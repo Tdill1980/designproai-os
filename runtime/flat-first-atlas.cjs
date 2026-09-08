@@ -2033,9 +2033,10 @@ function atlasPanelFinisher({
     String(input?.brandColors || "").trim(),
   ].filter(Boolean).join(" · ").slice(0, 600);
 
-  // The reasoning chain, accumulated across the six surfaces. It holds text
-  // and Gemini's encrypted thought signatures only -- never image data -- so
-  // it stays kilobytes while the sheets travel as declared references.
+  // The conversation, accumulated across the six surfaces as whole user/model
+  // exchanges. Each retained model turn replays the sheet it produced, because
+  // a thought signature is only meaningful on the part it arrived on -- so the
+  // module trims this from the oldest end to stay inside the request budget.
   let reasoningChain = [];
 
   return async function finishOnePanel(panel, finishedSoFar) {
@@ -2044,7 +2045,15 @@ function atlasPanelFinisher({
     // Only surfaces that are actually finished. The cascade order and the
     // extraction order are not identical (extraction runs Roof last), so a
     // neighbour that has not been cut yet is simply absent rather than fatal.
-    const neighbours = wanted.map((key) => byKey.get(key)).filter(Boolean);
+    // A sheet already replayed in the retained conversation is NOT also sent as
+    // a reference image. The model has it in its own turn, at full resolution,
+    // with its reasoning attached; attaching a downscaled copy alongside would
+    // pay for the same sheet twice and show it two contradictory ways.
+    const inConversation = new Set(reasoningChain.map((exchange) => exchange.surfaceKey));
+    const neighbours = wanted
+      .filter((key) => !inConversation.has(key))
+      .map((key) => byKey.get(key))
+      .filter(Boolean);
     return finishPanelSurface(panel, {
       neighbours,
       // THE WHOLE A.T.L.A.S., ON EVERY SURFACE (owner ruling 2026-09-08). The
@@ -2057,7 +2066,7 @@ function atlasPanelFinisher({
       // practice for chained image editing is to carry its own thought
       // signatures forward, so the model that drew the flanks is still holding
       // why it drew them when it reaches the hood.
-      priorTurns: reasoningChain,
+      priorExchanges: reasoningChain,
       creativeContext,
       store,
       logger: (message) => logger?.info?.("flat_atlas_panel_finish", { generationId, message }),
@@ -2072,14 +2081,16 @@ function atlasPanelFinisher({
           ),
           modelTurn: payload.modelTurn || null,
           thoughtSignatureCount: payload.thoughtSignatureCount || 0,
+          // What replaying this turn will cost the next request.
+          panelByteSize: Number(payload.panelBytes || 0),
         };
       },
     }).then((finish) => {
       // Advance the chain only on an accepted sheet. A refused pass leaves the
       // history where it was rather than recording reasoning behind bytes the
       // run then threw away.
-      if (finish?.applied === true && Array.isArray(finish.nextTurns)) {
-        reasoningChain = finish.nextTurns;
+      if (finish?.applied === true && Array.isArray(finish.nextExchanges)) {
+        reasoningChain = finish.nextExchanges;
       }
       return finish;
     });

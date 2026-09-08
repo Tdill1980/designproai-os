@@ -75,7 +75,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 
 const PANEL_AUTHORING_CONTRACT = "designpro.atlas-panel-authoring.v1";
-const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v3-multi-turn";
+const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v4-signature-fidelity";
 
 /**
  * The owner's cascade. Driver leads because Driver is the shot the customer
@@ -125,6 +125,28 @@ const PANEL_NEIGHBOURS = Object.freeze({
 const REFERENCE_LONG_EDGE_PX = 1280;
 const REFERENCE_JPEG_QUALITY = 82;
 
+/**
+ * HOW MUCH CONVERSATION TO CARRY.
+ *
+ * A replayed model turn is not free. A thought signature is only meaningful on
+ * the part it arrived on, and on an image response that part IS the image — so
+ * honouring the contract means each retained turn re-sends a full sheet
+ * (~1-5MB) edge-side. Six of them would exceed the ~20MB model-request budget
+ * somewhere around the roof.
+ *
+ * So the chain is trimmed from the OLDEST end, in whole user/model exchanges,
+ * until it fits. Trimming whole exchanges matters: a model turn without the
+ * user turn that prompted it is a reply to nothing, and a user turn whose
+ * answer has been dropped invites the model to answer it twice.
+ *
+ * The most recent exchanges are the ones worth keeping — the sheet drawn
+ * immediately before this one is the strongest constraint on the next — and
+ * every earlier sheet is still present as a downscaled reference regardless,
+ * so trimming costs reasoning continuity, never visual continuity.
+ */
+const HISTORY_IMAGE_BUDGET_BYTES = 7 * 1024 * 1024;
+const MAX_HISTORY_EXCHANGES = 3;
+
 const SURFACE_LABELS = Object.freeze({
   driver: "DRIVER SIDE",
   passenger: "PASSENGER SIDE",
@@ -155,6 +177,30 @@ const MIN_HOLE_IMPROVEMENT = 1.0;
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Trim the conversation to what the next request can afford, dropping whole
+ * exchanges from the oldest end. See HISTORY_IMAGE_BUDGET_BYTES.
+ *
+ * An exchange whose own image alone exceeds the budget is dropped rather than
+ * kept as a lone survivor: retaining it would guarantee the very
+ * request-too-large failure the trim exists to prevent.
+ */
+function trimHistory(exchanges) {
+  const kept = [];
+  let bytes = 0;
+  // Walk backwards so the newest exchanges — the strongest constraint on the
+  // sheet about to be drawn — are the ones that survive.
+  for (let i = exchanges.length - 1; i >= 0; i -= 1) {
+    const exchange = exchanges[i];
+    const cost = Number(exchange?.imageBytes || 0);
+    if (kept.length >= MAX_HISTORY_EXCHANGES) break;
+    if (bytes + cost > HISTORY_IMAGE_BUDGET_BYTES) break;
+    bytes += cost;
+    kept.unshift(exchange);
+  }
+  return kept;
 }
 
 /**
@@ -207,11 +253,12 @@ async function finishPanel(panel, {
   // one is composed knowing what the complete design looks like rather than
   // only its own crop (owner ruling 2026-09-08).
   atlasReferenceBytes = null,
-  // The conversation so far, as `{ role, parts }` turns carrying text and
-  // Gemini's encrypted thought signatures — never images. `finishPanel`
-  // appends this pass's own model turn to it on success, so the caller can
-  // hand a growing chain to the next surface. See THOUGHT SIGNATURES below.
-  priorTurns = [],
+  // The conversation so far, as `{ surfaceKey, imageBytes, turns }` exchanges.
+  // Each exchange is the user turn that asked for a sheet plus the model turn
+  // that answered — replayed faithfully, every signature still on the part it
+  // arrived on, the image carried by reference. `finishPanel` returns the
+  // trimmed chain as `nextExchanges` for the following surface.
+  priorExchanges = [],
   creativeContext = "",
   store,
   callEdge,
@@ -290,9 +337,10 @@ async function finishPanel(panel, {
   // identically rather than one of them. So the second attempt deliberately
   // drops the history and asks again with nothing but the images. A run
   // therefore degrades to the previous, measured behaviour instead of failing.
-  let chain = Array.isArray(priorTurns) ? priorTurns : [];
+  const chain = trimHistory(Array.isArray(priorExchanges) ? priorExchanges : []);
   for (let attempt = 1; attempt <= PANEL_FINISH_ATTEMPTS; attempt += 1) {
-    const sendChain = attempt === 1 ? chain : [];
+    const sentExchanges = attempt === 1 ? chain : [];
+    const sendChain = sentExchanges.flatMap((exchange) => exchange.turns);
     let candidate;
     try {
       candidate = await callEdge({
@@ -340,11 +388,20 @@ async function finishPanel(panel, {
         // it has already answered. If this attempt fell back to no history,
         // the chain restarts from here rather than pretending continuity that
         // the provider never acknowledged.
-        nextTurns: [
-          ...sendChain,
-          { role: "user", parts: [{ text: `Finish the ${SURFACE_LABELS[panel.surfaceKey] || panel.surfaceKey} sheet of this set.` }] },
-          ...(candidate?.modelTurn?.parts?.length ? [candidate.modelTurn] : []),
-        ],
+        nextExchanges: trimHistory([
+          ...sentExchanges,
+          {
+            surfaceKey: panel.surfaceKey,
+            imageBytes: Number(candidate?.panelByteSize || 0),
+            turns: [
+              {
+                role: "user",
+                parts: [{ text: `Finish the ${SURFACE_LABELS[panel.surfaceKey] || panel.surfaceKey} sheet of this set.` }],
+              },
+              ...(candidate?.modelTurn?.parts?.length ? [candidate.modelTurn] : []),
+            ],
+          },
+        ]),
         thoughtSignatureCount: Number(candidate?.thoughtSignatureCount || 0),
         priorTurnsApplied: sendChain.length,
       });
@@ -424,7 +481,9 @@ module.exports = {
   PANEL_NEIGHBOURS,
   PANEL_FINISH_ATTEMPTS,
   MAX_ASPECT_DRIFT_RATIO,
+  MAX_HISTORY_EXCHANGES,
+  HISTORY_IMAGE_BUDGET_BYTES,
   SURFACE_LABELS,
   finishPanel,
-  _test: { holeRatio, evaluateCandidate },
+  _test: { holeRatio, evaluateCandidate, trimHistory },
 };

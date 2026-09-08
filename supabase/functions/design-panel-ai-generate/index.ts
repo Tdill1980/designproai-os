@@ -2719,7 +2719,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
 // FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
 // so this path can only raise the floor — it can never lose a run that would
 // have shipped without it.
-const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v3-multi-turn";
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v4-signature-fidelity";
 const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
 /**
  * Every already-finished sheet may be attached (owner ruling 2026-09-08:
@@ -2857,6 +2857,38 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
       parts.push({ inlineData: { mimeType, data: btoa(binary) } });
       return actual;
     };
+    /**
+     * A sheet this function produced on an earlier surface, fetched so it can
+     * be replayed inside the model turn it belongs to. Returns base64 rather
+     * than pushing, because a history image belongs in ITS OWN turn's parts,
+     * not appended to the current user turn.
+     *
+     * `atlas-panel/<uuid>.png` is where this handler writes every sheet it
+     * makes, so the prefix is the proof that history can only ever replay this
+     * function's own output — never an arbitrary object from the bucket.
+     */
+    const downloadHistoryImage = async (path: unknown, expectedHash: unknown) => {
+      const key = String(path || "").trim();
+      if (!/^atlas-panel\/[0-9a-f-]{36}\.png$/.test(key)) {
+        throw new Error(`atlas_panel_history_path_invalid:${key.slice(0, 160)}`);
+      }
+      const hash = String(expectedHash || "");
+      if (!/^[0-9a-f]{64}$/.test(hash)) {
+        throw new Error(`atlas_panel_history_hash_invalid:${key}`);
+      }
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_panel_history_download_failed:${key}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (await sha256Hex(bytes) !== hash) {
+        throw new Error(`atlas_panel_history_hash_mismatch:${key}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      return btoa(binary);
+    };
 
     const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];
     if (neighboursIn.length > ATLAS_PANEL_MAX_NEIGHBOURS) {
@@ -2876,35 +2908,62 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     // driver flank should still be holding why it drew it when it draws the
     // hood.
     //
-    // WHAT TRAVELS, AND WHAT DOES NOT. Prior turns carry text and signatures
-    // only — never image data. The sheets themselves are already attached as
-    // explicit references with declared roles, so replaying them here would
-    // duplicate megabytes to say something the <inputs> block says better. The
-    // caller is responsible for retrying without prior turns if a request
-    // carrying them is rejected; see `callAtlasPanelEdge`.
+    // A SIGNATURE IS RETURNED ON THE PART IT ARRIVED ON. This is the whole
+    // contract and the first version of this code got it wrong: on an image
+    // response the signature rides on the IMAGE part, and that version kept the
+    // signature while discarding `inlineData` — handing back a bare signature
+    // attached to nothing. A model turn is therefore replayed FAITHFULLY here,
+    // part for part, in its original order, with each signature still on its
+    // own part.
+    //
+    // The image travels by STORAGE REFERENCE rather than inline base64, and is
+    // rehydrated below into exactly the part shape it was returned in. That is
+    // this file's existing discipline for large inputs — a 2.2MB inline request
+    // killed the worker on 2026-08-27 — and it keeps a six-surface conversation
+    // inside the model-request budget without altering a single part the model
+    // will see.
     const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
     if (priorTurnsIn.length > ATLAS_PANEL_MAX_PRIOR_TURNS) {
       throw new Error(`atlas_panel_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
     }
-    const priorTurns = priorTurnsIn.map((turn) => {
+    const priorTurns: Array<Record<string, unknown>> = [];
+    for (const turn of priorTurnsIn) {
       const role = String(turn.role || "");
       if (role !== "user" && role !== "model") {
         throw new Error(`atlas_panel_prior_turn_role_invalid:${role.slice(0, 40)}`);
       }
       const turnParts = Array.isArray(turn.parts) ? (turn.parts as Array<Record<string, unknown>>) : [];
-      const sanitised = turnParts.map((part) => {
+      const replayed: Array<Record<string, unknown>> = [];
+      for (const part of turnParts) {
         const out: Record<string, unknown> = {};
         if (typeof part.text === "string") out.text = part.text.slice(0, 4000);
-        if (typeof part.thoughtSignature === "string") out.thoughtSignature = part.thoughtSignature;
-        // An inlineData part here would be a replayed image. Refused rather
-        // than dropped: silently shrinking a caller's history would make a
-        // budget bug invisible.
-        if (part.inlineData) throw new Error("atlas_panel_prior_turn_carries_image");
-        return out;
-      }).filter((part) => Object.keys(part).length > 0);
-      if (sanitised.length === 0) throw new Error("atlas_panel_prior_turn_empty");
-      return { role, parts: sanitised };
-    });
+        // An image the model previously produced, referenced by the path this
+        // function wrote it to. Hash-verified on the way back in, exactly like
+        // every other image this handler attaches.
+        const ref = part.imageRef as Record<string, unknown> | undefined;
+        if (ref) {
+          out.inlineData = {
+            mimeType: "image/png",
+            data: await downloadHistoryImage(ref.storagePath, ref.contentHash),
+          };
+        }
+        // Inline base64 in history is refused rather than silently dropped:
+        // quietly shrinking a caller's history would make a budget bug
+        // invisible, and the reference form above exists precisely so nobody
+        // needs to send one.
+        if (part.inlineData) throw new Error("atlas_panel_prior_turn_carries_inline_image");
+        // LAST, so the signature sits on the same part as its content.
+        if (typeof part.thoughtSignature === "string") {
+          if (!out.text && !out.inlineData) {
+            throw new Error("atlas_panel_prior_turn_orphan_signature");
+          }
+          out.thoughtSignature = part.thoughtSignature;
+        }
+        if (Object.keys(out).length > 0) replayed.push(out);
+      }
+      if (replayed.length === 0) throw new Error("atlas_panel_prior_turn_empty");
+      priorTurns.push({ role, parts: replayed });
+    }
 
     const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
     const prompt = atlasPanelFinishPrompt(
@@ -2997,13 +3056,27 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
         // this sheet is still in context when the next one is drawn. Image
         // data is stripped: the sheets travel as declared references instead.
         priorTurnsApplied: priorTurns.length,
+        // THE MODEL TURN, FAITHFUL PART FOR PART.
+        //
+        // Same order, same parts, every signature still on the part it arrived
+        // on. The image is the one substitution — `inlineData` becomes an
+        // `imageRef` naming the object this handler just wrote — and it is
+        // rehydrated into the identical shape on the way back in. Nothing else
+        // is reshaped: the whole value of a signature is that the model
+        // recognises its own turn.
         modelTurn: {
           role: "model",
           parts: candidateParts
             .map((part) => {
               const out: Record<string, unknown> = {};
               if (typeof part?.text === "string" && part.text.trim()) out.text = part.text.slice(0, 4000);
-              if (typeof part?.thoughtSignature === "string") out.thoughtSignature = part.thoughtSignature;
+              if (part?.inlineData?.data) {
+                out.imageRef = { storagePath, contentHash: panelSha256 };
+              }
+              if (typeof part?.thoughtSignature === "string"
+                && (out.text || out.imageRef)) {
+                out.thoughtSignature = part.thoughtSignature;
+              }
               return out;
             })
             .filter((part) => Object.keys(part).length > 0),
