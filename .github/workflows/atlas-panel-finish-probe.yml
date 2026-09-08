@@ -1,0 +1,213 @@
+name: Probe A.T.L.A.S. per-surface panel finishing
+
+# A CONTROLLED EXPERIMENT, NOT A PRODUCT RUN.
+#
+# Per-surface panel finishing shipped today and has never drawn a pixel: the
+# blocking cutout gate refuses a holed master before panels are cut, so on
+# exactly the failure it was built for the pass is unreachable. Canary
+# 34258505325 refused five candidates for five, driver flank at
+# largestCutoutComponentRatio 0.14413.
+#
+# Moving that gate would be "healing", which the 2026-09-06 six-surface
+# restoration forbids and RULE 0.32 names ("do NOT add another repair
+# heuristic"). So the question is whether the pass WORKS — a measurement, which
+# is what RULE 0.32 asks for before any conditioning conclusion is drawn.
+#
+# This takes a REFUSED raw candidate already in storage, crops one surface with
+# the same code production uses, runs it through the deployed atlas-panel mode,
+# and measures. No production table is written, no revision or generation row is
+# created, no gate or threshold is changed. It reads one object and makes at
+# most one model call per surface.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected action — makes live provider calls against the production project"
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - RUN_PANEL_FINISH_PROBE
+      candidate:
+        description: "Refused raw candidate to repair, e.g. atlas-call1/<uuid>.png"
+        required: true
+        type: string
+      surfaces:
+        description: "Comma-separated cascade surfaces to attempt (driver first proves the hole; adding passenger proves the thought-signature chain)"
+        required: false
+        type: string
+        default: "driver,passenger"
+      vehicle_year:
+        required: true
+        type: string
+        default: "2022"
+      vehicle_make:
+        required: true
+        type: string
+        default: Ford
+      vehicle_model:
+        required: true
+        type: string
+        default: Transit
+      vehicle_type:
+        required: true
+        type: string
+        default: van
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-panel-finish-probe
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_PANEL_FINISH_PROBE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Prove protected live-provider intent
+        run: |
+          set +x
+          test "${{ inputs.confirmation }}" = "RUN_PANEL_FINISH_PROBE"
+          test -n "$SSH_PRIVATE_KEY"
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$1"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 35 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 36 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run the probe inside the live runtime image
+        id: run
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          P_CANDIDATE: ${{ inputs.candidate }}
+          P_SURFACES: ${{ inputs.surfaces }}
+          P_YEAR: ${{ inputs.vehicle_year }}
+          P_MAKE: ${{ inputs.vehicle_make }}
+          P_MODEL: ${{ inputs.vehicle_model }}
+          P_TYPE: ${{ inputs.vehicle_type }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+
+          # The runtime modules run against the DEPLOYED image's dependencies,
+          # so what the probe exercises is what production would run.
+          tar -cz --exclude runtime/node_modules \
+            scripts/atlas-panel-finish-probe.mjs runtime > "$RUNNER_TEMP/probe-payload.tgz"
+          payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            'f=$(mktemp /tmp/designpro-probe-payload.XXXXXX) && cat > "$f" && echo "$f"' \
+            < "$RUNNER_TEMP/probe-payload.tgz")
+          test -n "$payload_file"
+
+          set +e
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "P_CANDIDATE='$P_CANDIDATE' P_SURFACES='$P_SURFACES' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_TYPE='$P_TYPE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
+          set -Eeuo pipefail
+          env_file=/opt/designproai-os/shared/runtime.env
+          test -f "$env_file" || { echo "runtime.env missing"; exit 41; }
+
+          image=$(docker ps \
+            --filter label=com.docker.compose.project=designproai-os \
+            --format '{{.Image}}' | grep '^designproai-runtime:' | head -n1)
+          if [ -z "$image" ]; then echo "no running designproai-runtime container"; exit 42; fi
+          echo "runtime image: $image"
+
+          test -f "$P_PAYLOAD_FILE" || { echo "payload missing on host"; exit 43; }
+          work=$(mktemp -d /tmp/designpro-probe.XXXXXX)
+          out="$work/probe-evidence"
+          mkdir -p "$out"
+          cleanup() { rm -rf "$work" "$P_PAYLOAD_FILE"; }
+          trap cleanup EXIT
+
+          tar -C "$work" -xzf "$P_PAYLOAD_FILE"
+          ln -sfn /app/node_modules "$work/runtime/node_modules"
+          chmod -R 0777 "$work" "$out"
+
+          set +e
+          docker run --rm \
+            --env-file "$env_file" \
+            -v "$work:/work" -w /work \
+            --entrypoint node "$image" \
+            scripts/atlas-panel-finish-probe.mjs \
+              --out /work/probe-evidence \
+              --candidate "$P_CANDIDATE" \
+              --surfaces "$P_SURFACES" \
+              --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" --type "$P_TYPE"
+          status=$?
+          set -e
+
+          echo "---PROBE-EVIDENCE-TAR---"
+          tar -C "$out" -cz . | base64 -w0
+          exit $status
+          REMOTE
+          ssh_status=$?
+          set -e
+
+          mkdir -p probe-evidence
+          if grep -q -- '---PROBE-EVIDENCE-TAR---' "$RUNNER_TEMP/probe.log"; then
+            sed -n '1,/---PROBE-EVIDENCE-TAR---/p' "$RUNNER_TEMP/probe.log" | sed '$d' > probe-evidence/probe-run.log
+            sed -n '/---PROBE-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/probe.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C probe-evidence -xz
+          else
+            cp "$RUNNER_TEMP/probe.log" probe-evidence/probe-run.log
+          fi
+          cat probe-evidence/probe-run.log
+          exit "$ssh_status"
+
+      - name: Summarise the verdict
+        if: always()
+        shell: bash
+        run: |
+          if [ -f probe-evidence/panel-finish-evidence.json ]; then
+            { echo '## Per-surface finishing probe'; echo '```json';
+              cat probe-evidence/panel-finish-evidence.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the probe evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: atlas-panel-finish-probe-${{ github.run_id }}
+          path: probe-evidence
+          if-no-files-found: warn
+          retention-days: 90
