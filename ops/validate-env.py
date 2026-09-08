@@ -22,6 +22,13 @@ RUNTIME_BASE_KEYS = {
     "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED",
     "DESIGNPRO_TOPAZ_ENABLED",
+    # Per-surface A.T.L.A.S. panel finishing (owner ruling 2026-09-08).
+    # configure-env.sh always writes it, on or off, because a flag it left out
+    # would be silently reset by the next deploy. The runtime enables the
+    # feature only on the exact string "on", so an unexpected value here is
+    # inert rather than dangerous -- but it is still declared, because this
+    # allowlist exists so that nothing reaches runtime.env unnoticed.
+    "DESIGNPRO_ATLAS_PANEL_FINISH",
 }
 EMAIL_PROVIDER_KEYS = {"RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"}
 # Call 12 fails a production pack closed when it cannot run, so a half

@@ -256,6 +256,10 @@ test("env validator accepts only root-mode role-separated values", () => {
     "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
     "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false",
     "DESIGNPRO_TOPAZ_ENABLED=false",
+    // Always written by configure-env.sh, on or off, so the validator requires
+    // it rather than merely permitting it -- a release whose env writer predates
+    // the flag is then caught here instead of silently dropping it.
+    "DESIGNPRO_ATLAS_PANEL_FINISH=off",
     "",
   ].join("\n"));
   writeFileSync(gateway, [
@@ -298,6 +302,10 @@ test("env validator fails closed when email is enabled without an exact provider
     "DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool",
     "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
     "DESIGNPRO_TOPAZ_ENABLED=false",
+    // Always written by configure-env.sh, on or off, so the validator requires
+    // it rather than merely permitting it -- a release whose env writer predates
+    // the flag is then caught here instead of silently dropping it.
+    "DESIGNPRO_ATLAS_PANEL_FINISH=off",
   ];
   writeFileSync(runtime, [...baseRuntime, "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=true", ""].join("\n"));
   writeFileSync(gateway, [
