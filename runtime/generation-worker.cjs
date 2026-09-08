@@ -978,11 +978,24 @@ function createGenerationWorker({
           // Production permits exactly one refusal-only fallback. An accepted
           // first candidate still breaks the authoring loop immediately, so a
           // healthy run spends one creative call. This restores the measured
-          // behavior of generation 84a3eadf: its first raw candidate was
-          // refused and its second became canonical master 1564c66d.... If
-          // candidate 2 is also refused, the real gate error is surfaced; no
-          // third automatic attempt is permitted.
-          maxAuthoringAttempts: 2,
+          // ATTEMPT BUDGET RAISED TO 5 (owner ruling, Trish 2026-09-08).
+          //
+          // Two was modelled on generation 84a3eadf, whose first candidate was
+          // refused and whose second became canonical master 1564c66d. But the
+          // SAME unchanged request was refused four candidates for four on
+          // 2026-09-08, every one for large wheel/glass cutouts. Two throws is
+          // not enough for a coin flip.
+          //
+          // Nine recorded A/B tests closed the conditioning question -- even
+          // removing the teaching example entirely measured null -- so the
+          // number of throws is the remaining lever. At ~50% per candidate,
+          // five reaches a clean master ~97% of the time.
+          //
+          // Nothing else moves: the gate is untouched, each attempt sends the
+          // SAME request with no corrective text, a refused candidate is never
+          // persisted, and five refusals still fail closed with the real gate
+          // error surfaced.
+          maxAuthoringAttempts: 5,
           onMasterReady: (atlas) => {
             progressiveAtlas = atlas;
           },
