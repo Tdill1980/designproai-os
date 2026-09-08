@@ -163,10 +163,14 @@ test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte
   }
 });
 
-test("the v25 tail emits the fixture's own six normalized rectangles, anonymously", async () => {
+test("the field tail still emits the fixture's six normalized rectangles when explicitly invoked", async () => {
+  // RESTORED TO v23: production no longer SELECTS the field branch, so the
+  // fixture names the contract explicitly. The branch and its territory
+  // builder stay in the tree, tested, and available.
   const mod = await slice();
   const { field } = fixtureManifests();
-  const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
+  const body = { ...atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {}),
+    fieldContract: "designpro.atlas-field-prompt.v2", noseEdge: { driver: "left", passenger: "right" } };
   const { prompt } = mod.buildAtlasCall1Prompt(body);
   const tail = prompt.slice(prompt.indexOf(TAIL_MARK));
   assert.notEqual(tail, DRAW1_V24_TAIL, "Test 14 replaces the tail");

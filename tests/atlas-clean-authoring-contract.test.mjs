@@ -80,7 +80,7 @@ test("ATLAS creative contract carries named design context and pure rectangular 
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "// WHICH AUTHORING BRANCH");
+  const panelBlock = block(request, "panels: manifest.zones.map", "// v23 SIX-CONTAINER REQUEST");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
@@ -89,9 +89,7 @@ test("ATLAS request exposes exact identity, placement and normalized topology bu
   assert.match(request, /vehicleType:/);
   // Owner ruling 2026-09-07: the branch is a property of the manifest, so BOTH
   // requests are built here and both stay covered.
-  assert.match(request, /manifest\?\.topology === FIELD_TOPOLOGY/);
-  assert.match(request, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.match(request, /noseEdge: manifest\?\.installerMap\?\.noseEdge/);
+  assert.doesNotMatch(request, /fieldContract:|noseEdge:/);
   assert.match(request, /teachingProofStoragePath: extras.teachingProofStoragePath/);
   assert.match(request, /guideStoragePath: extras.guideStoragePath/);
   assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
@@ -167,8 +165,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260907\.v26-field-coordinates"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260907\.v26-field-coordinates"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
   assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });
