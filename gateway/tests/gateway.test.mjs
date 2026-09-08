@@ -890,11 +890,13 @@ test("a run parked on GENIE dimension validation reports waiting, not running", 
       }
       if (value.includes("/rest/v1/designpro_workflow_stages?")) {
         assert.match(value, /wait_reason/, "the status read must fetch the wait reason");
+        assert.match(value, /depends_on/, "the status read must retain real graph dependencies");
         return Response.json([
           { stage_key: "revision.freeze", status: "completed", output: {}, wait_reason: null, wait_details: {} },
           {
             stage_key: "manifest.resolve",
             status: "waiting",
+            depends_on: ["await_purchase"],
             output: {},
             wait_reason: "genie_dimension_validation_required",
             wait_details: { candidateId, requestedAt: "2026-08-23T05:27:36.795071+00:00" },
@@ -921,6 +923,7 @@ test("a run parked on GENIE dimension validation reports waiting, not running", 
   const manifest = job.stages.find((stage) => stage.key === "manifest.resolve");
   assert.equal(manifest.state, "waiting", "a parked stage must not render as a spinner");
   assert.equal(manifest.waitReason, "genie_dimension_validation_required");
+  assert.deepEqual(manifest.dependsOn, ["await_purchase"]);
 });
 
 test("artifact review signs only owner-scoped derived files and never persists a URL identity", async (t) => {

@@ -301,6 +301,11 @@ function publicState(raw) {
     stages: stages.map((s) => ({
       key: s.stage_key,
       label: s.stage_key,
+      ...(Object.hasOwn(s, "depends_on") ? {
+        dependsOn: Array.isArray(s.depends_on) ? s.depends_on.map(String) : null,
+      } : {}),
+      ...(["retryable", "cancelled", "skipped"].includes(s.status)
+        ? { executionState: s.status } : {}),
       state: s.status === "completed"
         ? "complete"
         : s.status === "failed"
@@ -589,7 +594,7 @@ function verifiedSourceEnticeRun(run, runs) {
 
 async function runState(fetchImpl, token, cfg, run) {
   const runId = encodeURIComponent(run.id);
-  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,output,error_message,error_details,wait_reason,wait_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
+  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,depends_on,output,error_message,error_details,wait_reason,wait_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
   if (!response.ok) throw Object.assign(new Error(`stages_query_${response.status}`), { status: response.status });
   return { run, stages: await response.json() };
 }

@@ -75,7 +75,7 @@ const {
 } = require("./atlas-master-qc.cjs");
 
 const PANEL_AUTHORING_CONTRACT = "designpro.atlas-panel-authoring.v1";
-const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v4-signature-fidelity";
+const PANEL_AUTHORING_PROMPT_VERSION = "atlas-panel-finish.20260908.v5-exact-exchanges";
 
 /**
  * The owner's cascade. Driver leads because Driver is the shot the customer
@@ -145,6 +145,7 @@ const REFERENCE_JPEG_QUALITY = 82;
  * so trimming costs reasoning continuity, never visual continuity.
  */
 const HISTORY_IMAGE_BUDGET_BYTES = 7 * 1024 * 1024;
+const HISTORY_IMAGE_BUDGET_ASSETS = 7; // leaves room for subject, master and five siblings
 const MAX_HISTORY_EXCHANGES = 3;
 
 const SURFACE_LABELS = Object.freeze({
@@ -190,14 +191,18 @@ function sha256(bytes) {
 function trimHistory(exchanges) {
   const kept = [];
   let bytes = 0;
+  let images = 0;
   // Walk backwards so the newest exchanges — the strongest constraint on the
   // sheet about to be drawn — are the ones that survive.
   for (let i = exchanges.length - 1; i >= 0; i -= 1) {
     const exchange = exchanges[i];
     const cost = Number(exchange?.imageBytes || 0);
+    const imageCount = (exchange?.turns || []).flatMap((turn) => turn.parts || []).filter((part) => part.imageRef).length;
     if (kept.length >= MAX_HISTORY_EXCHANGES) break;
-    if (bytes + cost > HISTORY_IMAGE_BUDGET_BYTES) break;
+    if (!Number.isFinite(cost) || cost < 0 || bytes + cost > HISTORY_IMAGE_BUDGET_BYTES
+      || images + imageCount > HISTORY_IMAGE_BUDGET_ASSETS) break;
     bytes += cost;
+    images += imageCount;
     kept.unshift(exchange);
   }
   return kept;
@@ -341,6 +346,10 @@ async function finishPanel(panel, {
   for (let attempt = 1; attempt <= PANEL_FINISH_ATTEMPTS; attempt += 1) {
     const sentExchanges = attempt === 1 ? chain : [];
     const sendChain = sentExchanges.flatMap((exchange) => exchange.turns);
+    // Decide AFTER trimming and for EACH attempt. Otherwise dropping history
+    // also drops the siblings that were excluded in favour of that history.
+    const inConversation = new Set(sentExchanges.map((exchange) => exchange.surfaceKey));
+    const sentNeighbours = staged.neighbours.filter((neighbour) => !inConversation.has(neighbour.surfaceKey));
     let candidate;
     try {
       candidate = await callEdge({
@@ -351,7 +360,7 @@ async function finishPanel(panel, {
         sourcePanelHash: staged.source.contentHash,
         atlasReferenceStoragePath: staged.atlas?.storagePath || null,
         atlasReferenceHash: staged.atlas?.contentHash || null,
-        neighbours: staged.neighbours,
+        neighbours: sentNeighbours,
         priorTurns: sendChain,
         creativeContext,
       });
@@ -378,29 +387,22 @@ async function finishPanel(panel, {
         preFinishHash: panel.contentHash,
         holeRatioBefore: beforeHoles,
         holeRatioAfter: verdict.afterHoles,
-        neighbourSurfaces: staged.neighbours.map((n) => n.surfaceKey),
+        neighbourSurfaces: sentNeighbours.map((n) => n.surfaceKey),
         atlasReferenceApplied: Boolean(staged.atlas),
         // THE CHAIN THE NEXT SURFACE SHOULD BE HANDED.
         //
-        // The user turn is a one-line note rather than a replay of the whole
-        // instruction: the point of the history is the model's own reasoning,
-        // carried by the signature on its turn, not a second copy of prompts
-        // it has already answered. If this attempt fell back to no history,
-        // the chain restarts from here rather than pretending continuity that
-        // the provider never acknowledged.
+        // Keep the ORIGINAL user/model exchange, or keep neither. A summary of
+        // the user turn is not faithful context for the signed model reply.
+        // A mixed deployment with an older edge can still return a panel, but
+        // does not acquire invented history. Retries restart the chain.
         nextExchanges: trimHistory([
           ...sentExchanges,
-          {
+          ...(candidate?.userTurn?.role === "user" && candidate?.userTurn?.parts?.length
+            && candidate?.modelTurn?.role === "model" && candidate?.modelTurn?.parts?.length ? [{
             surfaceKey: panel.surfaceKey,
-            imageBytes: Number(candidate?.panelByteSize || 0),
-            turns: [
-              {
-                role: "user",
-                parts: [{ text: `Finish the ${SURFACE_LABELS[panel.surfaceKey] || panel.surfaceKey} sheet of this set.` }],
-              },
-              ...(candidate?.modelTurn?.parts?.length ? [candidate.modelTurn] : []),
-            ],
-          },
+            imageBytes: Number(candidate?.historyImageBytes || candidate?.panelByteSize || 0),
+            turns: [candidate.userTurn, candidate.modelTurn],
+          }] : []),
         ]),
         thoughtSignatureCount: Number(candidate?.thoughtSignatureCount || 0),
         priorTurnsApplied: sendChain.length,

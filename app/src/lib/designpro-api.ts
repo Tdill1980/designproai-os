@@ -474,6 +474,8 @@ export type WorkflowStatus = {
   stages: Array<{
     key: string;
     label: string;
+    dependsOn?: string[] | null;
+    executionState?: "retryable" | "cancelled" | "skipped";
     state: "pending" | "running" | "waiting" | "complete" | "failed";
     waitReason?: string;
     /**

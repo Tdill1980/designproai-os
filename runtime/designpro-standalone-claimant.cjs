@@ -30,6 +30,7 @@ const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
+const { CONTRACT: PANELPRO_FILE_OUTPUT_CONTRACT, SOURCE_APPS: PANELPRO_FILE_OUTPUT_APPS } = require("./panelpro-file-output-contract.cjs");
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
@@ -2855,6 +2856,9 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   const stageConcurrency = Math.min(4, Math.max(1,
     Number.parseInt(process.env.DESIGNPRO_STAGE_CONCURRENCY || "2", 10) || 2));
   const inFlight = new Set();
+  // Reserve capacity BEFORE the first await. A slow claim/getRun otherwise
+  // allows several timer ticks to pass the same inFlight.size check.
+  let pendingClaims = 0;
   let timer = null;
   let lastReconcileAt = 0;
   let reconciling = false;
@@ -2881,7 +2885,9 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
   }
 
   async function tick() {
-    if (stopped || inFlight.size >= stageConcurrency) return;
+    if (stopped || inFlight.size + pendingClaims >= stageConcurrency) return;
+    pendingClaims += 1;
+    let claimReserved = true;
     let stage = null;
     let heartbeat = null;
     let stageGuard = null;
@@ -2892,8 +2898,14 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
       stage = Array.isArray(data) ? data[0] : data;
       if (!stage) return;
       const run = await getRun(supabase, stage.run_id);
+      if (stopped) throw new StageError("worker_stopping", "Worker stopped before stage execution", true);
       stageGuard = { lost: false, controller: new AbortController(), stageId: stage.id, leaseToken: stage.lease_token };
       inFlight.add(stageGuard);
+      pendingClaims -= 1;
+      claimReserved = false;
+      // Fill another available slot immediately. Readiness and cross-worker
+      // fencing remain owned by claim_designpro_stage, not this local wakeup.
+      queueMicrotask(() => void tick());
       heartbeat = setInterval(async () => {
         const { data: current, error: beatError } = await supabase.rpc("heartbeat_designpro_stage", { p_stage_id: stage.id, p_lease_token: stage.lease_token, p_lease_seconds: CLAIM_SECONDS });
         if (beatError || current !== true) {
@@ -2915,16 +2927,21 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
         await supabase.rpc("fail_designpro_stage", { p_stage_id: stage.id, p_lease_token: stage.lease_token, p_error_code: error.code || "stage_execution_failed", p_error_message: String(error.message || error).slice(0, 2000), p_retryable: error.retryable !== false });
       }
     } finally {
+      if (claimReserved) pendingClaims -= 1;
       if (heartbeat) clearInterval(heartbeat);
       if (stageGuard && !stageGuard.controller.signal.aborted) stageGuard.controller.abort(new Error("stage work ended"));
       if (stageGuard) inFlight.delete(stageGuard);
+      // Completed work may unlock a sibling or descendant. Empty claims still
+      // wait for the regular timer, preventing an idle polling loop.
+      if (stageGuard && !stopped) queueMicrotask(() => void tick());
     }
   }
 
   app.get("/designpro-os/claimant", (_req, res) => res.json({
     ready: true, contract: CLAIMANT_CONTRACT, workerId: id, stages: STAGES,
     // Observable, so "why did only one node run" is a query rather than a guess.
-    stageConcurrency, inFlight: inFlight.size,
+    stageConcurrency, inFlight: inFlight.size, pendingClaims,
+    panelProFileOutput: { contractVersion: PANELPRO_FILE_OUTPUT_CONTRACT, sourceApps: PANELPRO_FILE_OUTPUT_APPS, integrationState: "contract-only", approval: "existing-human-qc" },
   }));
   timer = setInterval(() => void tick(), 1_000);
   timer.unref?.();

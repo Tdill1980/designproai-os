@@ -4,6 +4,8 @@ runtime/package.json
 runtime/package-lock.json
 runtime/index.js
 runtime/designpro-standalone-claimant.cjs
+runtime/panelpro-file-output-contract.cjs
+runtime/panelpro-file-output-plan.cjs
 runtime/runtime-contract.cjs
 runtime/runtime-readiness.cjs
 runtime/genie-prep.cjs

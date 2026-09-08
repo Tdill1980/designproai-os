@@ -2045,13 +2045,9 @@ function atlasPanelFinisher({
     // Only surfaces that are actually finished. The cascade order and the
     // extraction order are not identical (extraction runs Roof last), so a
     // neighbour that has not been cut yet is simply absent rather than fatal.
-    // A sheet already replayed in the retained conversation is NOT also sent as
-    // a reference image. The model has it in its own turn, at full resolution,
-    // with its reasoning attached; attaching a downscaled copy alongside would
-    // pay for the same sheet twice and show it two contradictory ways.
-    const inConversation = new Set(reasoningChain.map((exchange) => exchange.surfaceKey));
+    // The finisher omits retained-history duplicates AFTER its byte-budget
+    // trim. Keep all available siblings here so retries can restore them.
     const neighbours = wanted
-      .filter((key) => !inConversation.has(key))
       .map((key) => byKey.get(key))
       .filter(Boolean);
     return finishPanelSurface(panel, {
@@ -2079,7 +2075,9 @@ function atlasPanelFinisher({
             payload.panelSha256,
             payload.panelBytes,
           ),
+          userTurn: payload.userTurn || null,
           modelTurn: payload.modelTurn || null,
+          historyImageBytes: Number(payload.historyImageBytes || 0),
           thoughtSignatureCount: payload.thoughtSignatureCount || 0,
           // What replaying this turn will cost the next request.
           panelByteSize: Number(payload.panelBytes || 0),

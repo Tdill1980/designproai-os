@@ -18,9 +18,9 @@
  * a view that merely rendered: the whole point of the page is to show the
  * customer that their production files are real.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { CheckCircle2, Circle, Loader2, PauseCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Circle, Loader2, PauseCircle } from "lucide-react";
 import {
   ApprovedGenerationView,
   dpApi,
@@ -36,22 +36,7 @@ import type { PackPanel } from "@/lib/panelizer-config";
 import { Loading, Notice, PageHead, Panel, StatePill } from "@/components/designpro/surface";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-/**
- * The seven rail steps the customer knows, each backed by the server stages that
- * actually prove it. A step is complete only when every stage behind it is.
- */
-const RAIL: Array<{ key: string; label: string; stages: string[] }> = [
-  { key: "panel", label: "Panel", stages: ["revision.freeze", "manifest.resolve"] },
-  { key: "optim", label: "Optim", stages: ["proof.build"] },
-  { key: "qa", label: "QA", stages: ["panels.build"] },
-  { key: "pack", label: "Pack", stages: ["pack.verify", "pack.activate"] },
-  { key: "detect", label: "Detect", stages: ["logos.extract", "panels.delogo"] },
-  { key: "admin", label: "Admin", stages: ["await_panelpro_preflight_qc", "await_final_human_qc"] },
-  { key: "ready", label: "Ready", stages: ["zip.build", "wrapbox.deliver"] },
-];
-
-type StepState = "complete" | "active" | "waiting" | "pending";
+import { presentWorkflowStages, productionProgressMessage, publicBuildPreviews, type PresentedState } from "@/lib/designpro-workflow-presentation.mjs";
 
 /** Canonical surface_key -> the zone ids PanelizerProgressDiagram lays out. */
 const ZONE_ID_FOR_SURFACE: Record<string, string> = {
@@ -63,20 +48,11 @@ const ZONE_ID_FOR_SURFACE: Record<string, string> = {
   rear: "rear",
 };
 
-function railState(job: WorkflowStatus | undefined, stages: string[]): StepState {
-  if (!job) return "pending";
-  const rows = job.stages.filter((stage) => stages.includes(stage.key));
-  if (!rows.length) return "pending";
-  if (rows.every((stage) => stage.state === "complete")) return "complete";
-  if (rows.some((stage) => stage.state === "waiting")) return "waiting";
-  if (rows.some((stage) => stage.state === "running")) return "active";
-  return "pending";
-}
-
-function StepIcon({ state }: { state: StepState }) {
+function StepIcon({ state }: { state: PresentedState }) {
   if (state === "complete") return <CheckCircle2 className="h-5 w-5 text-cyan-400" />;
-  if (state === "active") return <Loader2 className="h-5 w-5 animate-spin text-cyan-400" />;
+  if (state === "running" || state === "retrying") return <Loader2 className="h-5 w-5 animate-spin text-cyan-400" />;
   if (state === "waiting") return <PauseCircle className="h-5 w-5 text-amber-400" />;
+  if (state === "failed" || state === "attention") return <AlertCircle className="h-5 w-5 text-amber-400" />;
   return <Circle className="h-5 w-5 text-muted-foreground/40" />;
 }
 
@@ -86,24 +62,39 @@ export default function GenieProgress() {
   const [views, setViews] = useState<ApprovedGenerationView[]>([]);
   const [artifacts, setArtifacts] = useState<WorkflowArtifact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeRole, setActiveRole] = useState<string>("driver");
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
-    const [status, viewRows, artifactRows] = await Promise.all([
-      dpApi.getStatus(generationId).catch(() => undefined),
-      dpApi.listApprovedViews(generationId).catch(() => []),
-      dpApi.listArtifacts(generationId).catch(() => []),
+    const sequence = ++loadSequence.current;
+    const [status, viewRows, artifactRows] = await Promise.allSettled([
+      dpApi.getStatus(generationId),
+      dpApi.listApprovedViews(generationId),
+      dpApi.listArtifacts(generationId),
     ]);
-    setJob(status);
-    setViews(viewRows);
-    setArtifacts(artifactRows);
+    if (sequence !== loadSequence.current) return;
+    if (status.status === "fulfilled") setJob(status.value);
+    if (viewRows.status === "fulfilled") setViews(viewRows.value);
+    if (artifactRows.status === "fulfilled") setArtifacts(artifactRows.value);
+    setLoadError([status, viewRows, artifactRows].some((result) => result.status === "rejected"));
     setLoading(false);
   }, [generationId]);
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(load, 15_000);
-    return () => window.clearInterval(timer);
+    setLoading(true);
+    setJob(undefined);
+    setViews([]);
+    setArtifacts([]);
+    setLoadError(false);
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await load();
+      if (!disposed) timer = window.setTimeout(poll, 15_000);
+    };
+    void poll();
+    return () => { disposed = true; window.clearTimeout(timer); loadSequence.current += 1; };
   }, [load]);
 
   const viewByRole = useMemo(() => {
@@ -136,16 +127,16 @@ export default function GenieProgress() {
       label: SURFACE_LABEL[side] || side,
       widthInches: Number(metadata.printWidthIn ?? metadata.widthInches ?? 0),
       heightInches: Number(metadata.printHeightIn ?? metadata.heightInches ?? 0),
-      // Passenger is a deterministic mirror of the driver panel. Saying so on
-      // the customer's own progress page is the same statement the print files
-      // carry, not a UI flourish.
-      mirrored: side === "passenger",
+      mirrored: metadata.deterministicMirror === true,
     };
   }), [artifacts]);
 
   const packState = allGlow ? "complete" : glowing > 0 ? "processing" : "pending";
   const zipArtifact = artifacts.find((item) => item.kind === "zip");
   const active = viewByRole.get(activeRole);
+  const buildSteps = presentWorkflowStages(job?.stages);
+  const buildPreviews = publicBuildPreviews(artifacts);
+  const progressMessage = productionProgressMessage(job, Boolean(zipArtifact));
 
   if (loading && !job) {
     return (
@@ -170,30 +161,23 @@ export default function GenieProgress() {
         aside={job ? <StatePill state={job.state} /> : undefined}
       />
 
-      {!job && <Notice tone="warning">This design has not been handed to the production pipeline yet.</Notice>}
+      {loadError && <Notice tone="warning">Progress could not be fully refreshed. The latest available previews remain here while we reconnect.</Notice>}
+      {!job && !loadError && <Notice tone="warning">This design has not been handed to the production pipeline yet.</Notice>}
 
       {job && (
-        <Panel eyebrow="Build progress" title="Every stage the server owns">
-          <ol className="flex flex-wrap items-center gap-x-3 gap-y-4">
-            {RAIL.map((step, index) => {
-              const state = railState(job, step.stages);
+        <Panel eyebrow="Build progress" title="Your design taking shape" description="Completed files appear below as each part is prepared.">
+          {buildSteps.length === 0 && <p className="text-sm text-muted-foreground">{job.state === "queued" ? "Your design is queued for preparation." : "Your artwork and vehicle views are being prepared. Completed previews appear below."}</p>}
+          <ol className="grid gap-3 sm:grid-cols-2">
+            {buildSteps.map((step) => {
+              const state = step.state;
               return (
-                <li key={step.key} className="flex items-center gap-3">
-                  <div className="flex flex-col items-center gap-1">
-                    <StepIcon state={state} />
-                    <span
-                      className={cn(
-                        "text-[10px] font-bold uppercase tracking-wider",
-                        state === "complete" && "text-cyan-400",
-                        state === "active" && "text-cyan-300",
-                        state === "waiting" && "text-amber-400",
-                        state === "pending" && "text-muted-foreground/50",
-                      )}
-                    >
-                      {step.label}
-                    </span>
+                <li key={step.key} className="flex items-start gap-3 rounded-lg border border-border/60 p-3">
+                  <StepIcon state={state} />
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold">{step.label}</p>
+                    <p className="text-xs text-muted-foreground">{step.explanation}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{state === "attention" ? "Needs attention" : state === "running" ? "In progress" : state}</p>
                   </div>
-                  {index < RAIL.length - 1 && <span className="text-muted-foreground/30">—</span>}
                 </li>
               );
             })}
@@ -201,11 +185,24 @@ export default function GenieProgress() {
         </Panel>
       )}
 
+      {buildPreviews.length > 0 && (
+        <Panel eyebrow="Template and coverage" title="See how your artwork fits">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {buildPreviews.map((preview) => (
+              <figure key={preview.id} className="overflow-hidden rounded-lg border">
+                <img src={preview.signedUrl} alt={preview.label} className="aspect-video w-full bg-white object-contain" />
+                <figcaption className="p-3 text-sm">{preview.label}{SURFACE_LABEL[preview.surfaceKey] ? ` · ${SURFACE_LABEL[preview.surfaceKey]}` : ""}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </Panel>
+      )}
+
       {job && (
         <Panel
           eyebrow="ProductionFlow · UniversalPanelizer™"
           title="When all panels glow, it's a go"
-          description={`${glowing} of ${PRODUCTION_SURFACES.length} panels ${allGlow ? "complete" : "processing"}`}
+          description={`${glowing} of ${PRODUCTION_SURFACES.length} panel artworks prepared`}
         >
           <PanelizerProgressDiagram
             panels={packPanels}
@@ -214,9 +211,7 @@ export default function GenieProgress() {
             status={job.state === "failed" ? "failed" : packState}
           />
           <p className="mt-3 text-xs text-muted-foreground">
-            {allGlow
-              ? "Files sent to Admin QC — 24h review window active."
-              : "Each panel glows when the server has cut its print file. When all glow, it's a go."}
+            {progressMessage}
           </p>
           {zipArtifact && (
             <div className="mt-3">
@@ -230,13 +225,29 @@ export default function GenieProgress() {
         </Panel>
       )}
 
+      {panelSides.size > 0 && (
+        <Panel eyebrow="Panel artwork" title="Prepared sections">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            {PRODUCTION_SURFACES.map((side) => {
+              const panel = artifacts.find((item) => item.kind === "panel" && item.surfaceKey === side);
+              return panel?.signedUrl ? (
+                <figure key={side} className="overflow-hidden rounded-lg border">
+                  <img src={panel.signedUrl} alt={`${SURFACE_LABEL[side]} panel artwork`} className="aspect-video w-full bg-white object-contain" />
+                  <figcaption className="p-2 text-xs">{SURFACE_LABEL[side]}</figcaption>
+                </figure>
+              ) : null;
+            })}
+          </div>
+        </Panel>
+      )}
+
       {job?.state === "waiting_for_genie_dimensions" && (
         <Notice tone="warning">
           <div className="space-y-2">
             <strong className="block">GENIE vehicle dimensions need validation</strong>
             <span className="block">
-              The build is stopped until the vehicle's dimensions are validated. Panels
-              are cut to those exact dimensions, so nothing downstream can start first.
+              Production sizing is waiting for checked vehicle dimensions. Completed
+              artwork and proofs remain available while those measurements are reviewed.
             </span>
             <Button asChild size="sm" variant="outline">
               <Link
@@ -314,7 +325,7 @@ export default function GenieProgress() {
               <div className="space-y-1">
                 <strong className="block">All panels glow — it's a go</strong>
                 <span className="block">
-                  Your production files are with the design team for quality control.
+                  {progressMessage}
                 </span>
               </div>
             </Notice>

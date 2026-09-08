@@ -14,8 +14,10 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 63);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 65);
   for (const name of [
+    "runtime/panelpro-file-output-contract.cjs",
+    "runtime/panelpro-file-output-plan.cjs",
     // GENIE Prep (owner ruling 2026-09-02): the early lifecycle module is
     // required by generation-worker.cjs and index.js at module load, so a
     // release without it dies at require time (the runtime-closure lock caught
