@@ -22,13 +22,6 @@ RUNTIME_BASE_KEYS = {
     "GOOGLE_AI_API_KEY", "GOOGLE_IMAGE_MODEL", "DESIGNPRO_APP_ORIGIN",
     "DESIGNPRO_SPOOL_DIR", "SUPABASE_TUS_ENDPOINT", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED",
     "DESIGNPRO_TOPAZ_ENABLED",
-    # Per-surface A.T.L.A.S. panel finishing (owner ruling 2026-09-08).
-    # configure-env.sh always writes it, on or off, because a flag it left out
-    # would be silently reset by the next deploy. The runtime enables the
-    # feature only on the exact string "on", so an unexpected value here is
-    # inert rather than dangerous -- but it is still declared, because this
-    # allowlist exists so that nothing reaches runtime.env unnoticed.
-    "DESIGNPRO_ATLAS_PANEL_FINISH",
 }
 EMAIL_PROVIDER_KEYS = {"RESEND_API_KEY", "RESEND_FROM", "RESEND_FROM_VERIFIED"}
 # Call 12 fails a production pack closed when it cannot run, so a half
@@ -108,6 +101,19 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     if topaz_mode not in {"true", "false"}:
         raise ValidationError("DESIGNPRO_TOPAZ_ENABLED must be exactly true or false")
     runtime_keys = RUNTIME_BASE_KEYS | (EMAIL_PROVIDER_KEYS if email_mode == "true" else set())
+    # PERMITTED, NEVER REQUIRED — and the distinction is not cosmetic.
+    #
+    # Per-surface A.T.L.A.S. panel finishing (owner ruling 2026-09-08).
+    # configure-env.sh writes this key on every deploy, so requiring it looked
+    # safe. It is not: ci-dark-deploy.sh validates the ALREADY-INSTALLED
+    # runtime.env with the NEW validator before configure-env.sh has run, and
+    # that file was written by the previous release, which had never heard of
+    # the key. A required key therefore fails every upgrade from a release
+    # older than itself -- measured on run 34254151959.
+    #
+    # Same lesson as the v9 DB pin in CLAUDE.md: a gate must not learn a
+    # requirement one release before the writer that satisfies it.
+    runtime_keys |= {"DESIGNPRO_ATLAS_PANEL_FINISH"} if "DESIGNPRO_ATLAS_PANEL_FINISH" in runtime else set()
     runtime_keys |= TOPAZ_PROVIDER_KEYS if topaz_mode == "true" else set()
     exact_keys("runtime", runtime, runtime_keys)
     # DESIGNPRO_ADDITIONAL_ORIGINS is optional: present only when a second
