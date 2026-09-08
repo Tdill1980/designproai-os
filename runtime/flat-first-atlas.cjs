@@ -102,11 +102,29 @@ const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // valid master. A genuine creative miss belongs to a customer revision, not a
 // hidden technical rewrite of the accepted authority.
 //
-// The budget remains adjustable for a harness or an explicit operator retry,
-// but production cannot silently spend a second creative call while the buyer
-// is waiting for Driver.
-const MAX_MASTER_AUTHORING_ATTEMPTS = 3;
-const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;
+// ATTEMPT BUDGET RAISED TO 5 (owner ruling, Trish 2026-09-08).
+//
+// The default was ONE. Measured on the deployed six-container path: the same
+// unchanged request produced an accepted master on 2026-09-02 (1564c66d) and
+// was refused four candidates for four on 2026-09-08, every one for large
+// wheel/glass cutouts. That is a coin flip, and at one throw the buyer got
+// nothing roughly half the time.
+//
+// Nine recorded A/B tests (atlas-teaching-proof-ab.yml, tests 1-8) closed the
+// conditioning question: reworded contracts, altered teaching proofs, erased
+// labels, and REMOVING THE EXAMPLE ENTIRELY all measured null. There is no
+// prompt left to write, so the remaining lever is the number of throws.
+//
+// At ~50% per candidate, five attempts reach a clean master ~97% of the time.
+// Each refusal is cheap and invisible: nothing is persisted, no revision is
+// minted, the buyer sees one spinner. The gate is untouched -- a bad master
+// still never becomes canonical, and the run still fails closed if all five
+// are refused.
+//
+// The fallback stays UNCHANGED between attempts: no retry-specific corrective
+// text, no relaxed threshold, no third pipeline. Same request, another throw.
+const MAX_MASTER_AUTHORING_ATTEMPTS = 6;
+const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 5;
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);

@@ -6,12 +6,14 @@ const atlas = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.met
 const worker = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
 
 test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () => {
+  // Still one call on the happy path: the loop exits on the first accepted
+  // candidate. The raised budget only buys throws AFTER a refusal.
   // This is the invariant that protects the <60s / <90s SLA, and it is a
   // property of the LOOP, not of the budget: acceptance breaks out before a
   // second request body is ever built, so raising the ceiling cannot add a
   // millisecond to a healthy run. Asserting `maxAuthoringAttempts: 1` at the
   // call site only ever tested the ceiling, which is the weaker claim.
-  assert.match(atlas, /const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 1;/);
+  assert.match(atlas, /const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 5;/);
   assert.match(atlas, /geminiImageRequestCount: masterAuthoringAttempts/);
 
   const loop = atlas.slice(
@@ -36,12 +38,15 @@ test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () =>
   );
 });
 
-test("a REFUSED A.T.L.A.S. authoring gets exactly one fallback, and no third", () => {
+test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails closed", () => {
   // The last accepted six-surface production run needed candidate 2. Keep the
   // fallback bounded at the product call site, while the loop-level test above
   // proves an accepted candidate never incurs it.
-  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
-  assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 3;/);
+  // Raised from 2 to 5 (owner ruling 2026-09-08): the same unchanged request
+  // was refused 4 candidates for 4 on the deployed path, and nine A/B tests
+  // closed the conditioning question. Throws are the remaining lever.
+  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 5,/);
+  assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 6;/);
   assert.match(
     atlas,
     /if \(attempt === maxAuthoringAttempts\) \{\s*throw new FlatAtlasError\(/,
