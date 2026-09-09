@@ -23,14 +23,14 @@ generation passed, or a human approved a print package.
 
 | Component | Verified state |
 |---|---|
-| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335) merged at `0af5329eac1873dfccf84ba37b09314ec3ffefd8`; progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339) merged at `d6a82db1e33d7922bc363cbcb4de514a8370b17d` |
-| Supabase schema | All five 8 September migrations applied under their canonical repository versions; installed SQL hashes verified |
+| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335), progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339), and Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340) are merged. Identity repair commit: `7eb2fb9eb943e91fd659f5d796f36f2bf096807c` |
+| Supabase schema | All 97 canonical migrations installed, including `20260909062205_designpro_call1_reserved_identity`; installed SQL hashes and identity guards verified |
 | Image-generation Edge function | `design-panel-ai-generate` version 91 active |
-| Server release | Initial graph deployment [34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947) passed at 05:54 UTC. Progress recovery deployment [34319222749](https://github.com/Tdill1980/designproai-os/actions/runs/34319222749) passed at 06:32 UTC for `d6a82db1e33d7922bc363cbcb4de514a8370b17d`; both runtime replicas, gateway, archive/tree identity and shared spool passed acceptance. The public studio now serves `index-ZbIyvELt.js`; PanelProFileOutput navigation remains present |
+| Server release | Initial graph deployment [34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947) passed at 05:54 UTC; progress recovery [34319222749](https://github.com/Tdill1980/designproai-os/actions/runs/34319222749) passed at 06:32 UTC. Call 1 identity deployment [34322868929](https://github.com/Tdill1980/designproai-os/actions/runs/34322868929) passed at 07:18 UTC for `7eb2fb9eb943e91fd659f5d796f36f2bf096807c`: both runtime replicas, gateway, archive/tree identity and shared spool passed acceptance. Public bundle `index-BOeIciMl.js` and all existing studio navigation were observed after cutover |
 | End-to-end acceptance | Open, including the passenger-proof delay and logo/design-quality reports below |
 
 The exact merged release also passed [CI 34316026808](https://github.com/Tdill1980/designproai-os/actions/runs/34316026808).
-All 14 deployed Edge files match the release source. Production contains all 96
+All 14 deployed Edge files match the release source. Production contains all 97
 canonical migrations, retains 56 ATLAS history rows, and an existing seven-proof
 set still passes its read-only lineage validator. The public gateway health
 responds successfully and the private worker path returns 404.
@@ -505,7 +505,7 @@ Interactions is generally available and recommended for new projects;
 interaction ID supplements local persistence rather than replacing it.
 [Google Interactions overview](https://ai.google.dev/gemini-api/docs/interactions-overview).
 The signature formats are different across the two APIs.
-[Google thought-signature guide](https://ai.google.dev/gemini-api/docs/thought-signatures).
+[Google thinking and thought-signature guide](https://ai.google.dev/gemini-api/docs/thinking#thought-signatures).
 
 The exact-history implementation is
 `supabase/functions/_shared/gemini-image-history.mjs`, its edge handler and
@@ -661,10 +661,31 @@ worker stopped.
   completion, child revisions, historical reads and source-copy identity using
   database/runtime fixtures. Public API responses preserve the same identity
   pair and reject missing or conflated reservations on fresh v2 admissions.
-- [ ] Install and verify the new identity migration with its matching runtime
-  and gateway, then bind a fresh accepted production design to the advertised
-  IDs. Every panel/proof must match that actual ATLAS. Handoff/snapshot IDs stay
-  separately named. The user's reported incident still needs its exact ID.
+- [x] Install identity migration `20260909062205` in production at 07:05:57 UTC
+  on 9 September. Verify the installed SQL SHA-256
+  `9bed892ec57f9dc4f90a2b2bf8305f334c29f6a87bb9d2282bf4a811f90c68fd`,
+  all three RPC permissions, readiness, both claim paths, completion guards and
+  enabled identity triggers. Refresh PostgREST's schema cache after commit.
+- [x] Recheck all 56 existing ATLAS row fingerprints and the audited request,
+  master and handoff records after installation: no changes. Existing six-panel
+  and seven-proof bindings still match the saved ATLAS. Historical identity
+  projection recovers the actual ATLAS and Design ID without rewriting history.
+- [x] Deploy the matching gateway and workers from merged commit
+  `7eb2fb9eb943e91fd659f5d796f36f2bf096807c`. Exact merged-main
+  [CI 34322319530](https://github.com/Tdill1980/designproai-os/actions/runs/34322319530)
+  and [server deployment 34322868929](https://github.com/Tdill1980/designproai-os/actions/runs/34322868929)
+  passed. Cutover completed at 07:18:26 UTC; repeated acceptance passed at
+  07:18:31. Both runtime replicas, gateway and shared spool passed.
+- [x] Verify use of the new claim RPC through PostgREST after cutover. Database
+  query statistics increased from zero before deployment to 19 successful
+  `claim_designpro_generation_request_v2` polls by 07:19:04 UTC. These are queue
+  polls, not 19 generated designs. The public browser served the new
+  `index-BOeIciMl.js` bundle and retained DesignPro, RevisionStudioIQ,
+  PanelProStudio, PanelProFileOutput, GENIE QC and WrapBox navigation.
+- [ ] Bind a fresh accepted production design to its advertised Generation ID,
+  Design ID and ATLAS ID. Every panel/proof must match that actual ATLAS.
+  Handoff/snapshot IDs stay separately named. The user's reported incident
+  still needs its exact ID or page URL.
 
 | Identity boundary | Code and resulting behavior |
 |---|---|
@@ -681,6 +702,14 @@ Local validation: 97 migrations with Auth/Storage fixture services; 38 actual-ro
 SQL assertions; 120 gateway/runtime/readiness/source-copy cases; 10 child,
 history and fulfillment cases; 13 accepted-master/checkpoint recovery cases.
 Model transport is mocked in these tests. They do not certify new Gemini output.
+
+The exact PR head `1bed885e8e6f8d4d59ffeb2b87c336e418417864` passed
+[release gate 34321260222](https://github.com/Tdill1980/designproai-os/actions/runs/34321260222):
+1,642 executable tests across the existing suites, both application builds,
+97 fresh shadow migrations, 327 database assertions and the immutable archive
+and image checks. Two stale migration-inventory assertions were corrected. A
+temporary 502 during the shadow service restart passed when that failed job was
+retried on the same head; no application test or database assertion was skipped.
 
 Install the additive migration before the matching server release. Old gateway
 admission remains v1 until the new gateway opts into v2, and old claimants cannot
