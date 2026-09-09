@@ -8,6 +8,15 @@ must remain blocked for that request. See the [persistence repair and live
 acceptance ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md). Existing IDs and
 history remain; no missing panels or approved files are fabricated.
 
+**Parent repair deployed:** [PR #341](https://github.com/Tdill1980/designproai-os/pull/341)
+is installed as server `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` and
+`design-panel-ai-generate` v92. Exact-main CI and server acceptance passed,
+and all 14 deployed Edge source files match the tested code. Read-only inspection
+proved that the original 12 MiB response prefix does not contain a complete
+native image. That failed source stays blocked. Browser control stalled before
+a fresh post-release UI generation was submitted; no new ATLAS, child output,
+QC approval or WrapBox delivery is claimed by this deployment.
+
 PanelProFileOutput is a new shared application for preparing existing artwork
 against measured output profiles. Its shared handoff preserves DesignPro,
 RecreatePro, GraphicsPro and WallPro identities. This branch connects the
@@ -25,11 +34,12 @@ installed graph, tested provider integration, real-template validation and human
 QC are recorded separately. No `[x]` below means a live deployment or automatic
 production approval unless it explicitly says so.
 
-Deployment update: [PR #335](https://github.com/Tdill1980/designproai-os/pull/335)
+Initial deployment record: [PR #335](https://github.com/Tdill1980/designproai-os/pull/335)
 is merged at `main` commit `0af5329eac1873dfccf84ba37b09314ec3ffefd8`. All five
 new migrations are applied under their canonical versions with installed SQL
-hashes verified; image-generation Edge version 91 is active and all 14 deployed
-source files match. [Server deployment 34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947)
+hashes verified; image-generation Edge version 91 was active at that release and
+all 14 source files matched. It is superseded by the v92 parent repair above.
+[Server deployment 34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947)
 passed at 05:54 UTC on 9 September for that exact commit, including both workers
 and the gateway. The public studio bundle includes the new application route.
 The new service activation flags remain default-off; this does not establish an

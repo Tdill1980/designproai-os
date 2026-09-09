@@ -38,7 +38,7 @@ validation. The subsequent cache lookup correctly refused to claim that an
 incomplete response was a complete image. It did not authorize another model
 call. No accepted artwork has been reconstructed from the partial chunks.
 
-The deployed shared helper was downloaded and compared with the repository:
+The shared helper deployed at the time of failure was downloaded and compared with the repository:
 both SHA-256 hashes are
 `663837cd12b1188c72a7ea157b0e7f8baa2a325250d1ab1f4ab879aeca4585be`.
 
@@ -112,11 +112,45 @@ node scripts/benchmark-atlas-provider-cache.mjs --output-png /path/to/4k.png --r
 - [x] Test the rendered error card and hook behavior preserving the failed run.
 - [x] Build the application with the ATLAS wording and guarded controls.
 - [x] Authenticate the browser and open the actual customer's PanelProStudio route.
-- [ ] Complete exact-commit release CI and server rollout.
-- [ ] Deploy and verify the matching Edge writer after compatible runtime readers.
-- [ ] Inspect the partial production cache and establish whether any complete native image survived.
+- [x] Complete exact-commit release CI and server rollout.
+- [x] Deploy and verify the matching Edge writer after compatible runtime readers.
+- [x] Inspect the partial production cache and establish whether any complete native image survived: the stored native payload is incomplete.
 - [ ] Demonstrate a successful actual ATLAS generation and matching six panels/seven proofs in the UI.
 - [ ] Resolve logo/design degradation and complete the physical output/QC/WrapBox acceptance gates.
+
+## Production release and actual UI status
+
+| Gate | Verified evidence |
+|---|---|
+| Reviewed change | [PR #341](https://github.com/Tdill1980/designproai-os/pull/341), tested head `537847aa4ab0b1e16656f00abe68f39ab13375f6` |
+| PR-head CI | [34384916660](https://github.com/Tdill1980/designproai-os/actions/runs/34384916660), successful |
+| Merged code | `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` |
+| Exact merged-main CI | [34386075305](https://github.com/Tdill1980/designproai-os/actions/runs/34386075305), successful on attempt 2; application/contracts passed on attempt 1, and the temporary Supabase environment's post-reset 502 passed on retry with all 327 database checks |
+| Server deployment | [34387109272](https://github.com/Tdill1980/designproai-os/actions/runs/34387109272), successful; web, gateway and both exact-SHA runtime replicas accepted at 18:11 UTC |
+| Edge writer | `design-panel-ai-generate` version 92 active at 18:12 UTC, after runtime reader acceptance; all 14 deployed files compared byte-for-byte with the tested source |
+| Edge bundle | SHA-256 `de4397b89306e50e8f982e34b9740b1f3bf901aa7fff1018ed18939cf095b84a`; existing custom-auth configuration preserved |
+| Original response inspection | Completed at 18:11:50 UTC: 3 intact stored chunks / 12,582,912 native-envelope bytes, no completion receipt, no complete native payload, no complete final image, and no second authoring claim |
+| Original record | Still failed with its original IDs and evidence intact; inspection performed zero writes and zero provider calls |
+| Fresh UI generation | **Not run.** The signed-in browser connection stalled after deployment while checking the new build, before Generate was clicked |
+
+The original response cannot be reconstructed into a complete image from the
+banked chunks alone. Do not promote those bytes or silently reset the claim.
+There is no recovered accepted ATLAS for `DID-E9BABE2D`.
+
+The actual signed-in PanelProStudio record was examined before this release:
+it showed the correct failed generation, no accepted master, 0/6 panels and 0/7
+proofs, with approval controls disabled. This was a real UI inspection, not a
+successful generation test. Browser control briefly reconnected, then stalled
+again after the production update. A post-Edge database check found no new
+generation requests. The ATLAS creation form was inspected, but not submitted.
+
+To finish acceptance, restore the existing browser connection, reload and verify
+build `27c0e2c`, submit one fresh Harvest Moon regression design through the normal
+UI, and record its new request/GenerationID/DesignID. Verify its accepted master,
+six source panels, seven same-revision proofs and deterministic Call 8 proof in
+DesignProAI, RevisionStudioIQ and PanelProStudio, with visible screenshots and
+artifact lineage checks. Do not use the production-canary script or fabricate
+human QC, production approval, or notifications to complete this test.
 
 ## Rollout and recovery rules
 
@@ -132,9 +166,9 @@ or silently issue another model call. The scoped inspection distinguishes a
 complete stored envelope, a complete native payload inside a truncated envelope,
 and a truncated image. Any recovery must preserve that distinction.
 
-Browser component rendering and unit tests were performed before asking the
-customer to test. An HTML fixture exists for review, but the browser blocked its
-local file preview; no screenshot of that fixture is claimed. The now signed-in
-production browser is the remaining place to establish real end-to-end UI
-evidence. The earlier deployment verification was insufficient to claim a
-successful new ATLAS run.
+Component rendering and unit tests are not a successful browser generation.
+An HTML fixture exists for review, but its local browser preview was blocked;
+no screenshot of that fixture is claimed. The real signed-in browser remains the
+required acceptance surface. The earlier deployment verification was
+insufficient to claim a successful new ATLAS run, and this release's fresh UI
+test remains explicitly incomplete.

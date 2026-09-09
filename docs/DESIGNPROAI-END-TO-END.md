@@ -9,6 +9,13 @@ wording correction, regression evidence and pending live UI acceptance are
 tracked in [the 9 September incident record](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
 The deployment records below do not mean that this customer run succeeded.
 
+**Latest verified release:** [PR #341](https://github.com/Tdill1980/designproai-os/pull/341)
+is deployed as server `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` and Edge
+`design-panel-ai-generate` v92. The response persistence repair and ATLAS failure
+wording are installed. The original stored response is incomplete; it was not
+promoted or regenerated. **A fresh UI generation has not been run:** browser
+control stalled after deployment, before Generate was clicked.
+
 DesignProAI remains the operating system. The existing six-surface A.T.L.A.S.
 authoring path, identities, version history, studios and delivery flow remain its
 foundation. PanelProFileOutput adds a measured output-preparation application to
@@ -30,14 +37,16 @@ generation passed, or a human approved a print package.
 
 | Component | Verified state |
 |---|---|
-| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335), progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339), and Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340) are merged. Identity repair commit: `7eb2fb9eb943e91fd659f5d796f36f2bf096807c` |
+| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335), progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339), Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340), and response persistence repair [PR #341](https://github.com/Tdill1980/designproai-os/pull/341) are merged. Current deployed code: `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` |
 | Supabase schema | All 97 canonical migrations installed, including `20260909062205_designpro_call1_reserved_identity`; installed SQL hashes and identity guards verified |
-| Image-generation Edge function | `design-panel-ai-generate` version 91 active |
+| Image-generation Edge function | `design-panel-ai-generate` version 92 active; all 14 source files match the tested PR #341 source. Deployed after compatible runtime readers |
 | Server release | Initial graph deployment [34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947) passed at 05:54 UTC; progress recovery [34319222749](https://github.com/Tdill1980/designproai-os/actions/runs/34319222749) passed at 06:32 UTC. Call 1 identity deployment [34322868929](https://github.com/Tdill1980/designproai-os/actions/runs/34322868929) passed at 07:18 UTC for `7eb2fb9eb943e91fd659f5d796f36f2bf096807c`: both runtime replicas, gateway, archive/tree identity and shared spool passed acceptance. Public bundle `index-BOeIciMl.js` and all existing studio navigation were observed after cutover |
-| End-to-end acceptance | Open, including the passenger-proof delay and logo/design-quality reports below |
+| Response persistence rollout | Exact merged-main [CI 34386075305](https://github.com/Tdill1980/designproai-os/actions/runs/34386075305) passed; [deployment 34387109272](https://github.com/Tdill1980/designproai-os/actions/runs/34387109272) accepted web, gateway and both runtime replicas at 18:11 UTC. Edge v92 was deployed and verified at 18:12 UTC |
+| End-to-end acceptance | Open. The original Harvest Moon response is truncated and remains failed. No fresh UI generation was submitted after deployment because browser control stalled. Passenger-proof delay, logo/design quality and the downstream human/output gates remain open |
 
-The exact merged release also passed [CI 34316026808](https://github.com/Tdill1980/designproai-os/actions/runs/34316026808).
-All 14 deployed Edge files match the release source. Production contains all 97
+The initial graph release passed [CI 34316026808](https://github.com/Tdill1980/designproai-os/actions/runs/34316026808).
+The latest merged release and its Edge source verification are recorded above.
+Production contains all 97
 canonical migrations, retains 56 ATLAS history rows, and an existing seven-proof
 set still passes its read-only lineage validator. The public gateway health
 responds successfully and the private worker path returns 404.
@@ -46,8 +55,9 @@ Infrastructure acceptance does not establish a fresh successful design.
 PanelProFileOutput's new services retain their default-off activation flags;
 their code and pages are installed, but internal activation and a real-template
 trial still require completion. Human QC, Dropbox inputs, other source-app
-resolvers and delivery acceptance remain open. The browser currently requires
-sign-in for private designs. The new Harvest Moon incident is now identified;
+resolvers and delivery acceptance remain open. The browser was signed in and
+the failed PanelProStudio record was inspected; a later connection stall blocks
+the new release's generation test. The Harvest Moon incident is now identified;
 the earlier passenger-delay report remains a separate, unbound report.
 
 ## 1. Required result and visual contract
