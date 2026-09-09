@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const sharp = createRequire(new URL('../runtime/package.json', import.meta.url))('sharp');
 const atlas = require("../runtime/flat-first-atlas.cjs");
 const { resolveAtlasClaimGeometry } = require("../runtime/generation-worker.cjs");
 const { loadBundledAtlasTeachingProof } = require("../runtime/flat-atlas-topology-examples.cjs");
@@ -117,7 +118,7 @@ test("revision transport requires deployment capability and exact parent, teachi
   t.after(() => { oldUrl === undefined ? delete process.env.SUPABASE_URL : process.env.SUPABASE_URL = oldUrl;
     oldKey === undefined ? delete process.env.SUPABASE_SERVICE_ROLE_KEY : process.env.SUPABASE_SERVICE_ROLE_KEY = oldKey; });
   const teaching = loadBundledAtlasTeachingProof().identity;
-  const bytes = Buffer.from("verified final parent-bound image result");
+  const bytes = await sharp({ create: { width: 16, height: 16, channels: 3, background: '#438992' } }).png().toBuffer();
   const body = atlas._test.atlasEdgeRequestBody(input, manifest, {
     revisionContextHash: revision.revisionContextHash, teachingProofStoragePath: "atlas-call1-inputs/teaching.png",
     teachingProofIdentity: teaching, guideStoragePath: "atlas-call1-inputs/guide.png",

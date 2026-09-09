@@ -1827,11 +1827,19 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (digest !== String(payload.masterSha256 || "").toLowerCase()) {
     throw new FlatAtlasError("flat_atlas_edge_master_hash_mismatch", "Downloaded master bytes do not match the edge function's reported sha256");
   }
+  // Older Edge receipts only emitted PNG and omitted this field. New receipts
+  // retain the provider's native encoding; the canonical master normalizer
+  // below still emits PNG. Verify the declared format against the decoder.
+  const contentType = payload.masterContentType || "image/png";
+  const expectedFormat = { "image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp" }[contentType];
+  if (!expectedFormat || (await sharp(bytes, { failOn: "error", limitInputPixels: 40_000_000 }).metadata()).format !== expectedFormat) {
+    throw new FlatAtlasError("flat_atlas_edge_master_mime_mismatch", "The raw master format does not match its provider receipt");
+  }
   logger(`atlas-artboard edge request ${payload.requestId} model=${payload.model} promptChars=${payload.promptChars}`);
   return {
     bytes,
     model: String(payload.model || "unknown"),
-    contentType: "image/png",
+    contentType,
     provenance: {
       requestId: String(payload.requestId),
       functionName: String(payload.functionName),
@@ -1846,6 +1854,7 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       topologyContract: payload.topologyContract || null,
       masterStoragePath: masterPath,
       masterSha256: digest,
+      masterContentType: contentType,
       providerCacheContract: payload.providerCacheContract || null,
       providerRequestKey: payload.providerRequestKey || null,
       providerCacheHit: payload.providerCacheHit === true,

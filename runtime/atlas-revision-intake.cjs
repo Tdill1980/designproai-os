@@ -67,7 +67,8 @@ async function readParentHistory(supabase, parent, authorize = async () => {}) {
   if (!Array.isArray(turns) || !turns.length || turns.some(t => !['model', 'user'].includes(t.role) || !Array.isArray(t.parts))
     || modelTurn?.role !== 'model' || !Array.isArray(modelTurn.parts) || !modelTurn.parts.length) fail('atlas_revision_parent_history_invalid');
   const images = modelTurn.parts.filter(p => p.thought !== true && p.inlineData?.data);
-  if (images.length !== 1 || images[0].inlineData.mimeType !== 'image/png'
+  if (images.length !== 1 || !['image/png', 'image/jpeg', 'image/webp'].includes(images[0].inlineData.mimeType)
+    || (provenance.masterContentType && provenance.masterContentType !== images[0].inlineData.mimeType)
     || await providerSha256(Buffer.from(images[0].inlineData.data, 'base64')) !== provenance.masterSha256) fail('atlas_revision_parent_history_invalid');
   const imageCount = [...turns, modelTurn].reduce((count, turn) => count + turn.parts.filter(part => part?.inlineData?.data || part?.fileData).length, 0);
   const imageIdentities = [...turns, modelTurn].flatMap(turn => turn.parts.filter(part => part?.inlineData?.data)

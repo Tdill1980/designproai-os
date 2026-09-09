@@ -44,7 +44,7 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
-import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage } from "../_shared/gemini-image-history.mjs";
+import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage, decodeGenerateContentImage } from "../_shared/gemini-image-history.mjs";
 import {
   GEMINI_PROVIDER_CACHE_CONTRACT, authorizeAtlasProviderRequest,
   providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
@@ -2660,16 +2660,13 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     const { imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_artboard");
 
     // 5 — persist + provenance.
-    // Decode without a per-byte JS callback: a 4K master is ~5MB, and
-    // Uint8Array.from(binaryString, cb) walks it one closure call at a time.
+    // Accept native PNG/JPEG/WebP without recompression or MIME relabeling.
+    // The server's existing normalizer produces the canonical PNG afterward.
     const tDecode = Date.now();
-    const binary = atob(imagePart.inlineData.data);
-    const masterBytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) masterBytes[i] = binary.charCodeAt(i);
-    const digest = await crypto.subtle.digest("SHA-256", masterBytes);
-    const masterSha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-    const storagePath = `atlas-call1/${requestId}.png`;
-    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, masterBytes, "image/png");
+    const { bytes: masterBytes, mimeType: masterContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "atlas_artboard");
+    const masterSha256 = await providerSha256(masterBytes);
+    const storagePath = `atlas-call1/${requestId}.${extension}`;
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, masterBytes, masterContentType);
     // wrap-files is PRIVATE: a public URL 400s (live 2026-08-27, run
     // 33028608748 — the master was written, the caller could not read it).
     // The path is the contract; the signed URL is a convenience for humans.
@@ -2701,6 +2698,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         promptChars: prompt.length,
         masterUrl: signed?.signedUrl || null,
         masterStoragePath: storagePath,
+        masterContentType,
         masterSha256,
         masterBytes: masterBytes.length,
         designText: textOut.slice(0, 2000),
@@ -2918,7 +2916,7 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
      */
     const downloadHistoryImage = async (path: unknown, expectedHash: unknown) => {
       const key = String(path || "").trim();
-      if (!/^atlas-panel\/[0-9a-f-]{36}\.png$/.test(key)
+      if (!/^atlas-panel\/[0-9a-f-]{36}\.(png|jpg|webp)$/.test(key)
         && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(png|jpg)$/.test(key)
         && !/^atlas-panel-history\/[0-9a-f-]{36}\/\d+\.(png|jpg|webp)$/.test(key)) {
         throw new Error(`atlas_panel_history_path_invalid:${key.slice(0, 160)}`);
@@ -3050,12 +3048,10 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
     console.log(`atlas-panel ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts)`);
     const payload = cached.payload;
     const { candidateParts, imagePart } = selectFinalGenerateContentImage(payload, "atlas_panel");
-    const binary = atob(imagePart.inlineData.data);
-    const panelBytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) panelBytes[i] = binary.charCodeAt(i);
-    const panelSha256 = await sha256Hex(panelBytes);
-    const storagePath = `atlas-panel/${requestId}.png`;
-    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, panelBytes, "image/png");
+    const { bytes: panelBytes, mimeType: panelContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "atlas_panel");
+    const panelSha256 = await providerSha256(panelBytes);
+    const storagePath = `atlas-panel/${requestId}.${extension}`;
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, panelBytes, panelContentType);
 
     const userTurn = await captureImageTurn({ role: "user", parts }, async (_inlineData: unknown, index: number) => {
       const ref = userImageRefs.get(index);
@@ -3104,6 +3100,7 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
           .filter((part) => typeof part?.thoughtSignature === "string").length,
         promptChars: prompt.length,
         panelStoragePath: storagePath,
+        panelContentType,
         panelSha256,
         panelBytes: panelBytes.length,
       }),
