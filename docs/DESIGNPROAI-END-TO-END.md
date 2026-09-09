@@ -2,13 +2,16 @@
 
 Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
 
-**Current failure:** the owner's New Aura Day Spa run (`DID-664D054D`) failed
-on Call 1 at 21:43:59 UTC with `atlas_artboard_final_image_mime_invalid`, after
-the previous deployment finished. Its IDs and complete provider response record
-were saved. PNG-only admission and signed-history format handling are fixed
-locally; deployment and read-only verification of the saved native image remain
-pending. See the [current incident and repair checklist](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
-No new design submission is requested while this exact saved response is recovered.
+**Current blocker:** New Aura Day Spa (`DID-664D054D`) recovered its original
+4096 × 4096 Call-1 JPEG after the native-format repair (server `960bebc`,
+DesignPanel Edge v93). The same request stored Driver, Passenger and Hood
+finishing checkpoints, then failed on `panel:roof:1` at 22:31:19 UTC with
+`provider_outcome_unknown`. No accepted master or seven-proof set exists yet.
+Supabase refused the read-only roof log audit with HTTP 403. Failure reporting
+is being corrected, but that does not establish the cause of the old interruption.
+See the [incident, access requirement and exact repair checklist](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+**Owner testing is not ready.** No second Call-1 request or fabricated output is
+authorized by an unknown roof outcome.
 
 **Proof transport follow-up:** code now fixes the ignored 3D timeout and the
 four-by-three nested image retry budget. Each camera recovers its original
@@ -59,9 +62,9 @@ generation passed, or a human approved a print package.
 
 | Component | Verified state |
 |---|---|
-| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335), progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339), Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340), and response persistence repair [PR #341](https://github.com/Tdill1980/designproai-os/pull/341) are merged. Current deployed code: `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4` (PR #343) |
+| Repository | Initial graph release [PR #335](https://github.com/Tdill1980/designproai-os/pull/335), progress recovery [PR #339](https://github.com/Tdill1980/designproai-os/pull/339), Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340), and response persistence repair [PR #341](https://github.com/Tdill1980/designproai-os/pull/341) are merged. Current deployed code: `960bebcd9ce47225a8b24b24840017e00f7d2a10` ([PR #345](https://github.com/Tdill1980/designproai-os/pull/345)) |
 | Supabase schema | All 97 canonical migrations installed, including `20260909062205_designpro_call1_reserved_identity`; installed SQL hashes and identity guards verified |
-| Image-generation Edge function | `design-panel-ai-generate` version 92 active; all 14 source files match the tested PR #341 source. Deployed after compatible runtime readers |
+| Image-generation Edge function | `design-panel-ai-generate` version 93 active; all 14 source files match the tested PR #345 source. Deployed after compatible runtime readers |
 | Server release | Initial graph deployment [34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947) passed at 05:54 UTC; progress recovery [34319222749](https://github.com/Tdill1980/designproai-os/actions/runs/34319222749) passed at 06:32 UTC. Call 1 identity deployment [34322868929](https://github.com/Tdill1980/designproai-os/actions/runs/34322868929) passed at 07:18 UTC for `7eb2fb9eb943e91fd659f5d796f36f2bf096807c`: both runtime replicas, gateway, archive/tree identity and shared spool passed acceptance. Public bundle `index-BOeIciMl.js` and all existing studio navigation were observed after cutover |
 | Response persistence rollout | Exact merged-main [CI 34386075305](https://github.com/Tdill1980/designproai-os/actions/runs/34386075305) passed; [deployment 34387109272](https://github.com/Tdill1980/designproai-os/actions/runs/34387109272) accepted web, gateway and both runtime replicas at 18:11 UTC. Edge v92 was deployed and verified at 18:12 UTC |
 | End-to-end acceptance | Open. Harvest Moon remains failed with a truncated response. The owner's later New Aura run saved its complete response record but was refused by the PNG-only parser before master acceptance. Passenger-proof delay, logo/design quality and the downstream human/output gates remain open |

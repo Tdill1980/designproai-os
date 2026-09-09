@@ -1,12 +1,13 @@
 # PanelProFileOutput: shared deterministic output graph
 
-**9 September follow-up:** the parent DesignProAI run `DID-664D054D` stopped
-at Call 1 on a PNG-only image-format check. Native PNG/JPEG/WebP transport and
-both signed revision-history readers are being corrected without changing the
-canonical panel interface. PanelProFileOutput cannot claim an accepted source
-until the parent ATLAS passes its existing gates. Deployment, cache recovery
-and acceptance are tracked in the [incident ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
-The template/profile trial and human QC remain unchecked.
+**9 September follow-up:** the parent DesignProAI run `DID-664D054D` recovered
+its original 4K JPEG after PR #345 (server `960bebc`, DesignPanel Edge v93).
+It subsequently stopped at roof finishing at 22:31:19 UTC; there is still no
+accepted master to admit to PanelProFileOutput. Three private finishing
+checkpoints are not a completed production set. The read-only roof log audit
+was refused by Supabase with HTTP 403. Failure reporting, the access requirement
+and recovery status are tracked in the [incident ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+The template/profile trial and human QC remain unchecked; owner testing is not ready.
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 

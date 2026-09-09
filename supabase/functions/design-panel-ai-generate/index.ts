@@ -48,7 +48,7 @@ import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage, dec
 import {
   GEMINI_PROVIDER_CACHE_CONTRACT, authorizeAtlasProviderRequest,
   providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
-  prepareAtlasRevisionProviderContents,
+  prepareAtlasRevisionProviderContents, captureGeminiHttpExchange,
 } from "../_shared/gemini-provider-cache.mjs";
 // ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
 // buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
@@ -2644,14 +2644,13 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       privateRequest: modelRequest,
       outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
       authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
-      invoke: async () => {
-        const geminiRes = await fetch(geminiUrl, {
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
           signal: AbortSignal.timeout(115_000), body: modelRequest,
         });
-        return { status: geminiRes.status, payload: await geminiRes.json(), retryAfterSeconds: geminiRes.headers.get("retry-after") };
-      },
+      }),
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
@@ -2715,6 +2714,8 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
         providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
         providerStatus: (err as any)?.providerStatus || null,
+        providerDiagnostic: (err as any)?.providerDiagnostic || null,
+        providerFailureRecorded: (err as any)?.providerFailureRecorded === true,
         retryAfterSeconds: (err as any)?.retryAfterSeconds || null,
         retryable: (err as any)?.retryable === true,
         providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
@@ -3034,14 +3035,13 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
       privateRequest: modelRequest,
       outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
       authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
-      invoke: async () => {
-        const geminiRes = await fetch(geminiUrl, {
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
           signal: AbortSignal.timeout(110_000), body: modelRequest,
         });
-        return { status: geminiRes.status, payload: await geminiRes.json(), retryAfterSeconds: geminiRes.headers.get("retry-after") };
-      },
+      }),
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
@@ -3116,6 +3116,8 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
         imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
         providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
         providerStatus: (err as any)?.providerStatus || null,
+        providerDiagnostic: (err as any)?.providerDiagnostic || null,
+        providerFailureRecorded: (err as any)?.providerFailureRecorded === true,
         retryAfterSeconds: (err as any)?.retryAfterSeconds || null,
         retryable: (err as any)?.retryable === true,
         providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
