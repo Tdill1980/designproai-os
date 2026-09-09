@@ -5,14 +5,16 @@ its original 4K JPEG after PR #345 (server `960bebc`, DesignPanel Edge v93).
 It subsequently stopped at roof finishing at 22:31:19 UTC; there is still no
 accepted master to admit to PanelProFileOutput. Three private finishing
 checkpoints are not a completed production set. The read-only roof log audit
-was refused by Supabase with HTTP 403. Failure reporting, the access requirement
+was refused by Supabase with HTTP 403. Failure reporting is now deployed in
+DesignPanel Edge **v94** at 23:00:24 UTC; all 14 files match tested source.
+The remaining access requirement
 and recovery status are tracked in the [incident ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
 The template/profile trial and human QC remain unchecked; owner testing is not ready.
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
 **Upstream proof recovery:** the parent graph's new per-camera persistence and
-deadline repair is deployed as server `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`
+deadline repair was deployed as server `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`
 and `persona-photographer-render` v40, with matching source and successful server
 acceptance at 21:13 UTC. It preserves the existing
 accepted artifact interface consumed here. It does not unblock a missing source,
