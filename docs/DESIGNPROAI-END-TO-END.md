@@ -654,25 +654,23 @@ first passenger-delay report. A request begun earlier may have run on the prior
 release, and a page loaded earlier retains its old JavaScript until reload.
 Timing is a possible contributor, not a confirmed incident cause.
 
-### Provider timeout and recovery work still open
+### Provider timeout repair deployed; live acceptance still open
 
 The ATLAS worker already dispatches independent surface proofs; Driver priority
 is not a dependency that the passenger must wait to finish. A separate transport
-review found that `runtime/designpanel-server-provider.cjs` forwards an optional
-abort signal but does not enforce the image call's `timeoutMs`. The live
-`persona-photographer-render` handler can perform three 90-second attempts; the
-generation engine can retry the outer call four times and does not consistently
-honor `retryable: false`. A two-minute wait alone therefore does not prove the
-worker stopped.
+review found that `runtime/designpanel-server-provider.cjs` did not enforce the
+image call's `timeoutMs`, and nested runtime/Edge retries could multiply image
+requests. PR #343 repaired that path, deployed at 21:13 UTC and retained in the
+current server. A two-minute wait alone does not identify which stage stopped.
 
-- [ ] Add a stable, owner/revision/panel/camera-bound proof-operation identity,
-  an atomic provider claim, persisted result and authenticated result lookup.
-  In-flight or uncertain outcomes must not start duplicate model work.
-- [ ] Align transport deadlines, retry classification and lease heartbeat with
-  that durable operation. Do not install a bare fetch timeout that can abandon
-  a still-running Edge request and multiply paid image calls on retry.
-- [ ] Verify a delayed result, connection loss, worker restart and sibling
-  completion against the same operation before accepting this server repair.
+- [x] Install a stable owner/revision/panel/camera-bound proof-operation identity,
+  atomic claim, persisted response and authenticated cache-only recovery.
+- [x] Install the 180-second total proof-transport deadline and remove the nested
+  retry multiplier; preserve the same provider operation through recovery.
+- [x] Execute the local response-loss, restart, identity and bounded recovery
+  checks recorded in the incident ledger and exact PR #343 release gate.
+- [ ] Observe a live delayed result/recovery and the complete seven-view set
+  against the same accepted master. Deployed transport code is not this result.
 
 ### Call 1 identity audit — 9 September 2026
 

@@ -372,18 +372,22 @@ test("an interrupted finishing response never becomes a second image request",as
   const [panel]=await atlas.cutCallOnePanels(source,manifest,sha256(source));
   for(const interrupted of ["request","response"]){
     const methods=[];
+    const requests=[];
     await assert.rejects(finishPanel(panel,{
       store:{async putImmutableBytes(){}},
       callEdge:body=>atlas._test.callAtlasPanelEdge({...body,providerRequest:{...identities,attemptKey:"panel:driver:1"}},{
-        ownerId:identities.ownerId,fetchImpl:async(_url,options)=>{
+        ownerId:identities.ownerId,wait:async()=>{},fetchImpl:async(_url,options)=>{
           methods.push(options.method);
           if(options.method==="GET")return {ok:true,json:async()=>({providerCacheContract:"designpro.gemini-provider-cache.v1",modes:["atlas-panel"],cacheOnly:true})};
+          requests.push(JSON.parse(options.body));
           if(interrupted==="request")throw new TypeError("fetch failed after request transmission");
           return {ok:true,status:200,json:async()=>{throw new SyntaxError("interrupted response JSON");}};
         },
       }),
-    }),error=>error.code==="provider_outcome_unknown"&&error.retryable===true);
-    assert.deepEqual(methods,["GET","POST"],`${interrupted} interruption must recover the same cached attempt`);
+    }),error=>error.code==="provider_outcome_unknown"&&error.retryable===false);
+    assert.deepEqual(methods,["GET","POST","POST","POST","POST"],`${interrupted} interruption must recover the same cached attempt`);
+    assert.equal(requests.filter(request=>request.providerRequest.cacheOnly!==true).length,1);
+    for(const recovery of requests.slice(1))assert.deepEqual(recovery,{...requests[0],providerRequest:{...requests[0].providerRequest,cacheOnly:true}});
   }
 });
 

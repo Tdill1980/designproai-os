@@ -13,6 +13,15 @@ The template/profile trial and human QC remain unchecked; owner testing is not r
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
+**Remaining build and acceptance work:** the separate graph, deterministic
+renderer, protection checks, internal review pages and parent-package attachment
+are implemented. The activation flags remain off. The real measured-template
+and layered-asset trial, source-job integrations for RecreatePro/GraphicsPro/WallPro,
+live studio acceptance, original-logo quality comparison, human QC and verified
+delivery remain open. A blocked parent ATLAS is not the only remaining item.
+The current server recovery follow-up is recorded in the incident ledger; it
+does not enable this child or change any of these acceptance requirements.
+
 **Upstream proof recovery:** the parent graph's new per-camera persistence and
 deadline repair was deployed as server `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`
 and `persona-photographer-render` v40, with matching source and successful server

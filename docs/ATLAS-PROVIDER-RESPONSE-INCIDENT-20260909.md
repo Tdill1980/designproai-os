@@ -67,6 +67,33 @@ is `analytics_logs_read` (`analytics:read` for OAuth), per the
 This reporting correction cannot reconstruct an old response that was never
 saved, and does not by itself fix the unresolved roof interruption.
 
+### Runtime authoring/finishing recovery follow-up
+
+Further code inspection found that the server's Call-1 and panel-finishing
+transports had no bounded same-operation lookup after a lost response. A panel
+could therefore stop on an interrupted HTTP acknowledgement even when the Edge
+had saved, or was still saving, the result. The runtime also discarded the new
+v94 diagnostic fields before saving the generation error.
+
+- [x] Implement `runtime/atlas-authoring-transport.cjs`: one initial POST, then
+  at most three cache-only reads with the unchanged request/attempt/artwork.
+  Capability checks, response parsing and recovery share a 180-second maximum.
+- [x] Preserve only validated phase, exception class, HTTP status and elapsed
+  time on the runtime exception and in the existing failure-message field.
+  Prompts, arbitrary exception text and thought signatures stay out of it.
+- [x] Stop on identity/permission rejection or an already recorded provider
+  failure; do not advance a candidate, overwrite a claim or buy another image.
+- [x] Pass focused transport, finishing/restart, parent-revision, native-format
+  and release-packaging checks. The new packaged module changes the exact
+  runtime inventory from 78 to 79; the assertion and inventory both name it.
+- [ ] Pass the exact release gate and deploy this server follow-up.
+- [ ] Resolve the old roof operation and complete the real ATLAS. This transport
+  change cannot create a response that the provider/cache never retained.
+
+Production was re-read at 23:26:05 UTC: the same request remains failed,
+attempt 2, with zero accepted masters and zero proofs. No recovery mutation or
+new model request was made during this follow-up.
+
 ## Repaired Call-1 failure — saved image rejected by PNG-only parser
 
 At 21:42:59 UTC the owner submitted New Aura Day Spa, 2021 Lamborghini Urus.
