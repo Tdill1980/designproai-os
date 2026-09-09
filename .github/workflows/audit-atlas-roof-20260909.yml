@@ -1,0 +1,29 @@
+name: Read only ATLAS roof incident evidence
+
+# One fixed incident window. No provider calls, design changes or deployment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-atlas-roof-20260909.yml
+      - ops/audit-atlas-roof-20260909.py
+
+permissions:
+  contents: read
+
+jobs:
+  read-evidence:
+    if: contains(github.event.head_commit.message, '[audit-atlas-roof]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: designproai-production
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read the bounded Edge log window
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: python3 ops/audit-atlas-roof-20260909.py
