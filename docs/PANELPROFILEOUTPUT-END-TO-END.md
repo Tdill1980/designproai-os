@@ -2,6 +2,12 @@
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
+**Upstream incident:** Harvest Moon Coffee (`DID-E9BABE2D`) has no accepted ATLAS
+because its native provider response was only partly saved. PanelProFileOutput
+must remain blocked for that request. See the [persistence repair and live
+acceptance ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md). Existing IDs and
+history remain; no missing panels or approved files are fabricated.
+
 PanelProFileOutput is a new shared application for preparing existing artwork
 against measured output profiles. Its shared handoff preserves DesignPro,
 RecreatePro, GraphicsPro and WallPro identities. This branch connects the

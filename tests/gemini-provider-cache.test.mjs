@@ -63,7 +63,7 @@ test('durable response resumes every native part after a lost caller response, w
   assert.ok(!('privateRequest' in resumed));
   const chunkPath = [...bucket.files.keys()].find((path) => path.endsWith('.jsonpart'));
   const chunk = JSON.parse(new TextDecoder().decode(bucket.files.get(chunkPath)));
-  assert.equal(JSON.parse(atob(chunk.data)).privateRequest, privateRequest);
+  assert.equal(JSON.parse(chunk.text).privateRequest, privateRequest);
   assert.ok(bucket.writes.every(({ path }) => path.startsWith('designpro-provider-private/')));
 });
 

@@ -79,6 +79,48 @@ async function observeThenRecover(originalError: Error, recoveryError: Error, sh
 }
 
 describe("DesignPro recovery respects the latest owner-read refusal", () => {
+  it.each([false, true])("keeps an unconfirmed Call 1 addressable with recovery lineage refusal=%s and blocks another model submission", async (lineageRefused) => {
+    const failed: GenerationRequestState = { ...accepted, state: "failed", shotsComplete: 0, views: [], failureCode: "provider_outcome_unknown" };
+    vi.mocked(waitForGeneration).mockImplementationOnce(async (_requestId, options) => {
+      options?.onState?.(failed);
+      throw new Error("provider_outcome_unknown");
+    });
+    if (lineageRefused) {
+      vi.mocked(listDesignPanelViews).mockRejectedValueOnce(new ApiError(409, "flat_first_atlas_new_run_required"));
+    } else {
+      vi.mocked(listDesignPanelViews).mockResolvedValueOnce([]);
+    }
+    const result = await renderHook().generateFromPrompt(
+      { generationId: accepted.generationId, prompt: "Harvest Moon Coffee" } as DesignIQParams,
+      { year: "2022", make: "Ford", model: "Transit Connect" },
+      FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    );
+    expect(result.generationId).toBe(accepted.generationId);
+    expect(result.directRender).toBe(false);
+    expect(result.error).toContain("ATLAS generation did not complete");
+    expect(result.error).not.toMatch(/Start a new|Precision|paused|recovering/);
+    const display = renderHook();
+    expect(display.generationRequestState?.state).toBe("failed");
+    expect(display.generationRequestState?.generationId).toBe(accepted.generationId);
+    expect(display.visualizationId).toBe(accepted.generationId);
+    expect(display.generationErrorCode).toBe("provider_outcome_unknown");
+    expect(display.allViews).toEqual([]);
+    expect(display.generatedImageUrl).toBeNull();
+
+    // Clearing visible copy must not remove the request's unknown-outcome guard.
+    display.clearGenerationError();
+    const again = await renderHook().generateFromPrompt(
+      { generationId: "different-generation", prompt: "Try another design" } as DesignIQParams,
+      { year: "2022", make: "Ford", model: "Transit Connect" },
+      FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    );
+    expect(again.generationId).toBe(accepted.generationId);
+    expect(again.error).toContain("response could not be confirmed");
+    expect(startStandaloneGeneration).toHaveBeenCalledTimes(1);
+    expect(waitForGeneration).toHaveBeenCalledTimes(1);
+    expect(handoffGeneration).not.toHaveBeenCalled();
+  });
+
   it.each(["flat_first_atlas_new_run_required", "generation_atlas_lineage_invalid"])(
     "clears previously displayed Driver when recovery refuses %s after a 503",
     async (code) => {

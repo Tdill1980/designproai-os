@@ -26,6 +26,11 @@ import {
 import { useOrganization } from "@/contexts/OrganizationContext";
 import type { DesignIQParams } from "@/lib/designiq-engine";
 import { classifyDesignIqCombinedContact } from "@/lib/designpro-input-normalization";
+import {
+  ATLAS_UNCONFIRMED_OUTCOME_CODE,
+  ATLAS_UNCONFIRMED_OUTCOME_MESSAGE,
+  isUnconfirmedProviderOutcome,
+} from "@/lib/designpro-generation-error";
 
 import type { PersonaPipelinePhase } from "@/components/designpanelpro/PersonaPipelineProgress";
 import type { CoverageType } from "@/components/tools/CoverageSelector";
@@ -66,7 +71,7 @@ const PROOF_VIEW_LABELS: Record<string, string> = {
 };
 
 const ATLAS_NEW_RUN_REQUIRED_MESSAGE =
-  "This saved proof set cannot be reused. Start a new Precision run.";
+  "This saved proof set cannot be reused. Start a new ATLAS run.";
 const GENERATION_RECONNECTING_MESSAGE =
   "Reconnecting to your saved design. Available views stay visible; no new generation is being started.";
 const atlasNewRunRequired = (error: unknown) => {
@@ -172,6 +177,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   const [roofSize, setRoofSize] = useState<RoofSize>("none");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationErrorCode, setGenerationErrorCode] = useState<string | null>(null);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [visualizationId, setVisualizationId] = useState<string | null>(null);
   const [allViews, setAllViews] = useState<any[]>([]);
@@ -406,9 +412,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   // QC. Once the owner-read boundary reports that condition, remove every
   // display identity for that request. In particular, never let the generic
   // terminal-error recovery below put those old images back on screen.
-  const clearUntrustedAtlasProofState = () => {
+  const clearUntrustedAtlasProofState = ({ preserveRequestIdentity = false } = {}) => {
     setGeneratedImageUrl(null);
-    setVisualizationId(null);
+    if (!preserveRequestIdentity) setVisualizationId(null);
     setAllViews([]);
     setFailedViews([]);
     setRefusedShots([]);
@@ -418,8 +424,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     setRenderDid(null);
     setRenderPt(null);
     setFlatProofUrl(null);
-    setStandaloneRequestId(null);
-    setGenerationRequestState(null);
+    if (!preserveRequestIdentity) {
+      setStandaloneRequestId(null);
+      setGenerationRequestState(null);
+    }
     setIsDesignIQRender(false);
     setPersonaHeroUrl(null);
     setPersonaDesignAnchor(null);
@@ -589,11 +597,22 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     vehicleInfo?: { year: string; make: string; model: string },
     pipelineMode: GenerationPipelineMode = "legacy",
   ): Promise<{ generationId: string | null; directRender: boolean; renderUrl?: string; error?: string }> => {
+    // An unconfirmed paid call is not permission to mint another design. Keep
+    // the request addressable even if a caller clears the visible error first.
+    if (isUnconfirmedProviderOutcome(generationErrorCode)) {
+      setGenerationError(ATLAS_UNCONFIRMED_OUTCOME_MESSAGE);
+      return {
+        generationId: generationRequestState?.generationId || visualizationId,
+        directRender: false,
+        error: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE,
+      };
+    }
     clearLastRender();
     setActivePipelineMode(pipelineMode);
     setAllViews([]);
     setFailedViews([]);
     setGenerationError(null);
+    setGenerationErrorCode(null);
 
     const canGenerate = await checkCanGenerate();
     if (!canGenerate) {
@@ -751,12 +770,15 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-            ? "Your precision master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
+            ? "Your ATLAS master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
             : "Your seven DesignProAI™ views are saved. The server started Call 8 and the production job now reports its real status.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
     } catch (error: any) {
       const code = String(error?.code || error?.message || "");
+      const unconfirmedProviderOutcome =
+        acceptedRequest?.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
+        && isUnconfirmedProviderOutcome(code);
       const freshAtlasMasterQcFailure =
         acceptedRequest?.pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
         && (code.includes("flat_atlas_master_qc_failed")
@@ -772,7 +794,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       // Live, canary 990d4b62 (2026-08-27): the master was accepted, six panels
       // were cut, FIVE of seven proofs were accepted, the request reached
       // `outputs_ready` -- and the customer saw "Something went wrong. This
-      // saved proof set cannot be reused. Start a new Precision run." over a
+      // saved proof set cannot be reused. Start a new ATLAS run." over a
       // blank card. Everything the run produced was on the server and none of
       // it was on the screen.
       //
@@ -809,7 +831,11 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       const usableViews = recoveredViews.filter((view) => view.signedUrl);
       // Only now is it fair to say the lineage is unusable.
       const requiresNewAtlasRun = atlasNewRunRequired(effectiveError) && !usableViews.length;
-      if (requiresNewAtlasRun || freshAtlasMasterQcFailure) clearUntrustedAtlasProofState();
+      if (requiresNewAtlasRun || freshAtlasMasterQcFailure) {
+        // Withhold refused images without discarding the existing failed run
+        // when Call 1's final response is still unconfirmed.
+        clearUntrustedAtlasProofState({ preserveRequestIdentity: unconfirmedProviderOutcome });
+      }
       // A terminal request can still own byte-verified views. The legacy
       // worker used to discover a missing production manifest only after all
       // seven calls; hiding those saved images behind the error screen made a
@@ -852,10 +878,12 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
               sourceViewType, label: PROOF_VIEW_LABELS[sourceViewType] || sourceViewType,
             })),
           })
+          : unconfirmedProviderOutcome
+          ? ATLAS_UNCONFIRMED_OUTCOME_MESSAGE
           : requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
-          ? "The new flattened master was rejected during visual quality inspection. No proof set was saved. Start a new Precision run."
+          ? "The new ATLAS master was rejected during visual quality inspection. No proof set was saved. Start a new ATLAS run."
           : code === "generation_pipeline_mode_mismatch"
           ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"
@@ -868,9 +896,10 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       if (partialSet) console.warn("[DesignPro] partial proof set:", code, missingSides);
       else console.error("[DesignPro] standalone generation failed:", effectiveError);
       setGenerationError(friendly);
+      setGenerationErrorCode(unconfirmedProviderOutcome ? ATLAS_UNCONFIRMED_OUTCOME_CODE : code || null);
       const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {
-        generationId: requiresNewAtlasRun || freshAtlasMasterQcFailure
+        generationId: (requiresNewAtlasRun || freshAtlasMasterQcFailure) && !unconfirmedProviderOutcome
           ? null
           : acceptedRequest?.generationId || null,
         directRender: Boolean(recoveredPrimary?.signedUrl),
@@ -947,7 +976,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     if (!standaloneRequestId) return false;
     if (activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE) {
       setGenerationError(
-        "Proof views are locked to one master. Start a new Precision run to regenerate the proof set.",
+        "Proof views are locked to one ATLAS master. Start a new ATLAS run to regenerate the proof set.",
       );
       return false;
     }
@@ -1140,6 +1169,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     coverageType,
     setCoverageType,
     generationError,
+    generationErrorCode,
     generationRequestState,
     clearGenerationError: () => setGenerationError(null),
     saveDesignJob,

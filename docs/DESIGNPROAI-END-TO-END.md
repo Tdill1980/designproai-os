@@ -2,6 +2,13 @@
 
 Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
 
+**Active incident:** Harvest Moon Coffee (`DID-E9BABE2D`) failed on the deployed
+release during provider response saving, before an accepted ATLAS existed.
+The IDs were preserved. The bounded persistence repair, misleading Precision
+wording correction, regression evidence and pending live UI acceptance are
+tracked in [the 9 September incident record](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+The deployment records below do not mean that this customer run succeeded.
+
 DesignProAI remains the operating system. The existing six-surface A.T.L.A.S.
 authoring path, identities, version history, studios and delivery flow remain its
 foundation. PanelProFileOutput adds a measured output-preparation application to
@@ -40,7 +47,8 @@ PanelProFileOutput's new services retain their default-off activation flags;
 their code and pages are installed, but internal activation and a real-template
 trial still require completion. Human QC, Dropbox inputs, other source-app
 resolvers and delivery acceptance remain open. The browser currently requires
-sign-in, and the user's reported stalled design has not been identified.
+sign-in for private designs. The new Harvest Moon incident is now identified;
+the earlier passenger-delay report remains a separate, unbound report.
 
 ## 1. Required result and visual contract
 

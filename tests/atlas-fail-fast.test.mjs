@@ -39,7 +39,7 @@ test("the browser stops an old retrying request on fail-closed geometry", () => 
   assert.match(adapter, /terminalGenerationFailureCode\(state/);
 });
 
-test("A.T.L.A.S. per-view regeneration fails closed and tells the customer to start a new run", () => {
+test("A.T.L.A.S. per-view regeneration fails closed and directs the customer to the saved run", () => {
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
   const guardedPage = read("app/src/pages/designpro/GenerateDesign.tsx");
@@ -49,13 +49,13 @@ test("A.T.L.A.S. per-view regeneration fails closed and tells the customer to st
   );
 
   assert.match(retry, /activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE/);
-  assert.match(retry, /Start a new Precision run/);
+  assert.match(retry, /Start a new ATLAS run/);
   assert.ok(
     retry.indexOf("activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE")
       < retry.indexOf("regenerateDesignPanelView"),
     "the browser guard must run before its regeneration request",
   );
-  assert.match(premium, /isFlatFirstDiagnostic \? \([\s\S]*Start a new Precision run\.[\s\S]*\) : \([\s\S]*Retry This View/);
+  assert.match(premium, /isFlatFirstDiagnostic \? \([\s\S]*Open the saved ATLAS job to inspect this view\.[\s\S]*\) : \([\s\S]*Retry This View/);
   assert.match(guardedPage, /Start a new A\.T\.L\.A\.S\. run/);
   assert.doesNotMatch(guardedPage, /Edit the canonical master first/);
 });
@@ -63,6 +63,7 @@ test("A.T.L.A.S. per-view regeneration fails closed and tells the customer to st
 test("legacy Atlas owner-read failures clear every preview and never recover signed views", () => {
   const hook = read("app/src/hooks/useDesignPanelProLogic.ts");
   const premium = read("app/src/pages/DesignPanelProPremium.tsx");
+  const failureUi = read("app/src/components/designpanelpro/DesignGenerationFailure.tsx");
   const gateway = read("gateway/src/server.mjs");
   const failure = hook.slice(
     hook.indexOf("} catch (error: any) {", hook.indexOf("const runStandaloneGeneration")),
@@ -73,7 +74,7 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   assert.match(hook, /generation_atlas_lineage_invalid/);
   assert.match(
     failure,
-    /if \(requiresNewAtlasRun \|\| freshAtlasMasterQcFailure\) clearUntrustedAtlasProofState\(\)/,
+    /if \(requiresNewAtlasRun \|\| freshAtlasMasterQcFailure\) \{[\s\S]*?clearUntrustedAtlasProofState\(\{ preserveRequestIdentity: unconfirmedProviderOutcome \}\)/,
   );
   // RECOVERY NOW RUNS FIRST, AND THE VERDICT DEPENDS ON WHAT IT FOUND.
   //
@@ -101,9 +102,9 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
     !/requiresNewAtlasRun\s*\?/.test(applyBlock),
     "the apply block is gated by the flag, never branching inside it",
   );
-  assert.match(hook, /This saved proof set cannot be reused\. Start a new Precision run\./);
+  assert.match(hook, /This saved proof set cannot be reused\. Start a new ATLAS run\./);
   assert.match(hook, /freshAtlasMasterQcFailure/);
-  assert.match(hook, /No proof set was saved\. Start a new Precision run\./);
+  assert.match(hook, /No proof set was saved\. Start a new ATLAS run\./);
   const clear = hook.slice(
     hook.indexOf("const clearUntrustedAtlasProofState"),
     hook.indexOf("// Persona pipeline timer"),
@@ -115,8 +116,10 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
     "setPersonaAllViews({})", "setPersonaFailedShots([])",
   ]) assert.match(clear, new RegExp(reset.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.match(premium, /renderError \|\| atlasNewRunRequired/);
-  assert.match(premium, /generationError\?\.includes\("Start a new Precision run"\)/);
-  assert.match(premium, /Start New Precision Run/);
+  assert.match(premium, /generationError\?\.includes\("Start a new ATLAS run"\)/);
+  assert.match(premium, /<DesignGenerationFailure/);
+  assert.match(failureUi, /Start New ATLAS Run/);
+  assert.doesNotMatch(failureUi, /Precision/);
   assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
 });
@@ -183,7 +186,7 @@ test("the customer DesignPanel page enters the one production chain on both pipe
     /queryKey: \["designpro-production-job"[\s\S]{0,200}?activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/,
   );
   // One master owns the A.T.L.A.S. proof set; a single view is never re-rolled.
-  assert.match(hook, /Proof views are locked to one master/);
+  assert.match(hook, /Proof views are locked to one ATLAS master/);
 });
 
 test("A.T.L.A.S. streams signed proof views without new generation calls, and never shows the customer the master", () => {

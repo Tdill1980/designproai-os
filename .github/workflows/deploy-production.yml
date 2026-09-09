@@ -539,6 +539,30 @@ jobs:
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
+      # An explicit merge marker scopes this read-only incident check to the
+      # owner's reported request. It uses the runtime's existing credentials in
+      # place; logs contain hashes/counts only, never images, prompts or tokens.
+      - name: Inspect the reported ATLAS response without generating or modifying a design
+        if: env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3'
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! git log -1 --format=%B | grep -Fq '[inspect-atlas-e9babe2d]'; then
+            exit 0
+          fi
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_SHA='$EXACT_SHA' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          cd /opt/designproai-os/current
+          test "$(readlink -f /opt/designproai-os/current)" = "/opt/designproai-os/releases/$EXPECTED_SHA"
+          docker compose --env-file deploy/release.env -f ops/compose.yaml exec -T runtime-1 \
+            node inspect-atlas-provider-cache.cjs \
+            5f1da626-6912-4aab-8ba5-d704ab2b6ea3 e9babe2d-043e-4ce4-9b7f-5e93b2739b09
+          REMOTE
+
       - name: Remove only this run's temporary remote staging directory
         if: always() && env.DEPLOY_MODE == 'DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3' && steps.ssh.outputs.key_file != ''
         env:
