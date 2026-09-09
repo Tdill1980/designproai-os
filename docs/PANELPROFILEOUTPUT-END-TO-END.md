@@ -3,7 +3,9 @@
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
 **Upstream proof recovery:** the parent graph's new per-camera persistence and
-deadline repair is implemented and awaiting deployment. It preserves the existing
+deadline repair is deployed as server `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`
+and `persona-photographer-render` v40, with matching source and successful server
+acceptance at 21:13 UTC. It preserves the existing
 accepted artifact interface consumed here. It does not unblock a missing source,
 grant QC approval or enable PanelProFileOutput's optional production flag. See the
 [implementation and deployment ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
