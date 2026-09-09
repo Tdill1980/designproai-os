@@ -2,7 +2,16 @@
 
 Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
 
-**Current blocker:** New Aura Day Spa (`DID-664D054D`) recovered its original
+**Update (later on 9 September):** the roof interruption was read from the
+live Supabase function logs (edge answered `409 provider_outcome_unknown` after
+31.6 s with no response fragments), and the finishing transport is now
+recoverable and non-fatal: bounded cache-only recovery of the same request, and
+an unresolved or refused optional edit retains that surface's deterministic
+crop instead of failing the generation. See the
+[incident ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md). The paragraph
+below is the state before that change.
+
+**Previous blocker:** New Aura Day Spa (`DID-664D054D`) recovered its original
 4096 × 4096 Call-1 JPEG after the native-format repair (server `960bebc`,
 DesignPanel Edge v93). The same request stored Driver, Passenger and Hood
 finishing checkpoints, then failed on `panel:roof:1` at 22:31:19 UTC with
@@ -250,6 +259,21 @@ finishing mode is explicitly on, the flow is:
 This corrects the previous possibility that the displayed master and individually
 finished panels described different artwork. It also adds a real whole-master
 join in finishing mode; dependent proof generation cannot safely bypass it.
+
+Failure disposition inside the cascade (2026-09-09, measured on the New Aura
+roof): a finishing exchange that is interrupted, or that the edge reports as
+`provider_outcome_unknown`, is first re-read with `providerRequest.cacheOnly`
+up to three times (`invokeAtlasAuthoring`, PR #349); if nothing was banked, or the provider
+refused with any other `provider_*` code, **that surface retains its
+deterministic crop and the cascade continues** — the second candidate is never
+spent against an unresolved exchange, and the generation is never failed over an
+optional edit. Edge refusals before any image was requested (`providerOutcome:
+not_sent`, e.g. request too large) still take the designed second, smaller
+request. Contract, deployment and storage failures (`flat_atlas_*`) still throw
+and resume. `masterFinishing.surfaces[].providerOutcome` records which sheets
+are the cut. Note that production has had `DESIGNPRO_ATLAS_PANEL_FINISH=on`
+since the 2026-09-08 ruling even though this document's default is off; the
+deploy workflow input `atlas_panel_finish` is where it is changed.
 Historical revisions with mixed master/panel authority remain reviewable, while
 `assertAtlasReuseContract()` refuses automatic production reuse of that mismatch.
 

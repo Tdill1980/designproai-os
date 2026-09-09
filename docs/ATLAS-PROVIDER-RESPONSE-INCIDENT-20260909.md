@@ -1,6 +1,86 @@
 # ATLAS response persistence incident — 9 September 2026
 
-## Current status — Call 1 recovered; roof finishing remains blocked
+## Roof finishing — cause located in the live logs; finishing made recoverable and non-fatal
+
+The Supabase unified log stream for the project was readable through the
+Supabase MCP connector in this session (`function_edge_logs`, `function_logs`,
+`edge_logs`), which is the access the two audit runs below were refused. The
+roof exchange, exactly as logged (all times UTC, 9 September 2026):
+
+| time | event |
+|---|---|
+| 22:30:45.421 | runtime reads the roof finishing checkpoint: `GET 400` (none exists) |
+| 22:30:47.404 | `GET ?action=atlas-provider-capabilities` → 200 (203 ms) |
+| ~22:30:47.5 | runtime `POST design-panel-ai-generate` for `panel:roof:1` |
+| 22:30:49 | edge writes the roof provider claim (incident ledger, unchanged) |
+| 22:31:19.036 | edge answers **`POST 409`** after **31,610 ms**; there is **no** `atlas-panel …: roof responded` line and no response fragment |
+| 22:31:19.093 | request row `f5f1d8ce…` marked `failed`, `provider_outcome_unknown`, `retryable: false` |
+
+Every other finishing call in the same run logged `responded in 31–38 s` and
+returned 200, so the roof exchange ended inside the window where Gemini
+normally answers. The edge returned its own structured 409 JSON, which means
+its handler was alive and caught an exception from the Gemini `fetch()` or
+from reading the response body; it was not a 546 resource kill of the isolate.
+With Edge v93 the wrapper discarded that exception, so the phase and exception
+class are not recoverable for this occurrence. Edge v94 records them
+(`failure.json`) for the next one.
+
+What the logs also show, and the ledger did not: Passenger and Hood each made
+**two** finishing calls (`b8702ea5`/`b83ceaca`, `f5ad4952`/`84ce256e`), i.e.
+attempt 1 was refused by the runtime's candidate checks and attempt 2 was spent,
+at ~35 s each. That is a cost/latency finding for the finishing pass itself
+(`masterFinishing.surfaces[].reason` will name the refusal on the next completed
+run) and is separate from the roof interruption.
+
+### The defect that turned one interrupted edit into a dead generation
+
+`callAtlasPanelEdge` had no recovery path for an interrupted or unknown finishing
+exchange: it threw `provider_outcome_unknown`, `finishPanel` rethrew every
+`provider_*` code, and `generateOrReuseFlatAtlas` failed the whole request as
+terminal, with the accepted Call-1 master already in hand and three finished
+sheets checkpointed. The proof transport (`runtime/atlas-proof-transport.cjs`)
+already solved this shape with bounded cache-only reads; the finishing transport
+did not have it.
+
+| Code | Change |
+|---|---|
+| `runtime/atlas-authoring-transport.cjs` (PR #349, merged first) | `invokeAtlasAuthoring`: 180 s operation deadline; after an interrupted exchange or an explicit edge `provider_outcome_unknown`, up to three re-reads of the SAME request with `providerRequest.cacheOnly: true`. A cache-only read can only return a banked response; it cannot claim, invoke Gemini or spend. Both Call 1 and finishing use it |
+| `runtime/atlas-panel-authoring.cjs` `finishingFailureDisposition` | one table: `provider_outcome_unknown` and any other `provider_*` → **retain the deterministic crop for that surface and stop** (never the second candidate); edge refusal with `providerOutcome: not_sent` (request too large, input download) → the existing second, smaller request; other `flat_atlas_*` / `operator_required` → throw as before |
+| `runtime/flat-first-atlas.cjs` `masterFinishing.surfaces[]` | carries `providerOutcome`, so a receipt never reads as six finished sheets when one is the cut |
+| `supabase/functions/design-panel-ai-generate/index.ts` `handleAtlasPanel` | `attach` and `downloadHistoryImage` use the single-pass `encodeBase64` the 546 guard already uses, instead of `String.fromCharCode` + string concatenation + `btoa` per attachment (subject sheet, master, up to five siblings, up to three replayed exchanges) |
+
+The retained crop is exactly what a measured candidate refusal already produced;
+it is valid by cut, the whole-master gates still run on the assembled sheet, and
+the private finishing checkpoint records the retained outcome so a restart does
+not re-ask the provider. No image request is ever issued against an unresolved
+one, and no creative conditioning, gate, prompt version, geometry or bleed changes.
+
+- [x] Read the roof invocation logs (above); the audit-run 403 was a credential
+  scope issue, not a missing log.
+- [x] Finishing transport: deadline + bounded cache-only recovery (PR #349's
+  shared `invokeAtlasAuthoring`, mirrored from the proof transport).
+- [x] Finishing disposition: an unresolved or refused optional edit retains its
+  crop and the cascade continues; contract and storage failures still throw.
+- [x] Locked by `tests/atlas-authoring-recovery.test.mjs` (unresolved hood →
+  run publishes with hood retained and the chain not advanced; interrupted
+  request / interrupted body → one send, three cache-only reads, crop
+  retained; recorded edge 409 → one send, crop retained; banked response recovered by one cache-only read; storage
+  failure still resumes with exact signed exchanges) and
+  `tests/atlas-panel-authoring.test.mjs` (disposition table; 429/503/unknown →
+  one exchange; `not_sent` → second smaller request).
+- [ ] Deploy the runtime (`deploy-production.yml`) and Edge
+  (`deploy-edge-functions.yml`, `design-panel-ai-generate`), Edge first is not
+  required here: the runtime change is backward compatible with Edge v94, and
+  the Edge change is transport-only.
+- [ ] Requeue request `f5f1d8ce-cd5e-47fc-88af-43b82cd06622` (state `failed` →
+  `queued`, clear lease and error, keep identity and receipt). On resume it
+  reuses the authored checkpoint and the Driver/Passenger/Hood finishing
+  checkpoints, re-reads `panel:roof:1` cache-only, retains the roof crop if
+  nothing was banked, finishes Front and Rear, assembles, gates and publishes.
+- [ ] Observe accepted master, six panels, seven proofs, Call 8; then owner
+  inspection in RevisionStudioIQ and PanelProStudio.
+
+## Earlier status — Call 1 recovered; roof finishing was blocked
 
 The original JPEG rejection is repaired and deployed. The same New Aura request
 then resumed at 22:26:39 UTC, read its saved Call-1 response, and stored private

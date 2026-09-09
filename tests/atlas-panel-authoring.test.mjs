@@ -220,6 +220,49 @@ test("every failure path returns the crop unchanged — this can never lose a ru
   assert.match(refused.reason, /^edge_failed:/);
 });
 
+test("a provider refusal or unresolved outcome retains the crop and never spends the second candidate", async () => {
+  // The disposition table, as data. `finishingFailureDisposition` is what
+  // decides whether one failed exchange ends the surface (retain), tries the
+  // designed smaller request (retry), or is not this surface's to absorb (throw).
+  const d = authoring.finishingFailureDisposition;
+  assert.deepEqual(d({ code: "provider_outcome_unknown" }), { action: "retain", reason: "provider_outcome_unknown" });
+  assert.deepEqual(d({ code: "provider_http_429" }), { action: "retain", reason: "provider_refused:provider_http_429" });
+  assert.deepEqual(d({ code: "provider_cache_miss" }), { action: "retain", reason: "provider_refused:provider_cache_miss" });
+  assert.equal(d({ code: "flat_atlas_panel_edge_call_failed", providerOutcome: "not_sent", message: "atlas_panel_model_request_too_large:21000000" }).action, "retry");
+  assert.equal(d({ code: "flat_atlas_panel_edge_call_failed", providerOutcome: "received" }).action, "throw");
+  assert.equal(d({ code: "flat_atlas_panel_edge_prompt_version_mismatch" }).action, "throw");
+  assert.equal(d({ code: "flat_atlas_artifact_download_failed", retryable: true }).action, "throw");
+  assert.equal(d({ providerRetryDisposition: "operator_required" }).action, "throw");
+  assert.equal(d(new Error("boom")).action, "retry");
+
+  const bytes = await solid(600, 300);
+  const panel = panelFixture(bytes, { width: 600, height: 300 });
+  for (const code of ["provider_outcome_unknown", "provider_http_429", "provider_http_503"]) {
+    let calls = 0;
+    const finish = await authoring.finishPanel(panel, {
+      store: { putImmutableBytes: async () => {} },
+      callEdge: async () => { calls += 1; throw Object.assign(new Error(code), { code, providerOutcome: code === "provider_http_429" ? "rejected" : "unknown" }); },
+    });
+    assert.equal(calls, 1, `${code}: exactly one exchange; the second candidate is never spent`);
+    assert.equal(finish.applied, false);
+    assert.equal(finish.bytes, bytes, `${code}: the deterministic crop survives`);
+    assert.equal(finish.attempts, 1);
+    assert.match(finish.reason, code === "provider_outcome_unknown" ? /^provider_outcome_unknown$/ : /^provider_refused:provider_http_/);
+  }
+
+  // An edge refusal BEFORE any image was requested is the case the second,
+  // smaller request exists for.
+  let sends = 0;
+  const tooLarge = await authoring.finishPanel(panel, {
+    store: { putImmutableBytes: async () => {} },
+    callEdge: async () => { sends += 1; throw Object.assign(new Error("atlas_panel_model_request_too_large:21000000"),
+      { code: "flat_atlas_panel_edge_call_failed", providerOutcome: "not_sent", providerRetryDisposition: "operator_required" }); },
+  });
+  assert.equal(sends, authoring.PANEL_FINISH_ATTEMPTS);
+  assert.equal(tooLarge.applied, false);
+  assert.match(tooLarge.reason, /^edge_refused_before_send:/);
+});
+
 /** A model turn as the edge hands it back: image by reference, signature on it. */
 function modelTurnFixture(signature = "sig-abc") {
   return {

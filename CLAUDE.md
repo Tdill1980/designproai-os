@@ -1,5 +1,29 @@
 # CLAUDE.md — designproai-os
 
+## Finishing is optional; it may never kill a generation (2026-09-09, measured)
+
+New Aura Day Spa, `DID-664D054D`: Call 1 was recovered, Driver/Passenger/Hood
+were finished and checkpointed, and one interrupted roof finishing exchange
+(edge `409 provider_outcome_unknown` after 31.6 s, read from the live Supabase
+function logs) failed the whole request as terminal. That is the wrong blast
+radius, for the same reason RULE 0.15 gives about cut-outs: a defect that only
+exists in an optional edit must not destroy the design.
+
+Now: the shared `invokeAtlasAuthoring` transport (PR #349) carries a deadline
+and, after an interrupted or unknown exchange, re-reads the SAME provider
+request cache-only up to three times (the proof transport's pattern). `finishingFailureDisposition`
+(`runtime/atlas-panel-authoring.cjs`) then decides per surface: unresolved or
+refused (`provider_*`) → **retain the deterministic crop, stop, continue the
+cascade**; edge refusal with `providerOutcome: not_sent` → the designed second,
+smaller request; other `flat_atlas_*` / `operator_required` → throw and resume.
+No image request is ever issued against an unresolved one. The retained
+outcome is checkpointed and reported in `masterFinishing.surfaces[].providerOutcome`.
+Locked by `tests/atlas-authoring-recovery.test.mjs` and
+`tests/atlas-panel-authoring.test.mjs`. Production runs with
+`DESIGNPRO_ATLAS_PANEL_FINISH=on` (deploy input `atlas_panel_finish`); the same
+run showed Passenger and Hood each spending both candidates at ~35 s per call,
+which is the next thing to measure before calling finishing a product default.
+
 ## Current owner correction — author the whole A.T.L.A.S. together (2026-09-06)
 
 Trish rejected generation `a503b91b-65f3-4f30-ab31-5615f7db3cca`: its
