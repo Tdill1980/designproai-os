@@ -6,9 +6,14 @@ Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPR
 four-by-three nested image retry budget. Each camera recovers its original
 persisted response, validates the returned revision/surface and selects only
 the final image. The seven independent proof nodes and six ATLAS source panels
-remain unchanged. Release/deployment is pending; see the checked implementation
-items and open deployment items in the [incident record](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
-The owner will run the next UI acceptance after being told the deployment is ready.
+remain unchanged. [PR #343](https://github.com/Tdill1980/designproai-os/pull/343)
+is deployed as server `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4` and
+`persona-photographer-render` v40. All 11 deployed endpoint files match the checked
+source; web, gateway and both server replicas passed deployment acceptance at
+21:13 UTC. The earlier Call-1 persistence fix in `design-panel-ai-generate` v92
+is retained. See the checked [release ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+The owner can now hard-refresh DesignProAI, confirm build `e0e515b` and submit a
+new design. Actual UI/creative acceptance remains open until that run completes.
 
 **Active incident:** Harvest Moon Coffee (`DID-E9BABE2D`) failed on the deployed
 release during provider response saving, before an accepted ATLAS existed.
@@ -17,8 +22,8 @@ wording correction, regression evidence and pending live UI acceptance are
 tracked in [the 9 September incident record](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
 The deployment records below do not mean that this customer run succeeded.
 
-**Latest verified release:** [PR #341](https://github.com/Tdill1980/designproai-os/pull/341)
-is deployed as server `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` and Edge
+**Earlier Call-1 repair:** [PR #341](https://github.com/Tdill1980/designproai-os/pull/341)
+was deployed as server `27c0e2c6538b7d17b6a39a4446f5ebe18d3c8bdf` and Edge
 `design-panel-ai-generate` v92. The response persistence repair and ATLAS failure
 wording are installed. The original stored response is incomplete; it was not
 promoted or regenerated. **A fresh UI generation has not been run:** browser

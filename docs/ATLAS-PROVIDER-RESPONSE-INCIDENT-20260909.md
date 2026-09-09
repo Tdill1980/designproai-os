@@ -1,6 +1,6 @@
 # ATLAS response persistence incident — 9 September 2026
 
-## Follow-on proof transport repair — implementation complete, deployment pending
+## Follow-on proof transport repair — deployed, ready for owner UI acceptance
 
 The Call-1 response repair remains deployed. A separate defect was confirmed in
 the existing 3D proof path: `createAtlasDesignPanelProvider` ignored the slot's
@@ -21,15 +21,28 @@ they do not change the six-surface source interface or manufacturing geometry.
   capability read prevents an older Edge from interpreting recovery as generation.
 - [x] Limit ATLAS to one slot-level provider operation. Only a persisted, explicit
   429 rate-limit rejection advances the existing three-entry model ladder.
-- [x] Stop indefinite waits in HTTP bodies and Storage reads; the operation has
-  one 180-second maximum including recovery, not a fresh deadline per retry.
+- [x] Stop indefinite waits in HTTP bodies and Storage reads; each camera's transport
+  has one 180-second maximum including recovery, not a fresh deadline per retry.
 - [x] Authorize the internal caller and active generation lease before reading
   a panel or spending on a new image. Verify returned surface/revision lineage.
 - [x] Select exactly one final image; thought images and ambiguous final returns
   cannot be published as customer proofs. This closes a selection defect, not
   the still-open visual logo/creative-quality acceptance item.
 - [x] Pass 35 focused recovery, authority and orchestration checks locally.
-- [ ] Pass the exact commit's mandatory release gate and deploy both sides.
+- [x] Pass the full local application/build/contract checks and all 59 package
+  checks after adding the new module to the exact inventory count.
+- [x] Pass the [exact PR-head release gate](https://github.com/Tdill1980/designproai-os/actions/runs/34403884110)
+  for `757625d7b41f5e80df27fb84a53a23a34b78c054`.
+- [x] Merge [PR #343](https://github.com/Tdill1980/designproai-os/pull/343) as
+  `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`; its tree exactly matches the checked source.
+- [x] Deploy `persona-photographer-render` version 40 and compare all 11 deployed
+  files byte-for-byte against the checked source; all match, function ACTIVE.
+- [x] Pass [exact merged-main CI](https://github.com/Tdill1980/designproai-os/actions/runs/34404643031),
+  including application, database, reproducible archive and Docker image checks.
+- [x] Complete [server deployment](https://github.com/Tdill1980/designproai-os/actions/runs/34405288320)
+  and confirm both replicas accepted `e0e515ba88f1f2d5b04430dd712c5be40a05c1d4`.
+  At 21:13:06 UTC the deployment reported the web, gateway and both exact-SHA
+  runtime replicas installed; loopback acceptance passed at 21:13:12 UTC.
 - [ ] Confirm a fresh customer-visible ATLAS run on the new release.
 
 Roll out the compatible photographer Edge first, then the exact tested server
@@ -39,8 +52,11 @@ Keep the new Edge available when rolling back a server with in-flight proof
 operations. Do not roll the Edge back underneath the new runtime.
 
 Owner instruction after the browser outage: stop browser retries, finish the
-repair and tell Trish when the deployed release is ready for her test. No
-post-repair UI generation has been claimed as passed.
+repair and tell Trish when the deployed release is ready for her test. That
+release is now ready: hard-refresh `https://os.designproai.com/designpro/create`,
+confirm build `e0e515b`, and submit one new design. No post-repair UI generation
+has been claimed as passed. The seven proofs, six panels and Call 8 remain the
+owner's visible acceptance boundary, followed by actual human production QC.
 
 References: [Supabase runtime limits](https://supabase.com/docs/guides/functions/limits)
 and [Google retry guidance](https://ai.google.dev/gemini-api/docs/troubleshooting).
