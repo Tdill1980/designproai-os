@@ -92,6 +92,8 @@ async function database({legacyRevision=false}={}){
     SELECT request_id,generation_id,owner_id,tenant_key,id,2,$2,metadata FROM public.designpro_flat_atlas_revisions WHERE id=$1`,[fixture.parentId,sha('existing-version-two')]);
   const before=(await db.query('SELECT to_jsonb(a) value FROM public.designpro_flat_atlas_revisions a')).rows[0].value;
   await db.exec(await read('20260908201216_designpro_parent_bound_atlas_revisions.sql'));
+  const identity=await read('20260909062205_designpro_call1_reserved_identity.sql');
+  for(const name of ['designpro_private.reserve_atlas_request_identity','designpro_private.atlas_request_identity','designpro_private.completed_atlas_identity','public.enqueue_designpro_atlas_revision_v2'])await db.exec(extract(identity,name));
   return {db,fixture,before};
   }catch(error){await db.close();throw error;}
 }
@@ -112,14 +114,14 @@ async function seedParent(db){
 }
 const payload=f=>({generationId:GEN,parentAtlasRevisionId:f.parentId,parentMasterContentHash:f.masterRef.contentHash,instruction:'Move the existing logo clear of the handle.'});
 async function acceptedChild(db,intake,f){
-  const result=await intake.enqueue(OWNER,payload(f)),atlasId=randomUUID(),revisionId=randomUUID(),masterHash=sha(`child-${result.requestId}`);
+  const result=await intake.enqueue(OWNER,payload(f)),atlasId=result.atlasRevisionId,revisionId=result.handoffRevisionId,masterHash=sha(`child-${result.requestId}`);
   const row=(await db.query('SELECT * FROM public.designpro_generation_requests WHERE id=$1',[result.requestId])).rows[0];
   await db.query(`INSERT INTO public.designpro_flat_atlas_revisions(id,request_id,generation_id,owner_id,tenant_key,parent_revision_id,revision_sequence,master_content_hash,metadata)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[atlasId,result.requestId,GEN,OWNER,`user_${OWNER}`,f.parentId,result.revisionSequence,masterHash,JSON.stringify({masterQcPassed:true,revisionContextHash:row.revision_context_hash,
       callOnePanels:surfaces.map(surfaceKey=>({surfaceKey,sourceMasterHash:masterHash,contentHash:sha(`new-${surfaceKey}`),storagePath:`designpro/user_${OWNER}/${GEN}/panels/new-${surfaceKey}.png`}))})]);
   for(const role of [...surfaces,'closeup'])await db.query(`INSERT INTO public.designpro_generation_views(request_id,source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,metadata)
     VALUES($1,$2,$2,$3,$4,42,'image/png',$5)`,[result.requestId,role,`designpro/user_${OWNER}/${GEN}/calls-1-7/${role}/${sha(role)}.png`,sha(role),JSON.stringify({provider:{atlasMasterContentHash:masterHash},authority:{revisionId:atlasId}})]);
-  await db.query(`UPDATE public.designpro_generation_requests SET state='outputs_ready',completed_at=now(),engine_receipt=$2 WHERE id=$1`,[result.requestId,JSON.stringify({handoffRevisionId:revisionId})]);
+  await db.query(`UPDATE public.designpro_generation_requests SET state='outputs_ready',completed_at=now(),engine_receipt=engine_receipt||$2::jsonb WHERE id=$1`,[result.requestId,JSON.stringify({handoffRevisionId:revisionId,flatAtlas:{revisionId:atlasId}})]);
   return {...result,atlasId,revisionId,masterHash};
 }
 
@@ -130,11 +132,16 @@ test('actual migration preserves saved history, concurrent idempotency and incre
     const adapter=createPanelProfileTestAdapter(db,f.files),intake=createAtlasRevisionIntake({supabase:adapter.supabase});
     const [one,two]=await Promise.all([intake.enqueue(OWNER,payload(f)),intake.enqueue(OWNER,payload(f))]);
     assert.equal(one.requestId,two.requestId);assert.equal(one.revisionSequence,2);assert.equal(two.idempotent,true);
+    assert.equal(one.atlasRevisionId,two.atlasRevisionId);assert.equal(one.handoffRevisionId,two.handoffRevisionId);
+    assert.notEqual(one.atlasRevisionId,one.handoffRevisionId);assert.notEqual(one.atlasRevisionId,f.parentId);
+    assert.equal(one.designId,'DID-33333333');assert.equal(one.atlasIdentityContract,'designpro.atlas-identity-at-prompt.v2');
     await assert.rejects(intake.enqueue(OTHER,payload(f)),{code:'generation_access_denied'});
     await assert.rejects(db.query("UPDATE public.designpro_generation_requests SET revision_context='{}' WHERE id=$1",[one.requestId]),/atlas_request_identity_is_immutable/);
     await db.query("UPDATE public.designpro_generation_requests SET state='failed' WHERE id=$1",[one.requestId]);
     const branch=await intake.enqueue(OWNER,{...payload(f),instruction:'Keep the old version but move the phone number.'});
     assert.equal(branch.revisionSequence,3);assert.equal(branch.parentAtlasRevisionId,f.parentId);
+    assert.notEqual(branch.atlasRevisionId,one.atlasRevisionId);assert.notEqual(branch.handoffRevisionId,one.handoffRevisionId);
+    assert.equal(branch.designId,one.designId);
     const workspace=(await db.query('SELECT public.designpro_generation_workspace($1) x',[GEN])).rows[0].x;
     assert.equal(workspace.requestId,branch.requestId);assert.deepEqual(workspace.views,[]);
     const os=(await db.query('SELECT public.designpro_generation_os_snapshot($1) x',[GEN])).rows[0].x;
@@ -143,6 +150,26 @@ test('actual migration preserves saved history, concurrent idempotency and incre
     const library=(await db.query('SELECT public.designpro_generation_library() x')).rows[0].x;
     assert.equal(library.length,1);assert.equal(library[0].requestId,branch.requestId);assert.equal(library[0].revisionCount,1);
     assert.equal((await db.query('SELECT count(*) n FROM public.designpro_generation_requests')).rows[0].n,3);
+  }finally{await db.close();}
+});
+
+test('historical immutable snapshot and real artwork override an unused v1 handoff seed without rewriting the old row',async()=>{
+  const {db,fixture:f}=await database();try{
+    for(const role of [...surfaces,'closeup'])await db.query(`INSERT INTO public.designpro_generation_views(request_id,source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,metadata)
+      VALUES($1,$2,$2,$3,$4,42,'image/png',$5)`,[f.requestId,role,`designpro/user_${OWNER}/${GEN}/calls-1-7/${role}/${sha(role)}.png`,sha(role),JSON.stringify({provider:{atlasMasterContentHash:f.masterRef.contentHash},authority:{revisionId:f.parentId}})]);
+    await db.exec("SET test.jwt='{\"role\":\"authenticated\"}'");
+    const saved=(await db.query('SELECT public.handoff_designpro_generation_to_production($1) x',[f.requestId])).rows[0].x;
+    await db.query("UPDATE public.designpro_generation_requests SET engine_receipt=$2 WHERE id=$1",[f.requestId,JSON.stringify({handoffRevisionId:randomUUID(),atlasIdentityContract:'designpro.atlas-identity-at-prompt.v1'})]);
+    const before=(await db.query('SELECT to_jsonb(r) x FROM public.designpro_generation_requests r WHERE id=$1',[f.requestId])).rows[0].x;
+    const projected=(await db.query('SELECT designpro_private.atlas_request_identity(r) x FROM public.designpro_generation_requests r WHERE id=$1',[f.requestId])).rows[0].x;
+    assert.equal(projected.handoffRevisionId,saved.revisionId);assert.equal(projected.atlasRevisionId,f.parentId);
+    assert.equal(projected.designId,'DID-33333333');assert.equal(projected.atlasIdentityMintedAt,undefined);
+    assert.deepEqual((await db.query('SELECT to_jsonb(r) x FROM public.designpro_generation_requests r WHERE id=$1',[f.requestId])).rows[0].x,before);
+    await assert.rejects(db.query('SELECT designpro_private.completed_atlas_identity(r,$2) FROM public.designpro_generation_requests r WHERE id=$1',
+      [f.requestId,JSON.stringify({handoffRevisionId:before.engine_receipt.handoffRevisionId,flatAtlas:{revisionId:f.parentId}})]),/generation_handoff_identity_conflict/);
+    const receipt=(await db.query('SELECT designpro_private.completed_atlas_identity(r,$2) x FROM public.designpro_generation_requests r WHERE id=$1',
+      [f.requestId,JSON.stringify({handoffRevisionId:saved.revisionId,flatAtlas:{revisionId:f.parentId},providerResult:'current'})])).rows[0].x;
+    assert.equal(receipt.handoffRevisionId,saved.revisionId);assert.equal(receipt.flatAtlas.revisionId,f.parentId);assert.equal(receipt.providerResult,'current');
   }finally{await db.close();}
 });
 

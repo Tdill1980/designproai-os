@@ -58,6 +58,11 @@ const SESSION_USER = { id: "9c8b7a65-4321-4321-8765-0a1b2c3d4e5f", email: "owner
 const RPC_OK = {
   requestId: "11111111-2222-4333-8444-555555555555",
   generationId: GENERATION_ID,
+  atlasRevisionId: '22222222-2222-4222-8222-222222222222',
+  handoffRevisionId: '33333333-3333-4333-8333-333333333333',
+  designId: 'DID-3F1B0C7E',
+  atlasIdentityMintedAt: '2026-09-09T06:00:00Z',
+  atlasIdentityContract: 'designpro.atlas-identity-at-prompt.v2',
   state: "queued",
   inputHash: "a".repeat(64),
   engineContractHash: "b".repeat(64),
@@ -72,6 +77,7 @@ const RPC_OK = {
  */
 function upstreamFor(rpcResponse) {
   const calls = [];
+  const endpoints = [];
   const fetchImpl = async (url, init = {}) => {
     const href = String(url);
     if (href.includes("/auth/v1/user")) {
@@ -84,11 +90,12 @@ function upstreamFor(rpcResponse) {
     if (href.includes("/rpc/create_designpro_flat_first_generation_request")
       || href.includes("/rpc/create_designpro_generation_request")) {
       calls.push(JSON.parse(String(init.body || "{}")));
+      endpoints.push(new URL(href).pathname);
       return rpcResponse();
     }
     return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
   };
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, endpoints };
 }
 
 const ok = () => new Response(JSON.stringify(RPC_OK), { status: 200, headers: { "content-type": "application/json" } });
@@ -98,7 +105,7 @@ const conflict = () => new Response(
 );
 
 async function post(body, rpcResponse = ok) {
-  const { fetchImpl, calls } = upstreamFor(rpcResponse);
+  const { fetchImpl, calls, endpoints } = upstreamFor(rpcResponse);
   const server = createGateway({ env: ENV, fetchImpl });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
@@ -112,7 +119,7 @@ async function post(body, rpcResponse = ok) {
       },
       body: JSON.stringify(body),
     });
-    return { status: response.status, body: await response.json().catch(() => ({})), calls };
+    return { status: response.status, body: await response.json().catch(() => ({})), calls, endpoints };
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -122,6 +129,7 @@ test("a design-first request with no order and no recipient reaches the database
   const result = await post({ generationId: GENERATION_ID, input: V2_INPUT });
   assert.equal(result.status, 202);
   assert.equal(result.calls.length, 1, "the request never reached the RPC");
+  assert.deepEqual(result.endpoints, ['/rest/v1/rpc/create_designpro_flat_first_generation_request_v2']);
   assert.equal(result.calls[0].p_generation_id, GENERATION_ID);
   // Sent as v2, persisted as the atlas. DesignPro vehicle design has one
   // production architecture, and the creation boundary is what enforces it --

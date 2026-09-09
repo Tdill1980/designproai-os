@@ -2066,6 +2066,26 @@ async function generationRequestFor(fetchImpl, token, cfg, requestId) {
   });
 }
 
+// Public identity projection only. Historical rows may not have a reservation;
+// a v2 reservation must carry the complete, distinct pair and canonical DID.
+function validatedGenerationIdentity(value, requireReservation = false) {
+  const fields = ["atlasRevisionId", "handoffRevisionId", "designId", "atlasIdentityMintedAt", "atlasIdentityContract"];
+  const identity = Object.fromEntries(fields.filter(key => value[key] != null).map(key => [key, value[key]]));
+  const reserved = identity.atlasIdentityContract === "designpro.atlas-identity-at-prompt.v2";
+  const expectedDid = `DID-${String(value.generationId).replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  if (["atlasRevisionId", "handoffRevisionId"].some(key => identity[key] != null && (typeof identity[key] !== "string" || !UUID_PATTERN.test(identity[key])))
+    || (identity.atlasRevisionId != null && identity.atlasRevisionId === identity.handoffRevisionId)
+    || (identity.designId != null && identity.designId !== expectedDid)
+    || (identity.atlasIdentityContract != null && !["designpro.atlas-identity-at-prompt.v1", "designpro.atlas-identity-at-prompt.v2"].includes(identity.atlasIdentityContract))
+    || (identity.atlasIdentityMintedAt != null && (typeof identity.atlasIdentityMintedAt !== "string"
+      || !/^\d{4}-\d\d-\d\dT/.test(identity.atlasIdentityMintedAt) || !Number.isFinite(Date.parse(identity.atlasIdentityMintedAt))))
+    || (requireReservation && !reserved)
+    || (reserved && fields.some(key => identity[key] == null))) {
+    throw Object.assign(new Error("generation_identity_response_invalid"), { status: 502 });
+  }
+  return identity;
+}
+
 function validatedGenerationStatus(value) {
   if (value === null) return null;
   const state = String(value?.state || "");
@@ -2112,6 +2132,7 @@ function validatedGenerationStatus(value) {
   }
   return {
     requestId: String(value.requestId), generationId: String(value.generationId),
+    ...validatedGenerationIdentity(value),
     parentAtlasRevisionId: UUID_PATTERN.test(String(value.parentAtlasRevisionId || "")) ? String(value.parentAtlasRevisionId) : null,
     revisionSequence: Number.isSafeInteger(value.revisionSequence) && value.revisionSequence > 0 ? value.revisionSequence : 1,
     revisionHandoffError: value.revisionHandoffError ? {code:"revision_preparation_needs_attention"} : null,
@@ -2368,7 +2389,17 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const response=await fetchImpl(`${cfg.internalRuntimeUrl}/internal/atlas-revisions/enqueue`,{
           method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${cfg.workerSecret}`},
           body:JSON.stringify({actorId:user.id,payload})});
-        return json(res,response.status,await response.json().catch(()=>({error:"generation_revision_service_unavailable"})));
+        const result=await response.json().catch(()=>({error:"generation_revision_service_unavailable"}));
+        if(!response.ok)return json(res,response.status,{error:/^[a-z0-9][a-z0-9_:-]{0,119}$/.test(result?.error || "") ? result.error : "generation_revision_service_unavailable"});
+        if(!UUID_PATTERN.test(String(result?.requestId || "")) || result?.generationId!==payload.generationId
+          || result?.parentAtlasRevisionId!==payload.parentAtlasRevisionId || !Number.isSafeInteger(result?.revisionSequence) || result.revisionSequence<2
+          || !["queued","leased","retryable","outputs_ready","failed","cancelled"].includes(result?.state)
+          || !SHA256_PATTERN.test(String(result?.inputHash || "")) || !SHA256_PATTERN.test(String(result?.engineContractHash || ""))) {
+          throw Object.assign(new Error("generation_revision_response_invalid"),{status:502});
+        }
+        return json(res,response.status,{requestId:result.requestId,generationId:result.generationId,parentAtlasRevisionId:result.parentAtlasRevisionId,
+          revisionSequence:result.revisionSequence,state:result.state,inputHash:result.inputHash,engineContractHash:result.engineContractHash,
+          idempotent:result.idempotent===true,...validatedGenerationIdentity(result,result.idempotent!==true)});
       }
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
         const request = validatedGenerationRequest(await readBody(req), user.id);
@@ -2379,9 +2410,9 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // typed something wrong" and invites a retry of the same call. 409 says
         // the truth -- the id is taken, mint a new one.
         const intakeRpc = request.input.contractVersion === "designpro.calls-1-7-input.v3"
-          ? "create_designpro_flat_first_generation_request"
+          ? "create_designpro_flat_first_generation_request_v2"
           : "create_designpro_generation_request";
-        const acceptedPipelineMode = intakeRpc === "create_designpro_flat_first_generation_request"
+        const acceptedPipelineMode = intakeRpc === "create_designpro_flat_first_generation_request_v2"
           ? "flat-first-atlas-v1"
           : "legacy";
         const result = await rpc(fetchImpl, token, cfg, intakeRpc, {
@@ -2404,6 +2435,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 202, {
           requestId: result.requestId,
           generationId: result.generationId,
+          ...validatedGenerationIdentity(result, acceptedPipelineMode === "flat-first-atlas-v1" && result.idempotent !== true),
           state: result.state,
           // Echo the server-accepted contract mode. The browser must not infer
           // this from a toggle after the request has been queued: an A.T.L.A.S.

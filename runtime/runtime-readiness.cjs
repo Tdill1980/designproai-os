@@ -14,6 +14,7 @@ async function probeRuntimeDependencies(supabase) {
   if (database.groundedIdentityFence !== true) throw new Error("Universal GENIE grounded identity fence is missing");
   if (database.heavyOutputLeaseFence !== true) throw new Error("Heavy output lease fence is missing");
   if (database.wrapboxFence !== true) throw new Error("WrapBox publication fence is missing");
+  if (database.callOneIdentityFence !== true) throw new Error("Call 1 reserved identity admission and persistence fence is missing");
 
   const { data: bucketData, error: bucketError } = await supabase.storage.listBuckets();
   if (bucketError) throw new Error(`Supabase Storage readiness failed: ${bucketError.message}`);
@@ -31,6 +32,7 @@ async function probeRuntimeDependencies(supabase) {
     groundedIdentityFence: true,
     heavyOutputLeaseFence: true,
     wrapboxFence: true,
+    callOneIdentityFence: true,
     capabilities: Object.freeze({
       validatedGeometrySeeded: database.capabilities?.validatedGeometrySeeded === true,
       qcOperatorSeeded: database.capabilities?.qcOperatorSeeded === true,

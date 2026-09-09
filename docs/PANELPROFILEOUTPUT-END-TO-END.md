@@ -31,6 +31,14 @@ enabled, accepted PanelProFileOutput trial. See the
 [parent deployment status](DESIGNPROAI-END-TO-END.md#deployment-status--9-september-2026)
 and the open quality blockers below.
 
+The parent progress recovery subsequently deployed in
+[PR #339](https://github.com/Tdill1980/designproai-os/pull/339), exact server
+commit `d6a82db1e33d7922bc363cbcb4de514a8370b17d`.
+[Deployment 34319222749](https://github.com/Tdill1980/designproai-os/actions/runs/34319222749)
+passed at 06:32 UTC and the public application bundle changed. This repairs
+read-only progress recovery; it does not enable the child flags or approve a
+physical output trial.
+
 ## 1. What this app produces
 
 For a validated profile and revision, the app produces a repeatable physical-piece
@@ -641,6 +649,26 @@ approval before delivery; the original ATLAS/proofs cannot be silently presented
 as proof of an altered placement.
 
 ## 10. Acceptance ledger
+
+### Supplied template source — 9 September 2026
+
+- [x] Read the supplied web archive and open its shared **Vehicle Templates**
+  Dropbox folder. Confirm the make/model/year hierarchy by navigating Ford →
+  Vans → Transit → 2019. The folder contains labeled AI and EPS source files,
+  including `Transit_19_01.ai` and `Transit_19_14.eps`.
+- [ ] Select the exact body, wheelbase and roof variant, ingest the source
+  bytes, verify vector units/scale and reviewed cut geometry, then run the
+  first internal output trial. Folder access and a filename alone do not
+  establish measured dimensions or production suitability. The shared-link
+  access token is not copied into source code or these markdowns.
+
+The [Call 1 identity audit](DESIGNPROAI-END-TO-END.md#call-1-identity-audit--9-september-2026)
+distinguishes a reserved identity from an accepted master/panel set. Child input
+must bind the accepted ATLAS revision and exact artwork hashes; a handoff or
+snapshot revision ID is a separate identity, not an interchangeable ATLAS ID.
+The submit/claim/completion repair and its local tests are recorded in the parent
+ledger. Installation and a fresh production acceptance remain separate gates.
+No child may treat the mere reservation of those IDs as accepted artwork.
 
 The parent studio's temporary-connection recovery repair and its tests are
 recorded in [Driver-only display recovery](DESIGNPROAI-END-TO-END.md#driver-only-display-recovery--9-september-2026).

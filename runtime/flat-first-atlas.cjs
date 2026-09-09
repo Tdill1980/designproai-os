@@ -2600,12 +2600,14 @@ async function composePassengerFromDriver({
 }
 
 function atlasRevisionIdentity(options) {
+  const reservedRevisionId = options.atlasRevisionId ?? null;
   const revisionSequence = options.revisionSequence ?? 1;
   const parentRevisionId = options.parentAtlasRevisionId ?? null;
   const revisionContext = options.revisionContext ?? null;
   const revisionContextHash = options.revisionContextHash ?? null;
   const parentManifest = options.parentManifest ?? null;
-  if (!Number.isSafeInteger(revisionSequence) || revisionSequence < 1) {
+  if ((reservedRevisionId != null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(reservedRevisionId))
+    || !Number.isSafeInteger(revisionSequence) || revisionSequence < 1) {
     throw new FlatAtlasError("flat_atlas_revision_identity_invalid", "The server must supply the existing revision sequence");
   }
   if (revisionSequence === 1) {
@@ -2632,7 +2634,7 @@ function atlasRevisionIdentity(options) {
       throw new FlatAtlasError("flat_atlas_revision_identity_invalid", "An edit must retain its exact parent, instruction, history and measured manifest");
     }
   }
-  return { revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest };
+  return { reservedRevisionId, revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest };
 }
 
 async function generateOrReuseFlatAtlas(options) {
@@ -2667,7 +2669,7 @@ async function generateOrReuseFlatAtlas(options) {
   const maxAuthoringAttempts = resolveMaxAuthoringAttempts(options.maxAuthoringAttempts);
   if (!supabase || !store || !provider) throw new FlatAtlasError("flat_atlas_runtime_missing", "Atlas authoring requires Supabase, store and provider");
   if (!flatFirstRequested(input)) throw new FlatAtlasError("flat_atlas_input_required", "Atlas authoring only accepts the v3 flat-first input");
-  const { revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest } = atlasRevisionIdentity(options);
+  const { reservedRevisionId, revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest } = atlasRevisionIdentity(options);
 
   // The original GENIE six-surface manifest retains its canonical identity, and
   // the field territories are a LAYOUT of it: same six surfaces, same inches,
@@ -2746,6 +2748,9 @@ async function generateOrReuseFlatAtlas(options) {
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing) {
+    if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
+      throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
+    }
     if (existing.revisionSequence !== revisionSequence || existing.parentRevisionId !== parentRevisionId
       || (existing.metadata?.revisionContextHash ?? null) !== revisionContextHash) {
       throw new FlatAtlasError("flat_atlas_revision_identity_mismatch", "Stored artwork belongs to a different revision parent or edit context");
@@ -2765,6 +2770,9 @@ async function generateOrReuseFlatAtlas(options) {
     ? await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: { ...checkpointIdentity, checkpointKind: "authored" } })
     : null;
   const recoveredCheckpoint = acceptedCheckpoint || authoredCheckpoint;
+  if (reservedRevisionId && recoveredCheckpoint && recoveredCheckpoint.revisionId !== reservedRevisionId) {
+    throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved checkpoint does not match the identity reserved for this request");
+  }
   if (recoveredCheckpoint && recoveredCheckpoint.promptHash !== promptHash) {
     throw new FlatAtlasError("flat_atlas_checkpoint_prompt_mismatch", "Recovery must replay the exact original authoring context");
   }
@@ -2858,7 +2866,9 @@ async function generateOrReuseFlatAtlas(options) {
   // failed. A vehicle_depiction verdict never reaches acceptance.
   let outputClassReceipt = recoveredState?.outputClassReceipt || null;
   const edgeProvenance = recoveredState?.edgeProvenance ? [...recoveredState.edgeProvenance] : [];
-  const mintedRevisionId = recoveredCheckpoint?.revisionId || randomUUID();
+  // New requests reserve this before Call 1. Historical requests keep their
+  // checkpoint identity (or the original fallback if no checkpoint exists).
+  const mintedRevisionId = reservedRevisionId || recoveredCheckpoint?.revisionId || randomUUID();
   let masterFinishing = recoveredState?.masterFinishing || null;
   // OPTIMIZE TIME TO DRIVER, AND MEASURE IT. (Owner, 2026-08-27: "click->master,
   // master->Driver, click->Driver ... those are the primary latency metrics.")

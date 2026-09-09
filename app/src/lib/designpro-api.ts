@@ -796,6 +796,14 @@ export type GenerationVehicle = {
 export type GenerationRequestState = {
   requestId: string;
   generationId: string;
+  /** Saved actual artwork identity, reserved before Call 1 on v2 requests. */
+  atlasRevisionId?: string | null;
+  /** Separate manufacturing snapshot and source-input identity. */
+  handoffRevisionId?: string | null;
+  designId?: string | null;
+  /** Historical requests may have no known original reservation timestamp. */
+  atlasIdentityMintedAt?: string | null;
+  atlasIdentityContract?: "designpro.atlas-identity-at-prompt.v1" | "designpro.atlas-identity-at-prompt.v2" | null;
   /** Server-accepted mode returned by request creation. */
   pipelineMode?: GenerationPipelineMode;
   state: "queued" | "leased" | "retryable" | "outputs_ready" | "failed" | "cancelled";

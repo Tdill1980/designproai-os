@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { completeGenerationWithSources } = require("../runtime/generation-worker.cjs");
+const { completeGenerationWithSources, generationIdentity } = require("../runtime/generation-worker.cjs");
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const revisionId = "22222222-2222-4222-8222-222222222222";
@@ -15,9 +15,10 @@ const views = ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"
     contentType: ["image/png", "image/jpeg", "image/webp"][index % 3],
     storagePath: `designpro/user_${ownerId}/generation/accepted/${consumerRole}.png` };
 });
-const destination = view => `users/${ownerId}/revisions/${revisionId}/inputs/${view.consumerRole}/${view.contentHash}.${extensions[view.contentType]}`;
+const destination = (view, targetRevision = revisionId) => `users/${ownerId}/revisions/${targetRevision}/inputs/${view.consumerRole}/${view.contentHash}.${extensions[view.contentType]}`;
 
-function harness() {
+function harness(identity = null) {
+  const targetRevision = identity?.handoffRevisionId || revisionId;
   const files = new Map(views.map(view => [view.storagePath, Buffer.from(`accepted-${view.consumerRole}-proof-bytes`)]));
   const events = [];
   let failRole = null, failRead = false, completions = 0;
@@ -35,20 +36,20 @@ function harness() {
     },
   };
   const completionArgs = { p_request_id: "33333333-3333-4333-8333-333333333333", p_claim_token: "44444444-4444-4444-8444-444444444444",
-    p_views: views, p_engine_receipt: { handoffRevisionId: revisionId } };
+    p_views: views, p_engine_receipt: { ...identity, handoffRevisionId: targetRevision } };
   const supabase = { storage: { from(name) { assert.equal(name, "wrap-files"); return bucket; } },
     async rpc(name, args) {
       assert.equal(name, "complete_designpro_generation_request");
       assert.equal(args, completionArgs);
       for (const view of views) {
-        assert.deepEqual(files.get(destination(view)), files.get(view.storagePath), "all SQL handoff paths must already contain their exact accepted proof bytes");
+        assert.deepEqual(files.get(destination(view, targetRevision)), files.get(view.storagePath), "all SQL handoff paths must already contain their exact accepted proof bytes");
       }
       completions++;
       events.push("outputs_ready");
       return { data: { handoffReady: true }, error: null };
     } };
   return { files, events,
-    run: () => completeGenerationWithSources({ supabase, ownerId, revisionId, views, completionArgs }),
+    run: () => completeGenerationWithSources({ supabase, ownerId, revisionId: targetRevision, views, completionArgs }),
     get completions() { return completions; },
     set failRole(value) { failRole = value; }, set failRead(value) { failRead = value; } };
 }
@@ -60,6 +61,16 @@ test("seven exact role/hash/MIME input paths exist before outputs_ready can star
   assert.equal(h.events.at(-1), "outputs_ready");
   assert.equal(h.events.filter(event => event.startsWith("copy:")).length, 7);
   for (const view of views) assert.equal(sha(h.files.get(destination(view))), view.contentHash);
+});
+
+test("the claimed manufacturing reservation controls all seven input copies, independently of the artwork UUID", async () => {
+  const identity=generationIdentity({requestId:'33333333-3333-4333-8333-333333333333',generationId:'44444444-4444-4444-8444-444444444444',
+    atlasRevisionId:'55555555-5555-4555-8555-555555555555',handoffRevisionId:'66666666-6666-4666-8666-666666666666',
+    designId:'DID-44444444',atlasIdentityMintedAt:'2026-09-09T06:00:00Z',atlasIdentityContract:'designpro.atlas-identity-at-prompt.v2'});
+  const h=harness(identity);await h.run();
+  for(const view of views){assert.equal(sha(h.files.get(destination(view,identity.handoffRevisionId))),view.contentHash);
+    assert.equal(h.files.has(destination(view,identity.atlasRevisionId)),false);}
+  assert.equal(h.completions,1);
 });
 
 test("interrupted copies remain recoverable and verify existing destinations before publishing", async () => {
