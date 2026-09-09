@@ -435,10 +435,10 @@ export async function prepareAtlasRevisionProviderContents({ supabase, ownerId, 
     const images = modelTurn.parts.filter(part => part?.thought !== true && part?.inlineData?.data);
     const source = (parent.metadata.atlasEdgeProvenance || []).filter(p => p.providerRequestKey === history.providerRequestKey
       && p.masterSha256 === parent.metadata.rawProviderResponseHash);
-    if (images.length !== 1 || source.length !== 1 || images[0].inlineData.mimeType !== 'image/png') throw new GeminiProviderError('atlas_revision_parent_history_invalid', 409);
-    const binary = atob(images[0].inlineData.data);
-    const bytes = new Uint8Array(binary.length);
-    for (let at = 0; at < binary.length; at += 1) bytes[at] = binary.charCodeAt(at);
+    if (images.length !== 1 || source.length !== 1
+      || !['image/png', 'image/jpeg', 'image/webp'].includes(images[0].inlineData.mimeType)
+      || (source[0].masterContentType && source[0].masterContentType !== images[0].inlineData.mimeType)) throw new GeminiProviderError('atlas_revision_parent_history_invalid', 409);
+    const bytes = Buffer.from(images[0].inlineData.data, 'base64');
     if (await providerSha256(bytes) !== source[0].masterSha256) throw new GeminiProviderError('atlas_revision_parent_history_invalid', 409);
     contents = [...exchange.nativeRequest.contents, modelTurn];
   } else if (history?.mode !== 'image-reference'

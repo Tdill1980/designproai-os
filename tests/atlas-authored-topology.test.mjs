@@ -95,23 +95,25 @@ test('one authored topology preserves all six distinct source regions through pe
   }
 });
 
-test('six-surface transport rejects field-mode, missing teaching identity and missing guide inputs', async t=>{
+for (const format of ['png', 'jpeg', 'webp']) test(`${format}: six-surface transport rejects field-mode, missing teaching identity and missing guide inputs`, async t=>{
   const previous={url:process.env.SUPABASE_URL,key:process.env.SUPABASE_SERVICE_ROLE_KEY};
   process.env.SUPABASE_URL='https://fixture.invalid';
   process.env.SUPABASE_SERVICE_ROLE_KEY='test-only-not-a-real-key-'.repeat(3);
   t.after(()=>{for(const [name,value] of [['SUPABASE_URL',previous.url],['SUPABASE_SERVICE_ROLE_KEY',previous.key]]){
     if(value===undefined) delete process.env[name];else process.env[name]=value;
   }});
-  const bytes=Buffer.from('mock transport bytes');let downloads=0;
+  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#438992'}}).toFormat(format).toBuffer();let downloads=0;
   const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
   const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
     modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260901.v23-orthographic-restored',
-    masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
+    masterStoragePath:`fixture.${format}`,masterSha256:sha(bytes),masterContentType:`image/${format}`};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};
   const downloaded=await atlas._test.callAtlasArtboardEdge(body,transport);
   assert.equal(sha(downloaded.bytes),sha(bytes));
   assert.equal(downloaded.provenance.masterStoragePath,reply.masterStoragePath);
+  assert.equal(downloaded.contentType,`image/${format}`);
+  assert.equal(downloaded.provenance.masterContentType,`image/${format}`);
   assert.equal(downloads,1);
   for(const override of [{fieldContract:'designpro.atlas-field-prompt.v2'}, {teachingProofIdentity:null},
     {modelInputImageCount:0},{promptVersion:'stale'},
@@ -123,6 +125,9 @@ test('six-surface transport rejects field-mode, missing teaching identity and mi
   await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
     error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
   assert.equal(downloads,1,'invalid responses must fail before master download');
+  await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
+    fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,masterContentType:format==='png'?'image/jpeg':'image/png'})})}),
+    error=>error.code==='flat_atlas_edge_master_mime_mismatch');
 });
 
 // The two halves ship through different workflows, so an edge/runtime skew is
@@ -136,7 +141,7 @@ test('the field branch refuses an edge running a different prompt version', asyn
   t.after(()=>{for(const [name,value] of [['SUPABASE_URL',previous.url],['SUPABASE_SERVICE_ROLE_KEY',previous.key]]){
     if(value===undefined) delete process.env[name];else process.env[name]=value;
   }});
-  const bytes=Buffer.from('mock transport bytes');let downloads=0;
+  const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#438992'}}).png().toBuffer();let downloads=0;
   // The field branch is no longer selected by production (v23 restore), but the
   // guard still protects it, so the test names the contract explicitly.
   const body={...atlas._test.atlasEdgeRequestBody(input,productManifest(surfaces,undefined,'truck'),

@@ -550,17 +550,23 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          if ! git log -1 --format=%B | grep -Fq '[inspect-atlas-e9babe2d]'; then
+          if git log -1 --format=%B | grep -Fq '[inspect-atlas-664d054d]'; then
+            audit_request=f5f1d8ce-cd5e-47fc-88af-43b82cd06622
+            audit_generation=664d054d-b10e-4bdf-b7e2-d188f32ce53a
+          elif git log -1 --format=%B | grep -Fq '[inspect-atlas-e9babe2d]'; then
+            audit_request=5f1da626-6912-4aab-8ba5-d704ab2b6ea3
+            audit_generation=e9babe2d-043e-4ce4-9b7f-5e93b2739b09
+          else
             exit 0
           fi
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_SHA='$EXACT_SHA' bash -s" <<'REMOTE'
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "EXPECTED_SHA='$EXACT_SHA' AUDIT_REQUEST='$audit_request' AUDIT_GENERATION='$audit_generation' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           cd /opt/designproai-os/current
           test "$(readlink -f /opt/designproai-os/current)" = "/opt/designproai-os/releases/$EXPECTED_SHA"
           docker compose --env-file deploy/release.env -f ops/compose.yaml exec -T runtime-1 \
             node inspect-atlas-provider-cache.cjs \
-            5f1da626-6912-4aab-8ba5-d704ab2b6ea3 e9babe2d-043e-4ce4-9b7f-5e93b2739b09
+            "$AUDIT_REQUEST" "$AUDIT_GENERATION"
           REMOTE
 
       - name: Remove only this run's temporary remote staging directory

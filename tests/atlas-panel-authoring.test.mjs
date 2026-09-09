@@ -300,7 +300,7 @@ test("replayed history images are hash-verified and restricted to declared input
   const loader = handler.slice(handler.indexOf("const downloadHistoryImage ="));
   // atlas-panel/ is where this function writes every sheet it makes, so the
   // prefix is what stops history replaying an arbitrary bucket object.
-  assert.match(loader, /\^atlas-panel\\\/\[0-9a-f-\]\{36\}\\\.png\$/);
+  assert.match(loader, /\^atlas-panel\\\/\[0-9a-f-\]\{36\}\\\.\(png\|jpg\|webp\)\$/);
   assert.match(loader, /atlas_panel_history_hash_mismatch/);
   assert.match(loader, /atlas_panel_history_hash_invalid/);
   await assert.rejects(replayImageTurn({ role: "model", parts: [{ inlineData: { data: "unverified" } }] }, async () => ""), /atlas_panel_prior_turn_carries_inline_image/);

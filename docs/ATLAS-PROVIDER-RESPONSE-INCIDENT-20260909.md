@@ -1,6 +1,51 @@
 # ATLAS response persistence incident — 9 September 2026
 
-## Follow-on proof transport repair — deployed, ready for owner UI acceptance
+## Current incident — saved Call-1 image rejected by PNG-only parser
+
+At 21:42:59 UTC the owner submitted New Aura Day Spa, 2021 Lamborghini Urus.
+Request `f5f1d8ce-cd5e-47fc-88af-43b82cd06622`, generation
+`664d054d-b10e-4bdf-b7e2-d188f32ce53a`, design `DID-664D054D` failed at
+21:43:59 UTC with `atlas_artboard_final_image_mime_invalid`. This run happened
+**after** the 21:13 UTC deployment; deployment timing is not this failure.
+
+The Call-1 IDs were reserved before authoring: ATLAS revision
+`cfb323a0-3011-482e-a180-060e21f5b95a`, handoff revision
+`091cbcdb-b62d-4d4b-b3c0-79281a99311f`. No accepted master or proofs existed at
+failure. Storage has 26 response fragments and a completion record. That is
+better evidence than the earlier truncated Harvest Moon response, but a
+completion record alone is not proof the image is decodable.
+
+Confirmed cause: `selectFinalGenerateContentImage` selected the final non-thought
+image, then rejected any MIME other than `image/png`. The Edge writer also
+hardcoded `.png` and `image/png`; accepting JPEG while keeping those labels
+would corrupt provenance and signed-history replay. Both revision history
+readers contained the same PNG-only restriction.
+
+| Code | Change |
+|---|---|
+| `_shared/gemini-image-history.mjs` | Admit PNG/JPEG/WebP; validate base64 and container bytes; retain native MIME, extension and opaque signed parts |
+| `design-panel-ai-generate/index.ts` | Store Call-1 and finishing outputs with their actual native MIME and extension; native Buffer decode and SHA-256; no extra image request |
+| `runtime/flat-first-atlas.cjs` | Verify the raw receipt MIME against the image decoder; retain existing canonical PNG normalization and six-surface acceptance checks |
+| `runtime/atlas-revision-intake.cjs`, `_shared/gemini-provider-cache.mjs` | Replay original PNG/JPEG/WebP parent exchanges without changing image bytes or signature attachment; retain hash and owner checks |
+| `runtime/inspect-atlas-provider-cache.cjs` | Use the production cache reader to verify every saved fragment and full response hash; fully decode the native image and report only dimensions, MIME and hashes |
+| `.github/workflows/deploy-production.yml` | Explicit marker selects a read-only inspection of this exact reported request after deployment; no design, lease, approval or notification mutation |
+
+- [x] Identify the exact new failed request, error and reserved IDs.
+- [x] Fix PNG-only response admission and truthful native artifact storage.
+- [x] Fix both parent-history readers for the same formats.
+- [x] Pass 62 focused image-format, cache, history, authoring and inspection checks.
+- [ ] Pass the full release gate and deploy exact checked source.
+- [ ] Verify the actual saved response bytes and format in production.
+- [ ] Resume this same request only after verified completion; preserve its
+  immutable authoring fence so Call 1 can read its cache but cannot regenerate.
+- [ ] Observe accepted master, six panels, seven proofs and deterministic Call 8.
+
+The fix changes encoding transport, not the creative model, prompt, ATLAS
+layout, dimensions, bleed, panel acceptance, studio layout or QC policy.
+The provider's original response remains immutable. Human print QC and the
+separate PanelProFileOutput template/output trial remain open.
+
+## Earlier proof transport repair — deployed; subsequent owner run failed at Call 1
 
 The Call-1 response repair remains deployed. A separate defect was confirmed in
 the existing 3D proof path: `createAtlasDesignPanelProvider` ignored the slot's
@@ -52,9 +97,9 @@ Keep the new Edge available when rolling back a server with in-flight proof
 operations. Do not roll the Edge back underneath the new runtime.
 
 Owner instruction after the browser outage: stop browser retries, finish the
-repair and tell Trish when the deployed release is ready for her test. That
-release is now ready: hard-refresh `https://os.designproai.com/designpro/create`,
-confirm build `e0e515b`, and submit one new design. No post-repair UI generation
+repair and tell Trish when the deployed release is ready for her test. The
+owner submitted the run documented above on that release; it exposed the
+PNG-only admission defect before proofs started. No post-repair UI generation
 has been claimed as passed. The seven proofs, six panels and Call 8 remain the
 owner's visible acceptance boundary, followed by actual human production QC.
 

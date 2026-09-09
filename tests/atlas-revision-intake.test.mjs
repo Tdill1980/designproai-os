@@ -310,13 +310,13 @@ test('paid edit carries the verified recipient binding and original product enti
   }finally{await db.close();}
 });
 
-test('native parent exchange preserves exact signatures and all parts; missing known history and reference-budget overflow fail before provider dispatch',async()=>{
+for (const nativeMime of ['image/png', 'image/jpeg', 'image/webp']) test(`${nativeMime}: native parent exchange preserves exact signatures and all parts; missing known history and reference-budget overflow fail before provider dispatch`,async()=>{
   const {db,fixture:f}=await database();try{
     const adapter=createPanelProfileTestAdapter(db,f.files);
     const original=[{role:'user',parts:[{text:'Original private customer brief'},{inlineData:{mimeType:'image/png',data:Buffer.from('teaching').toString('base64')}}]}];
     const nativeParts=[{text:'Private reasoning',thought:true,thoughtSignature:'opaque-thought'},
       {inlineData:{mimeType:'image/png',data:Buffer.from('thought-image').toString('base64')},thought:true},
-      {inlineData:{mimeType:'image/png',data:Buffer.from('raw-model-art').toString('base64')},thoughtSignature:'opaque-image'}];
+      {inlineData:{mimeType:nativeMime,data:Buffer.from('raw-model-art').toString('base64')},thoughtSignature:'opaque-image'}];
     const cached=await runDurableImageProviderRequest({bucket:adapter.supabase.storage.from('wrap-files'),identity:{ownerId:OWNER,generationId:GEN,requestId:f.requestId,mode:'atlas-artboard',attemptKey:'master:1'},
       requestHash:sha('native-request'),privateRequest:JSON.stringify({contents:original}),authorize:async()=>{},invoke:async()=>({status:200,payload:{candidates:[{content:{role:'model',parts:nativeParts}}]}})});
     // The historical row is constructed with this provenance before admission;

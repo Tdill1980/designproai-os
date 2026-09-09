@@ -3,6 +3,7 @@
 // Read-only incident inspection. This command never invokes Gemini, changes a
 // lease, creates a design, writes Storage, approves QC, or sends a notification.
 const { createHash } = require("node:crypto");
+const sharp = require("sharp");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HASH = /^[0-9a-f]{64}$/;
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -46,21 +47,29 @@ async function read(bucket, path, maxBytes) {
   return bytes;
 }
 
-function imageSummary(payload) {
+async function imageSummary(payload) {
   const candidates = payload?.candidates;
   if (!Array.isArray(candidates) || candidates.length !== 1) return { completeFinalImage: false };
   const parts = candidates[0]?.content?.parts || [];
   const images = parts.filter(p => p?.thought !== true && typeof p?.inlineData?.data === "string");
   if (images.length !== 1) return { completeFinalImage: false, finalImageCount: images.length };
   const image = images[0];
-  const bytes = Buffer.from(image.inlineData.data, "base64");
-  const png = image.inlineData.mimeType === "image/png" && bytes.length >= 45
-    && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
-    && bytes.toString("ascii", 12, 16) === "IHDR"
-    && bytes.subarray(-12).equals(Buffer.from([0,0,0,0,73,69,78,68,174,66,96,130]));
-  return { completeFinalImage: png, imageBytes: bytes.length, imageSha256: digest(bytes),
-    ...(png ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) } : {}),
+  const encoded = image.inlineData.data;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length > MAX_BYTES) return { completeFinalImage: false };
+  const bytes = Buffer.from(encoded, "base64");
+  const expectedFormat = { "image/png": "png", "image/jpeg": "jpeg", "image/webp": "webp" }[image.inlineData.mimeType];
+  const summary = { completeFinalImage: false, imageBytes: bytes.length, imageSha256: digest(bytes),
+    imageMimeType: expectedFormat ? image.inlineData.mimeType : "unsupported",
     signedPartCount: parts.filter(p => typeof p?.thoughtSignature === "string").length };
+  if (!expectedFormat || bytes.toString("base64") !== encoded) return summary;
+  try {
+    const imageDecoder = sharp(bytes, { failOn: "error", limitInputPixels: 40_000_000 });
+    const metadata = await imageDecoder.metadata();
+    if (metadata.format !== expectedFormat || !metadata.width || !metadata.height || (metadata.pages || 1) !== 1) return summary;
+    // stats forces a full decode. A JPEG header alone is not a complete image.
+    await imageDecoder.stats();
+    return { ...summary, completeFinalImage: true, width: metadata.width, height: metadata.height };
+  } catch { return summary; }
 }
 
 async function inspectAtlasProviderCache({ supabase, requestId, generationId }) {
@@ -83,9 +92,23 @@ async function inspectAtlasProviderCache({ supabase, requestId, generationId }) 
     const rawReceipt = await read(bucket, `${prefix}/response.json`, 64 * 1024);
     if (rawReceipt) {
       const receipt = JSON.parse(rawReceipt.toString("utf8"));
+      // Use the production reader: it validates every chunk, the complete
+      // envelope checksum, the original request and owner-bound cache identity.
+      const { readDurableImageProviderExchange } = await import('../supabase/functions/_shared/gemini-provider-cache.mjs');
+      const exchange = await readDurableImageProviderExchange({
+        bucket, ownerId: row.owner_id, generationId, requestId, providerRequestKey: key,
+        authorize: async () => {
+          const { data: current, error: currentError } = await supabase.from('designpro_generation_requests')
+            .select('id,generation_id,owner_id').eq('id', requestId).eq('generation_id', generationId).maybeSingle();
+          if (currentError || current?.id !== requestId || current?.generation_id !== generationId
+            || current?.owner_id !== row.owner_id) throw new Error('audit_request_not_found');
+        },
+      });
       attempts.push({ attempt, claimPresent: true, completionRecordPresent: true,
         responseByteSize: receipt.byteSize, responseSha256: receipt.responseHash,
-        chunkCount: receipt.chunks?.length, requestSha256: claim.requestHash });
+        chunkCount: receipt.chunks.length, requestSha256: claim.requestHash,
+        completeEnvelope: true, completeNativePayload: Boolean(exchange.payload),
+        providerSucceeded: true, ...await imageSummary(exchange.payload) });
       continue;
     }
     const { data: files, error: listError } = await bucket.list(`${prefix}/result`, { limit: 129 });
@@ -115,7 +138,7 @@ async function inspectAtlasProviderCache({ supabase, requestId, generationId }) 
     catch { payload = completePayloadPrefix(prefixText); }
     attempts.push({ attempt, claimPresent: true, completionRecordPresent: false,
       chunkCount: records.length, bankedBytes: total, completeEnvelope,
-      completeNativePayload: Boolean(payload), ...imageSummary(payload), requestSha256: claim.requestHash });
+      completeNativePayload: Boolean(payload), ...await imageSummary(payload), requestSha256: claim.requestHash });
   }
   return { contractVersion: "designpro.atlas-provider-readonly-audit.v1", requestId, generationId,
     state: row.state, errorCode: row.error?.code || null, attempts, writes: 0, providerCalls: 0 };

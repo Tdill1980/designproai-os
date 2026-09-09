@@ -1,5 +1,7 @@
 // Exact generateContent history transport. Signatures are opaque metadata;
 // never summarize, truncate, merge or relabel the parts they accompany.
+import { Buffer } from 'node:buffer';
+const IMAGE_EXTENSIONS = Object.freeze({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' });
 const clone = (value) => JSON.parse(JSON.stringify(value));
 function assertTurn(turn) {
   if (!turn || !['user', 'model'].includes(turn.role)) throw new Error('atlas_panel_prior_turn_role_invalid');
@@ -19,10 +21,35 @@ export function selectFinalGenerateContentImage(payload, errorPrefix) {
   if (!finalImages.length) throw new Error(`${errorPrefix}_no_image`);
   if (finalImages.length !== 1) throw new Error(`${errorPrefix}_ambiguous_final_images`);
   const imagePart = finalImages[0];
-  if (imagePart.inlineData.mimeType !== 'image/png') throw new Error(`${errorPrefix}_final_image_mime_invalid`);
+  if (!Object.hasOwn(IMAGE_EXTENSIONS, imagePart.inlineData.mimeType)) throw new Error(`${errorPrefix}_final_image_mime_invalid`);
   const textOut = candidateParts.filter((part) => typeof part?.text === 'string' && part.thought !== true)
     .map((part) => part.text).join('\n').trim();
   return { candidateParts, imagePart, textOut };
+}
+
+// Preserve the native encoded bytes and MIME. PNG normalization belongs to the
+// existing runtime image decoder, after the raw response is durably banked.
+// Relabeling JPEG bytes as PNG would also corrupt signed image-history replay.
+export function decodeGenerateContentImage(inlineData, errorPrefix) {
+  const mimeType = inlineData?.mimeType;
+  if (!Object.hasOwn(IMAGE_EXTENSIONS, mimeType)) throw new Error(`${errorPrefix}_final_image_mime_invalid`);
+  const data = inlineData?.data;
+  if (typeof data !== 'string' || !data || data.length > 64 * 1024 * 1024
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new Error(`${errorPrefix}_final_image_bytes_invalid`);
+  const bytes = Buffer.from(data, 'base64');
+  if (!bytes.length || bytes.toString('base64') !== data) throw new Error(`${errorPrefix}_final_image_bytes_invalid`);
+  const png = bytes.length >= 45 && bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))
+    && bytes.toString('ascii', 12, 16) === 'IHDR'
+    && bytes.subarray(-12).equals(Buffer.from([0,0,0,0,73,69,78,68,174,66,96,130]));
+  const jpeg = bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+    && bytes[bytes.length - 2] === 255 && bytes[bytes.length - 1] === 217;
+  const webp = bytes.length >= 20 && bytes.toString('ascii', 0, 4) === 'RIFF'
+    && bytes.readUInt32LE(4) === bytes.length - 8 && bytes.toString('ascii', 8, 12) === 'WEBP'
+    && ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.toString('ascii', 12, 16));
+  if (!({ 'image/png': png, 'image/jpeg': jpeg, 'image/webp': webp })[mimeType]) {
+    throw new Error(`${errorPrefix}_final_image_bytes_invalid`);
+  }
+  return { bytes, mimeType, extension: IMAGE_EXTENSIONS[mimeType] };
 }
 
 export async function captureImageTurn(turn, storeImage) {
