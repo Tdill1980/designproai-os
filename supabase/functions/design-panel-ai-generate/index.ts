@@ -2644,11 +2644,13 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       privateRequest: modelRequest,
       outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
       authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
-      invoke: () => captureGeminiHttpExchange(() => fetch(geminiUrl, {
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
           signal: AbortSignal.timeout(115_000), body: modelRequest,
-        })),
+        });
+      }),
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
@@ -3033,11 +3035,13 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
       privateRequest: modelRequest,
       outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
       authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
-      invoke: () => captureGeminiHttpExchange(() => fetch(geminiUrl, {
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
           signal: AbortSignal.timeout(110_000), body: modelRequest,
-        })),
+        });
+      }),
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
