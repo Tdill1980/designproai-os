@@ -355,6 +355,32 @@ function handoffRevisionId(requestId) {
   ].join("-");
 }
 
+const ATLAS_IDENTITY_CONTRACT = "designpro.atlas-identity-at-prompt.v2";
+const UUID_IDENTITY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Carry the server's reserved identities; never re-mint a claimed v2 run. */
+function generationIdentity(claim) {
+  const identity = {};
+  for (const key of ["atlasRevisionId", "handoffRevisionId", "designId", "atlasIdentityMintedAt", "atlasIdentityContract"]) {
+    if (claim[key] != null && claim[key] !== "") identity[key] = claim[key];
+  }
+  const expectedDesignId = `DID-${String(claim.generationId).replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  const reserved = identity.atlasIdentityContract === ATLAS_IDENTITY_CONTRACT;
+  const invalid = ["atlasRevisionId", "handoffRevisionId"].some(key => identity[key] != null && !UUID_IDENTITY.test(identity[key]))
+    || (identity.atlasRevisionId != null && identity.atlasRevisionId === identity.handoffRevisionId)
+    || (reserved && (!identity.atlasRevisionId || !identity.handoffRevisionId
+      || identity.designId !== expectedDesignId || !identity.atlasIdentityMintedAt
+      || !Number.isFinite(Date.parse(identity.atlasIdentityMintedAt))));
+  if (invalid) throw Object.assign(new Error("The claimed ATLAS identity differs from its reserved design"), {
+    code: "generation_reserved_identity_invalid", retryable: false,
+  });
+  // Older claims had neither field. Retain their deterministic handoff fallback;
+  // their actual ATLAS identity still comes from saved rows/checkpoints.
+  identity.handoffRevisionId ||= handoffRevisionId(claim.requestId);
+  identity.designId ||= expectedDesignId;
+  return identity;
+}
+
 /**
  * Copy the accepted views into the revision input paths Calls 8+ reads.
  *
@@ -953,6 +979,7 @@ function createGenerationWorker({
 
       const isFlatFirst = flatFirstRequested(claim.input);
       enteredFlatFirst = isFlatFirst;
+      const identity = generationIdentity(claim);
       let flatAtlas = null;
       let dimensionRow = null;
       let geniePrepReceipt = null;
@@ -1057,6 +1084,9 @@ function createGenerationWorker({
           generationId: claim.generationId,
           tenantKey: claim.tenantKey,
           ownerId,
+          // v1 saved history/checkpoints retain their existing loader policy;
+          // only the new admission contract declares a reservation constraint.
+          atlasRevisionId: identity.atlasIdentityContract === ATLAS_IDENTITY_CONTRACT ? identity.atlasRevisionId : undefined,
           input: executionInput,
           ...(geometry.revision || {}),
           surfaces: geometry.surfaces,
@@ -1245,7 +1275,7 @@ function createGenerationWorker({
         return { requestId, state: "failed", reasons: "views_incomplete" };
       }
 
-      const revisionId = handoffRevisionId(requestId);
+      const revisionId = identity.handoffRevisionId;
 
       const authoringReceipt = isFlatFirst
         ? {
@@ -1287,7 +1317,8 @@ function createGenerationWorker({
               : {}),
             engineContract: engine.ENGINE_CONTRACT,
             providerCalls: result.providerCalls,
-            handoffRevisionId: revisionId,
+            ...identity,
+            ...(isFlatFirst ? { atlasRevisionId: flatAtlas.revisionId } : {}),
             // Carried on the receipt because the worker cannot write the revision
             // itself: save_designpro_revision_source requires an authenticated
             // JWT and refuses a service role. The owner freezes this exact object
@@ -1334,7 +1365,7 @@ function createGenerationWorker({
     if (busy || stopped) return null;
     busy = true;
     try {
-      const claim = await rpc("claim_designpro_generation_request", {
+      const claim = await rpc("claim_designpro_generation_request_v2", {
         p_worker_id: workerId, p_lease_seconds: REQUEST_LEASE_SECONDS,
       });
       if (!claim) {
@@ -1380,6 +1411,7 @@ module.exports = {
   completeGenerationWithSources,
   conditionedPromptPartsFor,
   designBrief,
+  generationIdentity,
   promptPartsFor,
   projectionOnlyPromptFor,
   surfaceSizeClause,

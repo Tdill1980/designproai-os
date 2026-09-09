@@ -118,6 +118,26 @@ function finishFlag(t,value) {
   t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_PANEL_FINISH:process.env.DESIGNPRO_ATLAS_PANEL_FINISH=previous);
 }
 
+test("Call 1 uses its admission-reserved artwork identity for checkpoints, visible panels, final storage and recovery",async t=>{
+  finishFlag(t,"off");
+  const {source}=await fixture(),run=harness(source);
+  const atlasRevisionId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  run.insertFailure=true;
+  await assert.rejects(run.run({atlasRevisionId}),error=>error.code==="flat_atlas_revision_insert_failed");
+  assert.equal(run.publicMasters[0].revisionId,atlasRevisionId);
+  for(const panel of run.publicPanels)assert.equal(panel.atlas.revisionId,atlasRevisionId);
+  for(const [path,bytes] of run.bytes)if(/\/(accepted|authored)\.json$/.test(path))assert.equal(JSON.parse(bytes).record.revisionId,atlasRevisionId);
+  await assert.rejects(run.run({atlasRevisionId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}),error=>error.code==="flat_atlas_reserved_revision_conflict"&&!error.retryable);
+  assert.equal(run.masterCalls.length,1,"a changed reservation cannot trigger new authoring");
+  run.insertFailure=false;
+  const result=await run.run({atlasRevisionId,claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(result.revisionId,atlasRevisionId);assert.equal(run.inserted.id,atlasRevisionId);
+  assert.equal(run.masterCalls.length,1);assert.equal(result.callOnePanels.length,6);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+  await assert.rejects(run.run({atlasRevisionId:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}),error=>error.code==="flat_atlas_reserved_revision_conflict");
+  assert.equal(run.masterCalls.length,1,"existing saved artwork cannot be reassigned to a different ID");
+});
+
 test("a crash after public panel events resumes the same accepted master and revision without another authoring call",async t=>{
   finishFlag(t,"off");
   const {source,manifest}=await fixture();

@@ -115,19 +115,21 @@ test("readiness verifies RPC contract, seeds, and private bucket", async () => {
   const fake = {
     async rpc(name) {
       assert.equal(name, "designpro_runtime_readiness");
-      return { data: { contract: readiness.READINESS_CONTRACT, ready: true, rpcCount: 17, dimensionSeedCount: 0, qcSeedCount: 0, groundedIdentityFence: true, heavyOutputLeaseFence: true, wrapboxFence: true, capabilities: { validatedGeometrySeeded: false, qcOperatorSeeded: false } }, error: null };
+      return { data: { contract: readiness.READINESS_CONTRACT, ready: true, rpcCount: 17, dimensionSeedCount: 0, qcSeedCount: 0, groundedIdentityFence: true, heavyOutputLeaseFence: true, wrapboxFence: true, callOneIdentityFence: true, capabilities: { validatedGeometrySeeded: false, qcOperatorSeeded: false } }, error: null };
     },
     storage: { async listBuckets() { return { data: [{ id: "wrap-files", name: "wrap-files", public: false }], error: null }; } },
   };
   assert.deepEqual(await readiness.probeRuntimeDependencies(fake), {
     ready: true, contract: readiness.READINESS_CONTRACT, rpcCount: 17,
     dimensionSeedCount: 0, qcSeedCount: 0, groundedIdentityFence: true,
-    heavyOutputLeaseFence: true, wrapboxFence: true,
+    heavyOutputLeaseFence: true, wrapboxFence: true, callOneIdentityFence: true,
     capabilities: { validatedGeometrySeeded: false, qcOperatorSeeded: false }, bucket: "wrap-files", bucketPrivate: true,
   });
   fake.rpc = async () => ({ data: { contract: "designpro.runtime-readiness.v1", ready: true }, error: null });
   await assert.rejects(readiness.probeRuntimeDependencies(fake), /contract is missing or incompatible/);
   fake.rpc = async () => ({ data: { contract: readiness.READINESS_CONTRACT, ready: true, groundedIdentityFence: true, heavyOutputLeaseFence: true, wrapboxFence: true }, error: null });
+  await assert.rejects(readiness.probeRuntimeDependencies(fake), /Call 1 reserved identity admission and persistence fence is missing/);
+  fake.rpc = async () => ({ data: { contract: readiness.READINESS_CONTRACT, ready: true, groundedIdentityFence: true, heavyOutputLeaseFence: true, wrapboxFence: true, callOneIdentityFence: true }, error: null });
   fake.storage.listBuckets = async () => ({ data: [{ id: "wrap-files", public: true }], error: null });
   await assert.rejects(readiness.probeRuntimeDependencies(fake), /privacy could not be verified/);
 });

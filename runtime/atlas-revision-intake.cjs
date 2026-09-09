@@ -170,7 +170,7 @@ function createAtlasRevisionIntake({ supabase }) {
   }
   async function enqueue(actorId, payload) {
     const prepared = await prepare(actorId, payload);
-    const { data, error } = await supabase.rpc('enqueue_designpro_atlas_revision', { p_actor: actorId,
+    const { data, error } = await supabase.rpc('enqueue_designpro_atlas_revision_v2', { p_actor: actorId,
       p_parent_revision_id: prepared.parentAtlasRevisionId, p_context: prepared.revisionContext, p_context_hash: prepared.revisionContextHash });
     if (error) fail(error.message || 'atlas_revision_enqueue_failed', error.code === 'P0001' ? 409 : 503, error.code !== 'P0001');
     return data;

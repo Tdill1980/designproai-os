@@ -13,6 +13,12 @@ const env = {
 const CALLS17_RECIPIENT_HASH = "c".repeat(64);
 const CALLS17_ORDER_NUMBER = "DP-9001";
 
+function reservedGenerationIdentity(generationId) {
+  return {atlasRevisionId: "22222222-2222-4222-8222-222222222222", handoffRevisionId: "33333333-3333-4333-8333-333333333333",
+    designId: `DID-${generationId.replace(/-/g, "").slice(0, 8).toUpperCase()}`,
+    atlasIdentityMintedAt: "2026-09-09T06:00:00Z", atlasIdentityContract: "designpro.atlas-identity-at-prompt.v2"};
+}
+
 function calls17Input(extra = {}) {
   return {
     contractVersion: "designpro.calls-1-7-input.v1",
@@ -1494,10 +1500,10 @@ test("flat-first v3 opts into the isolated intake RPC without changing v1", asyn
       const value = String(url);
       calls.push({ url: value, init });
       if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
-      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request_v2")) {
         return Response.json({
           requestId: "10000000-0000-4000-8000-000000000010",
-          generationId,
+          generationId, ...reservedGenerationIdentity(generationId),
           state: "queued",
           inputHash: "a".repeat(64),
           engineContractHash: "b".repeat(64),
@@ -1521,7 +1527,7 @@ test("flat-first v3 opts into the isolated intake RPC without changing v1", asyn
   });
   assert.equal(response.status, 202);
   assert.equal((await response.json()).pipelineMode, "flat-first-atlas-v1");
-  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request_v2"));
   assert.ok(rpcCall);
   assert.deepEqual(JSON.parse(rpcCall.init.body), {
     p_generation_id: generationId,
@@ -1549,10 +1555,10 @@ test("a v2 vehicle create is normalized to A.T.L.A.S. at the server boundary", a
       const value = String(url);
       calls.push({ url: value, init });
       if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
-      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request_v2")) {
         return Response.json({
           requestId: "10000000-0000-4000-8000-00000000001a",
-          generationId, state: "queued", inputHash: "a".repeat(64),
+          generationId, ...reservedGenerationIdentity(generationId), state: "queued", inputHash: "a".repeat(64),
           engineContractHash: "b".repeat(64), idempotent: false,
         });
       }
@@ -1576,7 +1582,7 @@ test("a v2 vehicle create is normalized to A.T.L.A.S. at the server boundary", a
   assert.equal((await response.json()).pipelineMode, "flat-first-atlas-v1");
   // The standard intake RPC is never reached, so no Standard row can exist.
   assert.equal(calls.some((item) => item.url.endsWith("/rpc/create_designpro_generation_request")), false);
-  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request_v2"));
   assert.ok(rpcCall);
   assert.deepEqual(JSON.parse(rpcCall.init.body).p_input, {
     ...input,
@@ -1642,10 +1648,10 @@ test("flat-first v3 admits the full DesignIQ contract and exact private referenc
       const value = String(url);
       calls.push({ url: value, init });
       if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
-      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request")) {
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request_v2")) {
         return Response.json({
           requestId: "10000000-0000-4000-8000-000000000010",
-          generationId, state: "queued", inputHash: "a".repeat(64),
+          generationId, ...reservedGenerationIdentity(generationId), state: "queued", inputHash: "a".repeat(64),
           engineContractHash: "b".repeat(64), idempotent: false,
         });
       }
@@ -1678,7 +1684,7 @@ test("flat-first v3 admits the full DesignIQ contract and exact private referenc
     body: JSON.stringify({ generationId, input, requiredPipelineMode: "flat-first-atlas-v1" }),
   });
   assert.equal(response.status, 202);
-  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request"));
+  const rpcCall = calls.find((item) => item.url.endsWith("/rpc/create_designpro_flat_first_generation_request_v2"));
   assert.deepEqual(JSON.parse(rpcCall.init.body).p_input, input);
 });
 

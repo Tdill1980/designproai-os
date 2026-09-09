@@ -191,7 +191,8 @@ test('revision intake preserves parent and generation identities and rejects cal
   const base=await start(t,async(url,init)=>{
     if(url.endsWith('/auth/v1/user'))return Response.json({id:OWNER});
     calls.push({url,body:JSON.parse(init.body)});
-    return Response.json({requestId:RUN,generationId:GENERATION,parentAtlasRevisionId:ATLAS,revisionSequence:3,state:'queued'},{status:202});
+    return Response.json({requestId:RUN,generationId:GENERATION,parentAtlasRevisionId:ATLAS,revisionSequence:3,state:'queued',inputHash:'a'.repeat(64),engineContractHash:'b'.repeat(64),
+      atlasRevisionId:'ffffffff-ffff-4fff-8fff-ffffffffffff',handoffRevisionId:REVISION,designId:'DID-BBBBBBBB',atlasIdentityMintedAt:'2026-09-09T06:00:00Z',atlasIdentityContract:'designpro.atlas-identity-at-prompt.v2'},{status:202});
   });
   const created=await fetch(`${base}/api/generation/requests/revisions`,{method:'POST',headers,body:JSON.stringify(input)});
   assert.equal(created.status,202);assert.equal((await created.json()).generationId,GENERATION);
