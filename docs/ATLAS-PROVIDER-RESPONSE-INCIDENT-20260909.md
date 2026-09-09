@@ -1,5 +1,52 @@
 # ATLAS response persistence incident — 9 September 2026
 
+## Follow-on proof transport repair — implementation complete, deployment pending
+
+The Call-1 response repair remains deployed. A separate defect was confirmed in
+the existing 3D proof path: `createAtlasDesignPanelProvider` ignored the slot's
+timeout and exposed four runtime attempts around `handleAtlasProof`'s three
+image attempts. A single unsuccessful camera shot could therefore buy twelve
+image requests. Each Edge invocation also minted a different proof request ID,
+so a lost HTTP acknowledgement could not recover a proof already produced.
+
+The reference is `restylepro-os@113d137dbe8813ca3bf70c8d7265ad081ebd4524`,
+`supabase/functions/persona-photographer-render/index.ts`, adapted here in
+`handleAtlasProof`. The pinned presentation/camera/studio modules are unchanged.
+Durable operation claims and caller deadlines are standalone transport concerns;
+they do not change the six-surface source interface or manufacturing geometry.
+
+- [x] Persist each camera's complete native response and opaque signatures under
+  the existing private provider-cache contract; preserve request/generation IDs.
+- [x] Recover a lost proof response using bounded cache-only reads. An authenticated
+  capability read prevents an older Edge from interpreting recovery as generation.
+- [x] Limit ATLAS to one slot-level provider operation. Only a persisted, explicit
+  429 rate-limit rejection advances the existing three-entry model ladder.
+- [x] Stop indefinite waits in HTTP bodies and Storage reads; the operation has
+  one 180-second maximum including recovery, not a fresh deadline per retry.
+- [x] Authorize the internal caller and active generation lease before reading
+  a panel or spending on a new image. Verify returned surface/revision lineage.
+- [x] Select exactly one final image; thought images and ambiguous final returns
+  cannot be published as customer proofs. This closes a selection defect, not
+  the still-open visual logo/creative-quality acceptance item.
+- [x] Pass 35 focused recovery, authority and orchestration checks locally.
+- [ ] Pass the exact commit's mandatory release gate and deploy both sides.
+- [ ] Confirm a fresh customer-visible ATLAS run on the new release.
+
+Roll out the compatible photographer Edge first, then the exact tested server
+artifact. Old in-flight server requests retain their compatibility branch;
+new runtime requests require the durable contract. No migration is needed.
+Keep the new Edge available when rolling back a server with in-flight proof
+operations. Do not roll the Edge back underneath the new runtime.
+
+Owner instruction after the browser outage: stop browser retries, finish the
+repair and tell Trish when the deployed release is ready for her test. No
+post-repair UI generation has been claimed as passed.
+
+References: [Supabase runtime limits](https://supabase.com/docs/guides/functions/limits)
+and [Google retry guidance](https://ai.google.dev/gemini-api/docs/troubleshooting).
+The application is deliberately stricter on uncertain paid image outcomes:
+it recovers the original operation instead of silently issuing another one.
+
 This is the investigation and release record for the failed Harvest Moon Coffee
 design. A checked code or test item does not mean that a new design completed.
 

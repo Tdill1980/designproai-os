@@ -108,12 +108,20 @@ function transportFixture({ proofBytes, panelPaths }) {
   const posts = [];
   const proofSha = hash(proofBytes);
   const fetchImpl = async (url, init) => {
+    if (init.method === "GET") return { ok: true, status: 200,
+      json: async () => ({ proofRecoveryContract: "designpro.atlas-proof-recovery.v1", cacheOnly: true }) };
+    const body = JSON.parse(init.body);
     posts.push({ url, body: JSON.parse(init.body), headers: init.headers });
     return {
       ok: true,
       status: 200,
       json: async () => ({
         success: true,
+        proofRecoveryContract: "designpro.atlas-proof-recovery.v1",
+        generationId: body.generationId, atlasRevisionId: body.atlasRevisionId,
+        shotKey: body.shotKey, surfaceKey: body.surfaceKey,
+        sourcePanelStoragePath: body.sourcePanelStoragePath,
+        sourcePanelHash: body.sourcePanelHash, sourceMasterHash: body.sourceMasterHash,
         requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         contract: "designpro.atlas-photographer-proof.v1",
         sourceCommit: "113d137dbe8813ca3bf70c8d7265ad081ebd4524",
@@ -189,6 +197,7 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
     atlas: f.atlas,
   });
   assert.equal(provider.contract, ATLAS_SERVER_PROVIDER_CONTRACT);
+  assert.equal(provider.maxProviderAttempts, 1, "the slot runner must not multiply the durable Edge budget");
 
   for (const sourceViewType of ["side", "passenger-side", "hood_detail", "front", "rear", "roof", "close-up"]) {
     const result = await provider.generateImage({ sourceViewType, attempt: 1 });

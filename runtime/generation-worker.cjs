@@ -1011,10 +1011,13 @@ function createGenerationWorker({
           await Promise.all(prerequisites.filter(Boolean));
           const atlasProvider = atlasProviderFactory({
             supabase,
+            supabaseUrl,
+            serviceRoleKey,
             provider: imageProvider,
             tenantKey: claim.tenantKey,
             generationId: claim.generationId,
             requestId,
+            claimToken,
             input: executionInput,
             atlas: {
               conditioningPartsFor: (view) => atlasProjectionParts(atlas, view),
