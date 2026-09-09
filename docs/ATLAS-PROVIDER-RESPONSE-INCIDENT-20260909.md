@@ -24,6 +24,9 @@ was not JSON. None of those specific causes has been proved for this roof call.
 The protected read-only log capture in [PR #346](https://github.com/Tdill1980/designproai-os/pull/346)
 was refused by Supabase with **HTTP 403** at 22:38:53 UTC:
 [audit run 34413238157](https://github.com/Tdill1980/designproai-os/actions/runs/34413238157).
+The same read was refused again at 23:00:22 UTC in
+[audit run 34414912681](https://github.com/Tdill1980/designproai-os/actions/runs/34414912681);
+its response supplied none of the predefined diagnostic terms.
 No alternate credential or access bypass was attempted. The exact denial reason
 is not established from status alone. Restore authorized analytics-log access
 for the existing production automation credential, or have an authorized
@@ -45,7 +48,18 @@ is `analytics_logs_read` (`analytics:read` for OAuth), per the
 - [x] Pass 31 focused native-format, persistence and transport checks, including
   non-JSON 400/429/503 responses, truncated 200, missing headers, failed diagnostic
   writes and restart without a second provider call.
-- [ ] Deploy the failure-reporting correction and verify its exact source.
+- [x] Retain the existing explicit single-fetch source checks and pass all 59
+  focused handler/finishing/cache checks after their syntax expectation surfaced
+  in CI. No assertion was relaxed.
+- [x] Pass the exact [PR #347 release gate 34414481498](https://github.com/Tdill1980/designproai-os/actions/runs/34414481498)
+  for `744803c145acba92ad62833cdc99ff522a9aaa07`; application contracts,
+  Supabase shadow and immutable archive all passed. Merged as `447a1253cc72754bad3389dc510c598da4d28846`,
+  with the identical tested tree `4a4386aa99feb1da739ea6fdc95c9f06a003a7f0`.
+- [x] Deploy `design-panel-ai-generate` **v94 ACTIVE at 23:00:24 UTC** and
+  compare all 14 deployed files byte-for-byte with the tested source; all match.
+  Bundle SHA-256: `4c7a6457f016abec8ec4ffcec1573ec427af65d9c130d39997996d0f594a6e9b`.
+  Server `960bebc` and photographer v40 remain the deployed versions; this
+  compatible Edge correction required no server cutover or schema change.
 - [ ] Obtain the denied roof invocation logs and resolve its unknown outcome
   without deleting the claim or inventing a replacement/approval.
 - [ ] Finish the original six-panel and seven-proof run, then permit owner testing.
