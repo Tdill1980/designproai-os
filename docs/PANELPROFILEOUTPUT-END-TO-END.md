@@ -2,6 +2,12 @@
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
+**Upstream proof recovery:** the parent graph's new per-camera persistence and
+deadline repair is implemented and awaiting deployment. It preserves the existing
+accepted artifact interface consumed here. It does not unblock a missing source,
+grant QC approval or enable PanelProFileOutput's optional production flag. See the
+[implementation and deployment ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+
 **Upstream incident:** Harvest Moon Coffee (`DID-E9BABE2D`) has no accepted ATLAS
 because its native provider response was only partly saved. PanelProFileOutput
 must remain blocked for that request. See the [persistence repair and live

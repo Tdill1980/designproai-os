@@ -26,6 +26,7 @@ const {
 } = require("./studio-os.cjs");
 
 const BUCKET = "wrap-files";
+const { PROOF_RECOVERY_CONTRACT, invokeAtlasProof, withinProofDeadline } = require("./atlas-proof-transport.cjs");
 const SERVER_PROVIDER_CONTRACT = "designpro.designpanel-server-provider.v1";
 const ATLAS_SERVER_PROVIDER_CONTRACT = "designpro.atlas-designpanel-server-provider.v1";
 const ARTIFACT_AUDIT_CONTRACT = "designpro.generation-artifact-audit.v1";
@@ -1158,16 +1159,20 @@ function createAtlasDesignPanelProvider(options = {}) {
     const panel = atlas.panelFor(sourceViewType);
     const vehicle = input?.vehicle || {};
 
-    const response = await fetchImpl(`${supabaseUrl}/functions/v1/persona-photographer-render`, {
-      method: "POST",
+    const { payload, signal: proofSignal } = await invokeAtlasProof({
+      url: `${supabaseUrl}/functions/v1/persona-photographer-render`,
+      fetchImpl, signal: call.signal, timeoutMs: call.timeoutMs,
       headers: {
         authorization: `Bearer ${serviceRoleKey}`,
         apikey: serviceRoleKey,
         "content-type": "application/json",
         "x-designpro-owner-id": ownerId,
       },
-      body: JSON.stringify({
+      body: {
         mode: "atlas-proof",
+        providerRequest: { contractVersion: PROOF_RECOVERY_CONTRACT,
+          requestId: options.requestId, generationId: options.generationId,
+          claimToken: options.claimToken },
         shotKey: sourceViewType,
         surfaceKey: panel.surfaceKey,
         surfaceSelection: panel.surfaceSelection,
@@ -1193,27 +1198,18 @@ function createAtlasDesignPanelProvider(options = {}) {
         // proof and the camera authority cannot disagree about the vehicle.
         isPickup: pickupVehicle(input),
         finish: String(input?.finish || "Gloss"),
-      }),
-      signal: call.signal,
+      },
     });
-    let payload = null;
-    try { payload = await response.json(); } catch { payload = null; }
-    if (!response.ok || payload?.success !== true) {
-      throw new DesignPanelServerError(
-        "designpanel_atlas_proof_failed",
-        `persona-photographer-render atlas-proof ${sourceViewType} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
-        response.status >= 500 || response.status === 429,
-      );
-    }
     // The proof comes back by STORAGE PATH: wrap-files is private, so a public
     // URL 400s -- the same lesson Call 1 learned live on 2026-08-27.
     const proofPath = String(payload.proofStoragePath || "").trim();
     if (!proofPath) throw new DesignPanelServerError("designpanel_atlas_proof_path_missing", "The photographer returned no proof storage path", true);
-    const { data: blob, error: dlErr } = await supabase.storage.from(ATLAS_PROOF_BUCKET).download(proofPath);
+    const { data: blob, error: dlErr } = await withinProofDeadline(
+      () => supabase.storage.from(ATLAS_PROOF_BUCKET).download(proofPath), proofSignal);
     if (dlErr || !blob) {
       throw new DesignPanelServerError("designpanel_atlas_proof_download_failed", dlErr?.message || `Could not read ${proofPath}`, true);
     }
-    const bytes = Buffer.from(await blob.arrayBuffer());
+    const bytes = Buffer.from(await withinProofDeadline(() => blob.arrayBuffer(), proofSignal));
     if (sha256(bytes) !== String(payload.proofSha256 || "").toLowerCase()) {
       throw new DesignPanelServerError("designpanel_atlas_proof_hash_mismatch", "Downloaded proof bytes do not match the photographer's reported sha256");
     }
@@ -1260,7 +1256,8 @@ function createAtlasDesignPanelProvider(options = {}) {
     generateImage,
     hydrateDriver: driverStore.hydrateHero,
     contract: ATLAS_SERVER_PROVIDER_CONTRACT,
-    maxProviderAttempts: 4,
+    // The Edge owns one durable provider budget; transport retries only read it.
+    maxProviderAttempts: 1,
     models: [...(provider?.models || [])],
     keyCount: Number(provider?.keyCount || 0),
   };

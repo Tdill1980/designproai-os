@@ -28,6 +28,10 @@ import {
 } from "../_shared/atlas-proof-presentation.ts";
 import { geminiImageUrl, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL } from "../_shared/model-config.ts";
 import { upscaleImageBytes } from "../_shared/topaz-upscale.ts";
+import { Buffer } from "node:buffer";
+import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
+import { authorizeAtlasProviderRequest, putImmutableProviderArtifact } from "../_shared/gemini-provider-cache.mjs";
+import { ATLAS_PROOF_RECOVERY_CONTRACT, runAtlasProofProvider } from "../_shared/atlas-proof-provider.mjs";
 
 
 const corsHeaders = {
@@ -79,6 +83,16 @@ serve(async (req) => {
   }
 
   try {
+    if (req.method === "GET" && new URL(req.url).searchParams.get("action") === "atlas-proof-capabilities") {
+      const caller = await resolveDesignProInternalCaller(req);
+      if (caller.rejection) return caller.rejection;
+      return new Response(JSON.stringify(caller.internal
+        ? { proofRecoveryContract: ATLAS_PROOF_RECOVERY_CONTRACT, cacheOnly: true }
+        : { error: "atlas_proof_internal_only" }), {
+        status: caller.internal ? 200 : 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const body = await req.json();
 
     // ═══ ATLAS-PROOF — the DesignProAI 3D proof, artwork authority swapped.
@@ -86,7 +100,10 @@ serve(async (req) => {
     // This is that function, in the one mode where the extracted A.T.L.A.S.
     // panel is the artwork instead of a hero render. See handleAtlasProof.
     if (body?.mode === "atlas-proof") {
-      return await handleAtlasProof(body);
+      const caller = await resolveDesignProInternalCaller(req);
+      if (caller.rejection) return caller.rejection;
+      if (!caller.internal || !caller.userId) return new Response(JSON.stringify({ error: "atlas_proof_internal_only" }), { status: 403, headers: corsHeaders });
+      return await handleAtlasProof(body, caller.userId);
     }
     const {
       designAnchorText,
@@ -421,18 +438,20 @@ serve(async (req) => {
 // learned). The caller downloads with its server client and verifies the hash.
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function handleAtlasProof(body: Record<string, unknown>): Promise<Response> {
-  const requestId = crypto.randomUUID();
+async function handleAtlasProof(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  let requestId = crypto.randomUUID();
+  const deadlineAt = Date.now() + 125_000;
+  const providerRequest = body.providerRequest as Record<string, unknown> | undefined;
   const shotKey = String(body.shotKey || "").trim();
   const surfaceKey = String(body.surfaceKey || "").trim();
   const svc = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const fail = (message: string, status = 400) => new Response(
+  const fail = (message: string, status = 400, details: Record<string, unknown> = {}) => new Response(
     JSON.stringify({
       success: false, requestId, functionName: "persona-photographer-render",
-      contract: ATLAS_PROOF_CONTRACT, shotKey, surfaceKey, error: message,
+      contract: ATLAS_PROOF_CONTRACT, shotKey, surfaceKey, error: message, ...details,
     }),
     { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
@@ -457,6 +476,13 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
       return fail("atlas_proof_hero_forbidden: the A.T.L.A.S. panel is the artwork authority; a hero render may not be substituted");
     }
 
+    if (providerRequest) {
+      if (providerRequest.contractVersion !== ATLAS_PROOF_RECOVERY_CONTRACT
+        || providerRequest.generationId !== body.generationId) return fail("atlas_proof_recovery_identity_invalid");
+      // Authorize before reading the source panel as well as before each paid call.
+      await authorizeAtlasProviderRequest(svc, { ...providerRequest, attemptKey: `proof:${shotKey}:1` }, ownerId);
+    }
+
     const panelPath = String(body.sourcePanelStoragePath || "").trim();
     const panelHash = String(body.sourcePanelHash || "").trim().toLowerCase();
     if (!panelPath) return fail("atlas_proof_panel_storage_path_missing");
@@ -470,14 +496,10 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
     if (panelSha !== panelHash) {
       return fail("atlas_proof_panel_hash_mismatch: the stored panel is not the artifact the caller named");
     }
-    let panelBin = "";
-    for (let i = 0; i < panelBytes.length; i += 8192) {
-      panelBin += String.fromCharCode.apply(null, Array.from(panelBytes.subarray(i, Math.min(i + 8192, panelBytes.length))));
-    }
     const panelPart = {
       inlineData: {
         mimeType: String(body.sourcePanelContentType || "image/png"),
-        data: btoa(panelBin),
+        data: Buffer.from(panelBytes).toString("base64"),
       },
     };
 
@@ -514,6 +536,28 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
     let imageMimeType = "image/png";
     let modelUsed = PRIMARY_IMAGE_MODEL;
     let imageRequestCount = 0;
+    let recovered: Awaited<ReturnType<typeof runAtlasProofProvider>> | null = null;
+    if (providerRequest) {
+      recovered = await runAtlasProofProvider({
+        supabase: svc, ownerId, providerRequest, shotKey, parts, deadlineAt,
+        promptContract: ATLAS_PROOF_PROMPT_CONTRACT,
+        authority: { panelPath, panelHash, sourceMasterHash: body.sourceMasterHash,
+          atlasRevisionId: body.atlasRevisionId, generationId: body.generationId, shotKey, surfaceKey },
+        models: [PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL],
+        invoke: async ({ model, body: modelBody, timeoutMs }: { model: string; body: string; timeoutMs: number }) => {
+          const response = await fetch(geminiImageUrl(getGeminiKey(), model), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: modelBody, signal: AbortSignal.timeout(timeoutMs),
+          });
+          return { status: response.status, payload: await response.json(), retryAfterSeconds: response.headers.get("retry-after") };
+        },
+      });
+      requestId = recovered.requestId;
+      imageMimeType = recovered.contentType;
+      modelUsed = recovered.model;
+      imageRequestCount = recovered.imageRequestCount;
+    } else {
+    // Compatibility only for runtime requests already in flight during rollout.
     const MAX_RETRIES = 2;
     for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
       const currentModel = attempt < MAX_RETRIES + 1 ? PRIMARY_IMAGE_MODEL : FALLBACK_IMAGE_MODEL;
@@ -553,18 +597,14 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
       if (attempt <= MAX_RETRIES) await new Promise((r) => setTimeout(r, 2000 * attempt));
     }
     if (!imageBase64) return fail(`atlas_proof_no_image after ${imageRequestCount} request(s)`, 502);
+    }
 
-    const bin = atob(imageBase64);
-    const proofBytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i += 1) proofBytes[i] = bin.charCodeAt(i);
+    const proofBytes = recovered?.bytes || Buffer.from(imageBase64!, "base64");
     const digest = await crypto.subtle.digest("SHA-256", proofBytes);
     const proofSha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const ext = imageMimeType === "image/jpeg" ? "jpg" : imageMimeType === "image/webp" ? "webp" : "png";
     const storagePath = `atlas-proof/${requestId}_${shotKey}.${ext}`;
-    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, proofBytes, {
-      contentType: imageMimeType, upsert: false,
-    });
-    if (upErr) return fail(`atlas_proof_upload_failed: ${upErr.message}`, 502);
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, proofBytes, imageMimeType);
 
     return new Response(
       JSON.stringify({
@@ -579,6 +619,8 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
         model: modelUsed,
         functionVersion: ATLAS_PROOF_SOURCE_COMMIT,
         imageRequestCount,
+        ...(recovered ? { proofRecoveryContract: ATLAS_PROOF_RECOVERY_CONTRACT,
+          providerCacheHit: recovered.providerCacheHit, providerRequestKey: recovered.providerRequestKey } : {}),
         promptChars: prompt.length,
         shotKey,
         surfaceKey,
@@ -598,6 +640,13 @@ async function handleAtlasProof(body: Record<string, unknown>): Promise<Response
     );
   } catch (err) {
     console.error(`atlas-proof ${requestId} failed:`, err);
+    if (providerRequest) {
+      const error = err as { code?: string; status?: number; retryable?: boolean; providerOutcome?: string };
+      return fail(error.code || "atlas_proof_unexpected", error.status || 500, {
+        proofRecoveryContract: ATLAS_PROOF_RECOVERY_CONTRACT,
+        retryable: error.retryable === true, providerOutcome: error.providerOutcome || "unknown",
+      });
+    }
     return fail(`atlas_proof_unexpected: ${String((err as Error)?.message || err).slice(0, 300)}`, 500);
   }
 }

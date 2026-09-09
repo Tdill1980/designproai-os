@@ -2,6 +2,14 @@
 
 Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
 
+**Proof transport follow-up:** code now fixes the ignored 3D timeout and the
+four-by-three nested image retry budget. Each camera recovers its original
+persisted response, validates the returned revision/surface and selects only
+the final image. The seven independent proof nodes and six ATLAS source panels
+remain unchanged. Release/deployment is pending; see the checked implementation
+items and open deployment items in the [incident record](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md).
+The owner will run the next UI acceptance after being told the deployment is ready.
+
 **Active incident:** Harvest Moon Coffee (`DID-E9BABE2D`) failed on the deployed
 release during provider response saving, before an accepted ATLAS existed.
 The IDs were preserved. The bounded persistence repair, misleading Precision

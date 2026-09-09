@@ -59,6 +59,7 @@ runtime/visionboard-iq.cjs
 runtime/photorealism-prompt.cjs
 runtime/generation-provider.cjs
 runtime/designpanel-server-provider.cjs
+runtime/atlas-proof-transport.cjs
 runtime/designpanel-edge-provider.cjs
 runtime/atlas-master-qc.cjs
 runtime/atlas-cutout-fill.cjs
