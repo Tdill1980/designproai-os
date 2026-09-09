@@ -65,6 +65,7 @@ const {
 const { readAcceptedCheckpoint, writeAcceptedCheckpoint, readAuthoringContext, writeAuthoringContext } = require("./atlas-accepted-checkpoint.cjs");
 const { createFinishingCheckpointStore } = require("./atlas-finishing-checkpoint.cjs");
 const { assembleFinishedMaster, CONTRACT: FINISHED_MASTER_CONTRACT } = require("./atlas-finished-master.cjs");
+const { invokeAtlasAuthoring, providerFailureDetails, providerFailureSummary } = require("./atlas-authoring-transport.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -1663,9 +1664,10 @@ function normalizedZoneTopology(zone, manifest) {
   };
 }
 
-async function requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl, mode, revisionIntake = false }) {
+async function requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl, mode, revisionIntake = false, signal }) {
   const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate?action=atlas-provider-capabilities`, {
     method: "GET",
+    signal,
     headers: { authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey,
       "x-designpro-owner-id": String(ownerId || "") },
   }).catch(() => { throw new FlatAtlasError("flat_atlas_provider_cache_probe_failed",
@@ -1683,7 +1685,7 @@ async function requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId,
   }
 }
 
-async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase, revisionContext = null } = {}) {
+async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetch, ownerId, supabase, revisionContext = null, signal, timeoutMs, wait } = {}) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
   if (!supabase?.storage?.from) {
@@ -1695,36 +1697,25 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
   if (body.revisionContextHash && (!revisionContext || !body.providerRequest)) {
     throw new FlatAtlasError("flat_atlas_revision_context_missing", "An edit requires its trusted parent context and current provider lease");
   }
-  if (body.providerRequest) await requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl,
-    mode: "atlas-artboard", revisionIntake: Boolean(body.revisionContextHash) });
-  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
-    method: "POST",
+  const { response, payload } = await invokeAtlasAuthoring({
+    url: `${supabaseUrl}/functions/v1/design-panel-ai-generate`, body, fetchImpl, signal, timeoutMs, wait,
+    probe: probeSignal => requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl,
+      mode: "atlas-artboard", revisionIntake: Boolean(body.revisionContextHash), signal: probeSignal }),
     headers: {
       authorization: `Bearer ${serviceRoleKey}`,
       apikey: serviceRoleKey,
       "content-type": "application/json",
       "x-designpro-owner-id": String(ownerId || ""),
     },
-    body: JSON.stringify(body),
-  }).catch((cause) => {
-    if (body.providerRequest) throw new FlatAtlasError("provider_outcome_unknown",
-      "The authoring response was interrupted; recover this same provider request before continuing", true);
-    throw cause;
   });
-  let payload = null;
-  try { payload = await response.json(); } catch { payload = null; }
-  if (body.providerRequest && !payload) {
-    throw new FlatAtlasError("provider_outcome_unknown", "The authoring response could not be decoded; recover the same provider request", true);
-  }
   if (!response.ok || payload?.success !== true) {
     throw Object.assign(new FlatAtlasError(
       /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
         ? String(payload.code || payload.error) : "flat_atlas_edge_call_failed",
-      `design-panel-ai-generate atlas-artboard failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`,
+      `design-panel-ai-generate atlas-artboard failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}${providerFailureSummary(payload)}`,
       typeof payload?.retryable === "boolean" ? payload.retryable
         : response.status >= 500 || [404, 409, 429].includes(response.status),
-    ), { providerRetryDisposition: payload?.providerRetryDisposition || null,
-      providerOutcome: payload?.providerOutcome || null, retryAfterSeconds: payload?.retryAfterSeconds || null });
+    ), providerFailureDetails(payload));
   }
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_edge_call_count_invalid", `The edge function reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
@@ -2169,41 +2160,31 @@ function atlasPanelFinisher({
  * nothing to say about a finishing pass, and folding two contracts into one
  * function is how those checks drift.
  */
-async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch } = {}) {
+async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch, signal, timeoutMs, wait } = {}) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
   if (!supabaseUrl || serviceRoleKey.length < 32) {
     throw new FlatAtlasError("flat_atlas_panel_edge_transport_missing", "SUPABASE_URL / service key are required", true);
   }
-  if (body.providerRequest) await requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl, mode: "atlas-panel" });
-  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
-    method: "POST",
+  const { response, payload } = await invokeAtlasAuthoring({
+    url: `${supabaseUrl}/functions/v1/design-panel-ai-generate`, body, fetchImpl, signal, timeoutMs, wait,
+    probe: probeSignal => requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl,
+      mode: "atlas-panel", signal: probeSignal }),
     headers: {
       authorization: `Bearer ${serviceRoleKey}`,
       apikey: serviceRoleKey,
       "content-type": "application/json",
       "x-designpro-owner-id": String(ownerId || ""),
     },
-    body: JSON.stringify(body),
-  }).catch((cause) => {
-    if (body.providerRequest) throw new FlatAtlasError("provider_outcome_unknown",
-      "The finishing response was interrupted; recover this same provider request before continuing", true);
-    throw cause;
   });
-  let payload = null;
-  try { payload = await response.json(); } catch { payload = null; }
-  if (body.providerRequest && !payload) {
-    throw new FlatAtlasError("provider_outcome_unknown", "The finishing response could not be decoded; recover the same provider request", true);
-  }
   if (!response.ok || payload?.success !== true) {
     throw Object.assign(new FlatAtlasError(
       /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
         ? String(payload.code || payload.error) : "flat_atlas_panel_edge_call_failed",
-      `design-panel-ai-generate atlas-panel failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}`,
+      `design-panel-ai-generate atlas-panel failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}${providerFailureSummary(payload)}`,
       typeof payload?.retryable === "boolean" ? payload.retryable
         : response.status >= 500 || [404, 409, 429].includes(response.status),
-    ), { providerRetryDisposition: payload?.providerRetryDisposition || null,
-      providerOutcome: payload?.providerOutcome || null, retryAfterSeconds: payload?.retryAfterSeconds || null });
+    ), providerFailureDetails(payload));
   }
   // The edge must be the one this runtime was built against, for the same
   // reason Call 1 checks it: the runtime and the function ship through
