@@ -16,9 +16,10 @@ const fixed = policy.filter((line) => !line.includes("*"));
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
   // The previous 65 plus three ATLAS checkpoints/assembly modules, three PPO
   // execution modules, verified source/delivery bindings, two templates and
-  // the server-owned revision intake adapter.
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 77);
+  // the server-owned revision intake adapter and durable proof transport.
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 78);
   for (const name of [
+    "runtime/atlas-proof-transport.cjs",
     "runtime/inspect-atlas-provider-cache.cjs",
     "runtime/panelpro-file-output-contract.cjs",
     "runtime/panelpro-file-output-plan.cjs",
