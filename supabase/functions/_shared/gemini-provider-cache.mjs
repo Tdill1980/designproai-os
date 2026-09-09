@@ -1,6 +1,9 @@
 // Server-only durable image-provider receipts. A transport timeout is not a
 // creative refusal and must never silently buy another image. Private paths
 // deliberately live outside every customer-readable Storage subtree.
+import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
+
 export const GEMINI_PROVIDER_CACHE_CONTRACT = 'designpro.gemini-provider-cache.v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const HASH = /^[0-9a-f]{64}$/;
@@ -8,6 +11,12 @@ const PREFIX = 'designpro-provider-private/v1';
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const STORED_CHUNK_BYTES = 6 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+const TEXT_FRAGMENT_ENCODING = 'utf8-json-fragments.v1';
+const TEXT_FRAGMENT_CODE_UNITS = 1024 * 1024;
+const MAX_TEXT_FRAGMENTS = 128;
+const MAX_CHUNK_WRITES = 2;
+const JSON_STRING_CODE_UNITS = 64 * 1024;
+const MAX_JSON_DEPTH = 64;
 const encoder = new TextEncoder();
 
 export class GeminiProviderError extends Error {
@@ -25,9 +34,101 @@ export class GeminiProviderError extends Error {
 }
 
 export async function providerSha256(value) {
-  const bytes = typeof value === 'string' ? encoder.encode(value) : value;
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  // Native incremental hashing avoids another full response-sized WebCrypto
+  // input allocation. node:crypto and node:buffer are supported by Deno.
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function stringBoundary(value, start, limit) {
+  let end = Math.min(value.length, start + limit);
+  if (end < value.length && value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff
+    && value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff) end -= 1;
+  return end;
+}
+
+function* jsonStringTokens(value) {
+  yield '"';
+  for (let start = 0; start < value.length;) {
+    const end = stringBoundary(value, start, JSON_STRING_CODE_UNITS);
+    // JSON.stringify supplies the exact escaping for control characters and
+    // lone surrogates. Paired surrogates never cross a token boundary.
+    yield JSON.stringify(value.slice(start, end)).slice(1, -1);
+    start = end;
+  }
+  yield '"';
+}
+
+function invalidJson() {
+  return new GeminiProviderError('provider_response_invalid', 502, 'received', 1);
+}
+
+// Provider JSON contains plain records, arrays and primitives. Refuse custom
+// serializers/getters/cycles rather than allowing hidden work during banking.
+// For that input domain the concatenated tokens equal JSON.stringify exactly.
+function* jsonTokens(value, ancestors = new Set(), depth = 0) {
+  if (depth > MAX_JSON_DEPTH) throw invalidJson();
+  if (typeof value === 'string') { yield* jsonStringTokens(value); return; }
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+    yield JSON.stringify(value); return;
+  }
+  if (typeof value !== 'object' || ancestors.has(value)) throw invalidJson();
+  const array = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (array ? prototype !== Array.prototype : ![Object.prototype, null].includes(prototype)) throw invalidJson();
+  const serializer = Object.getOwnPropertyDescriptor(value, 'toJSON');
+  if (serializer && (!Object.hasOwn(serializer, 'value') || typeof serializer.value === 'function')) throw invalidJson();
+  ancestors.add(value);
+  try {
+    if (array) {
+      yield '[';
+      for (let index = 0; index < value.length; index += 1) {
+        if (index) yield ',';
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (descriptor && !Object.hasOwn(descriptor, 'value')) throw invalidJson();
+        yield* jsonTokens(descriptor?.value === undefined ? null : descriptor.value, ancestors, depth + 1);
+      }
+      yield ']';
+    } else {
+      yield '{';
+      let first = true;
+      for (const key of Object.keys(value)) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !Object.hasOwn(descriptor, 'value')) throw invalidJson();
+        if (descriptor.value === undefined) continue;
+        if (!first) yield ',';
+        first = false;
+        yield* jsonStringTokens(key);
+        yield ':';
+        yield* jsonTokens(descriptor.value, ancestors, depth + 1);
+      }
+      yield '}';
+    }
+  } finally { ancestors.delete(value); }
+}
+
+function* jsonTextFragments(value) {
+  let pieces = [];
+  let used = 0;
+  for (const token of jsonTokens(value)) {
+    for (let start = 0; start < token.length;) {
+      const end = stringBoundary(token, start, TEXT_FRAGMENT_CODE_UNITS - used);
+      if (end === start) {
+        yield pieces.join(''); pieces = []; used = 0; continue;
+      }
+      pieces.push(token.slice(start, end));
+      used += end - start;
+      start = end;
+      if (used === TEXT_FRAGMENT_CODE_UNITS) {
+        yield pieces.join(''); pieces = []; used = 0;
+      } else if (pieces.length >= 256) {
+        // Bound the number of tiny token references without making another
+        // response-sized string or array for a document with many fields.
+        pieces = [pieces.join('')];
+      }
+    }
+  }
+  if (used) yield pieces.join('');
 }
 
 function normalizeIdentity(value) {
@@ -94,6 +195,10 @@ async function readJson(bucket, path) {
 
 export async function putImmutableProviderArtifact(bucket, path, bytes, contentType = 'application/octet-stream') {
   const contentHash = await providerSha256(bytes);
+  return putHashedImmutableArtifact(bucket, path, bytes, contentType, contentHash);
+}
+
+async function putHashedImmutableArtifact(bucket, path, bytes, contentType, contentHash) {
   let uploaded;
   try { uploaded = await bucket.upload(path, bytes, { contentType, upsert: false }); }
   catch { uploaded = { error: true }; }
@@ -110,25 +215,61 @@ export async function putImmutableProviderArtifact(bucket, path, bytes, contentT
 }
 
 async function saveResult(bucket, prefix, claim, result) {
-  const bytes = encoder.encode(JSON.stringify(result));
-  if (!bytes.length || bytes.length > MAX_RESPONSE_BYTES) throw new GeminiProviderError('provider_response_too_large', 502, 'received', 1);
   const chunks = [];
-  // Keep individual writes below Supabase's 6 MB standard-upload recommendation.
-  // The final manifest appears only after all create-only chunks are durable.
-  for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
-    const chunk = bytes.subarray(offset, offset + CHUNK_BYTES);
-    let binary = '';
-    for (let at = 0; at < chunk.length; at += 0x8000) binary += String.fromCharCode(...chunk.subarray(at, at + 0x8000));
-    // wrap-files allows JSON but not application/octet-stream. Each chunk is a
-    // complete valid JSON document; base64 preserves UTF-8 across byte splits.
-    const stored = encoder.encode(JSON.stringify({ data: btoa(binary) }));
-    const hash = await providerSha256(stored);
-    chunks.push({ ...await putImmutableProviderArtifact(bucket, `${prefix}/result/${chunks.length}-${hash}.jsonpart`, stored, 'application/json'), rawByteSize: chunk.length });
+  const pending = new Map();
+  const responseHash = createHash('sha256');
+  let byteSize = 0;
+  const settleOne = async () => {
+    const completed = await Promise.race(pending.values());
+    pending.delete(completed.index);
+    if (completed.error) throw completed.error;
+    chunks[completed.index] = completed.ref;
+  };
+  // Do not JSON.stringify/encode the complete 4K response and original request.
+  // That made multiple response-sized allocations and base64-encoded already
+  // encoded images again, exhausting the Edge CPU/memory budget mid-write.
+  // Each new chunk is a valid JSON document holding bounded UTF-8 text; the
+  // private native exchange, including every thought signature, is unchanged.
+  // Two independent Storage writes may overlap, but only those two buffers
+  // stay in flight. Slot order is reserved before dispatch so a faster later
+  // upload cannot reorder the native exchange or publish an early manifest.
+  try {
+    const fragments = jsonTextFragments(result);
+    while (true) {
+      if (pending.size >= MAX_CHUNK_WRITES) await settleOne();
+      const next = fragments.next();
+      if (next.done) break;
+      const text = next.value;
+      const rawByteSize = Buffer.byteLength(text, 'utf8');
+      byteSize += rawByteSize;
+      if (byteSize > MAX_RESPONSE_BYTES || chunks.length >= MAX_TEXT_FRAGMENTS) {
+        throw new GeminiProviderError('provider_response_too_large', 502, 'received', 1);
+      }
+      responseHash.update(text, 'utf8');
+      const stored = Buffer.from(JSON.stringify({ text }), 'utf8');
+      const hash = await providerSha256(stored);
+      const index = chunks.length;
+      chunks.push(null);
+      pending.set(index, putHashedImmutableArtifact(bucket, `${prefix}/result/${index}-${hash}.jsonpart`, stored, 'application/json', hash)
+        .then(ref => ({ index, ref: { ...ref, rawByteSize } }), error => ({ index, error })));
+    }
+    while (pending.size) await settleOne();
+  } catch (error) {
+    // Await every started write, including other failures, before returning.
+    // No detached work or swallowed rejection may outlive this failed receipt.
+    const completed = await Promise.all(pending.values());
+    const errors = [error, ...completed.filter(item => item.error).map(item => item.error)];
+    if (errors.length === 1) throw error;
+    throw Object.assign(new AggregateError(errors, String(error?.message || 'provider_artifact_write_failed'), { cause: error }), {
+      code: error.code, status: error.status, providerOutcome: error.providerOutcome,
+      imageRequestCount: error.imageRequestCount, retryable: error.retryable,
+      providerRetryDisposition: error.providerRetryDisposition,
+    });
   }
   const receipt = {
     contractVersion: GEMINI_PROVIDER_CACHE_CONTRACT, requestHash: claim.requestHash,
-    outputRequestId: claim.outputRequestId, responseHash: await providerSha256(bytes),
-    byteSize: bytes.length, chunks,
+    outputRequestId: claim.outputRequestId, responseHash: responseHash.digest('hex'),
+    encoding: TEXT_FRAGMENT_ENCODING, byteSize, chunks,
   };
   await putImmutableProviderArtifact(bucket, `${prefix}/response.json`, encoder.encode(JSON.stringify(receipt)), 'application/json');
 }
@@ -139,14 +280,20 @@ async function loadResult(bucket, prefix, claim) {
   if (receipt.contractVersion !== GEMINI_PROVIDER_CACHE_CONTRACT || receipt.requestHash !== claim.requestHash
     || receipt.outputRequestId !== claim.outputRequestId || !HASH.test(receipt.responseHash)
     || !Number.isInteger(receipt.byteSize) || receipt.byteSize < 1 || receipt.byteSize > MAX_RESPONSE_BYTES
-    || !Array.isArray(receipt.chunks) || !receipt.chunks.length || receipt.chunks.length > 16) {
+    || (receipt.encoding !== undefined && receipt.encoding !== TEXT_FRAGMENT_ENCODING)
+    || !Array.isArray(receipt.chunks) || !receipt.chunks.length
+    || receipt.chunks.length > (receipt.encoding === TEXT_FRAGMENT_ENCODING ? MAX_TEXT_FRAGMENTS : 16)) {
     throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
   }
+  if (receipt.encoding === TEXT_FRAGMENT_ENCODING) return loadTextResult(bucket, prefix, receipt);
   const bytes = new Uint8Array(receipt.byteSize);
   let offset = 0;
   for (let index = 0; index < receipt.chunks.length; index += 1) {
     const ref = receipt.chunks[index];
-    if (!HASH.test(ref.contentHash) || ref.storagePath !== `${prefix}/result/${index}-${ref.contentHash}.jsonpart`) {
+    if (!HASH.test(ref?.contentHash) || ref.storagePath !== `${prefix}/result/${index}-${ref.contentHash}.jsonpart`
+      || !Number.isSafeInteger(ref.byteSize) || ref.byteSize < 1 || ref.byteSize > STORED_CHUNK_BYTES
+      || !Number.isSafeInteger(ref.rawByteSize) || ref.rawByteSize < 1 || ref.rawByteSize > CHUNK_BYTES
+      || offset + ref.rawByteSize > bytes.length) {
       throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
     }
     const stored = await readBytes(bucket, ref.storagePath, STORED_CHUNK_BYTES);
@@ -157,9 +304,8 @@ async function loadResult(bucket, prefix, claim) {
     try {
       const object = JSON.parse(new TextDecoder().decode(stored));
       if (typeof object.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(object.data)) throw new Error();
-      const binary = atob(object.data);
-      chunk = new Uint8Array(binary.length);
-      for (let at = 0; at < binary.length; at += 1) chunk[at] = binary.charCodeAt(at);
+      chunk = Buffer.from(object.data, 'base64');
+      if (chunk.toString('base64') !== object.data) throw new Error();
     } catch { throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1); }
     if (chunk.length !== ref.rawByteSize || chunk.length > CHUNK_BYTES || offset + chunk.length > bytes.length) {
       throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
@@ -169,6 +315,44 @@ async function loadResult(bucket, prefix, claim) {
   }
   if (offset !== bytes.length || await providerSha256(bytes) !== receipt.responseHash) throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
   try { return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch { throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1); }
+}
+
+async function loadTextResult(bucket, prefix, receipt) {
+  const fragments = [];
+  const responseHash = createHash('sha256');
+  let byteSize = 0;
+  for (let index = 0; index < receipt.chunks.length; index += 1) {
+    const ref = receipt.chunks[index];
+    if (!HASH.test(ref?.contentHash) || ref.storagePath !== `${prefix}/result/${index}-${ref.contentHash}.jsonpart`
+      || !Number.isSafeInteger(ref.byteSize) || ref.byteSize < 1 || ref.byteSize > STORED_CHUNK_BYTES
+      || !Number.isSafeInteger(ref.rawByteSize) || ref.rawByteSize < 1
+      || ref.rawByteSize > 3 * TEXT_FRAGMENT_CODE_UNITS || byteSize + ref.rawByteSize > receipt.byteSize) {
+      throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
+    }
+    const stored = await readBytes(bucket, ref.storagePath, STORED_CHUNK_BYTES);
+    if (!stored || stored.length !== ref.byteSize || await providerSha256(stored) !== ref.contentHash) {
+      throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
+    }
+    let text;
+    try {
+      const object = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(stored));
+      text = object.text;
+      if (typeof text !== 'string' || !text.length || text.length > TEXT_FRAGMENT_CODE_UNITS
+        || Buffer.byteLength(text, 'utf8') !== ref.rawByteSize
+        || (text.charCodeAt(0) >= 0xdc00 && text.charCodeAt(0) <= 0xdfff)
+        || (text.charCodeAt(text.length - 1) >= 0xd800 && text.charCodeAt(text.length - 1) <= 0xdbff)) throw new Error();
+    } catch { throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1); }
+    responseHash.update(text, 'utf8');
+    byteSize += ref.rawByteSize;
+    fragments.push(text);
+  }
+  if (byteSize !== receipt.byteSize || responseHash.digest('hex') !== receipt.responseHash) {
+    throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1);
+  }
+  const json = fragments.join('');
+  fragments.length = 0;
+  try { return JSON.parse(json); }
   catch { throw new GeminiProviderError('provider_cache_invalid', 409, 'received', 1); }
 }
 
@@ -312,7 +496,7 @@ export async function runDurableImageProviderRequest({
     throw new GeminiProviderError('provider_cache_arguments_invalid', 400);
   }
   const identity = normalizeIdentity(suppliedIdentity);
-  if (privateRequest != null && (typeof privateRequest !== 'string' || encoder.encode(privateRequest).length > 20 * 1024 * 1024)) {
+  if (privateRequest != null && (typeof privateRequest !== 'string' || Buffer.byteLength(privateRequest, 'utf8') > 20 * 1024 * 1024)) {
     throw new GeminiProviderError('provider_private_request_invalid', 400);
   }
   await authorize();

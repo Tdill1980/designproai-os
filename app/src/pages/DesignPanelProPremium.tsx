@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
+import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
@@ -97,6 +98,7 @@ import {
   type GeniePrepReceipt,
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
+import { ATLAS_UNCONFIRMED_OUTCOME_MESSAGE, isUnconfirmedProviderOutcome } from "@/lib/designpro-generation-error";
 import {
   flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
@@ -313,6 +315,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     vehicleType,
     setVehicleType,
     generationError,
+    generationErrorCode,
     generationRequestState,
     clearGenerationError,
     flatProofUrl,
@@ -354,6 +357,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     (stage: any) => stage?.key === "proof.build" && stage?.deferred === true,
   ) || null;
   const isFlatFirstDiagnostic = activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
+  const atlasResponseUnconfirmed = isFlatFirstDiagnostic && isUnconfirmedProviderOutcome(generationErrorCode);
   const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
   const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
 
@@ -396,6 +400,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   prepVehicleRef.current = currentPrepVehicle;
 
   const invalidateDesignPrep = () => {
+    if (atlasResponseUnconfirmed) return;
     setDimensionPreview(null);
     setDesignPrepVehicle("");
     setGeniePrep(null);
@@ -1205,6 +1210,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
+    if (atlasResponseUnconfirmed) {
+      toast({ title: "ATLAS response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
+      return;
+    }
     const requestedPipelineMode = pipelineModeRef.current;
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
     if (
@@ -1213,7 +1222,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "MyVehicle is unavailable in Precision Mode",
+        title: "MyVehicle is unavailable for ATLAS generation",
         description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
@@ -1721,7 +1730,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "Revisions are unavailable in Precision Mode",
+        title: "Revisions are unavailable for this ATLAS run",
         description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
@@ -1887,7 +1896,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // it is a production instrument and it lives on the PanelPro Studio board.
   const previewDisplayUrl = mainDisplayUrl;
   const atlasNewRunRequired = isFlatFirstDiagnostic
-    && Boolean(generationError?.includes("Start a new Precision run"));
+    && Boolean(generationError?.includes("Start a new ATLAS run"));
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
@@ -2002,6 +2011,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     <AiPanelGenerator
                       onPanelGenerated={setSelectedPanel}
                       isGenerating={isGeneratingPanel}
+                      generationBlockedReason={atlasResponseUnconfirmed ? "ATLAS response unconfirmed" : undefined}
                       onGenerate={handlePipelineStart}
                       initialPrompt={pushedRender?.originalPrompt || acePrompt || undefined}
                       autoGenerate={!!acePrompt && !pushedRender}
@@ -2304,32 +2314,19 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         )}
 
                         {/* Error state */}
-                        {(renderError || atlasNewRunRequired) && !previewDisplayUrl && !pipelineActive ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-red-500/5 via-background to-red-500/10 px-6">
-                            <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
-                            <p className="text-white text-base font-semibold text-center">
-                              Something went wrong.
-                            </p>
-                            {generationError && (
-                              <p className="text-sm text-red-300 text-center max-w-md">
-                                {generationError}
-                              </p>
-                            )}
-                            <p className="text-sm text-gray-400 text-center">Let's try that again.</p>
-                            <Button
-                              onClick={() => {
-                                setRenderError(false);
-                                clearGenerationError();
-                                invalidateDesignPrep();
-                                setLeftColOpen(true);
-                              }}
-                              size="sm"
-                              className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2"
-                            >
-                              <RefreshCw className="w-4 h-4" />
-                              {isFlatFirstDiagnostic ? "Start New Precision Run" : "Relaunch"}
-                            </Button>
-                          </div>
+                        {(renderError || atlasNewRunRequired || atlasResponseUnconfirmed) && !previewDisplayUrl && !pipelineActive ? (
+                          <DesignGenerationFailure
+                            isAtlas={isFlatFirstDiagnostic}
+                            error={generationError}
+                            errorCode={generationErrorCode}
+                            generationId={generationRequestState?.generationId || visualizationId || generationIdRef.current}
+                            onStartNew={() => {
+                              setRenderError(false);
+                              clearGenerationError();
+                              invalidateDesignPrep();
+                              setLeftColOpen(true);
+                            }}
+                          />
                         ) : previewDisplayUrl ? (
                           <div className="absolute inset-0 flex flex-col">
                             <div className="relative flex-1 min-h-0 group">
@@ -2901,7 +2898,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable in Precision Mode.</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable for this ATLAS run.</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
                           Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
@@ -3003,7 +3000,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="space-y-1">
                           <p className="text-sm text-amber-200">
                             {isFlatFirstDiagnostic
-                              ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete. Start a new Precision run; individual views cannot be retried.`
+                              ? `${allViews.length} of ${requiredViewCount} views generated. The ATLAS proof set is incomplete; individual views cannot be retried here. Open the saved job to inspect its status.`
                               : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
                           </p>
                           {/* NAME THE VIEW AND SAY WHY. A short count told the
@@ -3085,7 +3082,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </p>
                               )}
                               {isFlatFirstDiagnostic ? (
-                                <p className="text-xs text-amber-300">Start a new Precision run.</p>
+                                <p className="text-xs text-amber-300">Open the saved ATLAS job to inspect this view.</p>
                               ) : (
                                 <Button
                                   size="sm"

@@ -2,6 +2,12 @@
 
 Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
+**Upstream incident:** Harvest Moon Coffee (`DID-E9BABE2D`) has no accepted ATLAS
+because its native provider response was only partly saved. PanelProFileOutput
+must remain blocked for that request. See the [persistence repair and live
+acceptance ledger](ATLAS-PROVIDER-RESPONSE-INCIDENT-20260909.md). Existing IDs and
+history remain; no missing panels or approved files are fabricated.
+
 PanelProFileOutput is a new shared application for preparing existing artwork
 against measured output profiles. Its shared handoff preserves DesignPro,
 RecreatePro, GraphicsPro and WallPro identities. This branch connects the
@@ -38,6 +44,17 @@ commit `d6a82db1e33d7922bc363cbcb4de514a8370b17d`.
 passed at 06:32 UTC and the public application bundle changed. This repairs
 read-only progress recovery; it does not enable the child flags or approve a
 physical output trial.
+
+Call 1 identity repair [PR #340](https://github.com/Tdill1980/designproai-os/pull/340)
+is merged at `7eb2fb9eb943e91fd659f5d796f36f2bf096807c`. Production migration
+`20260909062205` is installed, bringing the canonical chain to 97. Its SQL hash,
+permissions, identity guards and unchanged 56-row ATLAS history are verified.
+The matching [server deployment 34322868929](https://github.com/Tdill1980/designproai-os/actions/runs/34322868929)
+passed at 07:18 UTC after exact merged-main CI. Both runtime replicas, gateway
+and shared spool passed; successful new claim-RPC polls and the public
+`index-BOeIciMl.js` bundle were observed after cutover. This repair carries
+separate artwork and manufacturing revision IDs into this app's existing
+handoff contract. The child activation flags and real-template trial remain open.
 
 ## 1. What this app produces
 
@@ -666,8 +683,9 @@ The [Call 1 identity audit](DESIGNPROAI-END-TO-END.md#call-1-identity-audit--9-s
 distinguishes a reserved identity from an accepted master/panel set. Child input
 must bind the accepted ATLAS revision and exact artwork hashes; a handoff or
 snapshot revision ID is a separate identity, not an interchangeable ATLAS ID.
-The submit/claim/completion repair and its local tests are recorded in the parent
-ledger. Installation and a fresh production acceptance remain separate gates.
+The submit/claim/completion repair, passing exact-head CI, production schema and
+matching server installation are recorded in the parent ledger. Fresh model
+output and a real-template production trial remain separate acceptance gates.
 No child may treat the mere reservation of those IDs as accepted artwork.
 
 The parent studio's temporary-connection recovery repair and its tests are

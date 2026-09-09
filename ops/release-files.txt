@@ -68,6 +68,7 @@ runtime/atlas-proof-qc.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
+runtime/inspect-atlas-provider-cache.cjs
 runtime/atlas-revision-intake.cjs
 # Opt-in v3 canonical flat atlas authoring. It is required at module load even
 # when the release is serving legacy v1/v2 requests, so omitting it would make

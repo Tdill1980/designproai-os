@@ -131,6 +131,8 @@ const LOCKED_FEATURES = [
 interface AiPanelGeneratorProps {
   onPanelGenerated: (panel: any) => void;
   isGenerating: boolean;
+  /** A saved request needs investigation before another paid call can start. */
+  generationBlockedReason?: string;
   onGenerate: (params: DesignIQParams) => Promise<void>;
   initialPrompt?: string;
   /** When true, auto-fire the generation once on mount (used by the
@@ -193,6 +195,7 @@ function checkPremiumAccess(userTier: string): boolean {
 export const AiPanelGenerator = ({
   onPanelGenerated,
   isGenerating,
+  generationBlockedReason,
   onGenerate,
   initialPrompt,
   autoGenerate,
@@ -382,6 +385,7 @@ export const AiPanelGenerator = ({
   };
 
   const handleGenerate = async () => {
+    if (generationBlockedReason) return;
     if (!prompt.trim()) return;
 
     // If film grounding is enabled, look up the real film first
@@ -465,9 +469,10 @@ export const AiPanelGenerator = ({
   //
   // The readiness strip tells the customer what the system already knows about
   // their job; it never stands between them and Generate. What remains here is
-  // a double-submit guard and the two in-flight states -- none of which is a
+  // a double-submit guard, the two in-flight states, and an unconfirmed saved
+  // provider request -- none of which is a
   // judgement about whether their input is good enough.
-  const canGenerate = !isGenerating && !isGroundingFilm;
+  const canGenerate = !isGenerating && !isGroundingFilm && !generationBlockedReason;
 
   // WHAT WE HAVE, NOT WHAT IS MISSING.
   //
@@ -1104,7 +1109,7 @@ export const AiPanelGenerator = ({
             className="w-full btn-designiq text-white font-semibold text-base border-0 mt-4"
             size="lg"
           >
-            {isGenerating ? (
+            {generationBlockedReason ? generationBlockedReason : isGenerating ? (
               <>
                 <Sparkles className="w-4 h-4 mr-2 animate-spin" />
                 DesignIQ&#8482; is crafting your design...
