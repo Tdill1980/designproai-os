@@ -28,8 +28,15 @@ def query(token, endpoint, sql):
                 raise RuntimeError("audit_response_size_limit")
             return json.loads(data)
     except urllib.error.HTTPError as error:
-        # No response body, header or credential goes to the log.
-        print(json.dumps({"endpoint": endpoint, "httpStatus": error.code}))
+        # Preserve only known diagnostic terms from a denial, not its raw body,
+        # request headers or credentials. A 403 alone does not prove its cause.
+        try:
+            body = json.loads(error.read(8192))
+            denial = str(body.get("message", body.get("error", ""))) if isinstance(body, dict) else ""
+        except Exception:
+            denial = ""
+        terms = re.findall(r"forbidden|unauthorized|permission|access|scope|clickhouse|bigquery|not enabled|not available|not supported|not found|invalid|token|migration|experimental|disabled", denial, re.IGNORECASE)
+        print(json.dumps({"endpoint": endpoint, "httpStatus": error.code, "diagnosticTerms": sorted(set(terms))}))
         if error.code in (401, 403):
             raise RuntimeError("audit_analytics_access_refused") from None
         return {"error": "http_error"}

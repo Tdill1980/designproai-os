@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   authorizeAtlasProviderRequest, providerSha256, putImmutableProviderArtifact,
-  runDurableImageProviderRequest,
+  runDurableImageProviderRequest, captureGeminiHttpExchange,
 } from '../supabase/functions/_shared/gemini-provider-cache.mjs';
 import { selectFinalGenerateContentImage } from '../supabase/functions/_shared/gemini-image-history.mjs';
 
@@ -108,6 +108,91 @@ test('ambiguous network outcome never automatically creates another image on res
       (error) => error.code === 'provider_outcome_unknown' && error.imageRequestCount === 1 && error.providerOutcome === 'unknown');
   }
   assert.equal(calls, 1);
+});
+
+test('HTTP rejection survives an unreadable JSON body and is replayed without a second POST', async () => {
+  for (const status of [400, 429, 503]) {
+    const bucket = bucketFixture();
+    let calls = 0;
+    const invoke = () => captureGeminiHttpExchange(async () => {
+      calls++;
+      return new Response('<html>upstream failure</html>', { status, headers: { 'retry-after': '17' } });
+    });
+    for (let replay = 0; replay < 2; replay++) {
+      await assert.rejects(runDurableImageProviderRequest(options(bucket, invoke)), error => {
+        assert.equal(error.code, `provider_http_${status}`);
+        assert.equal(error.providerStatus, status);
+        assert.equal(error.retryAfterSeconds, '17');
+        assert.equal(error.retryable, false);
+        assert.equal(error.providerDiagnostic.phase, 'response_body');
+        assert.equal(error.providerDiagnostic.httpStatus, status);
+        assert.equal(error.providerDiagnostic.exceptionClass, 'SyntaxError');
+        return true;
+      });
+    }
+    assert.equal(calls, 1);
+    assert.ok([...bucket.files.keys()].some(path => path.endsWith('/response.json')));
+  }
+});
+
+test('truncated success records only safe diagnostics and remains an unknown outcome across restart', async () => {
+  const bucket = bucketFixture();
+  let calls = 0;
+  const invoke = () => captureGeminiHttpExchange(async () => {
+    calls++;
+    return { status: 200, headers: new Headers(), async json() { throw new SyntaxError('private prompt and API key MUST NOT LEAK'); } };
+  });
+  for (let replay = 0; replay < 2; replay++) {
+    await assert.rejects(runDurableImageProviderRequest(options(bucket, invoke)), error => {
+      assert.equal(error.code, 'provider_outcome_unknown');
+      assert.equal(error.providerOutcome, 'unknown');
+      assert.equal(error.retryable, false);
+      assert.equal(error.providerFailureRecorded, true);
+      assert.deepEqual({ ...error.providerDiagnostic, elapsedMs: 0 }, {
+        contractVersion: 'designpro.gemini-http-diagnostic.v1', phase: 'response_body',
+        httpStatus: 200, exceptionClass: 'SyntaxError', elapsedMs: 0,
+      });
+      return true;
+    });
+  }
+  assert.equal(calls, 1);
+  const recordPath = [...bucket.files.keys()].find(path => path.endsWith('/failure.json'));
+  const stored = Buffer.from(bucket.files.get(recordPath)).toString();
+  assert.doesNotMatch(stored, /private prompt|API key|MUST NOT LEAK|stack/);
+  assert.equal([...bucket.files.keys()].some(path => path.endsWith('/response.json')), false);
+  const corrupt = JSON.parse(stored);
+  corrupt.requestHash = 'b'.repeat(64);
+  bucket.files.set(recordPath, Buffer.from(JSON.stringify(corrupt)));
+  await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no retry'))), { code: 'provider_cache_invalid' });
+});
+
+test('no response headers is distinguished from body failure without assuming generation did not happen', async () => {
+  const bucket = bucketFixture();
+  let calls = 0;
+  const invoke = () => captureGeminiHttpExchange(async () => {
+    calls++;
+    throw new DOMException('contains a sensitive URL', 'TimeoutError');
+  });
+  for (let replay = 0; replay < 2; replay++) {
+    await assert.rejects(runDurableImageProviderRequest(options(bucket, invoke)), error =>
+      error.code === 'provider_outcome_unknown' && error.providerDiagnostic.phase === 'request'
+      && error.providerDiagnostic.httpStatus === null && error.providerDiagnostic.exceptionClass === 'TimeoutError'
+      && error.providerRetryDisposition === 'operator_required');
+  }
+  assert.equal(calls, 1);
+});
+
+test('failed diagnostic persistence cannot remove the claim or authorize another paid request', async () => {
+  const bucket = bucketFixture();
+  const originalUpload = bucket.upload.bind(bucket);
+  bucket.upload = (...args) => args[0].endsWith('/failure.json') ? { error: { statusCode: 503 } } : originalUpload(...args);
+  let calls = 0;
+  const invoke = () => captureGeminiHttpExchange(async () => { calls++; throw new TypeError('socket closed'); });
+  await assert.rejects(runDurableImageProviderRequest(options(bucket, invoke)), error =>
+    error.code === 'provider_outcome_unknown' && error.providerFailureRecorded === false);
+  await assert.rejects(runDurableImageProviderRequest(options(bucket, invoke)), { code: 'provider_outcome_unknown' });
+  assert.equal(calls, 1);
+  assert.equal(bucket.files.size, 1);
 });
 
 test('same creative attempt with changed model/request digest fails closed', async () => {

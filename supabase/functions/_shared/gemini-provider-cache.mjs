@@ -18,6 +18,48 @@ const MAX_CHUNK_WRITES = 2;
 const JSON_STRING_CODE_UNITS = 64 * 1024;
 const MAX_JSON_DEPTH = 64;
 const encoder = new TextEncoder();
+const HTTP_DIAGNOSTIC_CONTRACT = 'designpro.gemini-http-diagnostic.v1';
+const FAILURE_CONTRACT = 'designpro.gemini-provider-failure.v1';
+const EXCEPTION_CLASSES = new Set(['Error', 'TypeError', 'SyntaxError', 'RangeError', 'AbortError', 'TimeoutError']);
+
+function httpDiagnostic(value) {
+  if (!value || value.contractVersion !== HTTP_DIAGNOSTIC_CONTRACT
+    || !['request', 'response_body'].includes(value.phase)
+    || !EXCEPTION_CLASSES.has(value.exceptionClass)
+    || !Number.isSafeInteger(value.elapsedMs) || value.elapsedMs < 0 || value.elapsedMs > 3_600_000
+    || !(value.httpStatus === null || (Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599))) return null;
+  // Explicit projection: exception messages/stacks, request bytes and headers
+  // must never enter an operator/public diagnostic.
+  return { contractVersion: HTTP_DIAGNOSTIC_CONTRACT, phase: value.phase,
+    exceptionClass: value.exceptionClass, httpStatus: value.httpStatus, elapsedMs: value.elapsedMs };
+}
+
+/** Capture ONE HTTP exchange. A non-JSON error body must not erase its status. */
+export async function captureGeminiHttpExchange(send, { now = Date.now } = {}) {
+  const started = now();
+  let response;
+  let phase = 'request';
+  try {
+    response = await send();
+    if (!Number.isInteger(response?.status) || response.status < 100 || response.status > 599) throw new TypeError();
+    phase = 'response_body';
+    return { status: response.status, payload: await response.json(), retryAfterSeconds: response.headers?.get('retry-after') ?? null };
+  } catch (cause) {
+    const diagnostic = httpDiagnostic({ contractVersion: HTTP_DIAGNOSTIC_CONTRACT, phase,
+      exceptionClass: EXCEPTION_CLASSES.has(cause?.name) ? cause.name : 'Error',
+      httpStatus: phase === 'response_body' ? response.status : null,
+      elapsedMs: Math.min(3_600_000, Math.max(0, Math.round(now() - started))) });
+    if (phase === 'response_body' && (response.status < 200 || response.status >= 300)) {
+      // The HTTP rejection is known even when its body cannot be decoded.
+      // Do not invent a Gemini payload or turn a received 429 into ambiguity.
+      return { status: response.status, payload: null,
+        retryAfterSeconds: response.headers?.get('retry-after') ?? null, responseDiagnostic: diagnostic };
+    }
+    throw Object.assign(new GeminiProviderError('provider_outcome_unknown', 409, 'unknown', 1), {
+      providerDiagnostic: diagnostic,
+    });
+  }
+}
 
 export class GeminiProviderError extends Error {
   constructor(code, status = 500, providerOutcome = 'not_sent', imageRequestCount = 0) {
@@ -276,7 +318,19 @@ async function saveResult(bucket, prefix, claim, result) {
 
 async function loadResult(bucket, prefix, claim) {
   const receipt = await readJson(bucket, `${prefix}/response.json`);
-  if (!receipt) throw new GeminiProviderError('provider_outcome_unknown', 409, 'unknown', 1);
+  if (!receipt) {
+    const failure = await readJson(bucket, `${prefix}/failure.json`);
+    const error = new GeminiProviderError('provider_outcome_unknown', 409, 'unknown', 1);
+    if (failure) {
+      if (failure.contractVersion !== FAILURE_CONTRACT || failure.requestHash !== claim.requestHash
+        || failure.outputRequestId !== claim.outputRequestId || !httpDiagnostic(failure.diagnostic)) {
+        throw new GeminiProviderError('provider_cache_invalid', 409, 'unknown', 1);
+      }
+      error.providerDiagnostic = httpDiagnostic(failure.diagnostic);
+      error.providerFailureRecorded = true;
+    }
+    throw error;
+  }
   if (receipt.contractVersion !== GEMINI_PROVIDER_CACHE_CONTRACT || receipt.requestHash !== claim.requestHash
     || receipt.outputRequestId !== claim.outputRequestId || !HASH.test(receipt.responseHash)
     || !Number.isInteger(receipt.byteSize) || receipt.byteSize < 1 || receipt.byteSize > MAX_RESPONSE_BYTES
@@ -536,7 +590,26 @@ export async function runDurableImageProviderRequest({
   } else {
     await authorize();
     try { result = await invoke(); }
-    catch { throw new GeminiProviderError('provider_outcome_unknown', 409, 'unknown', 1); }
+    catch (cause) {
+      const error = new GeminiProviderError('provider_outcome_unknown', 409, 'unknown', 1);
+      const diagnostic = httpDiagnostic(cause?.providerDiagnostic);
+      if (diagnostic) {
+        error.providerDiagnostic = diagnostic;
+        error.providerFailureRecorded = false;
+        try {
+          await putImmutableProviderArtifact(bucket, `${prefix}/failure.json`, encoder.encode(JSON.stringify({
+            contractVersion: FAILURE_CONTRACT, requestHash: claim.requestHash,
+            outputRequestId: claim.outputRequestId, diagnostic,
+          })), 'application/json');
+          error.providerFailureRecorded = true;
+        } catch {
+          // Failure to record diagnostics never permits another image request.
+        }
+        console.warn(JSON.stringify({ event: 'gemini_provider_interrupted', requestId: identity.requestId,
+          attemptKey: identity.attemptKey, ...diagnostic, recorded: error.providerFailureRecorded }));
+      }
+      throw error;
+    }
     if (!result || !Number.isInteger(result.status) || result.status < 100 || result.status > 599) {
       throw new GeminiProviderError('provider_response_invalid', 502, 'unknown', 1);
     }
@@ -550,6 +623,7 @@ export async function runDurableImageProviderRequest({
     const error = new GeminiProviderError(`provider_http_${result.status}`, result.status === 429 ? 429 : 502,
       result.status >= 500 || result.status === 408 ? 'unknown' : 'rejected', 1);
     error.providerStatus = result.status;
+    error.providerDiagnostic = httpDiagnostic(result.responseDiagnostic);
     error.retryAfterSeconds = result.retryAfterSeconds ?? null;
     error.retryable = false;
     error.providerRetryDisposition = 'operator_required';

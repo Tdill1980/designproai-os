@@ -1,6 +1,59 @@
 # ATLAS response persistence incident — 9 September 2026
 
-## Current incident — saved Call-1 image rejected by PNG-only parser
+## Current status — Call 1 recovered; roof finishing remains blocked
+
+The original JPEG rejection is repaired and deployed. The same New Aura request
+then resumed at 22:26:39 UTC, read its saved Call-1 response, and stored private
+finishing checkpoints for Driver, Passenger and Hood. It failed at 22:31:19 UTC
+on `panel:roof:1` with `provider_outcome_unknown`. There is still **no accepted
+master, no published six-panel set and no seven-proof set**. Do not tell the owner
+to test a completed pipeline or mark the output ready.
+
+The roof provider claim was saved at 22:30:49 UTC under key
+`1fa307fe60bc878cf7212e16a927817c79a5d2556169272cc126bf9fd3c3943d`.
+It has no response completion record or saved response fragments. No roof
+second-attempt claim was created. The master authoring fence and all IDs remain
+unchanged. The finishing checkpoints record candidates/retained source results;
+they are not a final whole-master approval.
+
+The old provider wrapper discards every exception thrown by both `fetch()` and
+`response.json()`. Consequently the stored error cannot distinguish a network
+interruption, an unreadable success body, or a known HTTP rejection whose body
+was not JSON. None of those specific causes has been proved for this roof call.
+
+The protected read-only log capture in [PR #346](https://github.com/Tdill1980/designproai-os/pull/346)
+was refused by Supabase with **HTTP 403** at 22:38:53 UTC:
+[audit run 34413238157](https://github.com/Tdill1980/designproai-os/actions/runs/34413238157).
+No alternate credential or access bypass was attempted. The exact denial reason
+is not established from status alone. Restore authorized analytics-log access
+for the existing production automation credential, or have an authorized
+operator provide the `design-panel-ai-generate` invocation
+and runtime logs for 22:30–22:32 UTC on 9 September. The documented permission
+is `analytics_logs_read` (`analytics:read` for OAuth), per the
+[Supabase logs API](https://supabase.com/docs/reference/api/v1-get-project-logs).
+
+### Failure reporting correction
+
+- [x] Add `captureGeminiHttpExchange()` around the two existing ATLAS provider
+  requests. It sends once and retains known HTTP error status even if JSON
+  parsing fails; it does not fabricate a provider payload.
+- [x] Persist sanitized phase, exception class, received HTTP status and elapsed
+  time in a private immutable failure record when a response is interrupted.
+  Unknown outcomes retain their claim and remain operator-required.
+- [x] Replay the same diagnostic after restart, with request/output identity
+  checks; no diagnostic contains exception text, tokens, prompts or signatures.
+- [x] Pass 31 focused native-format, persistence and transport checks, including
+  non-JSON 400/429/503 responses, truncated 200, missing headers, failed diagnostic
+  writes and restart without a second provider call.
+- [ ] Deploy the failure-reporting correction and verify its exact source.
+- [ ] Obtain the denied roof invocation logs and resolve its unknown outcome
+  without deleting the claim or inventing a replacement/approval.
+- [ ] Finish the original six-panel and seven-proof run, then permit owner testing.
+
+This reporting correction cannot reconstruct an old response that was never
+saved, and does not by itself fix the unresolved roof interruption.
+
+## Repaired Call-1 failure — saved image rejected by PNG-only parser
 
 At 21:42:59 UTC the owner submitted New Aura Day Spa, 2021 Lamborghini Urus.
 Request `f5f1d8ce-cd5e-47fc-88af-43b82cd06622`, generation
@@ -34,10 +87,25 @@ readers contained the same PNG-only restriction.
 - [x] Fix PNG-only response admission and truthful native artifact storage.
 - [x] Fix both parent-history readers for the same formats.
 - [x] Pass 62 focused image-format, cache, history, authoring and inspection checks.
-- [ ] Pass the full release gate and deploy exact checked source.
-- [ ] Verify the actual saved response bytes and format in production.
-- [ ] Resume this same request only after verified completion; preserve its
-  immutable authoring fence so Call 1 can read its cache but cannot regenerate.
+- [x] Pass [PR-head release gate 34410462993](https://github.com/Tdill1980/designproai-os/actions/runs/34410462993) and
+  [merged-main gate 34411102368](https://github.com/Tdill1980/designproai-os/actions/runs/34411102368), including application, database, archive and Docker checks.
+- [x] Deploy [PR #345](https://github.com/Tdill1980/designproai-os/pull/345) as
+  server `960bebcd9ce47225a8b24b24840017e00f7d2a10`; both runtime replicas,
+  gateway and web passed [deployment 34411688380](https://github.com/Tdill1980/designproai-os/actions/runs/34411688380)
+  acceptance at 22:24:17 UTC.
+- [x] Deploy `design-panel-ai-generate` v93 at 22:25:40 UTC; all 14 deployed
+  files match checked source. `persona-photographer-render` v40 is retained.
+- [x] At 22:24:37 UTC, verify all 26 saved fragments and fully decode the
+  original **4096 × 4096 JPEG**, 8,066,908 bytes, with one opaque signed part.
+  Response SHA-256: `e7ec199caaecaed0252771943ccf0a10c37ba77cafe008122d7dc7517a444b9f`.
+  Image SHA-256: `b15326546c132933ee45204f167e3de9cfebcfd0896420ff78f6487573fc1a7b`.
+  Inspection made zero writes and zero provider calls; master attempt 2 has no claim.
+- [x] At 22:26:36 UTC, queue only the exact failed request after verified image
+  completion, preserving its immutable authoring fence, input, IDs, version and
+  attempt count. The old error and verification hashes were recorded on its
+  recovery receipt. This authorizes cache-only recovery of Call 1, not a reroll.
+- [x] Recover Call 1 from the verified saved image under the same IDs.
+- [ ] Finish recovery beyond the separate roof-finishing failure above.
 - [ ] Observe accepted master, six panels, seven proofs and deterministic Call 8.
 
 The fix changes encoding transport, not the creative model, prompt, ATLAS
