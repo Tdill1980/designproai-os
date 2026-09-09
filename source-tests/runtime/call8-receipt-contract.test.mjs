@@ -33,7 +33,7 @@ function call8ContractBranch() {
 function call8Receipt() {
   const anchor = claimant.indexOf('receiptKind: "call8.flat-proof"');
   assert.ok(anchor > 0, "the claimant must still send a call8.flat-proof receipt");
-  return claimant.slice(claimant.lastIndexOf("complete(", anchor), claimant.indexOf("\n    }", anchor));
+  return claimant.slice(claimant.lastIndexOf("const proofReceipt = {", anchor), claimant.indexOf("\n    };", anchor));
 }
 
 test("every frozen string literal in the Call 8 SQL contract is what the claimant sends", () => {

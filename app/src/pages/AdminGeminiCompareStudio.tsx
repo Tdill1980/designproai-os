@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +20,7 @@ import {
   type PreflightQc,
   PRODUCTION_SURFACES,
   ROLE_FOR_SOURCE_VIEW_TYPE,
+  SOURCE_VIEW_TYPE_FOR_ROLE,
   SURFACE_QC_CHECKLIST,
   type SurfaceQcRecord,
   type WorkflowArtifact,
@@ -40,6 +42,7 @@ import {
   findPanelProStudioJob,
   listPanelProStudioJobs,
   loadPanelProStudioJob,
+  loadPanelProVersionViews,
   panelProJobAtVersion,
   SURFACE_FOR_SIDE_KEY,
   type PanelProStudioJob,
@@ -48,6 +51,8 @@ import {
 // rendering validation results threw `cn is not defined` and white-screened the
 // whole board into the ErrorBoundary (caught in the 2026-07-24 button audit).
 import { cn } from "@/lib/utils";
+import { panelReviewState, selectSurfaceView } from "@/lib/studio-artifact-identity.mjs";
+import { panelOutputHref } from "@/lib/panelpro-file-output-api";
 import { VersionAssetManifest } from "@/components/designpro/VersionAssetManifest";
 import {
   getProductionPanelPackState,
@@ -949,8 +954,8 @@ function SurfacePairRows({
   /** The version selected by the operator, never an unscoped/latest guess. */
   atlas: FlatAtlasRevision | null;
 }) {
-  const viewFor = (surface: string) =>
-    job.raw_views.find((view) => view.surfaceKey === surface) || null;
+  const viewFor = (surface: GenieSurfaceKey) =>
+    selectSurfaceView(job.raw_views, surface, SOURCE_VIEW_TYPE_FOR_ROLE[surface], atlas);
   const callOneBySurface = new Map(
     (atlas?.callOnePanels || []).map((panel) => [panel.surfaceKey, panel]),
   );
@@ -960,11 +965,13 @@ function SurfacePairRows({
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
           Real design proof ∥ print panel · per surface
+          <Link className="ml-3 text-cyan-700 underline" to={panelOutputHref({ sourceApp: "DesignPro", sourceJobId: job.generation_id, generationId: job.generation_id, designId: job.design_id, ...(atlas?.id ? { revisionId: atlas.id } : {}) })}>Open PanelProFileOutput</Link>
         </div>
         <div className="text-[11px] text-gray-500">
           Left is that side's 3D proof. Right publishes the canonical Call&nbsp;1
           A.T.L.A.S. source immediately, then identifies the Call&nbsp;9 promoted
-          production artifact when it exists.
+          production artifact when it exists. Print rectangles include background
+          artwork through installation cut areas; masks belong to the review overlay.
         </div>
       </div>
 
@@ -975,6 +982,8 @@ function SurfacePairRows({
           const view = viewFor(surface);
           const panelUrl = side?.gemini_url || callOnePanel?.signedUrl || "";
           const promoted = Boolean(side?.gemini_url);
+          const activeArtifact = job.raw_artifacts.find((artifact) => artifact.kind === "panel" && artifact.surfaceKey === surface);
+          const review = panelReviewState({ panel: activeArtifact || callOnePanel, revision: atlas, humanApproved: side?.approved === true });
           const proofMasterHash = view?.atlasBinding?.masterContentHash || null;
           const sourceMasterHash = callOnePanel?.sourceMasterHash || null;
           const bound = promoted
@@ -1018,8 +1027,8 @@ function SurfacePairRows({
                     </span>
                   ) : null}
                   {promoted && (
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${side?.approved ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                      {side?.approved ? "Approved" : "Pending QC"}
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${review.approved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                      {review.label}
                     </span>
                   )}
                 </div>
@@ -2785,8 +2794,16 @@ export default function AdminGeminiCompareStudio() {
     const versions = versionHistory?.versions || [];
     if (!versions.length) return null;
     if (selectedVersionNumber == null) return versions[versions.length - 1];
-    return versions.find((entry) => entry.version === selectedVersionNumber) || versions[versions.length - 1];
+    return versions.find((entry) => entry.version === selectedVersionNumber) || null;
   }, [versionHistory, selectedVersionNumber]);
+
+  const { data: selectedVersionViews } = useQuery({
+    queryKey: ["panelpro-version-views", job?.id, selectedVersion?.revisionId, selectedVersion?.masterContentHash],
+    queryFn: () => loadPanelProVersionViews(String(job?.id || ""), selectedVersion!),
+    enabled: !!job?.id && !!selectedVersion,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
 
   /**
    * The job as it was at the selected version. Switching versions changes the
@@ -2795,13 +2812,14 @@ export default function AdminGeminiCompareStudio() {
    */
   const versionedJob = useMemo(() => {
     const current = job as unknown as PanelProStudioJob | null;
-    if (!current || !selectedVersion) return current;
+    if (!current) return null;
+    if (!selectedVersion) return selectedVersionNumber == null ? current : null;
     try {
-      return panelProJobAtVersion(current, selectedVersion, approvedSidesRef.current);
+      return panelProJobAtVersion({ ...current, raw_views: selectedVersionViews || [] }, selectedVersion, approvedSidesRef.current);
     } catch {
-      return current;
+      return null;
     }
-  }, [job, selectedVersion]);
+  }, [job, selectedVersion, selectedVersionNumber, selectedVersionViews]);
 
   /**
    * Which surfaces read PASS. Computed by the same function the checklist

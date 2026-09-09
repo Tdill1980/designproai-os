@@ -15,8 +15,11 @@ WORKDIR /app
 COPY runtime/package.json runtime/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY runtime/ ./
+# Runtime modules resolve ../supabase from /app, matching the checked-out tree.
+# These exact files are included and hash-bound by ops/release-files.txt.
+COPY supabase/functions/_shared/gemini-image-history.mjs supabase/functions/_shared/gemini-image-interactions.mjs supabase/functions/_shared/gemini-provider-cache.mjs /supabase/functions/_shared/
 COPY ops/runtime-healthcheck.js ./healthcheck.js
-RUN npm run check
+RUN npm run check && node --input-type=module -e "await import('/supabase/functions/_shared/gemini-image-interactions.mjs')"
 USER 10001:10001
 EXPOSE 3001
 CMD ["node", "index.js"]

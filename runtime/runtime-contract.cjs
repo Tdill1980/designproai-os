@@ -18,6 +18,9 @@ const STORAGE_NAMESPACE_RES = Object.freeze([
   // 32072921253).
   new RegExp(`^users/${UUID_PART}/revisions/${UUID_PART}/authoring/[A-Za-z0-9._-]+\\.[A-Za-z0-9]+$`),
   new RegExp(`^designpro/user_${UUID_PART}/${UUID_PART}/[A-Za-z0-9._/-]+$`),
+  // The separate physical-piece app reversibly encodes ':' in piece/asset
+  // identifiers as '~3a'. Keep that alphabet scoped to its own output folders.
+  new RegExp(`^designpro/user_${UUID_PART}/${UUID_PART}/panelprofile/(?:production|review|previews|assets)/[A-Za-z0-9._~/-]+$`),
   new RegExp(`^wrapbox/user_${UUID_PART}/${UUID_PART}/${UUID_PART}/[A-Za-z0-9._/-]+$`),
 ]);
 
@@ -31,7 +34,7 @@ function canonicalTenantKey(value) {
 
 function safeStoragePath(value) {
   const path = String(value || "").trim();
-  if (!path || path.startsWith("/") || path.includes("\\") || path.includes("//") || !/^[A-Za-z0-9._/-]+$/.test(path)) {
+  if (!path || path.startsWith("/") || path.includes("\\") || path.includes("//") || !/^[A-Za-z0-9._~/-]+$/.test(path)) {
     throw new Error("storagePath is not a safe relative Storage path");
   }
   const segments = path.split("/");

@@ -29,7 +29,7 @@ function releaseTree() {
 }
 
 function archive(dir, output) {
-  execFileSync("tar", ["-C", dir, "-czf", output, ".designpro-release.json", "runtime", "gateway", "web", "ops"]);
+  execFileSync("tar", ["-C", dir, "-czf", output, ".designpro-release.json", "runtime", "gateway", "web", "ops", "supabase"]);
 }
 
 test("mutable scripts are DesignPro-only and contain no RP retirement path", () => {
@@ -332,4 +332,33 @@ test("env validator fails closed when email is enabled without an exact provider
   ].join("\n"));
   chmodSync(runtime, 0o600);
   execFileSync("python3", [join(root, "validate-env.py"), runtime, gateway]);
+});
+
+test("graph flags are optional for upgrades and independently validated when configured", () => {
+  const dir = mkdtempSync(join(tmpdir(), "designpro-graph-env-"));
+  const runtime = join(dir, "runtime.env"), gateway = join(dir, "gateway.env");
+  const baseRuntime = [
+    "SUPABASE_URL=https://wozyamlnygaddievzuwn.supabase.co",
+    `SUPABASE_SERVICE_ROLE_KEY=sb_secret_${"s".repeat(40)}`,
+    `WORKER_SECRET=${"w".repeat(40)}`, `GOOGLE_AI_API_KEY=${"g".repeat(32)}`,
+    "GOOGLE_IMAGE_MODEL=gemini-3-pro-image", "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
+    "DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool",
+    "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
+    "DESIGNPRO_TOPAZ_ENABLED=false", "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false", "",
+  ].join("\n");
+  writeFileSync(gateway, read("gateway.env.example").replace(/^WORKER_SECRET=.*$/m, `WORKER_SECRET=${"w".repeat(40)}`));
+  chmodSync(gateway, 0o600);
+  const validate = (flags = "") => {
+    writeFileSync(runtime, baseRuntime + flags);
+    chmodSync(runtime, 0o600);
+    return spawnSync("python3", [join(root, "validate-env.py"), runtime, gateway], { encoding: "utf8" });
+  };
+  assert.equal(validate().status, 0, "preexisting deployments need not already contain the new keys");
+  assert.equal(validate("DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=true\nDESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=false\n").status, 0);
+  assert.equal(validate("DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=false\nDESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=true\n").status, 0);
+  for (const flag of ["DESIGNPRO_PANELPROFILEOUTPUT_ENABLED", "DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED"]) {
+    const invalid = validate(`${flag}=on\n`);
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, new RegExp(`${flag} must be exactly true or false`));
+  }
 });

@@ -129,6 +129,9 @@ async function spoolDeterministicZip64({ spoolDir, runId, materialHash, createSt
     return Object.freeze({ filePath, materialHash: material, contentHash, byteSize, idempotent: false });
   } catch (error) {
     if (error instanceof ZipSpoolError) throw error;
+    // A verified source hash/lease failure is not an I/O retry. Preserve a
+    // producer's explicit permanent refusal instead of consuming retry budget.
+    if (error?.retryable === false && typeof error?.code === "string") throw error;
     throw new ZipSpoolError("zip_spool_write_failed", error.message, true);
   } finally {
     await unlink(partial).catch((error) => { if (error.code !== "ENOENT") throw error; });
@@ -269,10 +272,12 @@ async function uploadSpoolWithTus({
   // vehicle is large enough to cross the line the stage fails closed. The six
   // surface keys are spelled out rather than matched loosely so a new
   // directory still has to be added deliberately.
-  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|surfaces\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|qc-panels\/(?:driver|passenger|hood|roof|front|rear)\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
-  if (!targetMatch) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
+  const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|proof\/stamped-view-(?:driver|passenger|hood|roof|front|rear|closeup|hero3d)-[0-9a-f]{24}\.png|panelprofile\/(?:package-[0-9a-f]{64}\.zip|(?:production|review|previews|assets)\/[A-Za-z0-9._~/-]+-[0-9a-f]{64}\.(?:png|tiff|pdf|svg|jpg|webp|eps))|surfaces\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|qc-panels\/(?:driver|passenger|hood|roof|front|rear)\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
+  const templateTarget = /^designpro-template-private\/v1\/[0-9a-f-]{36}\/(?:sources\/[0-9a-f]{64}|candidates\/[0-9a-f-]{36})\/[a-z-]+-[0-9a-f]{64}\.(?:png|jpg|webp|svg|pdf|eps|json)$/.test(target)
+    || /^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/panelprofile-templates\/[a-z-]+-[0-9a-f]{64}\.(?:png|json)$/.test(target);
+  if ((!targetMatch && !templateTarget) || target.split("/").some(part => !part || part === "." || part === "..")) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
   const extension = target.split(".").pop().toLowerCase();
-  const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript" })[extension];
+  const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript", pdf: "application/pdf", svg: "image/svg+xml", jpg: "image/jpeg", webp: "image/webp", json: "application/json" })[extension];
   if (!expectedType || String(contentType || "").toLowerCase() !== expectedType) fail("tus_content_type_invalid", "Resumable artifact content type does not match its exact extension", false);
   const existing = await verifyStoredArtifact({ supabase, storagePath: target, contentHash: spool.contentHash, byteSize: spool.byteSize, signal });
   if (existing) return existing;

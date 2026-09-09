@@ -201,7 +201,8 @@ test("the worker consumes a READY prep and skips the resolver; otherwise it runs
   const src = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
   assert.ok(src.includes("const prepared = await geniePrep.readReadyPrep({"), "worker reads the prep before resolving");
   assert.ok(/if \(prepared\) \{\s*dimensionRow = prepared\.geometry;/.test(src), "a READY prep is consumed as the dimensionRow");
-  assert.ok(/if \(!prepared\) \{\s*dimensionRow = await resolveFlatAtlasPreviewDimensions\(/.test(src), "the inline resolver remains the fallback");
+  assert.ok(src.includes("resolveDimensions = resolveFlatAtlasPreviewDimensions,"), "the real GENIE resolver remains the default");
+  assert.ok(/if \(!prepared\) \{\s*dimensionRow = await resolveDimensions\(/.test(src), "the inline resolver remains the fallback");
   assert.ok(src.includes("geniePrep: geniePrepReceipt,"), "the lifecycle receipt is handed to Call 1 as metadata");
   assert.ok(src.includes("await geniePrep.reclaimOne().catch(() => null);"), "the idle tick recovers an expired lease");
   const flat = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");

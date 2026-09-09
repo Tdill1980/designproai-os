@@ -469,6 +469,23 @@ function DeliveryArtifacts({ artifacts }: { artifacts: WorkflowArtifact[] }) {
 
 /* ── The two human release gates ─────────────────────────────────── */
 
+export function PanelProfileQcSummary({ outputs }: { outputs: WorkflowStatus["panelProfileOutputs"] }) {
+  const checked = (outputs || []).filter((output) =>
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(output.runId) && output.qcApproved === true
+    && /^[a-f0-9]{64}$/i.test(output.artifactSetHash) && /^[a-f0-9]{64}$/i.test(output.snapshotHash)
+    && Number.isSafeInteger(output.fileCount) && output.fileCount > 0
+    && output.reviewUrl === `/panelpro-file-output/runs/${output.runId}`);
+  if (!checked.length) return null;
+  return <Panel eyebrow="Included physical panels" title="PanelProFileOutput review">
+    <p className="mb-4 text-sm text-muted-foreground">These exact physical panel packages have recorded internal QC and are included in this production run. Inspect them with the matching vehicle proofs before final approval.</p>
+    <ul className="space-y-3">{checked.map((output) => <li key={output.runId} className="rounded-lg border border-border p-4">
+      <p className="text-sm font-medium">{output.fileCount} files · Physical panel QC recorded</p>
+      <div className="mt-2"><ContentHash value={output.artifactSetHash} /></div>
+      <Button asChild variant="outline" size="sm" className="mt-3"><Link to={output.reviewUrl}>Inspect this physical panel package</Link></Button>
+    </li>)}</ul>
+  </Panel>;
+}
+
 function QcGate({
   gate,
   onApprove,
@@ -845,7 +862,11 @@ export default function ProductionWorkflow() {
         />
       )}
       {job.state === "waiting_for_final_qc" && (
+        <PanelProfileQcSummary outputs={job.panelProfileOutputs} />
+      )}
+      {job.state === "waiting_for_final_qc" && (
         <QcGate
+          key={`${job.revisionId}:${(job.panelProfileOutputs || []).map((output) => output.snapshotHash).sort().join(":")}`}
           gate="final"
           onApprove={async (qc, notes) => {
             await dpApi.approveFinalQc(generationId, qc as FinalQc, notes);

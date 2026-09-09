@@ -10,6 +10,7 @@ import {
   revisionStudioVersionCommits,
   loadLayeredEditSources,
   readRevisionStudioDesign,
+  historicalStudioProofs,
 } from "@/lib/revisionstudio-source";
 import { renderClient } from "@/integrations/supabase/renderClient";
 import { downscaleStorageImage } from "@/lib/storage-image";
@@ -58,21 +59,21 @@ import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 // DesignVersionRecordCard is intentionally not mounted: production identity lives in PanelPro.
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
+import { panelOutputHref } from "@/lib/panelpro-file-output-api";
 import { dpApi } from "@/lib/designpro-api";
 import {
   getDesignBuildStatus,
   resumeDesignBuild,
   readDesignAfterEdit,
   submitDesignRevision,
+  readSubmittedRevision,
+  layerRevisionReferenceFiles,
+  pendingRevisionNotes,
+  revisionSurfaces,
   requestDesignBuild,
   type DesignBuildTrigger,
 } from "@/lib/revisionstudio-flow";
 import { formatDid } from "@/lib/designId";
-import {
-  composeRenderWithLayers,
-  uploadCompositeRender,
-  type PlacedLayer,
-} from "@/lib/logo-composite";
 import { parseVersionInfo, getVersionLabel, type VersionInfo } from "@/lib/asset-version";
 import {
   buildRevisionVersionTimeline,
@@ -87,7 +88,6 @@ import type {
 } from "@/types/revision-logo";
 import { toast } from "sonner";
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
-import { GenerationWizard, REVISION_TIPS } from "@/components/tools/GenerationWizard";
 import { RenderQualityRating } from "@/components/RenderQualityRating";
 import { downloadWithOverlay, downloadAllWithOverlay } from "@/lib/download-with-overlay";
 import { stampOverlayOnImage, type OverlaySpec } from "@/lib/overlay-stamper";
@@ -626,6 +626,7 @@ const VIEW_LABELS: Record<string, string> = {
   front: "Front",
   rear: "Rear",
   "close-up": "Close-Up",
+  "hero-3d": "Historical 3D proof",
   hero: "Hero",
   myvehicle_edit: "MyVehicle Edit",
 };
@@ -1054,26 +1055,11 @@ function InlineVisionBoard({
 function InlineStoredProof({ render }: { render: any }) {
   const id = render?.id || null;
   const { data: proofUrl } = useQuery({
-    queryKey: ["revstudio-inline-2dproof", id, render?.admin_notes],
+    queryKey: ["revstudio-inline-2dproof", id, render?.atlas_revision_id, render?._revisionRequest?.requestId],
     enabled: !!id,
-    queryFn: async () => {
-      let notes: Record<string, any> = {};
-      try { notes = render?.admin_notes ? JSON.parse(render.admin_notes) : {}; } catch { /* not JSON */ }
-      // Re-read the freshest row from the server by id — the in-memory copy can
-      // be stale (Call 8 publishes the proof after the design list loaded),
-      // which otherwise hides an already-built proof from this preload.
-      if (id) {
-        const fresh = await readRevisionStudioDesign(String(id)).catch(() => null);
-        if (fresh?.admin_notes) {
-          try { notes = JSON.parse(fresh.admin_notes); } catch { /* keep in-memory */ }
-        }
-      }
-      // The projected proof is the Call-8 customer artifact the server selected
-      // by role, so there is no longer a class of wrong value to screen out --
-      // a 3D render can never arrive under this key. Absent means Call 8 has not
-      // published one yet.
-      return typeof notes?.flat_proof_url === "string" ? notes.flat_proof_url : null;
-    },
+    queryFn: async () => (await getDesignBuildStatus({ generationId: String(id),
+      atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest })).proofUrl,
+    refetchInterval: 15000,
   });
   if (!proofUrl) return null;
   return (
@@ -1116,12 +1102,13 @@ function StoredOrGenerated2DProof({
   const resolvedVizId = render?.id ? String(render.id) : null;
   const resolvingVizId = false;
   const { data: enticeWorkflowStatus } = useQuery({
-    queryKey: ["revstudio-entice-proof-status", resolvedVizId],
+    queryKey: ["revstudio-entice-proof-status", resolvedVizId, render?.atlas_revision_id, render?._revisionRequest?.requestId],
     enabled: !!resolvedVizId,
     queryFn: async () => {
       try {
         return await getDesignBuildStatus({
           visualizationId: String(resolvedVizId),
+          atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest,
         });
       } catch (error: any) {
         if (/not found/i.test(String(error?.message || ""))) return null;
@@ -1151,37 +1138,11 @@ function StoredOrGenerated2DProof({
       setLoading(true);
       setInitialProofUrl(null);
 
-      // Parse the IN-MEMORY admin_notes once — used as an optimistic source and
-      // for the designiq_generation_id lookup. This copy can be STALE: the 8th-
-      // call 2D proof (and any in-studio Generate) saves flat_proof_url to the
-      // DB AFTER the RevisionStudio render list was loaded, so trusting only the
-      // in-memory notes made the 2D button miss an already-saved proof and
-      // needlessly regenerate. So we ALWAYS re-read the latest from the DB below.
-      let notes: Record<string, any> = {};
-      if (render?.admin_notes) {
-        try { notes = JSON.parse(render.admin_notes); } catch { /* not JSON */ }
-      }
-
-      // Re-read the freshest projection for this design from the server, so a
-      // proof Call 8 published after the list loaded is always found. Falls back
-      // to the in-memory notes when the run can't be read.
-      let freshNotes: Record<string, any> = notes;
-      const notesVizId = resolvedVizId || render?.id;
-      if (notesVizId) {
-        const fresh = await readRevisionStudioDesign(String(notesVizId)).catch(() => null);
-        if (fresh?.admin_notes) {
-          try { freshNotes = JSON.parse(fresh.admin_notes); } catch { freshNotes = notes; }
-        }
-      }
-
-      // The projected proof is the Call-8 customer artifact the server selected
-      // by role. There is no second store to fall back to, and no class of wrong
-      // value to screen out: absent means Call 8 has not published one yet, and
-      // the sheet's own build action is what produces it.
-      const cachedUrl =
-        (typeof freshNotes.flat_proof_url === "string" && freshNotes.flat_proof_url)
-        || (typeof notes.flat_proof_url === "string" && notes.flat_proof_url)
-        || null;
+      // Read the same exact revision as the paired panels. A pending edit has
+      // no production proof until its own accepted ATLAS child publishes one.
+      const cachedUrl = await getDesignBuildStatus({ generationId: String(resolvedVizId || render?.id || ""),
+        atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest,
+      }).then((status) => status.proofUrl).catch(() => null);
 
       if (cachedUrl) {
         if (!cancelled) {
@@ -1197,7 +1158,7 @@ function StoredOrGenerated2DProof({
       }
     })();
     return () => { cancelled = true; };
-  }, [render?.id, render?.admin_notes, resolvedVizId]);
+  }, [render?.id, render?.atlas_revision_id, render?._revisionRequest?.requestId, resolvedVizId]);
 
   // Submit (or retry) the durable proof build for the CURRENTLY saved revision.
   // Always re-reads updated_at immediately before submitting, so it can never
@@ -1657,7 +1618,8 @@ export default function RevisionStudioIQ() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const deepLinkId = searchParams.get("id");
+  const deepLinkId = searchParams.get("id") || searchParams.get("generationId");
+  const deepLinkRevisionId = searchParams.get("sourceRevisionId");
   // ApprovePro bridge: when present, the shop opened a specific proof's design
   // here to edit it; "Save to this proof" pushes the edit back as a new
   // version onto that proof and returns to the ApprovePro workbench.
@@ -1753,6 +1715,14 @@ export default function RevisionStudioIQ() {
   const [studioDisplayFullscreenIdx, setStudioDisplayFullscreenIdx] = useState<number | null>(null);
   const [showReviseDialog, setShowReviseDialog] = useState(false);
   const [revisionNotes, setRevisionNotes] = useState("");
+  const revisionContextRef = useRef<string | null>(null);
+  useEffect(() => {
+    const instruction = searchParams.get("revisionInstruction");
+    const context = `${deepLinkId || ""}:${searchParams.get("panelOutputRunId") || ""}:${instruction || ""}`;
+    if (!deepLinkId || !instruction || revisionContextRef.current === context) return;
+    revisionContextRef.current = context;
+    setRevisionNotes((previous) => previous.trim() ? previous : instruction.slice(0, 4000));
+  }, [deepLinkId, searchParams]);
   const [applyToAllViews, setApplyToAllViews] = useState(false);
   // Explicit per-view scope for the next revision. null = follow the smart
   // default (current view + the views that show any panel named in the notes).
@@ -1838,6 +1808,10 @@ export default function RevisionStudioIQ() {
   const [logoLayersByView, setLogoLayersByView] = useState<Record<string, LogoLayer[]>>({});
   // Per-view clean background URLs (set after wand-extracting elements off the render)
   const [cleanBackgroundsByView, setCleanBackgroundsByView] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setLogoLayersByView({});
+    setCleanBackgroundsByView({});
+  }, [selectedRender?.id, selectedVersionTimelineKey]);
   // The layer the user has clicked to "arm" for placement on the next render click
   const [armedLayerId, setArmedLayerId] = useState<string | null>(null);
   // Production method drives LayerStrip behavior — Print & Cut
@@ -1962,7 +1936,7 @@ export default function RevisionStudioIQ() {
       // elements.
       const surfaceKey = SURFACE_KEY_FOR_VIEW[viewKey] || null;
       const sources = surfaceKey
-        ? await loadLayeredEditSources(String(render.id), surfaceKey)
+        ? await loadLayeredEditSources(String(render.id), surfaceKey, revisionParentFor(render))
         : { cleanUrl: null, logos: [] };
       if (!sources.cleanUrl) {
         toast.error(LAYERED_EDIT_UNAVAILABLE_MESSAGE, { id: toastId, duration: 12000 });
@@ -2667,8 +2641,9 @@ export default function RevisionStudioIQ() {
     }
   }, [renders]);
   useEffect(() => {
-    if (!deepLinkId || selectedRender) return;
-    if (renders) {
+    const selectionKey = `${deepLinkId || ""}:${deepLinkRevisionId || "current"}`;
+    if (!deepLinkId || deepLinkFetchedRef.current === selectionKey || (selectedRender && !deepLinkRevisionId)) return;
+    if (renders && !deepLinkRevisionId) {
       // Direct ID match first, then check _mergedIds for renders that were merged
       const found = renders.find((r: any) =>
         r.id === deepLinkId || (r._mergedIds && r._mergedIds.includes(deepLinkId))
@@ -2683,11 +2658,12 @@ export default function RevisionStudioIQ() {
     // Wait for the first page before deciding the feed cannot answer, so an
     // in-feed design is never fetched twice.
     if (!renders) return;
-    if (deepLinkFetchedRef.current === deepLinkId) return;
-    deepLinkFetchedRef.current = deepLinkId;
+    deepLinkFetchedRef.current = selectionKey;
     let live = true;
-    readRevisionStudioDesign(deepLinkId)
+    let settled = false;
+    readRevisionStudioDesign(deepLinkId, deepLinkRevisionId)
       .then((row) => {
+        settled = true;
         if (!live) return;
         if (!row) {
           // The honest answer: this account cannot open that design, or it does
@@ -2699,9 +2675,12 @@ export default function RevisionStudioIQ() {
         setCurrentViewIndex(0);
         window.scrollTo({ top: 0, behavior: "smooth" });
       })
-      .catch(() => { if (live) setDeepLinkMissing(true); });
-    return () => { live = false; };
-  }, [deepLinkId, renders, selectedRender]);
+      .catch(() => { settled = true; if (live) setDeepLinkMissing(true); });
+    return () => {
+      live = false;
+      if (!settled && deepLinkFetchedRef.current === selectionKey) deepLinkFetchedRef.current = null;
+    };
+  }, [deepLinkId, deepLinkRevisionId, renders, selectedRender]);
 
   // ---------------------------------------------------------------------------
   // ApprovePro bridge: ALWAYS load the proof's CURRENT design.
@@ -2761,36 +2740,52 @@ export default function RevisionStudioIQ() {
     // customer's words.
   }, [bridgeProofId]);
 
-  // ---------------------------------------------------------------------------
-  // Re-read the selected design's views from the server when it looks short.
-  //
-  // In RestylePro a design could be spread across several rows -- a hero-only
-  // sibling, a "restored" row, the full-set row -- so an incomplete card meant
-  // hunting the missing angles across siblings and a linked generation row. A
-  // run holds its own seven views, so there is nothing to hunt: a short set
-  // means the remaining views have not been accepted yet, and the fix is to ask
-  // the server again. Display only; nothing is written, and a view already in
-  // hand is never replaced.
-  // ---------------------------------------------------------------------------
+  // Observe the exact submitted request while its new ATLAS version is built.
+  // Old proof URLs never fill a new version's gaps, and alias keys do not count
+  // as additional cameras. Closing this page does not stop server orchestration.
   useEffect(() => {
-    const r = selectedRender;
-    if (!r?.id) return;
-    const urls = (r.render_urls || {}) as Record<string, string>;
-    if (Object.keys(urls).length >= 7) return; // already complete
+    const id = selectedRender?.id;
+    const receipt = selectedRender?._revisionRequest;
+    if (!id) return;
     let cancelled = false;
-    (async () => {
-      const fresh = await readRevisionStudioDesign(String(r.id)).catch(() => null);
-      if (!fresh || cancelled) return;
-      const merged: Record<string, string> = { ...urls };
-      for (const [key, value] of Object.entries(fresh.render_urls)) {
-        if (!merged[key] && value) merged[key] = value;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      let finished = false;
+      try {
+        if (receipt) {
+          const observed = await readSubmittedRevision(receipt);
+          if (cancelled) return;
+          setSelectedRender((previous: any) => {
+            if (previous?.id !== id || previous?._revisionRequest?.requestId !== receipt.requestId) return previous;
+            return { ...previous, render_urls: observed.renderUrls,
+              atlas_revision_id: observed.revision?.id || null,
+              generation_status: observed.request.state === "failed" || observed.request.state === "cancelled" ? "failed"
+                : observed.request.state === "outputs_ready" && observed.proofCount === 7 ? "completed" : "processing",
+              _revisionState: observed.request.state,
+              _revisionHandoffNeedsAttention: Boolean(observed.request.revisionHandoffError),
+              _revisionProofCount: observed.proofCount,
+              revision: receipt.revisionSequence,
+            };
+          });
+          if (observed.revision) queryClient.invalidateQueries({ queryKey: ["design-version-history", id] });
+          finished = ["failed", "cancelled"].includes(observed.request.state);
+          // Keep signed previews fresh after completion and let the normal
+          // production-layers observer display the server's automatic handoff.
+        } else {
+          const fresh = await readRevisionStudioDesign(String(id), selectedRender.atlas_revision_id);
+          if (cancelled || !fresh) return;
+          setSelectedRender((previous: any) => previous?.id === id && !previous?._revisionRequest
+            ? { ...previous, ...fresh } : previous);
+        }
+      } catch {
+        // A failed read keeps this revision's last verified previews. A retry
+        // never substitutes another version or claims that work completed.
       }
-      if (Object.keys(merged).length > Object.keys(urls).length) {
-        setSelectedRender((prev: any) => (prev?.id === r.id ? { ...prev, render_urls: merged } : prev));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedRender?.id]);
+      if (!cancelled && !finished) timer = setTimeout(refresh, receipt ? 5000 : 15000);
+    };
+    void refresh();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedRender?._revisionRequest?.requestId, queryClient]);
 
   // ---------------------------------------------------------------------------
   // RE-SIGN THE VIEWS BEFORE OPENING A PROOF. (Trish 2026-08-31: "show 3d proof
@@ -2824,15 +2819,16 @@ export default function RevisionStudioIQ() {
     // exactly what the customer sees today.
     open(true);
     if (!id) return;
-    const fresh = await readRevisionStudioDesign(id).catch(() => null);
+    if (selectedRender?._revisionRequest) return;
+    const fresh = await readRevisionStudioDesign(id, selectedVersionTimelineKey?.startsWith("commit:") ? selectedVersionTimelineKey.slice(7) : selectedRender?.atlas_revision_id).catch(() => null);
     if (!fresh?.render_urls) return;
     setSelectedRender((prev: any) => {
       if (prev?.id !== id) return prev;
       // Replace every url the server re-signed; keep any key it no longer
       // reports rather than blanking a tile the sheet was already showing.
-      return { ...prev, render_urls: { ...prev.render_urls, ...fresh.render_urls } };
+      return { ...prev, render_urls: fresh.render_urls };
     });
-  }, [selectedRender?.id]);
+  }, [selectedRender?.id, selectedRender?._revisionRequest, selectedRender?.atlas_revision_id, selectedVersionTimelineKey]);
 
   // ---------------------------------------------------------------------------
   // Fetch version chain for selected render
@@ -2891,7 +2887,14 @@ export default function RevisionStudioIQ() {
 
   // Null unless this design is a standalone run, which is what lets the card
   // keep its existing behaviour for every design that is not.
+  const revisionParentFor = (render: any): string | null => {
+    if (selectedVersionTimelineKey?.startsWith("commit:")) return selectedVersionTimelineKey.slice(7);
+    if (render?.id === deepLinkId && !render?._revisionRequest && searchParams.get("sourceRevisionId")) return searchParams.get("sourceRevisionId");
+    return render?.atlas_revision_id || null;
+  };
   const standaloneProductionLayers = useStandaloneProductionLayers(productionLayersId, {
+    revisionId: selectedVersionTimelineKey?.startsWith("commit:") ? selectedVersionTimelineKey.slice(7)
+      : selectedRender?._revisionRequest ? selectedRender.atlas_revision_id || `pending:${selectedRender._revisionRequest.requestId}` : selectedRender?.atlas_revision_id || null,
     returnPath: typeof window !== "undefined" ? window.location.pathname : undefined,
   });
 
@@ -2960,7 +2963,7 @@ export default function RevisionStudioIQ() {
     {
       const current = await readRevisionStudioDesign(String(render.id));
       if (!current) throw new Error("The edited revision could not be resolved");
-      source = { ...render, ...current };
+      source = { ...render, ...current, render_urls: render.render_urls, atlas_revision_id: revisionParentFor(render) };
     }
 
     const allowedPatchKeys = new Set([
@@ -3019,6 +3022,8 @@ export default function RevisionStudioIQ() {
       trigger,
       change,
       patch,
+      parentAtlasRevisionId: revisionParentFor(render),
+      panelOutputRunId: render.id === deepLinkId ? searchParams.get("panelOutputRunId") : null,
     });
     const mergedNotes = { ...existingNotes, ...adminNotesPatch };
     // The server's answer wins on the views, because it owns them. The notes
@@ -3029,15 +3034,20 @@ export default function RevisionStudioIQ() {
       id: source.id,
       updated_at: accepted.updated_at,
       render_urls: accepted.render_urls,
-      admin_notes: JSON.stringify(mergedNotes),
+      admin_notes: pendingRevisionNotes(mergedNotes),
     };
     setSelectedRender((previous: any) =>
       previous?.id === source.id
         ? {
             ...previous,
-            render_urls: renderUrls,
+            render_urls: accepted.render_urls,
             updated_at: accepted.updated_at,
             admin_notes: saved.admin_notes,
+            _revisionRequest: accepted.revisionReceipt,
+            _revisionState: accepted.revisionReceipt.state,
+            atlas_revision_id: null,
+            revision: accepted.revisionReceipt.revisionSequence,
+            generation_status: "processing",
             ...(patch.finish_type !== undefined
               ? { finish_type: patch.finish_type }
               : {}),
@@ -3050,9 +3060,13 @@ export default function RevisionStudioIQ() {
     // Every successful atomic save appends an immutable ledger commit. Refresh
     // the OS timeline immediately; its 60-second cache must never make a new
     // precise edit, mirror, or in-place revision look like it disappeared.
-    queryClient.invalidateQueries({ queryKey: ["version-commits"] });
+    setSelectedVersionTimelineKey(null);
+    setLogoLayersByView({});
+    setCleanBackgroundsByView({});
+    queryClient.invalidateQueries({ queryKey: ["design-version-history"] });
+    toast.success("Revision submitted. Matching panels and vehicle proofs will regenerate as this version is accepted.");
     return { saved, accepted };
-  }, [queryClient]);
+  }, [queryClient, selectedVersionTimelineKey, deepLinkId, searchParams]);
 
   const savePreciseEditRevision = useCallback(async (
     render: any,
@@ -3069,11 +3083,6 @@ export default function RevisionStudioIQ() {
       trigger: "precise_edit",
       change: { type: "edit", viewKeys: [viewKey] },
     });
-    setSelectedRender((previous: any) =>
-      previous?.id === render.id
-        ? { ...previous, render_urls: updatedUrls }
-        : previous,
-    );
     queryClient.invalidateQueries({
       queryKey: ["revision-studio-renders"],
     });
@@ -3130,12 +3139,18 @@ export default function RevisionStudioIQ() {
    * The timeline below is untouched: the canonical history is projected into
    * the exact shape it already draws.
    */
-  const { data: versionCommits } = useQuery<VersionCommit[]>({
-    queryKey: ["design-version-history", selectedRender?.id],
+  const historyRevisionId = selectedVersionTimelineKey?.startsWith("commit:")
+    ? selectedVersionTimelineKey.slice(7) : selectedRender?.atlas_revision_id || null;
+  const { data: versionCommits, isFetching: loadingHistoryProofs, isError: historyProofsFailed } = useQuery<VersionCommit[]>({
+    queryKey: ["design-version-history", selectedRender?.id, historyRevisionId],
     queryFn: async () =>
-      (await revisionStudioVersionCommits(String(selectedRender?.id || ""))) as unknown as VersionCommit[],
+      (await revisionStudioVersionCommits(String(selectedRender?.id || ""), historyRevisionId)) as unknown as VersionCommit[],
+    // Keep the existing ledger visible while its selected proof URLs load.
+    // Never carry another generation's history into the next open design.
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === selectedRender?.id ? previous : undefined,
     enabled: !!selectedRender?.id,
     staleTime: 60 * 1000,
+    refetchInterval: 4 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
   // ---------------------------------------------------------------------------
@@ -3417,21 +3432,11 @@ export default function RevisionStudioIQ() {
         ? await getDesignIQModeAndDetails(sourceRender)
         : { mode: "restyle" as const };
 
-      // Build prompt history chain - carry forward from parent + append current revision
-      const parentHistory: Array<{ version: number; prompt: string; timestamp: string; view_key: string; type: string }> =
-        existingNotes.prompt_history || [];
-      const seededHistory = parentHistory.length === 0 && originalPrompt
-        ? [{ version: 1, prompt: originalPrompt, timestamp: sourceRender.created_at || new Date().toISOString(), view_key: "side", type: "original" }]
-        : [...parentHistory];
-      // For Restyle on New Vehicle, store the vehicle change as the prompt entry
+      // Existing history is read from the server. Only the in-progress card's
+      // requested edit is carried here; no browser-generated history entry.
       const promptEntry = notes.trim()
         ? notes
         : (vehicleOverride ? `Restyled on ${vehicleOverride.year} ${vehicleOverride.make} ${vehicleOverride.model}` : "Clone");
-      const promptType = notes.trim() ? "revision" : (vehicleOverride ? "restyle" : "clone");
-      const promptHistory = [
-        ...seededHistory,
-        { version: newVersion, prompt: promptEntry, timestamp: new Date().toISOString(), view_key: currentViewKey || "side", type: promptType },
-      ];
 
       // Ensure VisionBoard image URLs are cached in admin_notes for this and future revisions
       if (!existingNotes.visionboard_image_urls) {
@@ -3458,7 +3463,6 @@ export default function RevisionStudioIQ() {
       const versionMeta = {
         ...existingNotes,
         original_prompt: originalPrompt, // Preserve for future revisions
-        prompt_history: promptHistory, // Living chain of all prompts
         designiq_mode: existingNotes.designiq_mode || designIQInfo.mode,
         ...(designIQInfo.mode === "commercial" ? {
           company_name: existingNotes.company_name || designIQInfo.companyName,
@@ -3492,11 +3496,25 @@ export default function RevisionStudioIQ() {
       const panelPrefix = panelTargets && panelTargets.length > 0
         ? `Apply ONLY to ${panelTargets.map(k => PANEL_TARGETS.find(p => p.key === k)?.label || k).join(", ")}. `
         : "";
+      const layerViewKeys = [...new Set([
+        ...Object.keys(cleanBgsArg || {}),
+        ...Object.entries(logoLayersArg || {}).filter(([, layers]) => layers.some((layer) => layer.placement)).map(([key]) => key),
+      ])];
+      const referenceFiles = await layerRevisionReferenceFiles(layerViewKeys.map((viewKey) => ({
+        viewKey,
+        backgroundUrl: cleanBgsArg?.[viewKey] || sourceRender.render_urls?.[viewKey] || "",
+        layers: (logoLayersArg?.[viewKey] || []).filter((layer) => layer.placement).map((layer) => ({
+          id: layer.id, cleanedUrl: layer.sourceUrl, ...layer.placement!,
+        })),
+      })));
+      const layerInstruction = layerViewKeys.length
+        ? `Use the supplied layer edit references for ${layerViewKeys.map((key) => VIEW_LABELS[key] || key).join(", ")}. Apply the shown artwork placement or removal to the saved design, preserve the remaining artwork, and rebuild matching print panels and vehicle proofs for review.`
+        : "";
       const effectivePrompt = notes.trim()
         ? panelPrefix + notes
         : (isRestyleOnNewVehicle
             ? (originalPrompt || `Restyle this wrap design on a ${resolvedVehicle.year} ${resolvedVehicle.make} ${resolvedVehicle.model}`)
-            : "");
+            : layerInstruction);
       if (!effectivePrompt.trim()) {
         throw new Error(
           "Type what you want changed. A revision is authored from the brief, so an empty note has nothing to act on.",
@@ -3527,9 +3545,17 @@ export default function RevisionStudioIQ() {
       const designName = `${baseName} (V${newVersion})`;
       const revised = await submitDesignRevision({
         source: sourceRender,
-        instruction: effectivePrompt,
+        instruction: notes.trim() && layerInstruction ? `${effectivePrompt}\n\n${layerInstruction}` : effectivePrompt,
         vehicle: resolvedVehicle,
         designName,
+        parentAtlasRevisionId: revisionParentFor(sourceRender),
+        affectedSurfaces: revisionSurfaces([...(panelTargets?.length ? panelTargets : targetViewKeys || (applyToAll ? ["driver", "passenger", "hood", "roof", "front", "rear"] : currentViewKey ? [currentViewKey] : [])), ...layerViewKeys]),
+        referenceUrls: [...new Set([
+          ...(visionBoardImages || []).map((image) => image.storageUrl),
+          ...layerViewKeys.flatMap((key) => (logoLayersArg?.[key] || []).filter((layer) => layer.placement).map((layer) => layer.sourceUrl)),
+        ].filter(Boolean))],
+        referenceFiles,
+        panelOutputRunId: sourceRender.id === deepLinkId ? searchParams.get("panelOutputRunId") : null,
       });
 
       // The card the page selects while the server works. Its views are empty
@@ -3540,10 +3566,14 @@ export default function RevisionStudioIQ() {
       return {
         ...sourceRender,
         id: revised.generationId,
-        design_file_name: designName,
-        color_name: designName,
+        design_file_name: `${baseName} (V${revised.revisionSequence})`,
+        color_name: `${baseName} (V${revised.revisionSequence})`,
         render_urls: {},
-        admin_notes: JSON.stringify(versionMeta),
+        admin_notes: pendingRevisionNotes({ ...versionMeta, version: { ...versionMeta.version, version: revised.revisionSequence, revision_notes: notes.trim() && layerInstruction ? `${effectivePrompt}\n\n${layerInstruction}` : effectivePrompt } }),
+        _revisionRequest: revised,
+        _revisionState: revised.state,
+        atlas_revision_id: null,
+        revision: revised.revisionSequence,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         generation_status: "processing",
@@ -3552,6 +3582,8 @@ export default function RevisionStudioIQ() {
     onSuccess: (newRender) => {
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
       queryClient.invalidateQueries({ queryKey: ["version-chain"] });
+      queryClient.invalidateQueries({ queryKey: ["design-version-history"] });
+      setSelectedVersionTimelineKey(null);
       const version = parseVersionInfo(newRender);
       const isRestyle = version.revisionNotes?.startsWith("Restyled on ");
       toast.success(isRestyle
@@ -3566,6 +3598,8 @@ export default function RevisionStudioIQ() {
         }
       } catch { /* non-fatal */ }
       setSelectedRender(newRender);
+      setLogoLayersByView({});
+      setCleanBackgroundsByView({});
       // Stay on the revised view so user sees the edit (don't reset to 0)
       const newViews = getViews(newRender);
       const revisedKey = version.revisedViewKey || "side";
@@ -3667,13 +3701,22 @@ export default function RevisionStudioIQ() {
           model: String(render.vehicle_model || ""),
         },
         designName,
+        parentAtlasRevisionId: revisionParentFor(render),
+        affectedSurfaces: revisionSurfaces(panelTargets?.length ? panelTargets : applyToAll ? ["driver", "passenger", "hood", "roof", "front", "rear"] : currentViewKey ? [currentViewKey] : []),
+        referenceUrls: (visionBoardImages || []).map((image) => image.storageUrl).filter(Boolean),
+        panelOutputRunId: render.id === deepLinkId ? searchParams.get("panelOutputRunId") : null,
       });
       return {
         ...render,
         id: revised.generationId,
-        design_file_name: designName,
-        color_name: designName,
+        admin_notes: pendingRevisionNotes(render.admin_notes),
+        design_file_name: `${baseName} (V${revised.revisionSequence})`,
+        color_name: `${baseName} (V${revised.revisionSequence})`,
         render_urls: {},
+        _revisionRequest: revised,
+        _revisionState: revised.state,
+        atlas_revision_id: null,
+        revision: revised.revisionSequence,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         generation_status: "processing",
@@ -3682,8 +3725,12 @@ export default function RevisionStudioIQ() {
     onSuccess: (updatedRender) => {
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
       queryClient.invalidateQueries({ queryKey: ["version-chain"] });
+      queryClient.invalidateQueries({ queryKey: ["design-version-history"] });
+      setSelectedVersionTimelineKey(null);
       toast.success("Revision submitted — your new version is being designed. The previous version is preserved.");
       setSelectedRender(updatedRender);
+      setLogoLayersByView({});
+      setCleanBackgroundsByView({});
       // Stay on the revised view so user sees the edit (don't reset to 0)
       const newViews = getViews(updatedRender);
       const existingNotesP = (() => { try { return JSON.parse(updatedRender.admin_notes || "{}"); } catch { return {}; } })();
@@ -3944,6 +3991,10 @@ export default function RevisionStudioIQ() {
   // or failed angle actually needs, and says plainly that changing what a view
   // shows is a revision.
   const regenerateSingleView = async (render: any, viewKey: string) => {
+    if (viewKey === "hero-3d") {
+      toast.info("Historical 3D proofs are available for inspection only.");
+      return;
+    }
     if (!render?.id) {
       toast.error("Open a design first.");
       return;
@@ -4000,7 +4051,7 @@ export default function RevisionStudioIQ() {
       );
       const baseName = (render.design_file_name || render.color_name || "Design")
         .replace(/\s*\(V\d+\)$/, "");
-      await submitDesignRevision({
+      const revised = await submitDesignRevision({
         source: render,
         instruction: `Change the vinyl wrap finish to a ${finishDesc}. Keep the design, colours and artwork exactly as they are; change only the surface finish.`,
         vehicle: {
@@ -4009,13 +4060,22 @@ export default function RevisionStudioIQ() {
           model: String(render.vehicle_model || ""),
         },
         designName: `${baseName} (V${lineageMaxVersion + 1})`,
+        parentAtlasRevisionId: revisionParentFor(render),
+        panelOutputRunId: render.id === deepLinkId ? searchParams.get("panelOutputRunId") : null,
       });
+      setSelectedRender({ ...render, render_urls: {}, atlas_revision_id: null, admin_notes: pendingRevisionNotes(render.admin_notes),
+        _revisionRequest: revised, _revisionState: revised.state, revision: revised.revisionSequence,
+        generation_status: "processing", finish_type: targetFinish });
+      setSelectedVersionTimelineKey(null);
+      setLogoLayersByView({});
+      setCleanBackgroundsByView({});
       toast.success(
         `${targetFinish} finish submitted as a revision — it applies to all seven views and every panel, not just this angle.`,
         { duration: 10000 },
       );
       queryClient.invalidateQueries({ queryKey: ["revision-studio-renders"] });
       queryClient.invalidateQueries({ queryKey: ["version-chain"] });
+      queryClient.invalidateQueries({ queryKey: ["design-version-history", render.id] });
     } catch (error: any) {
       toast.error(`Couldn't submit the finish change: ${error?.message || error}`);
     } finally {
@@ -4196,10 +4256,9 @@ export default function RevisionStudioIQ() {
     const extra = standard.length === 0
       ? NON_CANONICAL.filter((k) => urls[k]).map((k) => ({ key: k, url: urls[k] }))
       : [];
-    return [...standard, ...extra];
+    return [...standard, ...extra, ...historicalStudioProofs(urls)];
   };
 
-  const selectedViews = selectedRender ? getViews(selectedRender) : [];
   const missingViews = selectedRender ? getMissingViews(selectedRender) : [];
 
   // ── Immutable OS version projection ──────────────────────────────────────
@@ -4226,14 +4285,18 @@ export default function RevisionStudioIQ() {
       const explicitlySelected = versionTimeline.find(
         (entry) => entry.key === selectedVersionTimelineKey,
       );
-      if (explicitlySelected) return explicitlySelected;
+      return explicitlySelected || null;
+    }
+    if (selectedRender?.atlas_revision_id) {
+      const savedSelection = versionTimeline.find((entry) => entry.key === `commit:${selectedRender.atlas_revision_id}`);
+      if (savedSelection) return savedSelection;
     }
     const entriesForWorkingRow = versionTimeline.filter(
       (entry) => entry.row?.id === selectedRender?.id,
     );
     return entriesForWorkingRow[entriesForWorkingRow.length - 1] ||
       versionTimeline[versionTimeline.length - 1];
-  }, [selectedRender?.id, selectedVersionTimelineKey, versionTimeline]);
+  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedVersionTimelineKey, versionTimeline]);
   const previousVersionPresentation = useMemo(
     () => selectedVersionPresentation?.previousKey
       ? versionTimeline.find((entry) => entry.key === selectedVersionPresentation.previousKey) || null
@@ -4241,11 +4304,20 @@ export default function RevisionStudioIQ() {
     [selectedVersionPresentation, versionTimeline],
   );
   const activeCommit = selectedVersionPresentation?.commit || null;
-  const isViewingImmutableVersion = Boolean(
-    selectedVersionTimelineKey && selectedVersionPresentation?.immutable,
-  );
+  const isViewingImmutableVersion = Boolean(selectedVersionTimelineKey?.startsWith("commit:"));
+  const selectedViews = isViewingImmutableVersion
+    ? getViews({ render_urls: selectedVersionPresentation?.currentUrls || {} })
+    : selectedRender ? getViews(selectedRender) : [];
+  const isReadOnlyProof = isViewingImmutableVersion || selectedViews[currentViewIndex]?.key === "hero-3d";
+  const selectedInspectionRender = isViewingImmutableVersion && selectedRender
+    ? { ...selectedRender, render_urls: selectedVersionPresentation?.currentUrls || {},
+      atlas_revision_id: historyRevisionId, _revisionRequest: undefined }
+    : selectedRender;
   const immutableHistoryHero = useMemo(() => {
     if (!isViewingImmutableVersion || !selectedVersionPresentation) return null;
+    // The seven angle controls inspect the selected saved version, too.
+    const inspected = getViews({ render_urls: selectedVersionPresentation.currentUrls })[currentViewIndex];
+    if (inspected) return inspected;
     // If the commit removed its only changed surface, do not silently show an
     // unchanged Driver image. A deletion has no "after" pixels and the empty
     // state below says that explicitly. For a no-op/import commit, a canonical
@@ -4258,13 +4330,13 @@ export default function RevisionStudioIQ() {
       ? selectedVersionPresentation.currentUrls[key] || null
       : selectedVersionPresentation.thumbnailUrl;
     return key && url ? { key, url } : null;
-  }, [isViewingImmutableVersion, selectedVersionPresentation]);
+  }, [isViewingImmutableVersion, selectedVersionPresentation, currentViewIndex]);
   const displayedHeroView = isViewingImmutableVersion
     ? immutableHistoryHero
     : selectedViews[currentViewIndex] || null;
 
   useEffect(() => {
-    if (!isViewingImmutableVersion) return;
+    if (!isReadOnlyProof) return;
     // A tool can already be armed before the user opens history. Tear down all
     // mutation surfaces so no invisible canvas, modal, or keyboard-focused
     // control can edit the working row while the hero shows frozen pixels.
@@ -4274,15 +4346,15 @@ export default function RevisionStudioIQ() {
     setPreciseEditOpen(false);
     setPrecisionModalOpen(false);
     setSideBoxesOpen(false);
-  }, [isViewingImmutableVersion]);
+  }, [isReadOnlyProof]);
 
   // ── Per-view revision scope ────────────────────────────────────────────────
   // Which angles the next "Revise & Clone" will touch. The displayed view is the
   // anchor (always edited); the smart default ALSO adds any angle that shows a
   // panel named in the notes (e.g. "hood" → hood_detail + front) but nothing
   // else — so the rear is never changed unless the user explicitly picks it.
-  const availableViewKeys = selectedViews.map((v) => v.key);
-  const currentScopeAnchorKey = selectedViews[currentViewIndex]?.key;
+  const availableViewKeys = selectedViews.filter((view) => view.key !== "hero-3d").map((v) => v.key);
+  const currentScopeAnchorKey = isReadOnlyProof ? undefined : selectedViews[currentViewIndex]?.key;
   const autoScopeViews = (() => {
     const set = new Set<string>();
     if (currentScopeAnchorKey) set.add(currentScopeAnchorKey);
@@ -4627,9 +4699,10 @@ export default function RevisionStudioIQ() {
               galleryRenders.map((render: any) => {
                 const vehicleInfo = formatVehicleInfo(render);
                 const designLabel = render.design_file_name || render.color_name || "Design";
-                const viewOrder = ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"];
-                const viewLabels: Record<string, string> = { side: "Driver", "passenger-side": "Passenger", hood_detail: "Hood", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof" };
-                const urls = (render.render_urls || {}) as Record<string, string>;
+                const historical = historicalStudioProofs(render.render_urls);
+                const urls = { ...(render.render_urls || {}), ...Object.fromEntries(historical.map((view) => [view.key, view.url])) } as Record<string, string>;
+                const viewOrder = [...VIEW_ORDER.filter((key) => key !== "close-up" || urls[key] || !historical.length), ...historical.map((view) => view.key)];
+                const viewLabels: Record<string, string> = { side: "Driver", "passenger-side": "Passenger", hood_detail: "Hood", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof", "hero-3d": "Historical 3D proof" };
                 const viewCount = viewOrder.filter((v) => urls[v]).length;
 
                 return (
@@ -4649,8 +4722,8 @@ export default function RevisionStudioIQ() {
                       {render.is_featured_hero && (
                         <Star className="h-4 w-4 text-amber-400 fill-amber-400 shrink-0" />
                       )}
-                      <span className={cn("text-[10px] font-bold", viewCount === 7 ? "text-emerald-400" : "text-red-400")}>
-                        {viewCount}/7
+                      <span className={cn("text-[10px] font-bold", viewCount === viewOrder.length ? "text-emerald-400" : "text-red-400")}>
+                        {viewCount}/{viewOrder.length}
                       </span>
                       <Button
                         size="sm"
@@ -4876,7 +4949,7 @@ export default function RevisionStudioIQ() {
             {/* ============================================================ */}
             {/* MISSING RENDERS ALERT                                       */}
             {/* ============================================================ */}
-            {!isViewingImmutableVersion && missingViews.length > 0 && !isMyVehicleRender(selectedRender) && (
+            {!isReadOnlyProof && missingViews.length > 0 && !isMyVehicleRender(selectedRender) && (
               <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-950/20 overflow-hidden">
                 <div className="flex items-start gap-4 p-4">
                   <div className="flex-shrink-0 mt-0.5">
@@ -5015,7 +5088,7 @@ export default function RevisionStudioIQ() {
                     // This is what makes "Separate Elements" actually remove the element
                     // from the displayed image.
                     const viewKey = displayedHeroView.key;
-                    const displayUrl = isViewingImmutableVersion
+                    const displayUrl = isReadOnlyProof
                       ? displayedHeroView.url
                       : cleanBackgroundsByView[viewKey] || displayedHeroView.url;
                     return (
@@ -5032,7 +5105,11 @@ export default function RevisionStudioIQ() {
                       <div className="flex flex-col items-center gap-2">
                         <ImageIcon className="w-10 h-10 opacity-30" />
                         <span className="text-sm opacity-60">
-                          {isViewingImmutableVersion && selectedVersionPresentation?.changedKeys.length
+                          {isViewingImmutableVersion && loadingHistoryProofs
+                            ? "Loading this saved version’s vehicle proofs…"
+                            : isViewingImmutableVersion && historyProofsFailed
+                              ? "This saved version’s proofs could not be loaded. Please try again."
+                            : isViewingImmutableVersion && selectedVersionPresentation?.changedKeys.length
                             ? "Changed surface was removed in this immutable version"
                             : isViewingImmutableVersion
                               ? "This immutable version has no canonical preview"
@@ -5066,7 +5143,7 @@ export default function RevisionStudioIQ() {
                   )}
 
                   {/* Per-view actions: Regenerate + Delete */}
-                  {!isViewingImmutableVersion && selectedViews[currentViewIndex] && (
+                  {!isReadOnlyProof && selectedViews[currentViewIndex] && (
                     <div className="absolute top-4 right-4 left-4 z-30 flex flex-wrap justify-end gap-2">
                       <Button
                         size="sm"
@@ -5166,7 +5243,7 @@ export default function RevisionStudioIQ() {
 
                   {/* Armed-layer hint — when a layer is armed, tell the user the
                       exact next action so placement is never a guessing game. */}
-                  {!isViewingImmutableVersion && armedLayerId && (() => {
+                  {!isReadOnlyProof && armedLayerId && (() => {
                     const viewKey = selectedViews[currentViewIndex]?.key || "";
                     const armed = (logoLayersByView[viewKey] || []).find((l) => l.id === armedLayerId);
                     return (
@@ -5177,7 +5254,7 @@ export default function RevisionStudioIQ() {
                   })()}
 
                   {/* Logo placement overlay — captures clicks when a layer is armed */}
-                  {!isViewingImmutableVersion && selectedViews[currentViewIndex] && (() => {
+                  {!isReadOnlyProof && selectedViews[currentViewIndex] && (() => {
                     const viewKey = selectedViews[currentViewIndex].key;
                     const layers = logoLayersByView[viewKey] || [];
                     const placedLayers = layers.filter((l) => l.placement);
@@ -5199,7 +5276,7 @@ export default function RevisionStudioIQ() {
 
                   {/* Removal-mode hint — names the exact gesture so it's never a
                       guessing game when the draw-box overlay is armed. */}
-                  {!isViewingImmutableVersion && wandActive && !armedLayerId && (
+                  {!isReadOnlyProof && wandActive && !armedLayerId && (
                     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1.5 rounded-full bg-red-500 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 whitespace-nowrap">
                       Draw a box over the elements you want to remove
                     </div>
@@ -5209,7 +5286,7 @@ export default function RevisionStudioIQ() {
                       Yields to logo placement: when a layer is armed, the
                       placement overlay owns the click so dropping a logo isn't
                       swallowed by the removal box canvas. */}
-                  {!isViewingImmutableVersion && (
+                  {!isReadOnlyProof && (
                     <RemovalBoxCanvas
                       active={wandActive && !armedLayerId}
                       onBoxSelect={handleBoxSelect}
@@ -5239,7 +5316,7 @@ export default function RevisionStudioIQ() {
 
                 {/* Inline Precise Edit — box-select on the render, then describe
                     the change. Toggled by the "Precise" toolbar button. */}
-                {!isViewingImmutableVersion && preciseEditOpen && selectedViews[currentViewIndex] && (
+                {!isReadOnlyProof && preciseEditOpen && selectedViews[currentViewIndex] && (
                   <Card className="bg-zinc-900 border-cyan-500/30">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -5381,6 +5458,7 @@ export default function RevisionStudioIQ() {
                                     // the working row with historical pixels.
                                     if (presentation.immutable) {
                                       setSelectedVersionTimelineKey(presentation.key);
+                                      setCurrentViewIndex(0);
                                     } else if (presentation.row) {
                                       setSelectedRender(presentation.row);
                                       const legacyViews = getViews(presentation.row);
@@ -5585,10 +5663,10 @@ export default function RevisionStudioIQ() {
               <div
                 className={cn(
                   "w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-4 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:pr-1",
-                  isViewingImmutableVersion && "pointer-events-none opacity-50",
+                  isReadOnlyProof && "pointer-events-none opacity-50",
                 )}
-                aria-disabled={isViewingImmutableVersion}
-                inert={isViewingImmutableVersion ? true : undefined}
+                aria-disabled={isReadOnlyProof}
+                {...(isReadOnlyProof ? { inert: "" } : {})}
               >
                 {/* LayerLift — HIDDEN: it is a DUPLICATE of "Remove Elements"
                     (RenderElementSeparator, Card 2 below). Both box-extract an
@@ -5807,6 +5885,15 @@ export default function RevisionStudioIQ() {
                         onChange={handleExampleUpload}
                       />
                     </div>
+                    {selectedRender?._revisionRequest && <p role="status" className="rounded-lg border border-purple-500/30 bg-purple-950/20 p-3 text-sm text-slate-200">
+                      {selectedRender._revisionHandoffNeedsAttention
+                        ? "Vehicle proofs are saved. Production preparation needs attention before matching files can continue. Your design and version history remain saved."
+                        : selectedRender._revisionState === "failed" || selectedRender._revisionState === "cancelled"
+                        ? "This revision needs attention. The previous version remains available in history."
+                        : selectedRender._revisionState === "outputs_ready"
+                          ? `V${selectedRender._revisionRequest.revisionSequence}: vehicle proofs accepted. Matching production panels and the dimensioned proof continue through the existing workflow.`
+                          : `Creating V${selectedRender._revisionRequest.revisionSequence}: ${selectedRender.atlas_revision_id ? "artwork accepted; building matching vehicle proofs" : "applying your edits to the artwork"}. ${selectedRender._revisionProofCount || 0} of 7 proofs saved.`}
+                    </p>}
                     {/* Revise & Clone — primary action, sits directly under the
                         prompt box so it never requires scrolling to the bottom. */}
                     <Button
@@ -5831,7 +5918,7 @@ export default function RevisionStudioIQ() {
                           && !!anchorKey
                           && !namedViews.includes(anchorKey);
                         const currentViewKey = promptNamesOtherPanel ? namedViews[0] : anchorKey;
-                        const hasPlacedLayers = !!currentViewKey && (logoLayersByView[currentViewKey] || []).some((l) => l.placement);
+                        const hasPlacedLayers = !!currentViewKey && ((logoLayersByView[currentViewKey] || []).some((l) => l.placement) || Boolean(cleanBackgroundsByView[currentViewKey]));
                         // The scope picker is the single source of truth for which
                         // angles get edited. effectiveScopeViews = the user's
                         // hand-picked set, or the smart default (current view + the
@@ -5865,7 +5952,7 @@ export default function RevisionStudioIQ() {
                         if (selectedRender && wantsLogoMove(revisionNotes) && currentViewKey) {
                           if (hasPlacedLayers) {
                             toast.error(
-                              "Move or remove the existing layer directly on the canvas, then save with the notes empty. No AI redesign was started.",
+                              "Finish the layer placement, then save with the notes empty. The saved reference will be used to rebuild matching artwork and proofs for review.",
                               { duration: 12000 },
                             );
                             return;
@@ -5896,12 +5983,12 @@ export default function RevisionStudioIQ() {
                           });
                         }
                       }}
-                      disabled={cloneAndRevise.isPending || (!revisionNotes.trim() && !((logoLayersByView[selectedViews[currentViewIndex]?.key || ""] || []).some((l) => l.placement)))}
+                      disabled={cloneAndRevise.isPending || (!revisionNotes.trim() && !cleanBackgroundsByView[selectedViews[currentViewIndex]?.key || ""] && !((logoLayersByView[selectedViews[currentViewIndex]?.key || ""] || []).some((l) => l.placement)))}
                     >
                       {cloneAndRevise.isPending ? (
-                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Cloning & Revising...</>
+                        <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting revision...</>
                       ) : (
-                        <><GitBranch className="w-4 h-4 mr-2" /> Revise & Clone as V{selectedRender ? parseVersionInfo(selectedRender).version + 1 : ""}</>
+                        <><GitBranch className="w-4 h-4 mr-2" /> Save as next version</>
                       )}
                     </Button>
                     {/* Apply scope: pick EXACTLY which angles this edit touches.
@@ -6095,7 +6182,7 @@ export default function RevisionStudioIQ() {
                     Renders nothing until separated layers exist. */}
                 {/* PRELOADED 2D production proof for this (past) job — shown
                     inline so the customer sees it without opening the dialog. */}
-                <InlineStoredProof render={selectedRender} />
+                <InlineStoredProof render={selectedInspectionRender} />
 
                 {/* ProductionPackQCCard removed from RevisionStudio per owner
                     (Trish 2026-07-24): the production-pack QC surface does not
@@ -6150,6 +6237,16 @@ export default function RevisionStudioIQ() {
                       Approve Design &amp; Build Print Panels
                     </Button>
                   </div>
+                )}
+
+                {productionLayersId && (
+                  <Button variant="outline" className="w-full" onClick={() => {
+                    const sourceRevisions = new Set((standaloneProductionLayers?.stage === "production" ? standaloneProductionLayers.rows : []).map((row) => row.revision_id).filter(Boolean));
+                    const sourceRevisionId = sourceRevisions.size === 1 ? [...sourceRevisions][0] : null;
+                    navigate(panelOutputHref({ sourceApp: "DesignPro", sourceJobId: productionLayersId, generationId: productionLayersId, ...(sourceRevisionId ? { revisionId: sourceRevisionId } : {}) }));
+                  }}>
+                    Open PanelProFileOutput
+                  </Button>
                 )}
 
                 <ProductionFlowLayersCard
@@ -6843,7 +6940,7 @@ export default function RevisionStudioIQ() {
         <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-auto p-0">
           {selectedRender && (
             <StoredOrGenerated2DProof
-              render={selectedRender}
+              render={selectedInspectionRender}
               renderFallback={({ initialProofUrl, onProofGenerated, workflowStatus, workflowFailedStage, hasActiveRun, onRetryBuild }) => (
                 <TwoDProofSheet
                   views={(() => {
@@ -6852,7 +6949,7 @@ export default function RevisionStudioIQ() {
                     // hood from the side view (RJ's "old hood" bug). The latest
                     // render_urls carry the corrected hood.
                     const order = ['side', 'passenger-side', 'hood_detail', 'front', 'rear', 'roof'];
-                    const urls = selectedRender.render_urls as Record<string, string> | null;
+                    const urls = selectedInspectionRender.render_urls as Record<string, string> | null;
                     if (!urls) return [];
                     return order
                       .filter(t => urls[t])
@@ -6954,15 +7051,7 @@ export default function RevisionStudioIQ() {
           )}
 
           {cloneAndRevise.isPending && (
-            <GenerationWizard
-              isGenerating={cloneAndRevise.isPending}
-              tips={REVISION_TIPS}
-              currentTipIndex={0}
-              toolName="Restyle"
-              gradientFrom="from-amber-500"
-              gradientTo="to-orange-500"
-              expectedDuration={15}
-            />
+            <p role="status" className="flex items-center gap-2 text-sm text-zinc-300"><Loader2 className="h-4 w-4 animate-spin" />Saving your revision request and supplied references…</p>
           )}
 
           <DialogFooter>
@@ -7357,7 +7446,7 @@ export default function RevisionStudioIQ() {
           render (not the tiny right-rail thumbnail). Heal + lift route the
           removed element into the LayerStrip via handleLayerExtracted. */}
       <PreciseEditDialog
-        open={precisionModalOpen && !isViewingImmutableVersion}
+        open={precisionModalOpen && !isReadOnlyProof}
         onOpenChange={setPrecisionModalOpen}
         defaultMode={precisionInitialMode}
         imageUrl={selectedViews[currentViewIndex]?.url || null}
@@ -7392,7 +7481,7 @@ export default function RevisionStudioIQ() {
           place Separate Elements puts them (handleLayerExtracted →
           logoLayersByView + cleanBackgroundsByView), keyed to the current view. */}
       <LayerLift
-        open={layerLiftOpen && !isViewingImmutableVersion}
+        open={layerLiftOpen && !isReadOnlyProof}
         onOpenChange={setLayerLiftOpen}
         imageUrl={(() => {
           const k = selectedViews[currentViewIndex]?.key;
@@ -7418,7 +7507,7 @@ export default function RevisionStudioIQ() {
           have flat-panel-openai fill it into a flat panel at the side's real
           size (wheels/tires excluded). */}
       <SidePanelBoxes
-        open={sideBoxesOpen && !isViewingImmutableVersion}
+        open={sideBoxesOpen && !isReadOnlyProof}
         onOpenChange={setSideBoxesOpen}
         imageUrl={selectedViews[currentViewIndex]?.url || null}
         userId={currentUserId}
@@ -7452,10 +7541,9 @@ export default function RevisionStudioIQ() {
 
       {/* ── Studio Display Modal (like CreatorMarket detail viewer) ── */}
       {studioDisplayRender && (() => {
-        const viewOrder = ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"];
         const viewLabelsSD: Record<string, string> = { side: "Driver Side", "passenger-side": "Passenger Side", hood_detail: "Hood Detail", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof" };
         const sdUrls = studioDisplayRender.render_urls || {};
-        const sdViews = viewOrder.filter((v) => sdUrls[v]).map((v) => ({ type: v, url: sdUrls[v], label: viewLabelsSD[v] || v }));
+        const sdViews = getViews(studioDisplayRender).map((view) => ({ type: view.key, url: view.url, label: viewLabelsSD[view.key] || VIEW_LABELS[view.key] || view.key }));
         const heroUrl = sdUrls.side || sdUrls["driver-side"] || sdUrls.hero || (sdViews[0]?.url);
         const vehicleInfo = formatVehicleInfo(studioDisplayRender);
         const designLabel = studioDisplayRender.design_file_name || studioDisplayRender.color_name || "Design";
@@ -7586,10 +7674,8 @@ export default function RevisionStudioIQ() {
 
       {/* ── Gallery Lightbox ── */}
       {galleryLightboxRender && (() => {
-        const viewOrder = ["side", "passenger-side", "hood_detail", "front", "rear", "close-up", "roof"];
         const viewLabelsLB: Record<string, string> = { side: "Driver Side", "passenger-side": "Passenger", hood_detail: "Hood", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof" };
-        const lbUrls = galleryLightboxRender.render_urls || {};
-        const lbViews = viewOrder.filter((v) => lbUrls[v]).map((v) => ({ type: v, url: lbUrls[v], label: viewLabelsLB[v] || v }));
+        const lbViews = getViews(galleryLightboxRender).map((view) => ({ type: view.key, url: view.url, label: viewLabelsLB[view.key] || VIEW_LABELS[view.key] || view.key }));
         const cur = lbViews[galleryLightboxIdx];
         if (!cur) return null;
         return (

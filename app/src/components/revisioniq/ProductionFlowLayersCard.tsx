@@ -248,7 +248,9 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   const activePack = injected?.activePack;
   const activePackLoading = false;
 
-  const activeProofUrl = String((activePack as any)?.proof_artifact?.url || "");
+  const activeProofBinding = String((activePack as any)?.proof_artifact?.url || "");
+  // Stable designpro:// identity is for matching only, never an image src.
+  const activeProofUrl = injected?.proofUrl || "";
   const expectedSurfaceCount = Array.isArray((activePack as any)?.surface_manifest?.surfaces)
     ? (activePack as any).surface_manifest.surfaces.length
     : 0;
@@ -256,14 +258,12 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   const rows = (injected?.rows ?? []) as PFARow[];
   const rowsLoading = false;
 
-  // Prefer the pack built from the CURRENT proof. If there isn't one yet, fall
-  // back to the newest complete pack for this design and show it as a preview —
-  // the same two-step `miniWrapKit` already uses. Falling back is what makes a
-  // pack visible between panels.build and pack.activate.
+  // A named proof requires its exact pack. A stale pack cannot fill the
+  // current revision while it builds; ATLAS previews use their own binding.
   const packState = (() => {
-    if (activeProofUrl) {
-      const current = getProductionPanelPackState(rows, activeProofUrl);
-      if (current.hasCompleteAtomicPack) return current;
+    if (activeProofBinding) {
+      const current = getProductionPanelPackState(rows, activeProofBinding);
+      return current;
     }
     return getProductionPanelPackState(rows);
   })();
@@ -394,7 +394,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
   const orderProductionPack =
     !injected?.entitlements?.productionPack
       && injected?.onOrderProductionPack
-      && (entice || (isVerifiedPack && packState.productionEligible))
+      && (entice || isVerifiedPack)
       ? async () => {
         if (ordering) return;
         setOrdering(true);
@@ -553,20 +553,21 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
         <>
           {printReady ? (
             <p className="text-[11px] text-zinc-300 leading-snug">
-              Every side is verified against the approved design.{" "}
-              <span className="font-semibold text-emerald-300">
-                Click Order Production Pack
-              </span>{" "}
-              to resolve exact vehicle sizing, process each panel to print
-              resolution, and run template QC.
+              This production pack has completed human QC. The approved output
+              files and proofs are available through its production workflow.
             </p>
           ) : null}
           <p className="text-[11px] text-zinc-500 leading-snug">
             Active revision only — every side, proof, and logo is pinned to pack {String((activePack as any)?.id || "").slice(0, 8)}.
           </p>
+          {orderProductionPack && (
+            <button type="button" disabled={ordering} onClick={orderProductionPack} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-fuchsia-600 text-sm font-bold text-white disabled:opacity-60">
+              {ordering ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />} Order Production Pack
+            </button>
+          )}
           {!printReady && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold text-amber-300">
-              Preview only — the panels themselves are not production eligible. Downloads and paid production are blocked.
+              Production artwork preview · final file checks and human QC are pending. Print files appear after approval.
             </p>
           )}
         </>
@@ -579,7 +580,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           <div className="flex items-center gap-2">
             <FileText className="w-3.5 h-3.5 text-blue-400" />
             <span className="text-sm font-bold text-zinc-200">2D Production Proof</span>
-            <span className="text-[10px] text-zinc-500">source of every panel below</span>
+            <span className="text-[10px] text-zinc-500">GENIE dimensions · 5″ bleed on every edge</span>
             <a
               href={activeProofUrl}
               target="_blank"
@@ -630,7 +631,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
               // sizing, print-resolution processing and human template QC are
               // all still ahead of it.
               ? "Verified panel · design size"
-              : "Preview only · production blocked";
+              : "Production panel · pending QC";
           const di: any = p.dimensions_inches || {};
           const w = di.w ?? di.width;
           const h = di.h ?? di.height;
@@ -828,7 +829,7 @@ export function ProductionFlowLayersCard({ generationId, onAddOverlayLayer, sour
           url={preview.url}
           label={preview.label}
           onClose={() => setPreview(null)}
-          onOrder={entice || printReady ? orderProductionPack : undefined}
+          onOrder={orderProductionPack}
         />
       )}
     </div>

@@ -371,9 +371,47 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
     const extension = MIME_EXTENSION[view.contentType];
     if (!extension) throw new Error(`handoff_content_type_invalid: ${view.contentType}`);
     const destination = `users/${ownerId}/revisions/${revisionId}/inputs/${view.consumerRole}/${view.contentHash}.${extension}`;
-    const { error } = await supabase.storage.from(BUCKET).copy(view.storagePath, destination);
-    if (error && !/exists|duplicate|conflict/i.test(String(error.message))) {
-      throw new Error(`handoff_copy_failed for ${view.consumerRole}: ${error.message}`);
+    const bucket = supabase.storage.from(BUCKET);
+    let error;
+    try { ({ error } = await bucket.copy(view.storagePath, destination)); }
+    catch (cause) { error = cause; }
+    const duplicate = error && (Number(error.statusCode || error.status) === 409
+      || /already exists|duplicate/i.test(String(error.message)));
+    if (error && !duplicate) {
+      throw Object.assign(new Error(`handoff_copy_failed for ${view.consumerRole}: ${error.message}`), {
+        code: "handoff_copy_failed", retryable: true,
+      });
+    }
+    if (duplicate) {
+      // A crash may have copied an earlier role already. Its content-addressed
+      // name alone is not evidence: verify the immutable destination bytes
+      // before letting that retry publish outputs_ready.
+      let result;
+      try { result = await bucket.download(destination); }
+      catch (cause) { result = { error: cause }; }
+      if (result?.error || !result?.data) {
+        throw Object.assign(new Error(`handoff_copy_readback_failed for ${view.consumerRole}`), {
+          code: "handoff_copy_readback_failed", retryable: true,
+        });
+      }
+      if (Number.isFinite(result.data.size) && result.data.size !== view.byteSize) {
+        throw Object.assign(new Error(`handoff_copy_hash_mismatch for ${view.consumerRole}`), {
+          code: "handoff_copy_hash_mismatch", retryable: false,
+        });
+      }
+      let bytes;
+      try { bytes = Buffer.from(await result.data.arrayBuffer()); }
+      catch {
+        throw Object.assign(new Error(`handoff_copy_readback_failed for ${view.consumerRole}`), {
+          code: "handoff_copy_readback_failed", retryable: true,
+        });
+      }
+      try { verifySourceBytes(view, bytes); }
+      catch {
+        throw Object.assign(new Error(`handoff_copy_hash_mismatch for ${view.consumerRole}`), {
+          code: "handoff_copy_hash_mismatch", retryable: false,
+        });
+      }
     }
     placed[view.consumerRole] = {
       storagePath: destination, contentHash: view.contentHash,
@@ -381,6 +419,16 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
     };
   }
   return placed;
+}
+
+async function completeGenerationWithSources({ supabase, ownerId, revisionId, views, completionArgs }) {
+  // A durable handoff consumer can observe outputs_ready immediately after
+  // this RPC commits. Every referenced input must exist before that boundary.
+  // Incomplete ATLAS proof sets remain partial and cannot trigger a handoff.
+  if (views.length === 7) await placeRevisionSources({ supabase, ownerId, revisionId, views });
+  const { data, error } = await supabase.rpc("complete_designpro_generation_request", completionArgs);
+  if (error) throw new Error(`complete_designpro_generation_request failed: ${error.message}`);
+  return data;
 }
 
 function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imageParts = []) {
@@ -748,6 +796,89 @@ function combineAtlasProofRuns(runs, viewPlan) {
   };
 }
 
+/**
+ * An artwork edit uses the geometry already saved with its selected parent.
+ * Re-running GENIE here could change that geometry between two revisions of
+ * the same vehicle. The intake helper verifies the leased request, immutable
+ * parent and manifest before this worker can release any authoring work.
+ */
+async function resolveAtlasClaimGeometry({
+  supabase, claim, ownerId, provider, geniePrep,
+  prepareRevision = (args) => require("./atlas-revision-intake.cjs").prepareAtlasRevisionClaim(args),
+  resolveDimensions = resolveFlatAtlasPreviewDimensions,
+}) {
+  const revision = await prepareRevision({ supabase, claim, ownerId });
+  const parentManifest = revision?.parentManifest;
+  if (parentManifest) {
+    return {
+      revision,
+      executionInput: revision.executionInput || claim.input,
+      dimensionRow: {
+        proofGeometryAuthority: parentManifest.geometryAuthority,
+        geometryResolution: parentManifest.geometryResolution,
+        vehicleClassResolution: revision.vehicleClassResolution || null,
+      },
+      // The authoring routine consumes the exact frozen manifest directly;
+      // surfaces are retained as the usual downstream geometry contract.
+      surfaces: parentManifest.zones.map((zone) => ({
+        surfaceKey: zone.surfaceKey,
+        widthInches: zone.trimWidthIn,
+        heightInches: zone.trimHeightIn,
+        bleed: { ...zone.bleedIn },
+      })),
+      geniePrepReceipt: {
+        contract: GENIE_PREP_CONTRACT,
+        prepHit: false,
+        source: "parent_revision_manifest",
+        parentAtlasRevisionId: revision.parentAtlasRevisionId,
+        manifestContentHash: revision.revisionContext.parentManifest.contentHash,
+        geometryMsAvoided: 0,
+        genieMs: 0,
+      },
+    };
+  }
+
+  const genieStartedAt = Date.now();
+  let dimensionRow;
+  let geniePrepReceipt = {
+    contract: GENIE_PREP_CONTRACT,
+    prepHit: false,
+    source: "inline_resolver",
+    prepId: null,
+    requestedAt: null,
+    preparedAt: null,
+    prepDurationMs: null,
+    geometryMsAvoided: 0,
+    genieMs: 0,
+  };
+  const prepared = await geniePrep.readReadyPrep({
+    ownerId, generationId: claim.generationId, vehicle: claim.input?.vehicle,
+  });
+  if (prepared) {
+    dimensionRow = prepared.geometry;
+    geniePrepReceipt = {
+      ...geniePrepReceipt,
+      prepHit: true,
+      source: "genie_prep",
+      prepId: prepared.receipt.prepId,
+      requestedAt: prepared.receipt.requestedAt,
+      preparedAt: prepared.receipt.preparedAt,
+      prepDurationMs: prepared.receipt.durationMs,
+      geometryMsAvoided: Number(prepared.receipt.durationMs) || 0,
+    };
+    await geniePrep.consumePrep(prepared.receipt.prepId, claim.requestId);
+  }
+  if (!prepared) {
+    dimensionRow = await resolveDimensions(supabase, claim.input?.vehicle, provider);
+  }
+  geniePrepReceipt.genieMs = Date.now() - genieStartedAt;
+  const executionInput = dimensionRow.resolvedVehicleClass
+    && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type
+    ? { ...claim.input, vehicle: { ...claim.input.vehicle, type: dimensionRow.resolvedVehicleClass } }
+    : claim.input;
+  return { revision, dimensionRow, geniePrepReceipt, executionInput, surfaces: expectedSurfacesFromRow(dimensionRow) };
+}
+
 function createGenerationWorker({
   supabase,
   workerId,
@@ -911,50 +1042,12 @@ function createGenerationWorker({
         // changed vehicle, an older contract, another owner -- runs the inline
         // resolver exactly as before. Either way the geometry stays private OS
         // state; nothing below places it in the model-facing request.
-        const genieStartedAt = Date.now();
-        geniePrepReceipt = {
-          contract: GENIE_PREP_CONTRACT,
-          prepHit: false,
-          source: "inline_resolver",
-          prepId: null,
-          requestedAt: null,
-          preparedAt: null,
-          prepDurationMs: null,
-          geometryMsAvoided: 0,
-          genieMs: 0,
-        };
-        const prepared = await geniePrep.readReadyPrep({
-          ownerId, generationId: claim.generationId, vehicle: claim.input?.vehicle,
+        const geometry = await resolveAtlasClaimGeometry({
+          supabase, claim, ownerId, provider: imageProvider, geniePrep,
         });
-        if (prepared) {
-          dimensionRow = prepared.geometry;
-          geniePrepReceipt = {
-            ...geniePrepReceipt,
-            prepHit: true,
-            source: "genie_prep",
-            prepId: prepared.receipt.prepId,
-            requestedAt: prepared.receipt.requestedAt,
-            preparedAt: prepared.receipt.preparedAt,
-            prepDurationMs: prepared.receipt.durationMs,
-            geometryMsAvoided: Number(prepared.receipt.durationMs) || 0,
-          };
-          await geniePrep.consumePrep(prepared.receipt.prepId, requestId);
-        }
-        if (!prepared) {
-          dimensionRow = await resolveFlatAtlasPreviewDimensions(
-            supabase,
-            claim.input?.vehicle,
-            imageProvider,
-          );
-        }
-        geniePrepReceipt.genieMs = Date.now() - genieStartedAt;
-        if (dimensionRow.resolvedVehicleClass
-          && dimensionRow.resolvedVehicleClass !== claim.input?.vehicle?.type) {
-          executionInput = {
-            ...claim.input,
-            vehicle: { ...claim.input.vehicle, type: dimensionRow.resolvedVehicleClass },
-          };
-        }
+        dimensionRow = geometry.dimensionRow;
+        geniePrepReceipt = geometry.geniePrepReceipt;
+        executionInput = geometry.executionInput;
         flatAtlas = await generateOrReuseFlatAtlas({
           supabase,
           store,
@@ -965,7 +1058,8 @@ function createGenerationWorker({
           tenantKey: claim.tenantKey,
           ownerId,
           input: executionInput,
-          surfaces: expectedSurfacesFromRow(dimensionRow),
+          ...(geometry.revision || {}),
+          surfaces: geometry.surfaces,
           geometryAuthority: dimensionRow.proofGeometryAuthority,
           // ONE MANIFEST IDENTITY, FROM THE SINGLE RESOLVER, ALL THE WAY DOWN.
           // The containers, the crops, the proof surface authority and both
@@ -975,27 +1069,10 @@ function createGenerationWorker({
           // Lifecycle receipt only (prepHit, genieMs, geometry time avoided);
           // it is persisted on the revision metadata and never enters the request.
           geniePrep: geniePrepReceipt,
-          // Production permits exactly one refusal-only fallback. An accepted
-          // first candidate still breaks the authoring loop immediately, so a
-          // healthy run spends one creative call. This restores the measured
-          // ATTEMPT BUDGET RAISED TO 5 (owner ruling, Trish 2026-09-08).
-          //
-          // Two was modelled on generation 84a3eadf, whose first candidate was
-          // refused and whose second became canonical master 1564c66d. But the
-          // SAME unchanged request was refused four candidates for four on
-          // 2026-09-08, every one for large wheel/glass cutouts. Two throws is
-          // not enough for a coin flip.
-          //
-          // Nine recorded A/B tests closed the conditioning question -- even
-          // removing the teaching example entirely measured null -- so the
-          // number of throws is the remaining lever. At ~50% per candidate,
-          // five reaches a clean master ~97% of the time.
-          //
-          // Nothing else moves: the gate is untouched, each attempt sends the
-          // SAME request with no corrective text, a refused candidate is never
-          // persisted, and five refusals still fail closed with the real gate
-          // error surfaced.
-          maxAuthoringAttempts: 5,
+          // One candidate and one unchanged fallback after a blocking
+          // refusal. Recovery reuses the same provider attempt and never
+          // resets this creative budget.
+          maxAuthoringAttempts: 2,
           onMasterReady: (atlas) => {
             progressiveAtlas = atlas;
           },
@@ -1184,45 +1261,42 @@ function createGenerationWorker({
             productionHandoffDeferred: true,
           };
 
-      const completion = await rpc("complete_designpro_generation_request", {
-        p_request_id: requestId,
-        p_claim_token: claimToken,
-        p_views: views,
-        p_engine_receipt: {
-          contractVersion: RECEIPT_CONTRACT,
-          sourceCommit: claim.engineContract?.sourceCommit,
-          frozenContractHash: claim.engineContractHash,
-          inputHash: claim.inputHash,
-          byteVerified: "true",
-          // The number actually delivered, never a constant. The DB predicate
-          // now matches this against jsonb_array_length(p_views), so an
-          // overstatement is refused rather than recorded.
-          callsCompleted: String(views.length),
-          ...(atlasPartial
-            ? {
-                refusedViews: refusedSlots.map((item) => ({
-                  sourceViewType: String(item.sourceViewType || ""),
-                  reason: String(item.reason || "").slice(0, 240),
-                })),
-              }
-            : {}),
-          engineContract: engine.ENGINE_CONTRACT,
-          providerCalls: result.providerCalls,
-          handoffRevisionId: revisionId,
-          // Carried on the receipt because the worker cannot write the revision
-          // itself: save_designpro_revision_source requires an authenticated
-          // JWT and refuses a service role. The owner freezes this exact object
-          // into the snapshot; nothing here bypasses that.
-          ...authoringReceipt,
+      const completion = await completeGenerationWithSources({
+        supabase, ownerId, revisionId, views,
+        completionArgs: {
+          p_request_id: requestId,
+          p_claim_token: claimToken,
+          p_views: views,
+          p_engine_receipt: {
+            contractVersion: RECEIPT_CONTRACT,
+            sourceCommit: claim.engineContract?.sourceCommit,
+            frozenContractHash: claim.engineContractHash,
+            inputHash: claim.inputHash,
+            byteVerified: "true",
+            // The number actually delivered, never a constant. The DB predicate
+            // now matches this against jsonb_array_length(p_views), so an
+            // overstatement is refused rather than recorded.
+            callsCompleted: String(views.length),
+            ...(atlasPartial
+              ? {
+                  refusedViews: refusedSlots.map((item) => ({
+                    sourceViewType: String(item.sourceViewType || ""),
+                    reason: String(item.reason || "").slice(0, 240),
+                  })),
+                }
+              : {}),
+            engineContract: engine.ENGINE_CONTRACT,
+            providerCalls: result.providerCalls,
+            handoffRevisionId: revisionId,
+            // Carried on the receipt because the worker cannot write the revision
+            // itself: save_designpro_revision_source requires an authenticated
+            // JWT and refuses a service role. The owner freezes this exact object
+            // into the snapshot; nothing here bypasses that.
+            ...authoringReceipt,
+          },
         },
       });
 
-      // Place the bytes where Calls 8+ expects them. The revision itself is
-      // created by the authenticated owner, not here: save_designpro_revision_source
-      // requires an 'authenticated' JWT and refuses a service role outright.
-      if (completion?.handoffReady === true) {
-        await placeRevisionSources({ supabase, ownerId, revisionId, views });
-      }
       return {
         requestId,
         state: "outputs_ready",
@@ -1244,12 +1318,11 @@ function createGenerationWorker({
         p_request_id: requestId, p_claim_token: claimToken,
         p_error_code: error.code || "generation_worker_failed",
         p_error_message: String(error.message || error).slice(0, 1000),
-        // A.T.L.A.S. performs its one canonical-authoring call before the
-        // bounded seven-view engine. Any error after entering flat-first is
-        // terminal for this run so the request cannot be auto-claimed and burn
-        // the provider pool again. Legacy errors retain their declared retry
-        // contract; slot-budget failures above are terminal in both modes.
-        p_retryable: enteredFlatFirst ? false : error?.retryable !== false,
+        // A.T.L.A.S. resumes only explicitly retryable transport/storage
+        // failures, whose provider outcome is recovered under the original
+        // request identity. Creative refusals and exhausted slot budgets
+        // remain terminal; a retry cannot buy another creative attempt.
+        p_retryable: enteredFlatFirst ? error?.retryable === true : error?.retryable !== false,
       }).catch(() => {});
       throw error;
     } finally {
@@ -1304,12 +1377,14 @@ module.exports = {
   REQUEST_LEASE_SECONDS,
   assertAtlasViewLineage,
   createGenerationWorker,
+  completeGenerationWithSources,
   conditionedPromptPartsFor,
   designBrief,
   promptPartsFor,
   projectionOnlyPromptFor,
   surfaceSizeClause,
   referenceImageParts,
+  resolveAtlasClaimGeometry,
   runAtlasProofStages,
   slotsFrom,
   standardProviderFactoryFor,

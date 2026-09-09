@@ -105,9 +105,11 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   ]) {
     assert.ok(loaded.has(module), `runtime/index.js must load ${module}`);
   }
-  // The canonical GENIE manifest is still built here; the field territories are
-  // a LAYOUT of it (same six surfaces, same inches, same MANIFEST_CONTRACT).
-  assert.match(atlas, /const manifest = buildAtlasManifest\(surfaces, geometryAuthority/);
+  // New artwork still builds the canonical six-surface GENIE manifest. An
+  // edit preserves the selected parent's exact manifest without remeasuring it.
+  assert.match(atlas,
+    /const manifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/);
+  assert.match(atlas, /if \(!parentManifest && geometryResolution\) manifest\.geometryResolution = geometryResolution;/);
   assert.match(atlas, /loadBundledAtlasTeachingProof/);
 
   // request → worker: the pipeline is chosen from the request's own contract,
@@ -184,13 +186,13 @@ test("no new A.T.L.A.S. generation can reach a legacy or browser-side design pro
 
   // 2. THE HISTORICAL EDGE FUNCTIONS ARE NOT SHIPPED TO THE RUNTIME.
   //
-  // They remain in supabase/functions as parity references. The image copies
-  // only runtime/, so the container physically cannot invoke them -- and that
-  // is the property worth pinning, because a name can be reused as a stage
-  // label (it is, inside the server provider) without any transport behind it.
+  // The image contains only the three approved shared Gemini transport/history
+  // modules outside runtime/. Historical Edge entrypoints are not executable
+  // container content; those stage names remain labels in the server provider.
   const dockerfile = read(resolve(import.meta.dirname, "..", "ops", "Dockerfile.runtime"));
-  assert.doesNotMatch(dockerfile, /^COPY\s+supabase/m,
-    "the runtime image must not ship the historical Edge functions");
+  const sharedCopies = dockerfile.split("\n").filter(line => /^COPY\s+supabase/.test(line));
+  assert.deepEqual(sharedCopies, ["COPY supabase/functions/_shared/gemini-image-history.mjs supabase/functions/_shared/gemini-image-interactions.mjs supabase/functions/_shared/gemini-provider-cache.mjs /supabase/functions/_shared/"],
+    "only approved shared modules may ship; never broad supabase directories or Edge handlers");
   assert.match(dockerfile, /^COPY runtime\/ \.\/$/m);
 
   // No runtime module may invoke a Supabase Edge function for generation.
@@ -299,7 +301,7 @@ test("the dormant Design Master cluster stays out of the active runtime", () => 
  * A run with no A.T.L.A.S. panel set still fails hard on both, because there
  * the proof genuinely is the source Call 9 cuts from.
  */
-test("the 2D Production Proof never gates A.T.L.A.S. manufacturing", () => {
+test("A.T.L.A.S. panels proceed independently while final release reconciles the required deterministic proof", () => {
   const claimant = readFileSync(
     resolve(import.meta.dirname, "..", "runtime", "designpro-standalone-claimant.cjs"),
     "utf8",
@@ -332,15 +334,20 @@ test("the 2D Production Proof never gates A.T.L.A.S. manufacturing", () => {
   ]) {
     assert.ok(verify.includes(check), `source.verify must enforce ${check}`);
   }
-  // The proof is optional on an atlas run and carried when present.
+  // The early proof can be absent; production regenerates the deterministic
+  // documentation from the same six panels under its own lease, with no AI.
   assert.match(verify, /const customerProof = sourceProofs\.find[\s\S]{0,90}\|\| null;/);
-  assert.match(verify, /if \(customerProof\) \{/);
+  assert.match(verify, /builtCall8 = await composeCall8Proof\([\s\S]*?lineageRunId: sourceRunId/);
+  assert.match(verify, /reconciledForProduction: true/);
   assert.match(verify, /\} else if \(!customerProof \|\| sourceProofs\.length !== 1\) \{/);
 
-  // And the seam still holds: manufacturing reads the snapshot, never the
-  // generation-side tables, for the master it must verify against.
+  // Manufacturing panel authority still comes only from the immutable
+  // snapshot. The separate final view join may recover later presentation
+  // proofs only when they bind that exact accepted master and own surface.
   assert.match(verify, /const snapshotPanels = await callOnePanelSet\(sb, run\);/);
-  assert.doesNotMatch(claimant, /designpro_flat_atlas_revisions/);
+  assert.doesNotMatch(verify.slice(0, verify.indexOf('stage.stage_key === "await_purchase"')), /from\("designpro_flat_atlas_revisions"\)/);
+  assert.match(claimant, /production_late_view_lineage_invalid/);
+  assert.match(claimant, /const proofJoin = authorized\.productionPackAuthorized \? await pinProductionProofJoin/);
 });
 
 /**

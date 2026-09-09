@@ -25,6 +25,7 @@ import {
   WorkflowStatus,
 } from "@/lib/designpro-api";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
+import { selectSurfaceView } from "@/lib/studio-artifact-identity.mjs";
 import type { ProductionLayersSource } from "@/lib/designpro-production-layers";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +85,8 @@ export function ServerRevisionStudio({
   useEffect(() => {
     let live = true;
     setViewsLoading(true);
+    setViews([]);
+    setViewsError("");
     dpApi
       .listApprovedViews(generationId)
       .then((rows) => {
@@ -106,10 +109,7 @@ export function ServerRevisionStudio({
     const rows = new Map<RenderRole, ApprovedGenerationView>();
     for (const role of ROLE_ORDER) {
       const sourceType = SOURCE_VIEW_TYPE_FOR_ROLE[role];
-      const row = views.find(
-        (candidate) =>
-          candidate.sourceViewType === sourceType || candidate.surfaceKey === role,
-      );
+      const row = selectSurfaceView(views, role, sourceType);
       if (row) rows.set(role, row);
     }
     return rows;
@@ -141,7 +141,7 @@ export function ServerRevisionStudio({
   const selectedPanel = panels.get(selectedRole) || null;
   const stageUrl = mode === "proof" ? proof?.signedUrl : selectedView?.signedUrl;
   const stageLabel = mode === "proof" ? "2D Production Proof" : SURFACE_LABEL[selectedRole];
-  const revisionUrl = "/designpro";
+  const revisionUrl = `/revision-studio?id=${encodeURIComponent(generationId)}${revisionInstruction.trim() ? `&revisionInstruction=${encodeURIComponent(revisionInstruction.trim())}` : ""}`;
   const verifiedCount = viewForRole.size;
 
   return (
@@ -153,7 +153,7 @@ export function ServerRevisionStudio({
               RevisionStudioIQ™
             </span>
             <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/10">
-              <ShieldCheck className="mr-1 h-3 w-3" /> Server verified
+              <ShieldCheck className="mr-1 h-3 w-3" /> Saved artifacts
             </Badge>
           </div>
           <h2 className="mt-1 truncate text-xl font-black tracking-tight md:text-2xl">
@@ -510,7 +510,7 @@ function StudioWorkspace({
             placeholder={`Example: On the ${SURFACE_LABEL[selectedRole].toLowerCase()}, move the phone number above the rear wheel and preserve all approved text exactly.`}
           />
           <Button asChild className="mt-3 w-full bg-gradient-to-r from-blue-600 to-fuchsia-600 text-white">
-            <Link to={revisionUrl}>Start new A.T.L.A.S. design</Link>
+            <Link to={revisionUrl}>Continue in RevisionStudioIQ</Link>
           </Button>
           <p className="mt-2 text-[10px] leading-4 text-zinc-600">
             A revision is a new current-architecture A.T.L.A.S. run. It never

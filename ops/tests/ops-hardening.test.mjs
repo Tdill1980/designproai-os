@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ops = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const track = resolve(ops, "..");
@@ -14,8 +14,20 @@ const policy = read("release-files.txt").split(/\r?\n/).map((line) => line.trim(
 const fixed = policy.filter((line) => !line.includes("*"));
 
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 63);
+  // The previous 65 plus three ATLAS checkpoints/assembly modules, three PPO
+  // execution modules, verified source/delivery bindings, two templates and
+  // the server-owned revision intake adapter.
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 76);
   for (const name of [
+    "runtime/panelpro-file-output-contract.cjs",
+    "runtime/panelpro-file-output-plan.cjs",
+    "runtime/panelpro-file-output-graph.cjs",
+    "runtime/panelpro-file-output-render.cjs",
+    "runtime/panelpro-file-output-service.cjs",
+    "runtime/panelpro-source-binding.cjs",
+    "runtime/panelpro-production-attachment.cjs",
+    "runtime/panelpro-template-provider.cjs",
+    "runtime/panelpro-template-service.cjs",
     // GENIE Prep (owner ruling 2026-09-02): the early lifecycle module is
     // required by generation-worker.cjs and index.js at module load, so a
     // release without it dies at require time (the runtime-closure lock caught
@@ -32,6 +44,13 @@ test("one canonical policy includes every required runtime file and five deploy 
     // that omits it dies at require time rather than merely leaving the
     // feature disabled.
     "runtime/atlas-panel-authoring.cjs",
+    "runtime/atlas-accepted-checkpoint.cjs",
+    "runtime/atlas-finishing-checkpoint.cjs",
+    "runtime/atlas-finished-master.cjs",
+    "gateway/src/generation-progress.mjs",
+    "supabase/functions/_shared/gemini-image-interactions.mjs",
+    "supabase/functions/_shared/gemini-provider-cache.mjs",
+    "supabase/functions/_shared/gemini-image-history.mjs",
     // THE MANDATORY OWNER-APPROVED LABELED FLAMINGO A.T.L.A.S. TEACHING PROOF
     // (owner boundary contract 2026-09-01). Call 1 refuses to author without
     // it: canary 33459887409 died at flat_atlas_bundled_example_missing when
@@ -66,7 +85,7 @@ test("one canonical policy includes every required runtime file and five deploy 
     // release without them composes the proof as bare rectangles, which is not
     // the 2D Production Proof the customer approves.
     "runtime/vehicle-proof-template.cjs", "runtime/proof-band-fit.cjs",
-    "runtime/generation-engine.cjs", "runtime/generation-worker.cjs",
+    "runtime/generation-engine.cjs", "runtime/generation-worker.cjs", "runtime/atlas-revision-intake.cjs",
     "runtime/flat-first-atlas.cjs", "runtime/flat-atlas-topology-examples.cjs",
     "runtime/atlas-examples/houdini-flattened-top-view.jpg",
     "runtime/atlas-examples/houdini-finished-3d-proof.jpg",
@@ -93,22 +112,27 @@ test("one canonical policy includes every required runtime file and five deploy 
 // eleven Design Master modules were left out of one release: every test passed,
 // the archive validated, and the failure surfaced as a health probe timing out
 // after the cutover.
-test("the policy is closed over everything the runtime entry points require", () => {
-  const runtime = resolve(track, "runtime");
+test("the policy includes runtime and gateway imports, including native Gemini modules", () => {
   const seen = new Set();
-  const stack = ["index.js", "designpro-standalone-claimant.cjs"];
+  const stack = ["runtime/index.js", "runtime/designpro-standalone-claimant.cjs", "gateway/src/server.mjs"];
   while (stack.length) {
     const name = stack.pop();
     if (seen.has(name)) continue;
     seen.add(name);
     let source;
-    try { source = readFileSync(join(runtime, name), "utf8"); } catch { continue; }
-    for (const match of source.matchAll(/require\(\s*"\.\/([A-Za-z0-9._-]+)"\s*\)/g)) {
-      stack.push(match[1]);
+    try { source = readFileSync(join(track, name), "utf8"); } catch { continue; }
+    for (const pattern of [
+      /require\(\s*["'](\.[^"']+)["']\s*\)/g,
+      /\bfrom\s*["'](\.[^"']+)["']/g,
+      /\bimport\(\s*["'](\.[^"']+)["']\s*\)/g,
+      /import\(pathToFileURL\(resolve\(__dirname,\s*["'](\.[^"']+)["']\)/g,
+    ]) for (const match of source.matchAll(pattern)) {
+      stack.push(join(dirname(name), match[1]));
     }
   }
-  const missing = [...seen].filter((name) => !fixed.includes(`runtime/${name}`));
+  const missing = [...seen].filter((name) => !fixed.includes(name));
   assert.deepEqual(missing, [], `release policy is missing runtime modules the kernel requires: ${missing.join(", ")}`);
+  assert.match(read("Dockerfile.runtime"), /^COPY supabase\/functions\/_shared\/gemini-image-history\.mjs supabase\/functions\/_shared\/gemini-image-interactions\.mjs supabase\/functions\/_shared\/gemini-provider-cache\.mjs \/supabase\/functions\/_shared\/$/m);
 });
 
 test("actual builder emits reproducible bytes with every fixed file manifest-bound", () => {
@@ -123,6 +147,7 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
       const path = join(root, name);
       mkdirSync(dirname(path), { recursive: true });
       if (name === "ops/release-files.txt") cpSync(join(track, name), path);
+      else if (name.startsWith("supabase/")) cpSync(join(track, name), path);
       else writeFileSync(path, name.endsWith(".json") ? "{}\n" : `fixture:${name}\n`);
     }
     // The served application is the branded operator shell, so the builder
@@ -140,6 +165,11 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
     assert.deepEqual(first, second);
     const manifest = JSON.parse(execFileSync("tar", ["-xOzf", join(root, "one", `designproai-release-${sha}.tgz`), ".designpro-release.json"], { encoding: "utf8" }));
     assert.deepEqual(Object.keys(manifest.files).sort(), [...fixed, "web/dist/assets/app.js"].sort());
+    const extracted = join(root, "native-import-check");
+    mkdirSync(extracted);
+    execFileSync("tar", ["-xzf", join(root, "one", `designproai-release-${sha}.tgz`), "-C", extracted, "supabase"]);
+    const interactionsUrl = pathToFileURL(join(extracted, "supabase/functions/_shared/gemini-image-interactions.mjs")).href;
+    execFileSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(interactionsUrl)})`]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -188,6 +218,31 @@ test("expanded dark env disables email and keeps an exact public-go-live provide
   assert.match(read("gateway.env.example"), /DESIGNPRO_ADDITIONAL_ORIGINS=https:\/\/designproai\.com/);
   assert.match(read("configure-env.sh"), /DESIGNPRO_ADDITIONAL_ORIGINS=https:\/\/designproai\.com/);
   assert.doesNotMatch(read("gateway.env.example"), /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("new graph opt-ins default off, preserve installed choices and accept explicit independent overrides", () => {
+  const root = mkdtempSync(join(tmpdir(), "dp-graph-flags-"));
+  try {
+    mkdirSync(join(root, "shared"));
+    const source = read("configure-env.sh");
+    const start = source.indexOf("resolve_optional_flag() {");
+    const end = source.indexOf("\nruntime_tmp=", start);
+    assert.ok(start >= 0 && end > start);
+    const script = `set -Eeuo pipefail\n${source.slice(start, end)}\nprintf '%s %s\\n' "$panelprofileoutput_enabled" "$template_recreate_enabled"`;
+    const baseEnv = { ...process.env, ROOT: root };
+    delete baseEnv.DESIGNPRO_PANELPROFILEOUTPUT_ENABLED;
+    delete baseEnv.DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED;
+    const run = (overrides = {}) => execFileSync("bash", ["-c", script], { env: { ...baseEnv, ...overrides }, encoding: "utf8" }).trim();
+    assert.equal(run(), "false false");
+    writeFileSync(join(root, "shared/runtime.env"), "DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=true\nDESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=true\n");
+    assert.equal(run(), "true true");
+    assert.equal(run({ DESIGNPRO_PANELPROFILEOUTPUT_ENABLED: "false" }), "false true");
+    assert.equal(run({ DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED: "false" }), "true false");
+    assert.throws(() => run({ DESIGNPRO_PANELPROFILEOUTPUT_ENABLED: "yes" }), (error) => error.status === 4);
+    for (const flag of ["DESIGNPRO_PANELPROFILEOUTPUT_ENABLED", "DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED"]) {
+      assert.match(read("runtime.env.example"), new RegExp(`^${flag}=false$`, "m"));
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("acceptance proves shared spool, both runtime identities, health contracts, and image IDs", () => {

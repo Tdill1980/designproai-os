@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
+import { publicGenerationProgress } from "./generation-progress.mjs";
 
 const BUCKET = "wrap-files";
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
@@ -253,6 +254,15 @@ function waitingStage(stages, stageKey, reason) {
 function publicState(raw) {
   const run = raw.run || {};
   const stages = raw.stages || [];
+  const verifiedOutput=stages.find(stage=>stage.stage_key==="output.verify" && stage.status==="completed" && stage.output?.verified===true)?.output;
+  const panelProfileOutputs=(Array.isArray(verifiedOutput?.panelProfileAttachments)?verifiedOutput.panelProfileAttachments:[])
+    .filter(attachment=>UUID_PATTERN.test(attachment.childRunId) && SHA256_PATTERN.test(attachment.snapshotHash)
+      && SHA256_PATTERN.test(attachment.snapshot?.artifactSetHash) && attachment.snapshot?.approval?.qcApproved===true
+      && attachment.snapshot.approval.artifactSetHash===attachment.snapshot.artifactSetHash
+      && attachment.snapshot.parentRunId===run.id && attachment.snapshot.revisionId===run.revision_id)
+    .map(attachment=>({runId:attachment.childRunId,snapshotHash:attachment.snapshotHash,artifactSetHash:attachment.snapshot.artifactSetHash,
+      fileCount:Array.isArray(attachment.snapshot.files)?attachment.snapshot.files.length:0,qcApproved:true,
+      reviewUrl:`/panelpro-file-output/runs/${attachment.childRunId}`}));
   const waitingPreflight = stages.some((s) => s.stage_key === "await_panelpro_preflight_qc" && s.status === "waiting");
   const waitingFinal = stages.some((s) => s.stage_key === "await_final_human_qc" && s.status === "waiting");
   const waitingGenie = waitingStage(stages, "manifest.resolve", "genie_dimension_validation_required");
@@ -276,6 +286,7 @@ function publicState(raw) {
     createdAt: isoOrNull(run.created_at),
     updatedAt: isoOrNull(run.updated_at),
     revision: Number(run.results?.revision || run.input?.revision || 1),
+    ...(panelProfileOutputs.length?{panelProfileOutputs}:{}),
     state: failed
       ? "failed"
       : waitingPreflight
@@ -301,6 +312,11 @@ function publicState(raw) {
     stages: stages.map((s) => ({
       key: s.stage_key,
       label: s.stage_key,
+      ...(Object.hasOwn(s, "depends_on") ? {
+        dependsOn: Array.isArray(s.depends_on) ? s.depends_on.map(String) : null,
+      } : {}),
+      ...(["retryable", "cancelled", "skipped"].includes(s.status)
+        ? { executionState: s.status } : {}),
       state: s.status === "completed"
         ? "complete"
         : s.status === "failed"
@@ -500,7 +516,32 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrder
   const generation = String(rows[0].generation_id || "").toLowerCase();
   const snapshot = rows[0].snapshot;
   const designId = canonicalDesignId(generation);
-  const orderNumber = String(snapshot?.orderNumber || "");
+  // Paid design-first runs freeze the existing append-only fulfillment binding
+  // in run.input; their original design snapshot intentionally has no order.
+  // The final human-gate RPC independently checks the authoritative DB binding.
+  const frozen=run.input?.fulfillment;
+  let orderNumber = String(snapshot?.orderNumber || "");
+  if(frozen!=null) {
+    const delivery=frozen.delivery;
+    const exact=(value,keys)=>value && typeof value==="object" && !Array.isArray(value)
+      && JSON.stringify(Object.keys(value).sort())===JSON.stringify(keys.sort());
+    const unbound=["designpro.calls-1-7-input.v2","designpro.calls-1-7-input.v3"].includes(snapshot?.sourceInputContract)
+      && snapshot?.fulfillment?.contractVersion==="designpro.fulfillment-state.v1" && snapshot.fulfillment.state==="unbound"
+      && snapshot.orderNumber==null && snapshot.delivery==null;
+    if(!exact(frozen,["bindingHash","contractVersion","delivery","orderNumber","revisionId"])
+      || frozen.contractVersion!=="designpro.fulfillment-binding.v1" || frozen.revisionId!==revisionId
+      || !SHA256_PATTERN.test(frozen.bindingHash) || (run.results?.fulfillmentBindingHash!=null && run.results.fulfillmentBindingHash!==frozen.bindingHash)
+      || (!orderNumber && !unbound) || (orderNumber && orderNumber!==frozen.orderNumber)
+      || !exact(delivery,["contractVersion","customerId","customerEmail","recipientIdentityHash","orderNumber","designName"])
+      || delivery.contractVersion!=="designpro.wrapbox-recipient.v1" || !UUID_PATTERN.test(delivery.customerId)
+      || !SHA256_PATTERN.test(delivery.recipientIdentityHash) || typeof delivery.customerEmail!=="string"
+      || delivery.customerEmail!==delivery.customerEmail.trim().toLowerCase() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(delivery.customerEmail)
+      || delivery.orderNumber!==frozen.orderNumber || (unbound && delivery.designName!==snapshot.designName)
+      || (snapshot.delivery && Object.keys(delivery).some(key=>snapshot.delivery[key]!==delivery[key]))) {
+      throw Object.assign(new Error("production_fulfillment_binding_drift"),{status:409});
+    }
+    orderNumber=String(frozen.orderNumber||"");
+  }
   const orderNumberValid = ORDER_NUMBER_PATTERN.test(orderNumber) && orderNumber.trim() === orderNumber;
   if (snapshot?.generationId !== generation || snapshot?.designId !== designId
     || (requireOrderNumber ? !orderNumberValid : orderNumber !== "" && !orderNumberValid)) {
@@ -526,26 +567,13 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrder
   // vehicle should say nothing, not invent one.
   // THE CUSTOMER'S OWN WORDS, VERBATIM.
   //
-  // Both studios have to show the brief a version was authored from -- PanelPro
-  // because a version history without the prompt that produced it is a strip of
-  // thumbnails, and RevisionStudio because its revision is composed from it. It
-  // lives on the generation request, which is where the customer typed it, so it
-  // is read from there rather than reconstructed from the snapshot.
-  //
-  // Best-effort by design: a request that predates this projection, or a read
-  // this caller is not entitled to, leaves the brief absent. Absent is honest;
-  // a summary or a reconstruction would be a design rebuilt against words
-  // nobody said, so there is no fallback.
-  let brief = null;
-  const briefResponse = await upstream(fetchImpl,
-    `${cfg.supabaseUrl}/rest/v1/designpro_generation_requests?select=${encodeURIComponent("input")}&generation_id=eq.${encodeURIComponent(generation)}&order=created_at.asc&limit=1`,
-    { method: "GET" }, token, cfg).catch(() => null);
-  if (briefResponse?.ok) {
-    const briefRows = await briefResponse.json().catch(() => []);
-    const raw = Array.isArray(briefRows) && briefRows.length === 1 ? briefRows[0]?.input?.brief : null;
-    const trimmed = String(raw ?? "").trim();
-    if (trimmed && trimmed.length <= 8000) brief = trimmed;
-  }
+  // Read the words frozen for this exact version. Current snapshots use brief;
+  // historical snapshots used a string bodyText. Current bodyText arrays hold
+  // artwork labels and must never become an invented brief. No oldest-request
+  // lookup: direct request-table reads are revoked and would mix versions.
+  const rawBrief=typeof snapshot?.brief==="string"?snapshot.brief
+    :typeof snapshot?.bodyText==="string"?snapshot.bodyText:null;
+  const brief=rawBrief?.trim() && rawBrief.length<=8000?rawBrief:null;
 
   const vehicle = snapshot?.vehicle && typeof snapshot.vehicle === "object" ? snapshot.vehicle : null;
   const text = (value) => {
@@ -589,7 +617,7 @@ function verifiedSourceEnticeRun(run, runs) {
 
 async function runState(fetchImpl, token, cfg, run) {
   const runId = encodeURIComponent(run.id);
-  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,output,error_message,error_details,wait_reason,wait_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
+  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_stages?select=stage_key,status,depends_on,output,error_message,error_details,wait_reason,wait_details&run_id=eq.${runId}&order=sequence.asc`, { method: "GET" }, token, cfg);
   if (!response.ok) throw Object.assign(new Error(`stages_query_${response.status}`), { status: response.status });
   return { run, stages: await response.json() };
 }
@@ -1105,17 +1133,21 @@ async function refusedViewsForGeneration(fetchImpl, token, cfg, generationIdValu
     .slice(0, 7);
 }
 
-async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdValue) {
+async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdValue, atlasRevisionId = null) {
   const generation = String(generationIdValue || "").toLowerCase();
   if (!UUID_PATTERN.test(generation)) return { views: [], superseded: false, found: false };
-  const workspace = await rpc(fetchImpl, token, cfg, "designpro_generation_workspace", {
+  const workspace = await rpc(fetchImpl, token, cfg, atlasRevisionId ? "designpro_atlas_revision_workspace" : "designpro_generation_workspace", {
     p_generation_id: generation,
+    ...(atlasRevisionId ? {p_atlas_revision_id:atlasRevisionId} : {}),
   });
   if (workspace === null || typeof workspace !== "object" || Array.isArray(workspace)) {
     return { views: [], superseded: false, found: false };
   }
   if (String(workspace.generationId || "").toLowerCase() !== generation) {
     throw Object.assign(new Error("generation_workspace_response_invalid"), { status: 502 });
+  }
+  if (atlasRevisionId && workspace.atlasRevisionId !== atlasRevisionId) {
+    throw Object.assign(new Error("generation_workspace_revision_mismatch"), {status:502});
   }
   // Paths embed the OWNER's id, not the caller's. A design-team member reading
   // a customer's job is authorized by the read above; checking the prefix
@@ -1129,7 +1161,11 @@ async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdVal
   const views = [];
   for (const row of rows) {
     const surfaceKey = String(row.consumerRole || "");
-    if (!PRODUCTION_SURFACES.includes(surfaceKey)) continue;
+    if (GENERATION_VIEW_ROLE.get(String(row.sourceViewType || "")) !== surfaceKey) continue;
+    if (atlasRevisionId && (row.atlasRevisionId !== atlasRevisionId
+      || row.atlasMasterContentHash !== workspace.masterContentHash)) {
+      throw Object.assign(new Error("generation_workspace_revision_mismatch"), {status:502});
+    }
     const storagePath = String(row.storagePath || "");
     if (!authorizedGenerationViewPath(storagePath, ownerId, generation)) continue;
     const hashOrNull = (value) => (SHA256_PATTERN.test(String(value || "")) ? String(value).toLowerCase() : null);
@@ -1170,7 +1206,7 @@ async function approvedViewsForGeneration(fetchImpl, token, cfg, generationIdVal
   return { views, superseded, found: true, ownerId, workspace };
 }
 
-async function approvedViewsForRun(fetchImpl, token, cfg, run) {
+async function approvedViewsForRun(fetchImpl, token, cfg, run, atlasRevisionId = null) {
   const revisionId = String(run?.revision_id || "").toLowerCase();
   const snapshotHash = String(run?.revision_snapshot_hash || "").toLowerCase();
   if (!UUID_PATTERN.test(revisionId) || !SHA256_PATTERN.test(snapshotHash)) {
@@ -1186,7 +1222,7 @@ async function approvedViewsForRun(fetchImpl, token, cfg, run) {
   }
   const generation = String(revisionRows[0].generation_id || "").toLowerCase();
   if (!UUID_PATTERN.test(generation)) throw Object.assign(new Error("immutable_revision_identity_missing"), { status: 409 });
-  return approvedViewsForGeneration(fetchImpl, token, cfg, generation);
+  return approvedViewsForGeneration(fetchImpl, token, cfg, generation, atlasRevisionId);
 }
 
 async function resolveRun(fetchImpl, token, cfg, requestedGenerationId) {
@@ -2076,6 +2112,9 @@ function validatedGenerationStatus(value) {
   }
   return {
     requestId: String(value.requestId), generationId: String(value.generationId),
+    parentAtlasRevisionId: UUID_PATTERN.test(String(value.parentAtlasRevisionId || "")) ? String(value.parentAtlasRevisionId) : null,
+    revisionSequence: Number.isSafeInteger(value.revisionSequence) && value.revisionSequence > 0 ? value.revisionSequence : 1,
+    revisionHandoffError: value.revisionHandoffError ? {code:"revision_preparation_needs_attention"} : null,
     state, inputHash: String(value.inputHash),
     engineContractHash: String(value.engineContractHash), attempt,
     outputSetHash: outputSetHash ? String(outputSetHash) : null,
@@ -2242,10 +2281,95 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (req.method === "POST" && url.pathname === "/api/assets/upload-intents") {
         return json(res, 201, await createUploadIntent(fetchImpl, token, cfg, user.id, await readBody(req)));
       }
+
+      const generationProgressMatch=url.pathname.match(/^\/api\/generation\/([0-9a-f-]{36})\/progress$/);
+      if(req.method==="GET" && generationProgressMatch) {
+        const generationId=generationProgressMatch[1];
+        if(!UUID_PATTERN.test(generationId))return json(res,400,{error:"generation_id_invalid"});
+        // The existing RPC checks owner/staff access before returning anything.
+        // Only the fixed public projection below may cross the gateway boundary.
+        const snapshot=await rpc(fetchImpl,token,cfg,"designpro_generation_os_snapshot",{p_generation_id:generationId});
+        if(snapshot?.generationId!==generationId || !Array.isArray(snapshot.workflowRuns))return json(res,502,{error:"generation_progress_invalid"});
+        const revisionIds=[...new Set(snapshot.workflowRuns.map(r=>r.revisionId).filter(id=>UUID_PATTERN.test(id)))];
+        const sources=new Map();
+        for(let offset=0;offset<revisionIds.length;offset+=50) {
+          const ids=revisionIds.slice(offset,offset+50);
+          const select=encodeURIComponent("revision_id,generation_id,panels:snapshot->callOnePanels");
+          const response=await upstream(fetchImpl,`${cfg.supabaseUrl}/rest/v1/designpro_revision_sources?select=${select}&revision_id=in.(${ids.join(",")})&generation_id=eq.${generationId}`,{method:"GET"},token,cfg);
+          if(!response.ok)return json(res,503,{error:"generation_progress_binding_unavailable"});
+          const rows=await response.json();
+          if(!Array.isArray(rows))return json(res,502,{error:"generation_progress_binding_invalid"});
+          for(const row of rows) {
+            const panels=row.panels,hashes=new Set(Array.isArray(panels)?panels.map(p=>p.sourceMasterHash):[]);
+            if(row.generation_id===generationId && Array.isArray(panels) && panels.length===6
+              && new Set(panels.map(p=>p.surfaceKey)).size===6 && PRODUCTION_SURFACES.every(key=>panels.some(p=>p.surfaceKey===key))
+              && hashes.size===1 && SHA256_PATTERN.test([...hashes][0]))sources.set(row.revision_id,[...hashes][0]);
+          }
+        }
+        return json(res,200,publicGenerationProgress({...snapshot,workflowRuns:snapshot.workflowRuns.map(run=>({
+          ...run,sourceMasterHash:sources.get(run.revisionId)||null,
+        }))}));
+      }
+
+      // Gateway authenticates the caller. Runtime resolves immutable assets
+      // and repeats tenant/QC checks with its private service credentials.
+      if(req.method==="GET" && url.pathname==="/api/panelpro-file-output/capabilities") {
+        if(!cfg.internalRuntimeUrl || cfg.workerSecret.length<32)return json(res,503,{error:"panelprofile_service_unavailable"});
+        const response=await fetchImpl(`${cfg.internalRuntimeUrl}/internal/panelpro-file-output/capabilities`,{
+          method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${cfg.workerSecret}`},
+          body:JSON.stringify({ownerId:user.id,payload:{}})});
+        return json(res,response.status,await response.json().catch(()=>({error:"panelprofile_service_unavailable"})));
+      }
+      const templateMatch=url.pathname.match(/^\/api\/panelpro-file-output\/templates\/(sources|candidates)(?:\/([0-9a-f-]{36})(?:\/(review|recover))?)?$/);
+      if(templateMatch && ["GET","POST"].includes(req.method||"")) {
+        if(!cfg.internalRuntimeUrl || cfg.workerSecret.length<32)return json(res,503,{error:"template_service_unavailable"});
+        const [,kind,candidateId,operation]=templateMatch;
+        let action,payload;
+        if(kind==="sources" && !candidateId && req.method==="POST") {action="import";payload=await readBody(req);}
+        else if(kind==="candidates" && !candidateId && req.method==="POST") {action="create";payload=await readBody(req);}
+        else if(kind==="candidates" && !candidateId && req.method==="GET") {action="list";payload=Object.fromEntries(["sourceId"].filter(k=>url.searchParams.has(k)).map(k=>[k,url.searchParams.get(k)]));}
+        else if(kind==="candidates" && candidateId && !operation && req.method==="GET") {action="get";payload={candidateId};}
+        else if(kind==="candidates" && candidateId && operation && req.method==="POST") {action=operation;payload={...await readBody(req),candidateId};}
+        else return json(res,405,{error:"method_not_allowed"});
+        const response=await fetchImpl(`${cfg.internalRuntimeUrl}/internal/panelpro-templates/${action}`,{
+          method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${cfg.workerSecret}`},
+          body:JSON.stringify({actorId:user.id,payload})});
+        return json(res,response.status,await response.json().catch(()=>({error:"template_service_unavailable"})));
+      }
+      const panelProfileMatch=url.pathname.match(/^\/api\/panelpro-file-output\/(sources|runs|production)(?:\/([0-9a-f-]{36})(?:\/(approve|resume|attach|reserve))?)?$/);
+      if(panelProfileMatch && ["GET","POST"].includes(req.method||"")) {
+        if(!cfg.internalRuntimeUrl || cfg.workerSecret.length<32)return json(res,503,{error:"panelprofile_service_unavailable"});
+        const [,kind,runId,approval]=panelProfileMatch;
+        let action,payload;
+        if(kind==="sources" && !runId && req.method==="POST") {action="sources";payload=await readBody(req);}
+        else if(kind==="runs" && !runId && req.method==="POST") {action="create";payload=await readBody(req);}
+        else if(kind==="runs" && !runId && req.method==="GET") {action="list";payload=Object.fromEntries(["sourceApp","sourceJobId","generationId","revisionId","designId","orderId"].filter(k=>url.searchParams.has(k)).map(k=>[k,url.searchParams.get(k)]));}
+        else if(kind==="runs" && runId && !approval && req.method==="GET") {action="get";payload={runId};}
+        else if(kind==="runs" && runId && ["approve","resume","attach"].includes(approval) && req.method==="POST") {action=approval;payload={...await readBody(req),runId};}
+        else if(kind==="production" && runId && approval==="reserve" && req.method==="POST") {action="reserve";payload={productionRunId:runId};}
+        else return json(res,405,{error:"method_not_allowed"});
+        const response=await fetchImpl(`${cfg.internalRuntimeUrl}/internal/panelpro-file-output/${action}`,{
+          method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${cfg.workerSecret}`},
+          body:JSON.stringify({ownerId:user.id,payload})});
+        return json(res,response.status,await response.json().catch(()=>({error:"panelprofile_service_unavailable"})));
+      }
       if (req.method === "POST" && url.pathname === "/api/assets/verify") {
         return json(res, 200, { asset: await verifyStoredAsset(fetchImpl, token, cfg, user.id, (await readBody(req)).asset || {}) });
       }
 
+      if(req.method==="POST" && url.pathname==="/api/generation/requests/revisions") {
+        if(!cfg.internalRuntimeUrl || cfg.workerSecret.length<32)return json(res,503,{error:"generation_revision_service_unavailable"});
+        const payload=await readBody(req);
+        const allowed=new Set(["generationId","parentAtlasRevisionId","parentMasterContentHash","instruction","affectedSurfaces","editAssets","panelOutputRunId"]);
+        if(!payload || typeof payload!=="object" || Array.isArray(payload) || Object.keys(payload).some(key=>!allowed.has(key))
+          || !UUID_PATTERN.test(payload.generationId) || !UUID_PATTERN.test(payload.parentAtlasRevisionId)
+          || !SHA256_PATTERN.test(payload.parentMasterContentHash) || typeof payload.instruction!=="string"
+          || !payload.instruction.trim() || payload.instruction.length>4000) return json(res,400,{error:"generation_revision_input_invalid"});
+        const response=await fetchImpl(`${cfg.internalRuntimeUrl}/internal/atlas-revisions/enqueue`,{
+          method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${cfg.workerSecret}`},
+          body:JSON.stringify({actorId:user.id,payload})});
+        return json(res,response.status,await response.json().catch(()=>({error:"generation_revision_service_unavailable"})));
+      }
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
         const request = validatedGenerationRequest(await readBody(req), user.id);
         // A generationId already carrying a different brief is not a bad
@@ -2915,6 +3039,8 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       const approvedViewMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/approved-views$/);
       if (req.method === "GET" && approvedViewMatch) {
         const requestedViewId = decodeURIComponent(approvedViewMatch[1]);
+        const atlasRevisionId = url.searchParams.get("atlasRevisionId");
+        if(atlasRevisionId !== null && !UUID_PATTERN.test(atlasRevisionId)) return json(res,400,{error:"atlas_revision_id_invalid"});
         const runs = await listRuns(fetchImpl, token, cfg);
         const run = requestedRun(runs, requestedViewId);
         // A RUN IS NOT REQUIRED TO HAVE PROOFS.
@@ -2927,8 +3053,8 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // corrected for the master. So the generation is the address, and the
         // run only supplies it when the caller passed a run id.
         const result = run
-          ? await approvedViewsForRun(fetchImpl, token, cfg, run)
-          : await approvedViewsForGeneration(fetchImpl, token, cfg, requestedViewId);
+          ? await approvedViewsForRun(fetchImpl, token, cfg, run, atlasRevisionId)
+          : await approvedViewsForGeneration(fetchImpl, token, cfg, requestedViewId, atlasRevisionId);
         if (!result.found) return json(res, 404, { error: "job_not_found" });
         // A superseded flat-first view set is withheld deliberately, and saying
         // so is the difference between "this design has no proofs yet" and
@@ -2947,7 +3073,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // passenger-side, provider_attempts_exhausted. This is the same idiom
         // as the superseded header directly above -- the payload stays the
         // views, and the reason the list is short rides beside it.
-        const refused = await refusedViewsForGeneration(fetchImpl, token, cfg, requestedViewId);
+        const refused = atlasRevisionId ? [] : await refusedViewsForGeneration(fetchImpl, token, cfg, requestedViewId);
         if (refused.length) {
           res.setHeader("x-designpro-views-refused", JSON.stringify(refused));
         }

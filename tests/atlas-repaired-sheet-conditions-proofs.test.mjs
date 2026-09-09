@@ -90,7 +90,7 @@ test("the ACCEPTED master is what persists and what every binding is keyed by", 
   // What persists is now the sheet that PASSED structural re-validation. On a
   // clean master that is byte-identical to what this test used to assert,
   // because the fill returns the same buffer and the path is the same one.
-  assert.match(source, /storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image\/png"/);
+  assert.match(source, /masterBytes: acceptedMasterBytes, masterStoragePath: acceptedMasterStoragePath/);
   assert.match(source, /master: \{\s*storagePath: row\.master_storage_path,/);
   // The pre-repair sheet is not lost -- it is recorded as provenance, and is
   // never again called the canonical or accepted master.

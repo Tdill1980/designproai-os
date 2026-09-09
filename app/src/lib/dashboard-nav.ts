@@ -118,6 +118,15 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: "The production control room — A.T.L.A.S. master, panels, proofs, downloads and the human QC checklist",
   },
   {
+    key: "panelprofileoutput",
+    label: "PanelProFileOutput",
+    route: "/panelpro-file-output",
+    icon: Layers,
+    pillar: "output",
+    tier: "starter",
+    description: "Fit saved artwork to templates, inspect protected placement and prepare physical print panels",
+  },
+  {
     key: "genieqc",
     label: "GENIE QC",
     route: "/designpro/genie-qc",

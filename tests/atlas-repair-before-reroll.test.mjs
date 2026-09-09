@@ -91,13 +91,13 @@ test("Passenger is composed from Driver only after acceptance, never inside the 
   assert.doesNotMatch(loop, /masterBytes\s*=\s*passengerMirror\.bytes/);
 
   // The composition happens after the loop, on an accepted master.
-  assert.match(afterLoop, /const passengerMirror = await composePassengerFromDriver\(\{/);
+  assert.match(afterLoop, /const passengerMirror = recoveredState\?\.passengerMirror \|\| await composePassengerFromDriver\(\{/);
   // ...and its result is re-validated before it can become canonical, exactly
   // as the repair path must be: deterministic proves repeatable, not valid.
   assert.match(afterLoop, /flat_atlas_mirrored_master_invalid/);
   assert.match(
     afterLoop,
-    /if \(passengerMirror\.composed\) \{\s*\n\s*\/\/[\s\S]{0,200}deterministicMasterChecks\(passengerMirror\.bytes, manifest\)/,
+    /if \(passengerMirror\.composed && !recoveredCheckpoint\) \{\s*\n\s*\/\/[\s\S]{0,200}deterministicMasterChecks\(passengerMirror\.bytes, manifest\)/,
     "a composed flank must be re-validated before it is promoted",
   );
 
@@ -164,7 +164,7 @@ test("the authored master is never mutated inside the authoring loop", () => {
   // canonical authority" -- and a composed passenger raises exactly the same
   // question. So the composed sheet becomes the accepted master and the sheet
   // as authored is kept by hash, never again called canonical.
-  assert.match(afterLoop, /const preMirrorMasterHash = passengerMirror\.composed \? masterHash : null/);
+  assert.match(afterLoop, /const preMirrorMasterHash = recoveredState\?\.preMirrorMasterHash \|\| \(passengerMirror\.composed \? masterHash : null\)/);
   assert.match(afterLoop, /masterBytes = passengerMirror\.bytes;\s*\n\s*masterHash = sha256\(masterBytes\)/);
   assert.match(afterLoop, /preMirrorMasterHash,/);
 });
@@ -234,7 +234,7 @@ test("the revision records what decided acceptance and what the judge said", () 
 });
 
 test("click -> master is measured in segments on the immutable revision", () => {
-  assert.match(source, /const callOneStartedAt = Date\.now\(\);/);
+  assert.match(source, /const callOneStartedAt = recoveredState\?\.callOneStartedAt \|\| Date\.now\(\);/);
   assert.match(source, /normalizeMs: 0,/);
   assert.match(source, /panelExtractionMs: 0,/);
   assert.match(source, /viewAuthorityMs: 0,/);

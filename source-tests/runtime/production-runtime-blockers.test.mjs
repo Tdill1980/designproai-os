@@ -174,7 +174,7 @@ test("the final deterministic pack includes the seven source views and GENIE dim
   assert.match(claimantSource, /"source-view": viewEntries\.length, "dimension-manifest": 1/);
   assert.match(claimantSource, /zipIncludesSourceViews: production/);
   assert.match(claimantSource, /const expectedSourceViews = authorized\.zipIncludesSourceViews \? 7 : 0/);
-  assert.match(claimantSource, /sourceViews: zipReceipt\.receipt\.sourceViews, dimensionManifest: zipReceipt\.receipt\.dimensionManifest/);
+  assert.match(claimantSource, /sourceViews: zipReceipt\.receipt\.sourceViews, stampedViews: zipReceipt\.receipt\.stampedViews, proofJoin: zipReceipt\.receipt\.proofJoin, panelProfileAttachments, dimensionManifest: zipReceipt\.receipt\.dimensionManifest/);
 });
 
 test("visible stamp, ZIP identity file, and WrapBox bind immutable DesignID plus Order #", () => {

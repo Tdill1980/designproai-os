@@ -68,6 +68,7 @@ const ApproveProUnavailable = () => (
 import { RequireAuth } from "@/components/RequireAuth";
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
+import { RequirePanelOutputReviewer } from "@/components/RequirePanelOutputReviewer";
 import { RequireSingleFlatPanel } from "@/components/RequireSingleFlatPanel";
 import { RequireWPWTenant } from "@/components/RequireWPWTenant";
 import { ScrollToTop } from "@/components/ScrollToTop";
@@ -116,6 +117,9 @@ const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/Producti
 const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelProStudioBoard"));
 const AdminGeminiCompareStudio = lazyWithRetry(() => import("./pages/AdminGeminiCompareStudio"));
 const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
+const PanelProFileOutput = lazyWithRetry(() => import("./pages/PanelProFileOutput"));
+const PanelProFileOutputPreparation = lazyWithRetry(() => import("./pages/PanelProFileOutput").then((module) => ({ default: module.PanelProFileOutputPreparation })));
+const PanelProTemplateReview = lazyWithRetry(() => import("./pages/PanelProTemplateReview"));
 const DesignProGenieQc = lazyWithRetry(() => import("./pages/designpro/GenieQc"));
 const DesignProWrapBox = lazyWithRetry(() =>
   import("./pages/designpro/WrapBoxDelivery").then((mod) => ({ default: mod.WrapBoxList })),
@@ -308,6 +312,10 @@ const App = () => {
           <Route path="/designpro/jobs/:generationId/panelpro" element={<RequireAuth><AdminGeminiCompareStudio /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/panelpro/surfaces" element={<RequireAuth><PanelProStudioBoard /></RequireAuth>} />
           <Route path="/designpro/studio-board" element={<RequireAuth><AdminGeminiCompareStudio /></RequireAuth>} />
+          <Route path="/panelpro-file-output" element={<RequireAuth><PanelProFileOutput /></RequireAuth>} />
+          <Route path="/panelpro-file-output/runs/:runId" element={<RequireAuth><PanelProFileOutput /></RequireAuth>} />
+          <Route path="/panelpro-file-output/prepare" element={<RequireAuth><RequirePanelOutputReviewer capability="canPrepare"><PanelProFileOutputPreparation /></RequirePanelOutputReviewer></RequireAuth>} />
+          <Route path="/panelpro-file-output/templates" element={<RequireAuth><RequirePanelOutputReviewer capability="canReview"><PanelProTemplateReview /></RequirePanelOutputReviewer></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId/progress" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/designpro/premium" element={<RequireAuth><DesignPanelProPremium /></RequireAuth>} />
           <Route path="/designpro/raster" element={<RequireAuth><DesignStudio /></RequireAuth>} />

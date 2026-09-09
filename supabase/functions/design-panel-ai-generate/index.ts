@@ -44,6 +44,12 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
+import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage } from "../_shared/gemini-image-history.mjs";
+import {
+  GEMINI_PROVIDER_CACHE_CONTRACT, authorizeAtlasProviderRequest,
+  providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
+  prepareAtlasRevisionProviderContents,
+} from "../_shared/gemini-provider-cache.mjs";
 // ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
 // buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
@@ -1238,6 +1244,18 @@ serve(async (req) => {
   // CLAUDE.md prompt lock.
   const internalCaller = await resolveDesignProInternalCaller(req);
   if (internalCaller.rejection) return internalCaller.rejection;
+  // An old Edge cannot safely receive cacheOnly: it would ignore the flag and
+  // create an image. Runtime probes this authenticated, nonspending GET first.
+  if (req.method === "GET" && new URL(req.url).searchParams.get("action") === "atlas-provider-capabilities") {
+    return new Response(JSON.stringify(internalCaller.internal ? {
+      providerCacheContract: GEMINI_PROVIDER_CACHE_CONTRACT,
+      modes: ["atlas-artboard", "atlas-panel"], cacheOnly: true,
+      revisionIntakeContract: "designpro.atlas-revision-intake.v1",
+    } : { error: "atlas_provider_internal_only" }), {
+      status: internalCaller.internal ? 200 : 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   const gate = await tokenGate(req, {
     reason: "design_panel_ai_generate",
     // The authenticated standalone request spends at request admission. Calls
@@ -1266,7 +1284,7 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      return await handleAtlasArtboard(body);
+      return await handleAtlasArtboard(body, internalCaller.userId!);
     }
 
     // ═══ ATLAS-PANEL — PER-SURFACE AUTHORING (owner ruling, Trish 2026-09-08).
@@ -1283,7 +1301,7 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
-      return await handleAtlasPanel(body);
+      return await handleAtlasPanel(body, internalCaller.userId!);
     }
     const {
       mode,
@@ -2393,11 +2411,17 @@ Output a single structured paragraph that another AI could use to recreate this 
 // inside this same master.
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Response> {
-  const requestId = crypto.randomUUID();
+async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  let requestId = crypto.randomUUID();
+  let imageRequestCount = 0;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   try {
+    const authorizedRequest = await authorizeAtlasProviderRequest(svc, body.providerRequest, ownerId);
+    if (Boolean(authorizedRequest.parentAtlasRevisionId) !== Boolean(body.revisionContextHash)
+      || (body.revisionContextHash && authorizedRequest.revisionContextHash !== body.revisionContextHash)) {
+      throw new Error("atlas_revision_context_required");
+    }
     const vehicleYear = String(body.vehicleYear || "").trim();
     const vehicleMake = String(body.vehicleMake || "").trim();
     const vehicleModel = String(body.vehicleModel || "").trim();
@@ -2593,9 +2617,14 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     // timings below say which half was slow.
     const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
     const t0 = Date.now();
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const revision = body.revisionContextHash ? await prepareAtlasRevisionProviderContents({
+      supabase: svc, ownerId, providerRequest: body.providerRequest,
+      revisionContextHash: body.revisionContextHash, currentUserParts: parts,
+    }) : null;
+    const contents = revision?.contents || [{ role: "user", parts }];
     const modelRequest = JSON.stringify({
-      contents: [{ role: "user", parts }],
+      contents,
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: { aspectRatio: "1:1", imageSize: "4K" },
@@ -2605,24 +2634,30 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     if (modelRequestByteSize > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES) {
       throw new Error(`atlas_artboard_model_request_too_large:${modelRequestByteSize}`);
     }
-    const modelInputImageCount = parts.filter((part) => Boolean((part as Record<string, any>)?.inlineData?.data)).length;
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(115_000),
-      body: modelRequest,
+    const modelInputImageCount = contents.reduce((count: number, turn: Record<string, any>) => count + turn.parts.filter((part: Record<string, any>) => Boolean(part?.inlineData?.data || part?.fileData)).length, 0);
+    if (modelInputImageCount > 14) throw new Error(`atlas_artboard_reference_budget_exceeded:${modelInputImageCount}`);
+    const providerRequest = body.providerRequest as Record<string, unknown>;
+    const cached = await runDurableImageProviderRequest({
+      bucket: svc.storage.from("wrap-files"),
+      identity: { ...providerRequest, ownerId, mode: "atlas-artboard" },
+      requestHash: await providerSha256(JSON.stringify({ model, promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION, modelRequest })),
+      privateRequest: modelRequest,
+      outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: async () => {
+        const geminiRes = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
+          signal: AbortSignal.timeout(115_000), body: modelRequest,
+        });
+        return { status: geminiRes.status, payload: await geminiRes.json(), retryAfterSeconds: geminiRes.headers.get("retry-after") };
+      },
     });
+    requestId = cached.requestId;
+    imageRequestCount = 1;
     console.log(`atlas-artboard ${requestId}: gemini responded in ${Date.now() - t0}ms (${model}, ${parts.length} parts, prompt ${prompt.length} chars)`);
-    if (!geminiRes.ok) {
-      throw new Error(`atlas_artboard_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
-    }
-    const payload = await geminiRes.json();
-    const candidateParts: Array<Record<string, any>> = payload?.candidates?.[0]?.content?.parts || [];
-    const imagePart = candidateParts.find((p) => p?.inlineData?.data);
-    const textOut = candidateParts.filter((p) => typeof p?.text === "string").map((p) => p.text).join("\n").trim();
-    if (!imagePart) {
-      throw new Error(`atlas_artboard_no_image: finishReason=${payload?.candidates?.[0]?.finishReason || "unknown"} text=${textOut.slice(0, 200)}`);
-    }
+    const payload = cached.payload;
+    const { imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_artboard");
 
     // 5 — persist + provenance.
     // Decode without a per-byte JS callback: a 4K master is ~5MB, and
@@ -2634,11 +2669,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
     const digest = await crypto.subtle.digest("SHA-256", masterBytes);
     const masterSha256 = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const storagePath = `atlas-call1/${requestId}.png`;
-    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, masterBytes, {
-      contentType: "image/png",
-      upsert: false,
-    });
-    if (upErr) throw new Error(`atlas_artboard_upload_failed: ${upErr.message}`);
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, masterBytes, "image/png");
     // wrap-files is PRIVATE: a public URL 400s (live 2026-08-27, run
     // 33028608748 — the master was written, the caller could not read it).
     // The path is the contract; the signed URL is a convenience for humans.
@@ -2654,6 +2685,13 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
         model,
         imageRequestCount: 1,
+        providerCacheContract: cached.providerCacheContract,
+        providerCacheHit: cached.providerCacheHit,
+        providerRequestKey: cached.providerRequestKey,
+        ...(revision ? { revisionContextHash: revision.revisionContextHash,
+          parentAtlasRevisionId: revision.parentAtlasRevisionId, parentMasterContentHash: revision.parentMasterContentHash,
+          revisionHistoryMode: revision.revisionHistoryMode, reusedImageCount: revision.reusedImageCount,
+          remainingImageCapacity: revision.remainingImageCapacity } : {}),
         modelRequestByteSize,
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
@@ -2676,10 +2714,15 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
         requestId,
         functionName: "design-panel-ai-generate",
         promptVersion: ATLAS_ARTBOARD_PROMPT_VERSION,
-        imageRequestCount: 0,
+        imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
+        providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
+        providerStatus: (err as any)?.providerStatus || null,
+        retryAfterSeconds: (err as any)?.retryAfterSeconds || null,
+        retryable: (err as any)?.retryable === true,
+        providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
         error: String((err as Error)?.message || err).slice(0, 500),
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: Number((err as any)?.status) || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 }
@@ -2719,7 +2762,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>): Promise<Respo
 // FAILURE IS NEVER FATAL. The caller falls back to the crop it already has,
 // so this path can only raise the floor — it can never lose a run that would
 // have shipped without it.
-const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v4-signature-fidelity";
+const ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish.20260908.v5-exact-exchanges";
 const ATLAS_PANEL_AUTHORING_MODEL = "gemini-3-pro-image";
 /**
  * Every already-finished sheet may be attached (owner ruling 2026-09-08:
@@ -2738,8 +2781,8 @@ const ATLAS_PANEL_MAX_NEIGHBOURS = 5;
 const ATLAS_PANEL_MAX_REFERENCE_ASSETS = 14;
 /**
  * Five, because the cascade is six surfaces and the sixth is the one asking.
- * Each prior turn is a short text plus an encrypted signature — kilobytes, not
- * megabytes, because images never travel in history.
+ * Retained exchanges include their exact input and output images. The runtime
+ * budgets their decoded bytes; this handler also checks the complete request.
  */
 const ATLAS_PANEL_MAX_PRIOR_TURNS = 10;
 const ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
@@ -2809,11 +2852,13 @@ function atlasPanelFinishPrompt(
   ].join("\n");
 }
 
-async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response> {
-  const requestId = crypto.randomUUID();
+async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  let requestId = crypto.randomUUID();
+  let imageRequestCount = 0;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   try {
+    await authorizeAtlasProviderRequest(svc, body.providerRequest, ownerId);
     const surfaceKey = String(body.surfaceKey || "").trim().toLowerCase();
     if (!["driver", "passenger", "hood", "roof", "front", "rear"].includes(surfaceKey)) {
       throw new Error(`atlas_panel_surface_unknown:${surfaceKey.slice(0, 40)}`);
@@ -2829,6 +2874,8 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
       return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
     };
     const parts: Array<Record<string, unknown>> = [];
+    const userImageRefs = new Map<number, { storagePath: string; contentHash: string }>();
+    let historyImageBytes = 0;
     // Same private-storage discipline as Call 1: the bytes travel by path plus
     // hash, never inline in the JSON body, and a path that does not hash to its
     // own name is refused rather than sent to the model.
@@ -2854,6 +2901,8 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
       for (let i = 0; i < bytes.length; i += CHUNK) {
         binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
       }
+      userImageRefs.set(parts.length, { storagePath: key, contentHash: actual });
+      historyImageBytes += bytes.length;
       parts.push({ inlineData: { mimeType, data: btoa(binary) } });
       return actual;
     };
@@ -2869,7 +2918,9 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
      */
     const downloadHistoryImage = async (path: unknown, expectedHash: unknown) => {
       const key = String(path || "").trim();
-      if (!/^atlas-panel\/[0-9a-f-]{36}\.png$/.test(key)) {
+      if (!/^atlas-panel\/[0-9a-f-]{36}\.png$/.test(key)
+        && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(png|jpg)$/.test(key)
+        && !/^atlas-panel-history\/[0-9a-f-]{36}\/\d+\.(png|jpg|webp)$/.test(key)) {
         throw new Error(`atlas_panel_history_path_invalid:${key.slice(0, 160)}`);
       }
       const hash = String(expectedHash || "");
@@ -2928,41 +2979,7 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     }
     const priorTurns: Array<Record<string, unknown>> = [];
     for (const turn of priorTurnsIn) {
-      const role = String(turn.role || "");
-      if (role !== "user" && role !== "model") {
-        throw new Error(`atlas_panel_prior_turn_role_invalid:${role.slice(0, 40)}`);
-      }
-      const turnParts = Array.isArray(turn.parts) ? (turn.parts as Array<Record<string, unknown>>) : [];
-      const replayed: Array<Record<string, unknown>> = [];
-      for (const part of turnParts) {
-        const out: Record<string, unknown> = {};
-        if (typeof part.text === "string") out.text = part.text.slice(0, 4000);
-        // An image the model previously produced, referenced by the path this
-        // function wrote it to. Hash-verified on the way back in, exactly like
-        // every other image this handler attaches.
-        const ref = part.imageRef as Record<string, unknown> | undefined;
-        if (ref) {
-          out.inlineData = {
-            mimeType: "image/png",
-            data: await downloadHistoryImage(ref.storagePath, ref.contentHash),
-          };
-        }
-        // Inline base64 in history is refused rather than silently dropped:
-        // quietly shrinking a caller's history would make a budget bug
-        // invisible, and the reference form above exists precisely so nobody
-        // needs to send one.
-        if (part.inlineData) throw new Error("atlas_panel_prior_turn_carries_inline_image");
-        // LAST, so the signature sits on the same part as its content.
-        if (typeof part.thoughtSignature === "string") {
-          if (!out.text && !out.inlineData) {
-            throw new Error("atlas_panel_prior_turn_orphan_signature");
-          }
-          out.thoughtSignature = part.thoughtSignature;
-        }
-        if (Object.keys(out).length > 0) replayed.push(out);
-      }
-      if (replayed.length === 0) throw new Error("atlas_panel_prior_turn_empty");
-      priorTurns.push({ role, parts: replayed });
+      priorTurns.push(await replayImageTurn(turn, downloadHistoryImage));
     }
 
     const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
@@ -2991,9 +3008,13 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
       neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
     }
 
+    const totalInputImageCount = referenceAssetCount + priorTurns.reduce((count, turn) =>
+      count + (turn.parts as Array<Record<string, unknown>>).filter((part) => part.inlineData || part.fileData).length, 0);
+    if (totalInputImageCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) throw new Error(`atlas_panel_reference_budget_exceeded:${totalInputImageCount}`);
+
     const model = ATLAS_PANEL_AUTHORING_MODEL;
     const t0 = Date.now();
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${getGeminiKey()}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     // NO aspectRatio — see the header. An edit follows its input's proportion;
     // asking for one from the menu would letterbox or distort every flank.
     const modelRequest = JSON.stringify({
@@ -3007,32 +3028,51 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
     if (modelRequestByteSize > ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES) {
       throw new Error(`atlas_panel_model_request_too_large:${modelRequestByteSize}`);
     }
-    const geminiRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(110_000),
-      body: modelRequest,
+    const providerRequest = body.providerRequest as Record<string, unknown>;
+    const cached = await runDurableImageProviderRequest({
+      bucket: svc.storage.from("wrap-files"),
+      identity: { ...providerRequest, ownerId, mode: "atlas-panel" },
+      requestHash: await providerSha256(JSON.stringify({ model, promptVersion: ATLAS_PANEL_PROMPT_VERSION, modelRequest })),
+      privateRequest: modelRequest,
+      outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: async () => {
+        const geminiRes = await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
+          signal: AbortSignal.timeout(110_000), body: modelRequest,
+        });
+        return { status: geminiRes.status, payload: await geminiRes.json(), retryAfterSeconds: geminiRes.headers.get("retry-after") };
+      },
     });
+    requestId = cached.requestId;
+    imageRequestCount = 1;
     console.log(`atlas-panel ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts)`);
-    if (!geminiRes.ok) {
-      throw new Error(`atlas_panel_gemini_http_${geminiRes.status}: ${(await geminiRes.text()).slice(0, 300)}`);
-    }
-    const payload = await geminiRes.json();
-    const candidateParts: Array<Record<string, any>> = payload?.candidates?.[0]?.content?.parts || [];
-    const imagePart = candidateParts.find((p) => p?.inlineData?.data);
-    if (!imagePart) {
-      throw new Error(`atlas_panel_no_image: finishReason=${payload?.candidates?.[0]?.finishReason || "unknown"}`);
-    }
+    const payload = cached.payload;
+    const { candidateParts, imagePart } = selectFinalGenerateContentImage(payload, "atlas_panel");
     const binary = atob(imagePart.inlineData.data);
     const panelBytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) panelBytes[i] = binary.charCodeAt(i);
     const panelSha256 = await sha256Hex(panelBytes);
     const storagePath = `atlas-panel/${requestId}.png`;
-    const { error: upErr } = await svc.storage.from("wrap-files").upload(storagePath, panelBytes, {
-      contentType: "image/png",
-      upsert: false,
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, panelBytes, "image/png");
+
+    const userTurn = await captureImageTurn({ role: "user", parts }, async (_inlineData: unknown, index: number) => {
+      const ref = userImageRefs.get(index);
+      if (!ref) throw new Error("atlas_panel_user_image_reference_missing");
+      return ref;
     });
-    if (upErr) throw new Error(`atlas_panel_upload_failed: ${upErr.message}`);
+    const modelTurn = await captureImageTurn(payload.candidates[0].content, async (inlineData: Record<string, string>, index: number) => {
+      const bytes = decodeBase64(inlineData.data);
+      historyImageBytes += bytes.length;
+      if (candidateParts[index] === imagePart) return { storagePath, contentHash: panelSha256 };
+      const extension = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as Record<string, string>)[inlineData.mimeType];
+      if (!extension) throw new Error("atlas_panel_history_image_mime_invalid");
+      const path = `atlas-panel-history/${requestId}/${index}.${extension}`;
+      const contentHash = await sha256Hex(bytes);
+      await putImmutableProviderArtifact(svc.storage.from("wrap-files"), path, bytes, inlineData.mimeType);
+      return { storagePath: path, contentHash };
+    });
 
     return new Response(
       JSON.stringify({
@@ -3044,43 +3084,22 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
         model,
         surfaceKey,
         imageRequestCount: 1,
+        providerCacheContract: cached.providerCacheContract,
+        providerCacheHit: cached.providerCacheHit,
+        providerRequestKey: cached.providerRequestKey,
         modelRequestByteSize,
-        modelInputImageCount: referenceAssetCount,
+        modelInputImageCount: totalInputImageCount,
         atlasReferenceAttached: Boolean(atlasReferenceHash),
         atlasReferenceHash,
         neighbourCount: neighboursIn.length,
         neighbourHashes,
         sourcePanelHash,
-        // THE CHAIN, HANDED BACK. The caller appends this as the model turn
-        // and sends it with the next surface, so the reasoning that produced
-        // this sheet is still in context when the next one is drawn. Image
-        // data is stripped: the sheets travel as declared references instead.
+        // Exact exchanges, including original user inputs and distinct model
+        // images. No reasoning or signatures are customer display content.
         priorTurnsApplied: priorTurns.length,
-        // THE MODEL TURN, FAITHFUL PART FOR PART.
-        //
-        // Same order, same parts, every signature still on the part it arrived
-        // on. The image is the one substitution — `inlineData` becomes an
-        // `imageRef` naming the object this handler just wrote — and it is
-        // rehydrated into the identical shape on the way back in. Nothing else
-        // is reshaped: the whole value of a signature is that the model
-        // recognises its own turn.
-        modelTurn: {
-          role: "model",
-          parts: candidateParts
-            .map((part) => {
-              const out: Record<string, unknown> = {};
-              if (typeof part?.text === "string" && part.text.trim()) out.text = part.text.slice(0, 4000);
-              if (part?.inlineData?.data) {
-                out.imageRef = { storagePath, contentHash: panelSha256 };
-              }
-              if (typeof part?.thoughtSignature === "string"
-                && (out.text || out.imageRef)) {
-                out.thoughtSignature = part.thoughtSignature;
-              }
-              return out;
-            })
-            .filter((part) => Object.keys(part).length > 0),
-        },
+        userTurn,
+        modelTurn,
+        historyImageBytes,
         thoughtSignatureCount: candidateParts
           .filter((part) => typeof part?.thoughtSignature === "string").length,
         promptChars: prompt.length,
@@ -3097,10 +3116,15 @@ async function handleAtlasPanel(body: Record<string, unknown>): Promise<Response
         requestId,
         functionName: "design-panel-ai-generate",
         promptVersion: ATLAS_PANEL_PROMPT_VERSION,
-        imageRequestCount: 0,
+        imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
+        providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
+        providerStatus: (err as any)?.providerStatus || null,
+        retryAfterSeconds: (err as any)?.retryAfterSeconds || null,
+        retryable: (err as any)?.retryable === true,
+        providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
         error: String((err as Error)?.message || err).slice(0, 500),
       }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: Number((err as any)?.status) || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 }

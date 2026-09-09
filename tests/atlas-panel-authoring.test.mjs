@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import { captureImageTurn, replayImageTurn } from "../supabase/functions/_shared/gemini-image-history.mjs";
 
 const require = createRequire(import.meta.url);
 // sharp is installed under runtime/, not at the repo root.
@@ -236,6 +237,7 @@ test("the cascade is ONE conversation — thought signatures carry forward", asy
   // should still be holding why when it reaches the hood.
   const bytes = await solid(600, 300);
   const seen = [];
+  const originalUserTurn = { role: "user", parts: [{ text: "Original instructions, not a summary" }, { imageRef: { storagePath: "subject.png", contentHash: "f".repeat(64) } }] };
   const earlier = {
     surfaceKey: "driver",
     imageBytes: 1000,
@@ -248,9 +250,11 @@ test("the cascade is ONE conversation — thought signatures carry forward", asy
       seen.push(request.priorTurns);
       return {
         bytes: await solid(600, 300),
+        userTurn: originalUserTurn,
         modelTurn: modelTurnFixture("sig-hood"),
         thoughtSignatureCount: 1,
         panelByteSize: 2000,
+        historyImageBytes: 3500,
       };
     },
   });
@@ -261,30 +265,37 @@ test("the cascade is ONE conversation — thought signatures carry forward", asy
   assert.equal(finish.nextExchanges.length, 2);
   assert.equal(finish.nextExchanges[0].surfaceKey, "driver");
   assert.equal(finish.nextExchanges[1].surfaceKey, "hood");
-  assert.equal(finish.nextExchanges[1].imageBytes, 2000);
+  assert.equal(finish.nextExchanges[1].imageBytes, 3500, "budget includes user inputs and every returned image");
+  assert.deepEqual(finish.nextExchanges[1].turns[0], originalUserTurn);
   assert.deepEqual(finish.nextExchanges[1].turns[1], modelTurnFixture("sig-hood"));
   assert.equal(finish.thoughtSignatureCount, 1);
   assert.match(runtimeSrc, /priorExchanges: reasoningChain,/);
   assert.match(runtimeSrc, /reasoningChain = finish\.nextExchanges;/);
 });
 
-test("A SIGNATURE IS REPLAYED ON THE PART IT ARRIVED ON, never orphaned", () => {
-  // The defect this replaces: the first version kept `thoughtSignature` and
-  // discarded `inlineData`, handing back a signature attached to nothing. On
-  // an image response the signature rides on the IMAGE part.
+test("signed multipart replies round-trip exactly, including distinct thought images and long text", async () => {
+  const original = { role: "model", parts: [
+    { text: "x".repeat(6000), thought: true, thoughtSignature: "sig-text" },
+    { inlineData: { mimeType: "image/jpeg", data: "first-image" }, thought: true, thoughtSignature: "sig-first" },
+    { text: " " },
+    { inlineData: { mimeType: "image/png", data: "final-image" }, thoughtSignature: "sig-final" },
+  ] };
+  const before = structuredClone(original);
+  const images = new Map();
+  const stored = await captureImageTurn(original, async (inlineData, index) => {
+    images.set(`image-${index}`, inlineData.data);
+    return { storagePath: `image-${index}`, contentHash: String(index).repeat(64) };
+  });
+  assert.notEqual(stored.parts[1].imageRef.storagePath, stored.parts[3].imageRef.storagePath);
+  const replayed = await replayImageTurn(stored, async (path) => images.get(path));
+  assert.deepEqual(replayed, original, "text, image MIME, part order, flags and signature attachment must survive");
+  assert.deepEqual(original, before, "capture must not mutate the provider response");
   const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
-  assert.match(handler, /atlas_panel_prior_turn_orphan_signature/);
-  // The model turn is reproduced part for part, in order, with the image
-  // carried by reference rather than reshaped away.
-  const modelTurn = handler.slice(handler.indexOf("modelTurn: {"), handler.indexOf("thoughtSignatureCount:"));
-  assert.match(modelTurn, /out\.imageRef = \{ storagePath, contentHash: panelSha256 \}/);
-  assert.match(modelTurn, /if \(typeof part\?\.thoughtSignature === "string"\s*\n?\s*&& \(out\.text \|\| out\.imageRef\)\)/);
-  // And rehydrated into the same shape on the way back in.
-  assert.match(handler, /out\.inlineData = \{/);
-  assert.match(handler, /data: await downloadHistoryImage\(ref\.storagePath, ref\.contentHash\)/);
+  assert.match(handler, /replayImageTurn\(turn, downloadHistoryImage\)/);
+  assert.match(handler, /captureImageTurn\(payload\.candidates\[0\]\.content/);
 });
 
-test("replayed history images are hash-verified and can only be this handler's own output", () => {
+test("replayed history images are hash-verified and restricted to declared input/output paths", async () => {
   const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
   const loader = handler.slice(handler.indexOf("const downloadHistoryImage ="));
   // atlas-panel/ is where this function writes every sheet it makes, so the
@@ -292,9 +303,9 @@ test("replayed history images are hash-verified and can only be this handler's o
   assert.match(loader, /\^atlas-panel\\\/\[0-9a-f-\]\{36\}\\\.png\$/);
   assert.match(loader, /atlas_panel_history_hash_mismatch/);
   assert.match(loader, /atlas_panel_history_hash_invalid/);
-  // Inline base64 in history is refused, not silently dropped.
-  assert.match(handler, /atlas_panel_prior_turn_carries_inline_image/);
-  assert.match(handler, /atlas_panel_prior_turn_role_invalid/);
+  await assert.rejects(replayImageTurn({ role: "model", parts: [{ inlineData: { data: "unverified" } }] }, async () => ""), /atlas_panel_prior_turn_carries_inline_image/);
+  await assert.rejects(replayImageTurn({ role: "system", parts: [{ text: "invalid" }] }, async () => ""), /atlas_panel_prior_turn_role_invalid/);
+  await assert.rejects(replayImageTurn(modelTurnFixture(), async () => { throw new Error("atlas_panel_history_hash_mismatch"); }), /atlas_panel_history_hash_mismatch/);
   assert.match(handler, /atlas_panel_prior_turn_budget_exceeded/);
   assert.match(handler, /contents: \[\.\.\.priorTurns, \{ role: "user", parts \}\]/);
 });
@@ -322,19 +333,13 @@ test("the conversation is trimmed from the oldest end, in whole exchanges", () =
   assert.deepEqual(authoring._test.trimHistory([exchange("driver", 99 * 1024 * 1024)]), []);
 });
 
-test("a sheet already in the conversation is not ALSO sent as a reference", () => {
-  // The model has it in its own turn, full resolution, reasoning attached.
-  // A downscaled copy alongside pays twice and shows it two ways.
-  assert.match(runtimeSrc, /const inConversation = new Set\(reasoningChain\.map\(\(exchange\) => exchange\.surfaceKey\)\)/);
-  assert.match(runtimeSrc, /\.filter\(\(key\) => !inConversation\.has\(key\)\)/);
-});
-
 test("a rejected reasoning chain degrades to images only, never to a lost panel", async () => {
   // Signature acceptance rules are the provider's, not ours, and a malformed
   // history would fail EVERY surface identically. So attempt 2 drops it.
   const bytes = await solid(600, 300);
   const sent = [];
-  const finish = await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300 }), {
+  const finish = await authoring.finishPanel(panelFixture(bytes, { width: 600, height: 300, surfaceKey: "passenger" }), {
+    neighbours: [{ surfaceKey: "driver", bytes }],
     priorExchanges: [{
       surfaceKey: "driver",
       imageBytes: 1000,
@@ -343,7 +348,11 @@ test("a rejected reasoning chain degrades to images only, never to a lost panel"
     store: { putImmutableBytes: async () => {} },
     callEdge: async (request) => {
       sent.push(request.priorTurns.length);
-      if (request.priorTurns.length > 0) throw new Error("atlas_panel_history_hash_mismatch");
+      if (request.priorTurns.length > 0) {
+        assert.deepEqual(request.neighbours, [], "do not duplicate retained images");
+        throw new Error("atlas_panel_history_hash_mismatch");
+      }
+      assert.deepEqual(request.neighbours.map((n) => n.surfaceKey), ["driver"], "dropping history must restore its sibling references");
       return { bytes: await solid(600, 300), modelTurn: null, thoughtSignatureCount: 0, panelByteSize: 10 };
     },
   });
@@ -352,7 +361,7 @@ test("a rejected reasoning chain degrades to images only, never to a lost panel"
   // Continuity was never acknowledged, so the chain restarts from this sheet
   // rather than claiming a lineage the provider did not confirm.
   assert.equal(finish.priorTurnsApplied, 0);
-  assert.deepEqual(finish.nextExchanges.map((e) => e.surfaceKey), ["driver"]);
+  assert.deepEqual(finish.nextExchanges, [], "an older edge without an exact exchange must not create invented history");
 });
 
 test("a RESUMED finished revision re-reads its panels instead of re-cutting them", () => {
@@ -523,8 +532,8 @@ test("the declared input order is the order the handler actually attaches", () =
 });
 
 test("the edge and the runtime finish against the same pinned contract", () => {
-  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v4-signature-fidelity"/);
-  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v4-signature-fidelity");
+  assert.match(edgeSrc, /ATLAS_PANEL_PROMPT_VERSION = "atlas-panel-finish\.20260908\.v5-exact-exchanges"/);
+  assert.equal(authoring.PANEL_AUTHORING_PROMPT_VERSION, "atlas-panel-finish.20260908.v5-exact-exchanges");
   // The runtime and the function ship through DIFFERENT workflows, so a
   // runtime-first deploy must refuse rather than be answered by the old edge.
   assert.match(runtimeSrc, /flat_atlas_panel_edge_prompt_version_mismatch/);
@@ -535,7 +544,7 @@ test("the atlas-panel edge mode is internal-only and makes exactly one image req
   assert.match(edgeSrc, /if \(body\?\.mode === "atlas-panel"\) \{/);
   const dispatch = edgeSrc.slice(
     edgeSrc.indexOf('if (body?.mode === "atlas-panel") {'),
-    edgeSrc.indexOf("return await handleAtlasPanel(body);"),
+    edgeSrc.indexOf("return await handleAtlasPanel(body, internalCaller.userId!);"),
   );
   assert.match(dispatch, /atlas_panel_internal_only/);
   const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));

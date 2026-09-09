@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
+const { resolveMaxAuthoringAttempts } = require("../runtime/flat-first-atlas.cjs")._test;
 
 const atlas = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 const worker = readFileSync(new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
@@ -13,12 +16,12 @@ test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () =>
   // second request body is ever built, so raising the ceiling cannot add a
   // millisecond to a healthy run. Asserting `maxAuthoringAttempts: 1` at the
   // call site only ever tested the ceiling, which is the weaker claim.
-  assert.match(atlas, /const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 5;/);
+  assert.match(atlas, /const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;/);
   assert.match(atlas, /geminiImageRequestCount: masterAuthoringAttempts/);
 
   const loop = atlas.slice(
     atlas.indexOf("for (let attempt = 1; attempt <= maxAuthoringAttempts"),
-    atlas.indexOf("const masterStoragePath = atlasStoragePath("),
+    atlas.indexOf("let masterStoragePath = atlasStoragePath("),
   );
   assert.ok(loop.length > 0, "the bounded authoring loop must still exist");
   // `stillBlocking` is tested TWICE in the loop -- first to decide whether the
@@ -42,16 +45,25 @@ test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails 
   // The last accepted six-surface production run needed candidate 2. Keep the
   // fallback bounded at the product call site, while the loop-level test above
   // proves an accepted candidate never incurs it.
-  // Raised from 2 to 5 (owner ruling 2026-09-08): the same unchanged request
-  // was refused 4 candidates for 4 on the deployed path, and nine A/B tests
-  // closed the conditioning question. Throws are the remaining lever.
-  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 5,/);
-  assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 6;/);
+  assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
+  assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 2;/);
   assert.match(
     atlas,
     /if \(attempt === maxAuthoringAttempts\) \{\s*throw new FlatAtlasError\(/,
     "exhausting the budget must surface the real refusal, never a silent retry",
   );
+});
+
+test("the default and a stale enlarged configuration can never buy a third Call-1 image", t => {
+  const previous = process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
+  t.after(() => previous === undefined ? delete process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS
+    : process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS = previous);
+  delete process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
+  assert.equal(resolveMaxAuthoringAttempts(), 2);
+  for (const value of [3, 5, 6, 99]) assert.equal(resolveMaxAuthoringAttempts(value), 2);
+  process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS = "5";
+  assert.equal(resolveMaxAuthoringAttempts(), 2);
+  assert.equal(resolveMaxAuthoringAttempts(1), 1);
 });
 
 test("panel.ready is a non-blocking graph release with durable prerequisites", () => {

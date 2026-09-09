@@ -4,6 +4,16 @@ runtime/package.json
 runtime/package-lock.json
 runtime/index.js
 runtime/designpro-standalone-claimant.cjs
+runtime/panelpro-file-output-contract.cjs
+runtime/panelpro-file-output-plan.cjs
+# Separate opt-in PanelProFileOutput graph and deterministic production worker.
+runtime/panelpro-file-output-graph.cjs
+runtime/panelpro-file-output-render.cjs
+runtime/panelpro-file-output-service.cjs
+runtime/panelpro-source-binding.cjs
+runtime/panelpro-production-attachment.cjs
+runtime/panelpro-template-provider.cjs
+runtime/panelpro-template-service.cjs
 runtime/runtime-contract.cjs
 runtime/runtime-readiness.cjs
 runtime/genie-prep.cjs
@@ -58,6 +68,7 @@ runtime/atlas-proof-qc.cjs
 runtime/generation-store.cjs
 runtime/generation-engine.cjs
 runtime/generation-worker.cjs
+runtime/atlas-revision-intake.cjs
 # Opt-in v3 canonical flat atlas authoring. It is required at module load even
 # when the release is serving legacy v1/v2 requests, so omitting it would make
 # rollback fail at startup rather than merely disable the experiment.
@@ -68,6 +79,10 @@ runtime/flat-atlas-topology-examples.cjs
 # time by flat-first-atlas.cjs, so a release without it dies at startup.
 runtime/atlas-output-class.cjs
 runtime/atlas-panel-authoring.cjs
+# Durable ATLAS acceptance and finishing are required at runtime module load.
+runtime/atlas-accepted-checkpoint.cjs
+runtime/atlas-finishing-checkpoint.cjs
+runtime/atlas-finished-master.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg
@@ -89,6 +104,12 @@ runtime/creative-authoring.cjs
 gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs
+gateway/src/generation-progress.mjs
+# Native Gemini transports shared by the runtime template service and Edge.
+# Preserve their repository-relative paths in both the archive and image.
+supabase/functions/_shared/gemini-image-interactions.mjs
+supabase/functions/_shared/gemini-provider-cache.mjs
+supabase/functions/_shared/gemini-image-history.mjs
 # The served single-page application. web/dist is the archive's name for the
 # web build; since the branded operator shell replaced the minimal control
 # panel, that build is produced from app/. The shell references its own images

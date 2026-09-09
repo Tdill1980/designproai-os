@@ -54,7 +54,7 @@ mkdir -p -- "$out"
 archive="$out/designproai-release-$sha.tgz"
 tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
   --mode='u+rwX,go+rX,go-w' --use-compress-program='gzip -n' -cf "$archive" -C "$stage" \
-  .designpro-release.json runtime gateway web ops
+  .designpro-release.json runtime gateway web ops supabase
 python3 "$root/ops/validate-archive.py" "$archive" "$sha"
 (cd "$out" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
 printf '%s\n' "$archive"
