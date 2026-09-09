@@ -50,6 +50,49 @@ export function terminalGenerationFailureCode(state: GenerationRequestState): st
     : null;
 }
 
+function generationReadStatus(error: unknown): number {
+  return Number((error as { status?: unknown } | null)?.status) || 0;
+}
+
+function transientGenerationReadFailure(error: unknown): boolean {
+  const status = generationReadStatus(error);
+  if (status) return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  return error instanceof Error && (
+    error.name === "TimeoutError"
+    || (error.name === "TypeError" && /fetch|network|load failed/i.test(error.message))
+  );
+}
+
+/** Missing pixels are not a proof-review verdict. Only recorded failed slots
+ * can be described as failed; transport errors never create that evidence. */
+export function incompleteGenerationMessage({
+  state, error, availableViews, missingViews,
+}: {
+  state: GenerationRequestState | null;
+  error: unknown;
+  availableViews: number;
+  missingViews: Array<{ sourceViewType: string; label: string }>;
+}): string {
+  const status = generationReadStatus(error);
+  if (status === 401) return "Sign in again to refresh this saved design. No new generation was started.";
+  if (status === 403) return "You do not have access to refresh this design.";
+  const failed = new Set((state?.failedShots || []).map((shot) => shot.sourceViewType));
+  const refused = missingViews.filter((view) => failed.has(view.sourceViewType));
+  const remaining = missingViews.filter((view) => !failed.has(view.sourceViewType));
+  const messages = [`${availableViews} of 7 views available.`];
+  if (refused.length) messages.push(`${refused.map((view) => view.label).join(" and ")} could not be completed; the saved status reports ${refused.length === 1 ? "this view" : "these views"} as failed.`);
+  if (remaining.length) {
+    const names = remaining.map((view) => view.label).join(" and ");
+    const running = state && ["queued", "leased", "retryable"].includes(state.state);
+    messages.push(running ? `Still waiting for ${names}.` : `${names} ${remaining.length === 1 ? "is" : "are"} not yet available.`);
+  }
+  if (transientGenerationReadFailure(error) || (error as Error | null)?.message === "generation_timeout") {
+    messages.push("The latest status could not be refreshed. Reopen this saved design to check for further views.");
+  }
+  messages.push("Your saved design is preserved.");
+  return messages.join(" ");
+}
+
 export type StandaloneGenerationInput = {
   vehicle: GenerationVehicle;
   brief: string;
@@ -139,17 +182,63 @@ export async function waitForGeneration(
      * start or repeat a Gemini call.
      */
     onViews?: (views: GenerationView[]) => void | Promise<void>;
+    /** Read connection state only; never changes the persisted generation. */
+    onConnectionState?: (state: "connected" | "reconnecting") => void;
   } = {},
 ): Promise<GenerationRequestState> {
   const timeoutMs = options.timeoutMs ?? 15 * 60_000;
-  const started = Date.now();
+  const deadline = Date.now() + timeoutMs;
   let observedViewCount = 0;
   let lastViewRefreshAt = 0;
   let nextViewRetryAt = 0;
+  let readFailures = 0;
+
+  // Bound even an unresolved GET by the existing watcher deadline. A timeout
+  // stops observation only: it cannot cancel or restart server generation.
+  async function beforeDeadline<T>(read: () => Promise<T>): Promise<T> {
+    if (options.signal?.aborted) throw new Error("generation_watch_aborted");
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("generation_timeout");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    const boundary = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("generation_timeout")), remaining);
+      onAbort = () => reject(new Error("generation_watch_aborted"));
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    try {
+      return await Promise.race([read(), boundary]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  async function pause(milliseconds: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await beforeDeadline(() => new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, milliseconds);
+      }));
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
 
   for (;;) {
-    if (options.signal?.aborted) throw new Error("generation_watch_aborted");
-    const state = await dpApi.getGenerationRequest(requestId);
+    let state: GenerationRequestState;
+    try {
+      state = await beforeDeadline(() => dpApi.getGenerationRequest(requestId));
+    } catch (error) {
+      if (options.signal?.aborted) throw new Error("generation_watch_aborted");
+      if (!transientGenerationReadFailure(error)) throw error;
+      readFailures += 1;
+      options.onConnectionState?.("reconnecting");
+      await pause(Math.min(2000 * (2 ** Math.min(readFailures - 1, 3)), 10_000));
+      continue;
+    }
+    readFailures = 0;
+    options.onConnectionState?.("connected");
     options.onState?.(state);
 
     const viewCount = state.views?.length ?? state.shotsComplete ?? 0;
@@ -162,11 +251,15 @@ export async function waitForGeneration(
       // failure after ten seconds and refresh successful URLs before their
       // five-minute lifetime expires, even if the next proof is still pending.
       try {
-        await options.onViews(await dpApi.listGenerationViews(requestId));
+        const views = await beforeDeadline(() => dpApi.listGenerationViews(requestId));
+        await beforeDeadline(async () => { await options.onViews!(views); });
         observedViewCount = Math.max(observedViewCount, viewCount);
         lastViewRefreshAt = Date.now();
         nextViewRetryAt = 0;
-      } catch {
+      } catch (error) {
+        if (options.signal?.aborted) throw new Error("generation_watch_aborted");
+        if (generationReadStatus(error) === 401 || generationReadStatus(error) === 403
+          || (error as Error | null)?.message === "generation_timeout") throw error;
         // Progressive display is best-effort; generation itself is server-owned.
         nextViewRetryAt = Date.now() + 10_000;
       }
@@ -175,9 +268,7 @@ export async function waitForGeneration(
     if (state.state === "outputs_ready") return state;
     const terminalFailure = terminalGenerationFailureCode(state);
     if (terminalFailure) throw new Error(terminalFailure);
-    if (Date.now() - started > timeoutMs) throw new Error("generation_timeout");
-
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await pause(2000);
   }
 }
 

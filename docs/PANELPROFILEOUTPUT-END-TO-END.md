@@ -1,6 +1,6 @@
 # PanelProFileOutput: shared deterministic output graph
 
-Updated: 8 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
+Updated: 9 September 2026. Parent workflow: [DesignProAI OS](DESIGNPROAI-END-TO-END.md).
 
 PanelProFileOutput is a new shared application for preparing existing artwork
 against measured output profiles. Its shared handoff preserves DesignPro,
@@ -18,6 +18,18 @@ This is the implementation contract and acceptance ledger. Code capability,
 installed graph, tested provider integration, real-template validation and human
 QC are recorded separately. No `[x]` below means a live deployment or automatic
 production approval unless it explicitly says so.
+
+Deployment update: [PR #335](https://github.com/Tdill1980/designproai-os/pull/335)
+is merged at `main` commit `0af5329eac1873dfccf84ba37b09314ec3ffefd8`. All five
+new migrations are applied under their canonical versions with installed SQL
+hashes verified; image-generation Edge version 91 is active and all 14 deployed
+source files match. [Server deployment 34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947)
+passed at 05:54 UTC on 9 September for that exact commit, including both workers
+and the gateway. The public studio bundle includes the new application route.
+The new service activation flags remain default-off; this does not establish an
+enabled, accepted PanelProFileOutput trial. See the
+[parent deployment status](DESIGNPROAI-END-TO-END.md#deployment-status--9-september-2026)
+and the open quality blockers below.
 
 ## 1. What this app produces
 
@@ -630,6 +642,51 @@ as proof of an altered placement.
 
 ## 10. Acceptance ledger
 
+The parent studio's temporary-connection recovery repair and its tests are
+recorded in [Driver-only display recovery](DESIGNPROAI-END-TO-END.md#driver-only-display-recovery--9-september-2026).
+It preserves the existing generation and accepted views. It does not approve a
+missing passenger proof, change physical artwork, enable this child service or
+resolve the unbound logo-quality report. The separately identified provider
+timeout/idempotency work remains an open parent requirement.
+
+### Open output quality blockers — 9 September 2026
+
+The user's passenger-proof delay and serious logo/design-quality degradation
+reports are tracked in the
+[parent release blockers](DESIGNPROAI-END-TO-END.md#open-release-blockers-reported-on-9-september-2026).
+The standalone-database check has no matching current job: its latest generation
+request was created on 8 September at 17:40 UTC. No exact GenerationID or failing
+physical-output artifact has yet been bound to this report. The child must not
+silently compensate for an unexamined authoring or proof defect.
+
+- [ ] Bind a real measured-template trial to the reported design's accepted
+  revision and verified original assets. Compare those assets through the
+  accepted ATLAS, six panels, seven proofs and resulting physical pieces;
+  identify the first altered logo, unreadable text, changed proportion/color,
+  composition loss or actual loss of detail. Use original-resolution crops and
+  full-size output inspection. A larger raster or changed DPI tag cannot pass
+  the sharpness check by itself.
+- [ ] Demonstrate deterministic placement with available assets first: original
+  logos/lettering remain correctly spelled, proportioned and forward-reading;
+  no mirrored text, unapproved reconstruction or stale logo remains after a
+  move. Essential elements clear the reviewed cut/trim/seam geometry, while
+  continuous existing nonessential artwork fills every installation-cut area
+  and the required 5-inch bleed. Inspect PNG/TIFF and required PDF companions;
+  retain the parent canonical output contract.
+- [ ] Repeat the repaired case through the existing studios, template overlay,
+  piece exports and internal human comparison. If a placement changes visible
+  artwork, return through the existing ATLAS revision flow and require matching
+  refreshed panels/seven proofs and fresh QC. Record measured reproduction,
+  regression coverage and reviewed before/after artifacts before checking off
+  this blocker. Missing passenger evidence, unchecked files or synthetic QC
+  cannot establish successful end-to-end delivery.
+
+Use the existing source-binding, planner, renderer, parent-attachment and
+studio-identity suites for the identified failure boundary; their previous
+fixture passes are not evidence that this user's report is fixed. Actual
+Dropbox templates, other source-app resolvers, automatic-QC policy and pricing
+remain outside the completed acceptance ledger.
+
 The reference input builders are `tests/helpers/panelprofile-fixture.mjs` for
 measured artwork/placement and `tests/helpers/panelpro-template-fixture.mjs` for
 the template lifecycle. They demonstrate the exact contracts with synthetic
@@ -741,9 +798,12 @@ server or real source-app job is implied by these local results.
 The [parent validation ledger](DESIGNPROAI-END-TO-END.md#9-fix-ledger-and-release-gates)
 records the group counts and remaining boundaries. This combined local gate
 includes the new renderer, real-Postgres fixtures, studio adapters and release
-inventory. Docker image construction, the required Supabase shadow/installed
-schema checks, live Gemini, real vehicle templates and actual human QC remain
-separate acceptance steps. The broad app TypeScript check still reports 219
+inventory. The recorded exact PR-head CI subsequently passed Docker construction,
+96 shadow migrations and 289 pgTAP checks. All five new production migrations
+and their installed SQL hashes were verified on 9 September. The merged-main CI
+and exact server deployment also passed. Internal service activation, live
+Gemini, real vehicle templates and actual human QC remain separate acceptance
+steps. The broad app TypeScript check still reports 219
 errors outside the touched integration files; a successful Vite build does not
 make the whole application type-clean.
 
