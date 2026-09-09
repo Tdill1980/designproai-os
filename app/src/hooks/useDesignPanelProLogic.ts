@@ -10,6 +10,7 @@ import {
   regenerateDesignPanelView,
   startStandaloneGeneration,
   waitForGeneration,
+  incompleteGenerationMessage,
 } from "@/lib/designpanelpro-standalone-adapter";
 import { selectCustomerProof } from "@/lib/designpro-artifact-selectors";
 import {
@@ -66,6 +67,8 @@ const PROOF_VIEW_LABELS: Record<string, string> = {
 
 const ATLAS_NEW_RUN_REQUIRED_MESSAGE =
   "This saved proof set cannot be reused. Start a new Precision run.";
+const GENERATION_RECONNECTING_MESSAGE =
+  "Reconnecting to your saved design. Available views stay visible; no new generation is being started.";
 const atlasNewRunRequired = (error: unknown) => {
   const code = String((error as any)?.code || (error as any)?.message || error || "");
   return code.includes("flat_first_atlas_new_run_required")
@@ -607,6 +610,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
     const generationId = params.generationId || crypto.randomUUID().toLowerCase();
     const promptPrefix = (params.prompt || "").trim().split(/\s+/).slice(0, 6).join(" ");
     let acceptedRequest: GenerationRequestState | null = null;
+    let latestRequestState: GenerationRequestState | null = null;
+    let latestObservedViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
 
     try {
       const [logoAsset, visionBoardImages] = await Promise.all([
@@ -664,6 +669,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
         pipelineMode,
       });
       acceptedRequest = request;
+      latestRequestState = request;
       const acceptedPipelineMode = request.pipelineMode || "legacy";
       setActivePipelineMode(acceptedPipelineMode);
       if (acceptedPipelineMode !== pipelineMode) {
@@ -678,11 +684,20 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       applyGenerationState(request);
 
       const finished = await waitForGeneration(request.requestId, {
-        onState: applyGenerationState,
+        onState: (state) => {
+          latestRequestState = state;
+          applyGenerationState(state);
+        },
+        onConnectionState: (connection) => {
+          setGenerationError((current) => connection === "reconnecting"
+            ? GENERATION_RECONNECTING_MESSAGE
+            : current === GENERATION_RECONNECTING_MESSAGE ? null : current);
+        },
         // Both modes reveal each immutable view as it lands. This observer only
         // performs signed GETs; closing or sleeping the browser cannot start,
         // cancel, repeat, or spend a generation call.
         onViews: async (progressiveViews) => {
+          latestObservedViews = progressiveViews;
           applyGeneratedViews(progressiveViews);
           const progressivePrimary = pickPrimaryProofView(progressiveViews);
           setPersonaHeroUrl(progressivePrimary?.signedUrl || null);
@@ -697,6 +712,7 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       applyGenerationState(finished);
 
       const views = await listDesignPanelViews(request.requestId);
+      latestObservedViews = views;
       applyGeneratedViews(views);
       const primary = pickPrimaryProofView(views);
       setPersonaHeroUrl(primary?.signedUrl || null);
@@ -773,17 +789,26 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       // the sides that are missing.
       const handoffShortSet = /seven_generation_views_required|generation_views_incomplete/
         .test(code);
+      let effectiveError = error;
       let recoveredViews: Awaited<ReturnType<typeof listDesignPanelViews>> = [];
       if (acceptedRequest && !freshAtlasMasterQcFailure) {
         try {
           recoveredViews = await listDesignPanelViews(acceptedRequest.requestId);
-        } catch {
-          recoveredViews = [];
+        } catch (recoveryError: unknown) {
+          const recoveryStatus = Number((recoveryError as { status?: unknown } | null)?.status);
+          // An explicit refusal from either read outranks a transient failure.
+          // Never restore cached proofs after the owner-read boundary withdraws
+          // their lineage; preserve auth failures for the sign-in/access message.
+          if (atlasNewRunRequired(recoveryError)
+            || (!atlasNewRunRequired(error) && (recoveryStatus === 401 || recoveryStatus === 403))) {
+            effectiveError = recoveryError;
+          }
+          recoveredViews = atlasNewRunRequired(effectiveError) ? [] : latestObservedViews;
         }
       }
       const usableViews = recoveredViews.filter((view) => view.signedUrl);
       // Only now is it fair to say the lineage is unusable.
-      const requiresNewAtlasRun = atlasNewRunRequired(error) && !usableViews.length;
+      const requiresNewAtlasRun = atlasNewRunRequired(effectiveError) && !usableViews.length;
       if (requiresNewAtlasRun || freshAtlasMasterQcFailure) clearUntrustedAtlasProofState();
       // A terminal request can still own byte-verified views. The legacy
       // worker used to discover a missing production manifest only after all
@@ -810,15 +835,23 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
       }
       // NAME THE SIDES, DO NOT CRY WOLF. A partial set reports what is missing
       // and keeps everything that landed on screen.
-      const missingSides = usableViews.length
+      const missingViewTypes = usableViews.length
         ? CANONICAL_PROOF_VIEW_TYPES
           .filter((type) => !usableViews.some((view) => view.sourceViewType === type))
-          .map((type) => PROOF_VIEW_LABELS[type] || type)
         : [];
+      const missingSides = missingViewTypes.map((type) => PROOF_VIEW_LABELS[type] || type);
       const partialSet = Boolean(usableViews.length) && (handoffShortSet || missingSides.length > 0);
+      const accessFailure = Number(effectiveError?.status) === 401 || Number(effectiveError?.status) === 403;
       const friendly =
-        partialSet
-          ? `${usableViews.length} of 7 views rendered. ${missingSides.join(" and ")} ${missingSides.length === 1 ? "was" : "were"} refused by proof review — your design, master and print panels are saved. Revise the design or try those views again.`
+        partialSet || accessFailure
+          ? incompleteGenerationMessage({
+            state: latestRequestState,
+            error: effectiveError,
+            availableViews: usableViews.length,
+            missingViews: missingViewTypes.map((sourceViewType) => ({
+              sourceViewType, label: PROOF_VIEW_LABELS[sourceViewType] || sourceViewType,
+            })),
+          })
           : requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
@@ -831,9 +864,9 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
             ? "We could not prepare this vehicle layout. Check the year, make, model, and vehicle type, then try again."
           : /generation_timeout/.test(code)
             ? "The design is taking longer than expected. You can safely return to this page later."
-            : error?.message || "Something went wrong — let's try again!";
+            : effectiveError?.message || "Something went wrong — let's try again!";
       if (partialSet) console.warn("[DesignPro] partial proof set:", code, missingSides);
-      else console.error("[DesignPro] standalone generation failed:", error);
+      else console.error("[DesignPro] standalone generation failed:", effectiveError);
       setGenerationError(friendly);
       const recoveredPrimary = pickPrimaryProofView(recoveredViews);
       return {

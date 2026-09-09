@@ -89,7 +89,7 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   // applied. What changed is that "untrusted" is now decided by whether this
   // generation owns any usable view, instead of assumed from the error alone.
   assert.match(failure, /if \(acceptedRequest && !freshAtlasMasterQcFailure\)/);
-  assert.match(failure, /const requiresNewAtlasRun = atlasNewRunRequired\(error\) && !usableViews\.length;/);
+  assert.match(failure, /const requiresNewAtlasRun = atlasNewRunRequired\(effectiveError\) && !usableViews\.length;/);
   assert.match(failure, /if \(usableViews\.length && !requiresNewAtlasRun && acceptedRequest\)/);
   // A cleared lineage must never reach the preview setters.
   const applyBlock = failure.slice(

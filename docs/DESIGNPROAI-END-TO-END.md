@@ -1,6 +1,6 @@
 # DesignProAI OS: end-to-end graph and acceptance
 
-Updated: 8 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
+Updated: 9 September 2026. Companion specification: [PanelProFileOutput](PANELPROFILEOUTPUT-END-TO-END.md).
 
 DesignProAI remains the operating system. The existing six-surface A.T.L.A.S.
 authoring path, identities, version history, studios and delivery flow remain its
@@ -15,9 +15,32 @@ those identities; they are not a replacement design-history system. A template
 profile version records measured geometry and display provenance separately.
 
 This document is both the implementation map and the acceptance ledger. A checked
-item means the stated code change has supporting tests. It does **not** mean the
-change is deployed, a fresh Gemini generation passed, or a human approved a print
-package. Those are separate gates at the end of this document.
+item applies only to its stated evidence: code tests, an installed component or a
+completed review. Tests alone do **not** mean a change is deployed, a fresh Gemini
+generation passed, or a human approved a print package.
+
+### Deployment status — 9 September 2026
+
+| Component | Verified state |
+|---|---|
+| Repository | [PR #335](https://github.com/Tdill1980/designproai-os/pull/335) merged; target `main` commit `0af5329eac1873dfccf84ba37b09314ec3ffefd8` |
+| Supabase schema | All five 8 September migrations applied under their canonical repository versions; installed SQL hashes verified |
+| Image-generation Edge function | `design-panel-ai-generate` version 91 active |
+| Server release | [Production deployment 34316492947](https://github.com/Tdill1980/designproai-os/actions/runs/34316492947) passed on 9 September at 05:54 UTC for `0af5329eac1873dfccf84ba37b09314ec3ffefd8`; both runtime replicas, gateway, archive/tree identity and shared spool passed acceptance; public studio bundle changed and the new PanelProFileOutput navigation is visible |
+| End-to-end acceptance | Open, including the passenger-proof delay and logo/design-quality reports below |
+
+The exact merged release also passed [CI 34316026808](https://github.com/Tdill1980/designproai-os/actions/runs/34316026808).
+All 14 deployed Edge files match the release source. Production contains all 96
+canonical migrations, retains 56 ATLAS history rows, and an existing seven-proof
+set still passes its read-only lineage validator. The public gateway health
+responds successfully and the private worker path returns 404.
+
+Infrastructure acceptance does not establish a fresh successful design.
+PanelProFileOutput's new services retain their default-off activation flags;
+their code and pages are installed, but internal activation and a real-template
+trial still require completion. Human QC, Dropbox inputs, other source-app
+resolvers and delivery acceptance remain open. The browser currently requires
+sign-in, and the user's reported stalled design has not been identified.
 
 ## 1. Required result and visual contract
 
@@ -551,6 +574,98 @@ policy hashes so reuse is exact and invalidation is explainable.
 
 ## 9. Fix ledger and release gates
 
+### Driver-only display recovery — 9 September 2026
+
+The status observer in `app/src/lib/designpanelpro-standalone-adapter.ts` could
+stop on its first temporary HTTP/network failure. A reproduced sequence returned
+Driver, then HTTP 503, then seven ready proofs: the old observer rejected after
+503 and never read the completed result. The hook could also describe missing
+views as refused without a recorded review failure. This proves a recovery bug;
+it does not identify the user's particular generation.
+
+- [x] Retry transient **status reads** with 2–10 second backoff within the
+  existing 15-minute observer deadline. Keep one existing request ID; never
+  start another generation or provider call to recover observation.
+- [x] Preserve already accepted views during reconnects, report the connection
+  state, and distinguish a persisted failed slot from a view still pending.
+  Authentication and explicit lineage refusals remain terminal.
+- [x] Cover Driver → temporary failure → seven proofs, authorization failures,
+  deadlines, cancellation and truthful partial status with focused regression
+  tests. Existing ATLAS customer-path gates also pass. This checkbox records
+  code/test evidence; production installation is tracked with the release.
+- [ ] Bind and replay the user's reported generation after installation. A
+  successful deployment or mocked recovery cannot substitute for this check.
+
+The first server release finished at **05:54 UTC** on 9 September, after the
+first passenger-delay report. A request begun earlier may have run on the prior
+release, and a page loaded earlier retains its old JavaScript until reload.
+Timing is a possible contributor, not a confirmed incident cause.
+
+### Provider timeout and recovery work still open
+
+The ATLAS worker already dispatches independent surface proofs; Driver priority
+is not a dependency that the passenger must wait to finish. A separate transport
+review found that `runtime/designpanel-server-provider.cjs` forwards an optional
+abort signal but does not enforce the image call's `timeoutMs`. The live
+`persona-photographer-render` handler can perform three 90-second attempts; the
+generation engine can retry the outer call four times and does not consistently
+honor `retryable: false`. A two-minute wait alone therefore does not prove the
+worker stopped.
+
+- [ ] Add a stable, owner/revision/panel/camera-bound proof-operation identity,
+  an atomic provider claim, persisted result and authenticated result lookup.
+  In-flight or uncertain outcomes must not start duplicate model work.
+- [ ] Align transport deadlines, retry classification and lease heartbeat with
+  that durable operation. Do not install a bare fetch timeout that can abandon
+  a still-running Edge request and multiply paid image calls on retry.
+- [ ] Verify a delayed result, connection loss, worker restart and sibling
+  completion against the same operation before accepting this server repair.
+
+### Open release blockers reported on 9 September 2026
+
+The user reports that the passenger-side proof is still absent after about two
+minutes and that logo/design quality has seriously degraded. These are user
+reports awaiting a bound reproduction, not passed acceptance cases. The
+standalone-database check found no matching current job; its latest generation
+request was created on 8 September at 17:40 UTC. The report therefore has no
+verified GenerationID/request/revision match yet.
+
+- [ ] Bind the report to its exact page origin, displayed release, GenerationID,
+  request ID and selected ATLAS revision. Record the original uploaded asset
+  hashes and the actual vehicle/brief before diagnosing a different job.
+- [ ] Reproduce the missing passenger proof and record enqueue, lease claim,
+  provider start/end, validation, storage, slot acceptance, progress response and
+  browser-display times. Identify queue delay, a running provider, explicit
+  refusal, retry or a publication/UI fault separately. Passenger must use its
+  own accepted panel, dispatch independently after the master is available, and
+  appear alongside that panel in RevisionStudioIQ and PanelProStudio. A refused
+  slot must show its reason; elapsed time or six available views cannot count as
+  seven-view completion. Set and verify the latency target from this measured
+  trace; the reported two-minute absence remains unresolved.
+- [ ] Locate the first quality change by comparing original reusable assets →
+  accepted master → six panels → seven vehicle proofs → physical output at the
+  same selected revision. Check readable, correctly spelled, forward-reading
+  lettering and logos, proportions, intended colors, composition and actual
+  image detail. Inspect original-resolution crops and full-size output;
+  increasing the DPI tag or pixel dimensions is not evidence of recovered
+  sharpness. Record whether the defect originates in authoring, cropping,
+  proof projection, asset movement, enhancement or export.
+- [ ] Add regression coverage at the failing boundary and repeat the bound live
+  case after repair, including a saved-version reload and revision edit. Reuse
+  verified available logo/text assets first; do not mirror or silently redraw
+  them. Preserve the six-surface ATLAS authority and continuous nonessential
+  artwork through installation cuts. A visible artwork correction creates a
+  new accepted revision, matching panels/proofs and fresh human QC. Mark this
+  blocker complete only with recorded before/after artifacts and review evidence.
+
+Relevant existing regression suites include `tests/atlas-progressive-latency.test.mjs`,
+`tests/atlas-sibling-surface-fanout.test.mjs`,
+`tests/atlas-partial-view-completion.test.mjs`,
+`tests/generation-progress.test.mjs`, `tests/studio-artifact-identity.test.mjs`
+and `tests/panelpro-file-output-render.test.mjs`. Their existing passes do not
+resolve this newly reported live case. Physical-output acceptance continues in
+the [companion quality blockers](PANELPROFILEOUTPUT-END-TO-END.md#open-output-quality-blockers--9-september-2026).
+
 ### Existing foundation verified in this branch
 
 - [x] Async claimant capacity reservation and prompt wake-up without dropping DB leases or dependencies.
@@ -584,7 +699,8 @@ specified, real image encoding where specified, and mocked external transport.
 They do not establish live provider continuation, a deployed schema or physical
 installation success. The assembled release checks remain separate.
 
-Reviewable change: draft [PR #335](https://github.com/Tdill1980/designproai-os/pull/335).
+Merged change: [PR #335](https://github.com/Tdill1980/designproai-os/pull/335),
+target release `0af5329eac1873dfccf84ba37b09314ec3ffefd8`.
 The individual cases above establish the named repairs. Only the final assembled
 gate below establishes that the combined branch passes together.
 
@@ -595,15 +711,15 @@ gate below establishes that the combined branch passes together.
 | Production bundles | Web and operator-app Vite builds; image-generation Edge entry-point esbuild compilation | Passed locally |
 | Markdown review | Companion links, referenced repository paths and function entry points | Verified locally |
 | Full application TypeScript | Broad compiler check, separately from Vite transpilation/build | 219 errors reported outside the touched integration files; application-wide type check is not clean |
-| Docker and installed Supabase | Container construction, deployment and shadow/installed schema checks | Not run locally; separate release gates |
+| Docker and Supabase release checks | Exact merged-main CI run [34316026808](https://github.com/Tdill1980/designproai-os/actions/runs/34316026808), plus the 9 September installed-schema check | CI image construction, 96 shadow migrations and 289 pgTAP checks passed; all five new production migrations and installed SQL hashes verified. Exact server deployment passed at 05:54 UTC |
 | Live production and physical installation | Exact release, real profile, fresh model result, human QC and actual downloaded package | Not performed by local fixtures |
 
 ### Acceptance that must remain explicit
 
 - [x] Current assembled patch passes the complete local non-Docker runtime, gateway, UI and release-inventory gate, including both production builds.
-- [ ] Exact release passes Docker construction and the required Supabase shadow/installed-schema acceptance.
+- [x] Recorded exact PR-head CI passed Docker construction, 96 shadow migrations and 289 pgTAP checks; all five new production migrations were applied and their installed SQL hashes verified on 9 September.
 - [ ] Several successive live RevisionStudio edits preserve the selected parent/history and regenerate correct panels, seven proofs and preparation, including history/reference-budget and provider-recovery cases.
-- [ ] Exact runtime, edge and database contracts are installed together and report the expected versions.
+- [x] Exact runtime and gateway `0af5329eac1873dfccf84ba37b09314ec3ffefd8`, Edge version 91 with all 14 files verified, and all 96 canonical database migrations are installed. Both runtime replicas passed infrastructure acceptance on 9 September; this does not mark live design quality or the new feature flags accepted.
 - [ ] Fresh production-path Call 1 yields a visually accepted master and all six correct own-surface panels.
 - [ ] Seven accepted vehicle proofs and deterministic Call 8 all share the approved revision and geometry.
 - [ ] RevisionStudioIQ and both PanelPro pages show the correct panels beside their proofs, including after refresh, edit and recovery.
