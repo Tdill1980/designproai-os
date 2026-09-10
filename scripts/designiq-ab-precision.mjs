@@ -44,7 +44,7 @@
  * request, revision, view or artifact row is created; the only writes are the
  * evidence objects under `designiq-ab/`.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -82,51 +82,47 @@ const sha = (v) => createHash("sha256").update(v).digest("hex");
 // leased designpro_generation_requests row: owner, generationId, requestId
 // and a live lease token, or `provider_request_identity_invalid` /
 // `provider_claim_invalid` before any Gemini call (run 34425198330). An edge
-// arm (B, F) therefore needs a real lease. The harness mints one row of its
-// own — the canary operator's, state `leased`, held by this run — and cancels
-// it when the run ends. Two properties keep it out of the product path:
-//   1. attempt is pinned at the table's maximum, so if this process dies and
-//      the lease expires, the worker's claim RPC marks the row `failed`
-//      without executing it (claim_designpro_generation_request_v2 checks
-//      attempt>=12 before leasing);
-//   2. the release runs in `finally`, so a completed run leaves `cancelled`.
+// arm (B, F) therefore needs a real lease.
+//
+// The harness cannot mint one: the table's BEFORE INSERT OR UPDATE trigger
+// calls designpro_private.calls_1_7_asset_paths_bound, whose EXECUTE is
+// revoked from service_role, so only the SECURITY DEFINER intake RPCs write
+// this table (run 34425554683: "permission denied for function
+// calls_1_7_asset_paths_bound"). The intake RPC would queue a real customer
+// generation for the live worker to claim, which is the opposite of a
+// harness. So the lease is minted by the operator, as the database owner,
+// BEFORE dispatch, and handed in as AB_LEASE_* — one canary-operator row,
+// state `leased`, attempt pinned at the table maximum so an expired lease is
+// failed by the worker's claim RPC without ever running (it checks
+// attempt>=12 before leasing), then cancelled by the operator after the run:
+//
+//   INSERT INTO public.designpro_generation_requests
+//     (generation_id, owner_id, tenant_key, idempotency_key, state,
+//      request_input, input_hash, engine_contract, engine_contract_hash,
+//      attempt, lease_owner, lease_token, lease_expires_at)
+//   VALUES (<gen>, <canary owner>, 'user_'||<owner>, 'calls17:'||<gen>||':'||<hash>,
+//      'leased', <the exact v3 input>, <hash>,
+//      designpro_private.calls_1_7_engine_contract(), <its sha256>,
+//      12, 'designiq-ab-precision', <token>, clock_timestamp()+interval '45 min');
+//   -- after the run:
+//   UPDATE ... SET state='cancelled', lease_owner=NULL, lease_token=NULL,
+//     lease_expires_at=NULL, error='{"code":"designiq_ab_harness_lease"}' WHERE id=<request>;
+//
 // The request row is transport identity only: it never enters the prompt,
 // and the cache keys each draw by attemptKey so N draws are N fresh images.
-const HARNESS_LEASE_MINUTES = 45;
-async function mintHarnessLease(supabase, ownerId, input) {
-  const generationId = randomUUID();
-  const claimToken = randomUUID();
-  const inputHash = sha(Buffer.from(JSON.stringify(input)));
-  // engine_contract must equal designpro_private.calls_1_7_engine_contract(),
-  // which PostgREST cannot call; the newest row carries the current value and
-  // the table CHECK refuses the insert loudly if it does not.
-  const { data: ref, error: refError } = await supabase.from("designpro_generation_requests")
-    .select("engine_contract,engine_contract_hash").order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (refError || !ref) throw new Error(`harness lease: cannot read the engine contract (${refError?.message || "no rows"})`);
-  const { data, error } = await supabase.from("designpro_generation_requests").insert({
-    generation_id: generationId, owner_id: ownerId, tenant_key: `user_${ownerId}`,
-    idempotency_key: `calls17:${generationId}:${inputHash}`, state: "leased",
-    request_input: input, input_hash: inputHash,
-    engine_contract: ref.engine_contract, engine_contract_hash: ref.engine_contract_hash,
-    attempt: 12,
-    lease_owner: "designiq-ab-precision", lease_token: claimToken,
-    lease_expires_at: new Date(Date.now() + HARNESS_LEASE_MINUTES * 60 * 1000).toISOString(),
-  }).select("id").single();
-  if (error) throw new Error(`harness lease: insert refused (${error.message})`);
-  const requestId = data.id;
-  let released = false;
+function harnessLeaseFromEnv(env) {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const requestId = String(env.AB_LEASE_REQUEST_ID || "").trim().toLowerCase();
+  const generationId = String(env.AB_LEASE_GENERATION_ID || "").trim().toLowerCase();
+  const claimToken = String(env.AB_LEASE_CLAIM_TOKEN || "").trim().toLowerCase();
+  if (![requestId, generationId, claimToken].every((v) => UUID.test(v))) {
+    throw new Error("an edge arm (B, F) needs AB_LEASE_REQUEST_ID, AB_LEASE_GENERATION_ID and AB_LEASE_CLAIM_TOKEN — "
+      + "the operator-minted leased designpro_generation_requests row the deployed edge authorizes against (see THE PROVIDER LEASE)");
+  }
+  const ownerId = env.AB_OWNER_ID || CANARY_OWNER_ID;
   return {
-    requestId, generationId, claimToken, ownerId,
+    requestId, generationId, ownerId,
     providerRequest: (attemptKey) => ({ requestId, generationId, claimToken, attemptKey }),
-    release: async (note) => {
-      if (released) return;
-      released = true;
-      const { error: releaseError } = await supabase.from("designpro_generation_requests")
-        .update({ state: "cancelled", lease_owner: null, lease_token: null, lease_expires_at: null,
-          error: { code: "designiq_ab_harness_lease", note: String(note || "harness run ended") } })
-        .eq("id", requestId).eq("lease_token", claimToken);
-      if (releaseError) throw new Error(`harness lease: release failed (${releaseError.message}) — request ${requestId} stays leased until it expires and the worker fails it`);
-    },
   };
 }
 const log = (m) => process.stdout.write(`  ${m}\n`);
@@ -447,10 +443,11 @@ async function main() {
   const results = {};
   const produced = [];
   let imageRequestsExecuted = 0;
-  const leaseOwnerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
-  const lease = (armAllowed("B") || armAllowed("F")) ? await mintHarnessLease(supabase, leaseOwnerId, V3_INPUT) : null;
-  if (lease) log(`harness lease minted: request ${lease.requestId} · generation ${lease.generationId} · ${HARNESS_LEASE_MINUTES} min`);
-  try {
+  const lease = (armAllowed("B") || armAllowed("F")) ? harnessLeaseFromEnv(process.env) : null;
+  if (lease) {
+    log(`harness lease: request ${lease.requestId} · generation ${lease.generationId} · owner ${lease.ownerId}`);
+    results.harnessLease = { requestId: lease.requestId, generationId: lease.generationId, ownerId: lease.ownerId };
+  }
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
@@ -605,13 +602,6 @@ async function main() {
     } catch (error) {
       log(`${name}: FAILED — ${error.message}`);
       results[name] = { ok: false, error: String(error.message).slice(0, 500) };
-    }
-  }
-  } finally {
-    if (lease) {
-      await lease.release("designiq-ab-precision run ended");
-      log(`harness lease released: request ${lease.requestId} -> cancelled`);
-      results.harnessLease = { requestId: lease.requestId, generationId: lease.generationId, ownerId: lease.ownerId, state: "cancelled" };
     }
   }
   // Owner protection #5: report exactly how many Gemini image requests this
