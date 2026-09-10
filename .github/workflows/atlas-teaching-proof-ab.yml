@@ -350,7 +350,7 @@ jobs:
           AB_CANDIDATES: ${{ inputs.candidates }}
           AB_DESIGN_LAYOUT: ${{ inputs.design_layout }}
           AB_SURFACES: ${{ inputs.surfaces }}
-          AB_MODEL: ${{ inputs.model }}
+          AB_IMAGE_MODEL: ${{ inputs.model }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -406,7 +406,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_DESIGN_LAYOUT='$AB_DESIGN_LAYOUT' AB_SURFACES='$AB_SURFACES' AB_MODEL='$AB_MODEL' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_DESIGN_LAYOUT='$AB_DESIGN_LAYOUT' AB_SURFACES='$AB_SURFACES' AB_IMAGE_MODEL='$AB_IMAGE_MODEL' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -475,7 +475,7 @@ jobs:
               # rectangle in an edit turn. One image call per surface.
               runner=scripts/atlas-panel-extend-ab.mjs
               extra_args=(--design-layout "$AB_DESIGN_LAYOUT" --surfaces "$AB_SURFACES")
-              if [ -n "$AB_MODEL" ]; then extra_args+=(--model "$AB_MODEL"); fi
+              if [ -n "$AB_IMAGE_MODEL" ]; then extra_args+=(--model "$AB_IMAGE_MODEL"); fi
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request
