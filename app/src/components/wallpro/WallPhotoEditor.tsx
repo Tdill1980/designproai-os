@@ -6,6 +6,7 @@ type Props = {
   marking: 'wall' | 'exclude' | 'rectangle' | null;
   corners: Point[]; masks: Point[][]; draft: Point[]; showMasks: boolean;
   seams: { top: Point; bottom: Point }[];
+  onEditing: (editing: boolean) => void;
   onPoint: (point: Point) => void;
   onRectangle: (a: Point, b: Point) => void;
   onCorners: (points: Point[]) => void;
@@ -31,7 +32,7 @@ export function WallPhotoEditor(p: Props) {
   }
   function startHandle(e: React.PointerEvent<SVGCircleElement>, handle: Handle) {
     e.stopPropagation(); if (p.busy) return;
-    e.preventDefault(); drag.current = handle; e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault(); drag.current = handle; p.onEditing(true); e.currentTarget.setPointerCapture(e.pointerId);
   }
   function keyboardHandle(e: React.KeyboardEvent<SVGCircleElement>, handle: Handle, current: Point) {
     const deltas: Record<string,Point> = { ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0}, ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1} };
@@ -56,13 +57,13 @@ export function WallPhotoEditor(p: Props) {
       if(rectangle.current && Math.hypot(next.x-rectangle.current.down.x,next.y-rectangle.current.down.y)>.004)rectangle.current.moved=true;
     }}
     onPointerUp={e => {
-      if(drag.current){drag.current=null;return;}
+      if(drag.current){moveHandle(drag.current,point(e));drag.current=null;p.onEditing(false);return;}
       const active=rectangle.current; rectangle.current=null;
       if(active && !p.busy){ if(active.moved)p.onRectangle(active.start,point(e)); else if(active.hadStart)p.onPoint(point(e)); }
       setHover(null);
     }}
-    onPointerCancel={() => {drag.current=null;rectangle.current=null;setHover(null);}}
-    onLostPointerCapture={() => {drag.current=null;rectangle.current=null;}}
+    onPointerCancel={() => {p.onEditing(false);drag.current=null;rectangle.current=null;setHover(null);}}
+    onLostPointerCapture={() => {p.onEditing(false);drag.current=null;rectangle.current=null;}}
     onPointerLeave={() => {if(!rectangle.current && !drag.current)setHover(null);}}>
     <img src={p.url} alt={p.alt} className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false}/>
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">

@@ -35,6 +35,7 @@ export default function WallPro() {
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
   const [view, setView] = useState<'before' | 'after' | 'design'>('before');
   const [showPrintGuides, setShowPrintGuides] = useState(false);
+  const [editingPhoto, setEditingPhoto] = useState(false);
   const [showMasks, setShowMasks] = useState(true);
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
@@ -61,9 +62,9 @@ export default function WallPro() {
     const version = ++previewVersion.current;
     let ownedPreview: string | null = null;
     setPreview(null); canvas.current = null;
-    if (!photo || !artwork || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
+    if (editingPhoto || !photo || !artwork || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
-    renderWallPreview(photo.url, artwork.url, corners, exclusions, { width, height, mode: placement, repeatWidth })
+    renderWallPreview(photo.url, artwork.url, corners, exclusions, { width, height, mode: placement, repeatWidth }, () => version !== previewVersion.current)
       .then(async output => {
         const blob = await canvasBlob(output);
         if (version !== previewVersion.current) return;
@@ -74,7 +75,7 @@ export default function WallPro() {
       .catch(e => { if (version === previewVersion.current) setError(e.message); })
       .finally(() => { if (version === previewVersion.current) setRendering(false); });
     return () => { previewVersion.current++; if (ownedPreview) URL.revokeObjectURL(ownedPreview); };
-  }, [photo, artwork, corners, exclusions, width, height, placement, repeatWidth]);
+  }, [photo, artwork, corners, exclusions, width, height, placement, repeatWidth, editingPhoto]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError(''); setNotice(''); beginAppBusy();
@@ -221,7 +222,7 @@ export default function WallPro() {
           <section className={panelClass + ' overflow-hidden'}>
             <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after','design'] as const).map(v => <Button size="sm" variant={view === v ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v !== 'before' && !artwork}>{v === 'before' ? 'Before' : v === 'after' ? 'On your wall' : 'Design only'}</Button>)}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Updating scale</span>}</div>
             {photo && view !== 'design' ? <>
-              <WallPhotoEditor url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={setCorners} onMasks={setExclusions} />
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={setCorners} onMasks={setExclusions} />
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />{corners.length ? 'Restart wall corners' : 'Mark wall corners'}</Button>

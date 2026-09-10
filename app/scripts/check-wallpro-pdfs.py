@@ -13,9 +13,9 @@ root = Path(sys.argv[1]).resolve()
 dpi = 24
 checks = []
 
-def render(path):
+def render(path, density=dpi):
     target = path.with_suffix('')
-    subprocess.run(['pdftoppm', '-f', '1', '-singlefile', '-r', str(dpi), '-png', str(path), str(target)], check=True, capture_output=True)
+    subprocess.run(['pdftoppm', '-f', '1', '-singlefile', '-r', str(density), '-png', str(path), str(target)], check=True, capture_output=True)
     return np.array(Image.open(target.with_suffix('.png')).convert('RGB')).astype(np.int16)
 
 def same(label, a, b):
@@ -54,8 +54,8 @@ overlap = round(manifest['settings']['overlap']*dpi)
 for i in range(1, len(panels)):
     same(f'overlap {i}/{i+1} duplicates identical artwork', panels[i-1][:,-overlap:], panels[i][:,:overlap])
 
-mural = render(root/'mural/wall-master-full-size.pdf')
-b = dpi
+mural = render(root/'mural/wall-master-full-size.pdf', 100)
+b = 100
 same('left mirror bleed', mural[b:-b,:b], mural[b:-b,b:2*b][:,::-1])
 same('right mirror bleed', mural[b:-b,-b:], mural[b:-b,-2*b:-b][:,::-1])
 same('top mirror bleed', mural[:b,b:-b], mural[b:2*b,b:-b][::-1])

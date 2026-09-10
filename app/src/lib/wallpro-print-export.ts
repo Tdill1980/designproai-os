@@ -17,7 +17,7 @@ function drawWall(doc: jsPDF, frame: PrintRect, layout: WallLayout, source: Wall
   const m = layoutMetrics(layout, source.width / source.height);
   const px = (x: number) => offset.x + (x - frame.x) * factor;
   const py = (y: number) => offset.y + (y - frame.y) * factor;
-  const clip = (r: PrintRect) => { doc.rect(px(r.x), py(r.y), r.width * factor, r.height * factor); doc.clip(); doc.discardPath(); };
+  const clip = (r: PrintRect) => { doc.rect(px(r.x), py(r.y), r.width * factor, r.height * factor, null); doc.clip(); doc.discardPath(); };
   const image = (x: number, y: number) => doc.addImage(source.bytes, 'PNG', px(x), py(y), m.artworkWidth * factor, m.artworkHeight * factor, 'wall-source', 'FAST');
   doc.saveGraphicsState(); clip(frame);
   if (layout.mode === 'repeat') {

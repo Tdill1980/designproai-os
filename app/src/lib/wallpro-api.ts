@@ -25,8 +25,13 @@ export async function openWallAsset(path: string): Promise<string> {
 export async function generateWall(input: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('generate-wall-design', { body: input });
   if (error) {
-    const body = await (error as any).context?.json?.().catch(() => null);
-    throw new Error(body?.error || error.message || 'The wall design could not be generated.');
+    const response = (error as any).context;
+    const body = await response?.clone?.().json().catch(() => null);
+    const detail = typeof body?.error === 'string' ? body.error : typeof body?.message === 'string' ? body.message : '';
+    const interrupted = response?.status >= 500 || /WORKER_LIMIT|timeout|fetch|non-2xx/i.test(detail || error.message);
+    throw new Error(interrupted
+      ? 'Generation was interrupted before a result reached this page. Check My wall designs for a saved result before starting again. Request: ' + String(input.request_id || 'unavailable')
+      : detail || error.message || 'The wall design could not be generated.');
   }
   if (!data?.storage_path || !data?.image_url) throw new Error(data?.error || 'No wall artwork was returned.');
   return data as { storage_path: string; image_url: string; design_name: string; request_id: string };
