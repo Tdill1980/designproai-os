@@ -116,6 +116,56 @@ Results: §5, filled in from the run.
 
 ---
 
-## 5. Draw results
+## 5. Draw results — run `34441561338`
 
-_Filled in after run completion — see the run id and storage prefix below._
+| | |
+|---|---|
+| capture-only proof run | `34441413803` (0 image calls; prompt assembled on the droplet, contract v3, 4,146 chars, 1 part, 0 images) |
+| draw run | `34441561338`, workflow artifact `10138206077` (51 files, 138 MB, 90 days) |
+| storage | `wrap-files/designiq-ab/2026-09-10T05-37-32-275Z-field-v3/` — `F{1..4}-raw-master.png`, `F{n}-panel-{driver,passenger,hood,roof,front,rear}.png`, `results.json`, `territories.json`, `requests.json` |
+| copies in repo | `docs/ab/field-v3-34441561338-*` (REPORT, results, requests, territories, prompt, run log, 1600-px previews of the four masters and eight flank panels) |
+| prompt | sha256 `4031400c2efdc1af…`, 4,146 chars, one text part, zero image parts, `gemini-3-pro-image`, `1:1`, `4K`, no temperature |
+| image requests | 4, one per draw, 33.6–36.7 s each |
+| territories | Urus: driver (0, 72, 4096, 1221) 202.3×60.31 in 20.25 px/in; passenger (0, 1437, 4096, 1221); hood/roof/front row at y 2730; rear (2190, 3339, 1124, 566) |
+
+| draw | raw sha | gates | output class | centre min-MAD | near-white | grey | border ring std / near-median | what it drew |
+|---|---|---|---|---|---|---|---|---|
+| F1 | `8af4fa5d5818` | non-blocking cut-out on **hood** (3.6% component, 0 blocking) | flat_atlas | 0.104 | 0.3% | 2.3% | 30.6 / 10.4% | full-bleed spa field: logo + name top-left, facial photo centre, botanical line work; **no vehicle, no numerals, no margin** |
+| F2 | `fb8a32398803` | pass | flat_atlas | 0.146 | 5.7% | 2.3% | 62.0 / 7.3% | full-bleed marbled blue/sage/white ribbons, lotus logo + name top-left, photo centre; no vehicle, no numerals, no margin |
+| F3 | `5fc3205624af` | pass | flat_atlas | 0.194 | 1.1% | 2.0% | 55.5 / 7.6% | full-bleed water/ribbon field, logo + name centred, photo lower centre; no vehicle, no numerals, no margin |
+| F4 | `ac31a3e2797c` | pass | flat_atlas | 0.125 | 2.0% | 3.3% | 48.6 / 11.0% | full-bleed watercolour waves and leaves, circular logo + name centred, photo left; no vehicle, no numerals, no margin |
+
+**Against the acceptance in the handoff (§4 step 2): 4/4 no numerals, 4/4
+no margin or mount, 4/4 no vehicle, 4/4 classifier `flat_atlas`.** The two
+v2 defects did not recur once the rows and the "areas" framing were gone.
+
+**The cut Driver/Passenger panels (4096×1221 each):**
+
+| draw | Driver (top third) | Passenger (middle third) |
+|---|---|---|
+| F1 | logo + "New Aura Day Spa", whole, on the blue/green ground | the facial photo, full width, ribbons at both ends — printable |
+| F2 | lotus logo + name, whole, on marbled blue with sage ribbons | the facial photo with orchids, ribbons at both ends — printable |
+| F3 | ribbons and water; the name is **sliced at the bottom edge** ("New Aura" cut mid-glyph) | water + "Day Spa" + photo; the top of "New Aura" **sliced at the top edge** |
+| F4 | waves and leaves only; the top of the circular logo sliced at the bottom edge | photo + logo + "NEW AURA"; "DAY SPA" **below the cut** |
+
+So the one open defect on the one-field branch is the one predicted in §2:
+with no positional language, the model centres the lock-up and the
+territory boundary at y = 1365 cuts through it in 2 of 4. F1 and F2 place
+the lock-up high enough to land whole in Driver. The centre four surfaces
+are crops of the lower third in every draw (photo fragments, ribbons,
+leaves): continuous artwork, not composed statements.
+
+**F1's gate result is worth reading carefully.** `deterministicMasterChecks`
+convicted a 3.6% near-black component on the hood as "one wheel/glass/bed
+shape cut out of the panel". It is the dark stone wall behind the customer
+in the photograph. Production would fill it deterministically and continue
+(non-blocking), but it shows the hole gate cannot tell a dark patch in a
+photo from a wheel well — the same colour-conditional proxy RULE 0.32
+describes from the other direction.
+
+**Not measured here:** the output-class question answered `flat_atlas` on all
+four but its evidence sentence described "multiple rectangular panels" on
+three of them, on images that contain none; it is reading the composition,
+not the sheet. Step 4 (gate tightening) has not been started, by the
+owner's stop instruction.
+

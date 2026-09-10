@@ -1,0 +1,39 @@
+{
+  "contract": "designpro.atlas-field-prompt.v3",
+  "model": "gemini-3-pro-image",
+  "generationConfig": {
+    "responseModalities": [
+      "TEXT",
+      "IMAGE"
+    ],
+    "imageConfig": {
+      "aspectRatio": "1:1",
+      "imageSize": "4K"
+    }
+  },
+  "promptChars": 4146,
+  "promptSha256": "4031400c2efdc1af48bb1b98f3590b58f698e8eb178c3ec42b54fc2a2822061d",
+  "partCount": 1,
+  "modelInputImageCount": 0,
+  "modelRequestByteSize": 4385,
+  "draws": 4,
+  "input": {
+    "contractVersion": "designpro.calls-1-7-input.v3",
+    "pipelineMode": "flat-first-atlas-v1",
+    "vehicle": {
+      "type": "suv",
+      "year": "2021",
+      "make": "llamborghini",
+      "model": "Urus"
+    },
+    "brief": "Custom wrap for  New Aura Day Spa use spa colors blues, sage ,white , create a logo and a custom photo of a women getting a professional facial in a spa setting must look modern and professional",
+    "designName": "New Aura Day Spa",
+    "mode": "commercial",
+    "companyName": "New Aura Day Spa",
+    "finish": "Gloss"
+  },
+  "noseEdge": {
+    "driver": "left",
+    "passenger": "right"
+  }
+}

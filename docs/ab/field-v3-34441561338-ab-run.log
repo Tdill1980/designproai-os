@@ -1,0 +1,32 @@
+runtime image: designproai-runtime:676423375a7181c617fd35698ae037b828e344dd
+test: 12-field-v3-draws -> scripts/atlas-field-v3-draws.mjs
+  resolving GENIE preview dimensions …
+      driver     third-1        (0, 72, 4096, 1221)  202.3×60.31 in  20.25 px/in
+      passenger  third-2        (0, 1437, 4096, 1221)  202.3×60.31 in  20.25 px/in
+      hood       third-3-row-1  (1066, 2730, 1124, 808)  77.49×55.71 in  14.5 px/in
+      roof       third-3-row-1  (0, 2730, 1066, 1088)  73.52000000000001×75.01 in  14.5 px/in
+      front      third-3-row-1  (2190, 2730, 1906, 609)  131.48000000000002×42 in  14.5 px/in
+      rear       third-3-row-2  (2190, 3339, 1124, 566)  77.49×39.03 in  14.5 px/in
+  field contract designpro.atlas-field-prompt.v3: prompt 4146 chars sha 4031400c2efdc1af, 1 part, 0 images, 4385 bytes, 4 draw(s) planned
+  F1: calling gemini-3-pro-image …
+  F1: 8473KB in 35.0s — raw master written FIRST
+  F1: gates REFUSE · class flat_atlas · centre min-MAD 0.1043 · white 0.3% · grey 2.3% · ring std 30.64
+  F2: calling gemini-3-pro-image …
+  F2: 8744KB in 33.6s — raw master written FIRST
+  F2: gates PASS · class flat_atlas · centre min-MAD 0.1456 · white 5.7% · grey 2.3% · ring std 61.96
+  F3: calling gemini-3-pro-image …
+  F3: 8750KB in 36.7s — raw master written FIRST
+  F3: gates PASS · class flat_atlas · centre min-MAD 0.194 · white 1.1% · grey 2.0% · ring std 55.47
+  F4: calling gemini-3-pro-image …
+  F4: 10082KB in 36.3s — raw master written FIRST
+  F4: gates PASS · class flat_atlas · centre min-MAD 0.1248 · white 2.0% · grey 3.3% · ring std 48.56
+  gemini image requests executed: 4
+  upload prompt-field-v3.txt: mime type application/octet-stream is not supported
+  upload F1-design-text.txt: mime type application/octet-stream is not supported
+  upload F2-design-text.txt: mime type application/octet-stream is not supported
+  upload F3-design-text.txt: mime type application/octet-stream is not supported
+  upload F4-design-text.txt: mime type application/octet-stream is not supported
+  upload REPORT.md: mime type application/octet-stream is not supported
+---AB-STORAGE-PREFIX---
+designiq-ab/2026-09-10T05-37-32-275Z-field-v3
+signed URLs (7-day read tokens) removed from this copy; see the workflow artifact 10138206077 for the originals

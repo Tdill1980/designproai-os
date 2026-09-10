@@ -1,0 +1,214 @@
+{
+  "topology": "field-thirds-v2",
+  "canvas": {
+    "widthPx": 4096,
+    "heightPx": 4096,
+    "colorSpace": "srgb",
+    "alphaOutsideZones": true
+  },
+  "genieManifestHash": "d8a4a2376b360d143862569d0c03f5f41fc36232ab6eb0a2efa75d965130b33c",
+  "geometryState": "provisional",
+  "installerMap": {
+    "driver": "third-1",
+    "passenger": "third-2",
+    "centerRowOneLeftToRight": [
+      "roof",
+      "hood",
+      "front"
+    ],
+    "centerRowTwo": [
+      "rear"
+    ],
+    "rearUnder": "front",
+    "noseEdge": {
+      "driver": "left",
+      "passenger": "right"
+    },
+    "flankRotationDegrees": 0
+  },
+  "fieldLayout": {
+    "contract": "designpro.atlas-field-territories.v2",
+    "thirds": [
+      {
+        "third": 1,
+        "y": 0,
+        "h": 1365,
+        "surfaces": [
+          "driver"
+        ]
+      },
+      {
+        "third": 2,
+        "y": 1365,
+        "h": 1365,
+        "surfaces": [
+          "passenger"
+        ]
+      },
+      {
+        "third": 3,
+        "y": 2730,
+        "h": 1366,
+        "surfaces": [
+          "roof",
+          "hood",
+          "front",
+          "rear"
+        ],
+        "scaleCenterPxPerIn": 14.5,
+        "rearUnder": "front"
+      }
+    ],
+    "canvasPx": 16777216,
+    "extractedPx": 13867370,
+    "extractedRatio": 0.8266,
+    "paintedNotExtractedPx": 2909846,
+    "paintedNotExtractedRatio": 0.1734,
+    "boundaries": [
+      {
+        "between": [
+          "hood",
+          "front"
+        ],
+        "axis": "x",
+        "at": 2190,
+        "from": 2730,
+        "to": 3339
+      },
+      {
+        "between": [
+          "hood",
+          "rear"
+        ],
+        "axis": "x",
+        "at": 2190,
+        "from": 3339,
+        "to": 3538
+      },
+      {
+        "between": [
+          "roof",
+          "hood"
+        ],
+        "axis": "x",
+        "at": 1066,
+        "from": 2730,
+        "to": 3538
+      },
+      {
+        "between": [
+          "front",
+          "rear"
+        ],
+        "axis": "y",
+        "at": 3339,
+        "from": 2190,
+        "to": 3314
+      }
+    ]
+  },
+  "zones": [
+    {
+      "surfaceKey": "driver",
+      "placement": "third-1",
+      "x": 0,
+      "y": 72,
+      "w": 4096,
+      "h": 1221,
+      "trim": {
+        "x": 101,
+        "y": 173,
+        "w": 3894,
+        "h": 1019
+      },
+      "printWidthIn": 202.3,
+      "printHeightIn": 60.31,
+      "effectivePpiNative": 20.25
+    },
+    {
+      "surfaceKey": "passenger",
+      "placement": "third-2",
+      "x": 0,
+      "y": 1437,
+      "w": 4096,
+      "h": 1221,
+      "trim": {
+        "x": 101,
+        "y": 1538,
+        "w": 3894,
+        "h": 1019
+      },
+      "printWidthIn": 202.3,
+      "printHeightIn": 60.31,
+      "effectivePpiNative": 20.25
+    },
+    {
+      "surfaceKey": "hood",
+      "placement": "third-3-row-1",
+      "x": 1066,
+      "y": 2730,
+      "w": 1124,
+      "h": 808,
+      "trim": {
+        "x": 1139,
+        "y": 2803,
+        "w": 978,
+        "h": 662
+      },
+      "printWidthIn": 77.49,
+      "printHeightIn": 55.71,
+      "effectivePpiNative": 14.5
+    },
+    {
+      "surfaceKey": "roof",
+      "placement": "third-3-row-1",
+      "x": 0,
+      "y": 2730,
+      "w": 1066,
+      "h": 1088,
+      "trim": {
+        "x": 72,
+        "y": 2803,
+        "w": 922,
+        "h": 942
+      },
+      "printWidthIn": 73.52000000000001,
+      "printHeightIn": 75.01,
+      "effectivePpiNative": 14.5
+    },
+    {
+      "surfaceKey": "front",
+      "placement": "third-3-row-1",
+      "x": 2190,
+      "y": 2730,
+      "w": 1906,
+      "h": 609,
+      "trim": {
+        "x": 2262,
+        "y": 2803,
+        "w": 1762,
+        "h": 463
+      },
+      "printWidthIn": 131.48000000000002,
+      "printHeightIn": 42,
+      "effectivePpiNative": 14.5
+    },
+    {
+      "surfaceKey": "rear",
+      "placement": "third-3-row-2",
+      "x": 2190,
+      "y": 3339,
+      "w": 1124,
+      "h": 566,
+      "trim": {
+        "x": 2263,
+        "y": 3412,
+        "w": 978,
+        "h": 420
+      },
+      "printWidthIn": 77.49,
+      "printHeightIn": 39.03,
+      "effectivePpiNative": 14.5
+    }
+  ]
+}
