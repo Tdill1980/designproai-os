@@ -214,3 +214,62 @@ one-field request, 13 of 13 draws (plus `06bc1851` from production,
 14 of 14). Every request that shows the model a vehicle-shaped image or asks
 for the vehicle-shaped layout has drawn body lines (17 six-surface draws,
 7 of 8 extend turns).
+
+## 7. Test 14 — three arms on the one-field Call 1 (owner: "go run all 3 arms")
+
+Owner questions, 10 September: *"So you're saying we should make Lambos the
+primary example?"* and *"examine the prompt engineering language — I don't
+think the right flattened topology was ever used in describing."* Both
+measured in one run, `34539589338`, on the stored New Aura brief (2021
+Urus), four draws per arm, interleaved A,B,C,A,B,C,… Twelve image calls,
+`scripts/atlas-field-arms-ab.mjs`, workflow test `14-field-arms`. The
+creative assembly is byte-identical across arms (asserted before any call).
+
+| arm | what varies | images | body lines / vehicle | mount, margin or frame | clean full bleed |
+|---|---|---|---|---|---|
+| A | v3 field tail alone (the baseline) | 0 | **1** (A3: a hood-shaped piece on a blue surround) | 1 (the same A3) | **3** (A1, A2, A4) |
+| B | v3 tail + the Houdini Huracán design layout as the only image | 1 | **2** (B3: the Urus from above with the doors spread; B4: a hood-shaped piece with seam lines) | 2 (B1 mounted on a grey wall; B2 a photograph of a printed roll on a concrete floor) | **0** |
+| C | v4 "pressed skin" tail alone | 0 | **0** | 2 (C3 framed inside a white margin; C4 mounted on a sage wall with a drop shadow) | 2 (C1, C2) |
+
+What the gates said: every draw passed the deterministic gate except B1
+(one near-black component on the hood, non-blocking class). The output-class
+question convicted B3 and B4 only. B1, B2, A3, C3 and C4 all passed as
+`flat_atlas`. The border-ring telemetry (outer 2% of the raw canvas) read
+0.97–1.64 luma std with 99–100% of the ring within ±6 of its median on A3,
+B4 and C4, 8.27/85% on B3, 20.75/36% on B2, 13.96/14% on B1, and 28–63 with
+4–18% on every full-bleed draw. It missed C3 (55/3.5%), whose margin is
+busy water artwork rather than a flat colour. That is the fixture set for
+the step-4 uniform-margin gate: five true mounts, one frame it cannot see,
+six full-bleed negatives.
+
+Lettering across the code cut, on the five full-bleed draws: sliced on A1,
+A2 and C2 ("Day Spa" / "MODERN & PROFESSIONAL" straddle the driver and
+passenger territories); whole on A4 and C1. Same defect as run
+`34441561338`, same cause (no positional language on purpose).
+
+**Answers.**
+
+1. **The Lamborghini layout is not a primary example.** Shown the Huracán
+   design layout, the model drew the vehicle twice in four draws and
+   staged the other two as a mounted print and a photographed roll. Zero
+   usable draws. This is the first measured send of the Houdini pair to
+   Call 1 (it was wired in `flat-atlas-topology-examples.cjs` and never
+   drawn). The image is the right picture for PanelPro to SHOW a human, as
+   a code-composed unroll of the accepted field; it is the wrong thing to
+   show the model.
+2. **The pressed-skin wording drew no body lines in four, and the v3
+   baseline drew its first anatomy in eighteen.** A3 is a hood-shaped
+   piece on a surround: the one-field record is now 17 of 18 without a
+   vehicle contour, not 14 of 14. At n=4 per arm, A (1 of 4) and C (0 of 4)
+   are not separable on body lines; both beat B decisively. C's cost is
+   two mounts to A's one.
+3. **The defect both text arms share is the mount.** "On one square 4K
+   image" plus "seen straight on" is being read as a print object in a
+   scene: a hood-shaped sheet, a framed square, a canvas on a wall. The
+   ring telemetry sees four of the six. The owner-approved v3 wording
+   already says "no margin, border, frame, mount or backdrop", and it is
+   painted anyway, which is the same lesson as every negative in this file.
+
+Evidence: `docs/ab/field-arms-34539589338-*` (twelve raw masters at
+1600 px, driver and passenger cuts, REPORT, requests, results, all three
+prompts, token-stripped log). Nothing deployed.

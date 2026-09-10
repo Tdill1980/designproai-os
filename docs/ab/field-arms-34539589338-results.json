@@ -1,0 +1,1495 @@
+{
+  "arms": {
+    "A": {
+      "what": "v3 field tail, no image (baseline)",
+      "contract": "designpro.atlas-field-prompt.v3",
+      "partCount": 1,
+      "modelInputImageCount": 0,
+      "promptChars": 4146,
+      "promptSha256": "4031400c2efdc1af48bb1b98f3590b58f698e8eb178c3ec42b54fc2a2822061d",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.\nPaint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact 2021 Llamborghini Urus (suv) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.\n\nThe image is the printed artwork itself, at full size, seen straight on, and nothing else. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the image, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the image as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole picture.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 4385
+    },
+    "B": {
+      "what": "v3 field tail + Houdini Huracán design layout as the only image (1320×784 jpg, sha aa5d811b529d)",
+      "contract": "designpro.atlas-field-prompt.v3",
+      "partCount": 3,
+      "modelInputImageCount": 1,
+      "promptChars": 4146,
+      "promptSha256": "4031400c2efdc1af48bb1b98f3590b58f698e8eb178c3ec42b54fc2a2822061d",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.\nPaint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact 2021 Llamborghini Urus (suv) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.\n\nThe image is the printed artwork itself, at full size, seen straight on, and nothing else. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the image, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the image as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole picture.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 225580
+    },
+    "C": {
+      "what": "v4 pressed-skin tail, no image",
+      "contract": "designpro.atlas-field-prompt.v4-pressed-skin (harness)",
+      "partCount": 1,
+      "modelInputImageCount": 0,
+      "promptChars": 4213,
+      "promptSha256": "3ac13ce3701c3273432b19067161de8a3612aa50488128df01c22d1f5a703425",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — THE WRAP'S PRINTED SKIN, PRESSED FLAT, on one square 4K image.\nThis wrap was designed across the whole 2021 Llamborghini Urus (suv) as one continuous piece of artwork. The image shows that artwork pressed perfectly flat into a single continuous print, seen straight on. Pressing it flat leaves only the print: one uninterrupted field of colour, texture, imagery and motion filling the entire square, edge to edge on all four sides.\n\nThe print is the artwork alone, at full size. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the print, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the print as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole print.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 4450
+    }
+  },
+  "drawsPerArm": 4,
+  "imageRequestsExecuted": 12,
+  "draws": [
+    {
+      "ok": true,
+      "label": "A1",
+      "arm": "A",
+      "draw": 1,
+      "file": "A1-raw-master.png",
+      "preview": "A1-raw-master-1600.jpg",
+      "bytes": 8929135,
+      "elapsedMs": 50806,
+      "contentHash": "a904157119ae1ffb18ed8cae4dfddcad5e3541ee5d1043fc7c30cca2c807e752",
+      "normalizedHash": "86a732c5a7df1c015a881ff85b1f2d8603e014b71d29a0e25ee24fa71b30001f",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 56.35
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0021,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 55.99
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0.0321,
+            "concentratedFlatBlackRatio": 0.0038,
+            "lumaStddev": 55.97
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 42.24
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0.0084,
+            "concentratedFlatBlackRatio": 0.0179,
+            "lumaStddev": 59.84
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 47.61
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular regions filled with continuous spa-themed artwork, with no depiction of a vehicle or vehicle parts.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1704
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0116,
+        "neutralGreyShare": 0.0204,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 62.57,
+          "median": 134,
+          "nearMedianShare": 0.0416
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "03b1fbc89b8694f013add4ddfa72bacbc613b4f67f8bfcf8047929e99355e01f",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "b2dfe1f4307c4e9866ec94b19bce5851f7659a39f1ea2a0446136c4b2b64043c",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "894f992fa7de1edd363d7a97ff7e9bd5d841af86cb4c6822088b8cf103da3860",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "0a2d6c257cddeb92495aea5a303ce77a48369e20ec73e6aacfeaf4162a858d75",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "a7cb6fea0281e0994f9d31325e485b6c463be16881466fa413377df67b694378",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "7c85dac18b12c8e750956a6872388a0722648459866637bd73be9052b3260193",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "B1",
+      "arm": "B",
+      "draw": 1,
+      "file": "B1-raw-master.png",
+      "preview": "B1-raw-master-1600.jpg",
+      "bytes": 7530797,
+      "elapsedMs": 44636,
+      "contentHash": "b7b1ec6784caa87c99a4c6871fbc7a621031f7bcd15f58aa90b258934753f144",
+      "normalizedHash": "57215d702e15a27256bbfee533a29aa5f964625dbf77bc7d9c90957b79c099f9",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": false,
+        "blockingFailures": [],
+        "cutoutFindings": [
+          "hood largestCutoutComponentRatio=0.02962 (flatBlackRatio=0.04858) inside a zone that is 94.4% artwork -- one wheel/glass/bed shape cut out of the panel"
+        ],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 52.64
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0121,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 42.88
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0.0838,
+            "concentratedFlatBlackRatio": 0.0444,
+            "lumaStddev": 52.88
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0.0535,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 39.82
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 38.02
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 40.49
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays a flat, rectangular print artwork for a spa, with no depiction of a vehicle or vehicle parts.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1797
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0121,
+        "neutralGreyShare": 0.144,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 13.96,
+          "median": 210,
+          "nearMedianShare": 0.1362
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "993ff10891bbff72be42589040a55ace44a6a4c3e22f8dc26e0fd6d4a8c9dd86",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "90c658137527831f8bc7988101a286d6393885f02c9c7c334b30b16ef63178f2",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "426a564d39c00aae7d2d1007232b06cfe1355c048242cac2268ca6738a429617",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "ebb70e559b2dd78a5694f05fdfbcd5eb8568c698cd34a4119f6d63afa9f0397b",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "558da3d7265e5c2674ec3b0c069a9f713c95fca2e9efdb342c52fccdd84027a8",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "c09893e39f2a7da290b3d3f1496d518bdca970cd9050f9f6dffb6f29dffb3ba1",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "C1",
+      "arm": "C",
+      "draw": 1,
+      "file": "C1-raw-master.png",
+      "preview": "C1-raw-master-1600.jpg",
+      "bytes": 10158738,
+      "elapsedMs": 50880,
+      "contentHash": "02ecf38d56d5fe67c1dce19ad0a3c3ce7b64bc3d2cca36f669ac209f4f8c7c09",
+      "normalizedHash": "c19ab29296839e0b6fc212845383c50beb3f9815781ec8536f816ef4c9059be9",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 49
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0011,
+            "concentratedFlatBlackRatio": 0.0121,
+            "lumaStddev": 56.92
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 34.97
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 29.35
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 45.72
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 30.13
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays rectangular regions filled with continuous artwork for a spa advertisement, with no depiction of a vehicle or vehicle parts.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.137
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0088,
+        "neutralGreyShare": 0.0913,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 52.27,
+          "median": 136,
+          "nearMedianShare": 0.0787
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "ed2223364c5bbc1deaddbceb58546017c32d0436dd0429051f704f3d8fc1498c",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "d9043c9906ef31ba719e90328dc6ba005b325b5076d7b416d3c69248c8df8c3e",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "f4a462b239e9f938f35262e24c670d7cb7a5c931703a3b86e2199df0656c23c7",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "bcb6359fba756463bb9c5e85ef2d7bda1de6f1797d878e6b62977cdf5a0d5f6d",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "d41cd2ed8248b4b09f537dd6a290b7c6a96eb47212e5e10d74232e1eeb3731b1",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "6b1f43e779635fb743a8fe57a223f9ed8d028015fd1e4d93a0fa2fa073d54676",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "A2",
+      "arm": "A",
+      "draw": 2,
+      "file": "A2-raw-master.png",
+      "preview": "A2-raw-master-1600.jpg",
+      "bytes": 8788751,
+      "elapsedMs": 44330,
+      "contentHash": "787bac4d279e3ada2b7525356b87c6ef8d58c084b70301bd182368e949c3d20f",
+      "normalizedHash": "eaf1dab407ed0d59edb7b63d11998ea9936fd6af733aa4a381578652d2a5b896",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 33.38
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0004,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 39.5
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 39.19
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 21.16
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0.0018,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 34.47
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 26.4
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular panels of continuous artwork, laid out side by side, with no vehicle depicted.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1212
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0153,
+        "neutralGreyShare": 0.0523,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 28.56,
+          "median": 179,
+          "nearMedianShare": 0.1794
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "283fa36001be9d19a9ae55b58522c74fa33a713c4deb30f73bdc9605930e9f70",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "815f042c2b0666c71596af09eaef49ec7d2f72993cdf21fe53bde27442d4d3f5",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "6ae8cdc49c59e8067dafa8bed276c01066cd4929bca3a4a750a990afbcb1d9a0",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "6e72d5f7e2e07d89227a60c62f0c8fa5718a2715792529c1420e1a18d2d6e511",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "349565298ae6ffce8f23f85254ef93f512df44d1405e04c62964f2dc715e3c9b",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "870ed62f9faadf28f61a353688ddc6a4230528434b04c86f9dda327f3839b0af",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "B2",
+      "arm": "B",
+      "draw": 2,
+      "file": "B2-raw-master.png",
+      "preview": "B2-raw-master-1600.jpg",
+      "bytes": 9397771,
+      "elapsedMs": 47975,
+      "contentHash": "b7ebf72dd91340c6521c4e203700ee59b38bd066aae7b286fe3aa2e6354051d7",
+      "normalizedHash": "6289da48dc288e56d3f626b845d54be04818a15b5875c37c5dffaa4df39b47f0",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0.0001,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 41.28
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0.0069,
+            "lumaStddev": 50.87
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 22.3
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 29.88
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 25.1
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 29.13
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image shows a flat printed sheet with continuous graphics for a spa, filling the rectangular regions without any vehicle depiction.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.0894
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0062,
+        "neutralGreyShare": 0.11,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 20.75,
+          "median": 102,
+          "nearMedianShare": 0.3603
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "f58e8d477d8917ea2ff9174a2f15a52b9ea366b1915aa150f6639da5592ab0e7",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "e12d258a3ba4079ae6d58c04518ebb86c0d1175f6bdc14406e3d045c5ab17988",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "26ce2b0e6abb104ba3d613d17f9ba6c619b60f5695c4cd9b8be155febe3863de",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "a5b409e99810f02fcbb37246a27954921213fb96935a7a80fe9c8559025cb6ff",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "0844768fa50b877b84019ffe5a9f147cc6853a19dd1bc46afd0eb1cd9e0ca065",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "5cf88d449349cacc30a965389a45e621285e48c2c8c5657fce9611cd9b7bb238",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "C2",
+      "arm": "C",
+      "draw": 2,
+      "file": "C2-raw-master.png",
+      "preview": "C2-raw-master-1600.jpg",
+      "bytes": 9298372,
+      "elapsedMs": 42701,
+      "contentHash": "aac75f330191320767df192a6280472a0adeb91d08035d31afdfc2c9bbe81e6b",
+      "normalizedHash": "ed44043b1c4d1f2cd59ed14f5ac9c402383a4c17250dc04dbc26c0c7b74d4067",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 49.02
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0158,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 52.86
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0.0195,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 47.21
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0.001,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 49.91
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 48.74
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 37.65
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays a flat banner design with text, a logo, and a spa scene, with no depiction of a vehicle or vehicle parts.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.2112
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0102,
+        "neutralGreyShare": 0.0185,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 48.13,
+          "median": 123,
+          "nearMedianShare": 0.0898
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "7074258e8db76be4a766f3b10bc5b1f1873c5e726332b1d312c6a08009706378",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "0c8f5a90db6f384aaa1118fe4a339f9773820a09c772a0a6e25a448c6c6f9a60",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "b5c3ef136006d207224eb83fc74971aa68e65409b56e043d560bc19b1f633b23",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "acf7dab416e36b9a160f153a33a832b512e68e7d046971321ab1aadf605d9495",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "fa28f743522dd09e0e8b0882c09f9f0392cb54669a473396da2c37e326293c55",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "e30e911089af84aa85d01a8a0506d944baa9aa0cf8c0f8f38ee752bfd0a2bc06",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "A3",
+      "arm": "A",
+      "draw": 3,
+      "file": "A3-raw-master.png",
+      "preview": "A3-raw-master-1600.jpg",
+      "bytes": 8767431,
+      "elapsedMs": 59291,
+      "contentHash": "6cfee0205215e78070161631410692105777de95c2ea1e0fd67a8b424ea36741",
+      "normalizedHash": "90b1b1b651857e677918eb9cfb6f270c98c238772ce231d5920be220f7403dbf",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 44.85
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 50.66
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 30.95
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 44.82
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0.0011,
+            "concentratedFlatBlackRatio": 0.0177,
+            "lumaStddev": 54.43
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0.0014,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 40.89
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 0.8,
+        "evidence": "The image displays a single, custom-shaped flat print artwork for a spa, with no vehicle depicted.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1587
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0096,
+        "neutralGreyShare": 0.0118,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 1.15,
+          "median": 83,
+          "nearMedianShare": 1
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "3bdad414606248ef34e81ba6e8bcf7751af8cb7349bd95fc543bfc1d7ed1ee91",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "fe802f6b31582a594ff0b760bea59269c5ea70a682c1866b842afcebacf1db12",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "f104d6a50bc45eca471b74d76b8c86739ec182ab16f70ea51fc46331781d87e4",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "c5c5f8135fbae39403813e549d0bebffdc4ae329406e811d3c7e0c4b96fe064f",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "3b390753e1e585eee09f1a038c8878e561c1b099c5df5516dc0f5c5bf5d41e6c",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "0c082c9fcb7ff878b1e6cd2f925fc261aaf1bc4d36f77a92018e7da0684fb15a",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "B3",
+      "arm": "B",
+      "draw": 3,
+      "file": "B3-raw-master.png",
+      "preview": "B3-raw-master-1600.jpg",
+      "bytes": 7956919,
+      "elapsedMs": 49741,
+      "contentHash": "3d8a7873c0ac47d7df412884028ad4c89013c6f83c3c0097bc1e95e37469f31a",
+      "normalizedHash": "bcba63b447e0931b64afc81bf1505f8c9c8930a23d9dd6d1794cd17b8791148a",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0.0021,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 34.01
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.006,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 46.81
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0.002,
+            "concentratedFlatBlackRatio": 0.0039,
+            "lumaStddev": 39.6
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 17.39
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0.0015,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 40.26
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 21.11
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 1,
+        "evidence": "The image clearly depicts a vehicle, showing its body contours, front grille, and doors with branding applied.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.0691
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0042,
+        "neutralGreyShare": 0.095,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 8.27,
+          "median": 165,
+          "nearMedianShare": 0.8458
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "02d56dbaf99f5d3c578d3ace21c9e7d5874eff8cd2625f7765f873749069335a",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "ee1ca154f4a974dfe672b0216b70423cc434fa6d4e1d608a198d30dbbb1a9d8e",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "ce6b8ad9ed60eba914cfbbffe8cafc78d95d55cde3b7a1c1470cce8a8ace2032",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "ce4141890c54ef5dd6f3fe799330b340482bb5a2ca87e27d35f87ca29b220998",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "c8b8aa1ae9cba0aa404963185db37a00f587a56a88eded0fb34f54b9c7842c74",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "3f92093f00168ce8bd9d385197c095741e8eddf698ad1fdbc7a346d8aa6afbbd",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "C3",
+      "arm": "C",
+      "draw": 3,
+      "file": "C3-raw-master.png",
+      "preview": "C3-raw-master-1600.jpg",
+      "bytes": 8637155,
+      "elapsedMs": 48426,
+      "contentHash": "953f6b4f60311993ab56e278ae3700cb8baf11b59e3eb4c76618eb12dca5c969",
+      "normalizedHash": "33131d3c2b4de81ffb6c42d6fa46936333d64b9e2c477739387a9f45e5a31ce9",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 44.65
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 56.4
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 41.16
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 37.45
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 32.39
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 28.08
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular print artworks laid out side by side, each filled corner to corner with continuous graphics, and no vehicle parts or shapes are present.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.155
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0798,
+        "neutralGreyShare": 0.0316,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 55.29,
+          "median": 209,
+          "nearMedianShare": 0.0354
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "db29ae773ff772f61549657718dc0583fc237620c4d7ae8f339d8b2052a88965",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "098590db99981a28df32b5d82855bd18926340db8d21f5b58b0e11948da415f0",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "00306c12a4ddc0081b3639f6ec983521ffa63dafddba266b8daed20b2f6ba035",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "c56653ecf04e89dc92f24518f9a8b06f5e16ff54e38d6df620d5623b9014a2b5",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "415b78d737dcced0646998ca18deb8f907d03439fa70e7a699024d285f5c21de",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "7fca79141422726f4f7b47e001df26ca27cd60162a8675862df1f91e634034a2",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "A4",
+      "arm": "A",
+      "draw": 4,
+      "file": "A4-raw-master.png",
+      "preview": "A4-raw-master-1600.jpg",
+      "bytes": 8994112,
+      "elapsedMs": 49956,
+      "contentHash": "98c4e4af97b8f937597faa079b7965a2a4ed19f7e337aa5553e02aaa7266ae42",
+      "normalizedHash": "719fb5a877c195bdbeac90676791a1080f2b3f018dd0e1ed4b62cf439cc344df",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 53.39
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0008,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 40.77
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 42.6
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 53.44
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 47.17
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 44.19
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular regions of flat 2D print artwork laid out side by side, with pure graphics filling each rectangle and no vehicle body depicted.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1609
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0152,
+        "neutralGreyShare": 0.0029,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 55.62,
+          "median": 124,
+          "nearMedianShare": 0.0618
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "0f639a0a3aac24f0b23a82aafe176037b1166e35621d1ad9c9368791eb1e955b",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "905d259bef6218dea31f93fadc76cd128173e818b417f548a18044698c631544",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "88b5793fa1e0ea26f1a2226f5e0c5ad8a849913ecac9337b00256e3f1f1307ff",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "6cf9c7b2aac3274de16a408552b1c99957d796d89a21e00d8481ebcec958692c",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "9bb6a2592a5151c97c311226949f18716a6832ed01d713faa2c650d1a8ddb37f",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "655b3a28f0a51032c5f474cba6bc60d46e0486e5c22ef5b597b3c5c2f060b987",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "B4",
+      "arm": "B",
+      "draw": 4,
+      "file": "B4-raw-master.png",
+      "preview": "B4-raw-master-1600.jpg",
+      "bytes": 7909048,
+      "elapsedMs": 75502,
+      "contentHash": "ab42cadb24d8a7d3e8f1e063b1d122b68feaec314972915788f5dda55813685f",
+      "normalizedHash": "2f6b164f14b62d5ea29fde4c8a7c0d93689cdeb524f5b1b86f565586fd3583b4",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0.0004,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 45.08
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0.0395,
+            "concentratedFlatBlackRatio": 0.0043,
+            "lumaStddev": 52.79
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0.0544,
+            "concentratedFlatBlackRatio": 0.0069,
+            "lumaStddev": 43.45
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0.0652,
+            "concentratedFlatBlackRatio": 0.0067,
+            "lumaStddev": 45.96
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0.0012,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 50.74
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 38.46
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "confidence": 0.6,
+        "evidence": "The image depicts a curved display stand with applied graphics, which is not a flat layout of multiple print panels.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.175
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.003,
+        "neutralGreyShare": 0.027,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 1.64,
+          "median": 90,
+          "nearMedianShare": 0.9928
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "7874aa74e32f40106069ec0edafbc57fd36e4d153c5f2512a74d0fefcd9119f5",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "d782ca9e747e7d7eabf7fd88e5b185a99e0073a12fcf14da4a02ef2429b52d6f",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "83ba7688df50386cee064cf29fcecb36c727e16c8a132f3e644384630bad7164",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "fe3aa20da5753037aa7cab1778e54f9dc33623d0c9e3e6a41afe5c49c59e3e87",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "9030efaeb23054701d0f3148109f2aa32d4c65be2db2bb17e1689877fa0eafb8",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "dd65803ed221cb91339f0d55ee7b121f9ca42bd06033467b3488172d5cebdb0d",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "label": "C4",
+      "arm": "C",
+      "draw": 4,
+      "file": "C4-raw-master.png",
+      "preview": "C4-raw-master-1600.jpg",
+      "bytes": 8683831,
+      "elapsedMs": 47310,
+      "contentHash": "95b14ca27084b4c676a127e29b858550c25aaed065bdf75b87625d795338e74a",
+      "normalizedHash": "c470e4816ae0ffe2d8e6a0afca52db1b3e2ec162d29dfc283fefcbc4754485fe",
+      "model": "gemini-3-pro-image",
+      "keyFingerprint": "3bd4c4c8ea5a",
+      "delivered": {
+        "width": 4096,
+        "height": 4096,
+        "nativelyFourK": true
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "zones": [
+          {
+            "surfaceKey": "driver",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 42.89
+          },
+          {
+            "surfaceKey": "passenger",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 33.58
+          },
+          {
+            "surfaceKey": "hood",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 50.22
+          },
+          {
+            "surfaceKey": "roof",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 25.55
+          },
+          {
+            "surfaceKey": "front",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 36.95
+          },
+          {
+            "surfaceKey": "rear",
+            "edgeHoleRatio": 0,
+            "concentratedFlatBlackRatio": 0,
+            "lumaStddev": 55.76
+          }
+        ]
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "confidence": 1,
+        "evidence": "The image displays multiple rectangular panels laid out side by side, each filled corner to corner with continuous artwork, and no vehicle or vehicle-shaped elements are present.",
+        "code": null,
+        "reason": null
+      },
+      "centreDistinctness": {
+        "minPair": 0.1741
+      },
+      "telemetry": {
+        "nearWhiteShare": 0.0123,
+        "neutralGreyShare": 0.0504,
+        "borderRing": {
+          "widthPx": 10,
+          "lumaStd": 0.97,
+          "median": 173,
+          "nearMedianShare": 1
+        }
+      },
+      "panels": [
+        {
+          "surfaceKey": "driver",
+          "contentHash": "fc708fb7dfdc135c70b04c72420595c008eb0dc815954734969252e299d5eda3",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "passenger",
+          "contentHash": "95f659b73da026f3b9057c735baf0138520e70446eb0b1e337dc1635382d3666",
+          "pixelWidth": 4096,
+          "pixelHeight": 1221
+        },
+        {
+          "surfaceKey": "hood",
+          "contentHash": "1a667e0ebb2a211e6d6b2fbdcb38a557da16c506c917d94f0f20ade134cc19be",
+          "pixelWidth": 1124,
+          "pixelHeight": 808
+        },
+        {
+          "surfaceKey": "front",
+          "contentHash": "93d1f1c0511b45db68369c2a97794339e7daca42977d86c1097a00a442c3c1fa",
+          "pixelWidth": 1906,
+          "pixelHeight": 609
+        },
+        {
+          "surfaceKey": "rear",
+          "contentHash": "36b59774a24a42379fc4956f347cb8466ea7c553e8e8cfb609f0894d55edb5d5",
+          "pixelWidth": 1124,
+          "pixelHeight": 566
+        },
+        {
+          "surfaceKey": "roof",
+          "contentHash": "f648c2370801b4c252356b5a1957cbd62127d8fff786177ba823a03983ea2408",
+          "pixelWidth": 1066,
+          "pixelHeight": 1088
+        }
+      ]
+    }
+  ]
+}

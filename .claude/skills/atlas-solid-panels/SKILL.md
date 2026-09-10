@@ -50,12 +50,26 @@ labels came back as text).
 record (fifteen variants, `docs/ATLAS-CALL1-*.md`, `docs/ab/`) drew vehicle
 anatomy into at least one flank. The one-field request (RULE 0.33,
 `designpro.atlas-field-prompt.v3`, `runtime/atlas-field-territories.cjs`)
-has drawn no wheel arch, silhouette or body line in 13 of 13 real draws
-(`33659500846`, `34425798511` ×4, `34430841234` ×4, `34441561338` ×4). That is
-the measured difference between the two branches. Its cost is a different
-defect: with no positional language the code cut can slice lettering across
-a territory boundary (2 of 4 in `34441561338`). Do not "fix" that by adding
-positional text; it is an owner decision about which branch is primary.
+has drawn no wheel arch, silhouette or body line in 17 of 18 real draws
+(`33659500846`, `34425798511` ×4, `34430841234` ×4, `34441561338` ×4,
+`34539589338` arm A ×4; the one exception, A3 of that run, is a hood-shaped
+piece on a blue surround that every gate passed). That is the measured
+difference between the two branches. Its costs are two different defects:
+with no positional language the code cut can slice lettering across a
+territory boundary (2 of 4 in `34441561338`, 3 of 5 in `34539589338`), and
+"on one square 4K image ... seen straight on" is sometimes read as a print
+OBJECT in a scene: a mounted square, a framed square, a photographed roll
+(`34539589338`: 5 of 12 across all arms). Do not "fix" either by adding
+positional text or a negative; the mount is a gate item (the border-ring
+telemetry sees a flat-colour mount, not a busy frame), and which branch is
+primary is an owner decision.
+
+**A vehicle-shaped example is never a model input.** Test 14 sent the
+Houdini Huracán design layout as the only image beside the v3 tail: 0 of 4
+usable, the Urus drawn from above with its doors spread, a hood-shaped piece
+with seam lines, a mounted print and a photographed roll. The Lamborghini
+sheet is the right picture for PanelPro to SHOW a human as a code-composed
+unroll of the accepted field; shown to Gemini it is reproduced as an object.
 
 **The gates (`runtime/atlas-master-qc.cjs`).** They are colour-conditional
 proxies, not the contract. `holeAt` is near-black-or-transparent

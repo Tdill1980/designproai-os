@@ -153,6 +153,18 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            carried a mount and painted numerals. Given an image containing the
 #            silhouette, the model reproduces the silhouette. Closed.
 #
+#   test 14 — FIELD ARMS (owner: "go run all 3 arms", 2026-09-10). Three arms on
+#            the one-field Call 1, interleaved A,B,C per draw, creative assembly
+#            byte-identical: A the v3 tail alone; B the v3 tail + the Houdini
+#            Huracán design layout as the ONLY image; C a v4 "pressed skin" tail
+#            alone (the owner's own description of A.T.L.A.S.).
+#            RESULT (run 34539589338, 4 per arm): A 3 clean, 1 hood-shaped piece
+#            on a surround (the one-field record's first anatomy, 17 of 18);
+#            B 0 clean — the Urus drawn from above, a hood-shaped piece with seam
+#            lines, a mounted print, a photographed roll; C 2 clean, 0 body
+#            lines, 2 mounts. The Lambo layout is not a model input. Both text
+#            arms share the mount defect; the border-ring telemetry sees 4 of 6.
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is

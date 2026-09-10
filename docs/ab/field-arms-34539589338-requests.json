@@ -1,0 +1,64 @@
+{
+  "model": "gemini-3-pro-image",
+  "generationConfig": {
+    "responseModalities": [
+      "TEXT",
+      "IMAGE"
+    ],
+    "imageConfig": {
+      "aspectRatio": "1:1",
+      "imageSize": "4K"
+    }
+  },
+  "drawsPerArm": 4,
+  "arms": {
+    "A": {
+      "what": "v3 field tail, no image (baseline)",
+      "contract": "designpro.atlas-field-prompt.v3",
+      "partCount": 1,
+      "modelInputImageCount": 0,
+      "promptChars": 4146,
+      "promptSha256": "4031400c2efdc1af48bb1b98f3590b58f698e8eb178c3ec42b54fc2a2822061d",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.\nPaint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact 2021 Llamborghini Urus (suv) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.\n\nThe image is the printed artwork itself, at full size, seen straight on, and nothing else. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the image, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the image as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole picture.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 4385
+    },
+    "B": {
+      "what": "v3 field tail + Houdini Huracán design layout as the only image (1320×784 jpg, sha aa5d811b529d)",
+      "contract": "designpro.atlas-field-prompt.v3",
+      "partCount": 3,
+      "modelInputImageCount": 1,
+      "promptChars": 4146,
+      "promptSha256": "4031400c2efdc1af48bb1b98f3590b58f698e8eb178c3ec42b54fc2a2822061d",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.\nPaint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact 2021 Llamborghini Urus (suv) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.\n\nThe image is the printed artwork itself, at full size, seen straight on, and nothing else. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the image, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the image as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole picture.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 225580
+    },
+    "C": {
+      "what": "v4 pressed-skin tail, no image",
+      "contract": "designpro.atlas-field-prompt.v4-pressed-skin (harness)",
+      "partCount": 1,
+      "modelInputImageCount": 0,
+      "promptChars": 4213,
+      "promptSha256": "3ac13ce3701c3273432b19067161de8a3612aa50488128df01c22d1f5a703425",
+      "creativeSha256": "6079d9de97391aab74faea6ade71ad96a58450bc1dc2437c5f015589be577ec3",
+      "tail": "OUTPUT — THE WRAP'S PRINTED SKIN, PRESSED FLAT, on one square 4K image.\nThis wrap was designed across the whole 2021 Llamborghini Urus (suv) as one continuous piece of artwork. The image shows that artwork pressed perfectly flat into a single continuous print, seen straight on. Pressing it flat leaves only the print: one uninterrupted field of colour, texture, imagery and motion filling the entire square, edge to edge on all four sides.\n\nThe print is the artwork alone, at full size. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.\n\nEvery part of the print, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the print as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole print.\n\nLettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for.\n\nGallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+      "modelRequestByteSize": 4450
+    }
+  },
+  "input": {
+    "contractVersion": "designpro.calls-1-7-input.v3",
+    "pipelineMode": "flat-first-atlas-v1",
+    "vehicle": {
+      "type": "suv",
+      "year": "2021",
+      "make": "llamborghini",
+      "model": "Urus"
+    },
+    "brief": "Custom wrap for  New Aura Day Spa use spa colors blues, sage ,white , create a logo and a custom photo of a women getting a professional facial in a spa setting must look modern and professional",
+    "designName": "New Aura Day Spa",
+    "mode": "commercial",
+    "companyName": "New Aura Day Spa",
+    "finish": "Gloss"
+  }
+}
