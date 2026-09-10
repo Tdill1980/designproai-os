@@ -102,7 +102,17 @@ env:
   # commercial/restyle assembly the control arm exercises is byte-identical, so
   # the A arm still compares against the same creative engine it always did.
   # Recomputed with scripts/build-control-prompt.mjs, as #202, #203 and #224 did.
-  EXPECT_CONTROL_HASH: cf65f98fedaf0523b3ba3b90983d1a86e991f39733ff720ccef61a2eb2d9c313
+  # Re-pinned 2026-09-10 (arm F). `git diff 901217cd..7c3850cb -U0` on
+  # design-panel-ai-generate/index.ts touches buildDesignIQPrompt, but every
+  # hunk there is an `atlasFlatMaster ? ... : <original>` or `atlasField`
+  # ternary whose else-branch is the 08-28 string byte for byte (identity,
+  # contact lock, mascot, QR zone, exact reference, style inspiration, finish,
+  # restyle identity/scene/finish lock, hood/roof/front view clause). The
+  # remaining hunks are A.T.L.A.S.-only: handleAtlasArtboard/handleAtlasPanel,
+  # atlasFlatMasterContract, atlasFieldContract, atlasPanelTopology,
+  # ATLAS_PLACEMENT_WORDS, COMMERCIAL_TRANSLATION_FIELD. The commercial control
+  # the A arm runs is unchanged; the pin follows the deployed source (#350).
+  EXPECT_CONTROL_HASH: d4ac0f9ed8a348e098381f6b681e12ef1ab0c4319efe079251d9e1e25a8a6a8a
 
 jobs:
   ab:
