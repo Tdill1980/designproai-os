@@ -44,7 +44,7 @@
  * request, revision, view or artifact row is created; the only writes are the
  * evidence objects under `designiq-ab/`.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -75,6 +75,60 @@ mkdirSync(OUT, { recursive: true });
 const FIELD_DRAWS = Math.max(1, Math.min(6, Number(args["field-draws"] || 1) || 1));
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
+
+// ── THE PROVIDER LEASE ───────────────────────────────────────────────────
+// Since the durable provider cache (gemini-provider-cache.mjs), the deployed
+// design-panel-ai-generate authorizes EVERY Call-1 image request against a
+// leased designpro_generation_requests row: owner, generationId, requestId
+// and a live lease token, or `provider_request_identity_invalid` /
+// `provider_claim_invalid` before any Gemini call (run 34425198330). An edge
+// arm (B, F) therefore needs a real lease. The harness mints one row of its
+// own — the canary operator's, state `leased`, held by this run — and cancels
+// it when the run ends. Two properties keep it out of the product path:
+//   1. attempt is pinned at the table's maximum, so if this process dies and
+//      the lease expires, the worker's claim RPC marks the row `failed`
+//      without executing it (claim_designpro_generation_request_v2 checks
+//      attempt>=12 before leasing);
+//   2. the release runs in `finally`, so a completed run leaves `cancelled`.
+// The request row is transport identity only: it never enters the prompt,
+// and the cache keys each draw by attemptKey so N draws are N fresh images.
+const HARNESS_LEASE_MINUTES = 45;
+async function mintHarnessLease(supabase, ownerId, input) {
+  const generationId = randomUUID();
+  const claimToken = randomUUID();
+  const inputHash = sha(Buffer.from(JSON.stringify(input)));
+  // engine_contract must equal designpro_private.calls_1_7_engine_contract(),
+  // which PostgREST cannot call; the newest row carries the current value and
+  // the table CHECK refuses the insert loudly if it does not.
+  const { data: ref, error: refError } = await supabase.from("designpro_generation_requests")
+    .select("engine_contract,engine_contract_hash").order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (refError || !ref) throw new Error(`harness lease: cannot read the engine contract (${refError?.message || "no rows"})`);
+  const { data, error } = await supabase.from("designpro_generation_requests").insert({
+    generation_id: generationId, owner_id: ownerId, tenant_key: `user_${ownerId}`,
+    idempotency_key: `calls17:${generationId}:${inputHash}`, state: "leased",
+    request_input: input, input_hash: inputHash,
+    engine_contract: ref.engine_contract, engine_contract_hash: ref.engine_contract_hash,
+    attempt: 12,
+    lease_owner: "designiq-ab-precision", lease_token: claimToken,
+    lease_expires_at: new Date(Date.now() + HARNESS_LEASE_MINUTES * 60 * 1000).toISOString(),
+  }).select("id").single();
+  if (error) throw new Error(`harness lease: insert refused (${error.message})`);
+  const requestId = data.id;
+  let released = false;
+  return {
+    requestId, generationId, claimToken, ownerId,
+    providerRequest: (attemptKey) => ({ requestId, generationId, claimToken, attemptKey }),
+    release: async (note) => {
+      if (released) return;
+      released = true;
+      const { error: releaseError } = await supabase.from("designpro_generation_requests")
+        .update({ state: "cancelled", lease_owner: null, lease_token: null, lease_expires_at: null,
+          error: { code: "designiq_ab_harness_lease", note: String(note || "harness run ended") } })
+        .eq("id", requestId).eq("lease_token", claimToken);
+      if (releaseError) throw new Error(`harness lease: release failed (${releaseError.message}) — request ${requestId} stays leased until it expires and the worker fails it`);
+    },
+  };
+}
 const log = (m) => process.stdout.write(`  ${m}\n`);
 
 // ── THE PRECISION CLIMATE SOLUTIONS PAYLOAD ────────────────────────────────
@@ -393,6 +447,10 @@ async function main() {
   const results = {};
   const produced = [];
   let imageRequestsExecuted = 0;
+  const leaseOwnerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
+  const lease = (armAllowed("B") || armAllowed("F")) ? await mintHarnessLease(supabase, leaseOwnerId, V3_INPUT) : null;
+  if (lease) log(`harness lease minted: request ${lease.requestId} · generation ${lease.generationId} · ${HARNESS_LEASE_MINUTES} min`);
+  try {
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
@@ -412,13 +470,18 @@ async function main() {
         // production does, and scored on the things the owner rejects designs
         // for: vehicle anatomy, a vehicle-depiction verdict, four centre
         // surfaces that are slices of one band, and white gutters.
-        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
+        const ownerId = lease.ownerId;
         const draws = [];
         for (let draw = 1; draw <= FIELD_DRAWS; draw += 1) {
           const label = `F${draw}`;
           const started = Date.now();
           try {
-            const out = await atlas._test.callAtlasArtboardEdge(fEdgeBody, { logger: log, ownerId, supabase });
+            // Same request identity, a distinct attemptKey per draw: the cache
+            // keys on attemptKey, so each draw is its own Gemini image request.
+            const out = await atlas._test.callAtlasArtboardEdge(
+              { ...fEdgeBody, providerRequest: lease.providerRequest(`master:field:${draw}`) },
+              { logger: log, ownerId, supabase },
+            );
             imageRequestsExecuted += out.provenance.imageRequestCount;
             const rawFile = `${label}-atlas-master.png`;
             writeFileSync(join(OUT, rawFile), out.bytes);
@@ -492,8 +555,11 @@ async function main() {
         // The edge function authenticates the server caller by resolving a
         // real owner id with Auth Admin privilege (designpro-internal-call).
         // The acceptance run names the canary operator, never a customer.
-        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
-        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId, supabase });
+        const ownerId = lease.ownerId;
+        const out = await atlas._test.callAtlasArtboardEdge(
+          { ...bEdgeBody, providerRequest: lease.providerRequest("master:1") },
+          { logger: log, ownerId, supabase },
+        );
         imageRequestsExecuted += out.provenance.imageRequestCount;
         writeFileSync(join(OUT, spec.file), out.bytes);
         // The owner proof contract: the six deterministic crop hashes, cut by
@@ -539,6 +605,13 @@ async function main() {
     } catch (error) {
       log(`${name}: FAILED — ${error.message}`);
       results[name] = { ok: false, error: String(error.message).slice(0, 500) };
+    }
+  }
+  } finally {
+    if (lease) {
+      await lease.release("designiq-ab-precision run ended");
+      log(`harness lease released: request ${lease.requestId} -> cancelled`);
+      results.harnessLease = { requestId: lease.requestId, generationId: lease.generationId, ownerId: lease.ownerId, state: "cancelled" };
     }
   }
   // Owner protection #5: report exactly how many Gemini image requests this
