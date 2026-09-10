@@ -62,6 +62,7 @@ const ace = require_("./designiq-prompt.cjs");
 // through the deployed edge exactly as production's fail-over sends it.
 const { buildFieldTerritories, FIELD_TOPOLOGY } = require_("./atlas-field-territories.cjs");
 const outputClass = require_("./atlas-output-class.cjs");
+const masterQc = require_("./atlas-master-qc.cjs");
 const sharp = require_("sharp");
 const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 
@@ -488,7 +489,7 @@ async function main() {
               .resize({ width: 1600, height: 1600, fit: "inside" }).jpeg({ quality: 82 }).toBuffer());
             produced.push(preview);
             const normalized = await atlas.normalizeAtlasMaster(out.bytes, fieldManifest);
-            const checks = await atlas.deterministicMasterChecks(normalized.bytes, fieldManifest);
+            const checks = await masterQc.deterministicMasterChecks(normalized.bytes, fieldManifest);
             const klass = await outputClass.classifyAtlasCandidate({ provider, bytes: normalized.bytes });
             const crops = await atlas.cutCallOnePanels(normalized.bytes, fieldManifest, out.provenance.masterSha256);
             const cropHashes = {};
