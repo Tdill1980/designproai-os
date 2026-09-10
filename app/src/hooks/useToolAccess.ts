@@ -153,6 +153,7 @@ export const DESIGNPRO_PLUS_PRICING: TierPricing = {
  *   DesignPro → + DesignPro, GraphicsPro (anchor creative tier)
  */
 export const TOOL_TIER_REQUIREMENTS: Record<string, Tier> = {
+  wallpro: "starter",
   // Starter ($199) — five featured render tools + browsing + quote entry
   colorpro: "starter",
   patternpro: "starter",

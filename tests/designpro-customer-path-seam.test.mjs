@@ -38,6 +38,7 @@ const EXTENSIONS = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"]
  * a new customer surface is exactly what this is meant to cover.
  */
 const CUSTOMER_ROUTE_MODULES = [
+  "pages/WallPro.tsx",
   "pages/DesignProAIHome.tsx",
   "pages/DesignPanelProPremium.tsx",
   "pages/designpro/GenerateDesign.tsx",
@@ -107,7 +108,7 @@ const LEGACY_SYMBOLS = [
  */
 const ROUTE_PATTERN = /<Route\s+path="([^"]+)"\s+element=\{([\s\S]*?)\}\s*\/>/g;
 const DESIGNPRO_URL =
-  /^\/(designpro|designpanelpro|wrapbox|revision-studio|productionflow|production-flow)/;
+  /^\/(designpro|designpanelpro|wrapbox|revision-studio|productionflow|production-flow|printpro\/wallpro|wallpro)/;
 
 function appRoutes() {
   const source = readFileSync(join(ROOT, "App.tsx"), "utf8");
