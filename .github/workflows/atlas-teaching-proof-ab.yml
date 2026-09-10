@@ -171,6 +171,7 @@ on:
           - 12-field-v3-draws
           - measure-accepted-master
           - fetch-raw-candidates
+          - 13-panel-extend
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
         required: false
@@ -181,6 +182,16 @@ on:
         required: false
         type: string
         default: ""
+      design_layout:
+        description: "13-panel-extend only — the pressed design-layout image to extend (wrap-files path)"
+        required: false
+        type: string
+        default: ""
+      surfaces:
+        description: "13-panel-extend only — comma-separated surfaces to extend (one image call each)"
+        required: false
+        type: string
+        default: "driver,hood"
       draws:
         description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else. Test 12 (field v3) accepts 1-4."
         required: true
@@ -332,6 +343,8 @@ jobs:
           AB_DESIGN_NAME: ${{ inputs.design_name }}
           AB_GENERATION: ${{ inputs.generation }}
           AB_CANDIDATES: ${{ inputs.candidates }}
+          AB_DESIGN_LAYOUT: ${{ inputs.design_layout }}
+          AB_SURFACES: ${{ inputs.surfaces }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -374,6 +387,7 @@ jobs:
             scripts/atlas-field-recovery-v2.mjs \
             scripts/atlas-field-v3-draws.mjs \
             scripts/atlas-fetch-raw-candidates.mjs \
+            scripts/atlas-panel-extend-ab.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -386,7 +400,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_DESIGN_LAYOUT='$AB_DESIGN_LAYOUT' AB_SURFACES='$AB_SURFACES' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -448,6 +462,13 @@ jobs:
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
               extra_args=(--generation "$AB_GENERATION")
+              ;;
+            13-panel-extend)
+              # The professional two-layer workflow: a pressed design layout the
+              # model already drew, extended per surface into its print
+              # rectangle in an edit turn. One image call per surface.
+              runner=scripts/atlas-panel-extend-ab.mjs
+              extra_args=(--design-layout "$AB_DESIGN_LAYOUT" --surfaces "$AB_SURFACES")
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request
