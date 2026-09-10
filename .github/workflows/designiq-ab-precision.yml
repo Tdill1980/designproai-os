@@ -38,6 +38,46 @@ on:
         required: false
         type: string
         default: ""
+      field_draws:
+        description: "Arm F only — independent draws of the one-field fail-over request (1-6). Each draw is one Gemini 4K image call plus one Flash inspection."
+        required: false
+        type: string
+        default: "1"
+      lease_request_id:
+        description: "Edge arms (B, F) only — id of the operator-minted LEASED designpro_generation_requests row the deployed edge authorizes against (see THE PROVIDER LEASE in scripts/designiq-ab-precision.mjs)"
+        required: false
+        type: string
+        default: ""
+      lease_generation_id:
+        description: "Edge arms only — that row's generation_id"
+        required: false
+        type: string
+        default: ""
+      lease_claim_token:
+        description: "Edge arms only — that row's lease_token (masked in the log)"
+        required: false
+        type: string
+        default: ""
+      company_name:
+        description: "companyName field of the v3 input (empty = omitted)"
+        required: false
+        type: string
+        default: ""
+      design_name:
+        description: "Design name field of the v3 input"
+        required: false
+        type: string
+        default: "Precision Climate Solutions — July 24 canary"
+      industry:
+        description: "Industry field of the v3 input (empty = omitted)"
+        required: false
+        type: string
+        default: "HVAC and climate control"
+      colors:
+        description: "Comma-separated colors field of the v3 input (empty = omitted)"
+        required: false
+        type: string
+        default: "deep blue,sunrise orange"
       runtime_source:
         description: "image = the DEPLOYED runtime (evidence about production); checkout = THIS ref's runtime modules run inside the deployed image's dependencies — the isolated acceptance route for a dark candidate, no deploy, no traffic switch"
         required: true
@@ -97,7 +137,17 @@ env:
   # commercial/restyle assembly the control arm exercises is byte-identical, so
   # the A arm still compares against the same creative engine it always did.
   # Recomputed with scripts/build-control-prompt.mjs, as #202, #203 and #224 did.
-  EXPECT_CONTROL_HASH: cf65f98fedaf0523b3ba3b90983d1a86e991f39733ff720ccef61a2eb2d9c313
+  # Re-pinned 2026-09-10 (arm F). `git diff 901217cd..7c3850cb -U0` on
+  # design-panel-ai-generate/index.ts touches buildDesignIQPrompt, but every
+  # hunk there is an `atlasFlatMaster ? ... : <original>` or `atlasField`
+  # ternary whose else-branch is the 08-28 string byte for byte (identity,
+  # contact lock, mascot, QR zone, exact reference, style inspiration, finish,
+  # restyle identity/scene/finish lock, hood/roof/front view clause). The
+  # remaining hunks are A.T.L.A.S.-only: handleAtlasArtboard/handleAtlasPanel,
+  # atlasFlatMasterContract, atlasFieldContract, atlasPanelTopology,
+  # ATLAS_PLACEMENT_WORDS, COMMERCIAL_TRANSLATION_FIELD. The commercial control
+  # the A arm runs is unchanged; the pin follows the deployed source (#350).
+  EXPECT_CONTROL_HASH: d4ac0f9ed8a348e098381f6b681e12ef1ab0c4319efe079251d9e1e25a8a6a8a
 
 jobs:
   ab:
@@ -169,11 +219,23 @@ jobs:
           AB_TYPE: ${{ inputs.vehicle_type }}
           AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
           AB_ARMS: ${{ inputs.arms }}
+          AB_FIELD_DRAWS: ${{ inputs.field_draws }}
           AB_RUNTIME_SOURCE: ${{ inputs.runtime_source }}
+          AB_LEASE_REQUEST_ID: ${{ inputs.lease_request_id }}
+          AB_LEASE_GENERATION_ID: ${{ inputs.lease_generation_id }}
+          AB_LEASE_CLAIM_TOKEN: ${{ inputs.lease_claim_token }}
+          AB_DESIGN_NAME: ${{ inputs.design_name }}
+          AB_INDUSTRY: ${{ inputs.industry }}
+          AB_COMPANY_NAME: ${{ inputs.company_name }}
+          AB_COLORS: ${{ inputs.colors }}
         shell: bash
         run: |
           set -Eeuo pipefail
           set +x
+          if [ -n "$AB_LEASE_CLAIM_TOKEN" ]; then echo "::add-mask::$AB_LEASE_CLAIM_TOKEN"; fi
+          design_name_b64=$(printf '%s' "$AB_DESIGN_NAME" | base64 -w0)
+          industry_b64=$(printf '%s' "$AB_INDUSTRY" | base64 -w0)
+          company_b64=$(printf '%s' "$AB_COMPANY_NAME" | base64 -w0)
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # The brief travels as base64 so quoting cannot mangle the exact text
           # the two requests are compared on.
@@ -204,7 +266,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_FIELD_DRAWS='$AB_FIELD_DRAWS' AB_LEASE_REQUEST_ID='$AB_LEASE_REQUEST_ID' AB_LEASE_GENERATION_ID='$AB_LEASE_GENERATION_ID' AB_LEASE_CLAIM_TOKEN='$AB_LEASE_CLAIM_TOKEN' AB_DESIGN_NAME_B64='$design_name_b64' AB_INDUSTRY_B64='$industry_b64' AB_COMPANY_B64='$company_b64' AB_COLORS='$AB_COLORS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -263,10 +325,14 @@ jobs:
           chmod 0777 "$work" "$out"
 
           brief=$(printf '%s' "$AB_BRIEF_B64" | base64 -d)
+          design_name=$(printf '%s' "$AB_DESIGN_NAME_B64" | base64 -d)
+          industry=$(printf '%s' "$AB_INDUSTRY_B64" | base64 -d)
+          company=$(printf '%s' "$AB_COMPANY_B64" | base64 -d)
 
           set +e
           docker run --rm \
             --env-file "$env_file" \
+            -e AB_LEASE_REQUEST_ID -e AB_LEASE_GENERATION_ID -e AB_LEASE_CLAIM_TOKEN \
             -v "$work:/work" -w /work \
             --entrypoint node "$image" \
             scripts/designiq-ab-precision.mjs \
@@ -277,7 +343,10 @@ jobs:
               --brief "$brief" \
               --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
               --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE" \
-              --arms "$AB_ARMS"
+              --arms "$AB_ARMS" \
+              --field-draws "${AB_FIELD_DRAWS:-1}" \
+              --design-name "$design_name" --industry "$industry" --colors "$AB_COLORS" \
+              --company-name "$company"
           status=$?
           set -e
 

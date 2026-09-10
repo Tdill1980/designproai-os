@@ -58,6 +58,12 @@ const genie = require_("./genie-universal-resolver.cjs");
 const examples = require_("./flat-atlas-topology-examples.cjs");
 const { createProvider } = require_("./generation-provider.cjs");
 const ace = require_("./designiq-prompt.cjs");
+// Arm F — the ONE-FIELD FAIL-OVER request (owner-directed 2026-09-10), drawn
+// through the deployed edge exactly as production's fail-over sends it.
+const { buildFieldTerritories, FIELD_TOPOLOGY } = require_("./atlas-field-territories.cjs");
+const outputClass = require_("./atlas-output-class.cjs");
+const masterQc = require_("./atlas-master-qc.cjs");
+const sharp = require_("sharp");
 const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 
 const args = Object.fromEntries(
@@ -66,8 +72,60 @@ const args = Object.fromEntries(
 const CANARY_OWNER_ID = "b940320d-cb5a-4b60-b280-32d12ef4d6a6"; // canary-operator@designproai.com
 const OUT = args.out || "./ab-evidence";
 mkdirSync(OUT, { recursive: true });
+// Arm F draws: bounded so a typo cannot spend a fleet of 4K calls.
+const FIELD_DRAWS = Math.max(1, Math.min(6, Number(args["field-draws"] || 1) || 1));
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
+
+// ── THE PROVIDER LEASE ───────────────────────────────────────────────────
+// Since the durable provider cache (gemini-provider-cache.mjs), the deployed
+// design-panel-ai-generate authorizes EVERY Call-1 image request against a
+// leased designpro_generation_requests row: owner, generationId, requestId
+// and a live lease token, or `provider_request_identity_invalid` /
+// `provider_claim_invalid` before any Gemini call (run 34425198330). An edge
+// arm (B, F) therefore needs a real lease.
+//
+// The harness cannot mint one: the table's BEFORE INSERT OR UPDATE trigger
+// calls designpro_private.calls_1_7_asset_paths_bound, whose EXECUTE is
+// revoked from service_role, so only the SECURITY DEFINER intake RPCs write
+// this table (run 34425554683: "permission denied for function
+// calls_1_7_asset_paths_bound"). The intake RPC would queue a real customer
+// generation for the live worker to claim, which is the opposite of a
+// harness. So the lease is minted by the operator, as the database owner,
+// BEFORE dispatch, and handed in as AB_LEASE_* — one canary-operator row,
+// state `leased`, attempt pinned at the table maximum so an expired lease is
+// failed by the worker's claim RPC without ever running (it checks
+// attempt>=12 before leasing), then cancelled by the operator after the run:
+//
+//   INSERT INTO public.designpro_generation_requests
+//     (generation_id, owner_id, tenant_key, idempotency_key, state,
+//      request_input, input_hash, engine_contract, engine_contract_hash,
+//      attempt, lease_owner, lease_token, lease_expires_at)
+//   VALUES (<gen>, <canary owner>, 'user_'||<owner>, 'calls17:'||<gen>||':'||<hash>,
+//      'leased', <the exact v3 input>, <hash>,
+//      designpro_private.calls_1_7_engine_contract(), <its sha256>,
+//      12, 'designiq-ab-precision', <token>, clock_timestamp()+interval '45 min');
+//   -- after the run:
+//   UPDATE ... SET state='cancelled', lease_owner=NULL, lease_token=NULL,
+//     lease_expires_at=NULL, error='{"code":"designiq_ab_harness_lease"}' WHERE id=<request>;
+//
+// The request row is transport identity only: it never enters the prompt,
+// and the cache keys each draw by attemptKey so N draws are N fresh images.
+function harnessLeaseFromEnv(env) {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const requestId = String(env.AB_LEASE_REQUEST_ID || "").trim().toLowerCase();
+  const generationId = String(env.AB_LEASE_GENERATION_ID || "").trim().toLowerCase();
+  const claimToken = String(env.AB_LEASE_CLAIM_TOKEN || "").trim().toLowerCase();
+  if (![requestId, generationId, claimToken].every((v) => UUID.test(v))) {
+    throw new Error("an edge arm (B, F) needs AB_LEASE_REQUEST_ID, AB_LEASE_GENERATION_ID and AB_LEASE_CLAIM_TOKEN — "
+      + "the operator-minted leased designpro_generation_requests row the deployed edge authorizes against (see THE PROVIDER LEASE)");
+  }
+  const ownerId = env.AB_OWNER_ID || CANARY_OWNER_ID;
+  return {
+    requestId, generationId, ownerId,
+    providerRequest: (attemptKey) => ({ requestId, generationId, claimToken, attemptKey }),
+  };
+}
 const log = (m) => process.stdout.write(`  ${m}\n`);
 
 // ── THE PRECISION CLIMATE SOLUTIONS PAYLOAD ────────────────────────────────
@@ -84,16 +142,28 @@ const VEHICLE = {
   make: args["vehicle-make"] || "Ford",
   model: args["vehicle-model"] || "F250 Crew Cab",
 };
+// A flag that is ABSENT keeps the canary payload's value; a flag passed EMPTY
+// omits the field, so a real customer brief can be drawn with exactly the
+// fields the customer's request carried (New Aura carried companyName and
+// finish, no industry, no colors, no style).
+const field = (key, fallback) => (Object.prototype.hasOwnProperty.call(args, key)
+  ? (String(args[key] ?? "").trim() || undefined) : fallback);
+const INDUSTRY = field("industry", "HVAC and climate control");
+const COLORS = field("colors", "deep blue,sunrise orange");
+const STYLE = field("style", "modern commercial");
+const COMPANY_NAME = field("company-name", undefined);
 const V3_INPUT = {
   contractVersion: "designpro.calls-1-7-input.v3",
   pipelineMode: "flat-first-atlas-v1",
   vehicle: VEHICLE,
   brief: BRIEF,
-  designName: args["design-name"] || "Precision Climate Solutions — July 24 canary",
+  designName: field("design-name", undefined) || "Precision Climate Solutions — July 24 canary",
   mode: "commercial",
-  industry: args.industry || "HVAC and climate control",
-  colors: (args.colors || "deep blue,sunrise orange").split(",").map((c) => c.trim()),
-  style: args.style || "modern commercial",
+  ...(COMPANY_NAME ? { companyName: COMPANY_NAME } : {}),
+  ...(INDUSTRY ? { industry: INDUSTRY } : {}),
+  ...(COLORS ? { colors: COLORS.split(",").map((c) => c.trim()).filter(Boolean) } : {}),
+  ...(STYLE ? { style: STYLE } : {}),
+  finish: field("finish", undefined) || "Gloss",
 };
 
 // The SAME creative inputs on design-panel-ai-generate's own request body.
@@ -104,7 +174,8 @@ const CONTROL_PARAMS = {
   prompt: BRIEF,
   finish: "Gloss",
   industryType: V3_INPUT.industry,
-  brandColors: V3_INPUT.colors.join(", "),
+  brandColors: V3_INPUT.colors ? V3_INPUT.colors.join(", ") : undefined,
+  companyName: V3_INPUT.companyName,
   vehicleYear: VEHICLE.year,
   vehicleMake: VEHICLE.make,
   vehicleModel: VEHICLE.model,
@@ -221,6 +292,10 @@ async function main() {
   const dimensionRow = await genie.resolveFlatAtlasPreviewDimensions(supabase, VEHICLE, provider);
   const surfaces = genie.expectedSurfacesFromRow(dimensionRow);
   const manifest = atlas.buildAtlasManifest(surfaces, dimensionRow.proofGeometryAuthority);
+  // cutCallOnePanels fails closed without the GENIE manifest identity
+  // (flat_atlas_geometry_manifest_identity_missing); the worker stamps it from
+  // the same resolver row (generation-worker.cjs), so the harness does too.
+  if (dimensionRow.geometryResolution) manifest.geometryResolution = dimensionRow.geometryResolution;
 
   // Examples load BEFORE the prompt is assembled: the prompt's quality-bar
   // clause follows the gold-standard attachment count, so building it first
@@ -251,12 +326,30 @@ async function main() {
     ? Buffer.from(structuralImage.inlineData.data, "base64")
     : null;
   const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
+  // The deployed six-container branch requires the hash-pinned labeled
+  // teaching proof (atlas_artboard_teaching_proof_incomplete without it, run
+  // 34430841234); stage the same bundled bytes and identity the worker stages.
+  const teachingProof = examples.loadBundledAtlasTeachingProof();
+  const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
   const bEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {
+    teachingProofStoragePath: await stage(teachingBytes, "image/png"),
+    teachingProofIdentity: teachingProof.identity,
     guideStoragePath: await stage(authoringGuideBytes, "image/png"),
     structuralReferenceStoragePath: structuralBytes ? await stage(structuralBytes, structuralMime) : undefined,
     structuralReferenceMime: structuralMime,
   });
   log(`atlas edge request ${(JSON.stringify(bEdgeBody).length / 1024).toFixed(0)}KB, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
+
+  // ── F: THE FAIL-OVER REQUEST, ASSEMBLED BY THE SAME RUNTIME ────────────
+  // Same GENIE surfaces, laid out as field territories; the request body
+  // carries the field contract and nose edges and no structural images.
+  const fieldManifest = buildFieldTerritories(manifest);
+  if (fieldManifest.topology !== FIELD_TOPOLOGY) throw new Error("field territories did not produce the field topology");
+  const fEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, fieldManifest, { referenceImagesBase64: [] });
+  if (fEdgeBody.fieldContract !== "designpro.atlas-field-prompt.v2" || fEdgeBody.teachingProofStoragePath || fEdgeBody.guideStoragePath) {
+    throw new Error("the field request must carry the field contract and no structural images");
+  }
+  log(`field edge request ${(JSON.stringify(fEdgeBody).length / 1024).toFixed(0)}KB, ${FIELD_DRAWS} draw(s) planned`);
 
   // ── C: THE ARTWORK+COMPOSE PATH ────────────────────────────────────────
   // DPAG craft aimed at ONE flat banner; code owns the geometry afterwards.
@@ -329,6 +422,18 @@ async function main() {
         "the creative prompt is assembled INSIDE the deployed edge function — the real Persona-2 buildDesignerPrompt, executed (owner directive 2026-08-27)",
       ],
     },
+    F: {
+      label: "F — THE FAIL-OVER: POST /functions/v1/design-panel-ai-generate mode:atlas-artboard with the one-field contract",
+      endpoint: "/functions/v1/design-panel-ai-generate",
+      requestBody: fEdgeBody,
+      draws: FIELD_DRAWS,
+      attempts: `harness executes ${FIELD_DRAWS} independent edge request(s); each makes exactly 1 Gemini image request`,
+      notes: [
+        "this is byte-for-byte the request generateOrReuseFlatAtlas sends after the six-surface budget is refused (authoringTopology: field)",
+        "no teaching sheet, no guide, no topology text; the model receives the field prompt plus verified customer references only",
+        "territories cut in code by field-thirds-v2; scored for anatomy, output class, centre distinctness and white gutters",
+      ],
+    },
     C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
       model: AUTHORING_MODEL,
       modelFallback: "none",
@@ -349,6 +454,7 @@ async function main() {
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
   writeFileSync(join(OUT, "B-atlas-call1.request.json"), JSON.stringify(bEdgeBody, null, 2));
+  writeFileSync(join(OUT, "F-atlas-field.request.json"), JSON.stringify(fEdgeBody, null, 2));
   writeFileSync(join(OUT, "B-authoring-guide.png"), authoringGuideBytes);
   log(`requests captured → ${OUT}/requests.json`);
 
@@ -362,10 +468,16 @@ async function main() {
   const results = {};
   const produced = [];
   let imageRequestsExecuted = 0;
+  const lease = (armAllowed("B") || armAllowed("F")) ? harnessLeaseFromEnv(process.env) : null;
+  if (lease) {
+    log(`harness lease: request ${lease.requestId} · generation ${lease.generationId} · owner ${lease.ownerId}`);
+    results.harnessLease = { requestId: lease.requestId, generationId: lease.generationId, ownerId: lease.ownerId };
+  }
   for (const [name, spec] of [
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
     ["B", { edge: true, file: "B-atlas-master.png" }],
+    ["F", { field: true }],
     ["C", { parts: cParts, model: AUTHORING_MODEL, cfg: requests.C.generationConfig, file: "C-artwork-banner.png", systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION, compose: true }],
   ]) {
     if (!armAllowed(name)) {
@@ -373,6 +485,91 @@ async function main() {
       continue;
     }
     try {
+      if (spec.field) {
+        // THE FAIL-OVER PATH, N INDEPENDENT DRAWS. Each draw is one edge
+        // request and one Gemini image request; each raw return is kept, then
+        // normalised, gated and cut with the field manifest exactly as
+        // production does, and scored on the things the owner rejects designs
+        // for: vehicle anatomy, a vehicle-depiction verdict, four centre
+        // surfaces that are slices of one band, and white gutters.
+        const ownerId = lease.ownerId;
+        const draws = [];
+        for (let draw = 1; draw <= FIELD_DRAWS; draw += 1) {
+          const label = `F${draw}`;
+          const started = Date.now();
+          try {
+            // Same request identity, a distinct attemptKey per draw: the cache
+            // keys on attemptKey, so each draw is its own Gemini image request.
+            const out = await atlas._test.callAtlasArtboardEdge(
+              { ...fEdgeBody, providerRequest: lease.providerRequest(`master:field:${draw}`) },
+              { logger: log, ownerId, supabase },
+            );
+            imageRequestsExecuted += out.provenance.imageRequestCount;
+            const rawFile = `${label}-atlas-master.png`;
+            writeFileSync(join(OUT, rawFile), out.bytes);
+            produced.push(rawFile);
+            const preview = `${label}-atlas-master-1600.jpg`;
+            writeFileSync(join(OUT, preview), await sharp(out.bytes, { limitInputPixels: false })
+              .resize({ width: 1600, height: 1600, fit: "inside" }).jpeg({ quality: 82 }).toBuffer());
+            produced.push(preview);
+            const normalized = await atlas.normalizeAtlasMaster(out.bytes, fieldManifest);
+            const checks = await masterQc.deterministicMasterChecks(normalized.bytes, fieldManifest);
+            const klass = await outputClass.classifyAtlasCandidate({ provider, bytes: normalized.bytes });
+            const crops = await atlas.cutCallOnePanels(normalized.bytes, fieldManifest, out.provenance.masterSha256);
+            const cropHashes = {};
+            const thumbs = {};
+            for (const crop of crops) {
+              cropHashes[crop.surfaceKey] = crop.contentHash;
+              const file = `${label}-panel-${crop.surfaceKey}.png`;
+              writeFileSync(join(OUT, file), crop.bytes);
+              produced.push(file);
+              thumbs[crop.surfaceKey] = await sharp(crop.bytes, { limitInputPixels: false })
+                .resize(128, 128, { fit: "fill" }).greyscale().raw().toBuffer();
+            }
+            // CENTRE DISTINCTNESS: mean absolute difference between every pair
+            // of the four centre surfaces at 128x128 greyscale, 0..1. The
+            // 2026-09-06 rejection (a503b91b) was four surfaces cut from one
+            // band; those read near 0 here. Distinct passages read well above.
+            const centre = ["hood", "roof", "front", "rear"];
+            const pairs = {};
+            let minPair = 1;
+            for (let i = 0; i < centre.length; i += 1) for (let j = i + 1; j < centre.length; j += 1) {
+              const a = thumbs[centre[i]]; const b = thumbs[centre[j]];
+              let sum = 0;
+              for (let k = 0; k < a.length; k += 1) sum += Math.abs(a[k] - b[k]);
+              const mad = sum / (a.length * 255);
+              pairs[`${centre[i]}-${centre[j]}`] = Number(mad.toFixed(4));
+              minPair = Math.min(minPair, mad);
+            }
+            // WHITE GUTTERS: share of the raw canvas that is near-white, the
+            // Draw-1 (33659500846) framed-thirds defect measured 8.38%.
+            const small = await sharp(out.bytes, { limitInputPixels: false }).resize(512, 512, { fit: "fill" })
+              .removeAlpha().raw().toBuffer();
+            let white = 0;
+            for (let k = 0; k < small.length; k += 3) if (small[k] >= 245 && small[k + 1] >= 245 && small[k + 2] >= 245) white += 1;
+            const record = {
+              ok: true, draw, file: rawFile, preview, bytes: out.bytes.length, elapsedMs: Date.now() - started,
+              contentHash: out.provenance.masterSha256, ...out.provenance,
+              deterministic: {
+                accepted: checks.accepted, blockingFailures: checks.blockingFailures, cutoutFindings: checks.cutoutFindings.map((f) => f.finding || f),
+                zones: (checks.zones || []).map((z) => ({ surfaceKey: z.surfaceKey, edgeHoleRatio: Number((z.edgeHoleRatio ?? 0).toFixed(4)),
+                  concentratedFlatBlackRatio: Number((z.concentratedFlatBlackRatio ?? 0).toFixed(4)) })),
+              },
+              outputClass: { disposition: klass.disposition, blocking: klass.blocking, confidence: klass.confidence, evidence: klass.evidence },
+              centreDistinctness: { pairs, minPair: Number(minPair.toFixed(4)) },
+              nearWhiteShare: Number((white / (small.length / 3)).toFixed(4)),
+              panelCropHashes: cropHashes,
+            };
+            draws.push(record);
+            log(`${label}: ${checks.accepted ? "gates PASS" : "gates REFUSE"} · class ${klass.disposition} · centre min-MAD ${record.centreDistinctness.minPair} · white ${(record.nearWhiteShare * 100).toFixed(1)}% · ${((Date.now() - started) / 1000).toFixed(1)}s`);
+          } catch (error) {
+            log(`${label}: FAILED — ${error.message}`);
+            draws.push({ ok: false, draw, error: String(error.message).slice(0, 500) });
+          }
+        }
+        results[name] = { ok: draws.every((d) => d.ok), draws };
+        continue;
+      }
       if (spec.edge) {
         // THE PRODUCT PATH: one edge request; the response carries the proof
         // fields (requestId, sourceCommit, promptVersion, model,
@@ -380,8 +577,11 @@ async function main() {
         // The edge function authenticates the server caller by resolving a
         // real owner id with Auth Admin privilege (designpro-internal-call).
         // The acceptance run names the canary operator, never a customer.
-        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
-        const out = await atlas._test.callAtlasArtboardEdge(bEdgeBody, { logger: log, ownerId, supabase });
+        const ownerId = lease.ownerId;
+        const out = await atlas._test.callAtlasArtboardEdge(
+          { ...bEdgeBody, providerRequest: lease.providerRequest("master:1") },
+          { logger: log, ownerId, supabase },
+        );
         imageRequestsExecuted += out.provenance.imageRequestCount;
         writeFileSync(join(OUT, spec.file), out.bytes);
         // The owner proof contract: the six deterministic crop hashes, cut by
@@ -446,11 +646,11 @@ async function finish(supabase, manifestValue, produced) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const prefix = `designiq-ab/${stamp}`;
   const urls = {};
-  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
+  for (const file of [...produced, "requests.json", "F-atlas-field.request.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
     try {
       const path = `${prefix}/${file}`;
       const body = readFileSync(join(OUT, file));
-      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".json") ? "application/json" : "text/plain";
+      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".jpg") ? "image/jpeg" : file.endsWith(".json") ? "application/json" : "text/plain";
       const { error } = await supabase.storage.from("wrap-files").upload(path, body, { contentType, upsert: true });
       if (error) { log(`upload ${file}: ${error.message}`); continue; }
       const { data } = await supabase.storage.from("wrap-files").createSignedUrl(path, 60 * 60 * 24 * 7);
