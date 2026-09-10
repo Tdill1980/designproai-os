@@ -183,3 +183,6 @@ verify_jwt = false
 
 [functions.logopro-finalize-logo]
 verify_jwt = false
+[functions.generate-wall-design]
+# The handler validates the caller with auth.getUser before any file or AI access.
+verify_jwt = false
