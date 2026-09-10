@@ -15,6 +15,7 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     DESIGNER_IDENTITY, CAPABILITIES,
     'Deliver one continuous flat 2D artwork image, edge to edge. This is the mural artwork before installation, not a room photograph or a photographed wall. Fine texture and crisp detail at 4K.',
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
+    'Printing uses panels up to 51 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
     input.placement === 'repeat' ? 'Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.' : 'Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges.',
     input.wallPath ? 'The wall photograph is architectural context only. Do not reproduce the room, floor, furniture, windows or perspective in the output artwork. Wall placement is performed separately.' : '',
     input.referencePath ? 'The labeled reference image is style inspiration or an existing wall design. Use its visual direction to create flat artwork following the brief. Do not recreate its surrounding room.' : '',
@@ -23,4 +24,3 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     'Return a short design name before the final image.'
   ].filter(Boolean).join('\n\n');
 }
-

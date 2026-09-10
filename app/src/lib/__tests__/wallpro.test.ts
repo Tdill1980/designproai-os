@@ -1,11 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
-import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, layoutMetrics, insidePolygon } from '../wallpro-geometry';
+import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, layoutMetrics, insidePolygon, wallPrintPanels } from '../wallpro-geometry';
 import { createWallHandler, parseWallInput, nearestAspect } from '../../../../supabase/functions/generate-wall-design/handler';
 const owner = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const input = { requestId, prompt: 'Blue botanicals', width: 120, height: 96, placement: 'cover', wallPath: owner + '/uploads/33333333-3333-4333-8333-333333333333.jpg' };
 
 describe('WallPro physical geometry', () => {
+  it('plans 51-inch print panels with a correctly sized final panel', () => {
+    const panels = wallPrintPanels(120,96);
+    expect(panels.map(p => p.width)).toEqual([51,51,18]);
+    expect(panels.map(p => p.start)).toEqual([0,51,102]);
+    expect(panels.reduce((n,p) => n+p.width,0)).toBe(120);
+    expect(wallPrintPanels(102,96)).toHaveLength(2);
+    expect(wallPrintPanels(51.25,96).map(p => p.width)).toEqual([51,.25]);
+  });
+  it('keeps pattern registration continuous across a 51-inch print seam', () => {
+    const seam = wallPrintPanels(120,96)[1].start;
+    const uv = artworkPoint({x:seam/120,y:.5},{width:120,height:96,mode:'repeat',repeatWidth:24},1);
+    expect(uv?.x).toBeCloseTo(.125,10);
+    const quad=[{x:.1,y:.1},{x:.9,y:.2},{x:.8,y:.9},{x:.2,y:.8}];
+    const seamPoint=projectPoint(homography(UNIT_WALL,quad),{x:seam/120,y:0});
+    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(51/120,10);
+  });
   it('keeps a 24-inch tile physically constant when the wall doubles', () => {
     const a = layoutMetrics({ width:120,height:96,mode:'repeat',repeatWidth:24 },2);
     const b = layoutMetrics({ width:240,height:96,mode:'repeat',repeatWidth:24 },2);

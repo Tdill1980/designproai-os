@@ -2,10 +2,21 @@
 export type Point = { x: number; y: number };
 export type Placement = 'cover' | 'contain' | 'repeat';
 export type WallLayout = { width: number; height: number; mode: Placement; repeatWidth: number };
+export const WALLPRO_PRINT_WIDTH = 51;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 export function validWallSize(width: number, height: number): boolean {
   return [width, height].every(n => Number.isFinite(n) && n >= 1 && n <= 2400);
+}
+
+// Trim-area planning at the shop's printable width. Pattern coordinates stay
+// wall-wide; they never restart or stretch at a panel boundary.
+export function wallPrintPanels(width: number, height: number) {
+  if (!validWallSize(width, height)) throw new Error('Enter valid wall dimensions.');
+  return Array.from({ length: Math.ceil(width / WALLPRO_PRINT_WIDTH) }, (_, i) => ({
+    number: i + 1, start: i * WALLPRO_PRINT_WIDTH,
+    width: Math.min(WALLPRO_PRINT_WIDTH, width - i * WALLPRO_PRINT_WIDTH), height,
+  }));
 }
 
 export function validWallCorners(points: Point[]): boolean {

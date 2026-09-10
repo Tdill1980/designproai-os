@@ -6,7 +6,7 @@ import { Helmet } from 'react-helmet-async';
 import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, layoutMetrics, type Point, type Placement } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, layoutMetrics, wallPrintPanels, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { wallUser, uploadWallAsset, openWallAsset, generateWall, saveWallProject, wallHistory, getWallProject, type WallAsset } from '@/lib/wallpro-api';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -31,6 +31,7 @@ export default function WallPro() {
   const [marking, setMarking] = useState<'wall' | 'exclude' | null>('wall');
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
   const [view, setView] = useState<'before' | 'after' | 'design'>('before');
+  const [showPrintGuides, setShowPrintGuides] = useState(false);
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [history, setHistory] = useState<History | null>(null);
@@ -40,6 +41,12 @@ export default function WallPro() {
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
   const dimensionsValid = validWallSize(width, height);
   const cornersValid = validWallCorners(corners);
+  const printPanels = dimensionsValid ? wallPrintPanels(width,height) : [];
+  const wallMap = cornersValid ? homography(UNIT_WALL,corners) : null;
+  const printSeams = wallMap ? printPanels.slice(1).map(panel => ({
+    top: projectPoint(wallMap,{x:panel.start/width,y:0}),
+    bottom: projectPoint(wallMap,{x:panel.start/width,y:1}),
+  })) : [];
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (artwork) metrics = layoutMetrics({ width, height, mode: placement, repeatWidth }, artwork.aspect); } catch { /* visible validation below */ }
 
@@ -112,7 +119,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, corners, exclusions, prompt, designMode });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, corners, exclusions, prompt, designMode });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -130,7 +137,7 @@ export default function WallPro() {
       setArtwork(art); setName(result.design_name); setView(photo ? 'after' : 'design');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, corners, exclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, corners, exclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
     });
   }
@@ -185,6 +192,11 @@ export default function WallPro() {
             {placement === 'repeat' && <label className="mt-3 block text-sm">Pattern tile width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /><span className="mt-2 block text-xs text-slate-500">One tile is the entire uploaded image. Height follows its proportions.</span></label>}
             {metrics && placement === 'repeat' && <p role="status" className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-900">{metrics.across.toFixed(2)} tiles across × {metrics.down.toFixed(2)} down. Each tile: {metrics.artworkWidth.toFixed(2)}″ × {metrics.artworkHeight.toFixed(2)}″.</p>}
             {artwork && !metrics && <p className="mt-2 text-sm text-red-700">Enter valid wall and repeat dimensions to preview.</p>}
+            <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm"><p className="font-semibold">Print panel width: {WALLPRO_PRINT_WIDTH}″</p>
+              {printPanels.length > 0 && <p className="mt-1 text-slate-600">{printPanels.length} {printPanels.length === 1 ? 'panel' : 'panels'} × {height}″ tall. {printPanels.length === 1 ? 'Panel' : 'Last panel'}: {Number(printPanels.at(-1)!.width.toFixed(2))}″ wide.</p>}
+              <p className="mt-2 text-xs text-slate-500">Trim layout before installation overlap and bleed. Pattern scale continues across every panel.</p>
+              <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={showPrintGuides} onChange={e => setShowPrintGuides(e.target.checked)} />Show 51-inch print panel guides</label>
+            </div>
           </section>
         </fieldset>
         <div className="min-w-0 space-y-5">
@@ -197,6 +209,7 @@ export default function WallPro() {
                   {(marking || view === 'before') && <polygon points={corners.map(p => p.x * 100 + ',' + p.y * 100).join(' ')} fill="rgba(139,92,246,.1)" stroke="#8b5cf6" strokeWidth=".35" />}
                   {corners.map((p,i) => (marking || view === 'before') && <g key={i}><circle cx={p.x * 100} cy={p.y * 100} r="1.1" fill="#7c3aed" /><text x={p.x * 100 + 1.5} y={p.y * 100 - 1.5} fill="#7c3aed" fontSize="3">{i+1}</text></g>)}
                   {exclusions.map((poly,i) => (marking || view === 'before') && <polygon key={i} points={poly.map(p => p.x * 100 + ',' + p.y * 100).join(' ')} fill="rgba(245,158,11,.2)" stroke="#f59e0b" strokeWidth=".3" />)}
+                  {showPrintGuides && printSeams.map((seam,i) => <line key={'seam-'+i} x1={seam.top.x*100} y1={seam.top.y*100} x2={seam.bottom.x*100} y2={seam.bottom.y*100} stroke="#06b6d4" strokeWidth=".4" strokeDasharray="1 .8" />)}
                   <polyline points={excludeDraft.map(p => p.x * 100 + ',' + p.y * 100).join(' ')} fill="none" stroke="#f59e0b" strokeWidth=".4" />
                 </svg>
               </div>
