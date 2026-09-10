@@ -279,6 +279,10 @@ async function main() {
   const dimensionRow = await genie.resolveFlatAtlasPreviewDimensions(supabase, VEHICLE, provider);
   const surfaces = genie.expectedSurfacesFromRow(dimensionRow);
   const manifest = atlas.buildAtlasManifest(surfaces, dimensionRow.proofGeometryAuthority);
+  // cutCallOnePanels fails closed without the GENIE manifest identity
+  // (flat_atlas_geometry_manifest_identity_missing); the worker stamps it from
+  // the same resolver row (generation-worker.cjs), so the harness does too.
+  if (dimensionRow.geometryResolution) manifest.geometryResolution = dimensionRow.geometryResolution;
 
   // Examples load BEFORE the prompt is assembled: the prompt's quality-bar
   // clause follows the gold-standard attachment count, so building it first
