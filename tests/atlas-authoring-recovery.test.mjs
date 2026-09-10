@@ -7,6 +7,7 @@ const atlas = require("../runtime/flat-first-atlas.cjs");
 const sharp = require("../runtime/node_modules/sharp");
 const { assembleFinishedMaster } = require("../runtime/atlas-finished-master.cjs");
 const { finishPanel } = require("../runtime/atlas-panel-authoring.cjs");
+const { buildFieldTerritories, FIELD_TOPOLOGY } = require("../runtime/atlas-field-territories.cjs");
 const { sha256 } = atlas._test;
 
 const surfaces = [["driver",153,56],["passenger",153,56],["hood",71.5,56],
@@ -22,22 +23,45 @@ const identities = { requestId:"11111111-1111-4111-8111-111111111111",
   generationId:"22222222-2222-4222-8222-222222222222",ownerId:"33333333-3333-4333-8333-333333333333",
   tenantKey:"user_33333333-3333-4333-8333-333333333333",claimToken:"44444444-4444-4444-8444-444444444444" };
 let fixturePromise;
+/** Paint every zone of a manifest with a distinct gradient: synthetic artwork with no holes. */
+async function paintZones(manifest) {
+  const layers = [];
+  for (const [i,zone] of manifest.zones.entries()) {
+    const raw = Buffer.alloc(zone.w*zone.h*3);
+    for (let y=0;y<zone.h;y++) for (let x=0;x<zone.w;x++) {
+      const at=(y*zone.w+x)*3;
+      raw[at]=45+i*25;raw[at+1]=50+Math.round(x/zone.w*145);raw[at+2]=55+Math.round(y/zone.h*140);
+    }
+    layers.push({input:await sharp(raw,{raw:{width:zone.w,height:zone.h,channels:3}}).png().toBuffer(),left:zone.x,top:zone.y});
+  }
+  return sharp({create:{width:4096,height:4096,channels:4,background:{r:0,g:0,b:0,alpha:0}}})
+    .composite(layers).png().toBuffer();
+}
 function fixture() {
   return fixturePromise ||= (async () => {
     const manifest = atlas.buildAtlasManifest(surfaces,undefined,"truck");
     manifest.geometryResolution = geometryResolution;
-    const layers = [];
-    for (const [i,zone] of manifest.zones.entries()) {
-      const raw = Buffer.alloc(zone.w*zone.h*3);
-      for (let y=0;y<zone.h;y++) for (let x=0;x<zone.w;x++) {
-        const at=(y*zone.w+x)*3;
-        raw[at]=45+i*25;raw[at+1]=50+Math.round(x/zone.w*145);raw[at+2]=55+Math.round(y/zone.h*140);
-      }
-      layers.push({input:await sharp(raw,{raw:{width:zone.w,height:zone.h,channels:3}}).png().toBuffer(),left:zone.x,top:zone.y});
-    }
-    const source = await sharp({create:{width:4096,height:4096,channels:4,background:{r:0,g:0,b:0,alpha:0}}})
-      .composite(layers).png().toBuffer();
+    const source = await paintZones(manifest);
     return {manifest,source};
+  })();
+}
+/** The six-surface source with a wheel-well disc punched out of the driver flank: a refused master. */
+let holedPromise;
+function holedFixture() {
+  return holedPromise ||= (async () => {
+    const {manifest,source}=await fixture();
+    const driver=manifest.zones.find(zone=>zone.surfaceKey==="driver");
+    const cx=driver.x+Math.round(driver.w/2), cy=driver.y+Math.round(driver.h/2), r=Math.round(Math.min(driver.w,driver.h)*0.3);
+    return sharp(source).composite([{input:Buffer.from(`<svg width="4096" height="4096"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#000000"/></svg>`)}]).png().toBuffer();
+  })();
+}
+/** A clean one-field source: the same synthetic artwork painted onto the field territories. */
+let fieldPromise;
+function fieldFixture() {
+  return fieldPromise ||= (async () => {
+    const {manifest}=await fixture();
+    const fieldManifest=buildFieldTerritories(manifest);
+    return {fieldManifest,fieldSource:await paintZones(fieldManifest)};
   })();
 }
 
@@ -46,7 +70,7 @@ function harness(source) {
   const publicMasters = [], publicPanels = [], masterCalls = [], finishCalls = [];
   let inserted = null, pendingRow = null, fenceCalls = 0;
   let insertFailure = false, finishFailure = null, finishFailureCode = "provider_outcome_unknown", forceCacheOnly = false, corruptReads = null, whiteFinish = false;
-  let checkpointRace = null;
+  let checkpointRace = null, masterFor = null;
   const query = {select(){return this;},eq(){return this;},order(){return this;},limit(){return this;},
     async maybeSingle(){return {data:inserted,error:null};},
     insert(row){pendingRow=row;return this;},
@@ -76,7 +100,7 @@ function harness(source) {
   }};
   const run = (extra={}) => atlas.generateOrReuseFlatAtlas({
     input,surfaces,geometryResolution,...identities,provider:{},supabase,store,
-    callEdge:async body=>{masterCalls.push(body);return {bytes:source,provenance:{imageRequestCount:1,masterSha256:sha256(source)}};},
+    callEdge:async body=>{masterCalls.push(body);const bytes=masterFor?await masterFor(body):source;return {bytes,provenance:{imageRequestCount:1,masterSha256:sha256(bytes),masterStoragePath:`atlas-call1/${body.providerRequest?.attemptKey||"x"}.png`}};},
     callPanelEdge:async body=>{
       finishCalls.push(body);
       if (finishFailure === body.surfaceKey) throw Object.assign(new Error(finishFailureCode),{code:finishFailureCode,retryable:true});
@@ -109,8 +133,101 @@ function harness(source) {
     get inserted(){return inserted;},get fenceCalls(){return fenceCalls;},
     set insertFailure(value){insertFailure=value;},set finishFailure(value){finishFailure=value;},set finishFailureCode(value){finishFailureCode=value;},
     set forceCacheOnly(value){forceCacheOnly=value;},set corruptReads(value){corruptReads=value;},
-    set whiteFinish(value){whiteFinish=value;},set checkpointRace(value){checkpointRace=value;}};
+    set whiteFinish(value){whiteFinish=value;},set checkpointRace(value){checkpointRace=value;},set masterFor(value){masterFor=value;}};
 }
+
+function failoverFlag(t,value) {
+  const previous = process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER;
+  if (value === undefined) delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER; else process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=value;
+  t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER:process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=previous);
+}
+
+test("a refused six-surface budget fails over ONCE to the one-field contract instead of failing closed",async t=>{
+  // Owner-directed 2026-09-10 after 7 of 12 failures in six days were Call 1
+  // drawing the vehicle into the sheet. The six-surface contract keeps its
+  // bounded budget; when both candidates are refused the run does not die.
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
+  const result=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1","master:2","master:field:1"],
+    "one candidate, one unchanged fallback, then exactly one field attempt");
+  const six=run.masterCalls[0], field=run.masterCalls[2];
+  assert.equal(six.fieldContract,undefined);assert.ok(six.teachingProofStoragePath);assert.ok(six.guideStoragePath);
+  assert.equal(field.fieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(field.teachingProofStoragePath,undefined,"no teaching sheet reaches the field request");
+  assert.equal(field.teachingProofIdentity,undefined);
+  assert.equal(field.guideStoragePath,undefined,"no guide reaches the field request");
+  assert.deepEqual(field.noseEdge,{driver:"left",passenger:"right"});
+  assert.deepEqual(field.referenceImagesBase64,six.referenceImagesBase64);
+  assert.equal(run.fenceCalls,1,"the fail-over rides the fence the six-surface pass holds; it never re-claims");
+  assert.equal(result.metadata.topology,FIELD_TOPOLOGY);
+  assert.equal(result.metadata.authoringTopology,"field");
+  assert.equal(result.metadata.atlasFieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
+  assert.equal(result.metadata.masterAuthoringAttempts,1);
+  assert.equal(result.metadata.maxAuthoringAttemptsAllowed,1);
+  const failover=result.metadata.authoringFailover;
+  assert.equal(failover.contract,"designpro.atlas-authoring-failover.v1");
+  assert.equal(failover.from,"rectangular-preview-v1");assert.equal(failover.to,FIELD_TOPOLOGY);
+  assert.equal(failover.code,"flat_atlas_unrepaired_cutout");assert.equal(failover.attempts,2);
+  assert.match(failover.reason,/driver/);
+  assert.deepEqual(failover.rawCandidates.map(item=>item.storagePath),["atlas-call1/master:1.png","atlas-call1/master:2.png"]);
+  assert.equal(result.callOnePanels.length,6);
+  for(const panel of result.callOnePanels)assert.equal(panel.sourceMasterHash,result.master.contentHash);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+  assert.equal(run.publicMasters.length,1);
+  assert.equal(run.publicPanels.length,6);
+  // Resume: the stored revision is the field one and is reused without a call.
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);
+  assert.equal(reused.master.contentHash,result.master.contentHash);
+  assert.equal(run.masterCalls.length,3,"a completed fail-over never spends again");
+  // A field acceptance stays resumable even after the flag is turned off: the
+  // flag decides whether a NEW refusal fails over, never whether a stored
+  // design can be read back.
+  failoverFlag(t,"off");
+  const stillReused=await run.run({claimToken:"66666666-6666-4666-8666-666666666666"});
+  assert.equal(stillReused.reused,true);
+  assert.equal(run.masterCalls.length,3);
+});
+
+test("a fail-over whose revision row never landed resumes from its field checkpoint, not from a new Call 1",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
+  run.insertFailure=true;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
+  assert.equal(run.masterCalls.length,3);
+  assert.equal(run.publicMasters.length,1,"the field master was published before the row failed");
+  run.insertFailure=false;
+  const result=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(run.masterCalls.length,3,"the six-surface pass recognises the field checkpoint and spends nothing");
+  assert.equal(result.metadata.authoringTopology,"field");
+  assert.equal(result.metadata.authoringFailover.code,"flat_atlas_unrepaired_cutout");
+  assert.equal(result.metadata.topology,FIELD_TOPOLOGY);
+  assert.equal(result.callOnePanels.length,6);
+});
+
+test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off keeps the fail-closed refusal, and an accepted first candidate never fails over",async t=>{
+  finishFlag(t,"off");failoverFlag(t,"off");
+  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_unrepaired_cutout"&&error.retryable===false);
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1","master:2"]);
+  assert.equal(run.publicMasters.length,0);
+  // With the flag unset, a clean first candidate exits immediately on six surfaces.
+  failoverFlag(t,undefined);
+  const clean=harness(source);
+  const result=await clean.run();
+  assert.deepEqual(clean.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1"]);
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.authoringFailover,null);
+  assert.equal(result.metadata.topology,"rectangular-preview-v1");
+});
 
 function finishFlag(t,value) {
   const previous = process.env.DESIGNPRO_ATLAS_PANEL_FINISH;

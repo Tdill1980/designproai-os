@@ -91,10 +91,16 @@ one, and no creative conditioning, gate, prompt version, geometry or bleed chang
   `482d70a0…` completed at 00:32:33 UTC: revision.freeze, panels.build,
   logos.extract, panels.delogo, proof.build (`flat-proof` `c1848f81…`),
   pack.verify, pack.activate, with six `panel` and six `qc-panel` artifacts.
-- [ ] Owner visual inspection in RevisionStudioIQ and PanelProStudio. Hashes
-  and gates are verified above; the artwork itself has not been looked at by a
-  person. Human print QC, Topaz, ZIP and WrapBox remain the production-pack
-  half and were not run here.
+- [x] Owner visual inspection, 2026-09-10: **rejected.** Both flanks of master
+  `cb765b0f…` are an Urus side profile on a plain grey surround, with ROOF and
+  REAR painted as captions in the centre column. The hole gate convicts only
+  near-black fields, and the output-class inspector answered `flat_atlas`, so
+  the sheet passed every gate and printed anatomy. This is the seventh such
+  Call-1 outcome in six days (see the fail-over section in CLAUDE.md).
+- [x] Correction: the one-field fail-over (a refused six-surface budget fails
+  over once to the v24 field contract instead of failing closed) and the
+  tightened output-class question. Human print QC, Topaz, ZIP and WrapBox
+  remain the production-pack half and were not run on this design.
 
 ## Earlier status — Call 1 recovered; roof finishing was blocked
 

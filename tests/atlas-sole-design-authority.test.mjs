@@ -108,8 +108,11 @@ test("the A.T.L.A.S. design chain is wired end to end in the server-native runti
   // New artwork still builds the canonical six-surface GENIE manifest. An
   // edit preserves the selected parent's exact manifest without remeasuring it.
   assert.match(atlas,
-    /const manifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/);
-  assert.match(atlas, /if \(!parentManifest && geometryResolution\) manifest\.geometryResolution = geometryResolution;/);
+    /const sixSurfaceManifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/);
+  assert.match(atlas, /if \(!parentManifest && geometryResolution\) sixSurfaceManifest\.geometryResolution = geometryResolution;/);
+  // The one-field fail-over (2026-09-10) is a layout of that same manifest,
+  // entered only after the six-surface budget is refused.
+  assert.match(atlas, /const manifest = authoringTopology === "field" \? fieldManifestFrom\(sixSurfaceManifest\) : sixSurfaceManifest;/);
   assert.match(atlas, /loadBundledAtlasTeachingProof/);
 
   // request → worker: the pipeline is chosen from the request's own contract,

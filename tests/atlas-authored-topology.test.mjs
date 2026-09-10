@@ -232,7 +232,14 @@ test('cutout-only first candidate uses the unchanged fallback and publishes only
   assert.equal(run.inserted.metadata.callOnePanels.length,6);
 });
 
-test('two cutout candidates fail closed with retrievable paths and the measured surface finding',async()=>{
+test('two cutout candidates fail closed with retrievable paths and the measured surface finding (fail-over off)',async t=>{
+  // Owner-directed 2026-09-10: with DESIGNPRO_ATLAS_FIELD_FAILOVER unset a
+  // refused six-surface budget fails over once to the field contract instead
+  // (tests/atlas-authoring-recovery.test.mjs). This lock covers the explicit
+  // fail-closed configuration and the refusal evidence it must surface.
+  const previousFailover=process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER;
+  process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER='off';
+  t.after(()=>previousFailover===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER:process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=previousFailover);
   const {hole}=await cutoutLoopFixtures();
   const run=runCutoutLoop([hole,hole]);
   await assert.rejects(run.done,error=>{
