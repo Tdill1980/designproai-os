@@ -68,17 +68,33 @@ one, and no creative conditioning, gate, prompt version, geometry or bleed chang
   failure still resumes with exact signed exchanges) and
   `tests/atlas-panel-authoring.test.mjs` (disposition table; 429/503/unknown →
   one exchange; `not_sent` → second smaller request).
-- [ ] Deploy the runtime (`deploy-production.yml`) and Edge
-  (`deploy-edge-functions.yml`, `design-panel-ai-generate`), Edge first is not
-  required here: the runtime change is backward compatible with Edge v94, and
-  the Edge change is transport-only.
-- [ ] Requeue request `f5f1d8ce-cd5e-47fc-88af-43b82cd06622` (state `failed` →
-  `queued`, clear lease and error, keep identity and receipt). On resume it
-  reuses the authored checkpoint and the Driver/Passenger/Hood finishing
-  checkpoints, re-reads `panel:roof:1` cache-only, retains the roof crop if
-  nothing was banked, finishes Front and Rear, assembles, gates and publishes.
-- [ ] Observe accepted master, six panels, seven proofs, Call 8; then owner
-  inspection in RevisionStudioIQ and PanelProStudio.
+- [x] Merged as `30fb883` (PR #350, on top of #349). Runtime deployed by
+  dispatch run 34420405953 at 00:18 UTC 2026-09-10 with `atlas_panel_finish: off`;
+  Edge `design-panel-ai-generate` deployed by run 34419707541 (attempt 2, after
+  a Supabase CLI rate-limit failure on attempt 1) at 00:07 UTC.
+- [x] Requeued request `f5f1d8ce-cd5e-47fc-88af-43b82cd06622` at 00:25:11 UTC
+  (state `failed` → `queued`, lease and error cleared, identity and receipt kept,
+  `engine_receipt.finishingOffRequeue` recorded). With finishing off the run
+  reused the banked Call-1 image under `master:1` (`providerCacheHit: true`,
+  edge request `d99ac668…`, 8,066,908 bytes, no new image spend) and did not
+  enter the finishing cascade (`masterFinishing` is JSON null).
+- [x] **Observed, 2026-09-10:** `outputs_ready` at 00:26:53 UTC, 1 min 42 s after
+  requeue. Accepted master `cb765b0f…` (4096×4096, `masterQcPassed: true`,
+  output class not blocking, prompt version
+  `designpro-flat-first-atlas-20260901.v23-orthographic-restored`); six panels
+  driver `c96804c6` · passenger `39a0d28d` · hood `09e6c050` · front `dca04ef8`
+  · rear `78831bfa` · roof `6fca5703`, every `sourceMasterHash` equal to the
+  master; seven proofs persisted 00:26:48–00:26:51 (side, roof, hood_detail,
+  passenger-side, front, close-up, rear) by `persona-photographer-render`,
+  each bound to its surface panel hash. The Call 8–11 handoff was fired as the
+  owner at 00:31 UTC (the browser was not on the page); entice run
+  `482d70a0…` completed at 00:32:33 UTC: revision.freeze, panels.build,
+  logos.extract, panels.delogo, proof.build (`flat-proof` `c1848f81…`),
+  pack.verify, pack.activate, with six `panel` and six `qc-panel` artifacts.
+- [ ] Owner visual inspection in RevisionStudioIQ and PanelProStudio. Hashes
+  and gates are verified above; the artwork itself has not been looked at by a
+  person. Human print QC, Topaz, ZIP and WrapBox remain the production-pack
+  half and were not run here.
 
 ## Earlier status — Call 1 recovered; roof finishing was blocked
 
