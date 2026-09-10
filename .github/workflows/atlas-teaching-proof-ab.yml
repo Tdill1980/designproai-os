@@ -185,6 +185,7 @@ on:
           - measure-accepted-master
           - fetch-raw-candidates
           - 13-panel-extend
+          - 14-field-arms
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
         required: false
@@ -211,7 +212,7 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else. Test 12 (field v3) accepts 1-4."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else. Test 12 (field v3) accepts 1-4. Test 14 (field arms) is per arm, 1-4, three arms."
         required: true
         type: string
         default: "1"
@@ -407,6 +408,7 @@ jobs:
             scripts/atlas-field-v3-draws.mjs \
             scripts/atlas-fetch-raw-candidates.mjs \
             scripts/atlas-panel-extend-ab.mjs \
+            scripts/atlas-field-arms-ab.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -489,6 +491,17 @@ jobs:
               runner=scripts/atlas-panel-extend-ab.mjs
               extra_args=(--design-layout "$AB_DESIGN_LAYOUT" --surfaces "$AB_SURFACES")
               if [ -n "$AB_IMAGE_MODEL" ]; then extra_args+=(--model "$AB_IMAGE_MODEL"); fi
+              ;;
+            14-field-arms)
+              # Three arms, one variable each, interleaved A,B,C per draw:
+              # A v3 tail alone · B v3 tail + Houdini Huracán design layout as
+              # the only image · C v4 "pressed skin" tail alone. `draws` is PER
+              # ARM (1-4), so up to 12 image calls. Customer fields as test 12.
+              runner=scripts/atlas-field-arms-ab.mjs
+              extra_args=(--company "$(printf '%s' "$AB_COMPANY_B64" | base64 -d)"
+                          --industry "$(printf '%s' "$AB_INDUSTRY_B64" | base64 -d)"
+                          --colors "$AB_COLORS" --style ""
+                          --design-name "$(printf '%s' "$AB_DESIGN_NAME_B64" | base64 -d)")
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request
