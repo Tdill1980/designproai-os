@@ -2,6 +2,12 @@
 export type Point = { x: number; y: number };
 export type Placement = 'cover' | 'contain' | 'repeat';
 export type WallLayout = { width: number; height: number; mode: Placement; repeatWidth: number };
+export function rectangularWallMask(a: Point, b: Point): Point[] {
+  if ([a.x, a.y, b.x, b.y].some(n => !Number.isFinite(n) || n < 0 || n > 1)) throw new Error('Choose two points inside the wall photo.');
+  const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x), top = Math.min(a.y, b.y), bottom = Math.max(a.y, b.y);
+  if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
+  return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+}
 export const WALLPRO_PRINT_WIDTH = 51;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 

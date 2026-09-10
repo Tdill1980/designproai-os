@@ -21,6 +21,6 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     input.referencePath ? 'The labeled reference image is style inspiration or an existing wall design. Use its visual direction to create flat artwork following the brief. Do not recreate its surrounding room.' : '',
     'Design brief: ' + input.prompt,
     DESIGN_TRANSLATION,
-    'Return a short design name before the final image.'
+    'Generate the finished artwork image now. Return the image only, with no written explanation or design proposal.'
   ].filter(Boolean).join('\n\n');
 }

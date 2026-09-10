@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, layoutMetrics, insidePolygon, wallPrintPanels } from '../wallpro-geometry';
-import { createWallHandler, parseWallInput, nearestAspect } from '../../../../supabase/functions/generate-wall-design/handler';
+import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, layoutMetrics, insidePolygon, rectangularWallMask, wallPrintPanels } from '../wallpro-geometry';
+import { createWallHandler, parseWallInput, nearestAspect, decodeWallImage, finalWallImage } from '../../../../supabase/functions/generate-wall-design/handler';
 const owner = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const input = { requestId, prompt: 'Blue botanicals', width: 120, height: 96, placement: 'cover', wallPath: owner + '/uploads/33333333-3333-4333-8333-333333333333.jpg' };
 
 describe('WallPro physical geometry', () => {
+  it('creates a stable window or drape mask from either pair of opposite corners', () => {
+    const mask=rectangularWallMask({x:.8,y:.9},{x:.3,y:.2});
+    expect(mask).toEqual([{x:.3,y:.2},{x:.8,y:.2},{x:.8,y:.9},{x:.3,y:.9}]);
+    expect(insidePolygon({x:.5,y:.5},mask)).toBe(true);
+    expect(insidePolygon({x:.2,y:.5},mask)).toBe(false);
+    expect(()=>rectangularWallMask({x:.3,y:.2},{x:.3,y:.9})).toThrow();
+  });
   it('plans 51-inch print panels with a correctly sized final panel', () => {
     const panels = wallPrintPanels(120,96);
     expect(panels.map(p => p.width)).toEqual([51,51,18]);
@@ -77,6 +84,24 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
 }
 
 describe('WallPro generation boundary', () => {
+  it('generates from a prompt with no wall photo, style reference or corner coordinates', async () => {
+    const f=fixture(); const result=await f.invoke({...input,wallPath:null,referencePath:null});
+    expect(result.status).toBe(200); expect(f.storage.download).not.toHaveBeenCalled();
+    const payload=f.calls.find(c=>c[0]==='provider')[1];
+    expect(payload.generationConfig.responseModalities).toEqual(['IMAGE']);
+    expect(payload.contents[0].parts).toHaveLength(1);
+  });
+  it('decodes a large image without the per-character intermediate array', () => {
+    const bytes=Buffer.alloc(12*1024*1024); for(let i=0;i<bytes.length;i++)bytes[i]=i%251;
+    const actual=decodeWallImage(bytes.toString('base64'));
+    expect(Buffer.compare(Buffer.from(actual),bytes)).toBe(0);
+    expect(()=>decodeWallImage('AAAA'.repeat(8*1024*1024))).toThrow('supported size');
+  });
+  it('does not publish thought images or blocked candidates and reports the actual stop reason', () => {
+    expect(()=>finalWallImage({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{thought:true,inlineData:{mimeType:'image/png',data:'AAAA'}}]}}]})).toThrow('MAX_TOKENS');
+    expect(()=>finalWallImage({candidates:[{finishReason:'IMAGE_SAFETY',content:{parts:[{inlineData:{mimeType:'image/png',data:'AAAA'}}]}}]})).toThrow('IMAGE_SAFETY');
+    expect(finalWallImage({candidates:[{content:{parts:[]}},{content:{parts:[{inlineData:{mimeType:'image/png',data:'AAAA'}}]}}]})).toEqual({mimeType:'image/png',data:'AAAA'});
+  });
   it('requires real user authentication before reading files or charging',async () => {
     const f=fixture({auth:false}); expect((await f.invoke()).status).toBe(401); expect(f.storage.download).not.toHaveBeenCalled(); expect(f.sb.rpc).not.toHaveBeenCalled(); expect(f.provider).not.toHaveBeenCalled();
   });

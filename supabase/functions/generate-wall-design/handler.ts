@@ -8,6 +8,36 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 const numberInRange = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 2400;
 
+// Uint8Array.from(atob(...)) materializes a per-character intermediate array.
+// A 4K PNG can exhaust an Edge worker before catch/refund can execute. Decode
+// bounded chunks directly into one allocation instead.
+export function decodeWallImage(data: unknown): Uint8Array {
+  if (typeof data !== 'string' || !data.length || data.length % 4 !== 0 || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4) throw new Error('The design image exceeded the supported size.');
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  const size = data.length / 4 * 3 - padding;
+  if (size > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (let start = 0; start < data.length; start += 262144) {
+    const binary = atob(data.slice(start, start + 262144));
+    for (let i = 0; i < binary.length; i++) bytes[offset++] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export function finalWallImage(result: any) {
+  const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+  for (const candidate of candidates) {
+    if (['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'RECITATION', 'BLOCKLIST'].includes(candidate.finishReason)) continue;
+    const parts = Array.isArray(candidate.content?.parts) ? candidate.content.parts : [];
+    const final = parts.filter((p: any) => p.thought !== true && p.inlineData?.data && imageTypes.includes(p.inlineData.mimeType)).at(-1)?.inlineData;
+    if (final) return final;
+  }
+  const reason = String(result?.promptFeedback?.blockReason || candidates[0]?.finishReason || 'NO_IMAGE').replace(/[^A-Z0-9_]/g, '').slice(0, 50);
+  if (['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'RECITATION', 'BLOCKLIST'].includes(reason)) throw new Error(`The image service could not generate this design (${reason}). Revise the description. Your render credit will be returned.`);
+  throw new Error(`The image service returned no finished image (${reason || 'NO_IMAGE'}). Your render credit will be returned. Please try again.`);
+}
+
 export function parseWallInput(body: any, owner: string) {
   if (!uuid.test(body.requestId || '') || !numberInRange(body.width) || !numberInRange(body.height)) throw new Error('Enter a valid wall width and height between 1 and 2,400 inches.');
   if (typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 6000) throw new Error('Describe your wall design in 1–6,000 characters.');
@@ -82,19 +112,17 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       reserved = true;
       const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['TEXT','IMAGE'], imageConfig: { aspectRatio: input.placement === 'repeat' ? '1:1' : nearestAspect(input.width,input.height), imageSize: '4K' } } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: input.placement === 'repeat' ? '1:1' : nearestAspect(input.width,input.height), imageSize: '4K' } } }),
         signal: AbortSignal.timeout(100_000),
       });
       if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
       const result = await provider.json();
-      const outputs = result.candidates?.[0]?.content?.parts || [];
-      const final = outputs.filter((p: any) => p.inlineData?.data && !p.thought).at(-1)?.inlineData;
-      if (!final || !imageTypes.includes(final.mimeType)) throw new Error('No usable design image was returned. Try a different description.');
-      const bytes = Uint8Array.from(atob(final.data), c => c.charCodeAt(0));
+      const final = finalWallImage(result);
+      const bytes = decodeWallImage(final.data);
       if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');
       const ext = final.mimeType === 'image/jpeg' ? 'jpg' : final.mimeType === 'image/webp' ? 'webp' : 'png';
       const path = owner + '/generated/' + input.requestId + '.' + ext;
-      const name = (outputs.find((p: any) => p.text && !p.thought)?.text || 'Wall design').trim().slice(0, 120);
+      const name = input.prompt.trim().slice(0, 120);
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: final.mimeType, upsert: false });
       if (uploaded.error) throw new Error('The design could not be saved. Your render credit will be returned.');
       const finish = await sb.rpc('finish_wallpro_generation', { p_id: input.requestId, p_owner: owner, p_path: path, p_name: name, p_error: null });
