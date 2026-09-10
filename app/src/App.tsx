@@ -66,6 +66,7 @@ const ApproveProUnavailable = () => (
   </main>
 );
 import { RequireAuth } from "@/components/RequireAuth";
+const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequirePanelOutputReviewer } from "@/components/RequirePanelOutputReviewer";
@@ -360,6 +361,8 @@ const App = () => {
               was always meant to be is what /revision-studio renders. */}
           <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
           <Route path="/gallery" element={<Gallery />} />
+          <Route path="/printpro/wallpro" element={<WallPro />} />
+          <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
           <Route path="/printpro/production-os" element={<ProductionOS />} />

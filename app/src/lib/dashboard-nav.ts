@@ -50,6 +50,15 @@ export interface ToolNavItem {
  * Ordered list. Sidebar + tool grid render in this order.
  */
 export const DASHBOARD_TOOLS: ToolNavItem[] = [
+  {
+    key: "wallpro",
+    label: "WallPro",
+    route: "/printpro/wallpro",
+    icon: ImageIcon,
+    pillar: "design",
+    tier: "starter",
+    description: "Upload a wall, create or upload artwork, and preview it at measured scale",
+  },
   // ── DESIGN ───────────────────────────────────────────────────
   {
     key: "designpro",
