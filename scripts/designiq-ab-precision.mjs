@@ -142,16 +142,28 @@ const VEHICLE = {
   make: args["vehicle-make"] || "Ford",
   model: args["vehicle-model"] || "F250 Crew Cab",
 };
+// A flag that is ABSENT keeps the canary payload's value; a flag passed EMPTY
+// omits the field, so a real customer brief can be drawn with exactly the
+// fields the customer's request carried (New Aura carried companyName and
+// finish, no industry, no colors, no style).
+const field = (key, fallback) => (Object.prototype.hasOwnProperty.call(args, key)
+  ? (String(args[key] ?? "").trim() || undefined) : fallback);
+const INDUSTRY = field("industry", "HVAC and climate control");
+const COLORS = field("colors", "deep blue,sunrise orange");
+const STYLE = field("style", "modern commercial");
+const COMPANY_NAME = field("company-name", undefined);
 const V3_INPUT = {
   contractVersion: "designpro.calls-1-7-input.v3",
   pipelineMode: "flat-first-atlas-v1",
   vehicle: VEHICLE,
   brief: BRIEF,
-  designName: args["design-name"] || "Precision Climate Solutions — July 24 canary",
+  designName: field("design-name", undefined) || "Precision Climate Solutions — July 24 canary",
   mode: "commercial",
-  industry: args.industry || "HVAC and climate control",
-  colors: (args.colors || "deep blue,sunrise orange").split(",").map((c) => c.trim()),
-  style: args.style || "modern commercial",
+  ...(COMPANY_NAME ? { companyName: COMPANY_NAME } : {}),
+  ...(INDUSTRY ? { industry: INDUSTRY } : {}),
+  ...(COLORS ? { colors: COLORS.split(",").map((c) => c.trim()).filter(Boolean) } : {}),
+  ...(STYLE ? { style: STYLE } : {}),
+  finish: field("finish", undefined) || "Gloss",
 };
 
 // The SAME creative inputs on design-panel-ai-generate's own request body.
@@ -162,7 +174,8 @@ const CONTROL_PARAMS = {
   prompt: BRIEF,
   finish: "Gloss",
   industryType: V3_INPUT.industry,
-  brandColors: V3_INPUT.colors.join(", "),
+  brandColors: V3_INPUT.colors ? V3_INPUT.colors.join(", ") : undefined,
+  companyName: V3_INPUT.companyName,
   vehicleYear: VEHICLE.year,
   vehicleMake: VEHICLE.make,
   vehicleModel: VEHICLE.model,
