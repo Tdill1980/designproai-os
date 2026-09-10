@@ -1,0 +1,141 @@
+{
+  "vehicle": {
+    "type": "car",
+    "year": "2021",
+    "make": "Porsche",
+    "model": "911 turbo"
+  },
+  "designLayout": "atlas-call1/737dcc5b-365f-4cba-98c5-306fcaa5f7e9.jpg",
+  "model": "gemini-3.1-flash-image",
+  "imageSize": "2K",
+  "plan": [
+    {
+      "surfaceKey": "driver",
+      "label": "DRIVER SIDE",
+      "printWidthIn": 179.6,
+      "printHeightIn": 48.99,
+      "aspectRatio": "4:1",
+      "ratioError": 0.0872,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nOutput the DRIVER SIDE of that same wrap as it looks on the vinyl roll before installation: the whole output image IS the driver side print, filled with artwork from edge to edge on all four sides, seen straight on and flat.\nCarry over exactly the artwork that covers the driver side in the design layout, at the same placement, colours, lettering and wear, and continue the stripes, textures and colours without interruption through every part of the image and off its edges, so the print is solid artwork corner to corner. The artwork is the only thing in the image.\nKeep everything about the design exactly as in the provided image; change nothing else."
+    },
+    {
+      "surfaceKey": "hood",
+      "label": "HOOD",
+      "printWidthIn": 73.67,
+      "printHeightIn": 55.16,
+      "aspectRatio": "4:3",
+      "ratioError": 0.0017,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nOutput the HOOD of that same wrap as it looks on the vinyl roll before installation: the whole output image IS the hood print, filled with artwork from edge to edge on all four sides, seen straight on and flat.\nCarry over exactly the artwork that covers the hood in the design layout, at the same placement, colours, lettering and wear, and continue the stripes, textures and colours without interruption through every part of the image and off its edges, so the print is solid artwork corner to corner. The artwork is the only thing in the image.\nKeep everything about the design exactly as in the provided image; change nothing else."
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "surfaceKey": "driver",
+      "aspectRatio": "4:1",
+      "width": 4128,
+      "height": 1024,
+      "bytes": 2670122,
+      "sha256": "54ad0541a9df20184282ce40095ffe83f73806c3663f40e6345a6e8bfb32e0ec",
+      "elapsedMs": 24666,
+      "gate": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "nonBlackFraction": 0.9978,
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0.0001,
+        "lumaStddev": 76.55
+      },
+      "fullBleed": {
+        "whole": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x254",
+          "sampleFactor": 4.03125,
+          "artworkRatio": 0.50921,
+          "nonArtworkRatio": 0.49079,
+          "largestNonArtworkComponentRatio": 0.22154,
+          "edgeReachableFieldRatio": 0.38202,
+          "interiorFieldRatio": 0.10877,
+          "nonArtworkComponentCount": 4,
+          "borderArtworkRatio": 0.82484,
+          "contourScore": 0.49079,
+          "fullBleedCompliant": false
+        },
+        "trim": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x214",
+          "sampleFactor": 3.80664,
+          "artworkRatio": 0.43102,
+          "nonArtworkRatio": 0.56898,
+          "largestNonArtworkComponentRatio": 0.25476,
+          "edgeReachableFieldRatio": 0.43745,
+          "interiorFieldRatio": 0.13153,
+          "nonArtworkComponentCount": 3,
+          "borderArtworkRatio": 0.77104,
+          "contourScore": 0.56898,
+          "fullBleedCompliant": false
+        }
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "evidence": "The image shows artwork applied to a vehicle body, indicated by the subtle curves and contours of the surface, and the overall composition resembling a race car's side panel."
+      }
+    },
+    {
+      "ok": true,
+      "surfaceKey": "hood",
+      "aspectRatio": "4:3",
+      "width": 2400,
+      "height": 1792,
+      "bytes": 2837295,
+      "sha256": "86e2c1356dd38a262626a4d805f87788b1e56cadb1a322a85a21a9a23615f84a",
+      "elapsedMs": 27482,
+      "gate": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "nonBlackFraction": 0.9861,
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0.0097,
+        "lumaStddev": 82.13
+      },
+      "fullBleed": {
+        "whole": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x765",
+          "sampleFactor": 2.34375,
+          "artworkRatio": 0.51173,
+          "nonArtworkRatio": 0.48827,
+          "largestNonArtworkComponentRatio": 0.20313,
+          "edgeReachableFieldRatio": 0.45408,
+          "interiorFieldRatio": 0.03419,
+          "nonArtworkComponentCount": 9,
+          "borderArtworkRatio": 0.62647,
+          "contourScore": 0.48827,
+          "fullBleedCompliant": false
+        },
+        "trim": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x725",
+          "sampleFactor": 2.02539,
+          "artworkRatio": 0.40073,
+          "nonArtworkRatio": 0.59927,
+          "largestNonArtworkComponentRatio": 0.25719,
+          "edgeReachableFieldRatio": 0.52413,
+          "interiorFieldRatio": 0.07514,
+          "nonArtworkComponentCount": 8,
+          "borderArtworkRatio": 0.71723,
+          "contourScore": 0.59927,
+          "fullBleedCompliant": false
+        }
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "evidence": "The image depicts a distressed vehicle panel, likely a hood or roof, with racing livery and a GT3 badge, indicating body contours."
+      }
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "vehicle": {
+    "type": "car",
+    "year": "2021",
+    "make": "Porsche",
+    "model": "911 turbo"
+  },
+  "designLayout": "atlas-call1/737dcc5b-365f-4cba-98c5-306fcaa5f7e9.jpg",
+  "model": "gemini-3-pro-image",
+  "imageSize": "2K",
+  "plan": [
+    {
+      "surfaceKey": "driver",
+      "label": "DRIVER SIDE",
+      "printWidthIn": 179.6,
+      "printHeightIn": 48.99,
+      "aspectRatio": "4:1",
+      "ratioError": 0.0872,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nFrom it, produce the DRIVER SIDE print panel: one flat rectangle of printed vinyl, 179.6 by 48.99 inches, carrying exactly the artwork that covers the driver side in the design layout, at the same placement, colours, lettering and wear.\nThe rectangle is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole rectangle and run off all four edges. Wherever the pressed design shows a gap or an outline, the surrounding artwork continues straight through it, so the rectangle is solid printed artwork corner to corner with no outline, no gap and no background.\nKeep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed."
+    },
+    {
+      "surfaceKey": "hood",
+      "label": "HOOD",
+      "printWidthIn": 73.67,
+      "printHeightIn": 55.16,
+      "aspectRatio": "4:3",
+      "ratioError": 0.0017,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nFrom it, produce the HOOD print panel: one flat rectangle of printed vinyl, 73.67 by 55.16 inches, carrying exactly the artwork that covers the hood in the design layout, at the same placement, colours, lettering and wear.\nThe rectangle is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole rectangle and run off all four edges. Wherever the pressed design shows a gap or an outline, the surrounding artwork continues straight through it, so the rectangle is solid printed artwork corner to corner with no outline, no gap and no background.\nKeep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed."
+    }
+  ],
+  "results": [
+    {
+      "ok": false,
+      "surfaceKey": "driver",
+      "error": "panel extend driver failed on every key: gemini-3-pro-image/3bd4c4c8ea5a:400 {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"Aspect ratio 4:1 is not supported for this model\",\n    \"status\": \"INVALID_ARGUMENT\"\n  }\n}\n"
+    },
+    {
+      "ok": true,
+      "surfaceKey": "hood",
+      "aspectRatio": "4:3",
+      "width": 2400,
+      "height": 1792,
+      "bytes": 2138285,
+      "sha256": "3f462e8df8688f674c8493656be089a2df601be08a3d42999fd6e0a39acf9ea8",
+      "elapsedMs": 31172,
+      "gate": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "nonBlackFraction": 0.9985,
+        "edgeHoleRatio": 0,
+        "largestCutoutComponentRatio": 0.0001,
+        "lumaStddev": 64.23
+      },
+      "fullBleed": {
+        "whole": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x765",
+          "sampleFactor": 2.34375,
+          "artworkRatio": 0.32672,
+          "nonArtworkRatio": 0.67328,
+          "largestNonArtworkComponentRatio": 0.54991,
+          "edgeReachableFieldRatio": 0.54991,
+          "interiorFieldRatio": 0.12337,
+          "nonArtworkComponentCount": 3,
+          "borderArtworkRatio": 0,
+          "contourScore": 0.33278,
+          "fullBleedCompliant": false
+        },
+        "trim": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x725",
+          "sampleFactor": 2.02539,
+          "artworkRatio": 0.39755,
+          "nonArtworkRatio": 0.60245,
+          "largestNonArtworkComponentRatio": 0.21028,
+          "edgeReachableFieldRatio": 0.59138,
+          "interiorFieldRatio": 0.01107,
+          "nonArtworkComponentCount": 6,
+          "borderArtworkRatio": 0.28563,
+          "contourScore": 0.34761,
+          "fullBleedCompliant": false
+        }
+      },
+      "outputClass": {
+        "disposition": "flat_atlas",
+        "blocking": false,
+        "evidence": "The image displays a flat panel with continuous graphic artwork, including logos and stripes, without any depiction of a vehicle body or vehicle-shaped boundaries."
+      }
+    }
+  ]
+}

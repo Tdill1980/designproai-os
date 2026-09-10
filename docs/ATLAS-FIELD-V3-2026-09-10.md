@@ -169,3 +169,48 @@ three of them, on images that contain none; it is reading the composition,
 not the sheet. Step 4 (gate tightening) has not been started, by the
 owner's stop instruction.
 
+
+---
+
+## 6. The Martini 911 on 10 September, and test 13 (owner-directed, "NOW GO")
+
+Generation `b53702b4` (2021 Porsche 911 turbo, "Distressed Porsche Martini
+Race team") failed at 16:22Z after three Gemini calls in 2 m 53 s:
+six-surface attempts `737dcc5b` and `e761fe92` (both body pieces on black,
+refused by the silhouette gate: driver edgeHole 0.50 / 0.37, hood 0.78),
+then the one-field fail-over `06bc1851` (a real distressed Martini field,
+no car body, but the deployed v2 tail painted its coordinate rows as
+numerals in grey bars, and the near-black gate convicted a rust patch on
+the rear, 2.5%, as a cut-out — terminal since `ea58f8d`, 5 September).
+Previews: `docs/ab/martini-b53702b4-*`. Re-gate: run `34502410086`.
+
+The same brief was accepted on 1 September (`1f7b7bb4`, one attempt,
+135 s): car-shaped pieces on white with HOOD / ROOF / PASSENGER SIDE painted
+in, 51–80% non-artwork per zone, bleed on 0/6 (`docs/ab/martini-1f7b7bb4-accepted-master-1400.jpg`,
+run `34502396531`). It passed because the gate then only saw near-black.
+
+**Test 13 — panel extend.** The Houdini two-layer workflow: a pressed
+DESIGN LAYOUT the model already drew (`737dcc5b`) is handed back in an
+edit turn and one surface's print rectangle is requested at its GENIE
+aspect. `scripts/atlas-panel-extend-ab.mjs`, workflow test `13-panel-extend`.
+
+| run | model | text | driver | hood |
+|---|---|---|---|---|
+| `34514050247` | gemini-3-pro-image | v1 (inch figures in text) | refused: 4:1 unsupported on Pro | **no body lines**, stripes off both edges; inch figures painted as labels; white mount |
+| `34514591670` | gemini-3-pro-image | v2 ("the HOOD … print") | 21:9: full 911 profile on white | hood outline and fender lines |
+| `34514597489` | gemini-3.1-flash-image | v2 | 4:1: arch bulges, door and window lines | hood shape as a contour |
+| `34515147978` | gemini-3-pro-image | v3 (v1 structure, no numbers) | 21:9: arch bulges, roofline | hood outline |
+| `34515153688` | gemini-3.1-flash-image | v3 | 4:1: arch bulges, bumper ends | |
+
+One contour-free rectangle in eight, and that one carried a mount and
+painted numerals from the text. Handing the model an image that contains
+the vehicle silhouette makes it reproduce the silhouette, which is what the
+Gemini guide says a reference image is for (objects reproduced with
+fidelity). Previews: `docs/ab/panel-extend-*`.
+
+**Standing measurement, 10 September:** rectangles with no body lines have
+come only from requests that contain no vehicle image and no layout: the
+one-field request, 13 of 13 draws (plus `06bc1851` from production,
+14 of 14). Every request that shows the model a vehicle-shaped image or asks
+for the vehicle-shaped layout has drawn body lines (17 six-surface draws,
+7 of 8 extend turns).

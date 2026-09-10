@@ -1,0 +1,141 @@
+{
+  "vehicle": {
+    "type": "car",
+    "year": "2021",
+    "make": "Porsche",
+    "model": "911 turbo"
+  },
+  "designLayout": "atlas-call1/737dcc5b-365f-4cba-98c5-306fcaa5f7e9.jpg",
+  "model": "gemini-3-pro-image",
+  "imageSize": "2K",
+  "plan": [
+    {
+      "surfaceKey": "driver",
+      "label": "DRIVER SIDE",
+      "printWidthIn": 179.6,
+      "printHeightIn": 48.99,
+      "aspectRatio": "21:9",
+      "ratioError": 0.4518,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nFrom it, produce the DRIVER SIDE print panel: the whole output image is one flat sheet of printed vinyl, filled edge to edge with exactly the artwork that covers the driver side in the design layout, at the same placement, colours, lettering and wear.\nThe sheet is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole sheet and run off all four edges. Wherever the pressed design shows a gap, a contour or an outline, the surrounding artwork continues straight through it, so the sheet is solid printed artwork corner to corner with no outline, no gap, no border and no background.\nKeep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed."
+    },
+    {
+      "surfaceKey": "hood",
+      "label": "HOOD",
+      "printWidthIn": 73.67,
+      "printHeightIn": 55.16,
+      "aspectRatio": "4:3",
+      "ratioError": 0.0017,
+      "prompt": "The provided image is this wrap design pressed flat onto the 2021 Porsche 911 turbo: the design layout.\nFrom it, produce the HOOD print panel: the whole output image is one flat sheet of printed vinyl, filled edge to edge with exactly the artwork that covers the hood in the design layout, at the same placement, colours, lettering and wear.\nThe sheet is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole sheet and run off all four edges. Wherever the pressed design shows a gap, a contour or an outline, the surrounding artwork continues straight through it, so the sheet is solid printed artwork corner to corner with no outline, no gap, no border and no background.\nKeep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed."
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "surfaceKey": "driver",
+      "aspectRatio": "21:9",
+      "width": 3168,
+      "height": 1344,
+      "bytes": 2491875,
+      "sha256": "fbd1088bf6a8b6c3fc0007cfc0311a43357e76a08ca6b14f568c2ea12281f812",
+      "elapsedMs": 32242,
+      "gate": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "nonBlackFraction": 0.9999,
+        "edgeHoleRatio": 0.0001,
+        "largestCutoutComponentRatio": 0,
+        "lumaStddev": 55.39
+      },
+      "fullBleed": {
+        "whole": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x434",
+          "sampleFactor": 3.09375,
+          "artworkRatio": 0.3499,
+          "nonArtworkRatio": 0.6501,
+          "largestNonArtworkComponentRatio": 0.49314,
+          "edgeReachableFieldRatio": 0.6501,
+          "interiorFieldRatio": 0,
+          "nonArtworkComponentCount": 3,
+          "borderArtworkRatio": 0.34375,
+          "contourScore": 0.6501,
+          "fullBleedCompliant": false
+        },
+        "trim": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x366",
+          "sampleFactor": 2.92188,
+          "artworkRatio": 0.36031,
+          "nonArtworkRatio": 0.63969,
+          "largestNonArtworkComponentRatio": 0.50411,
+          "edgeReachableFieldRatio": 0.62942,
+          "interiorFieldRatio": 0.01026,
+          "nonArtworkComponentCount": 4,
+          "borderArtworkRatio": 0.27558,
+          "contourScore": 0.63969,
+          "fullBleedCompliant": false
+        }
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "evidence": "The image displays a vehicle side panel with distinct body contours and wheel arches, indicating a vehicle shape."
+      }
+    },
+    {
+      "ok": true,
+      "surfaceKey": "hood",
+      "aspectRatio": "4:3",
+      "width": 2400,
+      "height": 1792,
+      "bytes": 2545725,
+      "sha256": "3e859b75857f32ab91d18fbbd025bf6dbbbe19b06c7d978b01cd81f737134e91",
+      "elapsedMs": 32832,
+      "gate": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "nonBlackFraction": 0.9982,
+        "edgeHoleRatio": 0.0004,
+        "largestCutoutComponentRatio": 0,
+        "lumaStddev": 69.17
+      },
+      "fullBleed": {
+        "whole": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x765",
+          "sampleFactor": 2.34375,
+          "artworkRatio": 0.4321,
+          "nonArtworkRatio": 0.5679,
+          "largestNonArtworkComponentRatio": 0.16285,
+          "edgeReachableFieldRatio": 0.51642,
+          "interiorFieldRatio": 0.05148,
+          "nonArtworkComponentCount": 14,
+          "borderArtworkRatio": 0.51259,
+          "contourScore": 0.5679,
+          "fullBleedCompliant": false
+        },
+        "trim": {
+          "surfaceKey": "hood",
+          "sampledAt": "1024x725",
+          "sampleFactor": 2.02539,
+          "artworkRatio": 0.38798,
+          "nonArtworkRatio": 0.61202,
+          "largestNonArtworkComponentRatio": 0.13782,
+          "edgeReachableFieldRatio": 0.48632,
+          "interiorFieldRatio": 0.1257,
+          "nonArtworkComponentCount": 16,
+          "borderArtworkRatio": 0.52862,
+          "contourScore": 0.61202,
+          "fullBleedCompliant": false
+        }
+      },
+      "outputClass": {
+        "disposition": "vehicle_depiction",
+        "blocking": true,
+        "evidence": "The image depicts a vehicle body part (likely a hood) with clear contours and a distressed finish, not a flat rectangular sheet of artwork."
+      }
+    }
+  ]
+}

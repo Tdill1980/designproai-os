@@ -139,6 +139,19 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            same field territories production uses. Customer fields
 #            (company_name, industry, colors, design_name) are dispatch inputs
 #            so a real request can be drawn field for field; empty = omitted.
+#            RESULT (run 34441561338): 4/4 no vehicle, no numerals, no margin;
+#            the code cut slices the name across the flank boundary in 2/4.
+#
+#   test 13 — PANEL EXTEND (owner-directed, "NOW GO"). The Houdini two-layer
+#            workflow: a pressed DESIGN LAYOUT the model drew (a refused raw
+#            Call-1 candidate) is handed back in an edit turn and one surface's
+#            print rectangle is requested at its GENIE aspect, the artwork
+#            continued past every body line. One image call per surface; the
+#            image model is a dispatch input (Pro refuses 4:1; 3.1 Flash draws it).
+#            RESULT (runs 34514050247, 34514591670, 34514597489, 34515147978,
+#            34515153688): one contour-free rectangle in eight, and that one
+#            carried a mount and painted numerals. Given an image containing the
+#            silhouette, the model reproduces the silhouette. Closed.
 #
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
