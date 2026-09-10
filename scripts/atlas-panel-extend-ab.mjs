@@ -63,9 +63,15 @@ const IMAGE_SIZE = ["1K", "2K", "4K"].includes(args["image-size"]) ? args["image
 const CLASSIFY = truthy(args.classify ?? "true");
 
 const LABEL = { driver: "DRIVER SIDE", passenger: "PASSENGER SIDE", hood: "HOOD", roof: "ROOF", front: "FRONT", rear: "REAR" };
-// Gemini 3 Pro Image aspect ratios (docs 2026-09-04). The closest one to the
-// GENIE print aspect is requested; the returned image is gated as-is.
-const RATIOS = [[1, 1], [3, 2], [2, 3], [4, 3], [3, 4], [4, 5], [5, 4], [16, 9], [9, 16], [21, 9], [4, 1], [1, 4], [8, 1], [1, 8]];
+// Aspect ratios per model (docs 2026-09-04; run 34514050247 measured that
+// gemini-3-pro-image refuses 4:1 with INVALID_ARGUMENT). The closest ratio
+// the model supports is requested; the returned image is gated as-is and its
+// aspect error against the GENIE print aspect is reported.
+const PRO_RATIOS = [[1, 1], [3, 2], [2, 3], [4, 3], [3, 4], [4, 5], [5, 4], [16, 9], [9, 16], [21, 9]];
+const FLASH_RATIOS = [...PRO_RATIOS, [4, 1], [1, 4], [8, 1], [1, 8]];
+const MODEL = String(args.model || "").trim() || require_("./designiq-prompt.cjs").DESIGNPANEL_AUTHORING_MODEL;
+if (!/^gemini-[a-z0-9.-]+image[a-z0-9.-]*$/.test(MODEL)) throw new Error(`--model must be a Gemini image model, got ${MODEL}`);
+const RATIOS = /flash/.test(MODEL) ? FLASH_RATIOS : PRO_RATIOS;
 function closestRatio(w, h) {
   const target = w / h;
   let best = RATIOS[0]; let err = Infinity;
@@ -78,12 +84,16 @@ function closestRatio(w, h) {
  * says what the rectangle IS (the artwork continued to every edge, as on the
  * roll before installation) and never names a body part to avoid.
  */
-function extendPrompt({ vehicle, label, printWidthIn, printHeightIn }) {
+function extendPrompt({ vehicle, label }) {
+  // v2 (run 34514050247): the inch figures were painted as dimension labels and
+  // "print panel ... rectangle" was read as a poster on a white mount. No
+  // numbers reach the model (the aspect is set in imageConfig), and the image
+  // itself is declared to BE the panel.
   return [
     `The provided image is this wrap design pressed flat onto the ${vehicle}: the design layout.`,
-    `From it, produce the ${label} print panel: one flat rectangle of printed vinyl, ${printWidthIn} by ${printHeightIn} inches, carrying exactly the artwork that covers the ${label.toLowerCase()} in the design layout, at the same placement, colours, lettering and wear.`,
-    "The rectangle is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole rectangle and run off all four edges. Wherever the pressed design shows a gap or an outline, the surrounding artwork continues straight through it, so the rectangle is solid printed artwork corner to corner with no outline, no gap and no background.",
-    "Keep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed.",
+    `Output the ${label} of that same wrap as it looks on the vinyl roll before installation: the whole output image IS the ${label.toLowerCase()} print, filled with artwork from edge to edge on all four sides, seen straight on and flat.`,
+    `Carry over exactly the artwork that covers the ${label.toLowerCase()} in the design layout, at the same placement, colours, lettering and wear, and continue the stripes, textures and colours without interruption through every part of the image and off its edges, so the print is solid artwork corner to corner. The artwork is the only thing in the image.`,
+    "Keep everything about the design exactly as in the provided image; change nothing else.",
   ].join("\n");
 }
 
@@ -94,7 +104,7 @@ async function main() {
   const captureOnly = truthy(args["capture-only"]);
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
   const provider = createProvider({ env: process.env });
-  const model = require_("./designiq-prompt.cjs").DESIGNPANEL_AUTHORING_MODEL;
+  const model = MODEL;
 
   log("resolving GENIE preview dimensions …");
   const dimensionRow = await genie.resolveFlatAtlasPreviewDimensions(supabase, VEHICLE, provider);
@@ -116,7 +126,7 @@ async function main() {
     const z = zoneOf(key);
     const ratio = closestRatio(z.printWidthIn, z.printHeightIn);
     return { surfaceKey: key, label: LABEL[key], printWidthIn: z.printWidthIn, printHeightIn: z.printHeightIn, ...ratio,
-      prompt: extendPrompt({ vehicle, label: LABEL[key], printWidthIn: z.printWidthIn, printHeightIn: z.printHeightIn }) };
+      prompt: extendPrompt({ vehicle, label: LABEL[key] }) };
   });
   writeFileSync(join(OUT, "requests.json"), JSON.stringify({ vehicle: VEHICLE, designLayout: DESIGN_LAYOUT, model, imageSize: IMAGE_SIZE, plan }, null, 2));
   for (const p of plan) log(`${p.surfaceKey}: ${p.printWidthIn}×${p.printHeightIn} in → aspect ${p.aspectRatio} (log error ${p.ratioError}), ${IMAGE_SIZE}`);
