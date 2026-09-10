@@ -155,7 +155,7 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
     "one candidate, one unchanged fallback, then exactly one field attempt");
   const six=run.masterCalls[0], field=run.masterCalls[2];
   assert.equal(six.fieldContract,undefined);assert.ok(six.teachingProofStoragePath);assert.ok(six.guideStoragePath);
-  assert.equal(field.fieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(field.fieldContract,"designpro.atlas-field-prompt.v3");
   assert.equal(field.teachingProofStoragePath,undefined,"no teaching sheet reaches the field request");
   assert.equal(field.teachingProofIdentity,undefined);
   assert.equal(field.guideStoragePath,undefined,"no guide reaches the field request");
@@ -164,7 +164,7 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
   assert.equal(run.fenceCalls,1,"the fail-over rides the fence the six-surface pass holds; it never re-claims");
   assert.equal(result.metadata.topology,FIELD_TOPOLOGY);
   assert.equal(result.metadata.authoringTopology,"field");
-  assert.equal(result.metadata.atlasFieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(result.metadata.atlasFieldContract,"designpro.atlas-field-prompt.v3");
   assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
   assert.equal(result.metadata.masterAuthoringAttempts,1);
   assert.equal(result.metadata.maxAuthoringAttemptsAllowed,1);

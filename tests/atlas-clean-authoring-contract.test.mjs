@@ -110,49 +110,56 @@ test("ATLAS field branch sends the prompt and customer references only", () => {
   assert.match(handler, /atlas_artboard_field_contract_unknown/);
   const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
   assert.match(fieldTail, /ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image/);
-  // v25 — ANONYMOUS SPATIAL COORDINATES. The three-equal-thirds instruction is
-  // gone: it described a partition the cutter does not use, and the four
-  // production surfaces taken from the lower band were being told to be a
-  // "supporting register" of "secondary motifs".
+  // v24's thirds were drawn as framed passages; v2/v25's coordinate rows were
+  // painted as numerals and its "areas" framing as a poster on a mount (runs
+  // 34425798511 / 34430841234). Neither partition may return.
   assert.doesNotMatch(fieldTail, /three equal horizontal thirds|THE UPPER THIRD|THE MIDDLE THIRD|THE LOWER THIRD/);
   assert.doesNotMatch(fieldTail, /supporting register|calmer intensity|secondary motifs/);
-  assert.match(fieldTail, /These areas of it, written as fractions of the image/);
-  assert.match(fieldTail, /must each carry a complete and finished passage/);
-  // Cohesion stays the governing object; no area becomes its own mini-design.
-  assert.match(fieldTail, /They are not separate pictures/);
   const emitted = fieldTail.slice(fieldTail.indexOf("return ["));
+  assert.doesNotMatch(emitted, /written as fractions|measured from the top-left|These areas|those areas|single area|separate pictures/);
+  assert.doesNotMatch(emitted, /Forward energy sweeps/);
+  // v3 — the positive full-bleed contract: the print itself, running off all
+  // four edges, finished everywhere, with the customer's wording as the only
+  // lettering. Stated as what the image IS, not as a list of refusals.
+  assert.match(emitted, /The image is the printed artwork itself, at full size, seen straight on, and nothing else/);
+  assert.match(emitted, /The design runs off all four edges/);
+  assert.match(emitted, /There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner/);
+  assert.match(emitted, /Every part of the image, corner to corner, is finished, intentional, commercially valuable artwork/);
+  assert.match(emitted, /The focal subject may span as much of the image as the concept calls for/);
+  // The lettering sentence is chosen by hasBrandName above the return.
+  assert.match(fieldTail, /the only lettering in the image is the company name and the wording the brief calls for/);
+  assert.match(fieldTail, /appears whole and legible, and it is the only lettering in the image/);
   for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette",
     "container", "wheel", "window", "do not", "never a", "A.T.L.A.S.", "region", "zone", "band", "third",
-    "upper", "middle", "lower", "driver", "passenger", "hood", "roof", "front", "rear", "•"]) {
+    "upper", "middle", "lower", "driver", "passenger", "hood", "roof", "front", "rear", "•",
+    "area", "areas", "fraction", "fractions", "coordinate", "coordinates", "caption", "captions", "label", "labels"]) {
     assert.ok(!new RegExp(`\\b${forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(emitted),
       `the field tail must not hand the image model "${forbidden}"`);
   }
 });
 
-test("ATLAS field geometry is derived from panels[].normalized, never hard-coded", () => {
+test("ATLAS field tail reads no geometry at all: no normalized rect, no fraction, no sweep", () => {
+  // RULE 0.33: the model is shown no normalized [0,1] text. v2 derived six
+  // coordinate rows from panels[].normalized "so the conditioning and the
+  // cutter read the same geometry", and the model painted the rows. The
+  // request still carries and validates panels[].normalized as OS data
+  // (atlas_artboard_topology_required, atlasNormalizedRect); the tail must
+  // never read it.
   const fieldTail = block(edge, "function atlasFieldContract(", "// ── GENIE-DERIVED NORMALIZED [0,1] MATHEMATICAL TOPOLOGY");
+  const signature = fieldTail.slice(0, fieldTail.indexOf("{"));
+  assert.doesNotMatch(signature, /panels|normalized|noseEdge|AtlasNoseEdge/);
   const body = fieldTail.slice(fieldTail.indexOf("{"));
-  // Every coordinate comes off the already-validated request geometry.
-  assert.match(body, /panel\.normalized/);
-  assert.match(body, /Number\(n\.x\)/);
-  assert.match(body, /Number\(n\.y\)/);
-  assert.match(body, /x0 \+ Number\(n\.width\)/);
-  assert.match(body, /y0 \+ Number\(n\.height\)/);
-  // Rows are ordered by the coordinates themselves, so row position cannot be
-  // reverse-mapped onto a production surface.
-  assert.match(body, /\.sort\(\(a, b\) => a\.y0 - b\.y0 \|\| a\.x0 - b\.x0\)/);
-  // A geometry literal here would silently decouple the conditioning from the
-  // cutter. There must not be one.
-  const literals = body.match(/(?<![\w.])\d*\.\d{3,}(?![\w])/g) || [];
-  assert.deepEqual(literals, [], `hard-coded geometry fraction(s) in the field tail: ${literals.join(", ")}`);
-  // Six regions or the call refuses; it never composes against partial geometry.
-  assert.match(body, /atlas_field_geometry_required/);
-  assert.match(body, /panels\.length !== 6/);
-  // Surface identity is consumed server-side and only ever yields a sweep phrase.
-  const sweep = block(edge, "function atlasFieldSweep(", "\n/**");
-  assert.match(sweep, /startsWith\("DRIVER"\)/);
-  assert.match(sweep, /startsWith\("PASSENGER"\)/);
-  assert.match(sweep, /atlasSweepPhrase/);
+  assert.doesNotMatch(body, /normalized|toFixed|\.sort\(|Number\(n\./);
+  const literals = body.match(/(?<![\w.])\d*\.\d{2,}(?![\w])/g) || [];
+  assert.deepEqual(literals, [], `geometry fraction(s) in the field tail: ${literals.join(", ")}`);
+  // The sweep helpers are gone with the coordinates: a per-flank direction
+  // cannot be stated without positional language, and every positional
+  // statement this tail has carried was painted.
+  assert.doesNotMatch(edge, /function atlasFieldSweep\(|function atlasSweepPhrase\(/);
+  // The nose edges are still validated on the request, outside the prompt.
+  const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
+  assert.match(handler, /atlasNoseEdgeInput\(body\.noseEdge\)/);
+  assert.doesNotMatch(handler.slice(0, handler.indexOf("} as any);")), /atlasNoseEdge,/);
 });
 
 test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", () => {
@@ -173,6 +180,6 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
   assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
   assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260901\.v23-orthographic-restored"/);
-  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
-  assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
+  assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v3"/);
+  assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v3"/);
 });

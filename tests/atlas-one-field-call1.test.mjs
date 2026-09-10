@@ -146,7 +146,7 @@ test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte
   const mod = await slice();
   const { field } = fixtureManifests();
   const body = atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {});
-  body.fieldContract = "designpro.atlas-field-prompt.v2";
+  body.fieldContract = "designpro.atlas-field-prompt.v3";
   const { prompt, references } = mod.buildAtlasCall1Prompt(body);
   assert.equal(references.length, 0);
   const split = prompt.indexOf(TAIL_MARK);
@@ -163,38 +163,42 @@ test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte
   }
 });
 
-test("the field tail still emits the fixture's six normalized rectangles when explicitly invoked", async () => {
-  // RESTORED TO v23: production no longer SELECTS the field branch, so the
-  // fixture names the contract explicitly. The branch and its territory
-  // builder stay in the tree, tested, and available.
+test("the v3 field tail carries no coordinates, no areas, no thirds and no sweep — one object, no map of it", async () => {
+  // The fail-over request names the contract; the fixture does the same. The
+  // territory builder stays in the tree, tested, and is what cuts the field.
   const mod = await slice();
   const { field } = fixtureManifests();
   const body = { ...atlas._test.atlasEdgeRequestBody(FIXTURE_INPUT, field, {}),
-    fieldContract: "designpro.atlas-field-prompt.v2", noseEdge: { driver: "left", passenger: "right" } };
+    fieldContract: "designpro.atlas-field-prompt.v3", noseEdge: { driver: "left", passenger: "right" } };
   const { prompt } = mod.buildAtlasCall1Prompt(body);
   const tail = prompt.slice(prompt.indexOf(TAIL_MARK));
-  assert.notEqual(tail, DRAW1_V24_TAIL, "Test 14 replaces the tail");
+  assert.notEqual(tail, DRAW1_V24_TAIL, "the v24 thirds tail is history");
   assert.doesNotMatch(tail, /three equal horizontal thirds|THE UPPER THIRD|supporting register/);
 
-  // Every emitted row is one of the request's own normalized rectangles, and
-  // every rectangle is emitted exactly once. This is the whole experiment: the
-  // conditioning and the cutter now read the same geometry.
+  // v2 emitted the request's six normalized rectangles as rows, and the model
+  // painted them (runs 34425798511 / 34430841234). Not one number from
+  // panels[].normalized may appear in the tail, in any form.
   const rows = tail.split("\n").filter((line) => /^ {2}[\d.]+ [\d.]+ [\d.]+ [\d.]+/.test(line));
-  assert.equal(rows.length, 6);
-  const expected = body.panels.map((p) => [
-    Number(p.normalized.x).toFixed(4),
-    Number(p.normalized.y).toFixed(4),
-    (Number(p.normalized.x) + Number(p.normalized.width)).toFixed(4),
-    (Number(p.normalized.y) + Number(p.normalized.height)).toFixed(4),
-  ].join(" "));
-  const emitted = rows.map((line) => line.trim().split(/\s+/).slice(0, 4).join(" "));
-  assert.deepEqual([...emitted].sort(), [...expected].sort());
-  // Reading order, not manifest order — row position reveals no surface.
-  const ys = rows.map((line) => Number(line.trim().split(/\s+/)[1]));
-  assert.deepEqual(ys, [...ys].sort((a, b) => a - b));
-  // Exactly the two flanks carry a sweep, and neither is named.
-  assert.equal(rows.filter((line) => /forward energy sweeps/i.test(line)).length, 2);
+  assert.equal(rows.length, 0);
+  for (const p of body.panels) {
+    for (const value of [p.normalized.x, p.normalized.y, p.normalized.width, p.normalized.height]) {
+      const serialized = Number(value).toFixed(4);
+      assert.ok(!tail.includes(serialized), `normalized value ${serialized} leaked into the tail`);
+    }
+  }
+  assert.doesNotMatch(tail, /\d\.\d{2,}/, "no fraction of any kind reaches the model");
+  assert.doesNotMatch(tail, /written as fractions|top-left corner|areas of it|single area|separate pictures/);
+  assert.doesNotMatch(tail, /forward energy sweeps/i);
   assert.doesNotMatch(tail, /\b(driver|passenger|hood|roof|front|rear)\b/i);
+  // What it says instead: the print itself, off all four edges, finished
+  // everywhere, the customer's wording as the only lettering.
+  assert.match(tail, /The image is the printed artwork itself, at full size, seen straight on, and nothing else\./);
+  assert.match(tail, /The design runs off all four edges/);
+  assert.match(tail, /no margin, border, frame, mount or backdrop around it/);
+  assert.match(tail, /The focal subject may span as much of the image as the concept calls for/);
+  assert.match(tail, /the only lettering in the image is the company name and the wording the brief calls for/);
+  // The same head, the same first line: Draw 1's creative half is untouched.
+  assert.equal(prompt.slice(0, prompt.indexOf(TAIL_MARK)), DRAW1_HEAD);
 });
 
 test("the whole model-facing field prompt carries no object-schema, topology or negative vocabulary", async () => {
@@ -202,7 +206,7 @@ test("the whole model-facing field prompt carries no object-schema, topology or 
   const { field } = fixtureManifests();
   for (const mode of ["commercial", "restyle"]) {
     const body = atlas._test.atlasEdgeRequestBody({ ...FIXTURE_INPUT, mode }, field, {});
-    body.fieldContract = "designpro.atlas-field-prompt.v2";
+    body.fieldContract = "designpro.atlas-field-prompt.v3";
     const { prompt } = mod.buildAtlasCall1Prompt(body);
     assert.doesNotThrow(() => assertFieldPromptClean(prompt, `the ${mode} field prompt`));
     assert.match(prompt, /OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image\./);

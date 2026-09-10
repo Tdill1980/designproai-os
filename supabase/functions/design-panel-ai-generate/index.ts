@@ -62,8 +62,16 @@ const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orth
 // topology text and NO panel-object vocabulary. GENIE/runtime owns the six
 // territories as code and serializes them after the one image call. The
 // legacy six-container request stays callable for the harness slice and for
-// history; production sends the field contract.
-const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
+// history; since 2026-09-10 production sends the field contract as the ONE
+// fail-over after a refused six-surface budget.
+//
+// v3 (2026-09-10): the v2 tail wrote six normalized coordinate rows into the
+// model request and they were PAINTED as numerals (5 of 8 real-brief draws,
+// runs 34425798511 / 34430841234); its "the square is one picture" framing
+// was read as a poster on a mount (2 of 8). v3 carries no geometry at all.
+// An older v2 request is refused, never answered with the new tail, so a
+// runtime/edge skew fails closed instead of silently authoring on either.
+const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v3";
 const ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 const ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES = 20 * 1024 * 1024 - 256 * 1024;
 // NO EXPLICIT TEMPERATURE (owner ruling, 2026-09-01). DID-2D918868 -- the
@@ -515,15 +523,16 @@ Every panel is opaque, unbroken and full-bleed to all four edges: flat printed g
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }
 
-// ── ONE-FIELD OUTPUT CONTRACT (designpro.atlas-field-prompt.v2) ─────────────
-// The tail of the one-field Call 1, ported verbatim from the harness that drew
-// the only clean flanks this product has produced (scripts/
-// atlas-field-contract-v2.mjs, run 33659500846). It names THIRDS — the
-// fractions the model draws and the fractions the code-owned territories
-// occupy — and nothing else: no containers, no panel objects, no labels, no
-// negatives, no vehicle-body-piece framing. The nose edges are OS data (the
-// runtime's installer map) so the two hero passages sweep the way the
-// installed sides do.
+// ── ONE-FIELD OUTPUT CONTRACT (designpro.atlas-field-prompt.v3) ─────────────
+// The tail of the one-field Call 1. It describes ONE object — the printed
+// artwork itself, full size, running off all four edges — and nothing else: no
+// containers, no panel objects, no labels, no coordinates, no fractions, no
+// thirds, no negatives, no vehicle-body-piece framing. The nose edges stay OS
+// data on the request (the runtime's installer map) and are validated here;
+// since v3 they no longer enter the prompt, because a per-flank sweep cannot
+// be stated without positional language, and every positional statement this
+// tail has carried was painted (v24: the thirds as framed passages; v2/v25:
+// the coordinate rows as numerals).
 type AtlasNoseEdge = { driver: "left" | "right"; passenger: "left" | "right" };
 
 function atlasNoseEdgeInput(value: unknown): AtlasNoseEdge {
@@ -536,95 +545,50 @@ function atlasNoseEdgeInput(value: unknown): AtlasNoseEdge {
   return { driver: edge("driver", "left"), passenger: edge("passenger", "right") };
 }
 
-function atlasSweepPhrase(noseEdge: "left" | "right"): string {
-  return noseEdge === "left" ? "Forward energy sweeps left to right." : "Forward energy sweeps right to left.";
-}
-
 /**
- * The OS knows which normalized rectangle belongs to which production surface.
- * That knowledge stays SERVER-SIDE: it only ever produces an anonymous sweep
- * phrase, so the installed sides still sweep the right way without the model
- * ever receiving a production-object identity.
- */
-function atlasFieldSweep(label: string, noseEdge: AtlasNoseEdge): string {
-  const key = String(label || "").toUpperCase();
-  if (key.startsWith("DRIVER")) return atlasSweepPhrase(noseEdge.driver);
-  if (key.startsWith("PASSENGER")) return atlasSweepPhrase(noseEdge.passenger);
-  return "";
-}
-
-/**
- * v25 — ANONYMOUS SPATIAL COORDINATES (owner ruling, Trish 2026-09-04).
+ * v3 — NO GEOMETRY REACHES THE MODEL (measured 2026-09-10, owner-directed).
  *
- * v24 told the model "three equal horizontal thirds" while the cutter took SIX
- * unequal territories out of the field. Measured on GEN 63e6629a (Arctic Air,
- * 2022 Toyota Prius): of the twelve real extraction cut lines, ELEVEN were
- * never shown to the model. The lower band alone discarded 27.81% of what was
- * painted there, and the four production surfaces cut from it had been
- * explicitly instructed to be a "supporting register ... calmer intensity,
- * secondary motifs" -- which is why the Front crop came back as background.
- * That is a coordinate-contract defect, not a model-quality defect.
+ * v2 (the v25 tail) wrote six `left top right bottom` fraction rows into the
+ * prompt so the conditioning and the cutter would read the same geometry.
+ * Drawn eight times on real briefs (runs 34425798511 and 34430841234, the
+ * second on the stored New Aura Day Spa request), the rows were PAINTED: as
+ * captions on framed panes (F2, F3 of run 1; F4 of run 2), as text across the
+ * artwork (F4 of run 1) and as axis ticks inside the driver territory (F3 of
+ * run 2). Its "the square is one picture ... areas of it" framing was read as
+ * a poster on a mount (F1, F2 of run 2), and its "every ... focal subject sits
+ * wholly inside a single area" sentence forbade the photo-across-the-vehicle
+ * the brief asked for. The deterministic gates and the output-class question
+ * accepted all eight. RULE 0.33's own contract says the model is shown no
+ * normalized [0,1] text; v2 had reintroduced it as prose. Text that reaches
+ * the model request becomes artwork (the 2026-08-25 artifactFreeContract
+ * deaths, the 2026-09-10 ROOF/REAR captions, and now numerals).
  *
- * The geometry was already on the wire. `panels[].normalized` is sent by the
- * runtime, REQUIRED by this function's caller (atlas_artboard_topology_required)
- * and validated rect by rect (atlasNormalizedRect) -- and then thrown away
- * before the model was asked to compose. This emits it instead.
- *
- * The governing rule: the model may receive anonymous spatial COORDINATES
- * derived from panels[].normalized; it may not receive semantic production
- * OBJECT IDENTITIES. So the rows carry no name, no index, no heading and no
- * colon-introduced title -- there is no noun for the model to set in type.
- * Rows are ordered by the coordinates themselves, which also destroys any
- * correlation between row position and surface identity.
- *
- * Every fraction is computed. A hard-coded geometry literal in this function
- * would silently decouple the conditioning from the cutter, so there is none,
- * and `tests/atlas-clean-authoring-contract.test.mjs` fails the build if one
- * appears.
+ * So v3 hands the model ONE object and no map of it: the printed artwork at
+ * full size, running off all four edges, finished everywhere, with the only
+ * lettering being the customer's own wording. GENIE/runtime still owns the six
+ * territories as code and cuts them after the call. `panels[].normalized` is
+ * still REQUIRED and validated on the request (atlas_artboard_topology_required,
+ * atlasNormalizedRect) — it is OS data, and it never enters this function.
+ * `tests/atlas-clean-authoring-contract.test.mjs` fails the build if a
+ * fraction, a coordinate or an "area" returns here.
  */
 function atlasFieldContract(
   vehicle: string,
   bodyClass: string,
-  noseEdge: AtlasNoseEdge,
   hasBrandName: boolean,
-  panels: Array<{ label?: unknown; normalized?: AtlasNormalizedRect }>,
 ): string {
-  if (!Array.isArray(panels) || panels.length !== 6) {
-    throw new Error(`atlas_field_geometry_required:${Array.isArray(panels) ? panels.length : "none"}`);
-  }
-  const f = (n: number) => n.toFixed(4);
-  const rows = panels
-    .map((panel) => {
-      const n = panel.normalized;
-      if (!n) throw new Error("atlas_field_geometry_required:normalized");
-      const x0 = Number(n.x);
-      const y0 = Number(n.y);
-      return {
-        x0,
-        y0,
-        x1: x0 + Number(n.width),
-        y1: y0 + Number(n.height),
-        sweep: atlasFieldSweep(String(panel.label || ""), noseEdge),
-      };
-    })
-    .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
-    .map((r) => `  ${f(r.x0)} ${f(r.y0)} ${f(r.x1)} ${f(r.y1)}${r.sweep ? `   ${r.sweep}` : ""}`);
   const lettering = hasBrandName
-    ? "Lettering reads left to right throughout, and the company name appears whole and legible."
-    : "Lettering reads left to right throughout, and any wording the brief calls for appears whole and legible.";
+    ? "Lettering reads left to right throughout; the company name appears whole and legible, and the only lettering in the image is the company name and the wording the brief calls for."
+    : "Lettering reads left to right throughout; any wording the brief calls for appears whole and legible, and it is the only lettering in the image.";
   return [
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
     "",
-    "The square is one picture. These areas of it, written as fractions of the image measured from the top-left corner — left, top, right, bottom — must each carry a complete and finished passage of that picture:",
+    "The image is the printed artwork itself, at full size, seen straight on, and nothing else. The design runs off all four edges: the outermost pixels on every side are artwork in mid-motion, and the print continues beyond the image in every direction. There is no margin, border, frame, mount or backdrop around it; the artwork reaches every corner.",
     "",
-    ...rows,
+    "Every part of the image, corner to corner, is finished, intentional, commercially valuable artwork — real subject matter, real depth, real movement, worth what the customer paid — with no empty backdrop, filler or quiet leftover anywhere. The focal subject may span as much of the image as the concept calls for, and the ground, palette, texture, lighting and motion run continuously through the whole picture.",
     "",
-    "Every one of those areas has to read on its own as intentional, finished, commercially valuable artwork: real subject matter, real depth, real movement, worth what the customer paid. Not one of them may become empty backdrop, filler, or the quiet leftover of a composition that happens elsewhere.",
-    "",
-    "They are not separate pictures. The ground, palette, texture, lighting and motion run continuously through the whole square and straight across every join between them, so they read as passages of one design and the joins are invisible.",
-    "",
-    `Nothing that has to be read or recognised may run from one of those areas into another: every letter, word, mark and focal subject sits wholly inside a single area and well clear of its four edges. ${lettering}`,
+    lettering,
     "",
     "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
   ].join("\n");
@@ -738,8 +702,7 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // lock, photo-realism rule, FINISH_SPECS text, style, movement and depth are
   // untouched.
   const atlasField = atlasFlatMaster && (params as any).atlasField === true;
-  const atlasNoseEdge: AtlasNoseEdge = atlasNoseEdgeInput((params as any).atlasNoseEdge);
-  const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
+  const vehicle =[vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
     .join(' ');
   const atlasBodyClass = atlasVehicleBodyClass(vehicleType);
@@ -994,7 +957,7 @@ CLIENT BRIEF:`;
 
     if (atlasField) {
       assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
-      assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, true, atlasPanels)}`;
+      assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, true)}`;
       return assembled;
     }
     if (atlasFlatMaster) {
@@ -1135,7 +1098,7 @@ ${PROFESSIONAL_JUDGMENT}`;
 
   if (atlasField) {
     assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
-    assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, false, atlasPanels)}`;
+    assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, false)}`;
     return assembled;
   }
   if (atlasFlatMaster) {
@@ -2435,7 +2398,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       throw new Error(`atlas_artboard_field_contract_unknown:${fieldContract.slice(0, 80)}`);
     }
     const atlasField = fieldContract === ATLAS_FIELD_PROMPT_CONTRACT;
-    const atlasNoseEdge = atlasNoseEdgeInput(body.noseEdge);
+    // OS data on the request, validated and kept OUT of the prompt (v3): the
+    // installer map's nose edges travel with the field request so the runtime
+    // and the edge agree on the manifest, but no positional text is authored
+    // from them.
+    atlasNoseEdgeInput(body.noseEdge);
 
     // The six labeled panels WITH their GENIE-derived normalized [0,1] target
     // topology. Under the owner boundary contract (2026-09-01) the topology is
@@ -2494,7 +2461,6 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       atlasFlatMaster: true,
       atlasPanels: panels,
       atlasField,
-      atlasNoseEdge,
     } as any);
 
     // 3 — parts, in v14's proven order. 083d2a70 (edge v14, 2026-08-31) is the

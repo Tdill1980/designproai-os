@@ -89,9 +89,12 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
 const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v23-orthographic-restored";
-// Historical field contract retained for harness compatibility; the product
-// selects the unchanged six-surface branch by omitting this request key.
-const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
+// The one-field contract the fail-over sends (and the harness draws). v3
+// (2026-09-10): the edge tail carries no coordinate rows, no "areas" and no
+// single-area sentence — v2's rows were painted as numerals and its framing
+// read as a poster on a mount (runs 34425798511 / 34430841234). The edge
+// refuses any other contract string, so a runtime/edge skew fails closed.
+const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v3";
 // Bounded QC-corrective re-rolls exist for operator harnesses only. The
 // customer path defaults to exactly ONE: one revision = one DesignPanelAI
 // creative call = one Gemini image request, and the exact request count is
@@ -3867,6 +3870,7 @@ module.exports = {
   GEOMETRY_AUTHORITY_CONTRACT,
   INPUT_CONTRACT,
   MANIFEST_CONTRACT,
+  ATLAS_FIELD_PROMPT_CONTRACT,
   MASTER_REQUEST_MAX_BYTES,
   MASTER_PROVIDER_CONTRACT,
   PIPELINE_MODE,

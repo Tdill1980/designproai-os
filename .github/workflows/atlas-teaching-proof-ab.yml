@@ -126,6 +126,20 @@ name: A.T.L.A.S. Call-1 — isolated-variable A/B
 #            wording is returned to v3 and Call-1 six-pane conditioning work
 #            stops here. The next move is architectural (test 11).
 #
+#   test 12 — FIELD CONTRACT v3, N DRAWS (owner-directed 2026-09-10). Not an
+#            A/B. The product's one-field fail-over tail is rewritten as
+#            `designpro.atlas-field-prompt.v3` (no coordinate rows, no "areas",
+#            no single-area sentence, positive full-bleed wording) after v2's
+#            rows were painted as numerals and its framing read as a poster on
+#            a mount. The deployed edge only answers its own contract, so this
+#            test EXECUTES the checkout's edge assembly (atlas-call1-build) on
+#            the exact request the runtime's fail-over emits and sends the one
+#            text part to Gemini itself — no deploy, no lease, no request row.
+#            `draws` 1-4; each is normalised, gated, classified and cut with the
+#            same field territories production uses. Customer fields
+#            (company_name, industry, colors, design_name) are dispatch inputs
+#            so a real request can be drawn field for field; empty = omitted.
+#
 # It changes nothing on the droplet or the project: no deploy, no env write, no
 # service restart, no prompt change, no topology change. The production teaching
 # proof and the edge function's hash pin on it are untouched — the variant is
@@ -154,6 +168,7 @@ on:
           - 9-field-recovery
           - 10-anchor-restoration
           - 11-field-recovery-v2
+          - 12-field-v3-draws
           - measure-accepted-master
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
@@ -161,10 +176,30 @@ on:
         type: string
         default: ""
       draws:
-        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else."
+        description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else. Test 12 (field v3) accepts 1-4."
         required: true
         type: string
         default: "1"
+      company_name:
+        description: "test 12 only — the customer's companyName field (empty = omitted, as a request without one)"
+        required: false
+        type: string
+        default: ""
+      industry:
+        description: "test 12 only — the customer's industry field (empty = omitted)"
+        required: false
+        type: string
+        default: ""
+      colors:
+        description: "test 12 only — comma-separated brand colors (empty = omitted)"
+        required: false
+        type: string
+        default: ""
+      design_name:
+        description: "test 12 only — the request's designName"
+        required: false
+        type: string
+        default: ""
       confirmation:
         description: "Protected live-provider action — real Gemini image calls (0 with capture_only)"
         required: true
@@ -285,6 +320,10 @@ jobs:
           AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
           AB_TEST: ${{ inputs.test }}
           AB_DRAWS: ${{ inputs.draws }}
+          AB_COMPANY_NAME: ${{ inputs.company_name }}
+          AB_INDUSTRY: ${{ inputs.industry }}
+          AB_COLORS: ${{ inputs.colors }}
+          AB_DESIGN_NAME: ${{ inputs.design_name }}
           AB_GENERATION: ${{ inputs.generation }}
         shell: bash
         run: |
@@ -292,6 +331,11 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           brief_b64=$(printf '%s' "$AB_BRIEF" | base64 -w0)
+          # Test 12's customer fields travel as base64 too, so quoting cannot
+          # mangle a real request's exact text.
+          company_b64=$(printf '%s' "$AB_COMPANY_NAME" | base64 -w0)
+          industry_b64=$(printf '%s' "$AB_INDUSTRY" | base64 -w0)
+          design_name_b64=$(printf '%s' "$AB_DESIGN_NAME" | base64 -w0)
 
           # The candidate ref's runtime modules run inside the DEPLOYED image's
           # dependencies. The teaching proof travels with them — it is a bundled
@@ -321,6 +365,7 @@ jobs:
             scripts/atlas-field-contract-v2.mjs \
             scripts/atlas-field-inspection.mjs \
             scripts/atlas-field-recovery-v2.mjs \
+            scripts/atlas-field-v3-draws.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -333,7 +378,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -381,6 +426,16 @@ jobs:
             9-field-recovery)        runner=scripts/atlas-field-recovery.mjs ;;
             10-anchor-restoration)   runner=scripts/atlas-anchor-recovery.mjs ;;
             11-field-recovery-v2)    runner=scripts/atlas-field-recovery-v2.mjs ;;
+            12-field-v3-draws)
+              # The checkout's edge assembly, drawn directly: no deploy, no lease.
+              # Empty customer fields are passed EMPTY so the script omits them,
+              # exactly as a request that never carried them.
+              runner=scripts/atlas-field-v3-draws.mjs
+              extra_args=(--company "$(printf '%s' "$AB_COMPANY_B64" | base64 -d)"
+                          --industry "$(printf '%s' "$AB_INDUSTRY_B64" | base64 -d)"
+                          --colors "$AB_COLORS" --style ""
+                          --design-name "$(printf '%s' "$AB_DESIGN_NAME_B64" | base64 -d)")
+              ;;
             measure-accepted-master)
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs

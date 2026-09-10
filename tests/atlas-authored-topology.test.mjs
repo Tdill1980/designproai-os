@@ -115,7 +115,7 @@ for (const format of ['png', 'jpeg', 'webp']) test(`${format}: six-surface trans
   assert.equal(downloaded.contentType,`image/${format}`);
   assert.equal(downloaded.provenance.masterContentType,`image/${format}`);
   assert.equal(downloads,1);
-  for(const override of [{fieldContract:'designpro.atlas-field-prompt.v2'}, {teachingProofIdentity:null},
+  for(const override of [{fieldContract:'designpro.atlas-field-prompt.v3'}, {teachingProofIdentity:null},
     {modelInputImageCount:0},{promptVersion:'stale'},
     {teachingProofIdentity:{...teaching.identity,flattenedTopViewContentHash:'f'.repeat(64)}}]){
     await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
@@ -145,10 +145,10 @@ test('the field branch refuses an edge running a different prompt version', asyn
   // The field branch is no longer selected by production (v23 restore), but the
   // guard still protects it, so the test names the contract explicitly.
   const body={...atlas._test.atlasEdgeRequestBody(input,productManifest(surfaces,undefined,'truck'),
-    {referenceImagesBase64:[]}), fieldContract:'designpro.atlas-field-prompt.v2'};
+    {referenceImagesBase64:[]}), fieldContract:'designpro.atlas-field-prompt.v3'};
   const current=/ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "([^"]+)"/
     .exec(readFileSync(new URL('../runtime/flat-first-atlas.cjs',import.meta.url),'utf8'))[1];
-  const reply={success:true,imageRequestCount:1,fieldContract:'designpro.atlas-field-prompt.v2',
+  const reply={success:true,imageRequestCount:1,fieldContract:'designpro.atlas-field-prompt.v3',
     modelInputImageCount:0,promptVersion:current,
     masterStoragePath:'fixture.png',masterSha256:sha(bytes)};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},

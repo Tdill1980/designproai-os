@@ -346,7 +346,7 @@ async function main() {
   const fieldManifest = buildFieldTerritories(manifest);
   if (fieldManifest.topology !== FIELD_TOPOLOGY) throw new Error("field territories did not produce the field topology");
   const fEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, fieldManifest, { referenceImagesBase64: [] });
-  if (fEdgeBody.fieldContract !== "designpro.atlas-field-prompt.v2" || fEdgeBody.teachingProofStoragePath || fEdgeBody.guideStoragePath) {
+  if (fEdgeBody.fieldContract !== atlas.ATLAS_FIELD_PROMPT_CONTRACT || fEdgeBody.teachingProofStoragePath || fEdgeBody.guideStoragePath) {
     throw new Error("the field request must carry the field contract and no structural images");
   }
   log(`field edge request ${(JSON.stringify(fEdgeBody).length / 1024).toFixed(0)}KB, ${FIELD_DRAWS} draw(s) planned`);
