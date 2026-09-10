@@ -170,8 +170,14 @@ on:
           - 11-field-recovery-v2
           - 12-field-v3-draws
           - measure-accepted-master
+          - fetch-raw-candidates
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
+        required: false
+        type: string
+        default: ""
+      candidates:
+        description: "fetch-raw-candidates only — comma-separated wrap-files paths (atlas-call1/<id>.jpg …); read-only, no provider call"
         required: false
         type: string
         default: ""
@@ -325,6 +331,7 @@ jobs:
           AB_COLORS: ${{ inputs.colors }}
           AB_DESIGN_NAME: ${{ inputs.design_name }}
           AB_GENERATION: ${{ inputs.generation }}
+          AB_CANDIDATES: ${{ inputs.candidates }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -366,6 +373,7 @@ jobs:
             scripts/atlas-field-inspection.mjs \
             scripts/atlas-field-recovery-v2.mjs \
             scripts/atlas-field-v3-draws.mjs \
+            scripts/atlas-fetch-raw-candidates.mjs \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -378,7 +386,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -440,6 +448,12 @@ jobs:
               # READ-ONLY. No provider call, no image generation, no write.
               runner=scripts/atlas-measure-master.mjs
               extra_args=(--generation "$AB_GENERATION")
+              ;;
+            fetch-raw-candidates)
+              # READ-ONLY. Download the refused raw candidates a failed request
+              # names, preview them, re-run the deterministic gate. No provider call.
+              runner=scripts/atlas-fetch-raw-candidates.mjs
+              extra_args=(--candidates "$AB_CANDIDATES")
               ;;
             *) echo "unknown test: $AB_TEST"; exit 44 ;;
           esac
