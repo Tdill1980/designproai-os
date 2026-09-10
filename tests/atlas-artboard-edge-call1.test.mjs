@@ -157,20 +157,28 @@ test("v23 restoration: legacy manifest, six-container request, both pinned image
   assert.match(runtimeSource, /loadBundledAtlasTeachingProof/);
   assert.match(liveAuthoring, /renderAtlasAuthoringGuide\(manifest\)/);
   assert.match(liveAuthoring,
-    /const manifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/,
+    /const sixSurfaceManifest = parentManifest \? structuredClone\(parentManifest\)\s*: buildAtlasManifest\(surfaces, geometryAuthority, input\?\.vehicle\?\.type\);/,
     "new designs build the six-surface GENIE manifest; edits use an immutable copy of their verified parent manifest");
-  assert.match(liveAuthoring, /if \(!parentManifest && geometryResolution\) manifest\.geometryResolution = geometryResolution;/,
+  assert.match(liveAuthoring, /if \(!parentManifest && geometryResolution\) sixSurfaceManifest\.geometryResolution = geometryResolution;/,
     "a newly resolved geometry identity must never replace the saved edit parent's geometry");
-  assert.doesNotMatch(liveAuthoring, /buildFieldTerritories\(/);
+  // ONE-FIELD FAIL-OVER (owner-directed 2026-09-10): the field territories are
+  // built only through the one helper the fail-over and its resume paths share,
+  // and the product manifest is still the six-surface one.
+  assert.match(liveAuthoring, /const manifest = authoringTopology === "field" \? fieldManifestFrom\(sixSurfaceManifest\) : sixSurfaceManifest;/);
+  assert.equal((liveAuthoring.match(/buildFieldTerritories\(/g) || []).length, 1,
+    "field territories are built in exactly one place: the fail-over helper");
+  assert.match(liveAuthoring, /authoringTopology = "six-surface"/);
 
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),
     runtimeSource.indexOf("function normalizedZoneTopology("),
   );
-  assert.match(requestBody, /teachingProofStoragePath: extras\.teachingProofStoragePath/);
-  assert.match(requestBody, /guideStoragePath: extras\.guideStoragePath/);
-  assert.doesNotMatch(requestBody, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
-  assert.doesNotMatch(requestBody, /noseEdge:/);
+  // The six-surface request keeps both pinned image inputs; the field keys
+  // exist only inside the FIELD_TOPOLOGY branch of the same body builder.
+  assert.match(requestBody,
+    /manifest\?\.topology === FIELD_TOPOLOGY \? \{[\s\S]*?fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,[\s\S]*?noseEdge:[\s\S]*?\} : \{[\s\S]*?teachingProofStoragePath: extras\.teachingProofStoragePath,[\s\S]*?teachingProofIdentity: extras\.teachingProofIdentity,[\s\S]*?guideStoragePath: extras\.guideStoragePath,[\s\S]*?\}\)/);
+  const outsideFieldBranch = requestBody.replace(/manifest\?\.topology === FIELD_TOPOLOGY \? \{[\s\S]*?\} : \{/, "");
+  assert.doesNotMatch(outsideFieldBranch, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT|noseEdge:/);
 });
 
 

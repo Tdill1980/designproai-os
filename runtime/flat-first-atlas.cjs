@@ -117,6 +117,29 @@ const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
 // limits include cached attempts; a worker restart never resets this budget.
 const MAX_MASTER_AUTHORING_ATTEMPTS = 2;
 const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
+/**
+ * ONE-FIELD FAIL-OVER (owner-directed, Trish 2026-09-10).
+ *
+ * Six days of production (2026-09-04 → 09-09): 20 requests, 8 delivered, 7
+ * refused because Call 1 drew the vehicle into the sheet (wheel arches, body
+ * outlines, `vehicle_depiction`), and every one of those seven ended as
+ * `failed` with the customer holding nothing. The owner: "every time I try a
+ * design it fails" and "it should never take 7 minutes".
+ *
+ * So the six-surface contract stays the PRODUCT, and its bounded budget stays
+ * exactly as ruled on 2026-09-06 (one candidate, one unchanged fallback). What
+ * changes is what happens when that budget is refused: instead of failing
+ * closed, Call 1 fails over ONCE to the one-field contract (v24, Field
+ * Recovery v2 — the only configuration that has measured clean, anatomy-free
+ * flanks on this product) and GENIE cuts the six territories from that field.
+ * The customer always gets a printable design; the revision records which
+ * contract authored it and why (`metadata.authoringFailover`).
+ *
+ * `DESIGNPRO_ATLAS_FIELD_FAILOVER=off` restores the fail-closed behaviour.
+ * Nothing else disables it, because a misspelled flag must not cost a design.
+ */
+const FIELD_FAILOVER_ATTEMPTS = 1;
+const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
@@ -1625,12 +1648,23 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       placement: zone.placement,
       normalized: normalizedZoneTopology(zone, manifest),
     })),
-    // v23 SIX-CONTAINER REQUEST. This is the shape that produced the accepted
-    // master 1564c66da0a1c482: the pinned teaching proof and the neutral target
-    // guide both travel, and no field contract is named.
-    teachingProofStoragePath: extras.teachingProofStoragePath,
-    teachingProofIdentity: extras.teachingProofIdentity,
-    guideStoragePath: extras.guideStoragePath,
+    ...(manifest?.topology === FIELD_TOPOLOGY ? {
+      // ONE-FIELD FAIL-OVER REQUEST (v24 contract). The edge assembles the same
+      // DesignPanelAI brief with the field wording and the field tail, and
+      // sends the model ONE text part plus the verified customer references:
+      // no teaching proof, no guide, no topology text. The `panels` list above
+      // stays on the request as OS data the edge validates; it never enters
+      // the field prompt.
+      fieldContract: ATLAS_FIELD_PROMPT_CONTRACT,
+      noseEdge: manifest?.installerMap?.noseEdge || NOSE_EDGE,
+    } : {
+      // v23 SIX-CONTAINER REQUEST. This is the shape that produced the accepted
+      // master 1564c66da0a1c482: the pinned teaching proof and the neutral target
+      // guide both travel, and no field contract is named.
+      teachingProofStoragePath: extras.teachingProofStoragePath,
+      teachingProofIdentity: extras.teachingProofIdentity,
+      guideStoragePath: extras.guideStoragePath,
+    }),
     referenceImagesBase64: extras.referenceImagesBase64,
     ...(extras.revisionContextHash ? { revisionContextHash: extras.revisionContextHash } : {}),
   };
@@ -2631,6 +2665,13 @@ async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, geometryResolution = null,
+    // ONE-FIELD FAIL-OVER (see FIELD_FAILOVER_ATTEMPTS). "six-surface" is the
+    // product. "field" is entered only by this function itself: after the
+    // six-surface budget is refused, or on resume when the stored revision or
+    // checkpoint proves the design was accepted on the field contract.
+    authoringTopology = "six-surface",
+    authoringFenceState = null,
+    failoverFrom = null,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -2673,12 +2714,37 @@ async function generateOrReuseFlatAtlas(options) {
   // -- was authored on the LEGACY six-container manifest, not on field
   // territories. Field territories stay in the tree and stay tested; they are
   // simply not what produced the accepted design.
-  const manifest = parentManifest ? structuredClone(parentManifest)
+  if (!["six-surface", "field"].includes(authoringTopology)) {
+    throw new FlatAtlasError("flat_atlas_authoring_topology_invalid", `Unknown authoring topology ${String(authoringTopology).slice(0, 40)}`);
+  }
+  if (authoringTopology === "field" && parentManifest) {
+    throw new FlatAtlasError("flat_atlas_failover_edit_unsupported",
+      "A revision edit keeps its parent's six-surface topology; the one-field fail-over is for first authoring only");
+  }
+  const sixSurfaceManifest = parentManifest ? structuredClone(parentManifest)
     : buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
   const teachingProof = loadBundledAtlasTeachingProof();
   // The resolver's manifest identity rides on the built manifest, so
   // `cutCallOnePanels` can bind it to every panel and refuse to cut without it.
-  if (!parentManifest && geometryResolution) manifest.geometryResolution = geometryResolution;
+  if (!parentManifest && geometryResolution) sixSurfaceManifest.geometryResolution = geometryResolution;
+  // The field layout is built from the SAME six-surface manifest, by one
+  // helper, everywhere it is needed (the fail-over pass and the resume peek
+  // below), so its hash is identical on every path that must recognise it.
+  const fieldManifestFrom = (six) => {
+    const field = buildFieldTerritories(six);
+    if (!parentManifest && geometryResolution) field.geometryResolution = geometryResolution;
+    return field;
+  };
+  const manifest = authoringTopology === "field" ? fieldManifestFrom(sixSurfaceManifest) : sixSurfaceManifest;
+  // A design already accepted on the field contract stays resumable whatever
+  // the flag says; the flag only decides whether a NEW refusal fails over.
+  const fieldResumable = authoringTopology === "six-surface" && !parentManifest;
+  const failoverEnabled = fieldResumable
+    && String(process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER || "").trim().toLowerCase() !== "off";
+  const failOverToField = (reason, extra = {}) => generateOrReuseFlatAtlas({
+    ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS,
+    failoverFrom: reason || null, ...extra,
+  });
   const checkpointIdentity = {
     tenantKey, generationId, requestId, ownerId,
     inputHash: sha256(canonicalBytes(input)), manifestHash: sha256(canonicalBytes(manifest)),
@@ -2687,7 +2753,13 @@ async function generateOrReuseFlatAtlas(options) {
     checkpointKind: "accepted",
     revisionSequence, parentRevisionId, revisionContextHash,
   };
-  const storedAuthoringContext = await readAuthoringContext({ supabase, bucket: BUCKET, identity: checkpointIdentity });
+  // The VisionBoard style DNA is written once, under the six-surface identity,
+  // before Call 1. The fail-over pass reads the SAME record so its prompt hash
+  // is reproducible on resume; it never derives a second style DNA.
+  const contextIdentity = authoringTopology === "field"
+    ? { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(sixSurfaceManifest)) }
+    : checkpointIdentity;
+  const storedAuthoringContext = await readAuthoringContext({ supabase, bucket: BUCKET, identity: contextIdentity });
 
   // VISIONBOARDIQ RUNS BEFORE THE DESIGN CALL, AND ITS RESULT GOES INTO IT.
   //
@@ -2731,12 +2803,17 @@ async function generateOrReuseFlatAtlas(options) {
   ));
   // Fence the restored teaching input and topology against one-field reuse.
   const currentExampleSetHash = sha256(canonicalBytes({
-    atlasDesignTeachingExample: teachingProof.identity,
-    fieldContract: null,
+    atlasDesignTeachingExample: manifest.topology === FIELD_TOPOLOGY ? null : teachingProof.identity,
+    fieldContract: manifest.topology === FIELD_TOPOLOGY ? ATLAS_FIELD_PROMPT_CONTRACT : null,
     territories: manifest.territoriesContract || null,
     topology: manifest.topology,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
+  if (existing && fieldResumable && existing.manifest?.topology === FIELD_TOPOLOGY) {
+    // The stored design was accepted on the one-field fail-over. Its own reuse
+    // checks (manifest, prompt and example-set hashes) run on that contract.
+    return failOverToField(existing.metadata?.authoringFailover || null);
+  }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
       throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
@@ -2754,8 +2831,23 @@ async function generateOrReuseFlatAtlas(options) {
     logger(`reused immutable atlas revision ${existing.revisionSequence} ${existing.master.contentHash}`);
     return existing;
   }
-  if (!storedAuthoringContext) await writeAuthoringContext({ store, identity: checkpointIdentity, styleDescriptors: visionBoardStyleDna });
-  const acceptedCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: checkpointIdentity });
+  if (!storedAuthoringContext) await writeAuthoringContext({ store, identity: contextIdentity, styleDescriptors: visionBoardStyleDna });
+  let acceptedCheckpoint;
+  try {
+    acceptedCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: checkpointIdentity });
+  } catch (cause) {
+    // The checkpoint path is shared by both contracts. A record that does not
+    // belong to the six-surface identity may be the FIELD acceptance written by
+    // the fail-over before the revision row landed; prove that with the field
+    // identity before resuming on that contract, and otherwise refuse as before.
+    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch" || !fieldResumable) throw cause;
+    const fieldCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
+      identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest))) } })
+      .catch(() => null);
+    if (!fieldCheckpoint) throw cause;
+    logger(`atlas call 1: resuming the accepted one-field fail-over for ${requestId}`);
+    return failOverToField(fieldCheckpoint.state?.authoringFailover || null);
+  }
   const authoredCheckpoint = !acceptedCheckpoint && checkpointIdentity.finishingMode === "on"
     ? await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: { ...checkpointIdentity, checkpointKind: "authored" } })
     : null;
@@ -2770,7 +2862,13 @@ async function generateOrReuseFlatAtlas(options) {
   // A request lease can expire while an image call is in flight. Claim a
   // durable, append-only authoring fence before spending the single Atlas
   // master call so a replacement worker cannot create a second master.
-  const { data: authoringClaimed, error: authoringClaimError } = recoveredCheckpoint
+  // The fail-over pass rides the fence the six-surface pass already holds (or
+  // already found spent): the fence is per request and append-only, so a
+  // second claim would always answer false and turn a live fail-over into a
+  // cache-only read of a request that was never sent.
+  const { data: authoringClaimed, error: authoringClaimError } = authoringFenceState
+    ? { data: authoringFenceState === "held", error: null }
+    : recoveredCheckpoint
     ? { data: true, error: null } : await supabase.rpc(
     "claim_designpro_flat_atlas_authoring",
     { p_request_id: requestId, p_claim_token: claimToken },
@@ -2885,6 +2983,7 @@ async function generateOrReuseFlatAtlas(options) {
     return { generated: generatedReceipt, masterDelivery: deliveryReceipt, masterDeterministic,
       outputClassReceipt, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
       maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
+      authoringTopology, authoringFailover: failoverFrom || null,
       passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
   };
   if (!recoveredCheckpoint) {
@@ -2896,7 +2995,8 @@ async function generateOrReuseFlatAtlas(options) {
     const attemptBody = atlasEdgeRequestBody(authoringInput, manifest, edgeExtras);
     // This envelope is transport identity only. It never enters the creative
     // prompt, its stable promptHash, or the model's contents.
-    attemptBody.providerRequest = { requestId, generationId, claimToken, attemptKey: `master:${attempt}`,
+    attemptBody.providerRequest = { requestId, generationId, claimToken,
+      attemptKey: authoringTopology === "field" ? `master:field:${attempt}` : `master:${attempt}`,
       ...(providerRecoveryOnly ? { cacheOnly: true } : {}) };
     masterRequestByteSize = Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
     if (masterRequestByteSize > masterRequestMaxBytes) {
@@ -2988,12 +3088,28 @@ async function generateOrReuseFlatAtlas(options) {
       .map((item) => `${item.masterStoragePath} sha256=${item.masterSha256}`)
       .join(", ");
     if (attempt === maxAuthoringAttempts) {
-      throw new FlatAtlasError(
+      const refusal = new FlatAtlasError(
         refusalCode,
         (`The flattened A.T.L.A.S. design call failed acceptance ${attempt} times. `
           + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
           + refusalReason).slice(0, 1000),
       );
+      if (!failoverEnabled) throw refusal;
+      // ONE-FIELD FAIL-OVER. The six-surface budget is spent and refused; the
+      // refusal is carried onto the field revision as its provenance, and the
+      // fence state travels with it so a spent fence stays cache-only.
+      logger(`atlas call 1: six-surface budget refused (${refusalCode}); failing over to the one-field contract`);
+      return failOverToField({
+        contract: AUTHORING_FAILOVER_CONTRACT,
+        from: manifest.topology,
+        to: FIELD_TOPOLOGY,
+        code: refusalCode,
+        reason: refusalReason,
+        attempts: attempt,
+        rawCandidates: edgeProvenance
+          .filter((item) => item?.masterStoragePath && HASH_RE.test(String(item.masterSha256 || "")))
+          .map((item) => ({ storagePath: item.masterStoragePath, sha256: item.masterSha256 })),
+      }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
     }
     // No corrective-note text is carried into the next attempt (owner boundary
     // contract 2026-09-01): a re-roll is the identical primary request and
@@ -3533,6 +3649,10 @@ async function generateOrReuseFlatAtlas(options) {
         revisionHistoryMode: revisionContext.history.mode } : {}),
       topology: manifest.topology,
       legacyTopology: manifest.legacyTopology || TOPOLOGY,
+      // Which Call-1 contract authored this design, and if it was the one-field
+      // fail-over, the exact six-surface refusal that triggered it.
+      authoringTopology,
+      authoringFailover: failoverFrom || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.
@@ -3780,6 +3900,7 @@ module.exports = {
   atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
+    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT,
     activeZoneMaskSvg,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.

@@ -76,6 +76,10 @@ function outputClassPrompt(inspectionId) {
     "",
     "CLASS vehicle_depiction — the image shows a vehicle in any form: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle views, a presentation board, or a studio scene containing a vehicle. Wheels, tires, glass, mirrors, lights, body contours, shadows on a floor, or multiple camera views of a vehicle all place the image in this class.",
     "",
+    "ALSO vehicle_depiction, even when the sheet is otherwise flat: any rectangle whose artwork is shaped like a vehicle rather than filling the rectangle — a side-profile silhouette or outline, wheel-arch cut-outs or discs, bumper, grille, headlight, door or window shapes, or artwork that stops at a vehicle-shaped edge with a plain single-colour surround (grey, white, black or any colour) filling the rest of the rectangle. Printed panel names or captions inside the artwork (for example ROOF, REAR, DRIVER) also place the image in this class.",
+    "",
+    "flat_atlas requires EVERY rectangle to be filled corner to corner with continuous artwork and no vehicle-shaped boundary anywhere.",
+    "",
     `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction","confidence":0..1,"evidence":"one short sentence naming what you see"}`,
   ].join("\n");
 }

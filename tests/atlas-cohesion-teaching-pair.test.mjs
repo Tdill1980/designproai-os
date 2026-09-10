@@ -57,7 +57,7 @@ test("the teaching proof decodes as the exact 1254x1254 owner canvas", async () 
 test("Call 1 restores the pinned teaching proof and records its identity", () => {
   assert.match(runtime, /loadBundledAtlasTeachingProof/);
   assert.match(runtime, /teachingProofIdentity: teachingProof\.identity/);
-  assert.match(runtime, /atlasDesignTeachingExample: teachingProof\.identity/);
+  assert.match(runtime, /atlasDesignTeachingExample: manifest\.topology === FIELD_TOPOLOGY \? null : teachingProof\.identity/);
   assert.match(runtime, /atlasDesignTeachingExampleApplied: manifest\.topology !== FIELD_TOPOLOGY/);
   assert.match(runtime, /atlasDesignTeachingExampleIdentity: manifest\.topology === FIELD_TOPOLOGY \? null : teachingProof\.identity/);
   // The receipt records the contract that actually ran, not a constant.

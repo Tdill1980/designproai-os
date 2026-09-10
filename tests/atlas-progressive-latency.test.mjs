@@ -41,17 +41,24 @@ test("a SUCCESSFUL A.T.L.A.S. authoring spends exactly one creative call", () =>
   );
 });
 
-test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails closed", () => {
+test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails over once or fails closed", () => {
   // The last accepted six-surface production run needed candidate 2. Keep the
   // fallback bounded at the product call site, while the loop-level test above
   // proves an accepted candidate never incurs it.
   assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
   assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 2;/);
+  // Owner-directed 2026-09-10: exhausting the six-surface budget surfaces the
+  // real refusal — thrown when the fail-over is off, carried as provenance
+  // onto exactly ONE one-field attempt when it is on. Never a silent retry of
+  // the same request.
   assert.match(
     atlas,
-    /if \(attempt === maxAuthoringAttempts\) \{\s*throw new FlatAtlasError\(/,
+    /if \(attempt === maxAuthoringAttempts\) \{\s*const refusal = new FlatAtlasError\([\s\S]*?if \(!failoverEnabled\) throw refusal;[\s\S]*?return failOverToField\(\{/,
     "exhausting the budget must surface the real refusal, never a silent retry",
   );
+  assert.match(atlas, /const FIELD_FAILOVER_ATTEMPTS = 1;/);
+  assert.match(atlas, /maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS/);
+  assert.match(atlas, /attemptKey: authoringTopology === "field" \? `master:field:\$\{attempt\}` : `master:\$\{attempt\}`/);
 });
 
 test("the default and a stale enlarged configuration can never buy a third Call-1 image", t => {

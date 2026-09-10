@@ -78,6 +78,15 @@ test("the inspector question is a binary class check at temperature 0, never cre
   assert.match(prompt, /flat_atlas/);
   assert.match(prompt, /vehicle_depiction/);
   assert.doesNotMatch(prompt, /design|improve|redraw|create artwork/i);
+  // 2026-09-10, New Aura (DID-664D054D): a master whose flanks were an Urus
+  // side profile on a plain grey surround, with ROOF / REAR painted as
+  // captions, was classed flat_atlas and printed as anatomy. The question now
+  // names that shape: vehicle-shaped artwork inside a rectangle, any-colour
+  // plain surround, and printed panel captions are all vehicle_depiction.
+  assert.match(prompt, /side-profile silhouette or outline/);
+  assert.match(prompt, /plain single-colour surround \(grey, white, black or any colour\)/);
+  assert.match(prompt, /Printed panel names or captions inside the artwork \(for example ROOF, REAR, DRIVER\)/);
+  assert.match(prompt, /flat_atlas requires EVERY rectangle to be filled corner to corner/);
   const source = readFileSync(new URL("../runtime/atlas-output-class.cjs", import.meta.url), "utf8");
   assert.match(source, /temperature: 0/);
   assert.doesNotMatch(source, /image/.source && /gemini-[a-z0-9.]*image/i);

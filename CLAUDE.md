@@ -1,5 +1,45 @@
 # CLAUDE.md — designproai-os
 
+## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
+
+Measured, 2026-09-04 → 09-09: 20 generation requests, 8 delivered, 12 failed.
+Seven of the twelve were Call 1 drawing the vehicle into the sheet (wheel
+arches, side-profile silhouettes, `vehicle_depiction`), refused twice by the
+gates, then `failed` with nothing for the customer. The successes cluster on the
+2022 F250 Crew Cab, which is the vehicle in the Flamingo teaching proof; the
+failures cluster on Transit vans, a Model X and F250 box variants. Owner:
+*"every time I try a design it fails"*, *"it should never take 7 minutes"*.
+
+**The six-surface contract stays the product and keeps its 2026-09-06 budget
+unchanged** (one candidate, one unchanged fallback, no corrective text). What
+changed is the exhaustion path in `generateOrReuseFlatAtlas`: instead of
+throwing, it fails over ONCE to the v24 one-field contract (RULE 0.33, Field
+Recovery v2 — the only configuration that has measured clean, anatomy-free
+flanks), with `attemptKey: master:field:1`, the field request body
+(`fieldContract`, `noseEdge`, no teaching sheet, no guide), the field
+territories cut in code, and the same gates. The revision records
+`metadata.authoringTopology` (`six-surface` | `field`) and
+`metadata.authoringFailover` (the exact six-surface refusal code, reason,
+attempt count and raw candidate paths). Resume paths recognise a field
+acceptance through the stored revision's `manifest.topology` and, when the row
+never landed, through the shared checkpoint read with the field manifest hash.
+The fail-over rides the authoring fence the six-surface pass holds (or found
+spent), so it can never turn a spent fence into a live request.
+`DESIGNPRO_ATLAS_FIELD_FAILOVER=off` restores fail-closed; nothing else does.
+Locked by `tests/atlas-authoring-recovery.test.mjs`.
+
+**The output-class question now names the failure it missed.** New Aura
+(`DID-664D054D`, 2026-09-10 00:26Z) was accepted with both flanks drawn as an
+Urus side profile on a plain grey surround and ROOF / REAR painted as captions:
+the hole gate only convicts near-black fields and the classifier answered
+`flat_atlas`. `outputClassPrompt` now states that vehicle-shaped artwork inside
+a rectangle, an any-colour plain surround, and printed panel captions are
+`vehicle_depiction`, and that `flat_atlas` requires every rectangle filled
+corner to corner. Post-generation only; no authoring conditioning changed.
+Locked by `tests/atlas-output-class-gate.test.mjs`. A deterministic
+colour-agnostic field detector was deliberately NOT added: flat-colour
+commercial wraps are legitimate, and the discriminator would convict them.
+
 ## Finishing is optional; it may never kill a generation (2026-09-09, measured)
 
 New Aura Day Spa, `DID-664D054D`: Call 1 was recovered, Driver/Passenger/Hood

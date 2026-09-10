@@ -80,7 +80,7 @@ test("ATLAS creative contract carries named design context and pure rectangular 
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
   const request = block(runtime, "function atlasEdgeRequestBody", "async function callAtlasArtboardEdge");
-  const panelBlock = block(request, "panels: manifest.zones.map", "// v23 SIX-CONTAINER REQUEST");
+  const panelBlock = block(request, "panels: manifest.zones.map", "...(manifest?.topology === FIELD_TOPOLOGY");
   assert.match(panelBlock, /label:/);
   assert.match(panelBlock, /surfaceId:/);
   assert.match(panelBlock, /placement:/);
@@ -88,8 +88,14 @@ test("ATLAS request exposes exact identity, placement and normalized topology bu
   assert.doesNotMatch(panelBlock, /widthInches:|heightInches:|topology:/);
   assert.match(request, /vehicleType:/);
   // Owner ruling 2026-09-07: the branch is a property of the manifest, so BOTH
-  // requests are built here and both stay covered.
-  assert.doesNotMatch(request, /fieldContract:|noseEdge:/);
+  // requests are built here and both stay covered. Since 2026-09-10 the field
+  // request is the fail-over's; its two keys live only in that branch, and the
+  // six-surface request never carries them.
+  const fieldBranch = block(request, "manifest?.topology === FIELD_TOPOLOGY ? {", "} : {");
+  assert.match(fieldBranch, /fieldContract: ATLAS_FIELD_PROMPT_CONTRACT/);
+  assert.match(fieldBranch, /noseEdge:/);
+  assert.doesNotMatch(fieldBranch, /teachingProof|guideStoragePath/);
+  assert.doesNotMatch(request.replace(fieldBranch, ""), /fieldContract:|noseEdge:/);
   assert.match(request, /teachingProofStoragePath: extras.teachingProofStoragePath/);
   assert.match(request, /guideStoragePath: extras.guideStoragePath/);
   assert.doesNotMatch(request, /cohesionExample|correctiveNote/);
