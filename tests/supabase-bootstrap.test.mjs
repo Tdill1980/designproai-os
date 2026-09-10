@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered ninety-seven-migration chain', () => {
-  assert.equal(migrationNames.length, 97);
+test('fresh bootstrap contains one ordered ninety-eight-migration chain', () => {
+  assert.equal(migrationNames.length, 98);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -90,6 +90,7 @@ test('fresh bootstrap contains one ordered ninety-seven-migration chain', () => 
       '20260908195123',
       '20260908201216',
       '20260909062205',
+      '20260910070849',
     ],
   );
 });
@@ -131,7 +132,9 @@ test('wrap-files is private, immutable for users, and owner-readable', () => {
   assert.match(sql, /CREATE POLICY designpro_owner_read_flat_atlas_previews/);
   assert.match(sql, /CREATE POLICY designpro_owner_insert_revision_inputs/);
   assert.match(sql, /REVOKE UPDATE, DELETE ON storage\.objects FROM authenticated/);
-  assert.doesNotMatch(sql, /FOR (?:UPDATE|DELETE)\s+TO authenticated/i);
+  // A saved WallPro project is editable; Storage objects remain immutable.
+  const storagePolicies = sql.split(';').filter(statement => /CREATE POLICY[\s\S]*?ON storage\.objects\b/i.test(statement)).join(';');
+  assert.doesNotMatch(storagePolicies, /FOR (?:UPDATE|DELETE)\s+TO authenticated/i);
 });
 
 test('revision snapshot requires the active Close-Up seven or an explicit historical hero set, not URLs', async () => {
