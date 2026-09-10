@@ -85,15 +85,18 @@ function closestRatio(w, h) {
  * roll before installation) and never names a body part to avoid.
  */
 function extendPrompt({ vehicle, label }) {
-  // v2 (run 34514050247): the inch figures were painted as dimension labels and
-  // "print panel ... rectangle" was read as a poster on a white mount. No
-  // numbers reach the model (the aspect is set in imageConfig), and the image
-  // itself is declared to BE the panel.
+  // v3. v1 (run 34514050247) produced the only rectangle with no contour, and
+  // it also painted the inch figures as labels and set the panel on a white
+  // mount. v2 (runs 34514591670 / 34514597489) dropped v1's "gap or outline ->
+  // artwork continues straight through" sentence and asked for "the HOOD";
+  // every one of its four returns drew the body piece again. v3 is v1's
+  // sentence structure with no numbers and with the image declared to be the
+  // panel, so there is nothing to mount it on.
   return [
     `The provided image is this wrap design pressed flat onto the ${vehicle}: the design layout.`,
-    `Output the ${label} of that same wrap as it looks on the vinyl roll before installation: the whole output image IS the ${label.toLowerCase()} print, filled with artwork from edge to edge on all four sides, seen straight on and flat.`,
-    `Carry over exactly the artwork that covers the ${label.toLowerCase()} in the design layout, at the same placement, colours, lettering and wear, and continue the stripes, textures and colours without interruption through every part of the image and off its edges, so the print is solid artwork corner to corner. The artwork is the only thing in the image.`,
-    "Keep everything about the design exactly as in the provided image; change nothing else.",
+    `From it, produce the ${label} print panel: the whole output image is one flat sheet of printed vinyl, filled edge to edge with exactly the artwork that covers the ${label.toLowerCase()} in the design layout, at the same placement, colours, lettering and wear.`,
+    "The sheet is the artwork alone, the way the vinyl looks on the roll before installation: the stripes, textures, lettering and colours continue without interruption across the whole sheet and run off all four edges. Wherever the pressed design shows a gap, a contour or an outline, the surrounding artwork continues straight through it, so the sheet is solid printed artwork corner to corner with no outline, no gap, no border and no background.",
+    "Keep everything about the design exactly as in the provided image; change nothing else. Straight-on, flat, full bleed.",
   ].join("\n");
 }
 
