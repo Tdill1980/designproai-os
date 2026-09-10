@@ -20,9 +20,10 @@ export async function validateWallUpload(file: File): Promise<{ url: string; asp
 
 // Bounded client-side visual proof. Original artwork remains separate and unmodified.
 // The inverse perspective map and physical repeat are identical for preview/export.
-export async function renderWallPreview(photoUrl: string, artworkUrl: string, corners: Point[], exclusions: Point[][], layout: WallLayout): Promise<HTMLCanvasElement> {
+export async function renderWallPreview(photoUrl: string, artworkUrl: string, corners: Point[], exclusions: Point[][], layout: WallLayout, cancelled: () => boolean = () => false): Promise<HTMLCanvasElement> {
   if (!validWallCorners(corners)) throw new Error('Mark the four wall corners clockwise, starting at the top left.');
   const [photo, art] = await Promise.all([loadWallImage(photoUrl), loadWallImage(artworkUrl)]);
+  if (cancelled()) throw new Error('Preview superseded.');
   const m = layoutMetrics(layout, art.naturalWidth / art.naturalHeight);
   const scale = Math.min(1, 1600 / Math.max(photo.naturalWidth, photo.naturalHeight));
   const canvas = document.createElement('canvas');
@@ -44,6 +45,7 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
   for (let y = minY; y < maxY; y++) {
     // Yield during large previews so controls remain responsive.
     if (y % 100 === 0) await new Promise<void>(r => requestAnimationFrame(() => r()));
+    if (cancelled()) throw new Error('Preview superseded.');
     for (let x = minX; x < maxX; x++) {
       const p = { x: (x + 0.5) / canvas.width, y: (y + 0.5) / canvas.height };
       const uv = projectPoint(h, p);

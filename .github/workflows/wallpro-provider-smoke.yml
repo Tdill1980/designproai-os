@@ -1,0 +1,36 @@
+name: Verify one WallPro 4K provider generation
+on:
+  push:
+    branches: [codex/wallpro-print-output]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wallpro-provider-smoke
+  cancel-in-progress: false
+jobs:
+  verify-provider:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[wallpro-ai-smoke]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: designproai-production
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Generate one synthetic wallpaper using the production image contract
+        env:
+          GOOGLE_AI_API_KEY: ${{ secrets.DESIGNPRO_GOOGLE_AI_API_KEY }}
+          NODE_OPTIONS: --max-old-space-size=192
+        run: node --experimental-strip-types scripts/wallpro-provider-smoke.mjs
+      - name: Retain image and sanitized validation receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: wallpro-provider-${{ github.sha }}
+          path: wallpro-provider-receipt/
+          retention-days: 7
