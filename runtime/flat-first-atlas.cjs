@@ -3183,6 +3183,10 @@ async function generateOrReuseFlatAtlas(options) {
         imageRequestCount: Number(finish.imageRequestCount || 0), providerCacheHits: Number(finish.providerCacheHits || 0),
         contentHash: finish.contentHash, thoughtSignatureCount: Number(finish.thoughtSignatureCount || 0),
         checkpointReused: finish.checkpointReused === true,
+        // A surface whose provider exchange could not be resolved keeps its
+        // deterministic crop and says so here, so the receipt never reads as
+        // "six finished sheets" when one of them is the cut.
+        providerOutcome: finish.providerOutcome || null,
       })),
     };
   }

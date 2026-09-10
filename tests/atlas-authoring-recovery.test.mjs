@@ -45,7 +45,7 @@ function harness(source) {
   const bytes = new Map();
   const publicMasters = [], publicPanels = [], masterCalls = [], finishCalls = [];
   let inserted = null, pendingRow = null, fenceCalls = 0;
-  let insertFailure = false, finishFailure = null, forceCacheOnly = false, corruptReads = null, whiteFinish = false;
+  let insertFailure = false, finishFailure = null, finishFailureCode = "provider_outcome_unknown", forceCacheOnly = false, corruptReads = null, whiteFinish = false;
   let checkpointRace = null;
   const query = {select(){return this;},eq(){return this;},order(){return this;},limit(){return this;},
     async maybeSingle(){return {data:inserted,error:null};},
@@ -79,7 +79,7 @@ function harness(source) {
     callEdge:async body=>{masterCalls.push(body);return {bytes:source,provenance:{imageRequestCount:1,masterSha256:sha256(source)}};},
     callPanelEdge:async body=>{
       finishCalls.push(body);
-      if (finishFailure === body.surfaceKey) throw Object.assign(new Error("provider_outcome_unknown"),{code:"provider_outcome_unknown",retryable:true});
+      if (finishFailure === body.surfaceKey) throw Object.assign(new Error(finishFailureCode),{code:finishFailureCode,retryable:true});
       const subject = bytes.get(body.sourcePanelStoragePath);
       const meta = await sharp(subject).metadata();
       const output = whiteFinish ? await sharp({create:{width:meta.width,height:meta.height,channels:3,background:"#ffffff"}}).png().toBuffer()
@@ -107,7 +107,7 @@ function harness(source) {
   });
   return {run,bytes,publicMasters,publicPanels,masterCalls,finishCalls,
     get inserted(){return inserted;},get fenceCalls(){return fenceCalls;},
-    set insertFailure(value){insertFailure=value;},set finishFailure(value){finishFailure=value;},
+    set insertFailure(value){insertFailure=value;},set finishFailure(value){finishFailure=value;},set finishFailureCode(value){finishFailureCode=value;},
     set forceCacheOnly(value){forceCacheOnly=value;},set corruptReads(value){corruptReads=value;},
     set whiteFinish(value){whiteFinish=value;},set checkpointRace(value){checkpointRace=value;}};
 }
@@ -274,10 +274,55 @@ test("checkpoint input conflicts never receive publication-race retry permission
   assert.equal(run.masterCalls.length,1);
 });
 
-test("optional finishing checkpoints restore exact signed exchanges and publish only the assembled master",async t=>{
+test("an unresolved finishing exchange retains that surface's crop and the run still publishes",async t=>{
+  // Measured 2026-09-09 (New Aura, roof): one `provider_outcome_unknown` on an
+  // OPTIONAL edit used to reject here and fail the whole generation as
+  // terminal, with the accepted master already in hand. The surface keeps its
+  // deterministic crop, no second image request is made for it, and the
+  // cascade continues to the assembled master.
   finishFlag(t,"on");const {source,manifest}=await fixture();const run=harness(source);
   run.finishFailure="hood";
-  await assert.rejects(run.run(),error=>error.code==="provider_outcome_unknown");
+  const result=await run.run();
+  assert.deepEqual(run.finishCalls.map(body=>body.surfaceKey),["driver","passenger","hood","roof","front","rear"],
+    "the unresolved surface is asked exactly once; the second candidate is never spent against it");
+  const hood=result.metadata.masterFinishing.surfaces.find(item=>item.surfaceKey==="hood");
+  assert.equal(hood.applied,false);
+  assert.equal(hood.reason,"provider_outcome_unknown");
+  assert.equal(hood.providerOutcome,"unknown");
+  assert.equal(hood.attempts,1);
+  for(const item of result.metadata.masterFinishing.surfaces)if(item.surfaceKey!=="hood")assert.equal(item.applied,true,item.surfaceKey);
+  assert.equal(result.metadata.masterFinishing.imageRequestCount,5);
+  // The chain does not advance on a retained surface: roof is handed driver
+  // and passenger, never an invented hood exchange.
+  const roofSignatures=run.finishCalls[3].priorTurns.flatMap(turn=>turn.parts).map(part=>part.thoughtSignature).filter(Boolean);
+  assert.deepEqual(roofSignatures,["opaque-driver","opaque-passenger"]);
+  assert.equal(run.publicMasters.length,1);
+  assert.equal(result.master.contentHash,run.publicMasters[0].hash);
+  assert.notEqual(result.master.contentHash,sha256(source),"five finished sheets still change the assembled master");
+  const expected=await atlas.cutCallOnePanels(result.master.bytes,manifest,result.master.contentHash);
+  for(const panel of expected){
+    const saved=result.callOnePanels.find(item=>item.surfaceKey===panel.surfaceKey);
+    assert.equal(saved.contentHash,panel.contentHash,`${panel.surfaceKey} must be an exact crop of the displayed assembled master`);
+    assert.equal(saved.sourceMasterHash,result.master.contentHash);
+  }
+  assert.equal(run.publicPanels.length,6);
+  // The retained outcome is checkpointed too: a restart reuses the accepted
+  // revision and never re-asks the provider for the hood.
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);
+  assert.equal(reused.master.contentHash,result.master.contentHash);
+  assert.equal(run.masterCalls.length,1);
+  assert.equal(run.finishCalls.length,6,"a completed revision never reruns its finishing requests");
+});
+
+test("optional finishing checkpoints restore exact signed exchanges and publish only the assembled master",async t=>{
+  // A retryable STORAGE failure on the finishing hop is still a resume, not a
+  // retained crop: the panel bytes could not be read, so nothing is known
+  // about the sheet either way. The restart must replay the exact signed
+  // conversation it had reached.
+  finishFlag(t,"on");const {source,manifest}=await fixture();const run=harness(source);
+  run.finishFailure="hood";run.finishFailureCode="flat_atlas_artifact_download_failed";
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_artifact_download_failed");
   assert.deepEqual(run.finishCalls.map(body=>body.surfaceKey),["driver","passenger","hood"]);
   assert.equal(run.publicMasters.length,0,"private staged edits cannot publish the old master");
   assert.equal(run.publicPanels.length,0);
@@ -370,27 +415,62 @@ test("an interrupted finishing response never becomes a second image request",as
     oldKey===undefined?delete process.env.SUPABASE_SERVICE_ROLE_KEY:process.env.SUPABASE_SERVICE_ROLE_KEY=oldKey;});
   const {source,manifest}=await fixture();
   const [panel]=await atlas.cutCallOnePanels(source,manifest,sha256(source));
-  for(const interrupted of ["request","response"]){
-    const methods=[];
-    const requests=[];
-    await assert.rejects(finishPanel(panel,{
+  const capability={ok:true,status:200,json:async()=>({providerCacheContract:"designpro.gemini-provider-cache.v1",modes:["atlas-panel"],cacheOnly:true})};
+  // The production shape of 2026-09-09 22:31:19Z: the edge itself answered
+  // HTTP 409 provider_outcome_unknown after its claim was written.
+  const edge409={ok:false,status:409,json:async()=>({success:false,error:"provider_outcome_unknown",providerOutcome:"unknown",
+    providerRetryDisposition:"operator_required",retryable:false,providerFailureRecorded:true,
+    providerDiagnostic:{contractVersion:"designpro.gemini-http-diagnostic.v1",phase:"request",exceptionClass:"TypeError",httpStatus:null,elapsedMs:31000}})};
+  for(const interrupted of ["request","response","edge-409"]){
+    const posts=[];
+    const finish=await finishPanel(panel,{
       store:{async putImmutableBytes(){}},
       callEdge:body=>atlas._test.callAtlasPanelEdge({...body,providerRequest:{...identities,attemptKey:"panel:driver:1"}},{
         ownerId:identities.ownerId,wait:async()=>{},fetchImpl:async(_url,options)=>{
-          methods.push(options.method);
-          if(options.method==="GET")return {ok:true,json:async()=>({providerCacheContract:"designpro.gemini-provider-cache.v1",modes:["atlas-panel"],cacheOnly:true})};
-          requests.push(JSON.parse(options.body));
+          if(options.method==="GET")return capability;
+          posts.push(JSON.parse(options.body).providerRequest);
+          if(interrupted==="edge-409")return edge409;
           if(interrupted==="request")throw new TypeError("fetch failed after request transmission");
           return {ok:true,status:200,json:async()=>{throw new SyntaxError("interrupted response JSON");}};
         },
       }),
-    }),error=>error.code==="provider_outcome_unknown"&&error.retryable===false);
-    assert.deepEqual(methods,["GET","POST","POST","POST","POST"],`${interrupted} interruption must recover the same cached attempt`);
-    assert.equal(requests.filter(request=>request.providerRequest.cacheOnly!==true).length,1);
-    for(const recovery of requests.slice(1))assert.deepEqual(recovery,{...requests[0],providerRequest:{...requests[0].providerRequest,cacheOnly:true}});
+    });
+    assert.equal(finish.applied,false,`${interrupted}: the crop is retained`);
+    assert.equal(finish.reason,"provider_outcome_unknown");
+    assert.equal(finish.providerOutcome,"unknown");
+    assert.equal(finish.attempts,1,`${interrupted}: the second candidate is never spent`);
+    assert.equal(finish.bytes,panel.bytes);
+    // A recorded edge failure is final and is not re-read; an interrupted
+    // exchange gets the shared transport's three bounded cache-only reads.
+    assert.equal(posts.length,interrupted==="edge-409"?1:4,`${interrupted}: one send${interrupted==="edge-409"?"":" plus three bounded cache-only reads"}`);
+    assert.equal(posts[0].cacheOnly,undefined,"the first POST is the real send");
+    for(const read of posts.slice(1))assert.deepEqual(read,{...posts[0],cacheOnly:true},`${interrupted}: every recovery read must be the same request, cache-only`);
+    if(interrupted==="edge-409")assert.equal(finish.providerFailureRecorded,true);
   }
 });
 
+test("a cache-only read that finds the banked finishing response completes the same attempt",async t=>{
+  const oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_URL="https://example.invalid";process.env.SUPABASE_SERVICE_ROLE_KEY="fixture-not-secret-".repeat(4);
+  t.after(()=>{oldUrl===undefined?delete process.env.SUPABASE_URL:process.env.SUPABASE_URL=oldUrl;
+    oldKey===undefined?delete process.env.SUPABASE_SERVICE_ROLE_KEY:process.env.SUPABASE_SERVICE_ROLE_KEY=oldKey;});
+  const {PANEL_AUTHORING_PROMPT_VERSION}=require("../runtime/atlas-panel-authoring.cjs");
+  const banked={success:true,requestId:"77777777-7777-4777-8777-777777777777",promptVersion:PANEL_AUTHORING_PROMPT_VERSION,surfaceKey:"driver",
+    imageRequestCount:1,providerCacheContract:"designpro.gemini-provider-cache.v1",providerCacheHit:true,providerRequestKey:"c".repeat(64),
+    panelStoragePath:"atlas-panel/77777777-7777-4777-8777-777777777777.jpg",panelSha256:"d".repeat(64),panelBytes:10};
+  const posts=[];
+  const payload=await atlas._test.callAtlasPanelEdge({mode:"atlas-panel",surfaceKey:"driver",providerRequest:{...identities,attemptKey:"panel:driver:1"}},{
+    ownerId:identities.ownerId,wait:async()=>{},fetchImpl:async(_url,options)=>{
+      if(options.method==="GET")return {ok:true,status:200,json:async()=>({providerCacheContract:"designpro.gemini-provider-cache.v1",modes:["atlas-panel"],cacheOnly:true})};
+      posts.push(JSON.parse(options.body).providerRequest);
+      if(posts.length===1)throw new TypeError("connection reset while the edge kept working");
+      return {ok:true,status:200,json:async()=>banked};
+    },
+  });
+  assert.equal(payload.providerCacheHit,true);
+  assert.equal(payload.panelSha256,"d".repeat(64));
+  assert.deepEqual(posts.map(read=>read.cacheOnly),[undefined,true],"the lost response is recovered by exactly one cache-only read");
+});
 test("recoverable artifact reads and explicit provider rejections retain the original finishing attempt",async()=>{
   const {source,manifest}=await fixture();
   const [panel]=await atlas.cutCallOnePanels(source,manifest,sha256(source));

@@ -2895,14 +2895,15 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
       if (actual !== match[1] || (expectedHash && actual !== String(expectedHash))) {
         throw new Error(`atlas_panel_input_hash_mismatch:${key}`);
       }
-      let binary = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
       userImageRefs.set(parts.length, { storagePath: key, contentHash: actual });
       historyImageBytes += bytes.length;
-      parts.push({ inlineData: { mimeType, data: btoa(binary) } });
+      // MEMORY (546 guard): single-pass base64, the same encoder the
+      // VisionBoard and originalRender paths use. The previous
+      // `String.fromCharCode` + string-concatenation + `btoa` loop held the
+      // bytes, a UTF-16 binary string twice their size and the base64 output
+      // all at once, per attachment, on a request that carries a full-size
+      // sheet plus up to six references and up to three replayed exchanges.
+      parts.push({ inlineData: { mimeType, data: encodeBase64(bytes.buffer) } });
       return actual;
     };
     /**
@@ -2932,12 +2933,8 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
       if (await sha256Hex(bytes) !== hash) {
         throw new Error(`atlas_panel_history_hash_mismatch:${key}`);
       }
-      let binary = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
-      return btoa(binary);
+      // MEMORY (546 guard): single-pass base64 — see `attach` above.
+      return encodeBase64(bytes.buffer);
     };
 
     const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];

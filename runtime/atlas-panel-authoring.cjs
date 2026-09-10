@@ -17,8 +17,12 @@
  * Exact user/model exchanges preserve opaque thought signatures on their
  * original parts. The runtime stores those exchanges privately so a worker
  * restart can resume the same completed edits. Known failed or refused edits
- * retain the original crop. An unknown provider outcome or failed durable
- * recovery stops for recovery; it never authorizes a replacement image call.
+ * retain the original crop. An unknown provider outcome first recovers the
+ * SAME request through bounded cache-only reads (`invokeAtlasAuthoring`); if
+ * nothing was banked, that surface also retains the original crop and the
+ * cascade continues. Nothing here ever authorizes a replacement image call
+ * against an unresolved one, and nothing here fails the generation over an
+ * optional edit (see `finishingFailureDisposition`).
  */
 
 const sharp = require("sharp");
@@ -113,7 +117,8 @@ const SURFACE_LABELS = Object.freeze({
   rear: "REAR",
 });
 
-/** At most two attempts per surface; unknown provider outcomes never advance. */
+/** At most two attempts per surface; an unresolved or refused provider
+ * outcome ends the surface on its crop and never spends the second. */
 const PANEL_FINISH_ATTEMPTS = 2;
 
 /**
@@ -230,7 +235,7 @@ async function finishPanel(panel, {
   let attempts = 0;
   let imageRequestCount = 0;
   let providerCacheHits = 0;
-  const unchanged = (reason) => Object.freeze({
+  const unchanged = (reason, extra = {}) => Object.freeze({
     contract: PANEL_AUTHORING_CONTRACT,
     surfaceKey: panel.surfaceKey,
     applied: false,
@@ -240,6 +245,7 @@ async function finishPanel(panel, {
     reason,
     bytes: panel.bytes,
     contentHash: panel.contentHash,
+    ...extra,
   });
 
   if (typeof callEdge !== "function" || !store?.putImmutableBytes) {
@@ -328,12 +334,21 @@ async function finishPanel(panel, {
       imageRequestCount += Number(candidate?.imageRequestCount || 0);
       if (candidate?.providerCacheHit === true) providerCacheHits += 1;
     } catch (cause) {
-      // An unknown provider outcome is a recovery wait, not permission to
-      // spend a second image request or replace a potentially completed edit.
-      if (String(cause?.code || "").startsWith("provider_")
-        || String(cause?.code || "").startsWith("flat_atlas_")
-        || cause?.providerRetryDisposition === "operator_required") throw cause;
-      lastReason = `edge_failed:${String(cause?.message || cause).slice(0, 140)}`;
+      const disposition = finishingFailureDisposition(cause);
+      if (disposition.action === "throw") throw cause;
+      if (disposition.action === "retain") {
+        // The crop is correct by cut. A provider outcome that is unknown or
+        // refused is never permission to spend a second image request against
+        // it, and never a reason to lose the design (RULE 0.15: a defect that
+        // only exists in an optional edit must not destroy the run).
+        logger(`atlas-panel ${panel.surfaceKey}: ${disposition.reason} on attempt ${attempt}; `
+          + "the deterministic crop is retained and no further image request is made");
+        return unchanged(disposition.reason, {
+          providerOutcome: String(cause?.providerOutcome || "unknown"),
+          providerFailureRecorded: cause?.providerFailureRecorded === true,
+        });
+      }
+      lastReason = disposition.reason;
       if (attempt === 1 && sendChain.length > 0) {
         logger(`atlas-panel ${panel.surfaceKey}: retrying without the reasoning chain (${lastReason})`);
       }
@@ -382,6 +397,40 @@ async function finishPanel(panel, {
     logger(`atlas-panel ${panel.surfaceKey}: attempt ${attempt} refused (${verdict.reason})`);
   }
   return unchanged(lastReason);
+}
+
+/**
+ * What ONE failed finishing exchange means for its surface.
+ *
+ * Measured 2026-09-09 (New Aura, roof): a single `provider_outcome_unknown` on
+ * an OPTIONAL edit was rethrown here and failed the whole generation as
+ * terminal, with the accepted master already in hand and three finished sheets
+ * checkpointed. The finishing pass exists to improve a panel that is already
+ * valid; it must never be the reason a customer has no design at all.
+ *
+ * | failure                                              | action | why |
+ * |---|---|---|
+ * | `provider_outcome_unknown` (after `invokeAtlasAuthoring`'s bounded cache-only recovery) | RETAIN the crop, stop | the image may have been produced and paid for; a second attempt is a second image request against it |
+ * | any other `provider_*` (429, 4xx/5xx, cache conflict)           | RETAIN the crop, stop | the provider answered and refused; retrying spends without new evidence |
+ * | `flat_atlas_panel_edge_call_failed` with `providerOutcome: not_sent` | RETRY within the budget | the edge refused before any image was requested (input download, request size); attempt 2 is the designed smaller request without the chain |
+ * | any other `flat_atlas_*`, or `operator_required` without a code    | THROW | contract, identity, deployment or storage failures are not this surface's to absorb; the worker resumes or an operator looks |
+ * | anything else                                                       | RETRY within the budget | unchanged behaviour |
+ *
+ * "Retain" is exactly what a measured candidate refusal already does; the
+ * result carries the provider outcome so `masterFinishing.surfaces` and the
+ * private checkpoint both say the sheet is the cut, not a finished edit.
+ */
+function finishingFailureDisposition(cause) {
+  const code = String(cause?.code || "");
+  if (code === "provider_outcome_unknown") return { action: "retain", reason: "provider_outcome_unknown" };
+  if (code.startsWith("provider_")) return { action: "retain", reason: `provider_refused:${code}` };
+  if (code === "flat_atlas_panel_edge_call_failed" && cause?.providerOutcome === "not_sent") {
+    return { action: "retry", reason: `edge_refused_before_send:${String(cause?.message || cause).slice(0, 140)}` };
+  }
+  if (code.startsWith("flat_atlas_") || cause?.providerRetryDisposition === "operator_required") {
+    return { action: "throw" };
+  }
+  return { action: "retry", reason: `edge_failed:${String(cause?.message || cause).slice(0, 140)}` };
 }
 
 /**
@@ -457,5 +506,6 @@ module.exports = {
   HISTORY_IMAGE_BUDGET_BYTES,
   SURFACE_LABELS,
   finishPanel,
+  finishingFailureDisposition,
   _test: { holeRatio, evaluateCandidate, trimHistory },
 };
