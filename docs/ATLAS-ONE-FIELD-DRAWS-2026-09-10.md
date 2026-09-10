@@ -88,3 +88,47 @@ subject, the name legible.
 - `deterministicMasterChecks` is imported from `atlas-master-qc.cjs`, and the
   harness manifest carries `geometryResolution`, so `cutCallOnePanels` no
   longer fails closed on it.
+
+## Correction: the four draws above used an invented brief
+
+Owner, on seeing them: *"Where's the atlas design? This is clearly ai slop!
+Missing key elements … my edge functions designer persona is not being used."*
+
+She was right about the brief. The harness dispatch carried a brief I typed
+("blush-rose ribbons and gold botanical line art"), not the stored New Aura
+request, whose brief is: *"Custom wrap for New Aura Day Spa use spa colors
+blues, sage, white, create a logo and a custom photo of a women getting a
+professional facial in a spa setting must look modern and professional"*,
+with `companyName: New Aura Day Spa`, `finish: Gloss`, no industry, no colors.
+The four ribbon draws render what was asked and say nothing about her brief.
+
+The persona claim was checked, not argued: the exact field prompt for her
+brief was assembled from the transpiled control build (4,496 chars). It
+carries the senior wrap-designer identity, THE CONCEPT + translation clause,
+`Business: New Aura Day Spa` with the logo requirement, the contact lock, the
+photographic-realism judgment and the PHOTOGRAPHIC IMAGERY clause. Only the
+tail differs from the 3D commercial prompt: studio/camera text out, the
+one-field output text in. The one-field tail also says every focal subject
+"sits wholly inside a single area and well clear of its four edges", which
+works directly against a photo the owner wants across most of the vehicle.
+
+## Run 2 — her stored brief, field for field (run `34430841234`)
+
+Harness now takes `company_name`, and empty `industry`/`colors` omit the
+field. Lease row `042da9a3…` (cancelled after). Arm B (six-surface) was
+refused by the edge before any call — `atlas_artboard_teaching_proof_incomplete`,
+the harness's B body predates the labeled teaching proof — so only F drew.
+
+| draw | gates | output class | centre min-MAD | near-white | what it drew |
+|---|---|---|---|---|---|
+| F1 | pass | flat_atlas | 0.205 | 1.9% | logo, name, facial photo in a swoosh window, blues/sage/white with orange accents — but drawn as a **poster with a dark-blue margin and a bevel**, so the margin lands inside the driver territory |
+| F2 | pass | flat_atlas | 0.192 | 2.1% | same elements, framed on a grey mount — a mockup, not a print field |
+| F3 | pass | flat_atlas | 0.162 | 12.7% | **closest to the brief**: continuous field, photo across ~60% of the sheet, logo and name — with **axis tick labels (0, 0.1 … 0.4) drawn down the left and along the bottom**, inside the driver panel |
+| F4 | pass | flat_atlas | 0.234 | 14.1% | six framed panels with the coordinate rows painted as captions; every panel on-brief (logo, photo, stones, water) |
+
+So with her real brief the persona and the brief's elements are present in
+4/4 (logo, name spelled right, the facial photo, the palette; orange is the
+model's addition). The defects are all the tail's: coordinate rows painted
+as numerals (F3, F4), and the "square is one picture" framing read as a
+poster or mockup with margins (F1, F2). No draw is production-usable as-is,
+and none of the four gates or the classifier refuses any of them.

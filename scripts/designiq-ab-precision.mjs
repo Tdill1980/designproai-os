@@ -326,7 +326,14 @@ async function main() {
     ? Buffer.from(structuralImage.inlineData.data, "base64")
     : null;
   const structuralMime = structuralImage?.inlineData?.mimeType || "image/jpeg";
+  // The deployed six-container branch requires the hash-pinned labeled
+  // teaching proof (atlas_artboard_teaching_proof_incomplete without it, run
+  // 34430841234); stage the same bundled bytes and identity the worker stages.
+  const teachingProof = examples.loadBundledAtlasTeachingProof();
+  const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
   const bEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, manifest, {
+    teachingProofStoragePath: await stage(teachingBytes, "image/png"),
+    teachingProofIdentity: teachingProof.identity,
     guideStoragePath: await stage(authoringGuideBytes, "image/png"),
     structuralReferenceStoragePath: structuralBytes ? await stage(structuralBytes, structuralMime) : undefined,
     structuralReferenceMime: structuralMime,
