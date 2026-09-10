@@ -54,9 +54,11 @@ WITH CHECK (bucket_id='wallpro-files' AND (storage.foldername(name))[1]=(SELECT 
   AND storage.filename(name) ~ '^[0-9a-f-]{36}\.(jpg|png|webp)$');
 
 -- The existing WallPro token-gate tier limits, reserved atomically with a request.
--- Invoker rights; only the verified edge handler's service role can call either RPC.
+-- Only the verified edge handler's service role can call either RPC. Definer
+-- rights let this narrow operation reserve/refund legacy balances without
+-- granting new direct table privileges. The search path is pinned below.
 CREATE FUNCTION public.reserve_wallpro_generation(p_id uuid,p_owner uuid,p_hash text,p_input jsonb)
-RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE g public.wallpro_generations; s public.user_subscriptions; cap integer; source text; sid uuid;
 BEGIN
   PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_owner::text,9010));
@@ -89,7 +91,7 @@ REVOKE ALL ON FUNCTION public.reserve_wallpro_generation(uuid,uuid,text,jsonb) F
 GRANT EXECUTE ON FUNCTION public.reserve_wallpro_generation(uuid,uuid,text,jsonb) TO service_role;
 
 CREATE FUNCTION public.finish_wallpro_generation(p_id uuid,p_owner uuid,p_path text,p_name text,p_error text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE g public.wallpro_generations;
 BEGIN
   SELECT * INTO g FROM public.wallpro_generations WHERE id=p_id AND owner_id=p_owner FOR UPDATE;
