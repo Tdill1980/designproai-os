@@ -350,7 +350,9 @@ async function finish(supabase, produced) {
     try {
       const path = `${prefix}/${file}`;
       const body = readFileSync(join(OUT, file));
-      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".jpg") ? "image/jpeg" : file.endsWith(".json") ? "application/json" : "text/plain";
+      // wrap-files refuses text/plain (capture run 34441413803: "mime type
+      // text/plain is not supported"), so text evidence travels as octets.
+      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".jpg") ? "image/jpeg" : file.endsWith(".json") ? "application/json" : "application/octet-stream";
       const { error } = await supabase.storage.from("wrap-files").upload(path, body, { contentType, upsert: true });
       if (error) { log(`upload ${file}: ${error.message}`); continue; }
       const { data } = await supabase.storage.from("wrap-files").createSignedUrl(path, 60 * 60 * 24 * 7);
