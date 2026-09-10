@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: ""
+      field_draws:
+        description: "Arm F only — independent draws of the one-field fail-over request (1-6). Each draw is one Gemini 4K image call plus one Flash inspection."
+        required: false
+        type: string
+        default: "1"
       runtime_source:
         description: "image = the DEPLOYED runtime (evidence about production); checkout = THIS ref's runtime modules run inside the deployed image's dependencies — the isolated acceptance route for a dark candidate, no deploy, no traffic switch"
         required: true
@@ -169,6 +174,7 @@ jobs:
           AB_TYPE: ${{ inputs.vehicle_type }}
           AB_CAPTURE_ONLY: ${{ inputs.capture_only }}
           AB_ARMS: ${{ inputs.arms }}
+          AB_FIELD_DRAWS: ${{ inputs.field_draws }}
           AB_RUNTIME_SOURCE: ${{ inputs.runtime_source }}
         shell: bash
         run: |
@@ -204,7 +210,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_ARMS='$AB_ARMS' AB_FIELD_DRAWS='$AB_FIELD_DRAWS' AB_RUNTIME_SOURCE='$AB_RUNTIME_SOURCE' EXPECT_CONTROL_HASH='$EXPECT_CONTROL_HASH' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -277,7 +283,8 @@ jobs:
               --brief "$brief" \
               --vehicle-year "$AB_YEAR" --vehicle-make "$AB_MAKE" \
               --vehicle-model "$AB_MODEL" --vehicle-type "$AB_TYPE" \
-              --arms "$AB_ARMS"
+              --arms "$AB_ARMS" \
+              --field-draws "${AB_FIELD_DRAWS:-1}"
           status=$?
           set -e
 

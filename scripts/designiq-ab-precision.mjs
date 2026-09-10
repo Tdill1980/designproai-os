@@ -58,6 +58,11 @@ const genie = require_("./genie-universal-resolver.cjs");
 const examples = require_("./flat-atlas-topology-examples.cjs");
 const { createProvider } = require_("./generation-provider.cjs");
 const ace = require_("./designiq-prompt.cjs");
+// Arm F — the ONE-FIELD FAIL-OVER request (owner-directed 2026-09-10), drawn
+// through the deployed edge exactly as production's fail-over sends it.
+const { buildFieldTerritories, FIELD_TOPOLOGY } = require_("./atlas-field-territories.cjs");
+const outputClass = require_("./atlas-output-class.cjs");
+const sharp = require_("sharp");
 const { composeAtlasFromArtwork } = require_("./atlas-artwork-compose.cjs");
 
 const args = Object.fromEntries(
@@ -66,6 +71,8 @@ const args = Object.fromEntries(
 const CANARY_OWNER_ID = "b940320d-cb5a-4b60-b280-32d12ef4d6a6"; // canary-operator@designproai.com
 const OUT = args.out || "./ab-evidence";
 mkdirSync(OUT, { recursive: true });
+// Arm F draws: bounded so a typo cannot spend a fleet of 4K calls.
+const FIELD_DRAWS = Math.max(1, Math.min(6, Number(args["field-draws"] || 1) || 1));
 
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 const log = (m) => process.stdout.write(`  ${m}\n`);
@@ -258,6 +265,17 @@ async function main() {
   });
   log(`atlas edge request ${(JSON.stringify(bEdgeBody).length / 1024).toFixed(0)}KB, authoring guide ${(authoringGuideBytes.length / 1024).toFixed(0)}KB`);
 
+  // ── F: THE FAIL-OVER REQUEST, ASSEMBLED BY THE SAME RUNTIME ────────────
+  // Same GENIE surfaces, laid out as field territories; the request body
+  // carries the field contract and nose edges and no structural images.
+  const fieldManifest = buildFieldTerritories(manifest);
+  if (fieldManifest.topology !== FIELD_TOPOLOGY) throw new Error("field territories did not produce the field topology");
+  const fEdgeBody = atlas._test.atlasEdgeRequestBody(V3_INPUT, fieldManifest, { referenceImagesBase64: [] });
+  if (fEdgeBody.fieldContract !== "designpro.atlas-field-prompt.v2" || fEdgeBody.teachingProofStoragePath || fEdgeBody.guideStoragePath) {
+    throw new Error("the field request must carry the field contract and no structural images");
+  }
+  log(`field edge request ${(JSON.stringify(fEdgeBody).length / 1024).toFixed(0)}KB, ${FIELD_DRAWS} draw(s) planned`);
+
   // ── C: THE ARTWORK+COMPOSE PATH ────────────────────────────────────────
   // DPAG craft aimed at ONE flat banner; code owns the geometry afterwards.
   // No topology guide, no zone map, and a real system instruction.
@@ -329,6 +347,18 @@ async function main() {
         "the creative prompt is assembled INSIDE the deployed edge function — the real Persona-2 buildDesignerPrompt, executed (owner directive 2026-08-27)",
       ],
     },
+    F: {
+      label: "F — THE FAIL-OVER: POST /functions/v1/design-panel-ai-generate mode:atlas-artboard with the one-field contract",
+      endpoint: "/functions/v1/design-panel-ai-generate",
+      requestBody: fEdgeBody,
+      draws: FIELD_DRAWS,
+      attempts: `harness executes ${FIELD_DRAWS} independent edge request(s); each makes exactly 1 Gemini image request`,
+      notes: [
+        "this is byte-for-byte the request generateOrReuseFlatAtlas sends after the six-surface budget is refused (authoringTopology: field)",
+        "no teaching sheet, no guide, no topology text; the model receives the field prompt plus verified customer references only",
+        "territories cut in code by field-thirds-v2; scored for anatomy, output class, centre distinctness and white gutters",
+      ],
+    },
     C: describe("C — ARTWORK+COMPOSE (DPAG craft, code geometry)", {
       model: AUTHORING_MODEL,
       modelFallback: "none",
@@ -349,6 +379,7 @@ async function main() {
   writeFileSync(join(OUT, "A-control-commercial.prompt.txt"), controlCommercialPrompt);
   writeFileSync(join(OUT, "A2-control-artboard.prompt.txt"), controlArtboardPrompt);
   writeFileSync(join(OUT, "B-atlas-call1.request.json"), JSON.stringify(bEdgeBody, null, 2));
+  writeFileSync(join(OUT, "F-atlas-field.request.json"), JSON.stringify(fEdgeBody, null, 2));
   writeFileSync(join(OUT, "B-authoring-guide.png"), authoringGuideBytes);
   log(`requests captured → ${OUT}/requests.json`);
 
@@ -366,6 +397,7 @@ async function main() {
     ["A", { parts: [{ text: controlCommercialPrompt }], model: CONTROL_MODEL, cfg: requests.A.generationConfig, file: "A-control-commercial.png" }],
     ["A2", { parts: a2Parts, model: CONTROL_MODEL, cfg: requests.A2.generationConfig, file: "A2-control-artboard.png" }],
     ["B", { edge: true, file: "B-atlas-master.png" }],
+    ["F", { field: true }],
     ["C", { parts: cParts, model: AUTHORING_MODEL, cfg: requests.C.generationConfig, file: "C-artwork-banner.png", systemInstruction: ace.ATLAS_ARTWORK_SYSTEM_INSTRUCTION, compose: true }],
   ]) {
     if (!armAllowed(name)) {
@@ -373,6 +405,86 @@ async function main() {
       continue;
     }
     try {
+      if (spec.field) {
+        // THE FAIL-OVER PATH, N INDEPENDENT DRAWS. Each draw is one edge
+        // request and one Gemini image request; each raw return is kept, then
+        // normalised, gated and cut with the field manifest exactly as
+        // production does, and scored on the things the owner rejects designs
+        // for: vehicle anatomy, a vehicle-depiction verdict, four centre
+        // surfaces that are slices of one band, and white gutters.
+        const ownerId = process.env.AB_OWNER_ID || CANARY_OWNER_ID;
+        const draws = [];
+        for (let draw = 1; draw <= FIELD_DRAWS; draw += 1) {
+          const label = `F${draw}`;
+          const started = Date.now();
+          try {
+            const out = await atlas._test.callAtlasArtboardEdge(fEdgeBody, { logger: log, ownerId, supabase });
+            imageRequestsExecuted += out.provenance.imageRequestCount;
+            const rawFile = `${label}-atlas-master.png`;
+            writeFileSync(join(OUT, rawFile), out.bytes);
+            produced.push(rawFile);
+            const preview = `${label}-atlas-master-1600.jpg`;
+            writeFileSync(join(OUT, preview), await sharp(out.bytes, { limitInputPixels: false })
+              .resize({ width: 1600, height: 1600, fit: "inside" }).jpeg({ quality: 82 }).toBuffer());
+            produced.push(preview);
+            const normalized = await atlas.normalizeAtlasMaster(out.bytes, fieldManifest);
+            const checks = await atlas.deterministicMasterChecks(normalized.bytes, fieldManifest);
+            const klass = await outputClass.classifyAtlasCandidate({ provider, bytes: normalized.bytes });
+            const crops = await atlas.cutCallOnePanels(normalized.bytes, fieldManifest, out.provenance.masterSha256);
+            const cropHashes = {};
+            const thumbs = {};
+            for (const crop of crops) {
+              cropHashes[crop.surfaceKey] = crop.contentHash;
+              const file = `${label}-panel-${crop.surfaceKey}.png`;
+              writeFileSync(join(OUT, file), crop.bytes);
+              produced.push(file);
+              thumbs[crop.surfaceKey] = await sharp(crop.bytes, { limitInputPixels: false })
+                .resize(128, 128, { fit: "fill" }).greyscale().raw().toBuffer();
+            }
+            // CENTRE DISTINCTNESS: mean absolute difference between every pair
+            // of the four centre surfaces at 128x128 greyscale, 0..1. The
+            // 2026-09-06 rejection (a503b91b) was four surfaces cut from one
+            // band; those read near 0 here. Distinct passages read well above.
+            const centre = ["hood", "roof", "front", "rear"];
+            const pairs = {};
+            let minPair = 1;
+            for (let i = 0; i < centre.length; i += 1) for (let j = i + 1; j < centre.length; j += 1) {
+              const a = thumbs[centre[i]]; const b = thumbs[centre[j]];
+              let sum = 0;
+              for (let k = 0; k < a.length; k += 1) sum += Math.abs(a[k] - b[k]);
+              const mad = sum / (a.length * 255);
+              pairs[`${centre[i]}-${centre[j]}`] = Number(mad.toFixed(4));
+              minPair = Math.min(minPair, mad);
+            }
+            // WHITE GUTTERS: share of the raw canvas that is near-white, the
+            // Draw-1 (33659500846) framed-thirds defect measured 8.38%.
+            const small = await sharp(out.bytes, { limitInputPixels: false }).resize(512, 512, { fit: "fill" })
+              .removeAlpha().raw().toBuffer();
+            let white = 0;
+            for (let k = 0; k < small.length; k += 3) if (small[k] >= 245 && small[k + 1] >= 245 && small[k + 2] >= 245) white += 1;
+            const record = {
+              ok: true, draw, file: rawFile, preview, bytes: out.bytes.length, elapsedMs: Date.now() - started,
+              contentHash: out.provenance.masterSha256, ...out.provenance,
+              deterministic: {
+                accepted: checks.accepted, blockingFailures: checks.blockingFailures, cutoutFindings: checks.cutoutFindings.map((f) => f.finding || f),
+                zones: (checks.zones || []).map((z) => ({ surfaceKey: z.surfaceKey, edgeHoleRatio: Number((z.edgeHoleRatio ?? 0).toFixed(4)),
+                  concentratedFlatBlackRatio: Number((z.concentratedFlatBlackRatio ?? 0).toFixed(4)) })),
+              },
+              outputClass: { disposition: klass.disposition, blocking: klass.blocking, confidence: klass.confidence, evidence: klass.evidence },
+              centreDistinctness: { pairs, minPair: Number(minPair.toFixed(4)) },
+              nearWhiteShare: Number((white / (small.length / 3)).toFixed(4)),
+              panelCropHashes: cropHashes,
+            };
+            draws.push(record);
+            log(`${label}: ${checks.accepted ? "gates PASS" : "gates REFUSE"} · class ${klass.disposition} · centre min-MAD ${record.centreDistinctness.minPair} · white ${(record.nearWhiteShare * 100).toFixed(1)}% · ${((Date.now() - started) / 1000).toFixed(1)}s`);
+          } catch (error) {
+            log(`${label}: FAILED — ${error.message}`);
+            draws.push({ ok: false, draw, error: String(error.message).slice(0, 500) });
+          }
+        }
+        results[name] = { ok: draws.every((d) => d.ok), draws };
+        continue;
+      }
       if (spec.edge) {
         // THE PRODUCT PATH: one edge request; the response carries the proof
         // fields (requestId, sourceCommit, promptVersion, model,
@@ -446,11 +558,11 @@ async function finish(supabase, manifestValue, produced) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const prefix = `designiq-ab/${stamp}`;
   const urls = {};
-  for (const file of [...produced, "requests.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
+  for (const file of [...produced, "requests.json", "F-atlas-field.request.json", "A-control-commercial.prompt.txt", "A2-control-artboard.prompt.txt", "B-atlas-call1.prompt.txt", "C-artwork.prompt.txt"]) {
     try {
       const path = `${prefix}/${file}`;
       const body = readFileSync(join(OUT, file));
-      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".json") ? "application/json" : "text/plain";
+      const contentType = file.endsWith(".png") ? "image/png" : file.endsWith(".jpg") ? "image/jpeg" : file.endsWith(".json") ? "application/json" : "text/plain";
       const { error } = await supabase.storage.from("wrap-files").upload(path, body, { contentType, upsert: true });
       if (error) { log(`upload ${file}: ${error.message}`); continue; }
       const { data } = await supabase.storage.from("wrap-files").createSignedUrl(path, 60 * 60 * 24 * 7);
