@@ -1,0 +1,15 @@
+<task>
+Generate an image: the subject sheet with its marked area completed.
+</task>
+
+<inputs>
+  <sheet role="subject">The flat printed sheet to complete and return, at exactly the shape it arrived in.</sheet>
+  <mask role="fill-region">The same size as the subject. WHITE marks the only area to paint. BLACK is finished artwork that stays exactly as it is.</mask>
+  <reference role="visual-dna">The complete design this sheet belongs to, all of its sheets laid out together. The authority for palette, motif family, line weight and texture. Read it for consistency; do not redraw it and do not copy its layout.</reference>
+</inputs>
+
+<instructions>
+Return the subject sheet with the white area of the mask painted as a continuation of the artwork around it: the same ground, the same palette, the same motifs and motion flowing straight through that area, so no seam, edge, ring or boundary remains and the sheet reads as one continuous printed graphic, corner to corner, running off all four edges.
+Everything outside the white area stays pixel for pixel as it arrived.
+Add nothing else: no new subjects, no borders, no margins, no captions, no labels, no annotation.
+</instructions>

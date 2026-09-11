@@ -1,0 +1,277 @@
+{
+  "generation": "5d727ea9-eb71-466b-8a04-dca2d8d411e7",
+  "master": "2165a36c7f52738b8a31466423fb86201a202e43a6a88ce84ddc0396edd7f5ae",
+  "rawMaster": {
+    "storagePath": "atlas-call1/c9cf6d59-ff1c-4793-b390-e512618fd660.png",
+    "rawHash": "4f4a0e897ecbf8e48260a1021f82f04380f3ce7c42dbf776af20bb51acf68e24",
+    "normalizedHash": "71c35796cf770c2efac7683ae5aad2c13cd8b7d120c75c977ea7594387001026",
+    "preRepairMasterHash": "71c35796cf770c2efac7683ae5aad2c13cd8b7d120c75c977ea7594387001026",
+    "matchesPreRepair": true
+  },
+  "model": "gemini-3-pro-image",
+  "dilatePx": 24,
+  "featherPx": 10,
+  "imageRequestsExecuted": 4,
+  "results": [
+    {
+      "surfaceKey": "driver",
+      "storagePath": "designpro/user_61cc6c1c-554c-440c-8e07-a64469f1f4eb/5d727ea9-eb71-466b-8a04-dca2d8d411e7/flat-first/v1/revisions/1/panels/7bb75c76bf7f4b83bb3032bc5b30a8e2ee8897b04cd327ccedba12133c5e6202.png",
+      "contentHash": "7bb75c76bf7f4b83bb3032bc5b30a8e2ee8897b04cd327ccedba12133c5e6202",
+      "subject": "raw-call1-candidate",
+      "subjectHash": "bba003beaac6a7f19c11c76c8cfbaae344ecdb52d1233c0644a71eee2e4340b8",
+      "printWidthIn": 178.4,
+      "printHeightIn": 48.84,
+      "draws": [
+        {
+          "draw": 1,
+          "ok": true,
+          "elapsedMs": 42278,
+          "aiWidth": 7936,
+          "aiHeight": 2172,
+          "aiSha256": "56a7a1b8e7d6e80ff04f8788b3e58c3bc3fe3b94c78866948880f781e65ec154",
+          "compositeSha256": "f71a818cb86010f79dc2b6bf281ddb529abe67eb3c1dd97deb2cf5a306539bbd",
+          "drift": {
+            "outsideMaskMeanAbsDiff": 10.74,
+            "insideMaskMeanAbsDiff": 88.88
+          },
+          "after": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": [],
+            "largestCutoutComponentRatio": 0,
+            "edgeHoleRatio": 0,
+            "fullBleed": {
+              "surfaceKey": "driver",
+              "sampledAt": "1024x280",
+              "sampleFactor": 3.625,
+              "artworkRatio": 0.96608,
+              "nonArtworkRatio": 0.03392,
+              "largestNonArtworkComponentRatio": 0.02023,
+              "edgeReachableFieldRatio": 0.03392,
+              "interiorFieldRatio": 0,
+              "nonArtworkComponentCount": 2,
+              "borderArtworkRatio": 0.96966,
+              "contourScore": 0.03392,
+              "fullBleedCompliant": false
+            }
+          }
+        },
+        {
+          "draw": 2,
+          "ok": true,
+          "elapsedMs": 38930,
+          "aiWidth": 7936,
+          "aiHeight": 2172,
+          "aiSha256": "ea5c22dd5829d84741e5d845bd494e7ce62032914c87f081b879355519787fe9",
+          "compositeSha256": "96b131d373543cca5d138c2cc17b7988b245ff14468af802eacbaa695103f5da",
+          "drift": {
+            "outsideMaskMeanAbsDiff": 10.55,
+            "insideMaskMeanAbsDiff": 85.59
+          },
+          "after": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": [],
+            "largestCutoutComponentRatio": 0,
+            "edgeHoleRatio": 0,
+            "fullBleed": {
+              "surfaceKey": "driver",
+              "sampledAt": "1024x280",
+              "sampleFactor": 3.625,
+              "artworkRatio": 0.96608,
+              "nonArtworkRatio": 0.03392,
+              "largestNonArtworkComponentRatio": 0.02023,
+              "edgeReachableFieldRatio": 0.03392,
+              "interiorFieldRatio": 0,
+              "nonArtworkComponentCount": 2,
+              "borderArtworkRatio": 0.96966,
+              "contourScore": 0.03392,
+              "fullBleedCompliant": false
+            }
+          }
+        }
+      ],
+      "before": {
+        "accepted": false,
+        "blockingFailures": [],
+        "cutoutFindings": [
+          "driver largestCutoutComponentRatio=0.08016 (flatBlackRatio=0.08016) inside a zone that is 91.9% artwork -- one wheel/glass/bed shape cut out of the panel",
+          "passenger largestCutoutComponentRatio=0.08016 (flatBlackRatio=0.08016) inside a zone that is 91.9% artwork -- one wheel/glass/bed shape cut out of the panel",
+          "hood largestCutoutComponentRatio=0.08016 (flatBlackRatio=0.08016) inside a zone that is 91.9% artwork -- one wheel/glass/bed shape cut out of the panel"
+        ],
+        "largestCutoutComponentRatio": 0.08016,
+        "edgeHoleRatio": 0.0692,
+        "fullBleed": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x280",
+          "sampleFactor": 3.625,
+          "artworkRatio": 0.88534,
+          "nonArtworkRatio": 0.11466,
+          "largestNonArtworkComponentRatio": 0.08074,
+          "edgeReachableFieldRatio": 0.11466,
+          "interiorFieldRatio": 0,
+          "nonArtworkComponentCount": 3,
+          "borderArtworkRatio": 0.90054,
+          "contourScore": 0.11466,
+          "fullBleedCompliant": false
+        }
+      },
+      "mask": {
+        "pixels": 303861,
+        "components": 1,
+        "share": 0.08057
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "largestCutoutComponentRatio": 0,
+        "edgeHoleRatio": 0.0001,
+        "fullBleed": {
+          "surfaceKey": "driver",
+          "sampledAt": "1024x280",
+          "sampleFactor": 3.625,
+          "artworkRatio": 0.88825,
+          "nonArtworkRatio": 0.11175,
+          "largestNonArtworkComponentRatio": 0.06528,
+          "edgeReachableFieldRatio": 0.11175,
+          "interiorFieldRatio": 0,
+          "nonArtworkComponentCount": 4,
+          "borderArtworkRatio": 0.91667,
+          "contourScore": 0.11175,
+          "fullBleedCompliant": false
+        }
+      }
+    },
+    {
+      "surfaceKey": "passenger",
+      "storagePath": "designpro/user_61cc6c1c-554c-440c-8e07-a64469f1f4eb/5d727ea9-eb71-466b-8a04-dca2d8d411e7/flat-first/v1/revisions/1/panels/3ee88ffe23ed136016dca69e2052853b10427c486915eae76537f3a4e78fe663.png",
+      "contentHash": "3ee88ffe23ed136016dca69e2052853b10427c486915eae76537f3a4e78fe663",
+      "subject": "raw-call1-candidate",
+      "subjectHash": "f86f2b00750096040ccda8bc3ea9555e4401812482d18834180d2ee18a5fb4cd",
+      "printWidthIn": 178.4,
+      "printHeightIn": 48.84,
+      "draws": [
+        {
+          "draw": 1,
+          "ok": true,
+          "elapsedMs": 40617,
+          "aiWidth": 7936,
+          "aiHeight": 2172,
+          "aiSha256": "a16e2fdae65ab50d5d9bfd5d3c5bd42c6bb9d947a52193d5bf36ecd0f38afe7e",
+          "compositeSha256": "230ce1a2b42753ed2c6bd11ce1662497e85d827c600dbd682118558e52d05d22",
+          "drift": {
+            "outsideMaskMeanAbsDiff": 14.05,
+            "insideMaskMeanAbsDiff": 89.66
+          },
+          "after": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": [],
+            "largestCutoutComponentRatio": 0,
+            "edgeHoleRatio": 0,
+            "fullBleed": {
+              "surfaceKey": "passenger",
+              "sampledAt": "1024x280",
+              "sampleFactor": 3.625,
+              "artworkRatio": 1,
+              "nonArtworkRatio": 0,
+              "largestNonArtworkComponentRatio": 0,
+              "edgeReachableFieldRatio": 0,
+              "interiorFieldRatio": 0,
+              "nonArtworkComponentCount": 0,
+              "borderArtworkRatio": 1,
+              "contourScore": 0,
+              "fullBleedCompliant": true
+            }
+          }
+        },
+        {
+          "draw": 2,
+          "ok": true,
+          "elapsedMs": 43771,
+          "aiWidth": 4096,
+          "aiHeight": 4096,
+          "aiSha256": "2b757060c49794d64622f4794a7fe70635b052547e4fa6f33248b766f30ae42d",
+          "compositeSha256": "50f3e54b31a6de9d73926b413376f2c570b4b40a9dde694288427df9d07ecded",
+          "drift": {
+            "outsideMaskMeanAbsDiff": 64.31,
+            "insideMaskMeanAbsDiff": 95.96
+          },
+          "after": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": [],
+            "largestCutoutComponentRatio": 0.01211,
+            "edgeHoleRatio": 0.0694,
+            "fullBleed": {
+              "surfaceKey": "passenger",
+              "sampledAt": "1024x280",
+              "sampleFactor": 3.625,
+              "artworkRatio": 0.98767,
+              "nonArtworkRatio": 0.01233,
+              "largestNonArtworkComponentRatio": 0.01233,
+              "edgeReachableFieldRatio": 0.01233,
+              "interiorFieldRatio": 0,
+              "nonArtworkComponentCount": 1,
+              "borderArtworkRatio": 0.93088,
+              "contourScore": 0.01233,
+              "fullBleedCompliant": false
+            }
+          }
+        }
+      ],
+      "before": {
+        "accepted": false,
+        "blockingFailures": [],
+        "cutoutFindings": [
+          "driver largestCutoutComponentRatio=0.07734 (flatBlackRatio=0.07737) inside a zone that is 92.0% artwork -- one wheel/glass/bed shape cut out of the panel",
+          "passenger largestCutoutComponentRatio=0.07734 (flatBlackRatio=0.07737) inside a zone that is 92.0% artwork -- one wheel/glass/bed shape cut out of the panel",
+          "hood largestCutoutComponentRatio=0.07734 (flatBlackRatio=0.07737) inside a zone that is 92.0% artwork -- one wheel/glass/bed shape cut out of the panel"
+        ],
+        "largestCutoutComponentRatio": 0.07734,
+        "edgeHoleRatio": 0.0688,
+        "fullBleed": {
+          "surfaceKey": "passenger",
+          "sampledAt": "1024x280",
+          "sampleFactor": 3.625,
+          "artworkRatio": 0.91945,
+          "nonArtworkRatio": 0.08055,
+          "largestNonArtworkComponentRatio": 0.08055,
+          "edgeReachableFieldRatio": 0.08055,
+          "interiorFieldRatio": 0,
+          "nonArtworkComponentCount": 1,
+          "borderArtworkRatio": 0.93088,
+          "contourScore": 0.08055,
+          "fullBleedCompliant": false
+        }
+      },
+      "mask": {
+        "pixels": 300443,
+        "components": 1,
+        "share": 0.07966
+      },
+      "deterministic": {
+        "accepted": true,
+        "blockingFailures": [],
+        "cutoutFindings": [],
+        "largestCutoutComponentRatio": 0,
+        "edgeHoleRatio": 0,
+        "fullBleed": {
+          "surfaceKey": "passenger",
+          "sampledAt": "1024x280",
+          "sampleFactor": 3.625,
+          "artworkRatio": 0.92035,
+          "nonArtworkRatio": 0.07965,
+          "largestNonArtworkComponentRatio": 0.07965,
+          "edgeReachableFieldRatio": 0.07965,
+          "interiorFieldRatio": 0,
+          "nonArtworkComponentCount": 1,
+          "borderArtworkRatio": 0.93088,
+          "contourScore": 0.07965,
+          "fullBleedCompliant": false
+        }
+      }
+    }
+  ]
+}
