@@ -11,7 +11,9 @@ contracts; each names its lock.
   else (`wallGenerationBlocker`). With a photo and no valid corners the flat
   design shows first; four valid corners switch on the on-wall view
   (`wallPreviewBlocker`). Corners never block generation or print files
-  (`tests/wallpro.test.ts`).
+  (`tests/wallpro.test.ts`). **The client sees both at once**: the flat
+  master stays on screen beside the photo pane, which shows the same file
+  imposed the moment the corners exist (`WallPro.tsx` preview section).
 - **Detect my wall runs on upload.** A wall photo is sent to
   `detect-wall-openings` the moment it is chosen; corners and protected areas
   (windows, drapes, doors, outlets, furniture) land as editable preview state.
