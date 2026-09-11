@@ -7,6 +7,7 @@ import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen,
 import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
+import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
@@ -71,6 +72,7 @@ export default function WallPro() {
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [detecting, setDetecting] = useState(false);
+  const [productionKick, setProductionKick] = useState(0);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]);
   photoRef.current = photo; cornersRef.current = corners;
@@ -299,7 +301,10 @@ export default function WallPro() {
     await run('Approving V' + currentVersion.version_no, async () => {
       await approveWallVersion(projectId, currentVersion.id);
       setVersions(await listWallVersions(projectId));
-      setNotice(`V${currentVersion.version_no} approved. Production reads this version only; refining again creates a new draft.`);
+      setNotice(`V${currentVersion.version_no} approved. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
+      // Approval auto-runs production: the 150 PPI panels start on the server
+      // without another click (owner, 2026-09-11).
+      setProductionKick(k => k + 1);
     });
   }
   function maskPoint(e: React.PointerEvent<SVGSVGElement>) {
@@ -615,6 +620,8 @@ export default function WallPro() {
               </button>)}</div></div>}
           </section>}
           {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
+          <WallProductionPanels approved={approvedVersion} autoStart={productionKick} busy={!!busy}
+            request={{ wallWidthIn: width, wallHeightIn: height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : undefined, mirror: !!layout.mirror, bleedIn: printSettings.bleed, overlapIn: printSettings.overlap, panelWidthIn: WALLPRO_PRINT_WIDTH, targetPpi: printSettings.minPpi }} />
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>

@@ -187,3 +187,40 @@ export async function approveWallVersion(projectId: string, versionId: string): 
 export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
 }
+
+/* ── Production panels: 150 PPI print files built on the server (Topaz) ─── */
+
+export type WallProductionPanel = {
+  number: number; file: string; path: string; xIn: number; yIn: number; widthIn: number; heightIn: number; overlapLeftIn: number;
+  widthPx: number; heightPx: number; ppi: number; sha256: string; byteSize: number;
+  upscale: { engine: string; model?: string; nativePpi?: number; reason?: string };
+};
+export type WallProductionJob = {
+  id: string; owner_id: string; project_id: string; version_id: string; request: Record<string, unknown>; request_hash: string;
+  status: 'queued' | 'running' | 'ready' | 'failed'; attempts: number; progress: { stage?: string; panelsTotal?: number; panelsDone?: number; nativePpi?: number; topaz?: string };
+  panels: WallProductionPanel[]; manifest_path: string | null; error: string | null; created_at: string; updated_at: string; finished_at: string | null;
+};
+export type WallProductionRequest = { wallWidthIn: number; wallHeightIn: number; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number; mirror?: boolean; bleedIn: number; overlapIn: number; panelWidthIn: number; targetPpi: number };
+
+/** Requests the 150 PPI panel build for an APPROVED version. The same version and
+ * geometry returns the existing live job; the runtime worker claims it and
+ * reports progress per panel. */
+export async function requestWallProduction(versionId: string, request: WallProductionRequest): Promise<WallProductionJob> {
+  const { data, error } = await db.rpc('request_wallpro_production', { p_version_id: versionId, p_request: request });
+  if (error) {
+    const code = String(error.message || '');
+    throw new Error(code.includes('not_approved') ? 'Approve this version first; production panels are built from the approved version only.'
+      : code.includes('not_found') ? 'The approved version could not be found.' : 'Production panels could not be requested: ' + code);
+  }
+  return data as WallProductionJob;
+}
+export async function getWallProductionJob(id: string): Promise<WallProductionJob> {
+  const { data, error } = await db.from('wallpro_production_jobs').select('*').eq('id', id).single();
+  if (error || !data) throw new Error('The production job could not be read: ' + (error?.message || 'missing'));
+  return data as WallProductionJob;
+}
+export async function latestWallProductionJob(versionId: string): Promise<WallProductionJob | null> {
+  const { data, error } = await db.from('wallpro_production_jobs').select('*').eq('version_id', versionId).order('created_at', { ascending: false }).limit(1);
+  if (error) throw new Error('The production job could not be read: ' + error.message);
+  return (data?.[0] as WallProductionJob) || null;
+}
