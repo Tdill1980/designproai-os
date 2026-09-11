@@ -23,10 +23,10 @@ async function fakeTopaz(_url, init) {
   return new Response(out, { status: 200, headers: { "content-type": "image/png" } });
 }
 
-test("plans 59.5-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
+test("plans 59-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
   const { panels } = production.planPanels(production.normalizeRequest({ wallWidthIn: 120, wallHeightIn: 96 }));
-  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 59.5, 98, 0], [58, 59.5, 98, .5], [117, 4, 98, .5]]);
-  assert.equal(production.DEFAULTS.panelWidthIn, 59.5); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
+  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 59, 98, 0], [57.5, 59, 98, .5], [116, 5, 98, .5]]);
+  assert.equal(production.DEFAULTS.panelWidthIn, 59); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
   assert.throws(() => production.normalizeRequest({ wallWidthIn: 0, wallHeightIn: 96 }), /1 to 2,400/);
 });
 

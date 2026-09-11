@@ -47,7 +47,7 @@ contracts; each names its lock.
   (owner, 2026-09-11: "make it 150 and auto run topaz").** Approving a version
   auto-requests `request_wallpro_production`; the droplet runtime claims the
   job (`claim_wallpro_production_job`, `runtime/wallpro-production.cjs`),
-  rasterises each 59.5-inch panel from the approved master at native density,
+  rasterises each 59-inch panel (the roll width, overlap inside it) from the approved master at native density,
   enhances it through the same `enhancePanel` Call 12 uses (fails closed when
   Topaz is unavailable), lands on panel inches × 150 exactly, stamps the PNG
   density and stores it under `{owner}/production/{job}/` in `wallpro-files`.

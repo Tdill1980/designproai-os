@@ -6,7 +6,7 @@
  *
  * Why per panel: a 4K master over a 142-inch wall is ~29 PPI, and Topaz caps a
  * single request near 96 MP, so a whole-wall 150 PPI master (300+ MP) is not
- * one request. Each 59.5-inch print panel IS within reach: rasterise the panel
+ * one request. Each 59-inch print panel (the roll width) IS within reach: rasterise the panel
  * from the approved master at its native density, enhance through Topaz to the
  * engine ceiling (the same `enhancePanel` Call 12 uses for vehicle panels,
  * failing closed when Topaz is unavailable), land exactly on panel inches x
@@ -25,7 +25,7 @@ const { directTusEndpoint, TUS_CHUNK_BYTES, MAX_STANDARD_UPLOAD_BYTES } = requir
 
 const BUCKET = "wallpro-files";
 const CONTRACT = "wallpro.production-panels.v1";
-const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59.5, targetPpi: 150 });
+const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59, targetPpi: 150 });
 const MAX_TILE_PLACEMENTS = 20000;
 // Panels build in parallel. Three 130 MP panels in flight is ~1.5 GB of raw
 // pixels plus Topaz round-trips; the env can widen or narrow it per droplet.
