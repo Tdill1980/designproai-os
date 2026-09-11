@@ -366,7 +366,6 @@ const App = () => {
           <Route path="/printpro/wallpro" element={<WallPro />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
-          <Route path="/designpro/wallpro/production" element={<Navigate to="/admin/wallpro-production" replace />} />
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
