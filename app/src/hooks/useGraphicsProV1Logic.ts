@@ -72,7 +72,7 @@ export function useGraphicsProV1Logic() {
     const path = `renders/${user.id}/GraphicsProV1/${folder}/${Date.now()}.${ext}`;
 
     const { error: uploadErr } = await supabase.storage
-      .from("wrap-files")
+      .from("graphicspro-files")
       .upload(path, file, { contentType: file.type, upsert: true });
 
     if (uploadErr) {
@@ -80,7 +80,7 @@ export function useGraphicsProV1Logic() {
       return null;
     }
 
-    const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
+    const { data: { publicUrl } } = supabase.storage.from("graphicspro-files").getPublicUrl(path);
     return publicUrl;
   }, []);
 

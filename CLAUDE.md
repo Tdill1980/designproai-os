@@ -112,6 +112,41 @@ Locked by `tests/atlas-call1-graph.test.mjs` (the real migration on PGlite,
 a two-worker end-to-end run, the refusal path, the runtime seams) and
 `ops/tests/server-cutover.test.mjs` (the env vocabularies).
 
+## ✂️ GRAPHICSPRO IS ROUTED, PORTED AND LOCKED (owner-directed, Trish 2026-09-11: "Graphicspro must work end to end")
+
+Full record: `docs/GRAPHICSPRO-END-TO-END.md`. What was measured: the
+GraphicsPro product in `app/src` was a byte-identical RestylePro copy that no
+route served, and every edge function it invokes and every table it reads was
+absent from this repository and from the DesignProAI Supabase project.
+MyVehiclePro for GraphicsPro was broken in RestylePro as well (the panel never
+sent a styling prompt or the mockup; the function 400'd on every click).
+
+- **Routes** `/graphics-pro`, `/graphics-pro-wall`, `/graphicspro` (redirect);
+  sidebar key `graphicspro`, tier `complete`.
+- **Recovered edge functions (RULE 1)**: `generate-graphics-pro`,
+  `graphicspro-on-vehicle-photo`, `edit-vehicle-photo`, `cut-graphics-proof`,
+  `cut-contour-build`, `cut-map`, `generate-cut-files`, `vectorize-it`, plus
+  `_shared/myvehicle-prompt-builder.ts`, `_shared/replicate-bg-remove.ts`,
+  `_shared/vtracer/`. Deltas are inline and deliberate: files live in the
+  **public `graphicspro-files` bucket** (wrap-files is private here); the
+  production PDF comes from `cut-contour-build` (pdf-lib) because RestylePro's
+  `quick-prep-pdf-export` never embedded the artwork; `vectorize-it` requires
+  `VECTORIZE_DROPLET_URL` and carries no RestylePro droplet IP.
+- **MyVehiclePro contract**: the approved mockup rides as `colorData.designUrl`
+  (IMAGE 2) and the brief as `customStylingPrompt`; vehicle jobs only.
+- **Schema** `20260911210000_graphicspro_cut_contour.sql`: the live RestylePro
+  shapes, `surface_type` admits `'studio'`, `shop_pricing_config.user_id`
+  UNIQUE, pricing seeded (Avery 6.32 / 3M 6.92 per sq ft).
+- **Konva on the customer's photo** is the existing `ZoneMasker` (react-konva)
+  on wall, storefront and every uploaded vehicle angle; the rectangles are
+  burned into the photo (`composeZoneOverlay`) and sent first as the hard mask.
+- **Step two, not started**: move Topaz / VTracer / BiRefNet stages onto the
+  droplet runtime as a durable node graph (the WallPro production pattern),
+  then signed reads. Acceptance is the owner's eye on a fresh generation.
+
+Locked by `tests/graphicspro-end-to-end.test.mjs` and
+`supabase/tests/graphicspro_cut_contour.test.sql`.
+
 ## 🧱 WALLPRO ACTIVE CONTRACTS (owner-directed, Trish 2026-09-11)
 
 WallPro is the wedge product: a wall is one flat rectangle, so "output the

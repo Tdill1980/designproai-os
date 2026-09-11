@@ -1035,16 +1035,21 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
             </Card>
           )}
 
-          {/* MyVehiclePro — brand differentiator: apply this graphic to a customer's actual vehicle photo */}
-          <MyVehicleProInline
-            modeType="graphicspro"
-            finishType={vinylFinish}
-            vehicleYear={surface.year}
-            vehicleMake={surface.make}
-            vehicleModel={surface.model}
-            renderUrl={mockupResult.mockupUrl}
-            designName="Graphic"
-          />
+          {/* MyVehiclePro — brand differentiator: apply this graphic to a
+              customer's actual vehicle photo. Vehicle jobs only (a wall or
+              storefront graphic has no vehicle to see it on); the approved
+              mockup is the design reference and the brief is the prompt. */}
+          {(surface.type === 'vehicle' || surface.source === 'upload') && (
+            <MyVehicleProInline
+              modeType="graphicspro"
+              finishType={vinylFinish}
+              vehicleYear={surface.year}
+              vehicleMake={surface.make}
+              vehicleModel={surface.model}
+              renderUrl={mockupResult.mockupUrl}
+              designName={graphic.businessName || graphic.designPrompt || "Cut vinyl graphic"}
+            />
+          )}
 
           {/* ApprovePro — Send for Client Approval */}
           <Button

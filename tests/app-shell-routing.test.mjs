@@ -219,7 +219,12 @@ test("no page the operator can open advertises a RestylePro product", () => {
   // RestyleLibrary and RestyleProAI itself. None of them are products this
   // system serves, so every one was either a dead link or an advert for
   // something the operator cannot open.
-  const products = /Restyle\s?Pro\s?AI|RestyleLibrary|ColorPro|PatternPro|ApprovePro™|GraphicsPro|LogoPro/;
+  //
+  // GraphicsPro left this list on 2026-09-11: it is routed at /graphics-pro
+  // and /graphics-pro-wall with its edge functions and schema in this
+  // repository (tests/graphicspro-end-to-end.test.mjs), so naming it is no
+  // longer an advert for something the operator cannot open.
+  const products = /Restyle\s?Pro\s?AI|RestyleLibrary|ColorPro|PatternPro|ApprovePro™|LogoPro/;
   for (const path of [
     "app/src/pages/Index.tsx",
     "app/src/pages/RestyleDashboardContent.tsx",

@@ -190,3 +190,30 @@ verify_jwt = false
 [functions.detect-wall-openings]
 # Detect my wall: preview-only vision question; the handler validates the caller and the file path.
 verify_jwt = false
+
+# ── GraphicsPro (cut-contour graphics for walls, vehicles and glass) ──────────
+# Recovered from restylepro-os (RULE 1). Every handler resolves the caller from
+# the Authorization header itself; the gateway must not pre-reject stale JWTs.
+[functions.generate-graphics-pro]
+verify_jwt = false
+
+[functions.graphicspro-on-vehicle-photo]
+verify_jwt = false
+
+[functions.edit-vehicle-photo]
+verify_jwt = false
+
+[functions.cut-graphics-proof]
+verify_jwt = false
+
+[functions.cut-contour-build]
+verify_jwt = false
+
+[functions.cut-map]
+verify_jwt = false
+
+[functions.generate-cut-files]
+verify_jwt = false
+
+[functions.vectorize-it]
+verify_jwt = false
