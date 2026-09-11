@@ -186,3 +186,7 @@ verify_jwt = false
 [functions.generate-wall-design]
 # The handler validates the caller with auth.getUser before any file or AI access.
 verify_jwt = false
+
+[functions.detect-wall-openings]
+# Detect my wall: preview-only vision question; the handler validates the caller and the file path.
+verify_jwt = false
