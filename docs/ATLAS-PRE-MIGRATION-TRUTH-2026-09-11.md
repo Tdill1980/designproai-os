@@ -103,3 +103,46 @@ remain, each an owner decision, not a bug:
 | no deterministic gate; the operator looked at the pair | near-black hole gate, output-class gate, both terminal | the gates were added for holes the edit prompt never produced, because it removed the vehicle from an image that had one |
 
 Nothing in this document changes code. It is the trace the owner asked for.
+
+## 5. Test 15 — from four real pre-migration heroes to the flat field (run `34567769071`)
+
+Owner, 2026-09-11: *"the 3D design portion must be coded like we had prior
+to migration — it worked 99% accuracy, we did over 500 designs."* So the
+design step is the hero, and the open question is the flat step. Four real
+heroes from the RestylePro database (`scripts/fixtures/premigration-heroes.json`:
+Flamingo Pools F-250, Harbor Line Transit, Designer Dental Urus, McLaren
+720S watercolor), each turned into a flat field two ways, one image call
+each, `scripts/atlas-hero-to-field-ab.mjs`, workflow test `15-hero-to-field`.
+
+| hero | R: one-field Call 1, hero as `exact_reference`, 1:1 4K, thirds cut | E: the July edit verbatim, 21:9 2K |
+|---|---|---|
+| Flamingo | faithful; a white field fills the roof territory, gate REFUSES (`roof lumaStddev=1.04`); glare band | faithful, clean; a light margin around the strip |
+| Harbor Line | faithful; the contact bar painted TWICE; glare band; the DRIVER cut slices the anchor logo in half | faithful, clean, full bleed, one contact bar |
+| Designer Dental | design faithful but staged as a MOUNTED square on a wall; 4 near-black cut-out flags | faithful, clean, full bleed |
+| McLaren | faithful watercolor, but the word JAPANEASE from the brief painted as lettering; DRIVER cut slices it | faithful, clean, full bleed, no lettering |
+| no vehicle drawn | 4 of 4 | 4 of 4 |
+| usable as the flat master as returned | 1 of 4 (Harbor, with the duplicated bar) | 3 of 4 clean, 4 of 4 faithful |
+| time per call | 50–55 s | 22–30 s |
+
+Previews: `docs/ab/hero-to-field-34567769071-sheet-*.jpg` (hero, R, R driver
+cut, E per hero) and the individual `-1600.jpg` files.
+
+**Reading.** Given the approved hero, the July edit request reproduces the
+design flat, at the flank's own proportions, without the vehicle, in every
+one of four tries, in under half a minute. Its 2026-07-30 pass rate (48.6%)
+was measured on the `-preview` model with a silent retry loop; on the GA
+model with the request sent once it went 4 for 4 here. The direct one-field
+call with the hero as reference also never drew the vehicle, but the square
+canvas and the thirds cut are the wrong shape for a design composed along a
+flank: they slice logos, invite mounts, and let brief words become lettering.
+
+**The collision the owner has to rule on.** CLAUDE.md, 2026-08-29: *"No
+pixel originating from a 3D proof may ever become a Call-8 surface,
+production panel, print file, or ZIP asset."* That ruling was made after
+Northgate's panels turned out to be crops of proof photographs, and it is
+what makes a Standard run fail at `panels.build` today
+(`production_panels_not_created`). The July flat step is an edit OF the hero,
+so it is pixels descended from a 3D render, transcribed flat by the model
+rather than cropped from the photograph. Restoring "the 3D design portion as
+before" with print files means reversing that ruling for the transcription
+case, or not restoring it. Nothing in this document changes code.

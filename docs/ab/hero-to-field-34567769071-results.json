@@ -1,0 +1,469 @@
+{
+  "arms": [
+    "R",
+    "E"
+  ],
+  "imageRequestsExecuted": 8,
+  "fixture": "scripts/fixtures/premigration-heroes.json",
+  "results": [
+    {
+      "label": "flamingo",
+      "generationId": "d0c43c25-1735-4998-9a79-43ff63e40fd1",
+      "companyName": "Flamingo Pools",
+      "vehicle": {
+        "type": "truck",
+        "year": "2022",
+        "make": "Ford",
+        "model": "F250 Crew Cab"
+      },
+      "arms": {
+        "R": {
+          "contract": "designpro.atlas-field-prompt.v3",
+          "promptChars": 4376,
+          "promptSha256": "4d622bf576c45320d1a6313a3ebce2eab0f7ca3002431c7bc0441135936b73b2",
+          "parts": 2,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "1:1",
+              "imageSize": "4K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 54951,
+          "rawSha256": "1e127dff4d9a07b389c383d2ddae2d2ad6389c2b65a808255c3688f396df970c",
+          "normalizedHash": "129885d2a676ffc62f5abebe1477a7c56c5d57a9ed7d16eb6665ca9d185b8c66",
+          "deterministic": {
+            "accepted": false,
+            "blockingFailures": [
+              "roof lumaStddev=1.04"
+            ],
+            "cutoutFindings": []
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a logo and a scenic background, with no vehicles or vehicle parts depicted."
+          },
+          "borderRing": {
+            "lumaStd": 79.3,
+            "median": 192,
+            "nearMedianShare": 0.023
+          }
+        },
+        "E": {
+          "contract": "restylepro generate-2d-proof brandedTiers[0] @ a3e4917",
+          "promptChars": 953,
+          "parts": 3,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "21:9",
+              "imageSize": "2K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 22516,
+          "rawSha256": "8ea997c80b232b6d91d7972a60c11068248289c7b1e213dbe5aceb4de84cccee",
+          "width": 3168,
+          "height": 1344,
+          "fullBleed": {
+            "contract": "designpro.atlas-fullbleed-colourblind.v1",
+            "zones": {
+              "driver": {
+                "surfaceKey": "driver",
+                "sampledAt": "1024x434",
+                "sampleFactor": 3.09375,
+                "artworkRatio": 0.48383,
+                "nonArtworkRatio": 0.51617,
+                "largestNonArtworkComponentRatio": 0.22519,
+                "edgeReachableFieldRatio": 0.29098,
+                "interiorFieldRatio": 0.22519,
+                "nonArtworkComponentCount": 3,
+                "borderArtworkRatio": 0.35062,
+                "contourScore": 0.42627,
+                "fullBleedCompliant": false
+              }
+            },
+            "fullBleedCompliantSurfaces": [],
+            "fullBleedCompliantCount": 0,
+            "worstNonArtworkRatio": 0.51617,
+            "worstContourScore": 0.42627
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a single rectangular banner with a logo and a pool scene, with no depiction of a vehicle or vehicle parts."
+          },
+          "borderRing": {
+            "lumaStd": 18.62,
+            "median": 93,
+            "nearMedianShare": 0.6504
+          }
+        }
+      },
+      "hero": {
+        "sha256": "aeb7bad03d8daa7064a26cc8d9b5afcc65ff5d639531f09cb9072e0f2b04f166",
+        "width": 5504,
+        "height": 3072,
+        "preview": "flamingo-hero-1600.jpg"
+      },
+      "geometry": {
+        "state": "measured",
+        "genieManifestHash": "766258a022b2a2da16007affc37ade77ee0af79f7b25f4f74a2039821de75b96"
+      }
+    },
+    {
+      "label": "harbor",
+      "generationId": "3ff0a82a-0299-4e5d-ba39-7df516f6d303",
+      "companyName": "Harbor Line Marine Service",
+      "vehicle": {
+        "type": "van",
+        "year": "2022",
+        "make": "Ford",
+        "model": "Transit"
+      },
+      "arms": {
+        "R": {
+          "contract": "designpro.atlas-field-prompt.v3",
+          "promptChars": 4295,
+          "promptSha256": "8d0418d9a77254e14bdf482443876378d5810ac6d75fd1a495db52af5cf6327a",
+          "parts": 2,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "1:1",
+              "imageSize": "4K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 53297,
+          "rawSha256": "080f86a18272aea045ac1988ad3208b3c0fc93ea65e7c6d86d95bea49941d95e",
+          "normalizedHash": "9dc6fcce282cdc00161cac2b76eb6fd47cd935f1796420fd03511f57d678f6d2",
+          "deterministic": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": []
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a marine service logo and text on a wavy ocean background, with no vehicle depicted."
+          },
+          "borderRing": {
+            "lumaStd": 51.58,
+            "median": 63,
+            "nearMedianShare": 0.0729
+          }
+        },
+        "E": {
+          "contract": "restylepro generate-2d-proof brandedTiers[0] @ a3e4917",
+          "promptChars": 953,
+          "parts": 3,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "21:9",
+              "imageSize": "2K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 23614,
+          "rawSha256": "c5f6761b1401aeb159b775c20ac54cc62bccd05ae789acccb690b61f884985f2",
+          "width": 3168,
+          "height": 1344,
+          "fullBleed": {
+            "contract": "designpro.atlas-fullbleed-colourblind.v1",
+            "zones": {
+              "driver": {
+                "surfaceKey": "driver",
+                "sampledAt": "1024x434",
+                "sampleFactor": 3.09375,
+                "artworkRatio": 0.44803,
+                "nonArtworkRatio": 0.55197,
+                "largestNonArtworkComponentRatio": 0.09358,
+                "edgeReachableFieldRatio": 0.49129,
+                "interiorFieldRatio": 0.06068,
+                "nonArtworkComponentCount": 11,
+                "borderArtworkRatio": 0.44746,
+                "contourScore": 0.55197,
+                "fullBleedCompliant": false
+              }
+            },
+            "fullBleedCompliantSurfaces": [],
+            "fullBleedCompliantCount": 0,
+            "worstNonArtworkRatio": 0.55197,
+            "worstContourScore": 0.55197
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a logo and text on a background of ocean waves, filling the entire rectangular canvas without any depiction of a vehicle."
+          },
+          "borderRing": {
+            "lumaStd": 66.58,
+            "median": 82,
+            "nearMedianShare": 0.0604
+          }
+        }
+      },
+      "hero": {
+        "sha256": "d10613fbe50383a82752cc9d22e54dfd0bbc4f4174281f36688e6149105329b9",
+        "width": 5504,
+        "height": 3072,
+        "preview": "harbor-hero-1600.jpg"
+      },
+      "geometry": {
+        "state": "derived",
+        "genieManifestHash": "9af888fde7748150b133f6efa202536fd57302b37fd760144de9c1e0089846eb"
+      }
+    },
+    {
+      "label": "dental",
+      "generationId": "4fa058c2-dd74-458a-9700-e2a9b6e05d42",
+      "companyName": "Designer Dental",
+      "vehicle": {
+        "type": "suv",
+        "year": "2024",
+        "make": "Lamborghini",
+        "model": "Urus"
+      },
+      "arms": {
+        "R": {
+          "contract": "designpro.atlas-field-prompt.v3",
+          "promptChars": 4338,
+          "promptSha256": "54983f01fbca145c6c60458ddec3ea5ffc22a848d4d665cc48f6bc39eedacc3b",
+          "parts": 2,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "1:1",
+              "imageSize": "4K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 50552,
+          "rawSha256": "3822698de4a0d29d59ed68ee26b20cc4ea9bfdbfe61b6d9c111a27e009ac5ff8",
+          "normalizedHash": "f4ca1f68bb0c8da4bc078ed9f3284bd8bd2921dc26ae05b1b81eb646d9426f08",
+          "deterministic": {
+            "accepted": false,
+            "blockingFailures": [],
+            "cutoutFindings": [
+              "driver largestCutoutComponentRatio=0.02964 (flatBlackRatio=0.03074) inside a zone that is 96.7% artwork -- one wheel/glass/bed shape cut out of the panel",
+              "passenger largestCutoutComponentRatio=0.18649 (flatBlackRatio=0.24591) inside a zone that is 69.9% artwork -- one wheel/glass/bed shape cut out of the panel",
+              "front largestCutoutComponentRatio=0.21423 (flatBlackRatio=0.26045) inside a zone that is 70.3% artwork -- one wheel/glass/bed shape cut out of the panel",
+              "rear largestCutoutComponentRatio=0.37382 (flatBlackRatio=0.40935) inside a zone that is 58.2% artwork -- one wheel/glass/bed shape cut out of the panel"
+            ]
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a single, flat graphic design with text and an image, without any depiction of a vehicle."
+          },
+          "borderRing": {
+            "lumaStd": 18.91,
+            "median": 227,
+            "nearMedianShare": 0.1609
+          }
+        },
+        "E": {
+          "contract": "restylepro generate-2d-proof brandedTiers[0] @ a3e4917",
+          "promptChars": 953,
+          "parts": 3,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "21:9",
+              "imageSize": "2K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 23876,
+          "rawSha256": "fbe7ea6068d624c1aa8270f60fc36781e187e7f337beecaedd997f75117b116f",
+          "width": 3168,
+          "height": 1344,
+          "fullBleed": {
+            "contract": "designpro.atlas-fullbleed-colourblind.v1",
+            "zones": {
+              "driver": {
+                "surfaceKey": "driver",
+                "sampledAt": "1024x434",
+                "sampleFactor": 3.09375,
+                "artworkRatio": 0.47556,
+                "nonArtworkRatio": 0.52444,
+                "largestNonArtworkComponentRatio": 0.45072,
+                "edgeReachableFieldRatio": 0.49843,
+                "interiorFieldRatio": 0.02601,
+                "nonArtworkComponentCount": 6,
+                "borderArtworkRatio": 0.41174,
+                "contourScore": 0.49061,
+                "fullBleedCompliant": false
+              }
+            },
+            "fullBleedCompliantSurfaces": [],
+            "fullBleedCompliantCount": 0,
+            "worstNonArtworkRatio": 0.52444,
+            "worstContourScore": 0.49061
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a flat graphic banner with text and a person, with no depiction of a vehicle or vehicle parts."
+          },
+          "borderRing": {
+            "lumaStd": 104.23,
+            "median": 1,
+            "nearMedianShare": 0.5336
+          }
+        }
+      },
+      "hero": {
+        "sha256": "b0d7559fd718dd49509e8e5f44e711c2cdb047b942a8f706df162db8430b691e",
+        "width": 5504,
+        "height": 3072,
+        "preview": "dental-hero-1600.jpg"
+      },
+      "geometry": {
+        "state": "unresolved",
+        "genieManifestHash": "ba12e6c49bfdfd43242fccb1d8d86e09f0f77989dad85260eba7c267841c51ad"
+      }
+    },
+    {
+      "label": "mclaren",
+      "generationId": "f74255be-4546-4f5d-ac83-95d6f498ea77",
+      "companyName": null,
+      "vehicle": {
+        "type": "car",
+        "year": "2022",
+        "make": "McLaren",
+        "model": "720S"
+      },
+      "arms": {
+        "R": {
+          "contract": "designpro.atlas-field-prompt.v3",
+          "promptChars": 4030,
+          "promptSha256": "ae84f1dd17d04ec4581122663ce78c2ff5e0312e245b267decb44bf24113faa9",
+          "parts": 2,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "1:1",
+              "imageSize": "4K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 49971,
+          "rawSha256": "0e5f0bf5b67049fca3a94d114be4a42271220ca830b2c7f4297fbc0ce96ab574",
+          "normalizedHash": "8d3819b294d2ac32fe519a96436279aef270abcd34d08e79dd665147803c8a3e",
+          "deterministic": {
+            "accepted": true,
+            "blockingFailures": [],
+            "cutoutFindings": []
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays multiple rectangular regions of flat 2D print artwork, each filled corner to corner with continuous graphics, and no vehicle or vehicle parts are depicted."
+          },
+          "borderRing": {
+            "lumaStd": 63.11,
+            "median": 192,
+            "nearMedianShare": 0.0426
+          }
+        },
+        "E": {
+          "contract": "restylepro generate-2d-proof brandedTiers[0] @ a3e4917",
+          "promptChars": 953,
+          "parts": 3,
+          "images": 1,
+          "generationConfig": {
+            "responseModalities": [
+              "TEXT",
+              "IMAGE"
+            ],
+            "imageConfig": {
+              "aspectRatio": "21:9",
+              "imageSize": "2K"
+            }
+          },
+          "ok": true,
+          "elapsedMs": 29951,
+          "rawSha256": "54c79b39a3551e256632aa3c43b2e6dd99d8b6e5ce64a8dcee662c6cc1526c7b",
+          "width": 3168,
+          "height": 1344,
+          "fullBleed": {
+            "contract": "designpro.atlas-fullbleed-colourblind.v1",
+            "zones": {
+              "driver": {
+                "surfaceKey": "driver",
+                "sampledAt": "1024x434",
+                "sampleFactor": 3.09375,
+                "artworkRatio": 0.90024,
+                "nonArtworkRatio": 0.09976,
+                "largestNonArtworkComponentRatio": 0.03385,
+                "edgeReachableFieldRatio": 0.01572,
+                "interiorFieldRatio": 0.08404,
+                "nonArtworkComponentCount": 5,
+                "borderArtworkRatio": 0.99073,
+                "contourScore": 0.09976,
+                "fullBleedCompliant": false
+              }
+            },
+            "fullBleedCompliantSurfaces": [],
+            "fullBleedCompliantCount": 0,
+            "worstNonArtworkRatio": 0.09976,
+            "worstContourScore": 0.09976
+          },
+          "outputClass": {
+            "disposition": "flat_atlas",
+            "blocking": false,
+            "evidence": "The image displays a continuous watercolor pattern of flowers and waves, which is a flat 2D graphic with no vehicle elements or vehicle-shaped boundaries."
+          },
+          "borderRing": {
+            "lumaStd": 47.43,
+            "median": 209,
+            "nearMedianShare": 0.1516
+          }
+        }
+      },
+      "hero": {
+        "sha256": "ebfd17309a1b0cc549cecbc39fb9495bb49788adf6546df5f95745870d6a8157",
+        "width": 5504,
+        "height": 3072,
+        "preview": "mclaren-hero-1600.jpg"
+      },
+      "geometry": {
+        "state": "derived",
+        "genieManifestHash": "f715c306a868183249efe88005f3d42a4571bf1dcfb61cd651e0472cbc55d8a5"
+      }
+    }
+  ]
+}
