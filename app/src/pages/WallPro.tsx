@@ -70,6 +70,10 @@ export default function WallPro() {
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  // Latest photo and corners, readable from a detection that started earlier.
+  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]);
+  photoRef.current = photo; cornersRef.current = corners;
   const [history, setHistory] = useState<History | null>(null);
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
@@ -163,12 +167,10 @@ export default function WallPro() {
       const asset = { ...validated, file, url: retain(validated.url) };
       if (role === 'photo') {
         setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before');
-        // Uploading a wall photo means "find my wall": detection runs at once. It
-        // is a preview aid, so a signed-out customer or a model failure leaves the
-        // upload in place and falls back to hand marking rather than failing it.
-        setBusy('Detecting your wall');
-        try { await detectPhoto(asset); }
-        catch (e) { setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+        // Uploading a wall photo means "find my wall": detection starts at once,
+        // in the background. It must not hold the form: the customer types the
+        // wall size while it runs, and the corner gate still guards Generate.
+        void detectInBackground(asset);
       }
       if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); await recordVersion('upload', asset, { note: file.name.slice(0, 200) }); }
       if (role === 'reference') { setReference(asset); setArtwork(null); }
@@ -253,18 +255,33 @@ export default function WallPro() {
     const wallPath = asset.path || await uploadWallAsset(asset, user.id);
     if (!asset.path) setPhoto(old => old && old.url === asset.url ? { ...old, path: wallPath } : old);
     const found = await detectWall(wallPath);
+    // The customer may have replaced the photo or tapped corners while the model
+    // was thinking. A stale answer, or one that would overwrite hand-placed
+    // corners, is dropped rather than applied on top of their work.
+    if (photoRef.current?.url !== asset.url) return;
+    const handMarked = validWallCorners(cornersRef.current);
     const cornersOk = !!found.wall && validWallCorners(found.wall);
-    if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
+    if (!handMarked) { if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); } }
     setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
-    setView(artwork && cornersOk ? 'after' : 'before'); setError('');
+    setView(artwork && (cornersOk || handMarked) ? 'after' : 'before'); setError('');
     const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
-    setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+  }
+  /** Detection never holds the form: it is a preview aid, so it runs beside the
+   * customer's typing and a signed-out session or a model failure leaves the
+   * upload in place and falls back to hand marking. */
+  async function detectInBackground(asset: WallAsset) {
+    setDetecting(true); setNotice('Detecting your wall corners and the areas to protect. Enter the wall size meanwhile, or tap the corners yourself.');
+    try { await detectPhoto(asset); }
+    catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+    finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
-  async function detectMyWall() {
-    if (!photo) return;
-    await run('Detecting your wall', () => detectPhoto(photo));
+  function detectMyWall() {
+    if (!photo || detecting) return;
+    setCorners([]); setMarking('wall');
+    void detectInBackground(photo);
   }
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
@@ -436,8 +453,8 @@ export default function WallPro() {
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Corners and protected areas are detected automatically. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
-              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall again</Button>
-              <p className="text-xs text-slate-600">Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
+              <Button className="w-full" variant="outline" disabled={!!busy || detecting} onClick={detectMyWall}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting your wall…' : 'Detect my wall again'}</Button>
+              <p className="text-xs text-slate-600">{detecting ? 'Finding the corners and the areas to protect (windows, drapes, doors, outlets, furniture). You can enter the wall size now.' : 'Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.'}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
