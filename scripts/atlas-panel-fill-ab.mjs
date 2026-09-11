@@ -51,6 +51,7 @@ const sharp = require_("sharp");
 const qc = require_("./atlas-master-qc.cjs");
 const { fillMasterCutouts, _test: fillTest } = require_("./atlas-cutout-fill.cjs");
 const { createProvider } = require_("./generation-provider.cjs");
+const { normalizeAtlasMaster } = require_("./flat-first-atlas.cjs");
 
 const args = Object.fromEntries(
   process.argv.slice(2).flatMap((a, i, all) => (a.startsWith("--") ? [[a.slice(2), all[i + 1]]] : [])),
@@ -69,6 +70,15 @@ const DRAWS = Math.min(2, Math.max(1, Number(args.draws || 1)));
 const DILATE_PX = Math.max(0, Number(args.dilate || 24));
 const FEATHER_PX = Math.max(1, Number(args.feather || 10));
 const MODEL = String(args.model || "gemini-3-pro-image").trim();
+// The stored panels of an accepted revision are cut from the ACCEPTED master,
+// which on a six-surface run is the deterministically filled sheet: the disc
+// is already rgb(25,19,23), one value outside the near-black predicate, so the
+// gate mask finds nothing (run 34571865270: 0 image calls). The raw Call-1
+// candidate the edge stored (`atlas-call1/<requestId>.png`) is the sheet the
+// fill step would actually receive in production, so the subject is rebuilt
+// from it exactly as production does: normalize, then `zone.extraction` crop
+// and rotation. Its hash is checked against the revision's `preRepairMasterHash`.
+const RAW_MASTER = String(args["raw-master"] || "").trim();
 const REFERENCE_EDGE = 1024;
 const ALL = ["driver", "passenger", "hood", "roof", "front", "rear"];
 
@@ -193,7 +203,7 @@ async function main() {
   // PostgREST (`uuid ~~ unknown`). Same resolution as atlas-measure-master.
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(GENERATION);
   let query = supabase.from("designpro_flat_atlas_revisions")
-    .select("generation_id,master_storage_path,master_content_hash,metadata,created_at")
+    .select("generation_id,master_storage_path,master_content_hash,manifest,metadata,created_at")
     .order("created_at", { ascending: false });
   query = isUuid ? query.eq("generation_id", GENERATION).limit(1) : query.limit(200);
   const { data: found, error } = await query;
@@ -214,15 +224,46 @@ async function main() {
   log(`generation ${row.generation_id} master ${row.master_content_hash.slice(0, 12)} · ${panels.length} panel(s) · model ${MODEL} · dilate ${DILATE_PX}px feather ${FEATHER_PX}px`);
   writeFileSync(join(OUT, "prompt-fill.txt"), fillPrompt()); produced.push("prompt-fill.txt");
 
+  // ── the raw, pre-fill sheet, when asked for ──────────────────────────────
+  let rawNormalized = null;
+  let rawProvenance = null;
+  if (RAW_MASTER) {
+    const rawBytes = await download(RAW_MASTER);
+    const rawHash = sha(rawBytes);
+    rawNormalized = await normalizeAtlasMaster(rawBytes, row.manifest);
+    const normalizedHash = sha(rawNormalized);
+    const preRepair = String(row.metadata?.preRepairMasterHash || "");
+    rawProvenance = { storagePath: RAW_MASTER, rawHash, normalizedHash, preRepairMasterHash: preRepair || null, matchesPreRepair: Boolean(preRepair) && normalizedHash === preRepair };
+    log(`raw master ${RAW_MASTER}: raw ${rawHash.slice(0, 12)} → normalized ${normalizedHash.slice(0, 12)} · preRepairMasterHash ${preRepair.slice(0, 12) || "none"} · ${rawProvenance.matchesPreRepair ? "MATCH" : "no match (proceeding on the normalized raw sheet)"}`);
+    produced.push(await preview(rawNormalized, "master-raw-normalized-1600.jpg"));
+  }
+  const rawPanel = async (key) => {
+    const zone = (row.manifest?.zones || []).find((z) => z.surfaceKey === key);
+    if (!zone?.extraction) throw new Error(`${key}: manifest zone has no extraction rect`);
+    const { x, y, w, h, outputRotationDegrees = 0 } = zone.extraction;
+    return sharp(rawNormalized, { limitInputPixels: false })
+      .extract({ left: Number(x), top: Number(y), width: Number(w), height: Number(h) })
+      .rotate(Number(outputRotationDegrees))
+      .png({ compressionLevel: 6, adaptiveFiltering: false, palette: false, force: true })
+      .toBuffer();
+  };
+
   const results = [];
   let imageRequestsExecuted = 0;
   for (const panel of panels) {
     const key = panel.surfaceKey;
-    const subject = await download(panel.storagePath);
-    if (sha(subject) !== String(panel.contentHash)) throw new Error(`${key}: panel bytes do not match the revision's hash`);
+    const stored = await download(panel.storagePath);
+    if (sha(stored) !== String(panel.contentHash)) throw new Error(`${key}: panel bytes do not match the revision's hash`);
     const printWidthIn = Number(panel.printWidthIn), printHeightIn = Number(panel.printHeightIn);
+    let subject = stored;
+    if (rawNormalized) {
+      subject = await rawPanel(key);
+      const [a, b] = await Promise.all([sharp(subject).metadata(), sharp(stored).metadata()]);
+      if (a.width !== b.width || a.height !== b.height) throw new Error(`${key}: raw cut ${a.width}x${a.height} does not match the stored panel ${b.width}x${b.height}`);
+      produced.push(await preview(stored, `${key}-0-stored-accepted-1600.jpg`));
+    }
     produced.push(await preview(subject, `${key}-0-original-1600.jpg`));
-    const record = { surfaceKey: key, storagePath: panel.storagePath, contentHash: panel.contentHash, printWidthIn, printHeightIn, draws: [] };
+    const record = { surfaceKey: key, storagePath: panel.storagePath, contentHash: panel.contentHash, subject: rawNormalized ? "raw-call1-candidate" : "stored-accepted-panel", subjectHash: sha(subject), printWidthIn, printHeightIn, draws: [] };
     results.push(record);
     record.before = await gatePanel(subject, key, printWidthIn, printHeightIn);
     log(`${key}: original gate ${record.before.accepted ? "PASS" : "REFUSE"} · cut-outs ${record.before.cutoutFindings.length} · largest ${record.before.largestCutoutComponentRatio}`);
@@ -305,7 +346,7 @@ async function main() {
     "",
   ].join("\n");
   writeFileSync(join(OUT, "REPORT.md"), report);
-  writeFileSync(join(OUT, "results.json"), JSON.stringify({ generation: row.generation_id, master: row.master_content_hash, model: MODEL, dilatePx: DILATE_PX, featherPx: FEATHER_PX, imageRequestsExecuted, results }, null, 2));
+  writeFileSync(join(OUT, "results.json"), JSON.stringify({ generation: row.generation_id, master: row.master_content_hash, rawMaster: rawProvenance, model: MODEL, dilatePx: DILATE_PX, featherPx: FEATHER_PX, imageRequestsExecuted, results }, null, 2));
   produced.push("REPORT.md", "results.json");
   return finish(supabase, produced);
 }
