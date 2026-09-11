@@ -230,8 +230,10 @@ async function main() {
   if (RAW_MASTER) {
     const rawBytes = await download(RAW_MASTER);
     const rawHash = sha(rawBytes);
-    rawNormalized = await normalizeAtlasMaster(rawBytes, row.manifest);
+    const normalized = await normalizeAtlasMaster(rawBytes, row.manifest);
+    rawNormalized = normalized.bytes;
     const normalizedHash = sha(rawNormalized);
+    log(`raw master delivered ${normalized.deliveredWidthPx}x${normalized.deliveredHeightPx}`);
     const preRepair = String(row.metadata?.preRepairMasterHash || "");
     rawProvenance = { storagePath: RAW_MASTER, rawHash, normalizedHash, preRepairMasterHash: preRepair || null, matchesPreRepair: Boolean(preRepair) && normalizedHash === preRepair };
     log(`raw master ${RAW_MASTER}: raw ${rawHash.slice(0, 12)} → normalized ${normalizedHash.slice(0, 12)} · preRepairMasterHash ${preRepair.slice(0, 12) || "none"} · ${rawProvenance.matchesPreRepair ? "MATCH" : "no match (proceeding on the normalized raw sheet)"}`);
