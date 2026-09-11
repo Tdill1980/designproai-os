@@ -76,6 +76,11 @@ export default function WallPro() {
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  // Nobody has to tap corners. A photo starts as the whole frame ('default'),
+  // detection tightens it when it can ('detected'), and only a customer's own
+  // tap or drag ('manual') is ever protected from being replaced.
+  const cornersOrigin = useRef<'default' | 'detected' | 'manual'>('default');
+  const fullFrame = () => UNIT_WALL.map(p => ({ ...p }));
   // The on-wall view switches on by itself the moment a design and four valid
   // corners both exist, whichever arrives last: detection landing after a
   // generation, a generation landing after hand-marked corners, or a restore.
@@ -174,7 +179,7 @@ export default function WallPro() {
       const validated = await validateWallUpload(file);
       const asset = { ...validated, file, url: retain(validated.url) };
       if (role === 'photo') {
-        setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before');
+        setPhoto(asset); setCorners(fullFrame()); cornersOrigin.current = 'default'; setExclusions([]); setExcludeDraft([]); setMarking(null); setView('before');
         // Uploading a wall photo means "find my wall": detection starts at once,
         // in the background. It must not hold the form: the customer types the
         // wall size while it runs, and the corner gate still guards Generate.
@@ -208,14 +213,12 @@ export default function WallPro() {
       const current = rows.find(v => v.id === config.currentVersionId) || rows.at(-1) || null;
       setCurrentVersionId(current?.id ?? null);
     } else { setVersions([]); setCurrentVersionId(null); }
-    setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
     const restoredCornersValid = validWallCorners(config.corners || []);
-    setMarking(restoredCornersValid ? null : 'wall');
-    // Only a wall with four valid corners can show the projected design. A saved
-    // project that carries artwork on an unmarked wall opens on the photo so the
-    // customer finishes the corners; the compositor then runs on the fourth point.
-    setView(art ? (wall && !restoredCornersValid ? 'before' : 'after') : 'before');
-    if (art && wall && !restoredCornersValid) setNotice('This project has artwork but the wall corners are incomplete. Mark all four corners to see the design on your wall.');
+    // A saved project without usable corners still shows the design on the wall:
+    // the whole photo stands in until the customer adjusts.
+    setCorners(restoredCornersValid ? config.corners : wall ? fullFrame() : []); cornersOrigin.current = restoredCornersValid ? 'manual' : 'default';
+    setExclusions(config.exclusions || []); setExcludeDraft([]); setMarking(null);
+    setView(art ? 'after' : 'before');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
   }
@@ -267,28 +270,29 @@ export default function WallPro() {
     // was thinking. A stale answer, or one that would overwrite hand-placed
     // corners, is dropped rather than applied on top of their work.
     if (photoRef.current?.url !== asset.url) return;
-    const handMarked = validWallCorners(cornersRef.current);
+    const handMarked = cornersOrigin.current === 'manual' && validWallCorners(cornersRef.current);
     const cornersOk = !!found.wall && validWallCorners(found.wall);
-    if (!handMarked) { if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); } }
+    if (!handMarked && cornersOk) { setCorners(found.wall!); cornersOrigin.current = 'detected'; }
+    setMarking(null);
     setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
-    setView(artworkRef.current && (cornersOk || handMarked) ? 'after' : 'before'); setError('');
+    setView(artworkRef.current ? 'after' : 'before'); setError('');
     const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
-    setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'Using the whole photo as the wall and ') + areas + '. Nothing to do unless you want to adjust: drag any point. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
    * customer's typing and a signed-out session or a model failure leaves the
    * upload in place and falls back to hand marking. */
   async function detectInBackground(asset: WallAsset) {
-    setDetecting(true); setNotice('Detecting your wall corners and the areas to protect. Enter the wall size meanwhile, or tap the corners yourself.');
+    setDetecting(true); setNotice('Finding your wall and the areas to protect. Enter the wall size meanwhile; nothing else is needed.');
     try { await detectPhoto(asset); }
-    catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+    catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Using the whole photo as the wall; drag the corners if the wall is smaller.'); }
     finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
   function detectMyWall() {
     if (!photo || detecting) return;
-    setCorners([]); setMarking('wall');
+    cornersOrigin.current = 'default'; setMarking(null);
     void detectInBackground(photo);
   }
   async function restoreVersion(version: WallVersion) {
@@ -434,7 +438,7 @@ export default function WallPro() {
       return;
     }
     if (marking === 'exclude') { setExcludeDraft(old => [...old, p]); return; }
-    const next = corners.length >= 4 ? [p] : [...corners, p]; setCorners(next);
+    const next = corners.length >= 4 ? [p] : [...corners, p]; setCorners(next); cornersOrigin.current = 'manual';
     if (next.length === 4) { setMarking(null); if (!validWallCorners(next)) setError('Those corners cross or form a narrow area. Mark them clockwise starting at the top left.'); else { setError(''); if (artwork) setView('after'); } }
   }
   async function prepareArtworkDownload() {
@@ -538,10 +542,10 @@ export default function WallPro() {
             </div>}
             {photo ? <div>
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
-              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={setCorners} onMasks={setExclusions} />
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCorners(next); }} onMasks={setExclusions} />
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />{corners.length ? 'Restart wall corners' : 'Mark wall corners'}</Button>
+                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />Re-mark wall corners</Button>
                 <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Mask window / drapes</Button>
                 <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Outline an object</Button>
                 {marking === 'exclude' && <Button size="sm" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish mask</Button>}
