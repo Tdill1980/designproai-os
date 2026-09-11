@@ -65,7 +65,7 @@ export default function WallPro() {
   const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | null>('wall');
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
   const [view, setView] = useState<'before' | 'after' | 'design'>('before');
-  const [showPrintGuides, setShowPrintGuides] = useState(false);
+  const showPrintGuides = false; // Print-seam guides on the photo are an internal aid; the customer page keeps them off.
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [showMasks, setShowMasks] = useState(true);
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
@@ -475,49 +475,7 @@ export default function WallPro() {
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Placement and pattern scale</h2>
-            <div className="grid gap-2">{([
-              { value: 'cover', label: 'Mural', hint: 'One image fills the whole wall. Motifs scale with the wall.' },
-              { value: 'repeat', label: 'Repeating pattern', hint: 'The image is one tile, repeated at a measured size like wallpaper.' },
-              { value: 'contain', label: 'Fit whole image', hint: 'Nothing cropped; margins where it does not cover.' },
-            ] as const).map(option => <button key={option.value} type="button" onClick={() => setPlacement(option.value)} className={'rounded-lg border p-3 text-left ' + (placement === option.value ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-slate-600">{option.hint}</span></button>)}</div>
-            {placement === 'repeat' && <div className="mt-3">
-              <p className="text-sm">Pattern scale (tile width)</p>
-              <div className="mt-1 grid grid-cols-5 gap-1">{[24, 36, 48, 72, 96].map(inches => <Button key={inches} size="sm" variant={repeatWidth === inches ? 'default' : 'outline'} onClick={() => setRepeatWidth(inches)}>{inches}″</Button>)}</div>
-              <label className="mt-2 block text-xs text-slate-600">Custom width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /></label>
-              <p className="mt-2 text-xs text-slate-500">One tile is the entire image; its height follows the image proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</p>
-            </div>}
-            {artwork?.width && artwork.height && metrics && (() => {
-              // Pixels over inches at this placement. A 4K mural on a 10-foot wall
-              // is not print quality whatever the preview looks like.
-              const ppi = Math.min(artwork.width / metrics.artworkWidth, artwork.height / metrics.artworkHeight);
-              const target = printSettings.minPpi;
-              return <p role="status" className={'mt-3 rounded-lg p-3 text-sm ' + (ppi >= target ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900')}>
-                <strong>{ppi.toFixed(0)} PPI</strong> at this size from a {artwork.width.toLocaleString()} × {artwork.height.toLocaleString()} px image. {ppi >= target ? `Print quality (${target} PPI needed).` : placement === 'repeat' ? `Below the ${target} PPI print target: choose a smaller tile or a higher-resolution image.` : `Below the ${target} PPI print target. If this is a pattern, choose Repeating pattern and a tile width; if it is a mural, it needs a higher-resolution master.`}
-              </p>;
-            })()}
-            {placement === 'repeat' && <div className="mt-3 rounded-lg border border-slate-200 p-3">
-              <label className="block text-sm">Seamless repeat<select className={inputClass} value={seamPreference} onChange={e => setSeamPreference(e.target.value as SeamlessPreference)}>
-                <option value="auto">Automatic: verify the tile, mirror if it does not join</option>
-                <option value="mirror">Mirror repeat: flip alternate tiles</option>
-                <option value="blend">Blended repeat: close the seam in the outer band</option>
-              </select></label>
-              <p role="status" className={'mt-2 text-xs ' + (seamReceipt && !seamReceipt.verified ? 'text-red-700' : 'text-slate-600')}>{!artwork ? 'Add artwork to check its seam.'
-                : seamBusy || !seamReceipt ? 'Checking that the tile joins seamlessly…'
-                : seamReceipt.method === 'verified' ? `Verified seamless as generated: the join is ${seamReceipt.before.ratio.toFixed(2)}× the neighbouring pixel step.`
-                : seamReceipt.method === 'mirror' ? `The tile ${seamReceipt.before.seamless ? 'joins on its own' : 'does not join on its own'} (${seamReceipt.before.ratio.toFixed(1)}×). Mirror repeat makes every join identical artwork, so it prints seamless.`
-                : `Seam closed by deterministic blend: ${seamReceipt.before.ratio.toFixed(1)}× before, ${seamReceipt.after?.ratio.toFixed(2)}× after.${seamReceipt.verified ? '' : ' Still not seamless. Choose Mirror repeat.'}`}</p>
-            </div>}
-            {metrics && placement === 'repeat' && <p role="status" className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-900">{metrics.across.toFixed(2)} tiles across × {metrics.down.toFixed(2)} down. Each tile: {metrics.artworkWidth.toFixed(2)}″ × {metrics.artworkHeight.toFixed(2)}″.</p>}
-            {artwork && !metrics && <p className="mt-2 text-sm text-red-700">Enter valid wall and repeat dimensions to preview.</p>}
-            <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm"><p className="font-semibold">Print panel width: {WALLPRO_PRINT_WIDTH}″</p>
-              <p className="mt-1 text-xs text-slate-500">Includes {printSettings.bleed}″ perimeter bleed and {printSettings.overlap}″ seam overlap. Adjust below in Prepare print files.</p>
-              {printPanels.length > 0 && <p className="mt-1 text-slate-600">{printPanels.length} {printPanels.length === 1 ? 'panel' : 'panels'} × {height + 2 * printSettings.bleed}″ printed height. {printPanels.length === 1 ? 'Panel' : 'Last panel'}: {Number(printPanels.at(-1)!.width.toFixed(2))}″ wide.</p>}
-              <p className="mt-2 text-xs text-slate-500">Guides mark where the next printed panel begins. Pattern scale continues through every overlap.</p>
-              <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={showPrintGuides} onChange={e => setShowPrintGuides(e.target.checked)} />Show 51-inch print panel guides</label>
-            </div>
-          </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid gap-2">{([
+          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
               { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
