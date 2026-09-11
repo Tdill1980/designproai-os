@@ -46,15 +46,24 @@ export function parseWallInput(body: any, owner: string) {
   if (typeof prompt !== 'string' || prompt.length > 6000) throw new Error('Describe your wall design in 1–6,000 characters.');
   if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe your wall design in 1–6,000 characters.');
   if (!['cover', 'contain', 'repeat'].includes(body.placement)) throw new Error('Choose a mural or repeating-pattern placement.');
-  const checkPath = (path: any) => {
+  const checkPath = (path: any, folders: string[] = ['uploads']) => {
     if (path === undefined || path === null) return null;
-    if (typeof path !== 'string' || !path.startsWith(owner + '/uploads/') || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(path.split('/')[2] || '') || path.split('/').length !== 3) throw new Error('The reference image is not one of your uploaded files.');
-    return path;
+    const parts = typeof path === 'string' ? path.split('/') : [];
+    const catalog = folders.includes('catalog') && parts.length === 2 && parts[0] === 'catalog' && /^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(parts[1]);
+    const owned = parts.length === 3 && parts[0] === owner && folders.includes(parts[1]) && /^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(parts[2]);
+    if (!catalog && !owned) throw new Error('The reference image is not one of your uploaded files.');
+    return path as string;
   };
   const wallPath = checkPath(body.wallPath), referencePath = checkPath(body.referencePath);
+  // A refinement's source is a version the owner already holds: their own
+  // generated master, an upload, a masked composite, or a catalog master.
+  const sourcePath = intent === 'refine' ? checkPath(body.sourcePath, ['uploads', 'generated', 'catalog']) : null;
+  const maskPath = intent === 'refine' ? checkPath(body.maskPath) : null;
   if (intent === 'match' && !referencePath) throw new Error('Upload the design to match first.');
   if (intent === 'wall' && !wallPath) throw new Error('Upload your wall photo first.');
-  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, wallPath, referencePath };
+  if (intent === 'refine' && !sourcePath) throw new Error('There is no current design version to refine.');
+  if (intent === 'refine' && !prompt.trim()) throw new Error('Describe what you want changed.');
+  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, wallPath, referencePath, sourcePath, maskPath };
 }
 
 /** Pixel size of the returned image, read from the container headers (PNG
@@ -128,7 +137,13 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // Resolve every private reference before charging or calling the provider.
       const parts: any[] = [{ text: wallDesignPrompt(input) }];
       let referenceBytes = 0;
-      for (const [label, path] of [[input.intent === 'wall' ? 'Wall photo — the room this artwork is for' : 'Wall photo — architectural context only', input.wallPath], [input.intent === 'match' ? 'Design to reproduce' : 'Style reference / existing wall design', input.referencePath]]) {
+      // A refinement keeps the framing of the version it edits, so its aspect
+      // comes from the source pixels, not from the wall.
+      let sourceDims: { width: number; height: number } | null = null;
+      const attachments: [string, string | null][] = input.intent === 'refine'
+        ? [['Current design (the version being refined)', input.sourcePath], ['Mask — only the white region may change', input.maskPath], ['Reference for the requested change', input.referencePath]]
+        : [[input.intent === 'wall' ? 'Wall photo — the room this artwork is for' : 'Wall photo — architectural context only', input.wallPath], [input.intent === 'match' ? 'Design to reproduce' : 'Style reference / existing wall design', input.referencePath]];
+      for (const [label, path] of attachments) {
         if (!path) continue;
         const downloaded = await sb.storage.from(BUCKET).download(path);
         if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + label.toLowerCase() + ' could not be read. Upload it again before generating.', code: 'UPLOAD_UNREADABLE' }, 400);
@@ -136,8 +151,11 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
         if (!imageTypes.includes(blob.type) || blob.size > 20 * 1024 * 1024) return response({ error: 'Reference images must be JPG, PNG or WebP and no larger than 20 MB.' }, 400);
         referenceBytes += blob.size;
         if (referenceBytes > 14 * 1024 * 1024) return response({ error: 'For AI generation, use smaller wall and reference images totaling no more than 14 MB. Your full-size artwork can still be uploaded for a preview.' }, 400);
-        parts.push({ text: label }, { inlineData: { mimeType: blob.type, data: toBase64(new Uint8Array(await blob.arrayBuffer())) } });
+        const raw = new Uint8Array(await blob.arrayBuffer());
+        if (path === input.sourcePath) sourceDims = imageDimensions(raw);
+        parts.push({ text: label }, { inlineData: { mimeType: blob.type, data: toBase64(raw) } });
       }
+      const requestedAspect = input.placement === 'repeat' ? '1:1' : input.intent === 'refine' && sourceDims ? nearestAspect(sourceDims.width, sourceDims.height) : nearestAspect(input.width, input.height);
       const reservation = await sb.rpc('reserve_wallpro_generation', { p_id: input.requestId, p_owner: owner, p_hash: hash, p_input: input });
       if (reservation.error) {
         const reason = reservation.error.message || '';
@@ -147,7 +165,7 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       reserved = true;
       const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: input.placement === 'repeat' ? '1:1' : nearestAspect(input.width,input.height), imageSize: '4K' } } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
         signal: AbortSignal.timeout(100_000),
       });
       if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
@@ -158,13 +176,13 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // Production is judged by returned pixels over wall inches, never by the
       // size that was requested. Log both so the enlargement a wall needs is a
       // recorded number, and hand the same numbers back to the caller.
-      const aspectRatio = input.placement === 'repeat' ? '1:1' : nearestAspect(input.width, input.height);
+      const aspectRatio = requestedAspect;
       const dims = imageDimensions(bytes);
       const enlargement = dims ? Number(Math.max(input.width * PRODUCTION_PPI / dims.width, input.height * PRODUCTION_PPI / dims.height).toFixed(2)) : null;
       console.log(JSON.stringify({ event: 'wall_master_returned', request_id: input.requestId, intent: input.intent, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, mime: final.mimeType, bytes: bytes.length, width: dims?.width ?? null, height: dims?.height ?? null, wall_in: [input.width, input.height], production_ppi: PRODUCTION_PPI, required_enlargement: enlargement }));
       const ext = final.mimeType === 'image/jpeg' ? 'jpg' : final.mimeType === 'image/webp' ? 'webp' : 'png';
       const path = owner + '/generated/' + input.requestId + '.' + ext;
-      const name = (input.prompt.trim() || (input.intent === 'match' ? 'Matched design' : input.intent === 'wall' ? 'Design for your wall' : 'Wall design')).slice(0, 120);
+      const name = (input.intent === 'refine' ? 'Refined: ' + input.prompt.trim() : input.prompt.trim() || (input.intent === 'match' ? 'Matched design' : input.intent === 'wall' ? 'Design for your wall' : 'Wall design')).slice(0, 120);
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: final.mimeType, upsert: false });
       if (uploaded.error) throw new Error('The design could not be saved. Your render credit will be returned.');
       const finish = await sb.rpc('finish_wallpro_generation', { p_id: input.requestId, p_owner: owner, p_path: path, p_name: name, p_error: null });

@@ -15,11 +15,32 @@ const DESIGN_TRANSLATION =
  *          print-ready master, applying only the requested changes.
  *  wall    design for this specific wall photograph; the brief is optional.
  * Every intent outputs the same thing: flat artwork, edge to edge, at 4K. */
-export type WallIntent = 'prompt' | 'match' | 'wall';
-export const WALL_INTENTS: readonly WallIntent[] = ['prompt', 'match', 'wall'];
+export type WallIntent = 'prompt' | 'match' | 'wall' | 'refine';
+export const WALL_INTENTS: readonly WallIntent[] = ['prompt', 'match', 'wall', 'refine'];
 
-export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null }) {
+/** refine: the customer's current version is the first image; produce the
+ * next version by applying ONLY the requested change. Composition, motif
+ * placement and scale, palette, style, framing and edges are preserved unless
+ * the change names them. With a mask, only the white region may change; the
+ * page additionally restores the black region pixel-for-pixel from the parent,
+ * so preservation outside the mask is deterministic, not a model promise. */
+export function wallRefinePrompt(input: { prompt: string; placement: string; maskPath?: string | null; referencePath?: string | null }) {
+  const tile = input.placement === 'repeat';
+  return [
+    DESIGNER_IDENTITY,
+    'The first image is the customer\'s current wall design. Produce the NEXT VERSION of this same design by applying only the change requested below. Everything the change does not name stays exactly as it is: composition, motif placement and scale, palette, rendering style, framing, edges and overall character. This is an edit of the existing artwork, not a new design.',
+    'Requested change: ' + input.prompt.trim(),
+    input.maskPath ? 'A mask image follows the design: only the WHITE region of the mask may change. The BLACK region must remain identical to the current design.' : '',
+    input.referencePath ? 'A reference image follows for the requested change, for example a colour or object to match. Use it only for that change.' : '',
+    'Output one continuous flat 2D artwork image, edge to edge, at the same framing and aspect as the current design, at full 4K detail. Not a room photograph, no mockup, no borders, no captions.',
+    tile ? 'The design is a seamless repeating tile: keep opposite edges joining exactly as before.' : 'Keep the artwork continuous across print seams; do not draw panel divisions or print marks.',
+    'Return the image only, with no written explanation.'
+  ].filter(Boolean).join('\n\n');
+}
+
+export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';
+  if (intent === 'refine') return wallRefinePrompt(input);
   const brief = input.prompt.trim();
   const tile = input.placement === 'repeat';
   return [

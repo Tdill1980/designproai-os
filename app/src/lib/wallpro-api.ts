@@ -141,6 +141,36 @@ export async function deleteWallDesign(row: Pick<WallCatalogRow, 'id'>) {
   const { error } = await db.from('wallpro_designs').delete().eq('id', row.id);
   if (error) throw new Error('The design could not be removed: ' + error.message);
 }
+/* ── Design sessions: CREATE → REFINE* → APPROVE → PRODUCTION ───────────── */
+
+export type WallVersionKind = 'create' | 'refine' | 'upload' | 'catalog' | 'composite';
+export type WallVersion = {
+  id: string; project_id: string; owner_id: string; version_no: number; parent_version_id: string | null; kind: WallVersionKind;
+  intent: string | null; prompt: string | null; mask_path: string | null; reference_path: string | null; artwork_path: string;
+  width_px: number | null; height_px: number | null; sha256: string | null; generation_id: string | null; design_id: string | null;
+  placement: 'cover' | 'contain' | 'repeat'; repeat_width_in: number | null; status: 'draft' | 'approved'; note: string | null; created_at: string; approved_at: string | null;
+};
+export async function listWallVersions(projectId: string): Promise<WallVersion[]> {
+  const { data, error } = await db.from('wallpro_design_versions').select('*').eq('project_id', projectId).order('version_no', { ascending: true });
+  if (error) throw new Error('The design history could not be loaded: ' + error.message);
+  return (data || []) as WallVersion[];
+}
+/** Appends the next immutable version of a project's design. */
+export async function createWallVersion(input: { projectId: string; owner: string; parent: WallVersion | null; kind: WallVersionKind; intent?: string | null; prompt?: string | null; maskPath?: string | null; referencePath?: string | null; artworkPath: string; widthPx?: number | null; heightPx?: number | null; sha256?: string | null; generationId?: string | null; designId?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; note?: string | null; versionNo: number }): Promise<WallVersion> {
+  const row = { project_id: input.projectId, owner_id: input.owner, version_no: input.versionNo, parent_version_id: input.parent?.id ?? null, kind: input.kind, intent: input.intent ?? null, prompt: input.prompt ?? null,
+    mask_path: input.maskPath ?? null, reference_path: input.referencePath ?? null, artwork_path: input.artworkPath, width_px: input.widthPx ?? null, height_px: input.heightPx ?? null, sha256: input.sha256 ?? null,
+    generation_id: input.generationId ?? null, design_id: input.designId ?? null, placement: input.placement, repeat_width_in: input.placement === 'repeat' ? input.repeatWidthIn ?? null : null, note: input.note ?? null };
+  const { data, error } = await db.from('wallpro_design_versions').insert(row).select('*').single();
+  if (error) throw new Error('The design version could not be recorded: ' + error.message);
+  return data as WallVersion;
+}
+/** Exactly one approved version per project: the previous approval is withdrawn first. */
+export async function approveWallVersion(projectId: string, versionId: string): Promise<void> {
+  const clear = await db.from('wallpro_design_versions').update({ status: 'draft', approved_at: null }).eq('project_id', projectId).eq('status', 'approved');
+  if (clear.error) throw new Error('The previous approval could not be withdrawn: ' + clear.error.message);
+  const { error } = await db.from('wallpro_design_versions').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', versionId);
+  if (error) throw new Error('The version could not be approved: ' + error.message);
+}
 export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
 }
