@@ -189,10 +189,17 @@ async function main() {
   const provider = createProvider({ env: process.env });
 
   // ── the revision and its panels ──────────────────────────────────────────
-  const { data: rows, error } = await supabase.from("designpro_flat_atlas_revisions")
+  // `generation_id` is a uuid column, so a LIKE prefix is a type error in
+  // PostgREST (`uuid ~~ unknown`). Same resolution as atlas-measure-master.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(GENERATION);
+  let query = supabase.from("designpro_flat_atlas_revisions")
     .select("generation_id,master_storage_path,master_content_hash,metadata,created_at")
-    .like("generation_id", `${GENERATION}%`).order("created_at", { ascending: false }).limit(1);
-  if (error || !rows?.length) throw new Error(`revision not found for ${GENERATION}: ${error?.message || "no rows"}`);
+    .order("created_at", { ascending: false });
+  query = isUuid ? query.eq("generation_id", GENERATION).limit(1) : query.limit(200);
+  const { data: found, error } = await query;
+  if (error) throw new Error(`revision lookup failed for ${GENERATION}: ${error.message}`);
+  const rows = isUuid ? found : (found || []).filter((r) => String(r.generation_id).startsWith(GENERATION.toLowerCase()));
+  if (!rows?.length) throw new Error(`revision not found for ${GENERATION}`);
   const row = rows[0];
   const panels = (row.metadata?.callOnePanels || []).filter((p) => SURFACES.includes(p.surfaceKey));
   if (panels.length !== SURFACES.length) throw new Error(`panels ${SURFACES.join(",")} not all present on ${row.generation_id}`);
