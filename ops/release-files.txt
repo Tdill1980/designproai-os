@@ -86,6 +86,7 @@ runtime/atlas-panel-authoring.cjs
 runtime/atlas-accepted-checkpoint.cjs
 runtime/atlas-finishing-checkpoint.cjs
 runtime/atlas-finished-master.cjs
+runtime/atlas-hero-driver.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg

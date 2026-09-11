@@ -1,5 +1,63 @@
 # CLAUDE.md — designproai-os
 
+## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
+
+**Supersedes the "one image request" half of the 2026-08-31 artifact-graph
+contract and the 2026-09-06 six-surface restoration wherever they conflict.
+The gates, the lineage, the assembly and everything after Call 1 are untouched.**
+
+Owner, verbatim: *"It must create the hero driver side and then flip the driver
+for passenger side then show each to each side generated in parallel so for
+instance rear would see driver, passenger, front and hood then roof would see
+all."* — *"Requires multi-turn spatial reasoning. Passing the thought_signature
+from the hero driver-side generation into the passenger/rear/hood requests
+locks the design continuity across all panels."* — *"Keep Gemini Image Pro 3.
+DO NOT USE VERTEX or IMAGEN."* — *"we need speed a 7 minute orchestration is not
+good."* — *"OK Go with this LETS DO IT GET IT COMPLETED."*
+
+**Why (measured, designproai-os-prod, 21 days to 2026-09-11):** 73 failed /
+43 delivered. After the slot infra was fixed on 08-27, **36 of the 52
+failures were the ONE-IMAGE Call 1 drawing the vehicle into the six-surface
+sheet and a gate correctly refusing it** — across v23, v24 one-field, v27,
+v28 and v29. Five prompt versions did not move that number. The shape of the
+ask does: one 21:9 rectangle of printed artwork is the ask this model answers
+cleanly; six related rectangles of one vehicle on one 4096² canvas is the ask
+it keeps failing.
+
+**The cascade** (`runtime/atlas-hero-driver.cjs`, hybrid wiring chosen for
+latency, ≈1.8 min to a full master at the measured ~35 s per call):
+
+| stage | surfaces | how |
+|---|---|---|
+| 1 | driver | the hero — from scratch, through the REAL persona brain (`buildDesignIQPrompt` with `atlasHeroSurface`, edge mode `atlas-author`, `first:true`) |
+| 2 | passenger | `flop(driver)` in code, then the existing brand-band mirror re-drops lettering forward. **Zero model calls.** |
+| 3 | hood · front · rear | **in parallel**, each a continuation of the SAME conversation: the driver exchange replayed with its thought signature on the part it arrived on, driver + passenger attached as references |
+| 4 | roof | sees all five; replays driver, hood, front, rear (trimmed to the request budget) |
+| — | assemble | `assembleFinishedMaster` places the six rectangles in the GENIE manifest zones; the SAME whole-master gates then judge the sheet |
+
+Every surface is bounded (two requests, the second without the replayed
+chain — which is also the fallback for a rejected signature from a
+linearised parallel branch), evaluated by the same "hole" predicate the
+master gate uses (`MAX_AUTHORED_HOLE_RATIO`), resized to its exact zone, and
+idempotent under the provider cache (`attemptKey: author:<surface>:<n>`), so
+a worker restart re-reads accepted sheets instead of regenerating them.
+
+**Selection and safety:** `DESIGNPRO_ATLAS_TOPOLOGY=hero-driver` (deploy
+input `atlas_topology`) turns it on; unset, six-surface with its one-field
+fail-over runs byte-for-byte as before. A refused hero pass — any surface
+refused, the assembled sheet refused by the gates, or the passenger mirror
+declining on a design that carries lettering — **fails over to six-surface**
+with the refusal recorded as `metadata.authoringFailover`. Revision edits
+keep their parent's topology. Nothing here touches a gate threshold, Call 8,
+Call 9, QC, Topaz, ZIP or WrapBox. The per-surface receipt lives on the
+revision as `metadata.heroDriverAuthoring`.
+
+**Acceptance is the owner's eye, not a green suite:** the probe workflow
+(`atlas-hero-driver-probe.yml`, no production rows) hands over six images
+first; then one real generation through proofs, both QC gates and WrapBox;
+only then does the deploy input flip the default. Locked by
+`tests/atlas-hero-driver-topology.test.mjs`.
+
 ## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
 
 Measured, 2026-09-04 → 09-09: 20 generation requests, 8 delivered, 12 failed.

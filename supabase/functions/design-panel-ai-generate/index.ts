@@ -451,6 +451,47 @@ function atlasFinishSpec(finishSpec: string): string {
     .replace("the body panel reflects the surroundings like a polished mirror.", "the artwork reflects the surroundings like a polished mirror.");
 }
 
+// ── HERO-DRIVER SHEET (owner ruling, Trish 2026-09-11) ──────────────────────
+// Call 1's first and only from-scratch request draws ONE sheet: the driver
+// side. It is the easiest ask this model answers cleanly (one rectangle of
+// printed artwork) and the one the six-surface sheet kept failing (drawing the
+// vehicle into six regions of one canvas). Every later surface is a
+// continuation of this sheet inside the same conversation; Passenger is
+// composed from it in code. No vehicle noun appears below.
+type AtlasHeroSurface = { label: string; widthInches: number; heightInches: number; orientation: string };
+
+function atlasHeroSurfaceInput(value: unknown): AtlasHeroSurface | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const label = String(raw.label || "DRIVER SIDE").trim().toUpperCase().slice(0, 40);
+  const widthInches = Number(raw.widthInches);
+  const heightInches = Number(raw.heightInches);
+  if (!(widthInches > 0) || !(heightInches > 0)) throw new Error("atlas_author_hero_surface_invalid");
+  return { label, widthInches, heightInches, orientation: atlasSheetOrientation(widthInches / heightInches) };
+}
+
+function atlasSheetOrientation(ratio: number): string {
+  return ratio > 2.2 ? "a long, wide landscape sheet" : ratio > 1.15 ? "a landscape sheet" : ratio < 0.87 ? "a tall portrait sheet" : "a near-square sheet";
+}
+
+function atlasHeroScene(vehicle: string, bodyClass: string, hero: AtlasHeroSurface, commercial: boolean): string {
+  const depth = commercial
+    ? "The design is built from layered elements — background color and texture flowing across the sheet, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. The company name reads clearly at a glance; how the branding is composed is your creative call."
+    : "Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare vinyl.";
+  return `Design the printed wrap artwork for a ${vehicle} (${bodyClass}) as ONE flat printed sheet — the ${hero.label} of the wrap, ${hero.orientation} of pure printed vinyl artwork the way it looks coming off the printer, never an on-vehicle photograph. This sheet is the single design authority for the complete vehicle: the opposite side will be composed from it, and the remaining surfaces will continue it, so it carries the whole identity of the design. ${depth}`;
+}
+
+function atlasHeroSurfaceContract(hero: AtlasHeroSurface, vehicle: string, bodyClass: string): string {
+  return `OUTPUT FORMAT — ONE FLAT PRINTED SHEET: the ${hero.label}.
+Design the ${hero.label} of the wrap for this exact ${vehicle || "customer vehicle"} (${bodyClass}) as one flat rectangular sheet of printed artwork, ${hero.widthInches} × ${hero.heightInches} inches, ${hero.orientation}. The output is flat print artwork on a 2D sheet, drawn straight-on.
+
+The artwork fills the whole rectangle corner to corner and runs off all four edges — opaque, unbroken, full bleed: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the proof projections and are absent here.
+
+Customer-facing wording reads normally, left to right, upright, whole and sharp. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
+
+Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D sheet, drawn straight-on and flat for printing.`;
+}
+
 function atlasFlatMasterContract(
   panels: Array<{
     label: string;
@@ -738,6 +779,12 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // lock, photo-realism rule, FINISH_SPECS text, style, movement and depth are
   // untouched.
   const atlasField = atlasFlatMaster && (params as any).atlasField === true;
+  // HERO-DRIVER CASCADE (owner ruling 2026-09-11): the same creative assembly,
+  // asked for ONE sheet -- the driver side -- instead of six on one canvas.
+  // Persona, concept, brief, translation, logo, contact lock, photo-realism
+  // rule, FINISH_SPECS text, style, movement and depth are untouched; only the
+  // presentation phrases that name six panels/fields switch to the one sheet.
+  const atlasHero: AtlasHeroSurface | null = atlasFlatMaster && !atlasField ? atlasHeroSurfaceInput((params as any).atlasHeroSurface) : null;
   const atlasNoseEdge: AtlasNoseEdge = atlasNoseEdgeInput((params as any).atlasNoseEdge);
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
@@ -880,7 +927,9 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = atlasField
+    const atlasScene = atlasHero
+      ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, true)
+      : atlasField
       ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. The design is built from layered elements — background color and texture flowing continuously across the whole field, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. The company name reads clearly at a glance; how the branding is composed is your creative call.`
       : `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. The design is built from layered elements — background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare panel. The company name reads clearly at a glance; how the branding is composed is your creative call.`;
 
@@ -964,10 +1013,18 @@ CLIENT BRIEF:`;
         ? `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Integrate it as a coordinated hero graphic in both flank fields, sized to complement the company name without crowding it.`
         : `\n\nBRAND MASCOT: Design an original, custom-illustrated brand character — ${mascot} — as a premium mascot logo in the spirit of a pro sports or esports emblem: clean bold shapes, a dynamic heroic pose, confident personality, on-brand colors, instantly readable at a glance. Treat it as a bespoke illustration a top studio would charge for — distinctive, polished, and memorable. Anchor the mascot as a hero graphic on the rear quarter panel, sized to complement the company name without crowding it.`;
     }
+    if (mascot && atlasHero) {
+      assembled = assembled.replace(
+        "Integrate it as a coordinated hero graphic in both flank fields, sized to complement the company name without crowding it.",
+        "Integrate it as the hero graphic on this sheet, sized to complement the company name without crowding it.",
+      );
+    }
 
     if (qrEnabled) {
       assembled += atlasFlatMaster
-        ? `\n\nQR CODE ZONE: Reserve one clean, flat rectangular area in the coordinated lower portion of each flank field as space for a scannable QR code added in production.`
+        ? atlasHero
+          ? `\n\nQR CODE ZONE: Reserve one clean, flat rectangular area in the lower portion of this sheet as space for a scannable QR code added in production.`
+          : `\n\nQR CODE ZONE: Reserve one clean, flat rectangular area in the coordinated lower portion of each flank field as space for a scannable QR code added in production.`
         : `\n\nQR CODE ZONE: Reserve one clean, flat, evenly-lit rectangular area (roughly 10x10 inches) low on the rear quarter panel — free of graphics, text, and busy color — as space for a scannable QR code added in production. Do not draw a QR code yourself.`;
     }
 
@@ -978,13 +1035,13 @@ CLIENT BRIEF:`;
     if (visionBoardImages && visionBoardImages.length > 0) {
       if (visionboard_intent === 'exact_reference') {
         assembled += atlasFlatMaster
-          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasField ? "the whole continuous field" : "the six mapped livery fields"}.`
+          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}.`
           : `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
       } else if (styleDescriptors) {
         assembled += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
       } else {
         assembled += atlasFlatMaster
-          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : "six-field livery"}. Use them as style inspiration only — create something new that captures their energy.`
+          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : atlasHero ? "single-sheet livery" : "six-field livery"}. Use them as style inspiration only — create something new that captures their energy.`
           : `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
       }
     }
@@ -995,6 +1052,11 @@ CLIENT BRIEF:`;
     if (atlasField) {
       assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
       assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, true, atlasPanels)}`;
+      return assembled;
+    }
+    if (atlasHero) {
+      assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole sheet — one consistent finish throughout.\nThe artwork fills the sheet edge to edge — solid printed vinyl, corner to corner.`;
+      assembled += `\n\n${atlasHeroSurfaceContract(atlasHero, vehicle, atlasBodyClass)}`;
       return assembled;
     }
     if (atlasFlatMaster) {
@@ -1053,7 +1115,9 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = atlasField
+  const atlasRestyleScene = atlasHero
+    ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, false)
+    : atlasField
     ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare vinyl.`
     : `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE FLAT print-production master — flat orthographic panels of pure printed vinyl artwork, never an on-vehicle photograph. This is the single design authority for the complete vehicle, not six independent graphics. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare panel.`;
   const restylePresentation = atlasFlatMaster
@@ -1065,7 +1129,9 @@ ${restyleScene}
 
 ${studioEnvironment}`;
 
-  const restyleFinish = atlasField
+  const restyleFinish = atlasHero
+    ? `PRINT COLOR: uniform artwork color across the whole sheet. Physical finish is applied only in downstream proof projections.`
+    : atlasField
     ? `PRINT COLOR: uniform artwork color across the whole field. Physical finish is applied only in downstream proof projections.`
     : atlasFlatMaster
     ? `PRINT COLOR: uniform artwork color across all six fields. Physical finish is applied only in downstream proof projections.`
@@ -1109,13 +1175,13 @@ ${PROFESSIONAL_JUDGMENT}`;
       }
     } else if (visionboard_intent === 'exact_reference') {
       assembled += atlasFlatMaster
-        ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across ${atlasField ? "the whole continuous field" : "the six mapped livery fields"}. Preserve its proportions, hierarchy, coverage and texture density.`
+        ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across ${atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}. Preserve its proportions, hierarchy, coverage and texture density.`
         : `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's own approved wrap design. Reproduce it faithfully on the ${vehicle} — keep the exact colors, patterns, graphics, typography, layout, and composition true to the reference, adapting ONLY to fit the ${vehicle}'s body lines while preserving the design's identity, proportions, and visual hierarchy. Reproduce EVERY logo, wordmark, and line of text exactly once, in the same place and style as the reference — branding is PART of this design, never a separate layer to strip, relocate, duplicate, or reinvent. Do NOT redesign, reinterpret, recolor, simplify, or add elements; the ONLY thing that changes is the vehicle the design is applied to. Match the reference's full coverage and texture density — if it is an all-over textured wrap, cover the entire body edge to edge; where the reference leaves the body plain, keep it plain.`;
     } else if (styleDescriptors) {
       assembled += `\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the references directly.`;
     } else {
       assembled += atlasFlatMaster
-        ? `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : "six-field livery"}. Use them as style inspiration only — create something new.`
+        ? `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : atlasHero ? "single-sheet livery" : "six-field livery"}. Use them as style inspiration only — create something new.`
         : `\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new.`;
     }
   }
@@ -1136,6 +1202,11 @@ ${PROFESSIONAL_JUDGMENT}`;
   if (atlasField) {
     assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole field — one consistent finish throughout.\nThe artwork fills the entire field edge to edge — solid printed vinyl, corner to corner.`;
     assembled += `\n\n${atlasFieldContract(vehicle, atlasBodyClass, atlasNoseEdge, false, atlasPanels)}`;
+    return assembled;
+  }
+  if (atlasHero) {
+    assembled += `\nFinish: ${atlasFinishSpec(finishSpec)} The vinyl finish is ${(finish || 'gloss').toLowerCase()} across the whole sheet — one consistent finish throughout.\nThe artwork fills the sheet edge to edge — solid printed vinyl, corner to corner.`;
+    assembled += `\n\n${atlasHeroSurfaceContract(atlasHero, vehicle, atlasBodyClass)}`;
     return assembled;
   }
   if (atlasFlatMaster) {
@@ -1249,7 +1320,7 @@ serve(async (req) => {
   if (req.method === "GET" && new URL(req.url).searchParams.get("action") === "atlas-provider-capabilities") {
     return new Response(JSON.stringify(internalCaller.internal ? {
       providerCacheContract: GEMINI_PROVIDER_CACHE_CONTRACT,
-      modes: ["atlas-artboard", "atlas-panel"], cacheOnly: true,
+      modes: ["atlas-artboard", "atlas-panel", "atlas-author"], cacheOnly: true,
       revisionIntakeContract: "designpro.atlas-revision-intake.v1",
     } : { error: "atlas_provider_internal_only" }), {
       status: internalCaller.internal ? 200 : 403,
@@ -1302,6 +1373,24 @@ serve(async (req) => {
         );
       }
       return await handleAtlasPanel(body, internalCaller.userId!);
+    }
+
+    // ═══ ATLAS-AUTHOR — THE HERO-DRIVER CASCADE (owner ruling, Trish 2026-09-11).
+    //
+    // Call 1 as ONE multi-turn conversation: the DRIVER SIDE is the only
+    // from-scratch request (the real persona brain, `buildDesignIQPrompt`, on a
+    // single sheet); Passenger is composed in code by the runtime; Hood, Front,
+    // Rear and Roof are authored as CONTINUATIONS of the finished sheets, each
+    // replaying the earlier exchanges with their thought signatures on the
+    // parts they arrived on. See handleAtlasAuthor.
+    if (body?.mode === "atlas-author") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_author_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasAuthor(body, internalCaller.userId!);
     }
     const {
       mode,
@@ -2391,6 +2480,355 @@ Output a single structured paragraph that another AI could use to recreate this 
     );
   }
 });
+// ═══════════════════════════════════════════════════════════════════════════
+// ATLAS-AUTHOR — THE HERO-DRIVER CASCADE (owner ruling, Trish 2026-09-11)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// "It must create the hero driver side and then flip the driver for passenger
+// side then show each to each side ... rear would see driver, passenger, front
+// and hood then roof would see all." / "Passing the thought_signature from the
+// hero driver-side generation into the passenger/rear/hood requests locks the
+// design continuity across all panels."
+//
+// One handler, two requests:
+//   first:true  — the DRIVER SIDE, from scratch, through THIS FILE's own
+//                 buildDesignIQPrompt (the real persona brain, RULE 0.26) with
+//                 atlasHeroSurface set so the same assembly asks for one sheet.
+//   first:false — a CONTINUATION: one named surface at its own size, shown the
+//                 finished sheets as downscaled references and handed the
+//                 earlier exchanges with every thought signature on the part it
+//                 arrived on. No subject sheet: this authors, it does not edit.
+//
+// The aspect ratio IS requested here (the closest menu ratio to the GENIE
+// rectangle) because there is no input image for the model to follow; the
+// runtime still resizes the return to the exact zone and refuses drift.
+// 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
+// same surface's share of a 4096² six-surface sheet, and returns faster.
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-driver.20260911.v1";
+const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
+const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
+const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
+const ATLAS_AUTHOR_MAX_PRIOR_TURNS = 10;
+const ATLAS_AUTHOR_ASPECTS: Array<[string, number]> = [
+  ["21:9", 21 / 9], ["16:9", 16 / 9], ["3:2", 3 / 2], ["4:3", 4 / 3], ["5:4", 5 / 4], ["1:1", 1],
+  ["4:5", 4 / 5], ["3:4", 3 / 4], ["2:3", 2 / 3], ["9:16", 9 / 16],
+];
+function atlasAuthorAspect(width: number, height: number): string {
+  const ratio = width / height;
+  return ATLAS_AUTHOR_ASPECTS.reduce((best, item) =>
+    Math.abs(Math.log(item[1] / ratio)) < Math.abs(Math.log(best[1] / ratio)) ? item : best)[0];
+}
+
+// Which finished sheets a continuation is told it touches, so artwork is
+// carried across the shared edge. Named as sheets, never as body parts.
+const ATLAS_AUTHOR_ADJACENT: Record<string, string> = {
+  hood: "the FRONT sheet and the forward ends of both side sheets",
+  front: "the HOOD sheet",
+  rear: "the rear ends of both side sheets and the ROOF sheet",
+  roof: "the HOOD sheet, both side sheets and the REAR sheet",
+};
+
+/**
+ * The continuation instruction. Positive framing, structured tags in
+ * attachment order, no vehicle noun — the same discipline as
+ * atlasPanelFinishPrompt, for the same measured reason.
+ */
+function atlasAuthorContinuationPrompt(
+  surfaceKey: string,
+  surfaceLabel: string,
+  widthInches: number,
+  heightInches: number,
+  neighbourLabels: string[],
+  creativeContext: string,
+  hasHistory: boolean,
+): string {
+  const inputs = neighbourLabels.map((label) =>
+    `  <reference role="finished-sheet" id="${label}">A sheet of this same design, already finished. Its ground, palette, gradient direction, pattern scale, stroke direction and motion are the authority for the sheet you draw. Continue them; do not copy its layout and do not repeat its lettering.</reference>`);
+  const adjacent = ATLAS_AUTHOR_ADJACENT[surfaceKey] || "the neighbouring sheets";
+  return [
+    "<task>",
+    `Generate an image: the ${surfaceLabel} sheet of this design, ${widthInches} × ${heightInches} inches, ${atlasSheetOrientation(widthInches / heightInches)}.`,
+    "</task>",
+    "",
+    "<inputs>",
+    ...inputs,
+    "</inputs>",
+    "",
+    "<subject>",
+    "One flat printed sheet — a single continuous rectangle of printed media, the artwork by itself, before anything is cut or applied. It is not a picture of an object and it has no parts.",
+    "</subject>",
+    "",
+    "<instructions>",
+    `Generate the ${surfaceLabel} sheet as a seamless continuation of the finished sheets:`,
+    "• the identical palette, the same gradients and their direction, the same pattern scale and stroke direction, the same textures and finish, so every sheet installs as one cohesive design",
+    `• where this sheet meets ${adjacent}, carry that artwork straight across the shared edge`,
+    "• finished artwork over the entire rectangle, corner to corner, running off all four edges",
+    "• any lettering reads upright, whole, sharp, left to right, and fully inside the sheet; introduce no words that are not already part of this design",
+    "• the requested proportion exactly: return it at the shape asked for",
+    ...(hasHistory ? ["• the sheets you drew earlier in this conversation are the same design; hold their reasoning and continue it here"] : []),
+    "",
+    "Add nothing foreign: no new subjects, no borders, no margins, no frame, no captions, no labels, no annotation, no signature.",
+    "</instructions>",
+    ...(creativeContext
+      ? ["", "<context>", `Whose design this is, for judgement only — it does not change what is drawn: ${creativeContext}`, "</context>"]
+      : []),
+    "",
+    "<identity>",
+    `This sheet is internally identified as ${surfaceLabel}. That identity is metadata and must not appear anywhere in the image.`,
+    "</identity>",
+  ].join("\n");
+}
+
+async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  let requestId = crypto.randomUUID();
+  let imageRequestCount = 0;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    await authorizeAtlasProviderRequest(svc, body.providerRequest, ownerId);
+    const surfaceKey = String(body.surfaceKey || "").trim().toLowerCase();
+    if (!["driver", "hood", "roof", "front", "rear"].includes(surfaceKey)) {
+      // Passenger is never authored here: it is the driver sheet composed in code.
+      throw new Error(`atlas_author_surface_unknown:${surfaceKey.slice(0, 40)}`);
+    }
+    const surfaceLabel = String(body.surfaceLabel || surfaceKey).toUpperCase();
+    const first = body.first === true;
+    if (first !== (surfaceKey === "driver")) throw new Error("atlas_author_first_must_be_driver");
+    const targetWidthPx = Number(body.targetWidthPx);
+    const targetHeightPx = Number(body.targetHeightPx);
+    const widthInches = Number(body.widthInches);
+    const heightInches = Number(body.heightInches);
+    if (!(targetWidthPx >= 8) || !(targetHeightPx >= 8) || !(widthInches > 0) || !(heightInches > 0)) {
+      throw new Error("atlas_author_target_invalid");
+    }
+
+    const sha256Hex = async (bytes: Uint8Array) => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const parts: Array<Record<string, unknown>> = [];
+    const userImageRefs = new Map<number, { storagePath: string; contentHash: string }>();
+    let historyImageBytes = 0;
+    const attach = async (path: unknown, expectedHash?: unknown) => {
+      const key = String(path || "").trim();
+      const match = key.match(/^atlas-call1-inputs\/([0-9a-f]{64})\.(png|jpg)$/);
+      if (!match) throw new Error(`atlas_author_input_path_invalid:${key.slice(0, 160)}`);
+      const mimeType = match[2] === "jpg" ? "image/jpeg" : "image/png";
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_author_input_download_failed:${key}:${error?.message || "missing"}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const actual = await sha256Hex(bytes);
+      if (actual !== match[1] || (expectedHash && actual !== String(expectedHash))) {
+        throw new Error(`atlas_author_input_hash_mismatch:${key}`);
+      }
+      userImageRefs.set(parts.length, { storagePath: key, contentHash: actual });
+      historyImageBytes += bytes.length;
+      parts.push({ inlineData: { mimeType, data: encodeBase64(bytes.buffer) } });
+      return actual;
+    };
+    // History can only replay THIS handler's own output (atlas-author/…) or a
+    // staged input — never an arbitrary object from the bucket.
+    const downloadHistoryImage = async (path: unknown, expectedHash: unknown) => {
+      const key = String(path || "").trim();
+      if (!/^atlas-author\/[0-9a-f-]{36}\.(png|jpg|webp)$/.test(key)
+        && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(png|jpg)$/.test(key)
+        && !/^atlas-author-history\/[0-9a-f-]{36}\/\d+\.(png|jpg|webp)$/.test(key)) {
+        throw new Error(`atlas_author_history_path_invalid:${key.slice(0, 160)}`);
+      }
+      const hash = String(expectedHash || "");
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error(`atlas_author_history_hash_invalid:${key}`);
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`atlas_author_history_download_failed:${key}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (await sha256Hex(bytes) !== hash) throw new Error(`atlas_author_history_hash_mismatch:${key}`);
+      return encodeBase64(bytes.buffer);
+    };
+
+    const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];
+    if (neighboursIn.length > ATLAS_AUTHOR_MAX_NEIGHBOURS) throw new Error(`atlas_author_neighbour_budget_exceeded:${neighboursIn.length}`);
+    if (first && neighboursIn.length) throw new Error("atlas_author_hero_takes_no_neighbours");
+    const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
+    if (priorTurnsIn.length > ATLAS_AUTHOR_MAX_PRIOR_TURNS) throw new Error(`atlas_author_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
+    if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
+    const priorTurns: Array<Record<string, unknown>> = [];
+    for (const turn of priorTurnsIn) priorTurns.push(await replayImageTurn(turn, downloadHistoryImage));
+
+    const creativeContext = String(body.creativeContext || "").trim().slice(0, 600);
+    let prompt: string;
+    if (first) {
+      // THE REAL PERSONA BRAIN, ONE SHEET. Same assembly as atlas-artboard —
+      // commercial/restyle branch, logo architecture, exact contact handling,
+      // brand colours, finish, photo-intent lock — with atlasHeroSurface set.
+      const references = Array.isArray(body.referenceImagesBase64) ? (body.referenceImagesBase64 as string[]) : [];
+      const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
+      prompt = buildDesignIQPrompt({
+        mode: authoringMode,
+        prompt: String(body.enrichedBrief || body.prompt || "").trim(),
+        finish: String(body.finish || "Gloss"),
+        substrate: String(body.substrate || "standard"),
+        companyName: String(body.companyName || "").trim() || undefined,
+        mascot: String(body.mascot || "").trim() || undefined,
+        bulletPoints: Array.isArray(body.bulletPoints) ? (body.bulletPoints as string[]) : undefined,
+        industryType: String(body.industryType || "").trim() || undefined,
+        phone: String(body.phone || "").trim() || undefined,
+        website: String(body.website || "").trim() || undefined,
+        textLayerPrompt: String(body.textLayerPrompt || "").trim() || undefined,
+        brandColors: String(body.brandColors || "").trim() || undefined,
+        fontStyle: String(body.fontStyle || "").trim() || undefined,
+        qrEnabled: body.qrEnabled === true,
+        vehicleYear: String(body.vehicleYear || "").trim(),
+        vehicleMake: String(body.vehicleMake || "").trim(),
+        vehicleModel: String(body.vehicleModel || "").trim(),
+        vehicleType: String(body.vehicleType || "").trim(),
+        viewType: "side",
+        visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
+        visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
+        styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
+        atlasFlatMaster: true,
+        atlasPanels: [],
+        atlasHeroSurface: { label: surfaceLabel, widthInches, heightInches },
+      } as any /* hero sheet */);
+      parts.push({ text: prompt });
+      for (const ref of references) {
+        if (typeof ref === "string" && ref.length > 0) parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+      }
+    } else {
+      const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
+      prompt = atlasAuthorContinuationPrompt(surfaceKey, surfaceLabel, widthInches, heightInches, neighbourLabels, creativeContext, priorTurns.length > 0);
+      parts.push({ text: prompt });
+    }
+    const neighbourHashes: string[] = [];
+    for (const neighbour of neighboursIn) neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
+
+    const totalInputImageCount = parts.filter((part) => part.inlineData).length + priorTurns.reduce((count, turn) =>
+      count + (turn.parts as Array<Record<string, unknown>>).filter((part) => part.inlineData || part.fileData).length, 0);
+    if (totalInputImageCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) throw new Error(`atlas_author_reference_budget_exceeded:${totalInputImageCount}`);
+
+    const model = ATLAS_AUTHOR_MODEL;
+    const aspectRatio = atlasAuthorAspect(targetWidthPx, targetHeightPx);
+    const t0 = Date.now();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const modelRequest = JSON.stringify({
+      contents: [...priorTurns, { role: "user", parts }],
+      generationConfig: {
+        temperature: 1.0,
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    if (modelRequestByteSize > ATLAS_PANEL_MODEL_REQUEST_MAX_BYTES) throw new Error(`atlas_author_model_request_too_large:${modelRequestByteSize}`);
+    const providerRequest = body.providerRequest as Record<string, unknown>;
+    const cached = await runDurableImageProviderRequest({
+      bucket: svc.storage.from("wrap-files"),
+      identity: { ...providerRequest, ownerId, mode: "atlas-author" },
+      requestHash: await providerSha256(JSON.stringify({ model, promptVersion: ATLAS_AUTHOR_PROMPT_VERSION, modelRequest })),
+      privateRequest: modelRequest,
+      outputRequestId: requestId, cacheOnly: providerRequest.cacheOnly === true,
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
+          // Speed is the product constraint (owner: "a 7 minute orchestration is
+          // not good"). A surface that has not answered in 90 s is a refused
+          // surface, never a three-minute wait.
+          signal: AbortSignal.timeout(90_000), body: modelRequest,
+        });
+      }),
+    });
+    requestId = cached.requestId;
+    imageRequestCount = 1;
+    console.log(`atlas-author ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts, ${priorTurns.length} prior turns, ${aspectRatio} ${ATLAS_AUTHOR_IMAGE_SIZE})`);
+    const payload = cached.payload;
+    const { candidateParts, imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_author");
+    const { bytes: panelBytes, mimeType: panelContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "atlas_author");
+    const panelSha256 = await providerSha256(panelBytes);
+    const storagePath = `atlas-author/${requestId}.${extension}`;
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, panelBytes, panelContentType);
+
+    const userTurn = await captureImageTurn({ role: "user", parts }, async (_inlineData: unknown, index: number) => {
+      const ref = userImageRefs.get(index);
+      if (ref) return ref;
+      // A customer reference travelled inline on the hero request; bank it so
+      // the exact user turn can be replayed by reference.
+      const inline = (parts[index] as Record<string, any>).inlineData;
+      const bytes = decodeBase64(inline.data);
+      const contentHash = await sha256Hex(bytes);
+      const path = `atlas-author-history/${requestId}/u${index}.png`;
+      await putImmutableProviderArtifact(svc.storage.from("wrap-files"), path, bytes, inline.mimeType || "image/png");
+      return { storagePath: path, contentHash };
+    });
+    const modelTurn = await captureImageTurn(payload.candidates[0].content, async (inlineData: Record<string, string>, index: number) => {
+      const bytes = decodeBase64(inlineData.data);
+      historyImageBytes += bytes.length;
+      if (candidateParts[index] === imagePart) return { storagePath, contentHash: panelSha256 };
+      const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" } as Record<string, string>)[inlineData.mimeType];
+      if (!ext) throw new Error("atlas_author_history_image_mime_invalid");
+      const path = `atlas-author-history/${requestId}/${index}.${ext}`;
+      const contentHash = await sha256Hex(bytes);
+      await putImmutableProviderArtifact(svc.storage.from("wrap-files"), path, bytes, inlineData.mimeType);
+      return { storagePath: path, contentHash };
+    });
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        sourceCommit: ATLAS_ARTBOARD_SOURCE_COMMIT,
+        promptVersion: ATLAS_AUTHOR_PROMPT_VERSION,
+        model,
+        surfaceKey,
+        first,
+        imageRequestCount: 1,
+        providerCacheContract: cached.providerCacheContract,
+        providerCacheHit: cached.providerCacheHit,
+        providerRequestKey: cached.providerRequestKey,
+        modelRequestByteSize,
+        modelInputImageCount: totalInputImageCount,
+        aspectRatio,
+        imageSize: ATLAS_AUTHOR_IMAGE_SIZE,
+        neighbourCount: neighboursIn.length,
+        neighbourHashes,
+        priorTurnsApplied: priorTurns.length,
+        priorSignaturesReplayed: priorTurns.reduce((count, turn) =>
+          count + (turn.parts as Array<Record<string, unknown>>).filter((part) => typeof part?.thoughtSignature === "string").length, 0),
+        userTurn,
+        modelTurn,
+        historyImageBytes,
+        thoughtSignatureCount: candidateParts.filter((part) => typeof part?.thoughtSignature === "string").length,
+        promptChars: prompt.length,
+        designText: textOut.slice(0, 2000),
+        panelStoragePath: storagePath,
+        panelContentType,
+        panelSha256,
+        panelBytes: panelBytes.length,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        promptVersion: ATLAS_AUTHOR_PROMPT_VERSION,
+        imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
+        providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
+        providerStatus: (err as any)?.providerStatus || null,
+        providerDiagnostic: (err as any)?.providerDiagnostic || null,
+        providerFailureRecorded: (err as any)?.providerFailureRecorded === true,
+        retryAfterSeconds: (err as any)?.retryAfterSeconds || null,
+        retryable: (err as any)?.retryable === true,
+        providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
+        error: String((err as Error)?.message || err).slice(0, 500),
+      }),
+      { status: Number((err as any)?.status) || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ATLAS-ARTBOARD MODE — THE CANONICAL DESIGNPROAI CALL 1
@@ -3124,3 +3562,4 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
     );
   }
 }
+

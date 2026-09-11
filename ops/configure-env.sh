@@ -105,6 +105,16 @@ if [[ -z $atlas_panel_finish && -s $ROOT/shared/runtime.env ]]; then
   atlas_panel_finish=$(sed -n 's/^DESIGNPRO_ATLAS_PANEL_FINISH=//p' "$ROOT/shared/runtime.env" | head -n 1)
 fi
 [[ $atlas_panel_finish == "on" ]] || atlas_panel_finish=off
+# Call-1 authoring topology (RULE 0.35, owner 2026-09-11). Same resolution as
+# the finishing flag: this deploy's explicit instruction wins, otherwise the
+# running system's value, otherwise the six-surface default (written as an
+# empty value, which the runtime reads as "not hero-driver"). Only the exact
+# string `hero-driver` selects the cascade; anything else fails safe.
+atlas_topology=${ATLAS_TOPOLOGY:-}
+if [[ -z $atlas_topology && -s $ROOT/shared/runtime.env ]]; then
+  atlas_topology=$(sed -n 's/^DESIGNPRO_ATLAS_TOPOLOGY=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+[[ $atlas_topology == "hero-driver" ]] || atlas_topology=""
 
 # Independent production-output and template-preview opt-ins. Preserve an
 # installed choice on later deploys; absence on an older release means false.
@@ -149,6 +159,9 @@ trap cleanup EXIT
   # Only the exact string `on` enables it -- the runtime fails safe on anything
   # else, so a typo here cannot switch a customer path on.
   printf 'DESIGNPRO_ATLAS_PANEL_FINISH=%s\n' "$atlas_panel_finish"
+  # CALL-1 TOPOLOGY. Empty = six-surface (the default); `hero-driver` = the
+  # cascade. Sticky for the same reason as the finishing flag above.
+  printf 'DESIGNPRO_ATLAS_TOPOLOGY=%s\n' "$atlas_topology"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then

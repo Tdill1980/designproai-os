@@ -21,6 +21,18 @@ on:
           - DO_NOT_DEPLOY
           - AUDIT_ONLY_DESIGNPROAI_PROD_SFO3
           - DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3
+      atlas_topology:
+        description: >-
+          Call-1 authoring topology (RULE 0.35). "unchanged" keeps whatever the
+          droplet already has; "hero-driver" turns on the hero-driver cascade;
+          "six-surface" restores the default. Sticky across later deploys.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - hero-driver
+          - six-surface
       atlas_panel_finish:
         description: >-
           Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
@@ -520,6 +532,7 @@ jobs:
           # configure-env.sh, which rewrites runtime.env on every deploy and so
           # must carry the flag forward rather than silently resetting it.
           ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish == 'unchanged' && '' || inputs.atlas_panel_finish }}
+          ATLAS_TOPOLOGY: ${{ inputs.atlas_topology == 'unchanged' && '' || inputs.atlas_topology }}
         shell: bash
         run: |
           set +x
@@ -537,7 +550,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in
