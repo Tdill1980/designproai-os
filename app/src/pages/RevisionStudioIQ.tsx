@@ -6468,6 +6468,23 @@ export default function RevisionStudioIQ() {
                         {!wall.approved && <p className="text-zinc-400">Approve a version in WallPro to build its 150 PPI panels.</p>}
                         {wall.approved && !wall.job && <p className="text-zinc-400">No production build yet. Open in WallPro and build the panels.</p>}
                         {wall.job && wall.job.status !== "ready" && <p className="text-zinc-400">Panels {wall.job.status === "failed" ? `failed: ${wall.job.error || "unknown error"}` : "are still building on the server"}.</p>}
+                        {/* Version history: every version stays inspectable, never only the newest. */}
+                        {(wall.versions?.length || 0) > 0 && (
+                          <div className="flex gap-2 overflow-x-auto py-1" aria-label="WallPro version history">
+                            {wall.versions!.map((v) => (
+                              <figure key={v.id} className={"shrink-0 w-20 text-center " + (v.id === wall.versionId ? "" : "opacity-70")} title={[`V${v.versionNo}`, v.kind, v.prompt || ""].filter(Boolean).join(" · ")}>
+                                {v.url ? <img src={v.url} alt={`V${v.versionNo}`} className={"h-14 w-20 rounded object-cover border " + (v.approved ? "border-emerald-400" : "border-violet-900")} /> : <div className="h-14 w-20 rounded border border-violet-900 bg-zinc-900" />}
+                                <figcaption className="mt-0.5 text-[11px] text-zinc-300">V{v.versionNo}{v.approved ? " ✓" : ""}</figcaption>
+                              </figure>
+                            ))}
+                          </div>
+                        )}
+                        {wall.job?.wholeWall && (
+                          <p className="flex flex-wrap items-center justify-between gap-2 rounded border border-violet-700/60 bg-violet-900/30 px-2 py-1.5 text-zinc-200">
+                            <span><strong>Whole wall, one file</strong> · {wall.job.wholeWall.widthIn} × {wall.job.wholeWall.heightIn} in with bleed · {wall.job.wholeWall.ppi} PPI · {(wall.job.wholeWall.byteSize / 1024 / 1024).toFixed(0)} MB</span>
+                            {wall.job.wholeWall.url ? <a className="text-violet-300 underline" href={wall.job.wholeWall.url} download={wall.job.wholeWall.file} rel="noopener">Download PNG</a> : <span className="text-zinc-500">link unavailable</span>}
+                          </p>
+                        )}
                         {panels.length > 0 && (
                           <ul className="divide-y divide-violet-900/60 rounded border border-violet-900/60">
                             {panels.map((p) => (

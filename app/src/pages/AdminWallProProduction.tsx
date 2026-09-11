@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { listWallProductionJobsForTeam, openWallAssets, wallDesignId, type WallTeamJob } from '@/lib/wallpro-api';
+import { listWallProductionJobsForTeam, openWallAssets, wallDesignId, wholeWallFile, type WallTeamJob } from '@/lib/wallpro-api';
 
 const fmt = (n: unknown) => Number(Number(n).toFixed(3)).toString();
 const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1) + ' MB';
@@ -25,7 +25,7 @@ export default function AdminWallProProduction() {
       const rows = await listWallProductionJobsForTeam();
       setJobs(rows);
       const paths = new Set<string>();
-      for (const j of rows) { for (const p of j.panels) paths.add(p.path); if (j.manifest_path) paths.add(j.manifest_path); if (j.artwork_path) paths.add(j.artwork_path); }
+      for (const j of rows) { for (const p of j.panels) paths.add(p.path); if (j.manifest_path) paths.add(j.manifest_path); if (j.artwork_path) paths.add(j.artwork_path); const w = wholeWallFile(j); if (w) paths.add(w.path); }
       const missing = [...paths].filter(p => !links[p]);
       if (missing.length) { const signed = await openWallAssets(missing, { download: true }); setLinks(old => ({ ...old, ...signed })); }
     } catch (e) { setError(e instanceof Error ? e.message : 'The production board could not be loaded.'); }
@@ -72,6 +72,9 @@ export default function AdminWallProProduction() {
               <span>Panel {p.number} · {fmt(p.widthIn)} × {fmt(p.heightIn)} in · {p.widthPx.toLocaleString()} × {p.heightPx.toLocaleString()} px · {p.ppi} PPI{p.overlapLeftIn ? ` · ${fmt(p.overlapLeftIn)}″ overlap left` : ''} · {mb(p.byteSize)} · {p.upscale?.engine === 'none' ? 'native' : 'Topaz'} · sha256 {p.sha256.slice(0, 12)}</span>
               {links[p.path] ? <Button asChild size="sm" variant="outline"><a href={links[p.path]} download={p.file} rel="noopener"><Download className="mr-1 h-3 w-3" />PNG</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}
             </li>)}
+            {(() => { const w = wholeWallFile(job); return w
+              ? <li className="flex flex-wrap items-center justify-between gap-2 bg-violet-50 px-3 py-2"><span><strong>Whole wall, one file</strong> · {fmt(w.widthIn)} × {fmt(w.heightIn)} in with bleed · {w.widthPx.toLocaleString()} × {w.heightPx.toLocaleString()} px · {w.ppi} PPI · {mb(w.byteSize)} · sha256 {w.sha256.slice(0, 12)}</span>{links[w.path] ? <Button asChild size="sm" variant="outline"><a href={links[w.path]} download={w.file} rel="noopener"><Download className="mr-1 h-3 w-3" />PNG</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}</li>
+              : job.progress?.wholeWall && 'error' in job.progress.wholeWall ? <li className="px-3 py-2 text-xs text-amber-800">Whole-wall file not built: {job.progress.wholeWall.error}. Print from the panels.</li> : null; })()}
             {job.manifest_path && <li className="flex items-center justify-between px-3 py-2"><span>Manifest and install notes</span>{links[job.manifest_path] ? <Button asChild size="sm" variant="ghost"><a href={links[job.manifest_path]} download="manifest.json">JSON</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}</li>}
           </ul>}
         </section>;
