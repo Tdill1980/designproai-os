@@ -175,7 +175,14 @@ async function main() {
       }
       const assembled = call1.buildAtlasCall1Prompt(body);
       const prompt = assembled.prompt;
-      if (!/REPRODUCTION specialist/.test(prompt)) throw new Error("exact_reference did not select the reproduction identity");
+      // Commercial mode carries the exact-reference clause ("EXACT REFERENCE: The
+      // provided reference is the customer's approved artwork authority ...
+      // across the whole continuous field"); the "REPRODUCTION specialist"
+      // identity is the restyle-mode form. Run 34567668316 failed on that
+      // mismatch before any image call was spent.
+      if (!/EXACT REFERENCE: The provided reference is the customer's approved artwork authority/.test(prompt)) {
+        throw new Error("exact_reference did not select the exact-reference clause");
+      }
       if (assembled.references.length !== 1) throw new Error(`expected the hero as the one reference, got ${assembled.references.length}`);
       const parts = [{ text: prompt }, ...assembled.references.map((data) => ({ inlineData: { mimeType: "image/png", data } }))];
       writeFileSync(join(OUT, `${hero.label}-R-prompt.txt`), prompt);
