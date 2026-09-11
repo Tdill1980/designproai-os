@@ -9,7 +9,7 @@ import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { wallUser, uploadWallAsset, openWallAsset, generateWall, saveWallProject, wallHistory, getWallProject, type WallAsset } from '@/lib/wallpro-api';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -48,6 +48,9 @@ export default function WallPro() {
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
   const dimensionsValid = validWallSize(width, height);
   const cornersValid = validWallCorners(corners);
+  // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
+  // so no token is spent until the placement exists. Null means generation may run.
+  const generationBlocker = wallGenerationBlocker(!!photo, corners, width, height);
   let printPanels: ReturnType<typeof planWallPrint>['panels'] = [];
   try { printPanels = planWallPrint(width, height, printSettings).panels; } catch { /* Output settings show validation. */ }
   const wallMap = cornersValid ? homography(UNIT_WALL,corners) : null;
@@ -108,7 +111,13 @@ export default function WallPro() {
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
     setDesignMode(config.designMode || 'ai'); setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
-    setMarking(validWallCorners(config.corners || []) ? null : 'wall'); setView(art ? 'after' : 'before');
+    const restoredCornersValid = validWallCorners(config.corners || []);
+    setMarking(restoredCornersValid ? null : 'wall');
+    // Only a wall with four valid corners can show the projected design. A saved
+    // project that carries artwork on an unmarked wall opens on the photo so the
+    // customer finishes the corners; the compositor then runs on the fourth point.
+    setView(art ? (wall && !restoredCornersValid ? 'before' : 'after') : 'before');
+    if (art && wall && !restoredCornersValid) setNotice('This project has artwork but the wall corners are incomplete. Mark all four corners to see the design on your wall.');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
   }
@@ -132,8 +141,15 @@ export default function WallPro() {
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
+    // Freeze the placement this generation is made for. The editor stays disabled
+    // while busy, but the saved project must record exactly what was validated.
+    const wallCorners = corners, wallExclusions = exclusions;
     await run('Generating wall artwork', async () => {
-      if (!dimensionsValid) throw new Error('Enter wall dimensions between 1 and 2,400 inches.');
+      // Hard gate, not a warning: with a wall photo, all four corners must be
+      // marked and valid before any paid call. Otherwise the artwork can never
+      // be projected onto the photo (the saved-project failure mode).
+      const blocker = wallGenerationBlocker(!!photo, wallCorners, width, height);
+      if (blocker) { if (photo && !validWallCorners(wallCorners)) { setMarking('wall'); setView('before'); } throw new Error(blocker); }
       const user = await wallUser();
       const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
@@ -141,12 +157,15 @@ export default function WallPro() {
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
       const result = await generateWall({ requestId: crypto.randomUUID(), prompt, width, height, placement, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
+      // The flat artwork is the production master. Setting it with a wall photo and
+      // valid corners drives the renderWallPreview compositor immediately (the
+      // preview effect keys on artwork/corners/exclusions), so the customer lands on
+      // the design projected onto their own wall with every mask preserved.
       const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight };
-      setArtwork(art); setName(result.design_name); setView(photo && cornersValid ? 'after' : 'design');
-      if (photo && !cornersValid) setNotice('Design generated. Choose On your wall and finish marking the four wall corners to place it in your photo. A style reference is optional.');
+      setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
     });
   }
@@ -196,7 +215,7 @@ export default function WallPro() {
       <div className="grid gap-5 lg:grid-cols-[350px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. A wall photo is optional when generating artwork.</p>
-            {photo && <p className="mt-3 text-sm text-slate-600">For the wall preview, mark four corners: top left, top right, bottom right, bottom left. You can generate artwork before finishing this.</p>}
+            {photo && <p className="mt-3 text-sm text-slate-600">Mark all four wall corners: top left, top right, bottom right, bottom left. Generation waits until the wall is marked so the design lands on your photo.</p>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
@@ -206,7 +225,7 @@ export default function WallPro() {
               {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
               <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>
               {reference && <div className="flex items-center gap-3"><img src={reference.url} alt="Style reference" className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
-              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!prompt.trim() || !dimensionsValid} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />Generate wall design</Button>{photo && !cornersValid && <p className="text-xs text-sky-700">Generate now; finish the wall corners afterward to preview it in your room.</p>}<p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
+              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!prompt.trim() || !!generationBlocker} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />Generate wall design</Button>{photo && generationBlocker && dimensionsValid && <p role="status" className="text-xs font-medium text-amber-700">{generationBlocker}</p>}<p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
           <section className={panelClass}><h2 className="mb-3 font-semibold">3. Size the artwork</h2><label className="block text-sm">Placement<select className={inputClass} value={placement} onChange={e => setPlacement(e.target.value as Placement)}><option value="cover">Fill wall — crop edges</option><option value="contain">Fit whole artwork — leave margins</option><option value="repeat">Repeat pattern at a measured size</option></select></label>
