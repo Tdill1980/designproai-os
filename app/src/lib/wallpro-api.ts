@@ -97,6 +97,20 @@ export async function detectWall(wallPath: string): Promise<{ wall: { x: number;
   return { ...data, masks: Array.isArray(data.masks) ? data.masks : [] };
 }
 
+/** AI view on the wall: the image model paints the flat master onto the wall
+ * in the room photo and leaves everything else as photographed. Presentation
+ * only; the flat master stays the print truth. No token charged. */
+export async function renderWallView(input: { wallPath: string; artworkPath: string; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number }): Promise<{ view_path: string; view_url: string; model: string }> {
+  const { data, error } = await supabase.functions.invoke('render-wall-view', { body: input });
+  if (error) {
+    const response = (error as any).context;
+    const body = await response?.clone?.().json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'The wall view could not be rendered.');
+  }
+  if (!data?.view_path) throw new Error(data?.error || 'No wall view was returned.');
+  return { ...data, view_url: data.view_url || await openWallAsset(data.view_path) };
+}
+
 /* ── Ready-to-sell catalog (wallpro_designs) ─────────────────────────────── */
 
 /** Storefront read: approved, active designs. Anonymous browsing is allowed by policy. */

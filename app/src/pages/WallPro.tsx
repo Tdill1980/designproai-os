@@ -14,7 +14,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -65,7 +65,7 @@ export default function WallPro() {
   const [corners, setCorners] = useState<Point[]>([]), [exclusions, setExclusions] = useState<Point[][]>([]);
   const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | null>('wall');
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
-  const [view, setView] = useState<'before' | 'after' | 'design'>('before');
+  const [view, setView] = useState<'before' | 'after' | 'design' | 'ai'>('before');
   const showPrintGuides = false; // Print-seam guides on the photo are an internal aid; the customer page keeps them off.
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [showMasks, setShowMasks] = useState(true);
@@ -77,6 +77,8 @@ export default function WallPro() {
   // Pixel-accurate protected areas from detection: one PNG, white where the
   // design must not paint. Preview-only; print panels stay full rectangles.
   const [detectedMask, setDetectedMask] = useState<{ url: string; path: string | null } | null>(null);
+  // The AI picture of the design on the wall: presentation only, never print.
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string } | null>(null);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
@@ -315,6 +317,22 @@ export default function WallPro() {
     try { await detectPhoto(asset, applyMasks); }
     catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Using the whole photo as the wall; drag the corners if the wall is smaller.'); }
     finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
+  }
+  /** ChatGPT-style "show me": the image model paints the flat master onto the
+   * wall and leaves the window, drapes and furniture as photographed. No corners,
+   * no masks, no token. The flat master stays the print truth. */
+  async function showAiView() {
+    if (!photo || !artwork) return;
+    await run('Painting the design onto your wall', async () => {
+      const user = await wallUser();
+      const wallPath = photo.path || await uploadWallAsset(photo, user.id);
+      if (!photo.path) setPhoto({ ...photo, path: wallPath });
+      const artworkPath = artwork.path || await uploadWallAsset(artwork, user.id);
+      if (!artwork.path) setArtwork({ ...artwork, path: artworkPath });
+      const result = await renderWallView({ wallPath, artworkPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
+      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath }); setView('ai');
+      setNotice('AI view ready. It is a picture for showing the design; the flat master and the production panels are what print.');
+    });
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
@@ -559,7 +577,8 @@ export default function WallPro() {
                 imposed on their photo on the right, the moment the corners exist.
                 The tabs only switch the photo pane between the original wall and
                 the imposed design; the flat master never leaves the screen. */}
-            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === 'after') === (v === 'after') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
+            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
+              {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy} onClick={() => aiView && aiView.artwork === (artwork.path || '') ? setView('ai') : void showAiView()}><Wand2 className="mr-1 h-3 w-3" />{aiView && aiView.artwork === (artwork.path || '') ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
             <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {artwork && <div>
               {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
@@ -574,6 +593,7 @@ export default function WallPro() {
             </div>}
             {photo ? <div>
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
+              {view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl bg-slate-100"><img src={aiView.url} alt="AI picture of the design on your wall" className="w-full object-contain" /><p className="p-2 text-xs text-slate-500">AI picture for showing the design. The flat master and the production panels are what print.</p></div> :
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCorners(next); }} onMasks={setExclusions} />
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">

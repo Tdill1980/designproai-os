@@ -190,3 +190,7 @@ verify_jwt = false
 [functions.detect-wall-openings]
 # Detect my wall: preview-only vision question; the handler validates the caller and the file path.
 verify_jwt = false
+
+[functions.render-wall-view]
+# AI view on the wall: presentation picture from the room photo and the flat master; no token charged.
+verify_jwt = false
