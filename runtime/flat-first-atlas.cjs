@@ -66,6 +66,20 @@ const { readAcceptedCheckpoint, writeAcceptedCheckpoint, readAuthoringContext, w
 const { createFinishingCheckpointStore } = require("./atlas-finishing-checkpoint.cjs");
 const { assembleFinishedMaster, CONTRACT: FINISHED_MASTER_CONTRACT } = require("./atlas-finished-master.cjs");
 const { invokeAtlasAuthoring, providerFailureDetails, providerFailureSummary } = require("./atlas-authoring-transport.cjs");
+// HERO-DRIVER CASCADE (owner ruling, Trish 2026-09-11): Call 1 as one
+// multi-turn conversation -- driver first, passenger by code, the rest as
+// continuations with thought signatures replayed. Selected by
+// DESIGNPRO_ATLAS_TOPOLOGY=hero-driver; six-surface (+ one-field fail-over)
+// stays the default and is the fall-over when the hero pass is refused.
+const {
+  HERO_DRIVER_TOPOLOGY, HERO_DRIVER_CONTRACT, HERO_DRIVER_PROMPT_VERSION,
+  authorHeroDriverMaster, heroDriverEnabled,
+} = require("./atlas-hero-driver.cjs");
+// The durable node graph for the cascade (owner 2026-09-11: "graph
+// orchestration in parallel wherever you can improve latency"). Only the kill
+// switch is read here; the worker itself is injected by index.js so this module
+// never owns a poller.
+const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -2246,6 +2260,75 @@ async function callAtlasPanelEdge(body, { ownerId, fetchImpl = fetch, signal, ti
   return payload;
 }
 
+/**
+ * The `atlas-author` transport: the hero-driver cascade's one door to the
+ * model. A sibling of callAtlasPanelEdge for the same reason that one is a
+ * sibling of the artboard transport -- the contracts differ and folding them
+ * is how the checks drift.
+ */
+async function callAtlasAuthorEdge(body, { ownerId, fetchImpl = fetch, signal, timeoutMs, wait } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_author_edge_transport_missing", "SUPABASE_URL / service key are required", true);
+  }
+  const { response, payload } = await invokeAtlasAuthoring({
+    url: `${supabaseUrl}/functions/v1/design-panel-ai-generate`, body, fetchImpl, signal, timeoutMs, wait,
+    probe: probeSignal => requireAtlasProviderCache({ supabaseUrl, serviceRoleKey, ownerId, fetchImpl,
+      mode: "atlas-author", signal: probeSignal }),
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "content-type": "application/json",
+      "x-designpro-owner-id": String(ownerId || ""),
+    },
+  });
+  if (!response.ok || payload?.success !== true) {
+    throw Object.assign(new FlatAtlasError(
+      /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
+        ? String(payload.code || payload.error) : "flat_atlas_author_edge_call_failed",
+      `design-panel-ai-generate atlas-author failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}${providerFailureSummary(payload)}`,
+      typeof payload?.retryable === "boolean" ? payload.retryable
+        : response.status >= 500 || [404, 409, 429].includes(response.status),
+    ), providerFailureDetails(payload));
+  }
+  if (String(payload.promptVersion || "") !== HERO_DRIVER_PROMPT_VERSION) {
+    throw new FlatAtlasError(
+      "flat_atlas_author_edge_prompt_version_mismatch",
+      `The edge function is on ${String(payload.promptVersion || "none")}; this runtime authors against ${HERO_DRIVER_PROMPT_VERSION}`,
+    );
+  }
+  if (String(payload.surfaceKey || "") !== String(body.surfaceKey)) {
+    throw new FlatAtlasError("flat_atlas_author_edge_surface_mismatch", `Asked to author ${body.surfaceKey}; the edge answered for ${payload.surfaceKey}`);
+  }
+  if (Number(payload.imageRequestCount) !== 1) {
+    throw new FlatAtlasError("flat_atlas_author_edge_call_count_invalid", `The edge reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
+  }
+  if (body.providerRequest && (payload.providerCacheContract !== "designpro.gemini-provider-cache.v1"
+    || !HASH_RE.test(String(payload.providerRequestKey || "")))) {
+    throw new FlatAtlasError("flat_atlas_provider_cache_receipt_missing", "The authoring response lacks its durable request receipt", true);
+  }
+  return payload;
+}
+
+/**
+ * The atlas-author transport as the cascade consumes it: the edge call plus a
+ * verified download of the sheet it stored. ONE definition, used by the
+ * in-process cascade and handed to the node graph worker, so a node on the
+ * other runtime process authors through exactly the same door.
+ */
+function createAtlasAuthorTransport({ supabase, callAuthorEdge = callAtlasAuthorEdge, ownerId: defaultOwnerId = null } = {}) {
+  if (!supabase) throw new FlatAtlasError("flat_atlas_runtime_missing", "the atlas-author transport requires Supabase");
+  return async (body, { ownerId = defaultOwnerId } = {}) => {
+    const payload = await callAuthorEdge(body, { ownerId });
+    return {
+      ...payload,
+      bytes: await downloadVerified(supabase, payload.panelStoragePath, payload.panelSha256, payload.panelBytes),
+      panelByteSize: Number(payload.panelBytes || 0),
+    };
+  };
+}
+
 async function downloadVerified(supabase, storagePath, expectedHash, expectedBytes) {
   const { data, error } = await supabase.storage.from(BUCKET).download(storagePath);
   if (error || !data) throw new FlatAtlasError("flat_atlas_artifact_download_failed", `${storagePath}: ${error?.message || "missing"}`, true);
@@ -2661,7 +2744,23 @@ function atlasRevisionIdentity(options) {
   return { reservedRevisionId, revisionSequence, parentRevisionId, revisionContext, revisionContextHash, parentManifest };
 }
 
+/**
+ * Topology selection is the ONLY thing this wrapper does. A caller that names a
+ * topology (the fail-over recursions below, a harness) gets exactly that; a
+ * caller that names none gets hero-driver when the deploy flag says so and a
+ * first-generation is being authored, otherwise the six-surface default.
+ * Revision edits keep their parent's topology, exactly as the field fail-over
+ * does.
+ */
 async function generateOrReuseFlatAtlas(options) {
+  if (options?.authoringTopology === undefined && heroDriverEnabled()
+    && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
+    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
+  }
+  return generateOrReuseFlatAtlasResolved(options);
+}
+
+async function generateOrReuseFlatAtlasResolved(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, geometryResolution = null,
@@ -2691,6 +2790,7 @@ async function generateOrReuseFlatAtlas(options) {
     // loop without a live edge function. Production always uses the real POST.
     callEdge = callAtlasArtboardEdge,
     callPanelEdge = callAtlasPanelEdge,
+    callAuthorEdge = callAtlasAuthorEdge,
     masterRequestMaxBytes = MASTER_REQUEST_MAX_BYTES,
     logger = () => {},
   } = options;
@@ -2714,8 +2814,13 @@ async function generateOrReuseFlatAtlas(options) {
   // -- was authored on the LEGACY six-container manifest, not on field
   // territories. Field territories stay in the tree and stay tested; they are
   // simply not what produced the accepted design.
-  if (!["six-surface", "field"].includes(authoringTopology)) {
+  if (!["six-surface", "field", HERO_DRIVER_TOPOLOGY].includes(authoringTopology)) {
     throw new FlatAtlasError("flat_atlas_authoring_topology_invalid", `Unknown authoring topology ${String(authoringTopology).slice(0, 40)}`);
+  }
+  const heroDriver = authoringTopology === HERO_DRIVER_TOPOLOGY;
+  if (heroDriver && parentManifest) {
+    throw new FlatAtlasError("flat_atlas_hero_edit_unsupported",
+      "A revision edit keeps its parent's topology; the hero-driver cascade is for first authoring only");
   }
   if (authoringTopology === "field" && parentManifest) {
     throw new FlatAtlasError("flat_atlas_failover_edit_unsupported",
@@ -2745,11 +2850,22 @@ async function generateOrReuseFlatAtlas(options) {
     ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS,
     failoverFrom: reason || null, ...extra,
   });
+  // HERO-DRIVER FAIL-OVER: a refused hero pass hands the request to the
+  // unchanged six-surface contract (which keeps its own one-field fail-over),
+  // carrying the refusal as provenance. The customer never ends with nothing
+  // because the new topology was refused.
+  const failOverToSixSurface = (reason, extra = {}) => generateOrReuseFlatAtlas({
+    ...options, authoringTopology: "six-surface", failoverFrom: reason || null, ...extra,
+  });
   const checkpointIdentity = {
     tenantKey, generationId, requestId, ownerId,
     inputHash: sha256(canonicalBytes(input)), manifestHash: sha256(canonicalBytes(manifest)),
     promptVersion: PROMPT_VERSION, masterQcContract: MASTER_QC_CONTRACT,
-    finishingMode: String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() === "on" ? "on" : "off",
+    // The hero pass authors every surface itself, so the optional finishing
+    // pass never runs on it -- and its checkpoint can never be mistaken for a
+    // six-surface acceptance of the same request.
+    finishingMode: heroDriver ? HERO_DRIVER_TOPOLOGY
+      : String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() === "on" ? "on" : "off",
     checkpointKind: "accepted",
     revisionSequence, parentRevisionId, revisionContextHash,
   };
@@ -2798,7 +2914,7 @@ async function generateOrReuseFlatAtlas(options) {
   // creative inputs changed.
   const stableEdgeBody = atlasEdgeRequestBody(authoringInput, manifest, { revisionContextHash });
   const promptHash = sha256(Buffer.from(
-    `${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
+    `${heroDriver ? HERO_DRIVER_PROMPT_VERSION : ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
   // Fence the restored teaching input and topology against one-field reuse.
@@ -2807,6 +2923,9 @@ async function generateOrReuseFlatAtlas(options) {
     fieldContract: manifest.topology === FIELD_TOPOLOGY ? ATLAS_FIELD_PROMPT_CONTRACT : null,
     territories: manifest.territoriesContract || null,
     topology: manifest.topology,
+    // `undefined` on every other topology: canonical() drops it, so existing
+    // six-surface and field revisions hash exactly as before.
+    authoring: heroDriver ? HERO_DRIVER_CONTRACT : undefined,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing && fieldResumable && existing.manifest?.topology === FIELD_TOPOLOGY) {
@@ -2998,7 +3117,7 @@ async function generateOrReuseFlatAtlas(options) {
     attemptBody.providerRequest = { requestId, generationId, claimToken,
       attemptKey: authoringTopology === "field" ? `master:field:${attempt}` : `master:${attempt}`,
       ...(providerRecoveryOnly ? { cacheOnly: true } : {}) };
-    masterRequestByteSize = Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
+    masterRequestByteSize = heroDriver ? 0 : Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
     if (masterRequestByteSize > masterRequestMaxBytes) {
       throw new FlatAtlasError(
         "flat_atlas_master_request_too_large",
@@ -3010,7 +3129,53 @@ async function generateOrReuseFlatAtlas(options) {
     // exactly one Gemini image request per attempt; this runtime never calls
     // Gemini for Call 1 (owner directive 2026-08-27).
     const authoringStartedAt = Date.now();
-    generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
+    if (heroDriver) {
+      // THE CASCADE. Five bounded image requests through the deployed edge
+      // (driver from scratch; hood, front, rear in parallel; roof last), the
+      // passenger composed in code, assembled by code into the manifest zones.
+      // The sheet then faces the SAME gates below as a six-surface master.
+      let hero;
+      try {
+        const heroArgs = {
+          manifest, input: authoringInput, store, logger,
+          creativeContext: [String(input?.companyName || "").trim(), String(input?.industryType || "").trim(), String(input?.brandColors || "").trim()].filter(Boolean).join(" · ").slice(0, 600),
+          providerRequest: { requestId, generationId, claimToken, ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+          callEdge: createAtlasAuthorTransport({ supabase, callAuthorEdge, ownerId }),
+        };
+        // THE GRAPH RUNS THE CASCADE when the node worker is wired and the
+        // deploy has not switched it off: each surface a durable node, claimed
+        // by either runtime process, hood/front/rear in parallel across them.
+        // The in-process cascade remains for the kill switch and for a
+        // database that has not received the graph migration yet -- that case
+        // is logged and recorded in provenance, never silent.
+        const graphWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
+        if (graphWorker) {
+          try {
+            hero = await graphWorker.author({ ...heroArgs, requestId, generationId, ownerId });
+          } catch (graphCause) {
+            if (graphCause?.code !== "designpro_atlas_call1_graph_unavailable") throw graphCause;
+            logger(`atlas call 1: node graph unavailable (${String(graphCause.message || "").slice(0, 160)}); running the cascade in-process`);
+            hero = await authorHeroDriverMaster(heroArgs);
+            hero.provenance.graph = { unavailable: true, code: graphCause.code };
+          }
+        } else {
+          hero = await authorHeroDriverMaster(heroArgs);
+        }
+      } catch (cause) {
+        if (cause?.code !== "flat_atlas_hero_driver_refused") throw cause;
+        timings.authoringMs += Date.now() - authoringStartedAt;
+        logger(`atlas call 1: hero-driver cascade refused on ${cause.surfaceKey} (${cause.reason}); failing over to the six-surface contract`);
+        return failOverToSixSurface({
+          contract: AUTHORING_FAILOVER_CONTRACT, from: HERO_DRIVER_TOPOLOGY, to: "six-surface",
+          code: cause.code, reason: `${cause.surfaceKey}: ${String(cause.reason || "").slice(0, 400)}`,
+          attempts: Number(cause.details?.attempts || 0), rawCandidates: [],
+        }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+      }
+      generated = { bytes: hero.bytes, model: hero.model, provenance: hero.provenance, heroDriver: hero.provenance };
+      timings.heroCascadeMs = (timings.heroCascadeMs || 0) + Number(hero.timings?.heroCascadeMs || 0);
+    } else {
+      generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
+    }
     timings.authoringMs += Date.now() - authoringStartedAt;
     edgeProvenance.push(generated.provenance);
     const normalizeStartedAt = Date.now();
@@ -3078,6 +3243,16 @@ async function generateOrReuseFlatAtlas(options) {
     const refusalReason = stillBlocking.join("; ").slice(0, 600);
     if (!stillBlocking.length) {
       break;
+    }
+    if (heroDriver) {
+      // The hero pass spends ONE assembled candidate: the cascade already
+      // bounded every surface. A gate refusal here hands the request to the
+      // unchanged six-surface contract rather than re-rolling five sheets.
+      logger(`atlas call 1: hero-driver sheet refused by the master gates (${refusalCode}); failing over to the six-surface contract`);
+      return failOverToSixSurface({
+        contract: AUTHORING_FAILOVER_CONTRACT, from: HERO_DRIVER_TOPOLOGY, to: "six-surface",
+        code: refusalCode, reason: refusalReason, attempts: attempt, rawCandidates: [],
+      }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
     }
     // The worker persists only the code and the first 1000 message characters.
     // Retain exact raw identities before the findings so a refused master can
@@ -3155,6 +3330,19 @@ async function generateOrReuseFlatAtlas(options) {
     provider,
     logger,
   });
+  // HERO-DRIVER: the passenger zone holds a plain flop of the driver sheet
+  // until the brand-band mirror above re-drops the lettering forward. If that
+  // mirror declined on a design that carries lettering, the flop would ship
+  // reversed type -- so the hero pass fails closed to six-surface instead.
+  if (heroDriver && !recoveredCheckpoint && !passengerMirror.composed
+    && [input?.companyName, input?.businessName, input?.phone, input?.website].some((v) => String(v || "").trim())) {
+    logger(`atlas call 1: hero-driver passenger mirror declined (${passengerMirror.reason}); failing over to the six-surface contract`);
+    return failOverToSixSurface({
+      contract: AUTHORING_FAILOVER_CONTRACT, from: HERO_DRIVER_TOPOLOGY, to: "six-surface",
+      code: "flat_atlas_hero_passenger_mirror_declined", reason: String(passengerMirror.reason || "declined"),
+      attempts: masterAuthoringAttempts, rawCandidates: [],
+    }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+  }
   if (passengerMirror.composed && !recoveredCheckpoint) {
     // Same re-validation the repair path earns: a deterministic transform is
     // REPEATABLE, which is not the same as VALID.
@@ -3653,6 +3841,9 @@ async function generateOrReuseFlatAtlas(options) {
       // fail-over, the exact six-surface refusal that triggered it.
       authoringTopology,
       authoringFailover: failoverFrom || null,
+      // The hero-driver cascade receipt: per-surface method, attempts, image
+      // requests, signatures replayed, stage timings. Null on every other topology.
+      heroDriverAuthoring: generated?.heroDriver || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.
@@ -3856,6 +4047,9 @@ This crop is full-bleed print artwork: it intentionally continues behind windows
 }
 
 module.exports = {
+  HERO_DRIVER_TOPOLOGY,
+  callAtlasAuthorEdge,
+  createAtlasAuthorTransport,
   CALL_ONE_PANEL_CONTRACT,
   cutCallOnePanels,
   ATLAS_CONTRACT,

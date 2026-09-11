@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-84), [
+  assert.deepEqual(names.slice(-85), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -260,6 +260,10 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260911120000_wallpro_designs_catalog.sql",
     // WallPro design sessions: immutable versions per project, one approved version, refine in place.
     "20260911150000_wallpro_design_versions.sql",
+    // Call 1 as a durable node graph (RULE 0.35 addendum, owner 2026-09-11):
+    // per-surface nodes with depends_on, SKIP LOCKED claims across both
+    // runtime workers, lease-gated by the generation request.
+    "20260911170000_designpro_atlas_call1_graph.sql",
     // WallPro production panels: 150 PPI per-panel Topaz jobs claimed by the runtime.
     "20260911190000_wallpro_production_jobs.sql",
   ]);

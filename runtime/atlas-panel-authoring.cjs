@@ -507,5 +507,9 @@ module.exports = {
   SURFACE_LABELS,
   finishPanel,
   finishingFailureDisposition,
+  // Shared with atlas-hero-driver.cjs: ONE definition of "hole" and ONE
+  // history-budget trim, so authoring and finishing cannot disagree.
+  holeRatio,
+  trimHistory,
   _test: { holeRatio, evaluateCandidate, trimHistory },
 };
