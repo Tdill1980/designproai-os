@@ -8,6 +8,12 @@ contracts; each names its lock.
 
 - **Corner gate.** With a wall photo, generation is blocked until four valid
   corners exist (`wallGenerationBlocker`, `tests/wallpro.test.ts`).
+- **Detect my wall runs on upload.** A wall photo is sent to
+  `detect-wall-openings` the moment it is chosen; corners and protected areas
+  (windows, drapes, doors, outlets, furniture) land as editable preview state.
+  Signed-out or failed detection falls back to hand marking and never fails
+  the upload. Masks are preview-only; print panels stay full rectangles
+  (`wallpro-detect.test.ts`).
 - **Seamless is measured and closed by code, never by re-asking the model.**
   `app/src/lib/wallpro-seamless.ts`; the print export refuses an unverified
   repeat (`wallpro-seamless.test.ts`).

@@ -161,7 +161,15 @@ export default function WallPro() {
     await run('Opening image', async () => {
       const validated = await validateWallUpload(file);
       const asset = { ...validated, file, url: retain(validated.url) };
-      if (role === 'photo') { setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before'); }
+      if (role === 'photo') {
+        setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before');
+        // Uploading a wall photo means "find my wall": detection runs at once. It
+        // is a preview aid, so a signed-out customer or a model failure leaves the
+        // upload in place and falls back to hand marking rather than failing it.
+        setBusy('Detecting your wall');
+        try { await detectPhoto(asset); }
+        catch (e) { setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+      }
       if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); await recordVersion('upload', asset, { note: file.name.slice(0, 200) }); }
       if (role === 'reference') { setReference(asset); setArtwork(null); }
     });
@@ -240,20 +248,23 @@ export default function WallPro() {
   }
   /** Preview-only: proposes corners and protected areas from the photo. Print
    * panels stay full rectangles whatever is detected; the installer trims. */
+  async function detectPhoto(asset: WallAsset) {
+    const user = await wallUser();
+    const wallPath = asset.path || await uploadWallAsset(asset, user.id);
+    if (!asset.path) setPhoto(old => old && old.url === asset.url ? { ...old, path: wallPath } : old);
+    const found = await detectWall(wallPath);
+    const cornersOk = !!found.wall && validWallCorners(found.wall);
+    if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
+    setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
+    setView(artwork && cornersOk ? 'after' : 'before'); setError('');
+    const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
+    setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+  }
+  /** Re-runs detection on demand (a different photo crop, or after the customer
+   * moved things). The first pass happens automatically on upload. */
   async function detectMyWall() {
     if (!photo) return;
-    await run('Detecting your wall', async () => {
-      const user = await wallUser();
-      const wallPath = photo.path || await uploadWallAsset(photo, user.id);
-      if (!photo.path) setPhoto({ ...photo, path: wallPath });
-      const found = await detectWall(wallPath);
-      const cornersOk = !!found.wall && validWallCorners(found.wall);
-      if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
-      setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
-      setView(artwork && cornersOk ? 'after' : 'before'); setError('');
-      const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
-      setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
-    });
+    await run('Detecting your wall', () => detectPhoto(photo));
   }
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
@@ -423,10 +434,10 @@ export default function WallPro() {
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. A wall photo is optional when generating artwork.</p>
+          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Corners and protected areas are detected automatically. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
-              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall</Button>
-              <p className="text-xs text-slate-600">Finds the wall corners and the areas to protect (windows, drapes, doors, outlets, furniture) from your photo. Adjust any point afterwards. Or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
+              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall again</Button>
+              <p className="text-xs text-slate-600">Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
