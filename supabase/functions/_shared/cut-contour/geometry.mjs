@@ -520,3 +520,39 @@ export function shelfPack(items, maxHeight, gap = 0) {
   placements.sort((a, b) => a.i - b.i);
   return { placements, sheetW, sheetH };
 }
+
+// ── WPW rule: letters under 2" need a conversation before ordering ──────────
+
+/**
+ * Finds runs of lettering inside one element: three or more components of
+ * similar height sitting on a common line (their vertical spans overlap),
+ * read left to right. Returns each run whose letter height is below
+ * `minHeightPx`, with the count and the median height in pixels. Logos and
+ * single shapes never form a run, so they are never flagged as small type.
+ */
+export function smallLetterRuns(comps, minHeightPx, { minRun = 3, tolerance = 0.35 } = {}) {
+  const sorted = [...comps].sort((a, b) => a.minX - b.minX);
+  const used = new Uint8Array(sorted.length);
+  const runs = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (used[i]) continue;
+    const run = [sorted[i]];
+    const h0 = sorted[i].maxY - sorted[i].minY + 1;
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (used[j]) continue;
+      const c = sorted[j];
+      const h = c.maxY - c.minY + 1;
+      const last = run[run.length - 1];
+      const overlapY = Math.min(last.maxY, c.maxY) - Math.max(last.minY, c.minY);
+      const gap = c.minX - last.maxX;
+      if (Math.abs(h - h0) <= tolerance * h0 && overlapY > 0.5 * Math.min(h, h0) && gap <= 1.5 * h0) run.push(c);
+    }
+    if (run.length >= minRun) {
+      for (const c of run) used[sorted.indexOf(c)] = 1;
+      const heights = run.map((c) => c.maxY - c.minY + 1).sort((a, b) => a - b);
+      const median = heights[Math.floor(heights.length / 2)];
+      if (median < minHeightPx) runs.push({ count: run.length, heightPx: median });
+    }
+  }
+  return runs;
+}

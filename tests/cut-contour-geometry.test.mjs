@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   maskFromRgba, edt, dilate, erode, closeMask, components, groupComponents, cropMask,
   traceBoundaries, polygonArea, cleanLoop, simplifyClosed, bleedRing, minFeatureWidth,
-  quantizeColors, maskForPaletteIndex, shelfPack, loopsToPathD,
+  quantizeColors, maskForPaletteIndex, shelfPack, loopsToPathD, smallLetterRuns,
 } from "../supabase/functions/_shared/cut-contour/geometry.mjs";
 
 /**
@@ -179,4 +179,17 @@ test("cropMask keeps only the requested component ids inside the window", () => 
   const { labels, components: comps } = components(mask, 40, 20);
   const crop = cropMask(mask, 40, 0, 0, 40, 20, labels, [comps[0].id]);
   assert.equal(crop.reduce((a, b) => a + b, 0), 25);
+});
+
+test("lettering under the minimum height is a run of similar shapes on a line; a logo is not", () => {
+  const c = canvas(300, 120);
+  for (let i = 0; i < 5; i++) rect(c, 10 + i * 24, 40, 18, 30);   // five 30 px "letters" on a line
+  rect(c, 200, 10, 80, 100);                                       // one big logo
+  const mask = maskFromRgba(c.data, 300, 120);
+  const { components: comps } = components(mask, 300, 120);
+  const runs = smallLetterRuns(comps, 40);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].count, 5);
+  assert.equal(runs[0].heightPx, 30);
+  assert.equal(smallLetterRuns(comps, 20).length, 0, "30 px letters are fine when the minimum is 20 px");
 });

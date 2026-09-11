@@ -127,10 +127,12 @@ sent a styling prompt or the mockup; the function 400'd on every click).
   design and produce cut contour designs and files"). `_shared/cut-contour/`
   executes the WePrintWraps guide: unified silhouette cut line as a real PDF
   `Separation /CutContour` (CMYK 0/100/0/0) 0.25 pt stroke, the artwork's own
-  colour bled 1/4" past it, layers CutContour / Artwork / Bleed (+ one per
-  film for Manufacture Film Cut), every graphic nested on one sheet ≤ 51.5",
-  10% scale with the scale in the name beyond the 200" PDF limit, manual-
-  review flags (hairline, > 200 vertices, tiling). `cut-contour-build`
+  colour bled 1/4" past it, layers CutContour / Artwork / Bleed for Print &
+  Cut and — WPW File Prep: "layered vector files are required" — one vector
+  film layer per colour with offset-path bleeds and no raster for
+  Manufacture Film Cut, every graphic nested on one sheet ≤ 51.5", 10% scale
+  with the scale in the name beyond the 200" PDF limit, manual-review flags
+  (letters under 2", hairline, > 200 vertices, tiling). `cut-contour-build`
   file-prep mode serves it (PDF + SVG + ZIP + sheet size to order);
   `run_production` stages 2–4 are that one call and pricing is the nested
   sheet. The flat artwork is briefed as cut-ready input. No model, no

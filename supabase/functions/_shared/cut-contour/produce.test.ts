@@ -74,15 +74,36 @@ Deno.test("produces a three-layer CutContour PDF and SVG, nested within the cut-
   assertEquals((result.svg.match(/<path id="cut-element-/g) || []).length, 3);
 });
 
-Deno.test("Manufacture Film Cut adds one hidden layer per film colour", async () => {
+Deno.test("Manufacture Film Cut is layered VECTOR end to end: one film layer per colour, offset-path bleeds, no raster", async () => {
   const png = await fixture();
   const result = await produceCutContour(png, { widthIn: 60, substrate: "cut", label: "Films" });
   const films = result.elements.flatMap((e) => e.films);
   assert(films.length >= 3, `expected a film per element, got ${films.length}`);
-  assert(result.layers.some((l) => l.startsWith("Film 1 ")));
+  assert(films.every((f) => f.paths > 0 && f.bleedPaths > 0), "every film has fills and an offset bleed");
+  assertEquals(result.vector, true);
+  assertEquals(result.layers[0], "CutContour");
+  assertEquals(result.layers[result.layers.length - 1], "Bleed");
+  assert(result.layers.filter((l) => l.startsWith("Film ")).length === 2, `red + blue films, got ${result.layers.join(", ")}`);
+  assert(!result.layers.includes("Artwork"), "the films are the artwork");
   const pdfText = new TextDecoder("latin1").decode(result.pdf);
-  assertMatch(pdfText, /\/OFF \[/);
-  assertMatch(result.svg, /data-film="#/);
+  assert(!pdfText.includes("/Subtype /Image"), "no raster in a Film Cut kit");
+  assertMatch(result.svg, /<g id="Artwork">\s*<g id="Film-1-[0-9A-F]{6}" data-film="#/);
+  assert(!result.svg.includes("<image"), "SVG is vector only");
+  assert(!result.svg.includes("display:none"), "film layers are visible artwork, not hidden extras");
+  const ops = await pageOperators(result.pdf);
+  assertMatch(ops, /\/OC \/OC1 BDC[\s\S]*?rg[\s\S]*?f\*/, "film fills are painted as vector paths");
+});
+
+Deno.test("lettering under 2 inches is flagged for a conversation before ordering", async () => {
+  const img = new Image(1000, 300);
+  img.fill(0xffffffff);
+  for (let i = 0; i < 5; i++) for (let y = 100; y < 130; y++) for (let x = 100 + i * 40; x < 125 + i * 40; x++) img.setPixelAt(x + 1, y + 1, 0x101010ff);
+  // 1000 px = 40 in → 25 px/in → the letters are 1.2 in tall.
+  const result = await produceCutContour(await img.encode(), { widthIn: 40, label: "Small type" });
+  assertEquals(result.elements.length, 1);
+  assertEquals(result.elements[0].smallLetters.length, 1);
+  assertEquals(result.elements[0].smallLetters[0].count, 5);
+  assert(result.reviewFlags.some((f) => f.startsWith("letters:") && f.includes("5 letters")), result.reviewFlags.join("; "));
 });
 
 Deno.test("a design wider than the plotter is flagged for tiling, never silently shrunk", async () => {

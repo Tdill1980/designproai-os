@@ -39,8 +39,8 @@ graphics*, `docs/…` upload 2026-09-11) is now executed deterministically by
 | Type → Create Outlines | a traced silhouette is already vector shape | — |
 | nest everything on one sheet ≤ 51.5" high, fit to artwork bounds | column packing, rotation when that is the only fit, oversize flagged for tiling; sheet inches are the order size | `shelfPack` |
 | files at 10% scale named "… 10%" when huge | sheets beyond the 200" PDF page limit are written at 10% scale with the scale in the file name, subject and SVG | `produce.ts` |
-| letters < 2", hairline detail → manual review | `hairline:` (< 0.05" feature), `vertices:` (> 200), `oversize:` flags; letter height stays with `cut-graphics-proof` | `minFeatureWidth` |
-| Manufacture Film Cut: one film per colour | colour quantisation of the element → one hidden layer per film with its own paths | `quantizeColors` |
+| letters < 2", hairline detail → manual review (WPW File Prep: "contact us prior to ordering") | `letters:` (a run of ≥ 3 similar shapes on a line under 2"), `hairline:` (< 0.05" feature), `vertices:` (> 200), `oversize:` flags; the dimensioned letter-height spec stays with `cut-graphics-proof` | `smallLetterRuns` / `minFeatureWidth` |
+| "Layered vector files are required" | Manufacture Film Cut kits are **vector end to end**: one visible layer per film colour (fills as paths) + each film's offset-path bleed in its colour + the CutContour stroke; no raster in the file. Print & Cut keeps the artwork as a raster inside the vector-layered file (photographic art has no vector form; the cut line and the layer structure are vector) | `quantizeColors` / `dilate` |
 
 Inputs: the FLAT artwork (`generate_flat`, briefed as cut-ready: pure white
 background, solid closed shapes, no soft edges, film-cut = flat solid colours

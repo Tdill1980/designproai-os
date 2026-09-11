@@ -129,7 +129,10 @@ test("the cut-contour producer is the WPW guide, deterministically, and cut-cont
   assert.match(PRODUCE, /C1: \[0, 1, 0, 0\]/);
   assert.match(PRODUCE, /StrokingColorspace, \[PDFName\.of\(CUT_CONTOUR_SPOT\.name\)\]/);
   // Three layers as optional content, cut line stroked never filled.
-  assert.match(PRODUCE, /const layers = \["CutContour", "Artwork", "Bleed"/);
+  assert.match(PRODUCE, /\["CutContour", \.\.\.filmOrder\.map\(filmLayer\), "Bleed"\]/, "Film Cut: one vector layer per film, CutContour on top, Bleed underneath");
+  assert.match(PRODUCE, /: \["CutContour", "Artwork", "Bleed"\]/, "Print & Cut: raster artwork inside the vector-layered file");
+  assert.match(PRODUCE, /MIN_LETTER_HEIGHT_IN = 2/, "WPW: letters under 2\" need a conversation before ordering");
+  assert.match(PRODUCE, /G\.smallLetterRuns\(g\.components, MIN_LETTER_HEIGHT_IN \* dpiWork\)/);
   assert.match(PRODUCE, /OCProperties/);
   assert.match(PRODUCE, /cutOps\.push\(stroke\(\), popGraphicsState\(\), endOC\(\)\)/);
   // 1/4" bleed that extends the artwork's own colour; 51.5" nesting limit; 10% scale beyond 200".

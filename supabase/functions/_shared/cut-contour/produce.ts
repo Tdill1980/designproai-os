@@ -38,6 +38,8 @@ export const MAX_CUT_CONTOUR_HEIGHT_IN = 51.5;
 export const DEFAULT_BLEED_IN = 0.25;
 export const MIN_FEATURE_WIDTH_IN = 0.05;
 export const MAX_VERTICES_PER_ELEMENT = 200;
+/** WPW: "For intricate designs and letters less than 2″ in height, please contact us prior to ordering." */
+export const MIN_LETTER_HEIGHT_IN = 2;
 
 export interface ProduceOptions {
   /** Real printed size of the whole artwork raster. Width wins when both are given. */
@@ -55,7 +57,7 @@ export interface ProduceOptions {
   workMax?: number;
 }
 
-export interface ProducedFilm { hex: string; coverage: number; paths: number }
+export interface ProducedFilm { hex: string; coverage: number; paths: number; bleedPaths: number }
 export interface ProducedElement {
   index: number;
   label: string;
@@ -64,6 +66,7 @@ export interface ProducedElement {
   cutPaths: number;
   vertices: number;
   minFeatureWidthIn: number;
+  smallLetters: { count: number; heightIn: number }[];
   placement: { xIn: number; yIn: number; widthIn: number; heightIn: number; rotated: boolean; oversize: boolean };
   films: ProducedFilm[];
 }
@@ -81,6 +84,10 @@ export interface ProduceResult {
   layers: string[];
   spot: typeof CUT_CONTOUR_SPOT;
   bleedIn: number;
+  /** Film Cut kits are layered vector end to end (fills + offset bleeds as
+   *  paths, no raster). Print & Cut keeps the artwork raster inside the
+   *  vector-layered file — photographic art has no vector form. */
+  vector: boolean;
 }
 
 interface WorkElement {
@@ -88,7 +95,8 @@ interface WorkElement {
   label: string;
   wPx: number; hPx: number;               // work-resolution size, art only
   loops: number[][][];                    // work px, relative to the element crop origin
-  filmLoops: { hex: string; coverage: number; loops: number[][][] }[];
+  filmLoops: { hex: string; coverage: number; loops: number[][][]; bleedLoops: number[][][] }[];
+  smallLetters: { count: number; heightIn: number }[];
   artPng: Uint8Array;                     // original resolution, transparent outside the art
   bleedPng: Uint8Array;                   // work resolution ring, transparent elsewhere
   bleedPx: number;
@@ -206,22 +214,30 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
     const localIds = [...new Set(Array.from(localLabels).filter((v: number) => v > 0))] as number[];
     const minFeatureWidthIn = G.minFeatureWidth(elemMask, cw, ch, localLabels, localIds) / dpiWork;
 
-    // Manufacture Film Cut: one layer per solid film colour.
+    // Manufacture Film Cut: one VECTOR layer per solid film colour (WPW:
+    // "layered vector files are required"), each with its own offset-path
+    // bleed in the same film colour — Nate's Offset Path on the bleed layer.
     const filmLoops: WorkElement["filmLoops"] = [];
     if (substrate === "cut") {
       const { palette, index } = G.quantizeColors(elemRgba, elemMask, cw, ch, { maxColors: options.maxFilms ?? 4 });
       palette.forEach((p: { hex: string; coverage: number }, k: number) => {
         const fm = G.closeMask(G.maskForPaletteIndex(index, k), cw, ch, 1);
         const fl = G.traceBoundaries(fm, cw, ch).map((l: number[][]) => G.cleanLoop(l));
-        if (fl.length) filmLoops.push({ hex: p.hex, coverage: p.coverage, loops: fl });
+        if (!fl.length) return;
+        const fbl = G.traceBoundaries(G.dilate(fm, cw, ch, bleedPx), cw, ch).map((l: number[][]) => G.cleanLoop(l));
+        filmLoops.push({ hex: p.hex, coverage: p.coverage, loops: fl, bleedLoops: fbl });
       });
     }
+
+    // WPW: letters under 2" need a conversation before ordering.
+    const smallLetters = (G.smallLetterRuns(g.components, MIN_LETTER_HEIGHT_IN * dpiWork) as { count: number; heightPx: number }[])
+      .map((r) => ({ count: r.count, heightIn: round(r.heightPx / dpiWork, 2) }));
 
     elements.push({
       index: gi + 1,
       label: `Element ${gi + 1}`,
       wPx: cw, hPx: ch,
-      loops, filmLoops,
+      loops, filmLoops, smallLetters,
       artPng: await encodePng(artCrop, ow, oh),
       bleedPng: await encodePng(ring, cw, ch),
       bleedPx, vertices, minFeatureWidthIn,
@@ -241,13 +257,14 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
       const bl = await Image.decode(e.bleedPng) as Image;
       e.bleedPng = await encodePng(rotateRgba90(bl.bitmap as Uint8ClampedArray, bl.width, bl.height), bl.height, bl.width);
       e.loops = rotateLoops90(e.loops, e.hPx);
-      e.filmLoops = e.filmLoops.map((f) => ({ ...f, loops: rotateLoops90(f.loops, e.hPx) }));
+      e.filmLoops = e.filmLoops.map((f) => ({ ...f, loops: rotateLoops90(f.loops, e.hPx), bleedLoops: rotateLoops90(f.bleedLoops, e.hPx) }));
       [e.wPx, e.hPx] = [e.hPx, e.wPx];
       e.rotated = true;
     }
     if (p.oversize) reviewFlags.push(`oversize:Element ${e.index} is larger than ${maxSheetHeightIn}" in both directions and must be tiled`);
     if (e.vertices > MAX_VERTICES_PER_ELEMENT) reviewFlags.push(`vertices:Element ${e.index} cut path has ${e.vertices} vertices (> ${MAX_VERTICES_PER_ELEMENT}); hand simplification recommended`);
     if (e.minFeatureWidthIn < MIN_FEATURE_WIDTH_IN) reviewFlags.push(`hairline:Element ${e.index} has detail ${round(e.minFeatureWidthIn, 3)}" wide (< ${MIN_FEATURE_WIDTH_IN}")`);
+    for (const r of e.smallLetters) reviewFlags.push(`letters:Element ${e.index} has ${r.count} letters about ${r.heightIn}" tall (< ${MIN_LETTER_HEIGHT_IN}"): contact WePrintWraps before ordering`);
   }
   const sheetWIn = packed.sheetW, sheetHIn = packed.sheetH;
   // PDF pages cap at 14400 pt (200"). A van-side kit can exceed that, so — as
@@ -258,8 +275,17 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
   const inPt = 72 * scale;
 
   const placed = packed.placements.map((p) => ({ p, e: elements[p.i] }));
-  const layers = ["CutContour", "Artwork", "Bleed", ...(substrate === "cut" ? placed.flatMap(({ e }) => e.filmLoops.map((f, i) => `Film ${i + 1} ${f.hex}`)) : [])];
+  // Film Cut: the films ARE the artwork, one visible vector layer per colour,
+  // numbered by first appearance across the sheet; Print & Cut: one raster
+  // Artwork layer. Both: CutContour on top, Bleed underneath.
+  const filmOrder: string[] = [];
+  for (const { e } of placed) for (const f of e.filmLoops) if (!filmOrder.includes(f.hex)) filmOrder.push(f.hex);
+  const filmLayer = (hex: string) => `Film ${filmOrder.indexOf(hex) + 1} ${hex}`;
+  const layers = substrate === "cut"
+    ? ["CutContour", ...filmOrder.map(filmLayer), "Bleed"]
+    : ["CutContour", "Artwork", "Bleed"];
   const uniqueLayers = [...new Set(layers)];
+  const hexToRgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
 
   // ── SVG (the editable companion; the PDF is what the RIP reads) ──────────
   const svgW = round(sheetWIn * inPt), svgH = round(sheetHIn * inPt);
@@ -267,23 +293,33 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
   svgParts.push(`<?xml version="1.0" encoding="UTF-8"?>`);
   svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${round(sheetWIn * scale)}in" height="${round(sheetHIn * scale)}in" viewBox="0 0 ${svgW} ${svgH}" data-cut-contour="${CUT_CONTOUR_SPOT.name}" data-bleed-in="${bleedIn}" data-scale="${scale}" data-sheet-in="${round(sheetWIn, 2)} x ${round(sheetHIn, 2)}">`);
   svgParts.push(`<title>${escapeXml(label)} — cut contour</title>`);
+  const pathAt = (loops: number[][][], p: { x: number; y: number }) => G.loopsToPathD(loops, { scale: ptPerPx, offsetX: p.x * inPt, offsetY: p.y * inPt });
   svgParts.push(`<g id="Bleed">`);
-  for (const { p, e } of placed) {
-    svgParts.push(`<image x="${round(p.x * inPt)}" y="${round(p.y * inPt)}" width="${round(e.wPx * ptPerPx)}" height="${round(e.hPx * ptPerPx)}" xlink:href="data:image/png;base64,${base64(e.bleedPng)}"/>`);
+  if (substrate === "cut") {
+    for (const { p, e } of placed) for (const f of e.filmLoops) {
+      svgParts.push(`<path data-film="${f.hex}" fill="${f.hex}" fill-rule="evenodd" d="${pathAt(f.bleedLoops, p)}"/>`);
+    }
+  } else {
+    for (const { p, e } of placed) {
+      svgParts.push(`<image x="${round(p.x * inPt)}" y="${round(p.y * inPt)}" width="${round(e.wPx * ptPerPx)}" height="${round(e.hPx * ptPerPx)}" xlink:href="data:image/png;base64,${base64(e.bleedPng)}"/>`);
+    }
   }
   svgParts.push(`</g><g id="Artwork">`);
-  for (const { p, e } of placed) {
-    svgParts.push(`<image x="${round(p.x * inPt)}" y="${round(p.y * inPt)}" width="${round(e.wPx * ptPerPx)}" height="${round(e.hPx * ptPerPx)}" xlink:href="data:image/png;base64,${base64(e.artPng)}"/>`);
+  if (substrate === "cut") {
+    for (const hex of filmOrder) {
+      svgParts.push(`<g id="${filmLayer(hex).replace(/[^A-Za-z0-9]+/g, "-")}" data-film="${hex}" fill="${hex}" fill-rule="evenodd">`);
+      for (const { p, e } of placed) for (const f of e.filmLoops) if (f.hex === hex) svgParts.push(`<path d="${pathAt(f.loops, p)}"/>`);
+      svgParts.push(`</g>`);
+    }
+  } else {
+    for (const { p, e } of placed) {
+      svgParts.push(`<image x="${round(p.x * inPt)}" y="${round(p.y * inPt)}" width="${round(e.wPx * ptPerPx)}" height="${round(e.hPx * ptPerPx)}" xlink:href="data:image/png;base64,${base64(e.artPng)}"/>`);
+    }
   }
   svgParts.push(`</g>`);
-  if (substrate === "cut") {
-    placed.forEach(({ p, e }) => e.filmLoops.forEach((f, i) => {
-      svgParts.push(`<g id="Film-${e.index}-${i + 1}" data-film="${f.hex}" style="display:none" fill="${f.hex}" fill-rule="evenodd"><path d="${G.loopsToPathD(f.loops, { scale: ptPerPx, offsetX: p.x * inPt, offsetY: p.y * inPt })}"/></g>`);
-    }));
-  }
   svgParts.push(`<g id="${CUT_CONTOUR_SPOT.name}" fill="none" stroke="#FF00FF" stroke-width="${CUT_CONTOUR_SPOT.strokeWeightPt}" data-spot="${CUT_CONTOUR_SPOT.name}" data-cmyk="0,100,0,0">`);
   for (const { p, e } of placed) {
-    svgParts.push(`<path id="cut-element-${e.index}" d="${G.loopsToPathD(e.loops, { scale: ptPerPx, offsetX: p.x * inPt, offsetY: p.y * inPt })}"/>`);
+    svgParts.push(`<path id="cut-element-${e.index}" d="${pathAt(e.loops, p)}"/>`);
   }
   svgParts.push(`</g></svg>`);
   const svg = svgParts.join("\n");
@@ -304,10 +340,9 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
   const ocgs: Record<string, PDFRef> = {};
   for (const name of uniqueLayers) ocgs[name] = ocg(name);
   const ocgRefs = uniqueLayers.map((n) => ocgs[n]);
-  const filmRefs = uniqueLayers.filter((n) => n.startsWith("Film ")).map((n) => ocgs[n]);
   pdf.catalog.set(PDFName.of("OCProperties"), ctx.obj({
     OCGs: ocgRefs,
-    D: ctx.obj({ Order: ocgRefs, ON: ocgRefs.filter((r) => !filmRefs.includes(r)), OFF: filmRefs }),
+    D: ctx.obj({ Order: ocgRefs, ON: ocgRefs }),
   }));
   const resources = page.node.Resources() as PDFDict;
   resources.set(PDFName.of("ColorSpace"), ctx.obj({ [CUT_CONTOUR_SPOT.name]: separation }));
@@ -323,34 +358,45 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
     y: pageH - (p.y * inPt + pt[1] * ptPerPx),
   });
 
-  // Bleed layer (bottom).
-  page.pushOperators(beginOC("Bleed"));
-  for (const { p, e } of placed) {
-    const img = await pdf.embedPng(e.bleedPng);
-    page.drawImage(img, { x: p.x * inPt, y: pageH - p.y * inPt - e.hPx * ptPerPx, width: e.wPx * ptPerPx, height: e.hPx * ptPerPx });
-  }
-  page.pushOperators(endOC());
-  // Artwork layer.
-  page.pushOperators(beginOC("Artwork"));
-  for (const { p, e } of placed) {
-    const img = await pdf.embedPng(e.artPng);
-    page.drawImage(img, { x: p.x * inPt, y: pageH - p.y * inPt - e.hPx * ptPerPx, width: e.wPx * ptPerPx, height: e.hPx * ptPerPx });
-  }
-  page.pushOperators(endOC());
-  // Film layers (Manufacture Film Cut), hidden by default.
-  if (substrate === "cut") {
-    for (const { p, e } of placed) {
-      e.filmLoops.forEach((f, i) => {
-        const r = parseInt(f.hex.slice(1, 3), 16) / 255, g = parseInt(f.hex.slice(3, 5), 16) / 255, b = parseInt(f.hex.slice(5, 7), 16) / 255;
-        const ops: PDFOperator[] = [beginOC(`Film ${i + 1} ${f.hex}`), pushGraphicsState(), setFillingColor(rgb(r, g, b))];
-        for (const loop of f.loops) {
-          loop.forEach((pt, k) => { const q = toPt(p, e, pt); ops.push(k === 0 ? moveTo(q.x, q.y) : lineTo(q.x, q.y)); });
-          ops.push(closePath());
-        }
-        ops.push(PDFOperator.of(PDFOperatorNames.FillEvenOdd, []), popGraphicsState(), endOC());
-        page.pushOperators(...ops);
-      });
+  const fillLoops = (ops: PDFOperator[], loops: number[][][], p: { x: number; y: number }, e: WorkElement) => {
+    for (const loop of loops) {
+      loop.forEach((pt, k) => { const q = toPt(p, e, pt); ops.push(k === 0 ? moveTo(q.x, q.y) : lineTo(q.x, q.y)); });
+      ops.push(closePath());
     }
+    ops.push(PDFOperator.of(PDFOperatorNames.FillEvenOdd, []));
+  };
+
+  if (substrate === "cut") {
+    // Bleed layer (bottom): each film's offset path, filled in its own colour.
+    const bleedOps: PDFOperator[] = [beginOC("Bleed"), pushGraphicsState()];
+    for (const { p, e } of placed) for (const f of e.filmLoops) {
+      bleedOps.push(setFillingColor(rgb(...hexToRgb(f.hex))));
+      fillLoops(bleedOps, f.bleedLoops, p, e);
+    }
+    bleedOps.push(popGraphicsState(), endOC());
+    page.pushOperators(...bleedOps);
+    // Film layers: the artwork itself, one vector layer per film colour.
+    for (const hex of filmOrder) {
+      const ops: PDFOperator[] = [beginOC(filmLayer(hex)), pushGraphicsState(), setFillingColor(rgb(...hexToRgb(hex)))];
+      for (const { p, e } of placed) for (const f of e.filmLoops) if (f.hex === hex) fillLoops(ops, f.loops, p, e);
+      ops.push(popGraphicsState(), endOC());
+      page.pushOperators(...ops);
+    }
+  } else {
+    // Bleed layer (bottom): the artwork's edge colour extended 1/4" outward.
+    page.pushOperators(beginOC("Bleed"));
+    for (const { p, e } of placed) {
+      const img = await pdf.embedPng(e.bleedPng);
+      page.drawImage(img, { x: p.x * inPt, y: pageH - p.y * inPt - e.hPx * ptPerPx, width: e.wPx * ptPerPx, height: e.hPx * ptPerPx });
+    }
+    page.pushOperators(endOC());
+    // Artwork layer: the print raster, transparent outside the art.
+    page.pushOperators(beginOC("Artwork"));
+    for (const { p, e } of placed) {
+      const img = await pdf.embedPng(e.artPng);
+      page.drawImage(img, { x: p.x * inPt, y: pageH - p.y * inPt - e.hPx * ptPerPx, width: e.wPx * ptPerPx, height: e.hPx * ptPerPx });
+    }
+    page.pushOperators(endOC());
   }
   // CutContour layer (top): stroke only, spot colour, hairline.
   const cutOps: PDFOperator[] = [
@@ -380,8 +426,9 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
     cutPaths: e.loops.length,
     vertices: e.vertices,
     minFeatureWidthIn: round(e.minFeatureWidthIn, 3),
+    smallLetters: e.smallLetters,
     placement: { xIn: round(p.x, 2), yIn: round(p.y, 2), widthIn: round(p.w, 2), heightIn: round(p.h, 2), rotated: e.rotated, oversize: p.oversize },
-    films: e.filmLoops.map((f) => ({ hex: f.hex, coverage: round(f.coverage, 3), paths: f.loops.length })),
+    films: e.filmLoops.map((f) => ({ hex: f.hex, coverage: round(f.coverage, 3), paths: f.loops.length, bleedPaths: f.bleedLoops.length })),
   }));
 
   return {
@@ -395,6 +442,7 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
     layers: uniqueLayers,
     spot: CUT_CONTOUR_SPOT,
     bleedIn,
+    vector: substrate === "cut",
   };
 }
 
