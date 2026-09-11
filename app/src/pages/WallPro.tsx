@@ -9,8 +9,9 @@ import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
+import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { wallUser, uploadWallAsset, openWallAsset, generateWall, saveWallProject, wallHistory, getWallProject, type WallAsset } from '@/lib/wallpro-api';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -30,6 +31,12 @@ export default function WallPro() {
   const [prompt, setPrompt] = useState('');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
+  // Seamless repeat is decided by measurement and closed by code (wallpro-seamless).
+  // `seam` is the derivation for the current artwork + preference: its receipt and
+  // the artwork that actually tiles (the blended copy, or the original).
+  const [seamPreference, setSeamPreference] = useState<SeamlessPreference>('auto');
+  const [seam, setSeam] = useState<{ key: string; receipt: SeamlessReceipt; artwork: WallAsset } | null>(null);
+  const [seamBusy, setSeamBusy] = useState(false);
   const [corners, setCorners] = useState<Point[]>([]), [exclusions, setExclusions] = useState<Point[][]>([]);
   const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | null>('wall');
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
@@ -58,16 +65,57 @@ export default function WallPro() {
     top: projectPoint(wallMap,{x:Math.max(0, panel.x)/width,y:0}),
     bottom: projectPoint(wallMap,{x:Math.max(0, panel.x)/width,y:1}),
   })) : [];
+  const seamKey = artwork && placement === 'repeat' ? artwork.url + '|' + seamPreference : '';
+  const seamCurrent = seam && seam.key === seamKey ? seam : null;
+  // What the preview samples and the print embeds. For a repeat this is the
+  // seam-derived artwork; the layout carries mirror when that method was chosen.
+  const tileArtwork = seamCurrent ? seamCurrent.artwork : artwork;
+  const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
+  const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
+  const seamReady = placement !== 'repeat' || !!seamCurrent;
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
-  try { if (artwork) metrics = layoutMetrics({ width, height, mode: placement, repeatWidth }, artwork.aspect); } catch { /* visible validation below */ }
+  try { if (artwork) metrics = layoutMetrics(layout, artwork.aspect); } catch { /* visible validation below */ }
+
+  useEffect(() => {
+    if (!seamKey || !artwork) { setSeam(null); setSeamBusy(false); return; }
+    let active = true, owned: string | null = null;
+    setSeam(null); setSeamBusy(true);
+    (async () => {
+      const image = await loadWallImage(artwork.url);
+      const tile = document.createElement('canvas');
+      tile.width = image.naturalWidth; tile.height = image.naturalHeight;
+      const ctx = tile.getContext('2d', { willReadFrequently: true });
+      if (!ctx) throw new Error('This browser could not check the pattern seam. Try a desktop browser.');
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, tile.width, tile.height);
+      const before = measureSeam(pixels.data, tile.width, tile.height);
+      const method = chooseSeamlessMethod(before, seamPreference);
+      let after: SeamReport | null = null, tiled: WallAsset = artwork;
+      if (method === 'blend') {
+        const blended = blendSeamless(pixels.data, tile.width, tile.height);
+        after = measureSeam(blended, tile.width, tile.height);
+        ctx.putImageData(new ImageData(blended, tile.width, tile.height), 0, 0);
+        const blob = await canvasBlob(tile);
+        if (!active) return;
+        owned = URL.createObjectURL(blob);
+        // Derived deterministically from the stored artwork; never uploaded itself.
+        tiled = { url: owned, aspect: artwork.aspect };
+      }
+      tile.width = 1; tile.height = 1;
+      if (!active) return;
+      setSeam({ key: seamKey, receipt: seamlessReceipt(seamPreference, before, after, method), artwork: tiled });
+    })().catch(e => { if (active) setError(e instanceof Error ? e.message : 'The pattern seam could not be checked.'); })
+      .finally(() => { if (active) setSeamBusy(false); });
+    return () => { active = false; if (owned) URL.revokeObjectURL(owned); };
+  }, [seamKey]);
 
   useEffect(() => {
     const version = ++previewVersion.current;
     let ownedPreview: string | null = null;
     setPreview(null); canvas.current = null;
-    if (editingPhoto || !photo || !artwork || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
+    if (editingPhoto || !photo || !artwork || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
-    renderWallPreview(photo.url, artwork.url, corners, exclusions, { width, height, mode: placement, repeatWidth }, () => version !== previewVersion.current)
+    renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current)
       .then(async output => {
         const blob = await canvasBlob(output);
         if (version !== previewVersion.current) return;
@@ -78,7 +126,7 @@ export default function WallPro() {
       .catch(e => { if (version === previewVersion.current) setError(e.message); })
       .finally(() => { if (version === previewVersion.current) setRendering(false); });
     return () => { previewVersion.current++; if (ownedPreview) URL.revokeObjectURL(ownedPreview); };
-  }, [photo, artwork, corners, exclusions, width, height, placement, repeatWidth, editingPhoto]);
+  }, [photo, artwork, corners, exclusions, width, height, placement, repeatWidth, editingPhoto, seamCurrent]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError(''); setNotice(''); beginAppBusy();
@@ -110,6 +158,7 @@ export default function WallPro() {
     setPhoto(wall); setArtwork(art); setReference(ref); setWidth(config.width || 120); setHeight(config.height || 96);
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
+    setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(config.designMode || 'ai'); setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
     const restoredCornersValid = validWallCorners(config.corners || []);
     setMarking(restoredCornersValid ? null : 'wall');
@@ -137,7 +186,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -165,7 +214,7 @@ export default function WallPro() {
       setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
     });
   }
@@ -220,7 +269,19 @@ export default function WallPro() {
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
           <section className={panelClass}><h2 className="mb-3 font-semibold">2. Size the artwork</h2><label className="block text-sm">Placement<select className={inputClass} value={placement} onChange={e => setPlacement(e.target.value as Placement)}><option value="cover">Fill wall — crop edges</option><option value="contain">Fit whole artwork — leave margins</option><option value="repeat">Repeat pattern at a measured size</option></select></label>
-            {placement === 'repeat' && <label className="mt-3 block text-sm">Pattern tile width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /><span className="mt-2 block text-xs text-slate-500">One tile is the entire uploaded image. Height follows its proportions.</span></label>}
+            {placement === 'repeat' && <label className="mt-3 block text-sm">Pattern tile width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /><span className="mt-2 block text-xs text-slate-500">One tile is the entire uploaded image. Height follows its proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</span></label>}
+            {placement === 'repeat' && <div className="mt-3 rounded-lg border border-slate-200 p-3">
+              <label className="block text-sm">Seamless repeat<select className={inputClass} value={seamPreference} onChange={e => setSeamPreference(e.target.value as SeamlessPreference)}>
+                <option value="auto">Automatic: verify the tile, mirror if it does not join</option>
+                <option value="mirror">Mirror repeat: flip alternate tiles</option>
+                <option value="blend">Blended repeat: close the seam in the outer band</option>
+              </select></label>
+              <p role="status" className={'mt-2 text-xs ' + (seamReceipt && !seamReceipt.verified ? 'text-red-700' : 'text-slate-600')}>{!artwork ? 'Add artwork to check its seam.'
+                : seamBusy || !seamReceipt ? 'Checking that the tile joins seamlessly…'
+                : seamReceipt.method === 'verified' ? `Verified seamless as generated: the join is ${seamReceipt.before.ratio.toFixed(2)}× the neighbouring pixel step.`
+                : seamReceipt.method === 'mirror' ? `The tile ${seamReceipt.before.seamless ? 'joins on its own' : 'does not join on its own'} (${seamReceipt.before.ratio.toFixed(1)}×). Mirror repeat makes every join identical artwork, so it prints seamless.`
+                : `Seam closed by deterministic blend: ${seamReceipt.before.ratio.toFixed(1)}× before, ${seamReceipt.after?.ratio.toFixed(2)}× after.${seamReceipt.verified ? '' : ' Still not seamless. Choose Mirror repeat.'}`}</p>
+            </div>}
             {metrics && placement === 'repeat' && <p role="status" className="mt-3 rounded-lg bg-violet-50 p-3 text-sm text-violet-900">{metrics.across.toFixed(2)} tiles across × {metrics.down.toFixed(2)} down. Each tile: {metrics.artworkWidth.toFixed(2)}″ × {metrics.artworkHeight.toFixed(2)}″.</p>}
             {artwork && !metrics && <p className="mt-2 text-sm text-red-700">Enter valid wall and repeat dimensions to preview.</p>}
             <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm"><p className="font-semibold">Print panel width: {WALLPRO_PRINT_WIDTH}″</p>
@@ -270,7 +331,7 @@ export default function WallPro() {
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
           <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs text-slate-500">The wall photo download is a visual proof. Use Prepare print files below for full-size panel PDFs.</p></section>
-          <WallPrintOutput artwork={artwork} name={name} projectId={projectId} layout={{ width, height, mode: placement, repeatWidth }} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
+          <WallPrintOutput artwork={tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>
     </div>

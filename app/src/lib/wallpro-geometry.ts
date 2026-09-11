@@ -1,7 +1,10 @@
 // Physical layout belongs to WallPro, independently of the vehicle A.T.L.A.S. seam.
+import { tileCoordinate } from './wallpro-seamless';
 export type Point = { x: number; y: number };
 export type Placement = 'cover' | 'contain' | 'repeat';
-export type WallLayout = { width: number; height: number; mode: Placement; repeatWidth: number };
+/** `mirror` applies to repeat only: odd tiles are flipped so every join is a
+ * column or row against its own copy, which is seamless by construction. */
+export type WallLayout = { width: number; height: number; mode: Placement; repeatWidth: number; mirror?: boolean };
 export function rectangularWallMask(a: Point, b: Point): Point[] {
   if ([a.x, a.y, b.x, b.y].some(n => !Number.isFinite(n) || n < 0 || n > 1)) throw new Error('Choose two points inside the wall photo.');
   const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x), top = Math.min(a.y, b.y), bottom = Math.max(a.y, b.y);
@@ -91,7 +94,7 @@ export function layoutMetrics(layout: WallLayout, aspect: number) {
 export function artworkPoint(p: Point, layout: WallLayout, aspect: number): Point | null {
   if (p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return null;
   const m = layoutMetrics(layout, aspect);
-  if (layout.mode === 'repeat') return { x: (p.x * m.across) % 1, y: (p.y * m.down) % 1 };
+  if (layout.mode === 'repeat') return { x: tileCoordinate(p.x * m.across, !!layout.mirror).u, y: tileCoordinate(p.y * m.down, !!layout.mirror).u };
   const x = (p.x * layout.width - (layout.width - m.artworkWidth) / 2) / m.artworkWidth;
   const y = (p.y * layout.height - (layout.height - m.artworkHeight) / 2) / m.artworkHeight;
   return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
