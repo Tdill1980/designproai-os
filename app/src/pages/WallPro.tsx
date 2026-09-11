@@ -28,7 +28,10 @@ export default function WallPro() {
   const [photo, setPhoto] = useState<WallAsset | null>(null);
   const [artwork, setArtwork] = useState<WallAsset | null>(null);
   const [reference, setReference] = useState<WallAsset | null>(null);
-  const [designMode, setDesignMode] = useState<'library' | 'ai' | 'upload'>('ai');
+  // library: pick a ready design · ai: describe · match: reproduce an uploaded
+  // design faithfully · wall: design for the wall photo · upload: a print-ready file.
+  const [designMode, setDesignMode] = useState<'library' | 'ai' | 'match' | 'wall' | 'upload'>('ai');
+  const intent = designMode === 'match' ? 'match' : designMode === 'wall' ? 'wall' : 'prompt';
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
   const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
@@ -166,7 +169,7 @@ export default function WallPro() {
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
-    setDesignMode(['library', 'ai', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
+    setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
     const restoredCornersValid = validWallCorners(config.corners || []);
     setMarking(restoredCornersValid ? null : 'wall');
@@ -226,12 +229,15 @@ export default function WallPro() {
       // be projected onto the photo (the saved-project failure mode).
       const blocker = wallGenerationBlocker(!!photo, wallCorners, width, height);
       if (blocker) { if (photo && !validWallCorners(wallCorners)) { setMarking('wall'); setView('before'); } throw new Error(blocker); }
+      if (intent === 'match' && !reference) throw new Error('Upload the design to match first.');
+      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first, then mark its four corners.');
+      if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe the design first.');
       const user = await wallUser();
       const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
       if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
-      const result = await generateWall({ requestId: crypto.randomUUID(), prompt, width, height, placement, wallPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master. Setting it with a wall photo and
       // valid corners drives the renderWallPreview compositor immediately (the
@@ -339,9 +345,11 @@ export default function WallPro() {
           </section>
           <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
-              { mode: 'ai', label: 'Create with AI', hint: 'Describe a mural or a repeating pattern.' },
-              { mode: 'upload', label: 'Use my artwork', hint: 'Upload a mural or a pattern tile.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
+              { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
+              { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
+              { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
+              { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -351,22 +359,27 @@ export default function WallPro() {
                 </button>)}</div>
                 <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
               </>}
-            </div> : designMode === 'ai' ? <div className="space-y-3">
+            </div> : designMode === 'ai' || designMode === 'match' || designMode === 'wall' ? <div className="space-y-3">
               <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-2 gap-2">
                 <Button variant={placement !== 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('cover'); setArtwork(null); }}>Mural</Button>
                 <Button variant={placement === 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('repeat'); setArtwork(null); }}>Repeating pattern</Button>
               </div><p className="mt-1 text-xs text-slate-500">{placement === 'repeat' ? `A seamless tile is generated and repeated at ${repeatWidth}″ (set the scale in step 2).` : 'One composition sized to your wall.'}</p></div>
-              <label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
-              <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-              {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
-              <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>
-              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt="Style reference" className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
+              {intent === 'match' && <>
+                {uploadControl('reference', reference ? 'Replace the design to match' : 'Upload the design to match')}
+                <p className="text-xs text-slate-500">The designer recreates this design faithfully as a print-ready 4K master: same composition, motifs, palette and scale. Low-resolution files, screenshots and photos of a wall are fine as the source.</p>
+              </>}
+              {intent === 'wall' && <p className="text-xs text-slate-500">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
+              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
+              {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
+              {intent !== 'match' && <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
+              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
               <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
               {photo && generationBlocker && dimensionsValid && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
-              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!prompt.trim() || !!generationBlocker} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />Generate wall design</Button>
+              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo)} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design'}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
