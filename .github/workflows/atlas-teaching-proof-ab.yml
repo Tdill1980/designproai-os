@@ -547,6 +547,9 @@ jobs:
               runner=scripts/atlas-panel-fill-ab.mjs
               extra_args=(--generation "$AB_GENERATION" --surfaces "$AB_SURFACES")
               if [ -n "$AB_IMAGE_MODEL" ]; then extra_args+=(--model "$AB_IMAGE_MODEL"); fi
+              # `candidates` names the raw Call-1 candidate (`atlas-call1/<id>.png`)
+              # to rebuild the PRE-fill panels from; the stored panels are post-fill.
+              if [ -n "$AB_CANDIDATES" ]; then extra_args+=(--raw-master "$AB_CANDIDATES"); fi
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request
