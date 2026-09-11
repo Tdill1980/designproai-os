@@ -6481,8 +6481,8 @@ export default function RevisionStudioIQ() {
                         )}
                         {wall.job?.wholeWall && (
                           <p className="flex flex-wrap items-center justify-between gap-2 rounded border border-violet-700/60 bg-violet-900/30 px-2 py-1.5 text-zinc-200">
-                            <span><strong>Whole wall, one file</strong> · {wall.job.wholeWall.widthIn} × {wall.job.wholeWall.heightIn} in with bleed · {wall.job.wholeWall.ppi} PPI · {(wall.job.wholeWall.byteSize / 1024 / 1024).toFixed(0)} MB</span>
-                            {wall.job.wholeWall.url ? <a className="text-violet-300 underline" href={wall.job.wholeWall.url} download={wall.job.wholeWall.file} rel="noopener">Download PNG</a> : <span className="text-zinc-500">link unavailable</span>}
+                            <span><strong>Print file</strong> · {wall.job.wholeWall.file} · {wall.job.wholeWall.widthIn} × {wall.job.wholeWall.heightIn} in with bleed · {wall.job.wholeWall.ppi} PPI · {(wall.job.wholeWall.byteSize / 1024 / 1024).toFixed(0)} MB</span>
+                            {wall.job.wholeWall.url ? <a className="font-semibold text-violet-300 underline" href={wall.job.wholeWall.url} download={wall.job.wholeWall.file} rel="noopener">Download print file</a> : <span className="text-zinc-500">link unavailable</span>}
                           </p>
                         )}
                         {panels.length > 0 && (

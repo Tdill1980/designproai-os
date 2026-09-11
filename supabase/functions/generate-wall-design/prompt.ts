@@ -43,13 +43,13 @@ export function wallRefinePrompt(input: { prompt: string; placement: string; mas
  * photo of a slat wall, measured 3/3 on 2026-09-11), so the retry asks for an
  * ORIGINAL covering in the reference's material through the style-inspiration
  * path instead of a copy. Same request, same credit, one retry only. */
-export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; height: number; placement: string; referencePath?: string | null; wallPath?: string | null }) {
+export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; referencePath?: string | null; wallPath?: string | null }) {
   const brief = 'An original wall covering with exactly the material, pattern, motif scale, colour, grain and texture of the reference image, drawn fresh as flat straight-on artwork at real-world scale: not a copy of the photograph, and nothing of the room around it (no furniture, window, drapes, floor, lighting or perspective).'
     + (input.prompt.trim() ? ' ' + input.prompt.trim() : '');
   return wallDesignPrompt({ ...input, intent: 'prompt', prompt: brief });
 }
 
-export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
+export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';
   if (intent === 'refine') return wallRefinePrompt(input);
   const brief = input.prompt.trim();
@@ -60,7 +60,10 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
     // 59 inches is the roll width (WALLPRO_PRINT_WIDTH in the app; owner, 2026-09-11).
     'Printing uses panels up to 59 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
-    tile ? 'Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.' : 'Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges.',
+    // Scale is stated in inches so motifs are drawn at the size they print
+    // (owner, 2026-09-11, after a mural printed with three-foot flowers).
+    tile ? `Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.${input.repeatWidthIn ? ` This tile prints exactly ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it: draw every motif at the physical size it will be seen at in the room (a bloom or a leaf a few inches across, a slat or a stripe at its real width), never one motif filling the tile.` : ''}`
+      : `Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges. The mural prints at ${input.width} by ${input.height} inches: scale every element to that real size, so a wall this large carries many elements at true scale rather than two or three blown past life size, unless the brief asks for one hero element.`,
     input.wallPath ? (intent === 'wall'
       ? 'The wall photograph is the space this artwork is for. Read its architecture, light, existing colours and furnishings so the design belongs in that room, but output flat artwork only: do not reproduce the room, floor, furniture, windows, drapes or perspective in the image. Wall placement is performed separately.'
       : 'The wall photograph is architectural context only. Do not reproduce the room, floor, furniture, windows or perspective in the output artwork. Wall placement is performed separately.') : '',

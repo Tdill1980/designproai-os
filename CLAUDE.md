@@ -150,8 +150,23 @@ contracts; each names its lock.
 - **Seamless is measured and closed by code, never by re-asking the model.**
   `app/src/lib/wallpro-seamless.ts`; the print export refuses an unverified
   repeat (`wallpro-seamless.test.ts`).
-- **Placement and pattern scale are explicit**, with a live PPI readout: a
-  4K master is never called print-ready unless pixels over wall inches say so.
+- **Scale is decided by code from the wall inches, never asked of the
+  customer** (owner, 2026-09-11, after a mural printed with three-foot
+  flowers: "WallPro should use its brain and know how to scale").
+  `app/src/lib/wallpro-scale.ts`: the brief's words and the wall width pick
+  tile-versus-mural (`autoWallScale`) and the tile's real-world width
+  (`autoRepeatWidthIn`: about four repeats across, 6-inch steps, 18 to 48);
+  the generator is told that width and the mural's inches so motifs are
+  drawn at print size (`prompt.ts`); production tiles at exactly that width.
+  Auto is the product; Mural and Repeating pattern remain overrides. A 4K
+  master is never called print-ready unless pixels over wall inches say so.
+  Locked by `wallpro-scale.test.ts` and `wallpro.test.ts`.
+- **The print file is ONE file.** Every production job stores the whole wall
+  with bleed as one PNG at the panel PPI (`stitchWholeWall`, stitched from
+  the enhanced panels' own pixels, 450 MP budget, fails soft) and every
+  surface shows it first as "Print file"; the 59-inch panels are the fallback
+  for a RIP that cannot tile. Locked by
+  `source-tests/runtime/wallpro-production.test.mjs`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
   my design (`match`: the reference IS the design), Design for my wall
   (`wall`), Describe a design (`prompt`), Use my print-ready file. The

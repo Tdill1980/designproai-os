@@ -144,6 +144,12 @@ describe('WallPro generation boundary', () => {
     // A photographed wall (a slat wall, an existing wallpaper) means the covering, never the room; panels are the 59-inch roll.
     expect(match).toMatch(/photograph of a room or of an installed wall, the design is the WALL COVERING/); expect(match).toMatch(/leave out the room itself: furniture, window, drapes/);
     expect(match).toMatch(/panels up to 59 inches wide/); expect(match).not.toMatch(/51 inches/);
+    // Scale in inches: a tile is told its print width and repeat count; a mural is told its real size.
+    const tile = wallDesignPrompt({ prompt:'Blush florals', width:142, height:96, placement:'repeat', repeatWidthIn: 36 });
+    expect(tile).toMatch(/prints exactly 36 inches wide on the wall and repeats about 4 times/); expect(tile).toMatch(/never one motif filling the tile/);
+    expect(wallDesignPrompt({ prompt:'A mountain mural', width:142, height:96, placement:'cover' })).toMatch(/prints at 142 by 96 inches: scale every element to that real size/);
+    expect(parseWallInput({ ...input, placement:'repeat', repeatWidthIn: 36 }, owner).repeatWidthIn).toBe(36);
+    expect(parseWallInput({ ...input, placement:'cover', repeatWidthIn: 36 }, owner).repeatWidthIn).toBeNull();
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'cover', intent:'wall', wallPath: input.wallPath })).toMatch(/design the wall covering you would specify for this room/);
     expect(wallDesignPrompt({ prompt:'Blue botanicals', width:142, height:95, placement:'cover', referencePath: ref })).toMatch(/style inspiration/);
     // The provider sees the reference labeled as the design to reproduce, and the record gets a name.

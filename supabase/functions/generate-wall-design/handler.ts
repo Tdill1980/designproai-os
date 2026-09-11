@@ -46,6 +46,8 @@ export function parseWallInput(body: any, owner: string) {
   if (typeof prompt !== 'string' || prompt.length > 6000) throw new Error('Describe your wall design in 1–6,000 characters.');
   if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe your wall design in 1–6,000 characters.');
   if (!['cover', 'contain', 'repeat'].includes(body.placement)) throw new Error('Choose a mural or repeating-pattern placement.');
+  // The tile's real-world width, so the prompt can state the print scale.
+  const repeatWidthIn = body.placement === 'repeat' && numberInRange(body.repeatWidthIn) ? body.repeatWidthIn as number : null;
   const checkPath = (path: any, folders: string[] = ['uploads']) => {
     if (path === undefined || path === null) return null;
     const parts = typeof path === 'string' ? path.split('/') : [];
@@ -63,7 +65,7 @@ export function parseWallInput(body: any, owner: string) {
   if (intent === 'wall' && !wallPath) throw new Error('Upload your wall photo first.');
   if (intent === 'refine' && !sourcePath) throw new Error('There is no current design version to refine.');
   if (intent === 'refine' && !prompt.trim()) throw new Error('Describe what you want changed.');
-  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, wallPath, referencePath, sourcePath, maskPath };
+  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, repeatWidthIn, wallPath, referencePath, sourcePath, maskPath };
 }
 
 /** Pixel size of the returned image, read from the container headers (PNG
