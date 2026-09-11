@@ -86,7 +86,7 @@ describe('WallPro physical geometry', () => {
   });
 });
 
-function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
+function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; recitationFirst?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
   const finalData = options.image ? Buffer.from(options.image).toString('base64') : btoa('final');
   const calls:any[]=[];
   const stored={state:'completed',artwork_path:owner+'/generated/'+requestId+'.png',design_name:'Blue Botanicals'};
@@ -100,7 +100,7 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
     if(name==='reserve_wallpro_generation') return options.noTokens ? {error:{message:'no_tokens'}} : {data:{fresh:options.fresh!==false,generation:stored}};
     return {data:stored};
   })};
-  const provider=vi.fn(async (_url:any,init:any) => { calls.push(['provider',JSON.parse(init.body)]); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
+  const provider=vi.fn(async (_url:any,init:any) => { calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
   const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any});
   const invoke=(body:any=input)=>handler(new Request('https://own.supabase.co/functions/v1/generate-wall-design',{method:'POST',headers:{authorization:'Bearer user-test-token'},body:JSON.stringify(body)}));
   return {handler,invoke,calls,provider,sb,storage};
@@ -152,6 +152,23 @@ describe('WallPro generation boundary', () => {
     const parts=f.calls.find(c=>c[0]==='provider')[1].contents[0].parts;
     expect(parts.some((p:any)=>p.text==='Design to reproduce')).toBe(true);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_name).toBe('Matched design');
+  });
+  it('recovers a match refused as IMAGE_RECITATION with one original-covering retry; nothing else retries', async () => {
+    const ref = owner + '/uploads/44444444-4444-4444-8444-444444444444.png';
+    const f=fixture({recitationFirst:true}); const result=await f.invoke({...input, intent:'match', prompt:'', placement:'repeat', referencePath: ref});
+    expect(result.status).toBe(200); expect((await result.json()).recovered_from).toBe('IMAGE_RECITATION');
+    const providerCalls=f.calls.filter(c=>c[0]==='provider'); expect(providerCalls).toHaveLength(2);
+    expect(providerCalls[0][1].contents[0].parts[0].text).toMatch(/IS the design/);
+    const retry=providerCalls[1][1].contents[0].parts;
+    expect(retry[0].text).toMatch(/style inspiration/); expect(retry[0].text).toMatch(/not a copy of the photograph/); expect(retry[0].text).toMatch(/seamless repeating tile/);
+    // The wall photo and the reference ride the retry too; one reservation, one finish, no refund.
+    expect(retry.filter((p:any)=>p.inlineData)).toHaveLength(2);
+    expect(f.calls.filter(c=>c[0]==='reserve_wallpro_generation')).toHaveLength(1);
+    expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeNull();
+    // A prompt-intent recitation is not a match and is not retried: the credit is returned.
+    const g=fixture({recitationFirst:true}); const r=await g.invoke({...input, referencePath: ref});
+    expect(r.status).toBe(502); expect((await r.json()).error).toMatch(/IMAGE_RECITATION/); expect(g.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
+    expect(g.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toMatch(/IMAGE_RECITATION/);
   });
   it('refines the current version in place: source required, mask optional, framing from the source pixels', async () => {
     const source = owner + '/generated/55555555-5555-4555-8555-555555555555.png', mask = owner + '/uploads/66666666-6666-4666-8666-666666666666.png';
