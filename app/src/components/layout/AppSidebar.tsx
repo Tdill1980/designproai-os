@@ -162,6 +162,24 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               <span className="truncate">Admin Dashboard</span>
             </Link>
           </SidebarTooltip>
+          <SidebarTooltip
+            title="WallPro Production"
+            description="Print-ready 150 PPI wall panels for any customer, filed by DesignID"
+          >
+            <Link
+              to="/admin/wallpro-production"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wallpro-production")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Shield className="w-4 h-4 shrink-0" />
+              <span className="truncate">WallPro Production</span>
+            </Link>
+          </SidebarTooltip>
         </div>
       )}
 

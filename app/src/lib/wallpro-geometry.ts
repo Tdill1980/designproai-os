@@ -11,9 +11,10 @@ export function rectangularWallMask(a: Point, b: Point): Point[] {
   if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
   return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
 }
-// Printable panel width on the production roll (owner, 2026-09-11): 59.5 in,
-// with the half-inch duplicated overlap from DEFAULT_WALL_PRINT.
-export const WALLPRO_PRINT_WIDTH = 59.5;
+// Printable panel width on the production roll (owner, 2026-09-11): the media
+// is 59 in wide, so a printed panel is at most 59 in INCLUDING its half-inch
+// duplicated overlap (DEFAULT_WALL_PRINT).
+export const WALLPRO_PRINT_WIDTH = 59;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 export function validWallSize(width: number, height: number): boolean {

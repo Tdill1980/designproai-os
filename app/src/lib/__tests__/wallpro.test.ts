@@ -15,21 +15,21 @@ describe('WallPro physical geometry', () => {
     expect(insidePolygon({x:.2,y:.5},mask)).toBe(false);
     expect(()=>rectangularWallMask({x:.3,y:.2},{x:.3,y:.9})).toThrow();
   });
-  it('plans 59.5-inch print panels with a correctly sized final panel', () => {
+  it('plans 59-inch print panels with a correctly sized final panel', () => {
     const panels = wallPrintPanels(150,96);
-    expect(panels.map(p => p.width)).toEqual([59.5,59.5,31]);
-    expect(panels.map(p => p.start)).toEqual([0,59.5,119]);
+    expect(panels.map(p => p.width)).toEqual([59,59,32]);
+    expect(panels.map(p => p.start)).toEqual([0,59,118]);
     expect(panels.reduce((n,p) => n+p.width,0)).toBe(150);
-    expect(wallPrintPanels(119,96)).toHaveLength(2);
-    expect(wallPrintPanels(59.75,96).map(p => p.width)).toEqual([59.5,.25]);
+    expect(wallPrintPanels(118,96)).toHaveLength(2);
+    expect(wallPrintPanels(59.25,96).map(p => p.width)).toEqual([59,.25]);
   });
-  it('keeps pattern registration continuous across a 59.5-inch print seam', () => {
+  it('keeps pattern registration continuous across a 59-inch print seam', () => {
     const seam = wallPrintPanels(150,96)[1].start;
     const uv = artworkPoint({x:seam/150,y:.5},{width:150,height:96,mode:'repeat',repeatWidth:24},1);
-    expect(uv?.x).toBeCloseTo((59.5/24)%1,10);
+    expect(uv?.x).toBeCloseTo((59/24)%1,10);
     const quad=[{x:.1,y:.1},{x:.9,y:.2},{x:.8,y:.9},{x:.2,y:.8}];
     const seamPoint=projectPoint(homography(UNIT_WALL,quad),{x:seam/150,y:0});
-    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(59.5/150,10);
+    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(59/150,10);
   });
   it('keeps a 24-inch tile physically constant when the wall doubles', () => {
     const a = layoutMetrics({ width:120,height:96,mode:'repeat',repeatWidth:24 },2);

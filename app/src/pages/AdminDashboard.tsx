@@ -676,6 +676,20 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
 
+            <Card className="border-2 border-violet-500/50 bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 hover:shadow-lg hover:shadow-violet-500/20 transition-all cursor-pointer" onClick={() => navigate("/admin/wallpro-production")}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500">
+                    <Layers className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">WallPro Production</CardTitle>
+                    <CardDescription>Print-ready 150 PPI panels by DesignID — download for any customer</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
+
             <Card className="border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-teal-500/10 hover:shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer" onClick={() => navigate("/admin/wallpro-batch")}>
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-3">

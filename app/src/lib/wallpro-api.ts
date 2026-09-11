@@ -86,7 +86,7 @@ export async function getWallProject(id: string) {
 
 /** Detect my wall: proposes the wall corners and the openings to protect from
  * the uploaded wall photo. Preview-only; costs no token. */
-export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; notes: string | null; model: string }> {
+export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
   const { data, error } = await supabase.functions.invoke('detect-wall-openings', { body: { wallPath } });
   if (error) {
     const response = (error as any).context;
@@ -94,7 +94,21 @@ export async function detectWall(wallPath: string): Promise<{ wall: { x: number;
     throw new Error(typeof body?.error === 'string' ? body.error : 'The wall could not be analysed. Mark the corners and openings by hand.');
   }
   if (!data || typeof data !== 'object' || !Array.isArray(data.openings)) throw new Error(data?.error || 'The wall could not be analysed. Mark the corners and openings by hand.');
-  return data;
+  return { ...data, masks: Array.isArray(data.masks) ? data.masks : [] };
+}
+
+/** AI view on the wall: the image model paints the flat master onto the wall
+ * in the room photo and leaves everything else as photographed. Presentation
+ * only; the flat master stays the print truth. No token charged. */
+export async function renderWallView(input: { wallPath: string; artworkPath: string; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number }): Promise<{ view_path: string; view_url: string; model: string }> {
+  const { data, error } = await supabase.functions.invoke('render-wall-view', { body: input });
+  if (error) {
+    const response = (error as any).context;
+    const body = await response?.clone?.().json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'The wall view could not be rendered.');
+  }
+  if (!data?.view_path) throw new Error(data?.error || 'No wall view was returned.');
+  return { ...data, view_url: data.view_url || await openWallAsset(data.view_path) };
 }
 
 /* ── Ready-to-sell catalog (wallpro_designs) ─────────────────────────────── */
@@ -135,9 +149,12 @@ export async function publishWallDesign(sourcePath: string, thumb: Blob | null, 
   return data as WallCatalogRow;
 }
 /** Signed URLs for many catalog files at once (thumbnails for a grid). */
-export async function openWallAssets(paths: string[]): Promise<Record<string, string>> {
+/** Signed URLs for display, or with `download` for links that save the file in
+ * place: a cross-origin signed URL ignores the anchor's download attribute and
+ * would navigate the page to the image, losing the customer's work. */
+export async function openWallAssets(paths: string[], options: { download?: boolean } = {}): Promise<Record<string, string>> {
   if (!paths.length) return {};
-  const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrls(paths, 3600);
+  const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrls(paths, 3600, options.download ? { download: true } : undefined);
   if (error) throw new Error('The catalog images could not be opened. ' + error.message);
   const out: Record<string, string> = {};
   for (const item of data || []) if (item.path && item.signedUrl) out[item.path] = item.signedUrl;
@@ -223,4 +240,27 @@ export async function latestWallProductionJob(versionId: string): Promise<WallPr
   const { data, error } = await db.from('wallpro_production_jobs').select('*').eq('version_id', versionId).order('created_at', { ascending: false }).limit(1);
   if (error) throw new Error('The production job could not be read: ' + error.message);
   return (data?.[0] as WallProductionJob) || null;
+}
+
+/* ── Design-team production board (admins and testers, read-only) ───────── */
+
+/** The DesignID the team files a wall design under: the approved version's
+ * identity, in the same DID-XXXXXXXX form the vehicle studio uses. */
+export const wallDesignId = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
+
+export type WallTeamJob = WallProductionJob & { project_name: string; version_no: number | null; artwork_path: string | null };
+/** Every customer's production jobs, newest first, with the project name and
+ * version number joined in. Readable by admins and testers only (RLS). */
+export async function listWallProductionJobsForTeam(limit = 100): Promise<WallTeamJob[]> {
+  const { data, error } = await db.from('wallpro_production_jobs').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw new Error('Production jobs could not be listed: ' + error.message);
+  const jobs = (data || []) as WallProductionJob[];
+  const projectIds = [...new Set(jobs.map(j => j.project_id))], versionIds = [...new Set(jobs.map(j => j.version_id))];
+  const [projects, versions] = await Promise.all([
+    projectIds.length ? db.from('wallpro_projects').select('id,name').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_design_versions').select('id,version_no,artwork_path').in('id', versionIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  const names = new Map<string, string>((projects.data || []).map((p: any) => [p.id, p.name]));
+  const vers = new Map<string, { version_no: number; artwork_path: string }>((versions.data || []).map((v: any) => [v.id, v]));
+  return jobs.map(j => ({ ...j, project_name: names.get(j.project_id) || 'Wall design', version_no: vers.get(j.version_id)?.version_no ?? null, artwork_path: vers.get(j.version_id)?.artwork_path ?? null }));
 }

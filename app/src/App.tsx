@@ -68,6 +68,7 @@ const ApproveProUnavailable = () => (
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
+const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequirePanelOutputReviewer } from "@/components/RequirePanelOutputReviewer";
@@ -364,6 +365,7 @@ const App = () => {
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/printpro/wallpro" element={<WallPro />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
+          <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
