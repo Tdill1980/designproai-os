@@ -36,6 +36,19 @@ export function validWallCorners(points: Point[]): boolean {
   return cross.every(n => n > 1e-6) && area >= 0.0025;
 }
 
+// Hard gate before any paid wall generation. A wall photo with fewer than four
+// valid corners can never be projected: saved projects proved the failure mode
+// (photo + artwork + exclusions, three corner points, no preview). Returning a
+// reason instead of a boolean keeps the button, the click handler and the tests
+// on one message.
+export function wallGenerationBlocker(hasPhoto: boolean, corners: Point[], width: number, height: number): string | null {
+  if (!validWallSize(width, height)) return 'Enter wall dimensions between 1 and 2,400 inches.';
+  if (!hasPhoto) return null;
+  if (corners.length < 4) return 'Mark all four wall corners (' + (4 - corners.length) + ' remaining) before generating, so the design can be placed on your wall photo.';
+  if (!validWallCorners(corners)) return 'The wall corners cross or form a narrow area. Restart the corners clockwise from the top left before generating.';
+  return null;
+}
+
 export function homography(from: Point[], to: Point[]): number[] {
   const rows: number[][] = [];
   for (let i = 0; i < 4; i++) {
