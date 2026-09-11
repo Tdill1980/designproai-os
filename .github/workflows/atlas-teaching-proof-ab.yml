@@ -198,6 +198,7 @@ on:
           - fetch-raw-candidates
           - 13-panel-extend
           - 14-field-arms
+          - 15-hero-to-field
       generation:
         description: "measure-accepted-master only — generation id or 8-char prefix"
         required: false
@@ -223,6 +224,16 @@ on:
         required: false
         type: string
         default: ""
+      heroes:
+        description: "15-hero-to-field only — fixture of pre-migration heroes (repo path)"
+        required: false
+        type: string
+        default: "scripts/fixtures/premigration-heroes.json"
+      arms:
+        description: "15-hero-to-field only — R (reproduce as one field, exact_reference) and/or E (the July edit, verbatim)"
+        required: false
+        type: string
+        default: "R,E"
       draws:
         description: "tests 2-8 — independent draws PER ARM (2 arms, so 2x this many image calls). Tests 9 and 10 (field recovery, anchor restoration) accept ONLY 1 — owner ruling — and refuse anything else. Test 12 (field v3) accepts 1-4. Test 14 (field arms) is per arm, 1-4, three arms."
         required: true
@@ -377,6 +388,8 @@ jobs:
           AB_DESIGN_LAYOUT: ${{ inputs.design_layout }}
           AB_SURFACES: ${{ inputs.surfaces }}
           AB_IMAGE_MODEL: ${{ inputs.model }}
+          AB_HEROES: ${{ inputs.heroes }}
+          AB_ARMS: ${{ inputs.arms }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -421,6 +434,8 @@ jobs:
             scripts/atlas-fetch-raw-candidates.mjs \
             scripts/atlas-panel-extend-ab.mjs \
             scripts/atlas-field-arms-ab.mjs \
+            scripts/atlas-hero-to-field-ab.mjs \
+            scripts/fixtures/premigration-heroes.json \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
             scripts/atlas-teaching-proof-variant.mjs \
@@ -433,7 +448,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_DESIGN_LAYOUT='$AB_DESIGN_LAYOUT' AB_SURFACES='$AB_SURFACES' AB_IMAGE_MODEL='$AB_IMAGE_MODEL' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
+            "AB_BRIEF_B64='$brief_b64' AB_YEAR='$AB_YEAR' AB_MAKE='$AB_MAKE' AB_MODEL='$AB_MODEL' AB_TYPE='$AB_TYPE' AB_CAPTURE_ONLY='$AB_CAPTURE_ONLY' AB_TEST='$AB_TEST' AB_DRAWS='$AB_DRAWS' AB_GENERATION='$AB_GENERATION' AB_CANDIDATES='$AB_CANDIDATES' AB_DESIGN_LAYOUT='$AB_DESIGN_LAYOUT' AB_SURFACES='$AB_SURFACES' AB_IMAGE_MODEL='$AB_IMAGE_MODEL' AB_HEROES='$AB_HEROES' AB_ARMS='$AB_ARMS' AB_COMPANY_B64='$company_b64' AB_INDUSTRY_B64='$industry_b64' AB_COLORS='$AB_COLORS' AB_DESIGN_NAME_B64='$design_name_b64' AB_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/ab.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing — run configure-env.sh first"; exit 41; }
@@ -514,6 +529,13 @@ jobs:
                           --industry "$(printf '%s' "$AB_INDUSTRY_B64" | base64 -d)"
                           --colors "$AB_COLORS" --style ""
                           --design-name "$(printf '%s' "$AB_DESIGN_NAME_B64" | base64 -d)")
+              ;;
+            15-hero-to-field)
+              # Four real pre-migration heroes (RestylePro database) → the flat
+              # field, two ways: R reproduce-as-one-field (exact_reference), E the
+              # July edit verbatim. `draws` caps the heroes (1-4); ≤ 8 image calls.
+              runner=scripts/atlas-hero-to-field-ab.mjs
+              extra_args=(--heroes "$AB_HEROES" --arms "$AB_ARMS")
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request

@@ -1,0 +1,42 @@
+{
+  "contract": "designpro.premigration-hero-fixture.v1",
+  "source": "Tdill1980/restylepro-os live database (project kfapjdyythzyvnpdeghu), designiq_generations.render_urls.side — the driver-side 3D hero the pre-migration design step produced first, one pass, from the brief",
+  "heroes": [
+    {
+      "label": "flamingo",
+      "generationId": "d0c43c25-1735-4998-9a79-43ff63e40fd1",
+      "createdAt": "2026-07-25",
+      "companyName": "Flamingo Pools",
+      "vehicle": { "type": "truck", "year": "2022", "make": "Ford", "model": "F250 Crew Cab" },
+      "brief": "Commercial Wrap Design for Flamingo Pools Create a custom logo and modern design include the 3/4 sides and rear with a photo of a beautiful infinity pool water feature and palm trees",
+      "sideUrl": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1784954582810_commercial.jpg"
+    },
+    {
+      "label": "harbor",
+      "generationId": "3ff0a82a-0299-4e5d-ba39-7df516f6d303",
+      "createdAt": "2026-08-01",
+      "companyName": "Harbor Line Marine Service",
+      "vehicle": { "type": "van", "year": "2022", "make": "Ford", "model": "Transit" },
+      "brief": "Commercial wrap for Harbor Line Marine Service. Deep navy to teal gradient with a bold white wave crest sweeping along the body line. Original anchor-and-rope mark as the logo. Company name large on both sides, contact bar along the rocker. Phone (207) 555-0184 · harborlinemarine.com · SINCE 2013 Services: Boat Detailing · Shrink Wrap · Engine Service · Winter Storage",
+      "sideUrl": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1785543996616_commercial.jpg"
+    },
+    {
+      "label": "dental",
+      "generationId": "4fa058c2-dd74-458a-9700-e2a9b6e05d42",
+      "createdAt": "2026-08-02",
+      "companyName": "Designer Dental",
+      "vehicle": { "type": "suv", "year": "2024", "make": "Lamborghini", "model": "Urus" },
+      "brief": "Designer Dental commercial wrap: black and gold, gold tooth logo, VENEERS and COSMETIC DENTISTRY, with a professional dental photo of a smiling patient",
+      "sideUrl": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1785655773741_restyle.jpg"
+    },
+    {
+      "label": "mclaren",
+      "generationId": "f74255be-4546-4f5d-ac83-95d6f498ea77",
+      "createdAt": "2026-07-29",
+      "companyName": null,
+      "vehicle": { "type": "car", "year": "2022", "make": "McLaren", "model": "720S" },
+      "brief": "Stunning supercar wrap that is themed japanease floral like a watercolor",
+      "sideUrl": "https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/object/public/wrap-files/renders/61cc6c1c-554c-440c-8e07-a64469f1f4eb/DesignPanelPro/ai-generated/1785296824845_restyle.jpg"
+    }
+  ]
+}
