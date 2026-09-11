@@ -22,18 +22,45 @@ export async function openWallAsset(path: string): Promise<string> {
   if (error || !data?.signedUrl) throw new Error('The saved image could not be opened. ' + (error?.message || ''));
   return data.signedUrl;
 }
+
+async function recoverWallGeneration(requestId: unknown) {
+  if (typeof requestId !== 'string' || !requestId) return null;
+  const { data, error } = await db.from('wallpro_generations')
+    .select('id,design_name,artwork_path,state,error')
+    .eq('id', requestId)
+    .maybeSingle();
+  if (error || !data || data.state !== 'completed' || !data.artwork_path) return null;
+  const imageUrl = await openWallAsset(data.artwork_path);
+  return {
+    storage_path: data.artwork_path as string,
+    image_url: imageUrl,
+    design_name: (data.design_name || 'Wall design') as string,
+    request_id: data.id as string,
+  };
+}
+
 export async function generateWall(input: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('generate-wall-design', { body: input });
   if (error) {
+    // The provider may finish and persist the artwork even if the browser loses
+    // the final Edge response. Treat the generation ledger as authority before
+    // showing a transport failure to the user.
+    const recovered = await recoverWallGeneration(input.requestId).catch(() => null);
+    if (recovered) return recovered;
+
     const response = (error as any).context;
     const body = await response?.clone?.().json().catch(() => null);
     const detail = typeof body?.error === 'string' ? body.error : typeof body?.message === 'string' ? body.message : '';
-    const interrupted = response?.status >= 500 || /WORKER_LIMIT|timeout|fetch|non-2xx/i.test(detail || error.message);
+    const interrupted = response?.status >= 500 || /WORKER_LIMIT|timeout|fetch|non-2xx|edge function/i.test(detail || error.message);
     throw new Error(interrupted
       ? 'Generation was interrupted before a result reached this page. Check My wall designs for a saved result before starting again. Request: ' + String(input.requestId || 'unavailable')
       : detail || error.message || 'The wall design could not be generated.');
   }
-  if (!data?.storage_path || !data?.image_url) throw new Error(data?.error || 'No wall artwork was returned.');
+  if (!data?.storage_path || !data?.image_url) {
+    const recovered = await recoverWallGeneration(input.requestId).catch(() => null);
+    if (recovered) return recovered;
+    throw new Error(data?.error || 'No wall artwork was returned.');
+  }
   return data as { storage_path: string; image_url: string; design_name: string; request_id: string };
 }
 export async function saveWallProject(id: string, owner: string, name: string, config: Record<string, unknown>) {
