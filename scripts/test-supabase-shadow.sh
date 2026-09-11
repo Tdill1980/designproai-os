@@ -21,28 +21,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# `db reset` ends by restarting the local containers and returns before the
-# API gateway is serving again. Measured on the release gate three times on
-# 2026-09-11: the very next command answered `Error status 502: An invalid
-# response was received from the upstream server` and passed unchanged on a
-# re-run. Wait for the gateway to answer before asking it anything.
-wait_for_local_stack() {
-  local attempt code
-  for attempt in $(seq 1 30); do
-    # No key on purpose: a healthy gateway answers 401 from PostgREST; a
-    # gateway whose upstream is still starting answers 502/503 or refuses.
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:54321/rest/v1/" || echo 000)"
-    case "${code}" in
-      2??|3??|401|403|404) return 0 ;;
-    esac
-    sleep 2
+# `db reset` recreates the database, applies every migration, restarts
+# storage/auth/realtime/pooler and then re-upserts `[storage.buckets]` through
+# the local Kong gateway (CLI 2.111.0: internal/db/reset/reset.go, then
+# internal/seed/buckets/buckets.go). The CLI waits for the storage container's
+# Docker health check first, but Kong can still answer that first request with
+# its own
+#   Error status 502: {"message":"An invalid response was received from the upstream server"}
+# while its pooled connection to the restarted storage-api is stale. Measured
+# on the release gate three times on 2026-09-11, after every migration had
+# applied; each passed unchanged on a re-run. The bucket rows this suite tests
+# come from migrations (20260806180700, 20260910070849), so the upsert is a
+# property no-op here. A bounded retry of the reset on that exact signature is
+# the remedy that lives in this repository; any other failure exits at once.
+reset_with_retry() {
+  local attempt log
+  log="$(mktemp)"
+  for attempt in 1 2 3; do
+    if "${supabase_cmd[@]}" db reset --local 2>&1 | tee "${log}"; then
+      rm -f "${log}"
+      return 0
+    fi
+    if ! grep -q "Error status 502" "${log}"; then
+      rm -f "${log}"
+      return 1
+    fi
+    echo "db reset attempt ${attempt} hit the local gateway 502 after the service restart; retrying in 10 s." >&2
+    sleep 10
   done
-  echo "The local Supabase API gateway did not become ready within 60 s (last status ${code})." >&2
+  rm -f "${log}"
+  echo "db reset hit the local gateway 502 on three consecutive attempts; that is no longer the restart race." >&2
   return 1
 }
 
 "${supabase_cmd[@]}" start
-"${supabase_cmd[@]}" db reset --local
-wait_for_local_stack
+reset_with_retry
 "${supabase_cmd[@]}" db lint --local --level error
 "${supabase_cmd[@]}" test db
