@@ -74,8 +74,13 @@ export default function WallPro() {
   const [detecting, setDetecting] = useState(false);
   const [productionKick, setProductionKick] = useState(0);
   // Latest photo and corners, readable from a detection that started earlier.
-  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]);
-  photoRef.current = photo; cornersRef.current = corners;
+  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
+  photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  // The on-wall view switches on by itself the moment a design and four valid
+  // corners both exist, whichever arrives last: detection landing after a
+  // generation, a generation landing after hand-marked corners, or a restore.
+  const cornersValidNow = validWallCorners(corners);
+  useEffect(() => { if (artwork && photo && cornersValidNow) setView('after'); }, [!!artwork, !!photo, cornersValidNow]);
   const [history, setHistory] = useState<History | null>(null);
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
@@ -266,7 +271,7 @@ export default function WallPro() {
     const cornersOk = !!found.wall && validWallCorners(found.wall);
     if (!handMarked) { if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); } }
     setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
-    setView(artwork && (cornersOk || handMarked) ? 'after' : 'before'); setError('');
+    setView(artworkRef.current && (cornersOk || handMarked) ? 'after' : 'before'); setError('');
     const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
     setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
   }
@@ -378,9 +383,10 @@ export default function WallPro() {
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
-    // Freeze the placement this generation is made for. The editor stays disabled
-    // while busy, but the saved project must record exactly what was validated.
-    const wallCorners = corners, wallExclusions = exclusions;
+    // Corners and masks are read LIVE when the design lands, never frozen at the
+    // click: detection or hand marking may finish while the model works, and the
+    // saved project and the on-wall decision must reflect what is on screen then.
+    const wallCorners = corners;
     await run('Generating wall artwork', async () => {
       // The flat rectangle is the product: only the wall size gates the call.
       // Corners decide whether the result can be imposed on the photo, not
@@ -403,12 +409,13 @@ export default function WallPro() {
       // lands on the design imposed on their wall; otherwise they see the flat
       // rectangle and the on-wall view appears when the corners are in.
       const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
-      const imposable = !!photo && validWallCorners(wallCorners);
+      const liveCorners = cornersRef.current, liveExclusions = exclusionsRef.current;
+      const imposable = !!photo && validWallCorners(liveCorners);
       setArtwork(art); setName(result.design_name); setMarking(imposable || !photo ? null : 'wall'); setView(imposable ? 'after' : 'design');
       if (photo && !imposable) setNotice('Your flat design is ready. Mark the four wall corners on the Before view to see it imposed on your wall.');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
