@@ -79,7 +79,7 @@ export function WallPhotoEditor(p: Props) {
           <polygon points={coords(mask)} fill="rgba(0,120,220,.10)" stroke="#00dcff" strokeWidth=".65" filter="url(#wall-mask-halo)"/>
           <polygon points={coords(mask)} fill="url(#wall-protected-glass)" stroke="#22d3ee" strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:'pointer'}} onPointerDown={e=>{e.stopPropagation();setSelected(i);}}/>
           <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill="#0e7490" fillOpacity=".9"/>
-          <text x={x+1.4} y={y+3.1} fill="white" fontSize="2.3">Protected {i+1}</text>
+          <text x={x+1.2} y={y+2.4} fill="white" fontSize="1.5">Protected {i+1}</text>
           {(selected===i || !!p.marking) && mask.map((q,j)=><circle key={j} cx={q.x*100} cy={q.y*100} r=".7" fill="white" stroke="#0891b2" strokeWidth=".3" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} point ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>)}
         </g>;
       })}

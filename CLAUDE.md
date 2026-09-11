@@ -112,6 +112,46 @@ Locked by `tests/atlas-call1-graph.test.mjs` (the real migration on PGlite,
 a two-worker end-to-end run, the refusal path, the runtime seams) and
 `ops/tests/server-cutover.test.mjs` (the env vocabularies).
 
+## 🧱 WALLPRO ACTIVE CONTRACTS (owner-directed, Trish 2026-09-11)
+
+WallPro is the wedge product: a wall is one flat rectangle, so "output the
+panels correctly every time" is deterministic here. These are the live
+contracts; each names its lock.
+
+- **Corner gate.** With a wall photo, generation is blocked until four valid
+  corners exist (`wallGenerationBlocker`, `tests/wallpro.test.ts`).
+- **Detect my wall runs on upload.** A wall photo is sent to
+  `detect-wall-openings` the moment it is chosen; corners and protected areas
+  (windows, drapes, doors, outlets, furniture) land as editable preview state.
+  Signed-out or failed detection falls back to hand marking and never fails
+  the upload. Masks are preview-only; print panels stay full rectangles
+  (`wallpro-detect.test.ts`).
+- **Seamless is measured and closed by code, never by re-asking the model.**
+  `app/src/lib/wallpro-seamless.ts`; the print export refuses an unverified
+  repeat (`wallpro-seamless.test.ts`).
+- **Placement and pattern scale are explicit**, with a live PPI readout: a
+  4K master is never called print-ready unless pixels over wall inches say so.
+- **Five entry paths are generator intents**: Pick a design (catalog), Match
+  my design (`match`: the reference IS the design), Design for my wall
+  (`wall`), Describe a design (`prompt`), Use my print-ready file. The
+  generator logs model, requested 4K, aspect, returned size and required
+  enlargement (`supabase/functions/generate-wall-design`).
+- **Design sessions: CREATE → REFINE* → APPROVE → PRODUCTION.** Refinement
+  edits the current version in place (`intent: 'refine'`), every refinement is
+  a new immutable version, outside-mask pixels are restored deterministically,
+  any version can be restored, exactly one version is approved and production
+  reads only it. `docs/wallpro/WALLPRO-REFINEMENT-WORKFLOW.md`, migration
+  `20260911150000_wallpro_design_versions.sql`.
+- **Ready-to-sell catalog (WrapReady Designs, wall medium).** DesignID =
+  the library `WPB-0001..0500`; GenerationID + master SHA-256 are the
+  canonical truth; SynthID is provenance only. `docs/wallpro/`,
+  `/admin/wallpro-batch`, `wallpro-catalog.test.ts`.
+- **Production rules** (owner workbook, `docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md`):
+  one canonical master, never AI-generate panels, upscale the whole master
+  before panelization, duplicated 1-inch overlap identical on both panels,
+  seam QC, 150 effective PPI from real pixels. The production-master stage
+  (server-side upscale or tiled reconstruction) is NOT built yet.
+
 ## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
 
 Measured, 2026-09-04 → 09-09: 20 generation requests, 8 delivered, 12 failed.

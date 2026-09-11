@@ -12,7 +12,8 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { wallUser, uploadWallAsset, openWallAsset, generateWall, saveWallProject, wallHistory, getWallProject, type WallAsset } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
+import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
 const cornerNames = ['top left', 'top right', 'bottom right', 'bottom left'];
@@ -27,7 +28,29 @@ export default function WallPro() {
   const [photo, setPhoto] = useState<WallAsset | null>(null);
   const [artwork, setArtwork] = useState<WallAsset | null>(null);
   const [reference, setReference] = useState<WallAsset | null>(null);
-  const [designMode, setDesignMode] = useState<'ai' | 'upload'>('ai');
+  // library: pick a ready design · ai: describe · match: reproduce an uploaded
+  // design faithfully · wall: design for the wall photo · upload: a print-ready file.
+  const [designMode, setDesignMode] = useState<'library' | 'ai' | 'match' | 'wall' | 'upload'>('ai');
+  const intent = designMode === 'match' ? 'match' : designMode === 'wall' ? 'wall' : 'prompt';
+  // Design session: every artwork the customer lands on is an immutable
+  // version; refinement edits the current one; exactly one is approved and
+  // production reads only it. docs/wallpro/WALLPRO-REFINEMENT-WORKFLOW.md
+  const [versions, setVersions] = useState<WallVersion[]>([]);
+  const [currentVersionId, setCurrentVersionId] = useState<string | null>(null);
+  const [versionThumbs, setVersionThumbs] = useState<Record<string, string>>({});
+  const [refinePrompt, setRefinePrompt] = useState('');
+  const [maskMode, setMaskMode] = useState(false);
+  const [maskRects, setMaskRects] = useState<{ x: number; y: number; w: number; h: number }[]>([]);
+  const [maskDraft, setMaskDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const maskStart = useRef<{ x: number; y: number } | null>(null);
+  const currentVersion = versions.find(v => v.id === currentVersionId) || null;
+  const approvedVersion = versions.find(v => v.status === 'approved') || null;
+  // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
+  // loads the approved master and the placement that master was published for.
+  const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
+  const [catalogThumbs, setCatalogThumbs] = useState<Record<string, string>>({});
+  const [catalogIndustry, setCatalogIndustry] = useState('all');
+  const [designId, setDesignId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
@@ -138,8 +161,16 @@ export default function WallPro() {
     await run('Opening image', async () => {
       const validated = await validateWallUpload(file);
       const asset = { ...validated, file, url: retain(validated.url) };
-      if (role === 'photo') { setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before'); }
-      if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); }
+      if (role === 'photo') {
+        setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before');
+        // Uploading a wall photo means "find my wall": detection runs at once. It
+        // is a preview aid, so a signed-out customer or a model failure leaves the
+        // upload in place and falls back to hand marking rather than failing it.
+        setBusy('Detecting your wall');
+        try { await detectPhoto(asset); }
+        catch (e) { setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+      }
+      if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); await recordVersion('upload', asset, { note: file.name.slice(0, 200) }); }
       if (role === 'reference') { setReference(asset); setArtwork(null); }
     });
   }
@@ -151,7 +182,7 @@ export default function WallPro() {
   );
   async function storedAsset(path: string): Promise<WallAsset> {
     const url = await openWallAsset(path), image = await loadWallImage(url);
-    return { path, url, aspect: image.naturalWidth / image.naturalHeight };
+    return { path, url, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
   }
   async function restore(config: any, id?: string, title?: string) {
     const [wall, art, ref] = await Promise.all([config.wallPath ? storedAsset(config.wallPath) : null, config.artworkPath ? storedAsset(config.artworkPath) : null, config.referencePath ? storedAsset(config.referencePath) : null]);
@@ -159,7 +190,15 @@ export default function WallPro() {
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
-    setDesignMode(config.designMode || 'ai'); setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
+    setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
+    setMaskRects([]); setMaskMode(false); setRefinePrompt('');
+    if (id) {
+      const rows = await listWallVersions(id).catch(() => [] as WallVersion[]);
+      setVersions(rows);
+      const current = rows.find(v => v.id === config.currentVersionId) || rows.at(-1) || null;
+      setCurrentVersionId(current?.id ?? null);
+    } else { setVersions([]); setCurrentVersionId(null); }
+    setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
     const restoredCornersValid = validWallCorners(config.corners || []);
     setMarking(restoredCornersValid ? null : 'wall');
     // Only a wall with four valid corners can show the projected design. A saved
@@ -170,6 +209,132 @@ export default function WallPro() {
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
   }
+  useEffect(() => {
+    // The catalog is browsable without signing in; failures leave the AI path untouched.
+    let active = true;
+    listWallCatalog().then(async rows => {
+      if (!active) return;
+      setCatalog(rows);
+      if (rows.length && !params.get('project')) setDesignMode('library');
+      setCatalogThumbs(await openWallAssets(rows.map(r => r.thumb_path || r.master_path)).catch(() => ({})));
+    }).catch(() => { if (active) setCatalog([]); });
+    return () => { active = false; };
+  }, []);
+  async function pickDesign(row: WallCatalogRow) {
+    await run('Opening ' + row.design_id, async () => {
+      const art = await storedAsset(row.master_path);
+      setArtwork(art); setDesignId(row.design_id); setName(row.title); setPrompt('');
+      const nextPlacement: Placement = row.mode === 'repeat' ? 'repeat' : 'cover';
+      setPlacement(nextPlacement); setRepeatWidth(row.tile_width_in || 24); setSeamPreference('auto');
+      setView(photo && cornersValid ? 'after' : 'design');
+      await recordVersion('catalog', art, { designId: row.design_id, placement: nextPlacement, repeatWidthIn: row.tile_width_in, note: row.title });
+    });
+  }
+  /** Appends the next immutable version for the current artwork. Needs a
+   * signed-in owner and a saved project row; when either is missing the
+   * artwork still works for preview, only the session history is skipped. */
+  async function recordVersion(kind: WallVersionKind, art: WallAsset, extra: { intent?: string | null; prompt?: string | null; maskPath?: string | null; referencePath?: string | null; generationId?: string | null; designId?: string | null; placement?: Placement; repeatWidthIn?: number | null; note?: string | null; sha256?: string | null } = {}): Promise<WallVersion | null> {
+    let user: Awaited<ReturnType<typeof wallUser>>;
+    try { user = await wallUser(); } catch { return null; }
+    const artworkPath = art.path || await uploadWallAsset(art, user.id);
+    if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    setParams({ project: projectId }, { replace: true });
+    const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
+      placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
+      generationId: extra.generationId ?? null, designId: extra.designId ?? null, note: extra.note ?? null, sha256: extra.sha256 ?? null });
+    setVersions(old => [...old, version]); setCurrentVersionId(version.id);
+    return version;
+  }
+  /** Preview-only: proposes corners and protected areas from the photo. Print
+   * panels stay full rectangles whatever is detected; the installer trims. */
+  async function detectPhoto(asset: WallAsset) {
+    const user = await wallUser();
+    const wallPath = asset.path || await uploadWallAsset(asset, user.id);
+    if (!asset.path) setPhoto(old => old && old.url === asset.url ? { ...old, path: wallPath } : old);
+    const found = await detectWall(wallPath);
+    const cornersOk = !!found.wall && validWallCorners(found.wall);
+    if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
+    setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
+    setView(artwork && cornersOk ? 'after' : 'before'); setError('');
+    const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
+    setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+  }
+  /** Re-runs detection on demand (a different photo crop, or after the customer
+   * moved things). The first pass happens automatically on upload. */
+  async function detectMyWall() {
+    if (!photo) return;
+    await run('Detecting your wall', () => detectPhoto(photo));
+  }
+  async function restoreVersion(version: WallVersion) {
+    await run('Restoring V' + version.version_no, async () => {
+      const art = await storedAsset(version.artwork_path);
+      setArtwork(art); setCurrentVersionId(version.id); setPlacement(version.placement); if (version.repeat_width_in) setRepeatWidth(Number(version.repeat_width_in));
+      if (version.design_id) setDesignId(version.design_id);
+      setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
+      const user = await wallUser();
+      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+    });
+  }
+  async function approveCurrent() {
+    if (!currentVersion) return;
+    await run('Approving V' + currentVersion.version_no, async () => {
+      await approveWallVersion(projectId, currentVersion.id);
+      setVersions(await listWallVersions(projectId));
+      setNotice(`V${currentVersion.version_no} approved. Production reads this version only; refining again creates a new draft.`);
+    });
+  }
+  function maskPoint(e: React.PointerEvent<SVGSVGElement>) {
+    const box = e.currentTarget.getBoundingClientRect();
+    return { x: Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)), y: Math.min(1, Math.max(0, (e.clientY - box.top) / box.height)) };
+  }
+  async function maskPng(art: WallAsset): Promise<File> {
+    const w = art.width || 2048, h = art.height || Math.round(2048 / art.aspect);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d')!; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = '#fff';
+    for (const r of maskRects) ctx.fillRect(Math.round(r.x * w), Math.round(r.y * h), Math.round(r.w * w), Math.round(r.h * h));
+    const blob = await canvasBlob(c);
+    return new File([blob], 'mask.png', { type: 'image/png' });
+  }
+  async function refine() {
+    const source = artwork, changes = refinePrompt.trim(), rects = maskRects;
+    if (!source || !changes) return;
+    await run('Refining the design', async () => {
+      const user = await wallUser();
+      const sourcePath = source.path || await uploadWallAsset(source, user.id);
+      const maskPath = rects.length ? await uploadWallAsset({ url: '', aspect: source.aspect, file: await maskPng(source) }, user.id) : null;
+      const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent: 'refine', prompt: changes, width, height, placement, sourcePath, maskPath, referencePath });
+      const image = await loadWallImage(result.image_url);
+      let art: WallAsset = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
+      let kind: WallVersionKind = 'refine', sha: string | null = null;
+      if (rects.length) {
+        // Deterministic preservation: every pixel outside the mask comes from
+        // the parent version; only the masked regions take the model's output.
+        const parent = await loadWallImage(source.url);
+        const c = document.createElement('canvas'); c.width = parent.naturalWidth; c.height = parent.naturalHeight;
+        const ctx = c.getContext('2d')!; ctx.drawImage(parent, 0, 0);
+        for (const r of rects) ctx.drawImage(image, r.x * image.naturalWidth, r.y * image.naturalHeight, r.w * image.naturalWidth, r.h * image.naturalHeight, r.x * c.width, r.y * c.height, r.w * c.width, r.h * c.height);
+        const blob = await canvasBlob(c);
+        sha = await sha256Hex(await blob.arrayBuffer());
+        const file = new File([blob], 'composite.png', { type: 'image/png' });
+        const url = retain(URL.createObjectURL(blob));
+        art = { url, file, aspect: c.width / c.height, width: c.width, height: c.height };
+        kind = 'composite';
+      }
+      setArtwork(art); setMaskRects([]); setMaskMode(false); setRefinePrompt('');
+      setView(photo && cornersValid ? 'after' : 'design');
+      await recordVersion(kind, art, { intent: 'refine', prompt: changes, maskPath, referencePath, generationId: result.request_id, sha256: sha, note: changes.slice(0, 200) });
+    });
+  }
+  useEffect(() => {
+    // Thumbnails for the version strip: signed URLs for whatever paths are new.
+    const missing = versions.map(v => v.artwork_path).filter(p => !versionThumbs[p]);
+    if (!missing.length) return;
+    let active = true;
+    openWallAssets(missing).then(urls => { if (active) setVersionThumbs(old => ({ ...old, ...urls })); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [versions]);
   useEffect(() => {
     if (loadOnce.current || !params.get('project')) return;
     loadOnce.current = true;
@@ -186,7 +351,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -199,23 +364,29 @@ export default function WallPro() {
       // be projected onto the photo (the saved-project failure mode).
       const blocker = wallGenerationBlocker(!!photo, wallCorners, width, height);
       if (blocker) { if (photo && !validWallCorners(wallCorners)) { setMarking('wall'); setView('before'); } throw new Error(blocker); }
+      if (intent === 'match' && !reference) throw new Error('Upload the design to match first.');
+      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first, then mark its four corners.');
+      if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe the design first.');
       const user = await wallUser();
       const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
       if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
-      const result = await generateWall({ requestId: crypto.randomUUID(), prompt, width, height, placement, wallPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master. Setting it with a wall photo and
       // valid corners drives the renderWallPreview compositor immediately (the
       // preview effect keys on artwork/corners/exclusions), so the customer lands on
       // the design projected onto their own wall with every mask preserved.
-      const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight };
+      const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode: 'ai' }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
+      // V1 of a new session, or the next version when the customer generates
+      // again inside an existing project.
+      await recordVersion('create', art, { intent, prompt, referencePath, generationId: result.request_id, note: result.design_name });
     });
   }
   function finishMask(points: Point[]) {
@@ -261,15 +432,37 @@ export default function WallPro() {
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
         {!history.projects.length && !history.generations.length && <p className="py-4 text-sm text-slate-500">Your saved projects will appear here.</p>}
       </section>}
-      <div className="grid gap-5 lg:grid-cols-[350px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. A wall photo is optional when generating artwork.</p>
-            {photo && <p className="mt-3 text-sm text-slate-600">Mark all four wall corners: top left, top right, bottom right, bottom left. Generation waits until the wall is marked so the design lands on your photo.</p>}
+          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Corners and protected areas are detected automatically. A wall photo is optional when generating artwork.</p>
+            {photo && <div className="mt-3 space-y-2">
+              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall again</Button>
+              <p className="text-xs text-slate-600">Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
+            </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Size the artwork</h2><label className="block text-sm">Placement<select className={inputClass} value={placement} onChange={e => setPlacement(e.target.value as Placement)}><option value="cover">Fill wall — crop edges</option><option value="contain">Fit whole artwork — leave margins</option><option value="repeat">Repeat pattern at a measured size</option></select></label>
-            {placement === 'repeat' && <label className="mt-3 block text-sm">Pattern tile width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /><span className="mt-2 block text-xs text-slate-500">One tile is the entire uploaded image. Height follows its proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</span></label>}
+          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Placement and pattern scale</h2>
+            <div className="grid gap-2">{([
+              { value: 'cover', label: 'Mural', hint: 'One image fills the whole wall. Motifs scale with the wall.' },
+              { value: 'repeat', label: 'Repeating pattern', hint: 'The image is one tile, repeated at a measured size like wallpaper.' },
+              { value: 'contain', label: 'Fit whole image', hint: 'Nothing cropped; margins where it does not cover.' },
+            ] as const).map(option => <button key={option.value} type="button" onClick={() => setPlacement(option.value)} className={'rounded-lg border p-3 text-left ' + (placement === option.value ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-slate-600">{option.hint}</span></button>)}</div>
+            {placement === 'repeat' && <div className="mt-3">
+              <p className="text-sm">Pattern scale (tile width)</p>
+              <div className="mt-1 grid grid-cols-5 gap-1">{[24, 36, 48, 72, 96].map(inches => <Button key={inches} size="sm" variant={repeatWidth === inches ? 'default' : 'outline'} onClick={() => setRepeatWidth(inches)}>{inches}″</Button>)}</div>
+              <label className="mt-2 block text-xs text-slate-600">Custom width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /></label>
+              <p className="mt-2 text-xs text-slate-500">One tile is the entire image; its height follows the image proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</p>
+            </div>}
+            {artwork?.width && artwork.height && metrics && (() => {
+              // Pixels over inches at this placement. A 4K mural on a 10-foot wall
+              // is not print quality whatever the preview looks like.
+              const ppi = Math.min(artwork.width / metrics.artworkWidth, artwork.height / metrics.artworkHeight);
+              const target = printSettings.minPpi;
+              return <p role="status" className={'mt-3 rounded-lg p-3 text-sm ' + (ppi >= target ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900')}>
+                <strong>{ppi.toFixed(0)} PPI</strong> at this size from a {artwork.width.toLocaleString()} × {artwork.height.toLocaleString()} px image. {ppi >= target ? `Print quality (${target} PPI needed).` : placement === 'repeat' ? `Below the ${target} PPI print target: choose a smaller tile or a higher-resolution image.` : `Below the ${target} PPI print target. If this is a pattern, choose Repeating pattern and a tile width; if it is a mural, it needs a higher-resolution master.`}
+              </p>;
+            })()}
             {placement === 'repeat' && <div className="mt-3 rounded-lg border border-slate-200 p-3">
               <label className="block text-sm">Seamless repeat<select className={inputClass} value={seamPreference} onChange={e => setSeamPreference(e.target.value as SeamlessPreference)}>
                 <option value="auto">Automatic: verify the tile, mirror if it does not join</option>
@@ -291,18 +484,43 @@ export default function WallPro() {
               <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={showPrintGuides} onChange={e => setShowPrintGuides(e.target.checked)} />Show 51-inch print panel guides</label>
             </div>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid grid-cols-2 gap-2">{(['ai','upload'] as const).map(mode => <Button key={mode} variant={designMode === mode ? 'default' : 'outline'} onClick={() => { setDesignMode(mode); setArtwork(null); }}>{mode === 'ai' ? 'Create with AI' : 'Use my artwork'}</Button>)}</div>
-            {designMode === 'ai' ? <div className="space-y-3"><label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
-              <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-              {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
-              <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>
-              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt="Style reference" className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
+          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid gap-2">{([
+              { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
+              { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
+              { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
+              { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
+              { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
+            {designMode === 'library' ? <div className="space-y-3">
+              {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
+                <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
+                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-violet-500 ring-2 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}>
+                  <div className="aspect-[4/3] bg-slate-100">{catalogThumbs[row.thumb_path || row.master_path] && <img src={catalogThumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" />}</div>
+                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p></div>
+                </button>)}</div>
+                <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
+              </>}
+            </div> : designMode === 'ai' || designMode === 'match' || designMode === 'wall' ? <div className="space-y-3">
+              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-2 gap-2">
+                <Button variant={placement !== 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('cover'); setArtwork(null); }}>Mural</Button>
+                <Button variant={placement === 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('repeat'); setArtwork(null); }}>Repeating pattern</Button>
+              </div><p className="mt-1 text-xs text-slate-500">{placement === 'repeat' ? `A seamless tile is generated and repeated at ${repeatWidth}″ (set the scale in step 2).` : 'One composition sized to your wall.'}</p></div>
+              {intent === 'match' && <>
+                {uploadControl('reference', reference ? 'Replace the design to match' : 'Upload the design to match')}
+                <p className="text-xs text-slate-500">The designer recreates this design faithfully as a print-ready 4K master: same composition, motifs, palette and scale. Low-resolution files, screenshots and photos of a wall are fine as the source.</p>
+              </>}
+              {intent === 'wall' && <p className="text-xs text-slate-500">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
+              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
+              {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
+              {intent !== 'match' && <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
+              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
               <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
               {photo && generationBlocker && dimensionsValid && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
-              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!prompt.trim() || !!generationBlocker} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />Generate wall design</Button>
+              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo)} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design'}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
@@ -327,11 +545,43 @@ export default function WallPro() {
               {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.' : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the drapes or object, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs text-slate-500">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
-            </> : artwork ? <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" /></div> : <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
+            </> : artwork ? <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" draggable={false} />
+              {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
+                onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
+                onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
+                onPointerUp={() => { if (maskDraft && maskDraft.w > 0.01 && maskDraft.h > 0.01) setMaskRects(old => [...old, maskDraft]); maskStart.current = null; setMaskDraft(null); }}>
+                {[...maskRects, ...(maskDraft ? [maskDraft] : [])].map((r, i) => <rect key={i} x={r.x * 100} y={r.y * 100} width={r.w * 100} height={r.h * 100} fill="rgba(255,255,255,0.45)" stroke="#7c3aed" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />)}
+              </svg>}
+            </div></div> : <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
           <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs text-slate-500">The wall photo download is a visual proof. Use Prepare print files below for full-size panel PDFs.</p></section>
-          <WallPrintOutput artwork={tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
+          {artwork && <section className={panelClass} aria-label="Refine and approve">
+            <h2 className="font-semibold">Refine this design</h2>
+            <p className="mt-1 text-sm text-slate-600">Changes are applied to the current version and saved as the next version. Composition and everything you do not mention stay as they are.{currentVersion ? ` Current: V${currentVersion.version_no}${currentVersion.status === 'approved' ? ' (approved)' : ''}.` : ''}</p>
+            <div className="mt-3 flex flex-wrap gap-1">{['Change colours', 'Remove an object', 'Add an object', 'Make it busier', 'Make it simpler', 'More negative space', 'Match my reference', 'Extend the design'].map(q => <Button key={q} size="sm" variant="outline" disabled={!!busy} onClick={() => setRefinePrompt(p => (p ? p + ' ' : '') + ({ 'Change colours': 'Change the colours: ', 'Remove an object': 'Remove ', 'Add an object': 'Add ', 'Make it busier': 'Make the design busier with more motifs.', 'Make it simpler': 'Make the design simpler and more minimal.', 'More negative space': 'Keep everything but add more negative space.', 'Match my reference': 'Match the colour in the reference image.', 'Extend the design': 'Extend the design to the right, continuing the same composition.' }[q] || q))}>{q}</Button>)}</div>
+            <label className="mt-3 block text-sm">Describe what you want changed<textarea className={inputClass + ' min-h-20'} maxLength={6000} value={refinePrompt} disabled={!!busy} placeholder="Make the flowers smaller and the background charcoal…" onChange={e => setRefinePrompt(e.target.value)} /></label>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button size="sm" variant={maskMode ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMaskMode(m => !m); setView('design'); }}>{maskMode ? 'Drawing mask: drag boxes on the design' : 'Only change an area'}</Button>
+              {maskRects.length > 0 && <><span className="text-xs text-slate-600">{maskRects.length} area{maskRects.length === 1 ? '' : 's'} selected; everything outside is kept pixel for pixel.</span><Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setMaskRects(old => old.slice(0, -1))}>Undo area</Button><Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setMaskRects([]); setMaskMode(false); }}>Clear</Button></>}
+              {uploadControl('reference', reference ? 'Replace reference image' : 'Add a reference image (optional)')}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button className="bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!busy || !refinePrompt.trim()} onClick={() => void refine()}><Wand2 className="mr-2 h-4 w-4" />Refine this design</Button>
+              {currentVersion && currentVersion.status !== 'approved' && <Button variant="outline" disabled={!!busy} onClick={() => void approveCurrent()}>Approve V{currentVersion.version_no} for production</Button>}
+              {currentVersion?.status === 'approved' && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">V{currentVersion.version_no} approved</span>}
+              <span className="text-xs text-slate-500">1 design token per refinement.</span>
+            </div>
+            {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:border-violet-400')}>
+                <div className="aspect-[4/3] overflow-hidden rounded bg-slate-100">{versionThumbs[v.artwork_path] && <img src={versionThumbs[v.artwork_path]} alt={'Version ' + v.version_no} className="h-full w-full object-cover" loading="lazy" />}</div>
+                <p className="mt-1 font-semibold">V{v.version_no} · {v.kind}{v.status === 'approved' ? ' · approved' : ''}</p>
+                <p className="truncate text-slate-500">{v.prompt || v.note || (v.design_id ?? '')}</p>
+                {v.id !== currentVersionId && <p className="text-violet-700">Restore</p>}
+              </button>)}</div></div>}
+          </section>}
+          {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
+          <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>
     </div>
