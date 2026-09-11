@@ -141,6 +141,9 @@ describe('WallPro generation boundary', () => {
     const match = wallDesignPrompt({ prompt:'make the background ivory', width:142, height:95, placement:'cover', intent:'match', referencePath: ref });
     expect(match).toMatch(/IS the design/); expect(match).toMatch(/Apply only these requested changes: make the background ivory/); expect(match).not.toMatch(/Design brief:/);
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'repeat', intent:'match', referencePath: ref })).toMatch(/true seamless tile/);
+    // A photographed wall (a slat wall, an existing wallpaper) means the covering, never the room; panels are the 59-inch roll.
+    expect(match).toMatch(/photograph of a room or of an installed wall, the design is the WALL COVERING/); expect(match).toMatch(/leave out the room itself: furniture, window, drapes/);
+    expect(match).toMatch(/panels up to 59 inches wide/); expect(match).not.toMatch(/51 inches/);
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'cover', intent:'wall', wallPath: input.wallPath })).toMatch(/design the wall covering you would specify for this room/);
     expect(wallDesignPrompt({ prompt:'Blue botanicals', width:142, height:95, placement:'cover', referencePath: ref })).toMatch(/style inspiration/);
     // The provider sees the reference labeled as the design to reproduce, and the record gets a name.

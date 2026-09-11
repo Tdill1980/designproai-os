@@ -47,13 +47,19 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     DESIGNER_IDENTITY, CAPABILITIES,
     'Deliver one continuous flat 2D artwork image, edge to edge. This is the mural artwork before installation, not a room photograph or a photographed wall. Fine texture and crisp detail at 4K.',
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
-    'Printing uses panels up to 51 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
+    // 59 inches is the roll width (WALLPRO_PRINT_WIDTH in the app; owner, 2026-09-11).
+    'Printing uses panels up to 59 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
     tile ? 'Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.' : 'Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges.',
     input.wallPath ? (intent === 'wall'
       ? 'The wall photograph is the space this artwork is for. Read its architecture, light, existing colours and furnishings so the design belongs in that room, but output flat artwork only: do not reproduce the room, floor, furniture, windows, drapes or perspective in the image. Wall placement is performed separately.'
       : 'The wall photograph is architectural context only. Do not reproduce the room, floor, furniture, windows or perspective in the output artwork. Wall placement is performed separately.') : '',
     input.referencePath ? (intent === 'match'
-      ? 'The labeled reference image IS the design. Reproduce it faithfully as a clean print-ready master: the same composition, motifs, motif scale, palette, rendering style and mood, redrawn at full 4K detail with every edge filled. Do not reinterpret it, do not add new elements, do not change its character.' + (tile ? ' Make it a true seamless tile while keeping the motif scale.' : '') + (brief ? ' Apply only these requested changes: ' + brief : ' No changes were requested.')
+      ? 'The labeled reference image IS the design. Reproduce it faithfully as a clean print-ready master: the same composition, motifs, motif scale, palette, rendering style and mood, redrawn at full 4K detail with every edge filled. Do not reinterpret it, do not add new elements, do not change its character.'
+        // A customer photographs the wall they want reproduced (a slat wall,
+        // a stone feature wall, an existing wallpaper) as often as they upload
+        // flat artwork. The covering is the design; the room around it is not.
+        + ' If the reference is a photograph of a room or of an installed wall, the design is the WALL COVERING in it: reproduce only that surface\'s material, pattern, colour, grain and texture as flat straight-on artwork at real-world scale, and leave out the room itself: furniture, window, drapes, floor, ceiling, lighting, shadows, shelves and objects, and any perspective.'
+        + (tile ? ' Make it a true seamless tile while keeping the motif scale.' : '') + (brief ? ' Apply only these requested changes: ' + brief : ' No changes were requested.')
       : 'The labeled reference image is style inspiration or an existing wall design. Use its visual direction to create flat artwork following the brief. Do not recreate its surrounding room.') : '',
     intent === 'match' ? '' : intent === 'wall' && !brief ? 'Design brief: design the wall covering you would specify for this room, chosen from its architecture, light and existing palette.' : 'Design brief: ' + brief,
     intent === 'match' ? '' : DESIGN_TRANSLATION,
