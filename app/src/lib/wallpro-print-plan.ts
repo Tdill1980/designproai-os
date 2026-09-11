@@ -13,7 +13,8 @@ export type WallPrintPlan = {
 const clean = (n: number) => Number(n.toFixed(6));
 
 /** One wall coordinate system. Only the wall perimeter receives bleed; seams
- * duplicate real neighboring artwork. Every PDF's total width stays <= 51 in. */
+ * duplicate real neighboring artwork. Every PDF's total width stays within
+ * WALLPRO_PRINT_WIDTH. */
 export function planWallPrint(width: number, height: number, settings: WallPrintSettings): WallPrintPlan {
   if (!validWallSize(width, height)) throw new Error('Enter a wall width and height between 1 and 2,400 inches.');
   if (![settings.bleed, settings.overlap, settings.minPpi].every(Number.isFinite)

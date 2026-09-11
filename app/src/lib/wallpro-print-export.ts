@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { layoutMetrics, type WallLayout } from './wallpro-geometry';
+import { layoutMetrics, WALLPRO_PRINT_WIDTH, type WallLayout } from './wallpro-geometry';
 import { intersectPrintRect, wallPrintPreflight, type PrintRect, type WallPrintSettings } from './wallpro-print-plan';
 import type { SeamlessReceipt } from './wallpro-seamless';
 
@@ -119,7 +119,7 @@ export async function buildWallPrintPack(input: {
   sheet.setProperties({ title: ascii(`${input.name} - installation layout`), creator: 'DesignProAI WallPro' });
   sheet.setFont('helvetica', 'bold'); sheet.setFontSize(21); sheet.setTextColor(22, 35, 58); sheet.text('WallPro | Installation layout', 36, 36);
   sheet.setFont('helvetica', 'normal'); sheet.setFontSize(10); sheet.text(ascii(input.name), 36, 54);
-  sheet.text(`Wall ${fmt(layout.width)} x ${fmt(layout.height)} in  |  ${panels.length} panels  |  Print width <= 51 in`, 36, 71);
+  sheet.text(`Wall ${fmt(layout.width)} x ${fmt(layout.height)} in  |  ${panels.length} panels  |  Print width <= ${WALLPRO_PRINT_WIDTH} in`, 36, 71);
   const map = { x: 0, y: 0, width: layout.width, height: layout.height };
   const mapScale = Math.min(720 / layout.width, 195 / layout.height);
   const mapOffset = { x: 36, y: 88 };
@@ -170,11 +170,11 @@ export async function buildWallPrintPack(input: {
   add('PRINT-INSTRUCTIONS.txt', new TextEncoder().encode(readme), 'text/plain');
   const inventory = await Promise.all(files.map(async f => ({ path: f.name, mimeType: f.mime, bytes: f.bytes.length, sha256: await sha256(f.bytes) })));
   const manifest = { contract: 'wallpro.print-pack.v1', packId: id, projectId: input.projectId || null, name: input.name, createdAt: created,
-    units: 'inches', printScale: 1, printableWidth: 51, wall: check.plan.wall, placement: layout, settings,
+    units: 'inches', printScale: 1, printableWidth: WALLPRO_PRINT_WIDTH, wall: check.plan.wall, placement: layout, settings,
     bleedBehavior: layout.mode === 'repeat' ? 'continuous-repeat' : 'mirror-wall-perimeter', color: 'RGB; assign sRGB input and printer/media ICC in RIP',
     seamless: layout.mode === 'repeat' ? input.seamless : null,
     source: { widthPixels: source.width, heightPixels: source.height, effectivePpi: check.ppi, sha256: await sha256(source.bytes), pixelResampling: false },
-    panels, files: inventory, preflight: { passed: true, minimumPpi: settings.minPpi, allPanelsWithinPrintableWidth: panels.every(p => p.width <= 51) } };
+    panels, files: inventory, preflight: { passed: true, minimumPpi: settings.minPpi, allPanelsWithinPrintableWidth: panels.every(p => p.width <= WALLPRO_PRINT_WIDTH) } };
   add('manifest.json', new TextEncoder().encode(JSON.stringify(manifest, null, 2)), 'application/json');
   onProgress?.('Packaging print files'); await yieldUi();
   const zip = new JSZip(); for (const file of files) zip.file(file.name, file.bytes);

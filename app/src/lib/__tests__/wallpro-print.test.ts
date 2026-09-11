@@ -10,21 +10,22 @@ import type { SeamlessReceipt } from '../wallpro-seamless';
 const verifiedSeam: SeamlessReceipt = { contract: 'wallpro.seamless.v1', preference: 'auto', method: 'verified', before: { width: 600, height: 400, edge: 1, interior: 1, ratio: 1, seamless: true }, after: null, verified: true };
 
 describe('WallPro printable panel geometry', () => {
-  it('fits the complete printed panel inside 51 inches including overlap and outer bleed', () => {
+  it('fits the complete printed panel inside 59.5 inches with the half-inch overlap and outer bleed', () => {
     const plan = planWallPrint(120, 96, DEFAULT_WALL_PRINT);
-    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-1, 51, 98, 0], [49.5, 51, 98, .5], [100, 21, 98, .5]]);
+    expect(DEFAULT_WALL_PRINT.overlap).toBe(.5);
+    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-1, 59.5, 98, 0], [58, 59.5, 98, .5], [117, 4, 98, .5]]);
     expect(plan.panels.reduce((n,p) => n+p.width-p.overlapLeft,0)).toBe(122);
   });
   it('does not create a duplicate final strip at exact widths', () => {
-    expect(planWallPrint(100, 96, { bleed: 1, overlap: 0, minPpi: 150 }).panels.map(p=>p.width)).toEqual([51, 51]);
+    expect(planWallPrint(117, 96, { bleed: 1, overlap: 0, minPpi: 150 }).panels.map(p=>p.width)).toEqual([59.5, 59.5]);
     expect(planWallPrint(49, 96, DEFAULT_WALL_PRINT).panels.map(p=>p.width)).toEqual([51]);
   });
   it('covers walls without gaps for fractional dimensions and overlaps', () => {
-    for (const width of [1, 50, 51, 51.125, 120, 2399.875]) for (const bleed of [0, .125, 1, 5]) for (const overlap of [0, .375, 5]) {
+    for (const width of [1, 50, 59.5, 59.625, 120, 2399.875]) for (const bleed of [0, .125, 1, 5]) for (const overlap of [0, .375, 5]) {
       const {panels}=planWallPrint(width, 83.125, {bleed, overlap, minPpi:150});
       expect(panels[0].x).toBeCloseTo(-bleed,6);
       expect(panels.at(-1)!.x+panels.at(-1)!.width).toBeCloseTo(width+bleed,6);
-      panels.forEach((p,i)=>{expect(p.width).toBeLessThanOrEqual(51); if(i)expect(panels[i-1].x+panels[i-1].width-p.x).toBeCloseTo(overlap,6);});
+      panels.forEach((p,i)=>{expect(p.width).toBeLessThanOrEqual(59.5); if(i)expect(panels[i-1].x+panels[i-1].width-p.x).toBeCloseTo(overlap,6);});
     }
   });
   it('rejects invalid settings and a falsely print-ready low-resolution mural', () => {
