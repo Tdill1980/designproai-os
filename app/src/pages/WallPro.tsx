@@ -12,7 +12,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -238,6 +238,23 @@ export default function WallPro() {
     setVersions(old => [...old, version]); setCurrentVersionId(version.id);
     return version;
   }
+  /** Preview-only: proposes corners and protected areas from the photo. Print
+   * panels stay full rectangles whatever is detected; the installer trims. */
+  async function detectMyWall() {
+    if (!photo) return;
+    await run('Detecting your wall', async () => {
+      const user = await wallUser();
+      const wallPath = photo.path || await uploadWallAsset(photo, user.id);
+      if (!photo.path) setPhoto({ ...photo, path: wallPath });
+      const found = await detectWall(wallPath);
+      const cornersOk = !!found.wall && validWallCorners(found.wall);
+      if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
+      setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
+      setView(artwork && cornersOk ? 'after' : 'before'); setError('');
+      const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
+      setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    });
+  }
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
       const art = await storedAsset(version.artwork_path);
@@ -407,7 +424,10 @@ export default function WallPro() {
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. A wall photo is optional when generating artwork.</p>
-            {photo && <p className="mt-3 text-sm text-slate-600">Mark all four wall corners: top left, top right, bottom right, bottom left. Generation waits until the wall is marked so the design lands on your photo.</p>}
+            {photo && <div className="mt-3 space-y-2">
+              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall</Button>
+              <p className="text-xs text-slate-600">Finds the wall corners and the areas to protect (windows, drapes, doors, outlets, furniture) from your photo. Adjust any point afterwards. Or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
+            </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
