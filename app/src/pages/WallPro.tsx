@@ -14,6 +14,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { autoWallScale } from '@/lib/wallpro-scale';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -59,6 +60,10 @@ export default function WallPro() {
   const [prompt, setPrompt] = useState('');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
+  // Tile-or-mural and the tile's width are decided by code from the brief and
+  // the wall inches (wallpro-scale.ts). 'auto' is the product; Mural and
+  // Repeating pattern are overrides a customer may still choose.
+  const [scaleChoice, setScaleChoice] = useState<'auto' | 'cover' | 'repeat'>('auto');
   // Seamless repeat is decided by measurement and closed by code (wallpro-seamless).
   // `seam` is the derivation for the current artwork + preference: its receipt and
   // the artwork that actually tiles (the blended copy, or the original).
@@ -500,7 +505,13 @@ export default function WallPro() {
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
       if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
-      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, wallPath, referencePath });
+      // WallPro decides tile-versus-mural and the tile's real-world width from
+      // the brief and the wall inches; the generator is told that width so
+      // motifs are drawn at the size they print.
+      const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
+      const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
+      setPlacement(placement); setRepeatWidth(repeatWidth);
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master and is shown first. With a wall
       // photo and four valid corners the renderWallPreview compositor runs at once
@@ -518,7 +529,7 @@ export default function WallPro() {
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
-      await recordVersion('create', art, { intent, prompt, referencePath, generationId: result.request_id, note: result.design_name });
+      await recordVersion('create', art, { intent, prompt, referencePath, generationId: result.request_id, note: result.design_name, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null });
     });
   }
   function finishMask(points: Point[]) {
@@ -594,10 +605,11 @@ export default function WallPro() {
                 <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
               </>}
             </div> : designMode === 'ai' || designMode === 'match' || designMode === 'wall' ? <div className="space-y-3">
-              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-2 gap-2">
-                <Button variant={placement !== 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('cover'); setArtwork(null); }}>Mural</Button>
-                <Button variant={placement === 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('repeat'); setArtwork(null); }}>Repeating pattern</Button>
-              </div><p className="mt-1 text-xs text-slate-500">{placement === 'repeat' ? `A seamless tile is generated and repeated at ${repeatWidth}″ (set the scale in step 2).` : 'One composition sized to your wall.'}</p></div>
+              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-3 gap-2">
+                <Button variant={scaleChoice === 'auto' ? 'default' : 'outline'} onClick={() => setScaleChoice('auto')}>Auto</Button>
+                <Button variant={scaleChoice === 'cover' ? 'default' : 'outline'} onClick={() => setScaleChoice('cover')}>Mural</Button>
+                <Button variant={scaleChoice === 'repeat' ? 'default' : 'outline'} onClick={() => setScaleChoice('repeat')}>Repeating pattern</Button>
+              </div><p className="mt-1 text-xs text-slate-500">{autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice }).reason}</p></div>
               {intent === 'match' && <>
                 {uploadControl('reference', reference ? 'Replace the design to match' : 'Upload the design to match')}
                 <p className="text-xs text-slate-500">The designer recreates this design faithfully as a print-ready 4K master: same composition, motifs, palette and scale. Low-resolution files, screenshots and photos of a wall are fine as the source.</p>
