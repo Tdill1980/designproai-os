@@ -1,0 +1,87 @@
+{
+  "contract": "designpro.atlas-v2-parity-fixture.v1",
+  "generationId": "5b2eb96c-77b5-4705-8cad-fef00af677fe",
+  "requestId": "0c10883f",
+  "createdAt": "2026-08-22T05:53:02Z",
+  "sourceCommit": "0b8ddf9903c7aaa2905ab7452f703f0deefcd686",
+  "promptVersion": "designpro-flat-first-atlas-20260822.v2",
+  "model": "gemini-3-pro-image",
+  "guideStoragePath": "designpro/user_61cc6c1c-554c-440c-8e07-a64469f1f4eb/5b2eb96c-77b5-4705-8cad-fef00af677fe/flat-first/v1/guide/f28bab318dab08127235ee6f6d90932ec1621df1ed6ceaeda3fb1d8ef43a5d93.png",
+  "guideContentHash": "f28bab318dab08127235ee6f6d90932ec1621df1ed6ceaeda3fb1d8ef43a5d93",
+  "manifestContentHash": "f6841d54322d54fcf4a268f8b58f5dfb5764914d0a26a13e781eac9f6105c1da",
+  "masterContentHash": "f9015398d87eca57d16b121ba83d5dcf7843d8086b2f0a697ffc4cc6271921bb",
+  "requestInput": {
+    "mode": "commercial",
+    "brief": "Create a modern pool company wrap  that looks like a franchise with a custom logo and an photo image in rear 3/4 of truck of a infinity pool with a water feature",
+    "finish": "Gloss",
+    "vehicle": { "make": "Ford", "type": "truck", "year": "2019", "model": "F250 Crew Cab" },
+    "website": "FlamingoPools.com",
+    "designName": "Flamingo Pools",
+    "companyName": "Flamingo Pools",
+    "pipelineMode": "flat-first-atlas-v1",
+    "contractVersion": "designpro.calls-1-7-input.v3"
+  },
+  "manifest": {
+    "zones": [
+      { "h": 3712, "w": 1016, "x": 2820, "y": 192, "trim": { "h": 3564, "w": 868, "x": 2894, "y": 266 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "right-flank", "extraction": { "h": 3712, "w": 1016, "x": 2820, "y": 192, "outputRotationDegrees": 90 }, "surfaceKey": "driver", "surfaceSqFt": 98.21, "trimWidthIn": 241, "effectivePpi": 14.79, "printWidthIn": 251, "trimHeightIn": 58.68, "printHeightIn": 68.68, "rotationDegrees": -90, "proofDependencies": ["side", "front", "rear", "hero-3d"] },
+      { "h": 3712, "w": 1016, "x": 261, "y": 192, "trim": { "h": 3564, "w": 868, "x": 335, "y": 266 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "left-flank", "extraction": { "h": 3712, "w": 1016, "x": 261, "y": 192, "outputRotationDegrees": -90 }, "surfaceKey": "passenger", "surfaceSqFt": 98.21, "trimWidthIn": 241, "effectivePpi": 14.79, "printWidthIn": 251, "trimHeightIn": 58.68, "printHeightIn": 68.68, "rotationDegrees": 90, "proofDependencies": ["passenger-side", "front", "rear", "hero-3d"] },
+      { "h": 964, "w": 1262, "x": 1417, "y": 2451, "trim": { "h": 802, "w": 1100, "x": 1498, "y": 2532 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "center-column", "extraction": { "h": 964, "w": 1262, "x": 1417, "y": 2451, "outputRotationDegrees": 0 }, "surfaceKey": "hood", "surfaceSqFt": 23.43, "trimWidthIn": 68, "effectivePpi": 16.17, "printWidthIn": 78, "trimHeightIn": 49.61, "printHeightIn": 59.61, "rotationDegrees": 0, "proofDependencies": ["hood_detail", "side", "passenger-side", "front", "hero-3d"] },
+      { "h": 1397, "w": 1262, "x": 1417, "y": 1018, "trim": { "h": 1227, "w": 1092, "x": 1502, "y": 1103 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "center-column", "extraction": { "h": 1397, "w": 1262, "x": 1417, "y": 1018, "outputRotationDegrees": 0 }, "surfaceKey": "roof", "surfaceSqFt": 31.96, "trimWidthIn": 64, "effectivePpi": 17.05, "printWidthIn": 74, "trimHeightIn": 71.91, "printHeightIn": 81.91, "rotationDegrees": 0, "proofDependencies": ["roof", "side", "passenger-side", "hero-3d"] },
+      { "h": 419, "w": 1262, "x": 1417, "y": 3451, "trim": { "h": 323, "w": 1166, "x": 1465, "y": 3499 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "center-column", "extraction": { "h": 419, "w": 1262, "x": 1417, "y": 3451, "outputRotationDegrees": 0 }, "surfaceKey": "front", "surfaceSqFt": 28.9, "trimWidthIn": 122.4, "effectivePpi": 9.52, "printWidthIn": 132.4, "trimHeightIn": 34, "printHeightIn": 44, "rotationDegrees": 0, "proofDependencies": ["front", "side", "passenger-side", "hero-3d"] },
+      { "h": 755, "w": 1262, "x": 1417, "y": 227, "trim": { "h": 593, "w": 1100, "x": 1498, "y": 308 }, "bleedIn": { "top": 5, "left": 5, "right": 5, "bottom": 5 }, "guideFill": "#e5e5e5", "placement": "center-column", "extraction": { "h": 755, "w": 1262, "x": 1417, "y": 227, "outputRotationDegrees": 0 }, "surfaceKey": "rear", "surfaceSqFt": 17.32, "trimWidthIn": 68, "effectivePpi": 16.17, "printWidthIn": 78, "trimHeightIn": 36.68, "printHeightIn": 46.68, "rotationDegrees": 0, "proofDependencies": ["rear", "side", "passenger-side", "hero-3d"] }
+    ],
+    "canvas": { "widthPx": 4096, "heightPx": 4096, "colorSpace": "srgb", "alphaOutsideZones": true },
+    "quality": { "targetPrintPpi": 150, "minimumEffectivePpi": 9.52, "requestedMasterSize": "4K", "upscalingRequiredBeforeAnyProductionExport": true, "ppiIsComputedFromZonePixelsAndPhysicalBleedBox": true },
+    "contract": "designpro.flat-first-atlas-manifest.v1",
+    "topology": "rectangular-preview-v1",
+    "proofViews": ["side", "passenger-side", "hood_detail", "front", "rear", "hero-3d", "roof"],
+    "bleedInches": 5,
+    "installerMap": { "driver": "right", "passenger": "left", "longitudinalOrder": "vehicle-rear-to-front", "centerOrderTopToBottom": ["rear", "roof", "hood", "front"] },
+    "totalTrimSqFt": 298.03,
+    "guideRendering": { "tone": "neutral-monochrome", "styleAuthority": false, "surfaceIdentityComesFromManifest": true },
+    "proofOnlyViews": ["hero-3d"],
+    "seamContinuity": {
+      "mode": "semantic-preview-only",
+      "relationships": [
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["rear", "passenger"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["rear", "driver"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["roof", "passenger"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["roof", "driver"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["hood", "passenger"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["hood", "driver"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["front", "passenger"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["front", "driver"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["rear", "roof"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["roof", "hood"], "exactPixelJoin": null },
+        { "intent": "continue artwork where the installed surfaces physically meet", "surfaces": ["hood", "front"], "exactPixelJoin": null }
+      ],
+      "exactPvoSeamMappingsAvailable": false
+    },
+    "sourceAuthority": { "geometry": "provisional-google-grounded-layout-only", "examplePurpose": "topology-only", "customerStyleSource": "customer-brief-and-verified-customer-assets-only", "visualProofsUsedForGeometry": false },
+    "coordinateSystem": { "units": "pixels", "origin": "top-left", "xDirection": "right", "yDirection": "down" },
+    "geometryAuthority": {
+      "source": "gemini_grounded",
+      "status": "provisional",
+      "purpose": "calls-1-7-layout-only",
+      "contract": "designpro.genie-proof-geometry-authority.v1",
+      "confidence": "high",
+      "sourceUrls": [
+        "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFXKA_bFVTFqFbqbpzxvoOLg1T9qVOeDfsdqd-M_oLVL-xRb0W1IH2FzsOEX0XEgjO9IZIXUGGLDjnz0ghz8RR5NHh4FUhA0zhFkn00GV5D5bKr--gUcowm4Kji0c7wPEGaRwAq3gcWRG-Sx5rBFq6CqZptlYyClac_9W2lyQHYl1_YXb7G",
+        "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFxkN_IEenwMQutXk66XPFwUuloabjkZhnVvWR5d__iftnt4ANPQq_4KR43ndwRDGy5sUZgkMEp8aEXoU5A28AE_l8MLgd66raJfNiFY1XEAaeVptoMQP4y4IBf0JnaNmaMfRgbhdqSxjA CT_yv1e4P5Gisz5Z_Z6TocngzX3aOxIKEZOlwym_Vht8CpY56MlHmmA"
+      ],
+      "candidateId": "e10a6588-4d3f-4844-90c5-03aeab0bc0fe",
+      "validatedAt": null,
+      "validatedBy": null,
+      "candidateHash": "47a9a8f32108a376d8585318d1c3ec7a85bd5fcb694969db9ae285668cb60b8e",
+      "estimatorContract": "designpro.genie-provisional-atlas-geometry.v1",
+      "operatorValidated": false,
+      "productionEligible": false
+    },
+    "productionBlockers": [
+      "operator-validated exact six-surface geometry is required before production",
+      "validated rectangular GENIE extents are not an exact PVO contour/UV topology",
+      "minimum effective density is 9.52 PPI; print target is 150 PPI"
+    ],
+    "productionEligible": false
+  }
+}

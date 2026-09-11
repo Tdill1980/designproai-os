@@ -200,6 +200,7 @@ on:
           - 14-field-arms
           - 15-hero-to-field
           - 16-panel-fill
+          - 17-v2-parity
       generation:
         description: "measure-accepted-master and 16-panel-fill — generation id or 8-char prefix"
         required: false
@@ -408,6 +409,8 @@ jobs:
           # release asset, so the arm-A image is the exact one production sends.
           tar -cz \
             --exclude runtime/node_modules \
+            --exclude scripts/fixtures/atlas-v2-0b8ddf99/node_modules \
+            --exclude scripts/fixtures/atlas-v2-0b8ddf99/atlas-examples \
             scripts/atlas-teaching-proof-ab.mjs \
             scripts/atlas-guide-ablation-ab.mjs \
             scripts/atlas-topology-text-ab.mjs \
@@ -437,6 +440,8 @@ jobs:
             scripts/atlas-field-arms-ab.mjs \
             scripts/atlas-hero-to-field-ab.mjs \
             scripts/atlas-panel-fill-ab.mjs \
+            scripts/atlas-v2-parity-ab.mjs \
+            scripts/fixtures/atlas-v2-0b8ddf99 \
             scripts/fixtures/premigration-heroes.json \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
@@ -550,6 +555,15 @@ jobs:
               # `candidates` names the raw Call-1 candidate (`atlas-call1/<id>.png`)
               # to rebuild the PRE-fill panels from; the stored panels are post-fill.
               if [ -n "$AB_CANDIDATES" ]; then extra_args+=(--raw-master "$AB_CANDIDATES"); fi
+              ;;
+            17-v2-parity)
+              # Owner 2026-09-11 ("it was working"): the 2026-08-22 Call-1 request
+              # (commit 0b8ddf99, prompt v2 — guide first, topology-lock prompt,
+              # Houdini flat/finished pair) sent VERBATIM from the vendored
+              # modules, on today's model, then measured with HEAD's gates.
+              # `draws` 1-4, one image call each (+ one class question each).
+              runner=scripts/atlas-v2-parity-ab.mjs
+              extra_args=()
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request

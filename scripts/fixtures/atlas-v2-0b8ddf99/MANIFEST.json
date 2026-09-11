@@ -1,0 +1,13 @@
+{
+  "sourceCommit": "0b8ddf9903c7aaa2905ab7452f703f0deefcd686",
+  "sourceCommitDate": "2026-08-22T04:51:34Z",
+  "promptVersion": "designpro-flat-first-atlas-20260822.v2",
+  "files": {
+  "designiq-prompt.cjs": "939567baf408ef3b43e777e1bd7b30a565ac41b46433a6b8a3a99e591c0fe9ec",
+  "flat-atlas-topology-examples.cjs": "ec2413a00ef08bed1c3bcd4da331f03bc90853d75283f322482f6f34c3b20582",
+  "flat-first-atlas.cjs": "7818f19b566182fd81bb1b30e798f119756d11767ac8f224eef3d94494f80e98",
+  "generation-store.cjs": "0a2171de1b5e97413d436b291e80298802a51b7cba0a0fa90f92139360e00c51",
+  "studio-os.cjs": "991b669a3a464f8889c13eaa24435d613bafd86459913e3f05137ff21e49eecf",
+  "view-angles.cjs": "a91fd8aca028261d27356938b11604b10464f201eae964a5e69763b6f666e759"
+  }
+}
