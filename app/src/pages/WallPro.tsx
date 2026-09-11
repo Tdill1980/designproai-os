@@ -12,7 +12,8 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { wallUser, uploadWallAsset, openWallAsset, generateWall, saveWallProject, wallHistory, getWallProject, type WallAsset } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, type WallAsset } from '@/lib/wallpro-api';
+import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
 const cornerNames = ['top left', 'top right', 'bottom right', 'bottom left'];
@@ -27,7 +28,13 @@ export default function WallPro() {
   const [photo, setPhoto] = useState<WallAsset | null>(null);
   const [artwork, setArtwork] = useState<WallAsset | null>(null);
   const [reference, setReference] = useState<WallAsset | null>(null);
-  const [designMode, setDesignMode] = useState<'ai' | 'upload'>('ai');
+  const [designMode, setDesignMode] = useState<'library' | 'ai' | 'upload'>('ai');
+  // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
+  // loads the approved master and the placement that master was published for.
+  const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
+  const [catalogThumbs, setCatalogThumbs] = useState<Record<string, string>>({});
+  const [catalogIndustry, setCatalogIndustry] = useState('all');
+  const [designId, setDesignId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
@@ -159,7 +166,8 @@ export default function WallPro() {
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
-    setDesignMode(config.designMode || 'ai'); setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
+    setDesignMode(['library', 'ai', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
+    setCorners(config.corners || []); setExclusions(config.exclusions || []); setExcludeDraft([]);
     const restoredCornersValid = validWallCorners(config.corners || []);
     setMarking(restoredCornersValid ? null : 'wall');
     // Only a wall with four valid corners can show the projected design. A saved
@@ -169,6 +177,25 @@ export default function WallPro() {
     if (art && wall && !restoredCornersValid) setNotice('This project has artwork but the wall corners are incomplete. Mark all four corners to see the design on your wall.');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
+  }
+  useEffect(() => {
+    // The catalog is browsable without signing in; failures leave the AI path untouched.
+    let active = true;
+    listWallCatalog().then(async rows => {
+      if (!active) return;
+      setCatalog(rows);
+      if (rows.length && !params.get('project')) setDesignMode('library');
+      setCatalogThumbs(await openWallAssets(rows.map(r => r.thumb_path || r.master_path)).catch(() => ({})));
+    }).catch(() => { if (active) setCatalog([]); });
+    return () => { active = false; };
+  }, []);
+  async function pickDesign(row: WallCatalogRow) {
+    await run('Opening ' + row.design_id, async () => {
+      const art = await storedAsset(row.master_path);
+      setArtwork(art); setDesignId(row.design_id); setName(row.title); setPrompt('');
+      setPlacement(row.mode === 'repeat' ? 'repeat' : 'cover'); setRepeatWidth(row.tile_width_in || 24); setSeamPreference('auto');
+      setView(photo && cornersValid ? 'after' : 'design');
+    });
   }
   useEffect(() => {
     if (loadOnce.current || !params.get('project')) return;
@@ -186,7 +213,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -291,8 +318,17 @@ export default function WallPro() {
               <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={showPrintGuides} onChange={e => setShowPrintGuides(e.target.checked)} />Show 51-inch print panel guides</label>
             </div>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid grid-cols-2 gap-2">{(['ai','upload'] as const).map(mode => <Button key={mode} variant={designMode === mode ? 'default' : 'outline'} onClick={() => { setDesignMode(mode); setArtwork(null); }}>{mode === 'ai' ? 'Create with AI' : 'Use my artwork'}</Button>)}</div>
-            {designMode === 'ai' ? <div className="space-y-3"><label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid grid-cols-3 gap-2">{(['library','ai','upload'] as const).map(mode => <Button key={mode} variant={designMode === mode ? 'default' : 'outline'} onClick={() => { setDesignMode(mode); setArtwork(null); setDesignId(null); }}>{mode === 'library' ? 'Pick a design' : mode === 'ai' ? 'Create with AI' : 'Use my artwork'}</Button>)}</div>
+            {designMode === 'library' ? <div className="space-y-3">
+              {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
+                <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
+                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-violet-500 ring-2 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}>
+                  <div className="aspect-[4/3] bg-slate-100">{catalogThumbs[row.thumb_path || row.master_path] && <img src={catalogThumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" />}</div>
+                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p></div>
+                </button>)}</div>
+                <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
+              </>}
+            </div> : designMode === 'ai' ? <div className="space-y-3"><label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
               {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
               <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>
