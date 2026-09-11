@@ -117,3 +117,21 @@ Deno.test("a design wider than the plotter is flagged for tiling, never silently
   assertMatch(result.svg, /data-scale="0\.1"/);
   assertMatch(new TextDecoder("latin1").decode(result.pdf), /\/MediaBox \[ 0 0 \d/);
 });
+
+Deno.test("interior-mount window graphics are cut in reverse: the whole kit is mirrored", async () => {
+  const img = new Image(800, 300);
+  img.fill(0xffffffff);
+  for (let y = 100; y < 200; y++) for (let x = 50; x < 150; x++) img.setPixelAt(x + 1, y + 1, 0xc81e1eff);   // square, left
+  for (let y = 100; y < 200; y++) for (let x = 500; x < 750; x++) img.setPixelAt(x + 1, y + 1, 0x14288fff);  // wide bar, right
+  const png = await img.encode();
+  const normal = await produceCutContour(png, { widthIn: 40, label: "Storefront" });
+  const reversed = await produceCutContour(png, { widthIn: 40, label: "Storefront", mirror: true });
+  assertEquals(normal.mirrored, false);
+  assertEquals(reversed.mirrored, true);
+  // Reading order flips: the wide bar is the leftmost element once mirrored.
+  assert(normal.elements[0].widthIn < normal.elements[1].widthIn, "square first when read normally");
+  assert(reversed.elements[0].widthIn > reversed.elements[1].widthIn, "bar first once mirrored");
+  // pdf-lib stores the info dictionary as UTF-16 hex; read it back through the parser.
+  assertMatch((await PDFDocument.load(reversed.pdf)).getSubject() ?? "", /REVERSE CUT/);
+  assertMatch(reversed.svg, /data-mirrored="true"/);
+});

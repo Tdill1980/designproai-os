@@ -42,6 +42,16 @@ graphics*, `docs/…` upload 2026-09-11) is now executed deterministically by
 | letters < 2", hairline detail → manual review (WPW File Prep: "contact us prior to ordering") | `letters:` (a run of ≥ 3 similar shapes on a line under 2"), `hairline:` (< 0.05" feature), `vertices:` (> 200), `oversize:` flags; the dimensioned letter-height spec stays with `cut-graphics-proof` | `smallLetterRuns` / `minFeatureWidth` |
 | "Layered vector files are required" | Manufacture Film Cut kits are **vector end to end**: one visible layer per film colour (fills as paths) + each film's offset-path bleed in its colour + the CutContour stroke; no raster in the file. Print & Cut keeps the artwork as a raster inside the vector-layered file (photographic art has no vector form; the cut line and the layer structure are vector) | `quantizeColors` / `dilate` |
 
+### Walls, windows and vehicles: one tool, one kit, three application rules
+
+| surface | entry | photo + Konva zones | what differs in the kit |
+|---|---|---|---|
+| Wall | `/graphics-pro-wall` (wall pre-selected) or `/graphics-pro` | `wallPhotoFile` → ZoneMasker on the wall photo → `surface.vinylZones` | flat art briefed "read from across a room"; bleed / cut line / nesting identical |
+| Window / storefront | `/graphics-pro-window` (glass pre-selected) or `/graphics-pro` | `glassPhotoFile` → ZoneMasker on the storefront → `surface.vinylZones`; day / night / headlight mockups | **interior mount = reverse cut**: the whole kit is mirrored (`mirror: true`, file suffix `-reverse`, "REVERSE CUT" in the PDF subject) so it reads correctly from the street; exterior mount is cut as drawn |
+| Vehicle | `/graphics-pro` | built preview (`generate_surface`) with ZoneMasker, or uploaded angles each with their own ZoneMasker → `uploadedAngles[].zones`; MyVehiclePro on the customer's own photo | flat art briefed "one graphic per body panel"; kit reads the zones from every angle |
+
+`run_production` and the Cut Contour Kit button take the zones from wherever the surface stores them, so the measured inches reach the producer on all three paths.
+
 Inputs: the FLAT artwork (`generate_flat`, briefed as cut-ready: pure white
 background, solid closed shapes, no soft edges, film-cut = flat solid colours
 only) and the real print size from the customer's measured zone (else the
@@ -131,7 +141,8 @@ it. Leave unchecked until then.
 - [ ] `deploy-edge-functions.yml` dispatched for the eight GraphicsPro functions; `list_edge_functions` shows them
 - [ ] migration applied through the release gate; `graphicspro-files` public bucket present
 - [ ] `/graphics-pro-wall`: upload a wall photo → Konva ZoneMasker shows the photo → draw two zones with inches → mockup returns with graphics inside the zones → Cut Contour Kit: the PDF opens in Illustrator with a `CutContour` spot swatch, the cut line follows the silhouette of each graphic, the bleed shows the artwork colour outside the cut line, the sheet size matches what the kit reports
-- [ ] `/graphics-pro` vehicle: upload driver-side photo → zones → mockup → MyVehiclePro on a second photo shows the SAME graphic
+- [ ] `/graphics-pro-window`: upload a storefront photo → zones → mockup (day and night) → with Interior mount selected the kit is mirrored and named `-reverse`; with Exterior it is not
+- [ ] `/graphics-pro` vehicle: upload driver-side photo → zones → mockup → MyVehiclePro on a second photo shows the SAME graphic → kit uses the driver-side zone inches
 - [ ] Approve → `run_production` reaches `complete` with print file, CutContour SVG, kit ZIP, CutContour PDF and pricing on the nested sheet
 - [ ] A kit PDF sent to the plotter RIP (VersaWorks / Onyx) routes the magenta path to the blade, not the print head
 

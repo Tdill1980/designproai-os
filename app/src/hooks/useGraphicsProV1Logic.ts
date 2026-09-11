@@ -506,7 +506,7 @@ export function useGraphicsProV1Logic() {
     designPrompt: string,
     designStyle: string,
     jobId: string | null,
-    cutContext?: { vinylSubstrate?: 'cut' | 'printed'; vinylZones?: VinylZone[]; businessName?: string },
+    cutContext?: { vinylSubstrate?: 'cut' | 'printed'; vinylZones?: VinylZone[]; businessName?: string; surfaceType?: string | null },
   ): Promise<string | null> => {
     try {
       const { data, error: flatErr } = await supabase.functions.invoke(
@@ -522,6 +522,7 @@ export function useGraphicsProV1Logic() {
               label: z.label, widthInches: z.widthInches, heightInches: z.heightInches, designPrompt: z.designPrompt, filmColor: z.filmColor,
             })),
             businessName: cutContext?.businessName,
+            surfaceType: cutContext?.surfaceType ?? undefined,
           },
         }
       );

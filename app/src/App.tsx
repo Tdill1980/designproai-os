@@ -75,6 +75,7 @@ const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"
 // docs/GRAPHICSPRO-END-TO-END.md.
 const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
+const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequirePanelOutputReviewer } from "@/components/RequirePanelOutputReviewer";
@@ -374,6 +375,7 @@ const App = () => {
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
+          <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />
           <Route path="/graphicspro" element={<Navigate to="/graphics-pro" replace />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />

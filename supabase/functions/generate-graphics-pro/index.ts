@@ -489,6 +489,7 @@ ${renderMode === 'night' ? `LIGHTING & ATMOSPHERE — NIGHT (CRITICAL):
 interface FlatPromptParams {
   designPrompt: string;
   designStyle: string;
+  surfaceType?: string;
   vinylSubstrate?: "cut" | "printed";
   vinylZones?: Array<{ label?: string; widthInches?: number; heightInches?: number; designPrompt?: string; filmColor?: string }>;
   businessName?: string;
@@ -514,7 +515,10 @@ function buildFlatPrompt(p: FlatPromptParams): string {
   return `You are a production artist preparing CUT CONTOUR vinyl graphics for a professional wrap shop.
 
 TASK: Draw the graphic design described below as FLAT, PRINT-READY ARTWORK. This file is not a mockup — it is the artwork a plotter will cut around. Its outer silhouettes become the cut line.
-
+${p.surfaceType === "wall" ? "APPLICATION: cut vinyl wall graphics — read from across a room; bold shapes, generous letter height.\n"
+  : p.surfaceType === "glass" ? "APPLICATION: cut vinyl window / storefront graphics — read from the street; high contrast, simple bold shapes, no fine detail.\n"
+  : p.surfaceType === "vehicle" ? "APPLICATION: cut vinyl vehicle graphics — read at a glance from across a parking lot; each graphic sits on one body panel.\n"
+  : ""}
 DESIGN BRIEF: ${p.designPrompt}
 ${p.businessName ? `BUSINESS: ${p.businessName}\n` : ""}STYLE: ${p.designStyle}
 ${zoneLines.length ? `\nGRAPHICS TO DRAW (each one becomes its own cut decal, so keep them apart from each other):\n${zoneLines.join("\n")}\n` : ""}
@@ -1337,11 +1341,12 @@ Return ONLY valid JSON, no markdown, no explanation:
 
     // ─── ACTION: generate_flat ───────────────────────────────────
     if (action === "generate_flat") {
-      const { designPrompt, designStyle, jobId, vinylSubstrate, vinylZones, businessName, maxFilms } = body;
+      const { designPrompt, designStyle, jobId, vinylSubstrate, vinylZones, businessName, maxFilms, surfaceType } = body;
 
       const prompt = buildFlatPrompt({
         designPrompt: designPrompt || "",
         designStyle: designStyle || "modern",
+        surfaceType: typeof surfaceType === "string" ? surfaceType : undefined,
         vinylSubstrate: vinylSubstrate === "cut" ? "cut" : "printed",
         vinylZones: Array.isArray(vinylZones) ? vinylZones : [],
         businessName,
@@ -1482,7 +1487,13 @@ Return ONLY valid JSON, no markdown, no explanation:
           // Real print size: the first zone the customer measured, else the
           // first line item. Without either the kit is built at 150 DPI and
           // the response says so — never a silent guess at true scale.
-          const zone = (surface?.vinylZones || []).find((z: any) => Number(z?.widthInches) > 0 && Number(z?.heightInches) > 0);
+          // Wall and window zones live on surface.vinylZones; uploaded vehicle
+          // angles carry their own zones. All three surfaces measure the same way.
+          const allZones: any[] = [
+            ...(surface?.vinylZones || []),
+            ...((surface?.uploadedAngles || []) as any[]).flatMap((a: any) => a?.zones || []),
+          ];
+          const zone = allZones.find((z: any) => Number(z?.widthInches) > 0 && Number(z?.heightInches) > 0);
           const item = (lineItems || []).find((li: any) => Number(li?.width) > 0 && Number(li?.height) > 0);
           const widthIn = Number(zone?.widthInches) || Number(item?.width) || undefined;
           const heightIn = Number(zone?.heightInches) || Number(item?.height) || undefined;
@@ -1497,6 +1508,9 @@ Return ONLY valid JSON, no markdown, no explanation:
                 bleed_in: Number(surface?.bleedInches) > 0 ? Number(surface.bleedInches) : 0.25,
                 substrate: surface?.vinylSubstrate === "cut" ? "cut" : "printed",
                 label,
+                surface: surface?.type || null,
+                // Interior-mount window graphics are applied face-out: reverse cut.
+                mirror: surface?.type === "glass" && surface?.glassMount === "interior",
               },
             },
           });

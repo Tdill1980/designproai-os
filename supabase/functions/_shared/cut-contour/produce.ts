@@ -55,6 +55,10 @@ export interface ProduceOptions {
   label?: string;
   /** Long side of the working raster the geometry runs on. */
   workMax?: number;
+  /** Reverse cut: mirror the whole artwork. Window graphics mounted on the
+   *  INSIDE of the glass are applied face-out, so the file is flipped and the
+   *  design reads correctly from the street. */
+  mirror?: boolean;
 }
 
 export interface ProducedFilm { hex: string; coverage: number; paths: number; bleedPaths: number }
@@ -88,6 +92,8 @@ export interface ProduceResult {
    *  paths, no raster). Print & Cut keeps the artwork raster inside the
    *  vector-layered file — photographic art has no vector form. */
   vector: boolean;
+  /** True when the kit was built reversed (interior-mount window graphics). */
+  mirrored: boolean;
 }
 
 interface WorkElement {
@@ -152,6 +158,16 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
 
   const original = await Image.decode(bytes) as Image;
   const W = original.width, H = original.height;
+  if (options.mirror) {
+    // Reverse cut: flip every row of the source once, up front, so the cut
+    // line, bleed, films and nesting are all built from the mirrored art.
+    const bm = original.bitmap as Uint8ClampedArray;
+    const row = new Uint8ClampedArray(W * 4);
+    for (let y = 0; y < H; y++) {
+      row.set(bm.subarray(y * W * 4, (y + 1) * W * 4));
+      for (let x = 0; x < W; x++) bm.set(row.subarray((W - 1 - x) * 4, (W - x) * 4), (y * W + x) * 4);
+    }
+  }
   const dpi = options.widthIn && options.widthIn > 0
     ? W / options.widthIn
     : options.heightIn && options.heightIn > 0
@@ -291,7 +307,7 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
   const svgW = round(sheetWIn * inPt), svgH = round(sheetHIn * inPt);
   const svgParts: string[] = [];
   svgParts.push(`<?xml version="1.0" encoding="UTF-8"?>`);
-  svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${round(sheetWIn * scale)}in" height="${round(sheetHIn * scale)}in" viewBox="0 0 ${svgW} ${svgH}" data-cut-contour="${CUT_CONTOUR_SPOT.name}" data-bleed-in="${bleedIn}" data-scale="${scale}" data-sheet-in="${round(sheetWIn, 2)} x ${round(sheetHIn, 2)}">`);
+  svgParts.push(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${round(sheetWIn * scale)}in" height="${round(sheetHIn * scale)}in" viewBox="0 0 ${svgW} ${svgH}" data-cut-contour="${CUT_CONTOUR_SPOT.name}" data-bleed-in="${bleedIn}" data-scale="${scale}" data-mirrored="${!!options.mirror}" data-sheet-in="${round(sheetWIn, 2)} x ${round(sheetHIn, 2)}">`);
   svgParts.push(`<title>${escapeXml(label)} — cut contour</title>`);
   const pathAt = (loops: number[][][], p: { x: number; y: number }) => G.loopsToPathD(loops, { scale: ptPerPx, offsetX: p.x * inPt, offsetY: p.y * inPt });
   svgParts.push(`<g id="Bleed">`);
@@ -329,7 +345,7 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
   pdf.setTitle(`${label} — cut contour`);
   pdf.setProducer("DesignProAI GraphicsPro cut-contour producer");
   pdf.setCreator("DesignProAI");
-  pdf.setSubject(`Sheet ${round(sheetWIn, 2)} x ${round(sheetHIn, 2)} in · bleed ${bleedIn} in · ${CUT_CONTOUR_SPOT.name} spot CMYK 0/100/0/0${scale < 1 ? ` · FILE AT ${Math.round(scale * 100)}% SCALE, print at ${Math.round(100 / scale)}%` : ""}`);
+  pdf.setSubject(`Sheet ${round(sheetWIn, 2)} x ${round(sheetHIn, 2)} in · bleed ${bleedIn} in · ${CUT_CONTOUR_SPOT.name} spot CMYK 0/100/0/0${options.mirror ? " · REVERSE CUT (interior-mount window graphic, mirrored)" : ""}${scale < 1 ? ` · FILE AT ${Math.round(scale * 100)}% SCALE, print at ${Math.round(100 / scale)}%` : ""}`);
   const ctx = pdf.context;
   const page = pdf.addPage([sheetWIn * inPt, sheetHIn * inPt]);
   const pageH = sheetHIn * inPt;
@@ -443,6 +459,7 @@ export async function produceCutContour(bytes: Uint8Array, options: ProduceOptio
     spot: CUT_CONTOUR_SPOT,
     bleedIn,
     vector: substrate === "cut",
+    mirrored: !!options.mirror,
   };
 }
 

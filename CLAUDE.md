@@ -121,8 +121,11 @@ absent from this repository and from the DesignProAI Supabase project.
 MyVehiclePro for GraphicsPro was broken in RestylePro as well (the panel never
 sent a styling prompt or the mockup; the function 400'd on every click).
 
-- **Routes** `/graphics-pro`, `/graphics-pro-wall`, `/graphicspro` (redirect);
-  sidebar key `graphicspro`, tier `complete`.
+- **Routes** `/graphics-pro`, `/graphics-pro-wall`, `/graphics-pro-window`,
+  `/graphicspro` (redirect); sidebar key `graphicspro`, tier `complete`. One
+  tool serves walls, windows and vehicles; interior-mount window graphics are
+  cut in REVERSE (the kit is mirrored); vehicle zones come from every
+  uploaded angle.
 - **The cut-contour files are PRODUCED, deterministically** (owner: "it must
   design and produce cut contour designs and files"). `_shared/cut-contour/`
   executes the WePrintWraps guide: unified silhouette cut line as a real PDF

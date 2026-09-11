@@ -81,9 +81,30 @@ test("GraphicsPro is routed, guarded and reachable from the shell", () => {
   assert.match(IS_APP_ROUTE, /"\/graphics-pro"/, "GraphicsPro must keep the app shell chrome");
 });
 
-test("the wall entry pre-selects the wall surface on the same tool", () => {
-  const wall = read("app/src/pages/GraphicsProWall.tsx");
-  assert.match(wall, /<GraphicsProV1ToolUI initialSurfaceType="wall" \/>/);
+test("walls, windows and vehicles all reach the same tool and the same cut-contour kit", () => {
+  // Entry pages pre-select the surface; the one tool serves all three.
+  assert.match(read("app/src/pages/GraphicsProWall.tsx"), /<GraphicsProV1ToolUI initialSurfaceType="wall" \/>/);
+  assert.match(read("app/src/pages/GraphicsProWindow.tsx"), /<GraphicsProV1ToolUI initialSurfaceType="glass" \/>/);
+  assert.match(APP, /<Route path="\/graphics-pro-window" element=\{<RequireAuth><GraphicsProWindow \/><\/RequireAuth>\} \/>/);
+  // Every surface's zones are drawn on the customer's photo in the Konva ZoneMasker …
+  const surfaceSelection = read("app/src/components/graphicspro-v1/SurfaceSelection.tsx");
+  assert.match(surfaceSelection, /imageUrl=\{surface\.wallPhotoUrl\}[\s\S]{0,200}zones=\{surface\.vinylZones\}/, "wall zones");
+  assert.match(surfaceSelection, /imageUrl=\{surface\.glassPhotoUrl\}[\s\S]{0,200}zones=\{surface\.vinylZones\}/, "window zones");
+  assert.match(surfaceSelection, /zones=\{a\.zones\}/, "per-angle vehicle zones");
+  // … and the kit reads them wherever they live: vinylZones (wall / window /
+  // built vehicle) or uploadedAngles[].zones (uploaded vehicle photos).
+  assert.match(GGP, /\.\.\.\(surface\?\.vinylZones \|\| \[\]\),\s*\.\.\.\(\(surface\?\.uploadedAngles \|\| \[\]\) as any\[\]\)\.flatMap\(\(a: any\) => a\?\.zones \|\| \[\]\)/);
+  assert.match(V1_UI, /const zones = surface\.source === 'upload' \? surface\.uploadedAngles\.flatMap\(\(a\) => a\.zones\) : surface\.vinylZones;/);
+  // The production-proof card (Cut Contour Kit button) shows for all three surfaces.
+  assert.match(V1_UI, /\(surface\.type === 'vehicle' \|\| surface\.type === 'wall' \|\| surface\.type === 'glass'\) && \(/);
+  // Windows: interior-mount graphics are cut in reverse, from the UI and from run_production.
+  assert.match(V1_UI, /mirror: surface\.type === 'glass' && surface\.glassMount === 'interior'/);
+  assert.match(GGP, /mirror: surface\?\.type === "glass" && surface\?\.glassMount === "interior"/);
+  assert.match(PRODUCE, /mirror\?: boolean;/);
+  assert.match(CUT_BUILD, /mirror: opt\.mirror === true \|\| opt\.mirror === "true"/);
+  // The flat artwork is briefed per surface.
+  for (const surface of ["wall", "glass", "vehicle"]) assert.match(GGP, new RegExp(`p\\.surfaceType === "${surface}" \\? "APPLICATION: cut vinyl`));
+  assert.match(V1_LOGIC, /surfaceType: cutContext\?\.surfaceType \?\? undefined/);
 });
 
 test("every edge function the browser invokes exists here and is registered", () => {

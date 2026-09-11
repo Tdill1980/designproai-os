@@ -137,11 +137,13 @@ serve(async (req) => {
         substrate: opt.substrate === "cut" ? "cut" : "printed",
         maxFilms: num(opt.max_films) ? Math.round(num(opt.max_films)!) : undefined,
         label,
+        // Window graphics mounted on the inside of the glass are cut in reverse.
+        mirror: opt.mirror === true || opt.mirror === "true",
       });
 
       const ts = Date.now();
       const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "cut-contour";
-      const scaleTag = result.scale < 1 ? `-${Math.round(result.scale * 100)}pct` : "";
+      const scaleTag = `${result.mirrored ? "-reverse" : ""}${result.scale < 1 ? `-${Math.round(result.scale * 100)}pct` : ""}`;
       const base = `cut-contour/file-output/${ts}_${slug}`;
       const upload = async (path: string, bytes: Uint8Array, contentType: string) => {
         const { error: upErr } = await db.storage.from("graphicspro-files").upload(path, bytes, { contentType, upsert: true });
@@ -158,6 +160,8 @@ serve(async (req) => {
         layers: result.layers,
         bleed_in: result.bleedIn,
         scale: result.scale,
+        mirrored: result.mirrored,
+        surface: opt.surface || null,
         sheet: result.sheet,
         elements: result.elements,
         review_flags: result.reviewFlags,
@@ -177,7 +181,7 @@ serve(async (req) => {
         svg_url: svgUrl,
         preview_url: svgUrl,
         zip_url: zipUrl,
-        output_format: `PDF — ${result.spot.name} spot (CMYK 0/100/0/0) ${result.spot.strokeWeightPt} pt stroke · layers ${result.layers.join(" / ")} · ${result.bleedIn}" bleed${result.scale < 1 ? ` · ${Math.round(result.scale * 100)}% scale` : ""}`,
+        output_format: `PDF — ${result.spot.name} spot (CMYK 0/100/0/0) ${result.spot.strokeWeightPt} pt stroke · layers ${result.layers.join(" / ")} · ${result.bleedIn}" bleed${result.mirrored ? " · reverse cut (interior mount)" : ""}${result.scale < 1 ? ` · ${Math.round(result.scale * 100)}% scale` : ""}`,
         description: `Print-ready cut-contour kit: ${result.elements.length} graphic(s) nested on a ${result.sheet.widthIn} x ${result.sheet.heightIn} in sheet, cut line on the unified silhouette, artwork colour bled ${result.bleedIn}" past it.`,
         sheet: result.sheet,
         scale: result.scale,
@@ -189,6 +193,8 @@ serve(async (req) => {
         layers: result.layers,
         spot: result.spot,
         bleed_in: result.bleedIn,
+        mirrored: result.mirrored,
+        vector: result.vector,
       });
     } catch (err: any) {
       console.error("cut-contour file-output:", err?.message || err);

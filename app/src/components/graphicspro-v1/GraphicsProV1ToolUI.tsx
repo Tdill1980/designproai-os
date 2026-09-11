@@ -196,7 +196,7 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
   // is bled 1/4" past it, and every graphic is nested on one sheet. The zones
   // the customer measured give the true print size.
   const [cutPathPdfUrl, setCutPathPdfUrl] = useState<string | null>(null);
-  const [cutKit, setCutKit] = useState<{ svgUrl: string | null; zipUrl: string | null; sheet: { widthIn: number; heightIn: number } | null; elements: number; reviewFlags: string[]; scale: number } | null>(null);
+  const [cutKit, setCutKit] = useState<{ svgUrl: string | null; zipUrl: string | null; sheet: { widthIn: number; heightIn: number } | null; elements: number; reviewFlags: string[]; scale: number; mirrored: boolean; vector: boolean } | null>(null);
   const [isGeneratingCutPath, setIsGeneratingCutPath] = useState(false);
   const handleBuildCutPathProof = useCallback(async () => {
     if (!mockupResult) {
@@ -208,7 +208,7 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
       const designLabel = graphic.businessName || graphic.designPrompt || "Custom Graphics";
       const zones = surface.source === 'upload' ? surface.uploadedAngles.flatMap((a) => a.zones) : surface.vinylZones;
       const flatUrl = await generateFlat(graphic.designPrompt || designLabel, graphic.designStyle || "", mockupResult.jobId, {
-        vinylSubstrate: surface.vinylSubstrate, vinylZones: zones, businessName: graphic.businessName,
+        vinylSubstrate: surface.vinylSubstrate, vinylZones: zones, businessName: graphic.businessName, surfaceType: surface.type,
       });
       if (!flatUrl) {
         toast({ title: "Couldn't flatten the artwork", description: "The cut contour needs flat artwork — try again.", variant: "destructive" });
@@ -225,6 +225,9 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
             bleed_in: surface.bleedInches ?? 0.25,
             substrate: surface.vinylSubstrate,
             label: designLabel,
+            surface: surface.type,
+            // Window graphics mounted inside the glass are applied face-out: reverse cut.
+            mirror: surface.type === 'glass' && surface.glassMount === 'interior',
           },
         },
       });
@@ -241,6 +244,8 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
         elements: Number((data as any)?.element_count) || 0,
         reviewFlags: Array.isArray((data as any)?.review_flags) ? (data as any).review_flags : [],
         scale: Number((data as any)?.scale) || 1,
+        mirrored: (data as any)?.mirrored === true,
+        vector: (data as any)?.vector === true,
       });
       toast({ title: "Cut Contour kit ready", description: (data as any)?.description || "CutContour PDF + SVG + ZIP." });
     } catch (e: any) {
@@ -605,7 +610,7 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
         `Recreate this logo exactly as clean flat artwork for vinyl cutting. ${graphic.logoRecreatePrompt || "Maintain original design."}`,
         graphic.designStyle || "modern",
         mockupResult.jobId,
-        { vinylSubstrate: surface.vinylSubstrate, businessName: graphic.businessName },
+        { vinylSubstrate: surface.vinylSubstrate, businessName: graphic.businessName, surfaceType: surface.type },
       );
     } else if (graphic.mode === "upload" && graphic.uploadedArtworkUrls.length > 0) {
       // Use the first uploaded artwork directly
@@ -623,6 +628,7 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
           vinylSubstrate: surface.vinylSubstrate,
           vinylZones: surface.source === 'upload' ? surface.uploadedAngles.flatMap((a) => a.zones) : surface.vinylZones,
           businessName: graphic.businessName,
+          surfaceType: surface.type,
         },
       );
     } else if (graphic.mode === "restyle" && graphic.restyleSourceUrl) {
@@ -1047,6 +1053,8 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
                         <span className="font-mono">CutContour</span> spot (CMYK 0/100/0/0) 0.25 pt cut line on the unified silhouette · artwork colour bled {surface.bleedInches ?? 0.25}″ past it · layers CutContour / Artwork / Bleed
                         {cutKit?.sheet ? ` · nested sheet ${cutKit.sheet.widthIn}″ × ${cutKit.sheet.heightIn}″ (${cutKit.elements} graphic${cutKit.elements === 1 ? '' : 's'})` : ''}
                         {cutKit && cutKit.scale < 1 ? ` · file at ${Math.round(cutKit.scale * 100)}% scale — print at ${Math.round(100 / cutKit.scale)}%` : ''}
+                        {cutKit?.vector ? ' · vector film layers' : ''}
+                        {cutKit?.mirrored ? ' · REVERSE CUT for interior-mount glass (mirrored, reads correctly from outside)' : ''}
                       </p>
                       {cutKit?.sheet && (
                         <p className="text-[11px] text-gray-600 mb-1.5">Order under Avery or 3M Cut Contour and enter <span className="font-semibold">{cutKit.sheet.widthIn}″ × {cutKit.sheet.heightIn}″</span> as the file size.</p>
