@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
+import { rasterizeDetectionMasks } from '@/lib/wallpro-masks';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
@@ -73,6 +74,9 @@ export default function WallPro() {
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [productionKick, setProductionKick] = useState(0);
+  // Pixel-accurate protected areas from detection: one PNG, white where the
+  // design must not paint. Preview-only; print panels stay full rectangles.
+  const [detectedMask, setDetectedMask] = useState<{ url: string; path: string | null } | null>(null);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
@@ -155,7 +159,7 @@ export default function WallPro() {
     setPreview(null); canvas.current = null;
     if (editingPhoto || !photo || !artwork || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
-    renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current)
+    renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current, detectedMask?.url ?? null)
       .then(async output => {
         const blob = await canvasBlob(output);
         if (version !== previewVersion.current) return;
@@ -166,7 +170,7 @@ export default function WallPro() {
       .catch(e => { if (version === previewVersion.current) setError(e.message); })
       .finally(() => { if (version === previewVersion.current) setRendering(false); });
     return () => { previewVersion.current++; if (ownedPreview) URL.revokeObjectURL(ownedPreview); };
-  }, [photo, artwork, corners, exclusions, width, height, placement, repeatWidth, editingPhoto, seamCurrent]);
+  }, [photo, artwork, corners, exclusions, detectedMask?.url, width, height, placement, repeatWidth, editingPhoto, seamCurrent]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError(''); setNotice(''); beginAppBusy();
@@ -179,7 +183,7 @@ export default function WallPro() {
       const validated = await validateWallUpload(file);
       const asset = { ...validated, file, url: retain(validated.url) };
       if (role === 'photo') {
-        setPhoto(asset); setCorners(fullFrame()); cornersOrigin.current = 'default'; setExclusions([]); setExcludeDraft([]); setMarking(null); setView('before');
+        setPhoto(asset); setCorners(fullFrame()); cornersOrigin.current = 'default'; setExclusions([]); setDetectedMask(null); setExcludeDraft([]); setMarking(null); setView('before');
         // Uploading a wall photo means "find my wall": detection starts at once,
         // in the background. It must not hold the form: the customer types the
         // wall size while it runs, and the corner gate still guards Generate.
@@ -218,6 +222,8 @@ export default function WallPro() {
     // the whole photo stands in until the customer adjusts.
     setCorners(restoredCornersValid ? config.corners : wall ? fullFrame() : []); cornersOrigin.current = restoredCornersValid ? 'manual' : 'default';
     setExclusions(config.exclusions || []); setExcludeDraft([]); setMarking(null);
+    setDetectedMask(null);
+    if (typeof config.maskPath === 'string' && config.maskPath) openWallAsset(config.maskPath).then(url => setDetectedMask({ url, path: config.maskPath })).catch(() => { /* the polygons and corners still restore */ });
     setView(art ? 'after' : 'before');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
@@ -251,7 +257,7 @@ export default function WallPro() {
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -274,9 +280,24 @@ export default function WallPro() {
     const cornersOk = !!found.wall && validWallCorners(found.wall);
     if (!handMarked && cornersOk) { setCorners(found.wall!); cornersOrigin.current = 'detected'; }
     setMarking(null);
-    setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
+    // Segmentation masks follow the real outline of a bed, a drape or a shelf,
+    // so the wall around them keeps the design. The coarse polygon list is only
+    // the fallback when segmentation returned nothing usable.
+    const raster = found.masks.length && asset.width && asset.height ? await rasterizeDetectionMasks(found.masks, asset.width, asset.height).catch(() => null) : null;
+    if (photoRef.current?.url !== asset.url) return;
+    let maskCount = 0, labels: string[] = [];
+    if (raster) {
+      maskCount = found.masks.length; labels = found.masks.map(m => m.label);
+      const blob = await canvasBlob(raster);
+      const url = retain(URL.createObjectURL(blob));
+      setDetectedMask({ url, path: null }); setExclusions([]);
+      // Persisted for restores; a failed upload keeps the in-memory mask working.
+      uploadWallAsset({ url, aspect: asset.aspect, file: new File([blob], 'protected-areas.png', { type: 'image/png' }) }, user.id)
+        .then(path => setDetectedMask(old => old && old.url === url ? { ...old, path } : old)).catch(() => { /* preview keeps the in-memory mask */ });
+    } else { setDetectedMask(null); setExclusions(found.openings.map(o => o.points)); maskCount = found.openings.length; labels = found.openings.map(o => o.label); }
+    setExcludeDraft([]); setShowMasks(true);
     setView(artworkRef.current ? 'after' : 'before'); setError('');
-    const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
+    const areas = maskCount ? `${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')})` : 'no areas to protect';
     setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'Using the whole photo as the wall and ') + areas + '. Nothing to do unless you want to adjust: drag any point. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
@@ -302,7 +323,7 @@ export default function WallPro() {
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
@@ -383,7 +404,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, prompt, designMode, designId, currentVersionId });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -419,7 +440,7 @@ export default function WallPro() {
       if (photo && !imposable) setNotice('Your flat design is ready. Mark the four wall corners on the Before view to see it imposed on your wall.');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
@@ -542,7 +563,7 @@ export default function WallPro() {
             </div>}
             {photo ? <div>
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
-              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCorners(next); }} onMasks={setExclusions} />
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCorners(next); }} onMasks={setExclusions} />
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />Re-mark wall corners</Button>
@@ -554,6 +575,7 @@ export default function WallPro() {
                   <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setExcludeDraft([]); setMarking(cornersValid ? null : 'wall'); }}>Cancel mask</Button>
                 </>}
                 {!!exclusions.length && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions(old => old.slice(0,-1))}>Remove last mask</Button>}
+                {detectedMask && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setDetectedMask(null)}>Clear detected areas</Button>}
               </div>
               <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. Use Outline an object for irregular edges. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.' : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the drapes or object, then choose Finish mask.'}</p>}

@@ -1,4 +1,5 @@
 import { homography, projectPoint, validWallCorners, layoutMetrics, UNIT_WALL, insidePolygon, type Point, type WallLayout } from './wallpro-geometry';
+import { maskFlags } from './wallpro-masks';
 import { tileCoordinate } from './wallpro-seamless';
 
 export async function loadWallImage(src: string): Promise<HTMLImageElement> {
@@ -21,7 +22,7 @@ export async function validateWallUpload(file: File): Promise<{ url: string; asp
 
 // Bounded client-side visual proof. Original artwork remains separate and unmodified.
 // The inverse perspective map and physical repeat are identical for preview/export.
-export async function renderWallPreview(photoUrl: string, artworkUrl: string, corners: Point[], exclusions: Point[][], layout: WallLayout, cancelled: () => boolean = () => false): Promise<HTMLCanvasElement> {
+export async function renderWallPreview(photoUrl: string, artworkUrl: string, corners: Point[], exclusions: Point[][], layout: WallLayout, cancelled: () => boolean = () => false, maskUrl: string | null = null): Promise<HTMLCanvasElement> {
   if (!validWallCorners(corners)) throw new Error('Mark the four wall corners clockwise, starting at the top left.');
   const [photo, art] = await Promise.all([loadWallImage(photoUrl), loadWallImage(artworkUrl)]);
   if (cancelled()) throw new Error('Preview superseded.');
@@ -32,6 +33,9 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(photo, 0, 0, canvas.width, canvas.height);
   const result = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // Pixel-accurate protected areas from detection, beside any hand-drawn polygons.
+  const protectedPx = maskUrl ? await maskFlags(maskUrl, canvas.width, canvas.height) : null;
+  if (cancelled()) throw new Error('Preview superseded.');
   const texture = document.createElement('canvas');
   const textureScale = Math.min(1, 2400 / Math.max(art.naturalWidth, art.naturalHeight));
   texture.width = Math.max(1, Math.round(art.naturalWidth * textureScale)); texture.height = Math.max(1, Math.round(art.naturalHeight * textureScale));
@@ -50,7 +54,7 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
     for (let x = minX; x < maxX; x++) {
       const p = { x: (x + 0.5) / canvas.width, y: (y + 0.5) / canvas.height };
       const uv = projectPoint(h, p);
-      if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 || exclusions.some(poly => insidePolygon(p, poly))) continue;
+      if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 || (protectedPx && protectedPx[y * canvas.width + x]) || exclusions.some(poly => insidePolygon(p, poly))) continue;
       let u: number, v: number;
       if (layout.mode === 'repeat') { u = tileCoordinate(uv.x * m.across, !!layout.mirror).u; v = tileCoordinate(uv.y * m.down, !!layout.mirror).u; }
       else { u = (uv.x * layout.width - (layout.width - m.artworkWidth) / 2) / m.artworkWidth; v = (uv.y * layout.height - (layout.height - m.artworkHeight) / 2) / m.artworkHeight; }

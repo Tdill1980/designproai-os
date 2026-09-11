@@ -86,7 +86,7 @@ export async function getWallProject(id: string) {
 
 /** Detect my wall: proposes the wall corners and the openings to protect from
  * the uploaded wall photo. Preview-only; costs no token. */
-export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; notes: string | null; model: string }> {
+export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
   const { data, error } = await supabase.functions.invoke('detect-wall-openings', { body: { wallPath } });
   if (error) {
     const response = (error as any).context;
@@ -94,7 +94,7 @@ export async function detectWall(wallPath: string): Promise<{ wall: { x: number;
     throw new Error(typeof body?.error === 'string' ? body.error : 'The wall could not be analysed. Mark the corners and openings by hand.');
   }
   if (!data || typeof data !== 'object' || !Array.isArray(data.openings)) throw new Error(data?.error || 'The wall could not be analysed. Mark the corners and openings by hand.');
-  return data;
+  return { ...data, masks: Array.isArray(data.masks) ? data.masks : [] };
 }
 
 /* ── Ready-to-sell catalog (wallpro_designs) ─────────────────────────────── */

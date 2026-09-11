@@ -5,6 +5,8 @@ type Props = {
   url: string; alt: string; aspect: number; busy: boolean;
   marking: 'wall' | 'exclude' | 'rectangle' | null;
   corners: Point[]; masks: Point[][]; draft: Point[]; showMasks: boolean;
+  /** Pixel-accurate protected areas from detection (white where protected). */
+  maskUrl?: string | null;
   seams: { top: Point; bottom: Point }[];
   onEditing: (editing: boolean) => void;
   onPoint: (point: Point) => void;
@@ -66,6 +68,7 @@ export function WallPhotoEditor(p: Props) {
     onLostPointerCapture={() => {p.onEditing(false);drag.current=null;rectangle.current=null;}}
     onPointerLeave={() => {if(!rectangle.current && !drag.current)setHover(null);}}>
     <img src={p.url} alt={p.alt} className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false}/>
+    {overlays && p.maskUrl && <img src={p.maskUrl} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-35" style={{ filter: 'drop-shadow(0 0 1px #22d3ee)' }} draggable={false}/>}
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
       <defs>
         <linearGradient id="wall-protected-glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#b9f6ff" stopOpacity=".4"/><stop offset=".45" stopColor="#38bdf8" stopOpacity=".13"/><stop offset="1" stopColor="#0e7490" stopOpacity=".28"/></linearGradient>
