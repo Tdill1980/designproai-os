@@ -161,13 +161,18 @@ test("v23 restoration: legacy manifest, six-container request, both pinned image
     "new designs build the six-surface GENIE manifest; edits use an immutable copy of their verified parent manifest");
   assert.match(liveAuthoring, /if \(!parentManifest && geometryResolution\) sixSurfaceManifest\.geometryResolution = geometryResolution;/,
     "a newly resolved geometry identity must never replace the saved edit parent's geometry");
-  // ONE-FIELD FAIL-OVER (owner-directed 2026-09-10): the field territories are
-  // built only through the one helper the fail-over and its resume paths share,
-  // and the product manifest is still the six-surface one.
+  // ONE-FIELD PRIMARY (owner-directed 2026-09-11): the field territories are
+  // built only through the one helper every path shares; the six-surface
+  // manifest is still built first (it is the GENIE identity the layout is cut
+  // from), and a first authoring runs the primary topology, which is the field
+  // unless DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=six-surface says otherwise.
   assert.match(liveAuthoring, /const manifest = authoringTopology === "field" \? fieldManifestFrom\(sixSurfaceManifest\) : sixSurfaceManifest;/);
   assert.equal((liveAuthoring.match(/buildFieldTerritories\(/g) || []).length, 1,
-    "field territories are built in exactly one place: the fail-over helper");
-  assert.match(liveAuthoring, /authoringTopology = "six-surface"/);
+    "field territories are built in exactly one place: the shared helper");
+  assert.match(liveAuthoring, /if \(!parentManifest\) authoringTopology = primaryTopology;/);
+  assert.match(liveAuthoring, /authoringTopology = "six-surface"/, "an edit of a six-surface design still follows its parent");
+  assert.match(runtimeSource, /return raw === "six-surface" \? "six-surface" : "field";/,
+    "anything but the exact six-surface opt-out is the one-field primary");
 
   const requestBody = runtimeSource.slice(
     runtimeSource.indexOf("function atlasEdgeRequestBody("),

@@ -26,12 +26,22 @@ const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_
 const extras = {teachingProofStoragePath:`atlas-call1-inputs/${teaching.flattenedTopView.contentHash}.png`,
   teachingProofIdentity:teaching.identity,guideStoragePath:`atlas-call1-inputs/${'a'.repeat(64)}.png`,referenceImagesBase64:[]};
 const creativeBody = ({ providerRequest: _transportOnly, ...body }) => body;
+// The one-field contract is the primary Call 1 since 2026-09-11
+// (tests/atlas-authoring-recovery.test.mjs). The locks below exercise the
+// six-surface request's own mechanics (its pinned image inputs, its bounded
+// cut-out loop), so they pin the six-surface opt-out for their own duration.
+function sixSurfacePrimary(t) {
+  const previous = process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY;
+  process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY = 'six-surface';
+  t.after(() => previous === undefined ? delete process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY : process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY = previous);
+}
 
 // Execute the real authoring function, including normalization, gates, storage,
 // extraction and lineage. The provider is replaced only at its network seam.
 // Six different pixel patterns expose a duplicated register even when its
 // dimensions, PNG hashes and opacity are otherwise valid.
-test('one authored topology preserves all six distinct source regions through persistence', async () => {
+test('one authored topology preserves all six distinct source regions through persistence', async t => {
+  sixSurfacePrimary(t);
   const manifest = productManifest(surfaces, undefined, 'truck');
   manifest.geometryResolution = geometryResolution;
   const layers = [];
@@ -217,7 +227,8 @@ function runCutoutLoop(candidates) {
   return {done,requests,stored,paths,get inserted(){return inserted},get publications(){return publications}};
 }
 
-test('cutout-only first candidate uses the unchanged fallback and publishes only a clean master',async()=>{
+test('cutout-only first candidate uses the unchanged fallback and publishes only a clean master',async t=>{
+  sixSurfacePrimary(t);
   const {clean,hole}=await cutoutLoopFixtures();
   const run=runCutoutLoop([hole,clean]);
   const result=await run.done;
@@ -237,6 +248,7 @@ test('two cutout candidates fail closed with retrievable paths and the measured 
   // refused six-surface budget fails over once to the field contract instead
   // (tests/atlas-authoring-recovery.test.mjs). This lock covers the explicit
   // fail-closed configuration and the refusal evidence it must surface.
+  sixSurfacePrimary(t);
   const previousFailover=process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER;
   process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER='off';
   t.after(()=>previousFailover===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER:process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=previousFailover);

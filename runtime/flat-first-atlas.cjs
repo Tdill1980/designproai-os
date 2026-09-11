@@ -143,6 +143,31 @@ const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
  */
 const FIELD_FAILOVER_ATTEMPTS = 1;
 const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
+/**
+ * ONE-FIELD IS THE PRIMARY CALL 1 (owner-directed, Trish 2026-09-11).
+ *
+ * Owner: the model "cannot natively generate a multi-panel, flattened vehicle
+ * topology with continuous edge-to-edge bleed in a single text-to-image
+ * prompt" -- layout boundaries become scene content and a layout reference is
+ * reproduced as an object. Measured the same way here: every six-surface
+ * request on record drew vehicle anatomy into a flank (17 of 17 harness
+ * draws, both production candidates of b53702b4), while the one-field request
+ * drew none in 17 of 18 (runs 33659500846, 34425798511, 34430841234,
+ * 34441561338, 34539589338 arm A). So the generative tier authors ONE
+ * continuous field with no topology in the request, and the geometric tier
+ * (`atlas-field-territories.cjs`, code only) cuts the six surfaces after.
+ *
+ * `DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=six-surface` restores the six-surface
+ * request as the first pass (with its one-field fail-over above). Anything
+ * else, including unset or misspelled, is the one-field primary: a typo must
+ * not put the vehicle back into the sheet. A revision edit always follows its
+ * parent's topology; a design accepted on either contract before this cutover
+ * still resumes without a call.
+ */
+function resolvePrimaryAuthoringTopology(explicit) {
+  const raw = String(explicit ?? process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY ?? "").trim().toLowerCase();
+  return raw === "six-surface" ? "six-surface" : "field";
+}
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
   const value = Number(raw);
@@ -1916,7 +1941,11 @@ async function verifiedCustomerLogoPart(supabase, input) {
     .rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true, kernel: "lanczos3" })
     .png(PNG_OPTIONS).toBuffer();
   return [
-    { text: "VERIFIED CUSTOMER-OWNED LOGO. This is a customer style/identity source, not a topology example." },
+    // The Gemini image guide treats a reference image as an object to reproduce
+    // with fidelity. That is exactly what a logo is for, so the part says so
+    // (owner-directed 2026-09-11: high-fidelity object binding, never a style
+    // hint the model may redraw).
+    { text: "VERIFIED CUSTOMER-OWNED LOGO — the company's actual brand mark. Reproduce this exact logo faithfully wherever the company mark appears in the design: same shapes, proportions, colours and lettering, whole and legible. It is the logo itself, never a style hint to redraw, and not a topology example." },
     { inlineData: { mimeType: "image/png", data: conditioned.toString("base64") } },
   ];
 }
@@ -2668,11 +2697,13 @@ async function generateOrReuseFlatAtlas(options) {
   const {
     supabase, store, provider, requestId, generationId, tenantKey, ownerId,
     claimToken, input, surfaces, geometryAuthority, geometryResolution = null,
-    // ONE-FIELD FAIL-OVER (see FIELD_FAILOVER_ATTEMPTS). "six-surface" is the
-    // product. "field" is entered only by this function itself: after the
-    // six-surface budget is refused, or on resume when the stored revision or
-    // checkpoint proves the design was accepted on the field contract.
-    authoringTopology = "six-surface",
+    // Which Call-1 contract this pass runs. Unset means: an edit follows its
+    // parent; a first authoring runs the PRIMARY topology
+    // (resolvePrimaryAuthoringTopology, one-field since 2026-09-11). Set
+    // explicitly only by this function itself: the six-surface fail-over into
+    // "field", and the resume peeks that re-enter on the contract a stored
+    // design was actually accepted on.
+    authoringTopology: requestedTopology = null,
     authoringFenceState = null,
     failoverFrom = null,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
@@ -2717,12 +2748,19 @@ async function generateOrReuseFlatAtlas(options) {
   // -- was authored on the LEGACY six-container manifest, not on field
   // territories. Field territories stay in the tree and stay tested; they are
   // simply not what produced the accepted design.
+  const primaryTopology = resolvePrimaryAuthoringTopology();
+  let authoringTopology = requestedTopology;
+  if (authoringTopology == null) {
+    if (!parentManifest) authoringTopology = primaryTopology;
+    else if (parentManifest.topology === FIELD_TOPOLOGY) authoringTopology = "field";
+    else authoringTopology = "six-surface";
+  }
   if (!["six-surface", "field"].includes(authoringTopology)) {
     throw new FlatAtlasError("flat_atlas_authoring_topology_invalid", `Unknown authoring topology ${String(authoringTopology).slice(0, 40)}`);
   }
-  if (authoringTopology === "field" && parentManifest) {
+  if (failoverFrom && parentManifest) {
     throw new FlatAtlasError("flat_atlas_failover_edit_unsupported",
-      "A revision edit keeps its parent's six-surface topology; the one-field fail-over is for first authoring only");
+      "A revision edit keeps its parent's topology; the one-field fail-over is for first authoring only");
   }
   const sixSurfaceManifest = parentManifest ? structuredClone(parentManifest)
     : buildAtlasManifest(surfaces, geometryAuthority, input?.vehicle?.type);
@@ -2734,6 +2772,9 @@ async function generateOrReuseFlatAtlas(options) {
   // helper, everywhere it is needed (the fail-over pass and the resume peek
   // below), so its hash is identical on every path that must recognise it.
   const fieldManifestFrom = (six) => {
+    // An edit of a field-authored design carries the field manifest as its
+    // parent already; the layout is not re-derived from a layout.
+    if (six.topology === FIELD_TOPOLOGY) return six;
     const field = buildFieldTerritories(six);
     if (!parentManifest && geometryResolution) field.geometryResolution = geometryResolution;
     return field;
@@ -2748,6 +2789,15 @@ async function generateOrReuseFlatAtlas(options) {
     ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS,
     failoverFrom: reason || null, ...extra,
   });
+  // The mirror image of `fieldResumable`: a one-field primary pass that finds a
+  // design accepted on the six-surface contract (authored before the 2026-09-11
+  // cutover, or under DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=six-surface) re-enters
+  // on that contract to READ it back. The re-entry names its topology, so it
+  // can never re-enter again, and it only ever reaches a stored revision or
+  // checkpoint: a six-surface pass with nothing stored would author, which is
+  // why the peek proves the record exists before re-entering.
+  const sixSurfaceResumable = authoringTopology === "field" && !parentManifest && !failoverFrom && requestedTopology == null;
+  const resumeOnSixSurface = () => generateOrReuseFlatAtlas({ ...options, authoringTopology: "six-surface" });
   const checkpointIdentity = {
     tenantKey, generationId, requestId, ownerId,
     inputHash: sha256(canonicalBytes(input)), manifestHash: sha256(canonicalBytes(manifest)),
@@ -2817,6 +2867,11 @@ async function generateOrReuseFlatAtlas(options) {
     // checks (manifest, prompt and example-set hashes) run on that contract.
     return failOverToField(existing.metadata?.authoringFailover || null);
   }
+  if (existing && sixSurfaceResumable && existing.manifest?.topology !== FIELD_TOPOLOGY) {
+    // The stored design was accepted on the six-surface contract; read it back
+    // on that contract, under its own reuse checks.
+    return resumeOnSixSurface();
+  }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
       throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
@@ -2843,13 +2898,20 @@ async function generateOrReuseFlatAtlas(options) {
     // belong to the six-surface identity may be the FIELD acceptance written by
     // the fail-over before the revision row landed; prove that with the field
     // identity before resuming on that contract, and otherwise refuse as before.
-    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch" || !fieldResumable) throw cause;
-    const fieldCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
-      identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest))) } })
+    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch" || !(fieldResumable || sixSurfaceResumable)) throw cause;
+    const otherManifestHash = fieldResumable
+      ? sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest)))
+      : sha256(canonicalBytes(sixSurfaceManifest));
+    const otherCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
+      identity: { ...checkpointIdentity, manifestHash: otherManifestHash } })
       .catch(() => null);
-    if (!fieldCheckpoint) throw cause;
-    logger(`atlas call 1: resuming the accepted one-field fail-over for ${requestId}`);
-    return failOverToField(fieldCheckpoint.state?.authoringFailover || null);
+    if (!otherCheckpoint) throw cause;
+    if (fieldResumable) {
+      logger(`atlas call 1: resuming the accepted one-field fail-over for ${requestId}`);
+      return failOverToField(otherCheckpoint.state?.authoringFailover || null);
+    }
+    logger(`atlas call 1: resuming the accepted six-surface design for ${requestId}`);
+    return resumeOnSixSurface();
   }
   const authoredCheckpoint = !acceptedCheckpoint && checkpointIdentity.finishingMode === "on"
     ? await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity: { ...checkpointIdentity, checkpointKind: "authored" } })
@@ -2986,7 +3048,7 @@ async function generateOrReuseFlatAtlas(options) {
     return { generated: generatedReceipt, masterDelivery: deliveryReceipt, masterDeterministic,
       outputClassReceipt, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
       maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
-      authoringTopology, authoringFailover: failoverFrom || null,
+      authoringTopology, authoringPrimaryTopology: primaryTopology, authoringFailover: failoverFrom || null,
       passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
   };
   if (!recoveredCheckpoint) {
@@ -3652,9 +3714,11 @@ async function generateOrReuseFlatAtlas(options) {
         revisionHistoryMode: revisionContext.history.mode } : {}),
       topology: manifest.topology,
       legacyTopology: manifest.legacyTopology || TOPOLOGY,
-      // Which Call-1 contract authored this design, and if it was the one-field
-      // fail-over, the exact six-surface refusal that triggered it.
+      // Which Call-1 contract authored this design, which contract was the
+      // primary when it ran, and if it was the one-field fail-over, the exact
+      // six-surface refusal that triggered it.
       authoringTopology,
+      authoringPrimaryTopology: primaryTopology,
       authoringFailover: failoverFrom || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
@@ -3904,7 +3968,7 @@ module.exports = {
   atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
-    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT,
+    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT, resolvePrimaryAuthoringTopology,
     activeZoneMaskSvg,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.

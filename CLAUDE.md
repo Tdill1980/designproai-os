@@ -1,6 +1,48 @@
 # CLAUDE.md — designproai-os
 
-## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
+## ONE-FIELD IS THE PRIMARY CALL 1. THE MODEL NEVER SEES THE TOPOLOGY. (owner-directed, Trish 2026-09-11)
+
+Owner: *"the model cannot natively generate a multi-panel, flattened vehicle
+topology (UV unroll) with continuous edge-to-edge bleed in a single
+text-to-image prompt"* — layout boundaries become scene content (boxes,
+margins, labels, wheel wells) and a layout handed in as a reference image is
+reproduced as an object. Three tiers: **generative** (Gemini authors ONE
+continuous field with no layout, no panel words, no vehicle-shaped image),
+**geometric** (code cuts the six surfaces: `runtime/atlas-field-territories.cjs`,
+`cutCallOnePanels`, 5" bleed unchanged), **assembly** (PanelPro composes the
+unroll sheet with labels and registration in SVG, after the AI step).
+
+Measured before the cutover, same brief, same gates, same cut
+(`docs/ATLAS-FIELD-V3-2026-09-10.md` §7, run `34539589338`): every six-surface
+request on record drew vehicle anatomy (17 of 17 harness draws, both
+production candidates of `b53702b4`); the Houdini Huracán design layout sent
+as the only reference image drew the vehicle 2 of 4 and staged the other two
+as a mounted print; the one-field request drew no body line in 17 of 18.
+
+So `generateOrReuseFlatAtlas` now runs the one-field contract FIRST
+(`resolvePrimaryAuthoringTopology`, `runtime/flat-first-atlas.cjs`), with
+the product budget (one candidate, one unchanged fallback) and no fall-back
+to six-surface: a refused field budget fails closed with the raw candidate
+paths. `DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=six-surface` is the only opt-out
+(anything else, including a typo, is the field). A revision edit follows its
+parent's topology. A design accepted on six-surface before the cutover still
+resumes without a call. The revision records `metadata.authoringTopology`
+and `metadata.authoringPrimaryTopology`. The customer logo, when supplied,
+rides as a reference image whose part text binds it as the brand mark to
+reproduce, never a style hint. Locked by
+`tests/atlas-authoring-recovery.test.mjs`; the six-surface mechanics locks
+pin the opt-out for their own duration. Nothing in this header is a deploy
+receipt; the branch is `claude/atlas-regressions-fix-ikytc4`.
+
+Open, and NOT changed by this cutover: the near-black cut-out finding is
+still terminal on the field branch (it convicted a rust patch on `06bc1851`
+and a stone wall on `34441561338` F1); "on one square 4K image ... seen
+straight on" is sometimes read as a print object in a scene (5 of 12 masters
+in run `34539589338`, four caught by the border-ring telemetry, none by the
+gates); the code cut can slice lettering across a territory boundary. Those
+are gate and wording items, measured, with fixtures under `docs/ab/`.
+
+## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10; now the six-surface opt-out path)
 
 Measured, 2026-09-04 → 09-09: 20 generation requests, 8 delivered, 12 failed.
 Seven of the twelve were Call 1 drawing the vehicle into the sheet (wheel

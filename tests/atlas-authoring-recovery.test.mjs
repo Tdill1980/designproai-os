@@ -65,6 +65,17 @@ function fieldFixture() {
   })();
 }
 
+/** The one-field source with a wheel-well disc punched out of the driver territory: a refused field candidate. */
+let holedFieldPromise;
+function holedFieldFixture() {
+  return holedFieldPromise ||= (async () => {
+    const {fieldManifest,fieldSource}=await fieldFixture();
+    const driver=fieldManifest.zones.find(zone=>zone.surfaceKey==="driver");
+    const cx=driver.x+Math.round(driver.w/2), cy=driver.y+Math.round(driver.h/2), r=Math.round(Math.min(driver.w,driver.h)*0.3);
+    return sharp(fieldSource).composite([{input:Buffer.from(`<svg width="4096" height="4096"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#000000"/></svg>`)}]).png().toBuffer();
+  })();
+}
+
 function harness(source) {
   const bytes = new Map();
   const publicMasters = [], publicPanels = [], masterCalls = [], finishCalls = [];
@@ -141,12 +152,98 @@ function failoverFlag(t,value) {
   if (value === undefined) delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER; else process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=value;
   t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER:process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=previous);
 }
+function primaryFlag(t,value) {
+  const previous = process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY;
+  if (value === undefined) delete process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY; else process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=value;
+  t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY:process.env.DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=previous);
+}
+
+// ── ONE-FIELD IS THE PRIMARY CALL 1 (owner-directed 2026-09-11) ──────────────
+
+test("the one-field contract is the primary Call 1 by default: one field call, no teaching sheet, no guide, no fail-over record",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,undefined);
+  assert.equal(atlas._test.resolvePrimaryAuthoringTopology(),"field");
+  assert.equal(atlas._test.resolvePrimaryAuthoringTopology("SIX-SURFACE"),"six-surface");
+  assert.equal(atlas._test.resolvePrimaryAuthoringTopology("six_surface"),"field","a misspelled flag must not put the vehicle back into the sheet");
+  const {source}=await fixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  run.masterFor=async body=>{assert.ok(body.fieldContract,"the primary pass sends the field contract");return fieldSource;};
+  const result=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:field:1"],"an accepted first candidate exits immediately");
+  const call=run.masterCalls[0];
+  assert.equal(call.fieldContract,"designpro.atlas-field-prompt.v3");
+  assert.equal(call.teachingProofStoragePath,undefined,"no teaching sheet reaches the model");
+  assert.equal(call.teachingProofIdentity,undefined);
+  assert.equal(call.guideStoragePath,undefined,"no guide reaches the model");
+  assert.equal(result.metadata.topology,FIELD_TOPOLOGY);
+  assert.equal(result.metadata.authoringTopology,"field");
+  assert.equal(result.metadata.authoringPrimaryTopology,"field");
+  assert.equal(result.metadata.authoringFailover,null,"a primary field pass is not a fail-over");
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
+  assert.equal(result.metadata.maxAuthoringAttemptsAllowed,2,"the primary pass keeps the product budget: one candidate, one unchanged fallback");
+  assert.equal(result.callOnePanels.length,6);
+  for(const panel of result.callOnePanels)assert.equal(panel.sourceMasterHash,result.master.contentHash);
+  assert.equal(run.publicMasters.length,1);assert.equal(run.publicPanels.length,6);
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);
+  assert.equal(run.masterCalls.length,1,"a stored field design resumes without a call");
+});
+
+test("a refused one-field budget fails closed; it never falls back to the six-surface request",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,undefined);
+  const {source}=await fixture();const holedField=await holedFieldFixture();
+  const run=harness(source);
+  run.masterFor=async()=>holedField;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_unrepaired_cutout"&&error.retryable===false&&/driver/.test(error.message));
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:field:1","master:field:2"],
+    "one candidate, one unchanged fallback, then fail closed on the field contract");
+  for(const call of run.masterCalls){
+    assert.ok(call.fieldContract);assert.equal(call.teachingProofStoragePath,undefined);assert.equal(call.guideStoragePath,undefined);
+  }
+  assert.equal(run.publicMasters.length,0);
+});
+
+test("a design accepted on the six-surface contract before the cutover still resumes under the one-field primary without a call",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  primaryFlag(t,"six-surface");
+  const {source}=await fixture();
+  const run=harness(source);
+  const authored=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1"]);
+  assert.equal(authored.metadata.authoringTopology,"six-surface");
+  assert.equal(authored.metadata.authoringPrimaryTopology,"six-surface");
+  primaryFlag(t,undefined);
+  const resumed=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(resumed.reused,true);
+  assert.equal(resumed.master.contentHash,authored.master.contentHash);
+  assert.equal(resumed.metadata.topology,"rectangular-preview-v1");
+  assert.equal(run.masterCalls.length,1,"the field primary reads the six-surface design back; it never re-authors it");
+});
+
+test("a six-surface acceptance whose revision row never landed resumes from its checkpoint under the one-field primary",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  primaryFlag(t,"six-surface");
+  const {source}=await fixture();
+  const run=harness(source);
+  run.insertFailure=true;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
+  assert.equal(run.masterCalls.length,1);
+  run.insertFailure=false;
+  primaryFlag(t,undefined);
+  const result=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(run.masterCalls.length,1,"the field primary recognises the six-surface checkpoint and spends nothing");
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.topology,"rectangular-preview-v1");
+  assert.equal(result.callOnePanels.length,6);
+});
+
+// ── SIX-SURFACE PRIMARY WITH ONE-FIELD FAIL-OVER (DESIGNPRO_ATLAS_PRIMARY_TOPOLOGY=six-surface) ──
 
 test("a refused six-surface budget fails over ONCE to the one-field contract instead of failing closed",async t=>{
   // Owner-directed 2026-09-10 after 7 of 12 failures in six days were Call 1
   // drawing the vehicle into the sheet. The six-surface contract keeps its
   // bounded budget; when both candidates are refused the run does not die.
-  finishFlag(t,"off");failoverFlag(t,undefined);
+  finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,"six-surface");
   const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
   run.masterFor=async body=>body.fieldContract?fieldSource:holed;
@@ -194,7 +291,7 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
 });
 
 test("a fail-over whose revision row never landed resumes from its field checkpoint, not from a new Call 1",async t=>{
-  finishFlag(t,"off");failoverFlag(t,undefined);
+  finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,"six-surface");
   const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
   run.masterFor=async body=>body.fieldContract?fieldSource:holed;
@@ -212,7 +309,7 @@ test("a fail-over whose revision row never landed resumes from its field checkpo
 });
 
 test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off keeps the fail-closed refusal, and an accepted first candidate never fails over",async t=>{
-  finishFlag(t,"off");failoverFlag(t,"off");
+  finishFlag(t,"off");failoverFlag(t,"off");primaryFlag(t,"six-surface");
   const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
   run.masterFor=async body=>body.fieldContract?fieldSource:holed;
@@ -229,6 +326,10 @@ test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off keeps the fail-closed refusal, and an a
   assert.equal(result.metadata.topology,"rectangular-preview-v1");
 });
 
+// The checkpoint, fence, edit and finishing mechanics below are topology-agnostic
+// and were written against the six-surface fixture; they run under the
+// six-surface opt-out so their fixtures stay valid. The one-field primary's own
+// resume paths are covered above.
 function finishFlag(t,value) {
   const previous = process.env.DESIGNPRO_ATLAS_PANEL_FINISH;
   process.env.DESIGNPRO_ATLAS_PANEL_FINISH=value;
@@ -236,7 +337,7 @@ function finishFlag(t,value) {
 }
 
 test("Call 1 uses its admission-reserved artwork identity for checkpoints, visible panels, final storage and recovery",async t=>{
-  finishFlag(t,"off");
+  finishFlag(t,"off");primaryFlag(t,"six-surface");
   const {source}=await fixture(),run=harness(source);
   const atlasRevisionId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   run.insertFailure=true;
@@ -256,7 +357,7 @@ test("Call 1 uses its admission-reserved artwork identity for checkpoints, visib
 });
 
 test("a crash after public panel events resumes the same accepted master and revision without another authoring call",async t=>{
-  finishFlag(t,"off");
+  finishFlag(t,"off");primaryFlag(t,"six-surface");
   const {source,manifest}=await fixture();
   const run=harness(source);run.insertFailure=true;
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
@@ -282,7 +383,7 @@ test("a crash after public panel events resumes the same accepted master and rev
 });
 
 test("changed request geometry or corrupted accepted bytes cannot be mistaken for a cache miss",async t=>{
-  finishFlag(t,"off");
+  finishFlag(t,"off");primaryFlag(t,"six-surface");
   const {source}=await fixture();const run=harness(source);run.insertFailure=true;
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
   await assert.rejects(run.run({input:{...input,companyName:"Different revision"}}),error=>error.code==="flat_atlas_context_invalid");
@@ -301,7 +402,7 @@ test("changed request geometry or corrupted accepted bytes cannot be mistaken fo
 });
 
 test("a saved-history edit publishes six new panels and seven child authorities, then recovers without overwriting its parent",async t=>{
-  finishFlag(t,"off");
+  finishFlag(t,"off");primaryFlag(t,"six-surface");
   const {source}=await fixture();
   const parentRun=harness(source);
   const parent=await parentRun.run();
@@ -362,7 +463,7 @@ test("a saved-history edit publishes six new panels and seven child authorities,
 });
 
 test("a spent master fence is a read-only provider-cache recovery request",async t=>{
-  finishFlag(t,"off");const {source}=await fixture();const run=harness(source);run.forceCacheOnly=true;
+  finishFlag(t,"off");primaryFlag(t,"six-surface");const {source}=await fixture();const run=harness(source);run.forceCacheOnly=true;
   const result=await run.run();
   assert.equal(run.masterCalls.length,1);
   assert.equal(run.masterCalls[0].providerRequest.cacheOnly,true);
@@ -371,7 +472,7 @@ test("a spent master fence is a read-only provider-cache recovery request",async
 });
 
 test("concurrent acceptance of the same candidate resumes the immutable winner's revision",async t=>{
-  finishFlag(t,"off");const {source}=await fixture();const run=harness(source);
+  finishFlag(t,"off");primaryFlag(t,"six-surface");const {source}=await fixture();const run=harness(source);
   const winnerRevisionId="77777777-7777-4777-8777-777777777777";
   run.checkpointRace={revisionId:winnerRevisionId};
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_checkpoint_publication_race"&&error.retryable===true);
@@ -384,7 +485,7 @@ test("concurrent acceptance of the same candidate resumes the immutable winner's
 });
 
 test("checkpoint input conflicts never receive publication-race retry permission",async t=>{
-  finishFlag(t,"off");const {source}=await fixture();const run=harness(source);
+  finishFlag(t,"off");primaryFlag(t,"six-surface");const {source}=await fixture();const run=harness(source);
   run.checkpointRace={revisionId:"77777777-7777-4777-8777-777777777777",inputHash:"b".repeat(64)};
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_checkpoint_identity_mismatch"&&error.retryable===false);
   assert.equal(run.publicMasters.length,0);
@@ -397,7 +498,7 @@ test("an unresolved finishing exchange retains that surface's crop and the run s
   // terminal, with the accepted master already in hand. The surface keeps its
   // deterministic crop, no second image request is made for it, and the
   // cascade continues to the assembled master.
-  finishFlag(t,"on");const {source,manifest}=await fixture();const run=harness(source);
+  finishFlag(t,"on");primaryFlag(t,"six-surface");const {source,manifest}=await fixture();const run=harness(source);
   run.finishFailure="hood";
   const result=await run.run();
   assert.deepEqual(run.finishCalls.map(body=>body.surfaceKey),["driver","passenger","hood","roof","front","rear"],
@@ -437,7 +538,7 @@ test("optional finishing checkpoints restore exact signed exchanges and publish 
   // retained crop: the panel bytes could not be read, so nothing is known
   // about the sheet either way. The restart must replay the exact signed
   // conversation it had reached.
-  finishFlag(t,"on");const {source,manifest}=await fixture();const run=harness(source);
+  finishFlag(t,"on");primaryFlag(t,"six-surface");const {source,manifest}=await fixture();const run=harness(source);
   run.finishFailure="hood";run.finishFailureCode="flat_atlas_artifact_download_failed";
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_artifact_download_failed");
   assert.deepEqual(run.finishCalls.map(body=>body.surfaceKey),["driver","passenger","hood"]);
@@ -479,7 +580,7 @@ test("optional finishing checkpoints restore exact signed exchanges and publish 
 });
 
 test("white replacement sheets cannot pass finishing just because their hole ratio improved",async t=>{
-  finishFlag(t,"on");const {source}=await fixture();const run=harness(source);run.whiteFinish=true;
+  finishFlag(t,"on");primaryFlag(t,"six-surface");const {source}=await fixture();const run=harness(source);run.whiteFinish=true;
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_finished_master_invalid"&&/lumaStddev/.test(error.message));
   assert.equal(run.publicMasters.length,0);
   assert.equal(run.publicPanels.length,0);
