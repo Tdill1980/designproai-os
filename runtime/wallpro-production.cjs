@@ -27,6 +27,9 @@ const BUCKET = "wallpro-files";
 const CONTRACT = "wallpro.production-panels.v1";
 const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59.5, targetPpi: 150 });
 const MAX_TILE_PLACEMENTS = 20000;
+// Panels build in parallel. Three 130 MP panels in flight is ~1.5 GB of raw
+// pixels plus Topaz round-trips; the env can widen or narrow it per droplet.
+const PANEL_CONCURRENCY = Math.max(1, Number(process.env.DESIGNPRO_WALLPRO_PANEL_CONCURRENCY) || 3);
 const WHITE = { r: 255, g: 255, b: 255 };
 
 class WallProProductionError extends Error {
@@ -236,28 +239,46 @@ async function processJob(job, deps) {
   const source = { bytes, width: meta.width, height: meta.height, sha256: sha256(bytes), path: version.artwork_path };
   const { panels, bounds } = planPanels(request);
   const prefix = `${job.owner_id}/production/${job.id}/`;
+  const progress = (stage, panelsDone) => ({ stage, panelsTotal: panels.length, panelsDone, nativePpi: clean(sourcePpi(source, request)), topaz: readiness.available ? readiness.model : "unavailable", concurrency: Math.min(panels.length, deps.concurrency || PANEL_CONCURRENCY) });
+  await update({ progress: progress("building", 0) });
+  // The panels are independent nodes of the graph: each one rasterises,
+  // enhances and uploads on its own, bounded only by runtime memory. Progress is
+  // written the moment any panel lands so the customer sees files as they exist.
   const done = [];
-  await update({ progress: { stage: "building", panelsTotal: panels.length, panelsDone: 0, nativePpi: clean(sourcePpi(source, request)), topaz: readiness.available ? readiness.model : "unavailable" } });
-  for (const panel of panels) {
+  let landed = 0;
+  await mapConcurrent(panels, deps.concurrency || PANEL_CONCURRENCY, async (panel) => {
     const produced = await producePanel({ source, request, panel, readiness, fetchImpl: deps.fetchImpl, apiKey: deps.apiKey, signal: deps.signal });
     const file = `panel-${String(panel.number).padStart(3, "0")}-${fmt(panel.width)}x${fmt(panel.height)}in.png`;
     const stored = await uploadBytes(deps, prefix + file, produced.bytes, "image/png");
     done.push({ number: panel.number, file, path: stored.storagePath, xIn: panel.x, yIn: panel.y, widthIn: panel.width, heightIn: panel.height, overlapLeftIn: panel.overlapLeft,
       widthPx: produced.widthPx, heightPx: produced.heightPx, ppi: request.targetPpi, sha256: stored.contentHash, byteSize: stored.byteSize, upscale: produced.upscale });
-    await update({ panels: done, progress: { stage: "building", panelsTotal: panels.length, panelsDone: done.length, nativePpi: clean(sourcePpi(source, request)), topaz: readiness.available ? readiness.model : "unavailable" } });
-  }
+    done.sort((a, b) => a.number - b.number);
+    landed += 1;
+    await update({ panels: done, progress: progress("building", landed) });
+  });
   const manifest = { contract: CONTRACT, jobId: job.id, versionId: job.version_id, projectId: job.project_id, generatedAt: new Date().toISOString(), request, bounds,
     source: { path: source.path, widthPx: source.width, heightPx: source.height, sha256: source.sha256, nativePpi: clean(sourcePpi(source, request)) },
     panels: done, install: `Adjacent panels share ${fmt(request.overlapIn)} in of identical artwork; align the duplicate image, never stretch. Perimeter bleed ${fmt(request.bleedIn)} in. Every PNG is ${request.targetPpi} PPI at its stated inches.` };
   const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2));
   const storedManifest = await uploadBytes(deps, prefix + "manifest.json", manifestBytes, "application/json");
-  await update({ status: "ready", panels: done, manifest_path: storedManifest.storagePath, finished_at: new Date().toISOString(), progress: { stage: "ready", panelsTotal: panels.length, panelsDone: done.length, nativePpi: clean(sourcePpi(source, request)), topaz: readiness.available ? readiness.model : "unavailable" } });
+  await update({ status: "ready", panels: done, manifest_path: storedManifest.storagePath, finished_at: new Date().toISOString(), progress: progress("ready", done.length) });
   return { panels: done, manifest };
 }
 
-function createWallProProductionWorker({ supabase, supabaseUrl, serviceRoleKey, tusEndpoint, workerId, intervalMs = 5000, env = process.env, fetchImpl, apiKey } = {}) {
+/** Runs `fn` over `items` with at most `limit` in flight; rejects on the first failure. */
+async function mapConcurrent(items, limit, fn) {
+  const queue = items.map((item, index) => ({ item, index }));
+  const results = new Array(items.length);
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) results[next.index] = await fn(next.item, next.index);
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function createWallProProductionWorker({ supabase, supabaseUrl, serviceRoleKey, tusEndpoint, workerId, intervalMs = 5000, env = process.env, fetchImpl, apiKey, concurrency } = {}) {
   let timer = null, busy = false, lastError = null, processed = 0;
-  const deps = { supabase, supabaseUrl, serviceRoleKey, tusEndpoint, env, fetchImpl, apiKey };
+  const deps = { supabase, supabaseUrl, serviceRoleKey, tusEndpoint, env, fetchImpl, apiKey, concurrency };
   const tick = async () => {
     if (busy) return;
     busy = true;
@@ -284,6 +305,6 @@ function createWallProProductionWorker({ supabase, supabaseUrl, serviceRoleKey, 
 }
 
 module.exports = Object.freeze({
-  BUCKET, CONTRACT, DEFAULTS, WallProProductionError,
-  normalizeRequest, planPanels, layoutMetrics, sourcePpi, rasterPanel, producePanel, processJob, createWallProProductionWorker,
+  BUCKET, CONTRACT, DEFAULTS, PANEL_CONCURRENCY, WallProProductionError,
+  normalizeRequest, planPanels, layoutMetrics, sourcePpi, rasterPanel, producePanel, processJob, createWallProProductionWorker, mapConcurrent,
 });

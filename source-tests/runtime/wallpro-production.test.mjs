@@ -114,12 +114,22 @@ test("processJob builds every panel, stores them under the owner's production na
     }; } },
   };
   const job = { id: jobId, owner_id: owner, project_id: "p", version_id: "v1", request: { wallWidthIn: 30, wallHeightIn: 20, bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72 } };
-  const result = await production.processJob(job, { supabase, readiness, fetchImpl: fakeTopaz, apiKey: "k", supabaseUrl: "https://x.supabase.co", serviceRoleKey: "s".repeat(40) });
+  // The three panels are independent graph nodes: their Topaz calls must overlap.
+  let inFlight = 0, peak = 0;
+  const overlappingTopaz = async (url, init) => {
+    inFlight += 1; peak = Math.max(peak, inFlight);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    try { return await fakeTopaz(url, init); } finally { inFlight -= 1; }
+  };
+  const result = await production.processJob(job, { supabase, readiness, fetchImpl: overlappingTopaz, apiKey: "k", supabaseUrl: "https://x.supabase.co", serviceRoleKey: "s".repeat(40) });
   assert.equal(result.panels.length, 3);
-  assert.deepEqual(uploads.map(u => u.path), [
-    `${owner}/production/${jobId}/panel-001-12x22in.png`, `${owner}/production/${jobId}/panel-002-12x22in.png`,
-    `${owner}/production/${jobId}/panel-003-9x22in.png`, `${owner}/production/${jobId}/manifest.json`,
+  assert.ok(peak >= 2, `panels built in parallel (peak ${peak})`);
+  assert.deepEqual(result.panels.map(p => p.number), [1, 2, 3]);
+  assert.deepEqual(uploads.map(u => u.path).sort(), [
+    `${owner}/production/${jobId}/manifest.json`, `${owner}/production/${jobId}/panel-001-12x22in.png`,
+    `${owner}/production/${jobId}/panel-002-12x22in.png`, `${owner}/production/${jobId}/panel-003-9x22in.png`,
   ]);
+  assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel");
   const final = updates.at(-1);
   assert.equal(final.status, "ready"); assert.equal(final.progress.panelsDone, 3); assert.equal(final.manifest_path, `${owner}/production/${jobId}/manifest.json`);
   assert.equal(result.manifest.contract, production.CONTRACT); assert.equal(result.manifest.panels[2].widthPx, 648);
