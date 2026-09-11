@@ -135,9 +135,12 @@ export async function publishWallDesign(sourcePath: string, thumb: Blob | null, 
   return data as WallCatalogRow;
 }
 /** Signed URLs for many catalog files at once (thumbnails for a grid). */
-export async function openWallAssets(paths: string[]): Promise<Record<string, string>> {
+/** Signed URLs for display, or with `download` for links that save the file in
+ * place: a cross-origin signed URL ignores the anchor's download attribute and
+ * would navigate the page to the image, losing the customer's work. */
+export async function openWallAssets(paths: string[], options: { download?: boolean } = {}): Promise<Record<string, string>> {
   if (!paths.length) return {};
-  const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrls(paths, 3600);
+  const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrls(paths, 3600, options.download ? { download: true } : undefined);
   if (error) throw new Error('The catalog images could not be opened. ' + error.message);
   const out: Record<string, string> = {};
   for (const item of data || []) if (item.path && item.signedUrl) out[item.path] = item.signedUrl;
