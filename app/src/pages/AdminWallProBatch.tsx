@@ -252,7 +252,7 @@ export default function AdminWallProBatch() {
               <Stars value={row.rating} onChange={v => void guarded('Rating', async () => { await updateWallDesign(row.id, { rating: v }); await refreshCatalog(); })} />
               <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void guarded('Updating', async () => { await updateWallDesign(row.id, { is_active: !row.is_active }); await refreshCatalog(); })}>{row.is_active ? <><Eye className="mr-1 h-3 w-3" />Active</> : <><EyeOff className="mr-1 h-3 w-3" />Hidden</>}</Button>
               <Button size="sm" variant="ghost" onClick={() => downloadJson(row)}><FileJson className="mr-1 h-3 w-3" />Provenance</Button>
-              <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove ${row.design_id} from the catalog? The master copy is deleted; the generation record stays.`)) void guarded('Removing', async () => { await deleteWallDesign(row); await refreshCatalog(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
+              <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove ${row.design_id} from the catalog? The master copy and generation record are retained as provenance.`)) void guarded('Removing', async () => { await deleteWallDesign(row); await refreshCatalog(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
             </div>
           </div>
         </article>)}</div>}

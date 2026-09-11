@@ -83,13 +83,13 @@ GRANT ALL ON public.wallpro_designs TO service_role;
 
 -- Catalog masters live under catalog/ in the private wallpro-files bucket.
 -- Customers read them through signed URLs; only curators may write there.
+-- Storage objects stay immutable for users (UPDATE/DELETE are revoked from
+-- authenticated by the bootstrap): removing a design deletes its row, and the
+-- catalog copy is retained as provenance of what was once sold.
 -- The per-owner read/upload policies from 20260910070849 are unchanged.
 CREATE POLICY wallpro_catalog_read ON storage.objects FOR SELECT TO anon,authenticated
 USING (bucket_id='wallpro-files' AND (storage.foldername(name))[1]='catalog');
 CREATE POLICY wallpro_catalog_write ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (bucket_id='wallpro-files' AND (storage.foldername(name))[1]='catalog' AND array_length(storage.foldername(name),1)=1
   AND storage.filename(name) ~ '^[0-9a-f-]{36}(-thumb)?\.(png|jpg|webp)$'
-  AND (public.has_role((SELECT auth.uid()),'admin'::public.app_role) OR public.has_role((SELECT auth.uid()),'tester'::public.app_role)));
-CREATE POLICY wallpro_catalog_delete ON storage.objects FOR DELETE TO authenticated
-USING (bucket_id='wallpro-files' AND (storage.foldername(name))[1]='catalog'
   AND (public.has_role((SELECT auth.uid()),'admin'::public.app_role) OR public.has_role((SELECT auth.uid()),'tester'::public.app_role)));
