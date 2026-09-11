@@ -81,12 +81,12 @@ describe('WallPro physical geometry', () => {
   });
 });
 
-function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; noTokens?: boolean; image?: Uint8Array } = {}) {
+function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
   const finalData = options.image ? Buffer.from(options.image).toString('base64') : btoa('final');
   const calls:any[]=[];
   const stored={state:'completed',artwork_path:owner+'/generated/'+requestId+'.png',design_name:'Blue Botanicals'};
   const storage={
-    download:vi.fn(async () => options.unreadable ? {error:{message:'denied'}} : {data:new Blob(['image'],{type:'image/jpeg'})}),
+    download:vi.fn(async () => options.unreadable ? {error:{message:'denied'}} : {data:new Blob([options.download ? (options.download as Uint8Array<ArrayBuffer>) : 'image'],{type:options.download ? 'image/png' : 'image/jpeg'})}),
     upload:vi.fn(async (...args:any[]) => { calls.push(['upload',...args]); return {}; }),
     createSignedUrl:vi.fn(async () => ({data:{signedUrl:'https://example.test/signed-result'}})),
   };
@@ -144,6 +144,27 @@ describe('WallPro generation boundary', () => {
     const parts=f.calls.find(c=>c[0]==='provider')[1].contents[0].parts;
     expect(parts.some((p:any)=>p.text==='Design to reproduce')).toBe(true);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_name).toBe('Matched design');
+  });
+  it('refines the current version in place: source required, mask optional, framing from the source pixels', async () => {
+    const source = owner + '/generated/55555555-5555-4555-8555-555555555555.png', mask = owner + '/uploads/66666666-6666-4666-8666-666666666666.png';
+    const parsed = parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: 'make the flowers smaller', sourcePath: source, maskPath: mask }, owner);
+    expect(parsed).toMatchObject({ intent: 'refine', sourcePath: source, maskPath: mask });
+    expect(parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: 'x', sourcePath: 'catalog/55555555-5555-4555-8555-555555555555.png' }, owner).sourcePath).toMatch(/^catalog\//);
+    expect(() => parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: 'x', sourcePath: null }, owner)).toThrow('no current design');
+    expect(() => parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: '', sourcePath: source }, owner)).toThrow('what you want changed');
+    expect(() => parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: 'x', sourcePath: source, maskPath: owner + '/generated/66666666-6666-4666-8666-666666666666.png' }, owner)).toThrow('uploaded files');
+    expect(() => parseWallInput({ ...input, wallPath: null, intent: 'refine', prompt: 'x', sourcePath: '99999999-9999-4999-8999-999999999999/generated/55555555-5555-4555-8555-555555555555.png' }, owner)).toThrow('uploaded files');
+    const text = wallDesignPrompt({ prompt: 'change the background to charcoal', width: 142, height: 95, placement: 'cover', intent: 'refine', maskPath: mask });
+    expect(text).toMatch(/NEXT VERSION/); expect(text).toMatch(/Requested change: change the background to charcoal/); expect(text).toMatch(/only the WHITE region/); expect(text).not.toMatch(/Design brief/);
+    // The refinement keeps the source's framing: a 3:2 source on a square wall still asks for 3:2.
+    const png = new Uint8Array(await sharp({ create: { width: 600, height: 400, channels: 3, background: '#345678' } }).png().toBuffer());
+    const f = fixture({ image: png, download: png });
+    const result = await f.invoke({ ...input, wallPath: null, width: 96, height: 96, intent: 'refine', prompt: 'make the flowers smaller', sourcePath: source });
+    expect(result.status).toBe(200);
+    const request = f.calls.find(c => c[0] === 'provider')[1];
+    expect(request.generationConfig.imageConfig).toEqual({ aspectRatio: '3:2', imageSize: '4K' });
+    expect(request.contents[0].parts.some((p: any) => p.text === 'Current design (the version being refined)')).toBe(true);
+    expect(f.calls.filter(c => c[0] === 'finish_wallpro_generation')[0][1].p_name).toBe('Refined: make the flowers smaller');
   });
   it('reads the returned pixel size from the container and reports the enlargement the wall needs', async () => {
     const png = new Uint8Array(await sharp({ create: { width: 640, height: 400, channels: 3, background: '#123456' } }).png().toBuffer());
