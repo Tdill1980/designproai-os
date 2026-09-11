@@ -87,6 +87,9 @@ runtime/atlas-accepted-checkpoint.cjs
 runtime/atlas-finishing-checkpoint.cjs
 runtime/atlas-finished-master.cjs
 runtime/atlas-hero-driver.cjs
+# The cascade as a durable node graph (owner 2026-09-11, "graph orchestration
+# in parallel"). index.js and flat-first-atlas.cjs require it at module load.
+runtime/atlas-call1-graph.cjs
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg

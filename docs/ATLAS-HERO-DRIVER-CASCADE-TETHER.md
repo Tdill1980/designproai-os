@@ -161,3 +161,46 @@ real generation inspected by the owner; (3) default flip.
 
 `generation_slots_failed` (21, all before 08-27) and the four GENIE grounding
 failures are not Call-1 problems and are not addressed by this tether.
+
+## 8. Addendum 2026-09-11 — the cascade as a durable node graph
+
+Owner: *"Graph orchestration in parallel wherever you can improve latency."*
+
+The cascade in §4 first shipped as one in-process function. It is now a node
+graph (`runtime/atlas-call1-graph.cjs`, migration
+`20260911170000_designpro_atlas_call1_graph.sql`), on the same pattern as the
+2026-09-08 PanelProFileOutput graph:
+
+```
+surface.driver ──▶ surface.passenger ──▶ surface.hood  ─┐
+       │                    │        ──▶ surface.front ─┼──▶ surface.roof ──▶ master.assemble
+       │                    │        ──▶ surface.rear  ─┘          ▲
+       └────────────────────┴───────────────────────────────────────┘
+```
+
+- **Node rows with `depends_on`**, claimed `FOR UPDATE SKIP LOCKED` by either
+  runtime process; hood, front and rear are claimable the instant passenger
+  completes and spread across both workers (proved in
+  `tests/atlas-call1-graph.test.mjs` §4: both `runtime-1` and `runtime-2`
+  held leases in one run).
+- **Lease-gated by the generation request**: a node is handed out only while
+  the request is still `leased`, and the claim carries that lease token — the
+  edge authorises the image request against it exactly as before.
+- **Per-node retry** (3 attempts, backoff, heartbeat); a dead worker loses one
+  node, not five sheets, and the provider cache's attempt keys make the re-run
+  read its own earlier image request.
+- **Same primitives, same transport, same gates**; the assembled sheet is
+  byte-for-byte the shape the in-process cascade produced, with
+  `provenance.execution = "graph"` and per-node lease owners recorded.
+- **Kill switch** `DESIGNPRO_ATLAS_CALL1_GRAPH=off` (deploy input
+  `atlas_call1_graph`, sticky).
+
+What it does not do: shorten the three-call critical path. That is the next
+lever (wider wiring; releasing the driver's proof before the roof lands), and
+it is a change to the graph definition, not to the orchestration.
+
+Also corrected here: the first tether's deploy plumbing wrote an empty
+`DESIGNPRO_ATLAS_TOPOLOGY=` line that `validate-env.py` refuses, and the key
+was not in its permitted set — the dark deploy would have failed. The writer
+now spells `six-surface`; the validator permits both flags with exact
+vocabularies.

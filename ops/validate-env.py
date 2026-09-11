@@ -114,6 +114,16 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     # Same lesson as the v9 DB pin in CLAUDE.md: a gate must not learn a
     # requirement one release before the writer that satisfies it.
     runtime_keys |= {"DESIGNPRO_ATLAS_PANEL_FINISH"} if "DESIGNPRO_ATLAS_PANEL_FINISH" in runtime else set()
+    # Call-1 topology (RULE 0.35) and its node-graph kill switch: permitted,
+    # never required, for the same upgrade reason; exact vocabularies when
+    # present so a typo cannot select a customer path. The topology is written
+    # as the literal "six-surface" for the default -- this loader refuses an
+    # empty value, and the runtime reads anything but "hero-driver" as off.
+    for flag, allowed in (("DESIGNPRO_ATLAS_TOPOLOGY", {"six-surface", "hero-driver"}), ("DESIGNPRO_ATLAS_CALL1_GRAPH", {"on", "off"})):
+        if flag in runtime:
+            if runtime[flag] not in allowed:
+                raise ValidationError(f"{flag} must be exactly one of {','.join(sorted(allowed))}")
+            runtime_keys.add(flag)
     # Old env files remain upgradeable; new independent graph opt-ins are
     # strict booleans when present and do not require any new secret keys.
     for flag in {"DESIGNPRO_PANELPROFILEOUTPUT_ENABLED", "DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED"}:

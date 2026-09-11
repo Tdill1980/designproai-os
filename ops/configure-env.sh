@@ -114,7 +114,18 @@ atlas_topology=${ATLAS_TOPOLOGY:-}
 if [[ -z $atlas_topology && -s $ROOT/shared/runtime.env ]]; then
   atlas_topology=$(sed -n 's/^DESIGNPRO_ATLAS_TOPOLOGY=//p' "$ROOT/shared/runtime.env" | head -n 1)
 fi
-[[ $atlas_topology == "hero-driver" ]] || atlas_topology=""
+# Written as the literal "six-surface" rather than empty: validate-env.py
+# refuses an empty value, and the runtime reads anything but "hero-driver" as
+# the six-surface default either way.
+[[ $atlas_topology == "hero-driver" ]] || atlas_topology="six-surface"
+# Call-1 node graph (owner 2026-09-11). ON unless a deploy says "off": the
+# graph is the product; "off" is the kill switch back to the in-process
+# cascade. Sticky like the two flags above.
+atlas_call1_graph=${ATLAS_CALL1_GRAPH:-}
+if [[ -z $atlas_call1_graph && -s $ROOT/shared/runtime.env ]]; then
+  atlas_call1_graph=$(sed -n 's/^DESIGNPRO_ATLAS_CALL1_GRAPH=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+[[ $atlas_call1_graph == "off" ]] || atlas_call1_graph=on
 
 # Independent production-output and template-preview opt-ins. Preserve an
 # installed choice on later deploys; absence on an older release means false.
@@ -159,9 +170,11 @@ trap cleanup EXIT
   # Only the exact string `on` enables it -- the runtime fails safe on anything
   # else, so a typo here cannot switch a customer path on.
   printf 'DESIGNPRO_ATLAS_PANEL_FINISH=%s\n' "$atlas_panel_finish"
-  # CALL-1 TOPOLOGY. Empty = six-surface (the default); `hero-driver` = the
-  # cascade. Sticky for the same reason as the finishing flag above.
+  # CALL-1 TOPOLOGY. `six-surface` (the default) or `hero-driver` (the
+  # cascade). Sticky for the same reason as the finishing flag above.
   printf 'DESIGNPRO_ATLAS_TOPOLOGY=%s\n' "$atlas_topology"
+  # CALL-1 NODE GRAPH. `on` (default) or `off` (in-process cascade). Sticky.
+  printf 'DESIGNPRO_ATLAS_CALL1_GRAPH=%s\n' "$atlas_call1_graph"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then

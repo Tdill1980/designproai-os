@@ -307,9 +307,21 @@ async function authorHeroDriverMaster({
     }
     stageTimings.push({ surfaces: [...stage], durationMs: Date.now() - stageStartedAt });
   }
+  return assembleHeroMaster({ manifest, authored, stageTimings, startedAt, execution: "in-process" });
+}
+
+/**
+ * ONE assembly for both executions of the cascade -- the in-process
+ * Promise.all above and the durable node graph (atlas-call1-graph.cjs) -- so
+ * the sheet, the receipts and the provenance are byte-for-byte the same shape
+ * whichever ran the surfaces. `authored` maps surfaceKey -> the frozen surface
+ * result (with bytes); `execution` names which orchestration produced it.
+ */
+async function assembleHeroMaster({ manifest, authored, stageTimings = [], startedAt = Date.now(), execution = "in-process", graph = null }) {
   const canvas = await sharp({ create: { width: CANVAS_PX, height: CANVAS_PX, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   const assembled = await assembleFinishedMaster(canvas, manifest, manifest.zones.map((zone) => {
     const surface = authored.get(zone.surfaceKey);
+    if (!surface?.bytes) throw Object.assign(new Error(`${zone.surfaceKey}: no authored sheet to assemble`), { code: "flat_atlas_hero_surface_missing" });
     return { surfaceKey: zone.surfaceKey, finish: { applied: true, bytes: surface.bytes, contentHash: surface.contentHash } };
   }));
   const surfaces = [...authored.values()].map(({ bytes: _bytes, exchange: _exchange, ...receipt }) => receipt);
@@ -323,11 +335,13 @@ async function authorHeroDriverMaster({
     promptVersion: HERO_DRIVER_PROMPT_VERSION,
     provenance: {
       contract: HERO_DRIVER_CONTRACT, topology: HERO_DRIVER_TOPOLOGY, promptVersion: HERO_DRIVER_PROMPT_VERSION,
+      execution, ...(graph ? { graph } : {}),
       imageRequestCount, masterSha256: assembled.contentHash, masterStoragePath: null,
       cascade: AUTHOR_CASCADE.map((stage) => [...stage]),
       surfaces: surfaces.map((s) => ({ surfaceKey: s.surfaceKey, method: s.method, contentHash: s.contentHash,
         attempts: s.attempts, imageRequestCount: s.imageRequestCount, signaturesReplayed: s.signaturesReplayed,
-        thoughtSignatureCount: s.thoughtSignatureCount, rawStoragePath: s.rawStoragePath || null, rawSha256: s.rawSha256 || null })),
+        thoughtSignatureCount: s.thoughtSignatureCount, rawStoragePath: s.rawStoragePath || null, rawSha256: s.rawSha256 || null,
+        ...(s.leaseOwner ? { leaseOwner: s.leaseOwner } : {}) })),
       stageTimings, totalMs: Date.now() - startedAt,
     },
     timings: { heroCascadeMs: Date.now() - startedAt, stages: stageTimings },
@@ -373,8 +387,16 @@ module.exports = {
   AUTHOR_HISTORY,
   AUTHOR_ATTEMPTS,
   MAX_AUTHORED_HOLE_RATIO,
+  SURFACE_LABELS,
+  CANVAS_PX,
   HeroDriverRefusal,
   authorHeroDriverMaster,
+  // The node graph (atlas-call1-graph.cjs) runs the SAME primitives, one per
+  // node: nothing creative lives outside these three and the assembler.
+  authorSurface,
+  composePassengerPlaceholder,
+  assembleHeroMaster,
+  zonePixelSize,
   heroDriverEnabled,
   heroRequestBody,
   _test: { authorSurface, evaluateAuthored, composePassengerPlaceholder, zonePixelSize, trimAuthoringHistory },

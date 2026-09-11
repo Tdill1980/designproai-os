@@ -288,6 +288,61 @@ test("env validator accepts only root-mode role-separated values", () => {
   assert.match(result.stderr, /unapproved keys: SUPABASE_SERVICE_ROLE_KEY/);
 });
 
+test("env validator permits the Call-1 topology and node-graph flags only with their exact vocabularies", () => {
+  // configure-env.sh writes both keys on every deploy; the validator must
+  // accept exactly what it writes and nothing looser. An EMPTY topology line
+  // -- which the first hero-driver plumbing wrote for six-surface -- is
+  // refused by the loader, so the writer now spells the default out.
+  const dir = mkdtempSync(join(tmpdir(), "designpro-call1-env-"));
+  const runtime = join(dir, "runtime.env");
+  const gateway = join(dir, "gateway.env");
+  const base = [
+    "SUPABASE_URL=https://wozyamlnygaddievzuwn.supabase.co",
+    `SUPABASE_SERVICE_ROLE_KEY=sb_secret_${"s".repeat(40)}`,
+    `WORKER_SECRET=${"w".repeat(40)}`,
+    `GOOGLE_AI_API_KEY=${"g".repeat(32)}`,
+    "GOOGLE_IMAGE_MODEL=gemini-3-pro-image",
+    "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
+    "DESIGNPRO_SPOOL_DIR=/var/lib/designproai/spool",
+    "SUPABASE_TUS_ENDPOINT=https://wozyamlnygaddievzuwn.storage.supabase.co/storage/v1/upload/resumable",
+    "DESIGNPRO_OUTBOUND_EMAIL_ENABLED=false",
+    "DESIGNPRO_TOPAZ_ENABLED=false",
+    "DESIGNPRO_ATLAS_PANEL_FINISH=off",
+  ];
+  writeFileSync(gateway, [
+    "SUPABASE_URL=https://wozyamlnygaddievzuwn.supabase.co",
+    `SUPABASE_PUBLISHABLE_KEY=sb_publishable_${"p".repeat(32)}`,
+    "DESIGNPRO_APP_ORIGIN=https://os.designproai.com",
+    "DESIGNPRO_RUNTIME_INTERNAL_URL=http://runtime-1:3001",
+    `WORKER_SECRET=${"w".repeat(40)}`,
+    "",
+  ].join("\n"));
+  chmodSync(gateway, 0o600);
+  const attempt = (lines) => {
+    writeFileSync(runtime, [...base, ...lines, ""].join("\n"));
+    chmodSync(runtime, 0o600);
+    return spawnSync("python3", [join(root, "validate-env.py"), runtime, gateway], { encoding: "utf8" });
+  };
+  for (const lines of [
+    ["DESIGNPRO_ATLAS_TOPOLOGY=six-surface", "DESIGNPRO_ATLAS_CALL1_GRAPH=on"],
+    ["DESIGNPRO_ATLAS_TOPOLOGY=hero-driver", "DESIGNPRO_ATLAS_CALL1_GRAPH=off"],
+    [],
+  ]) {
+    const ok = attempt(lines);
+    assert.equal(ok.status, 0, `${lines.join(" ")}: ${ok.stderr}`);
+  }
+  assert.match(attempt(["DESIGNPRO_ATLAS_TOPOLOGY="]).stderr, /empty or still a placeholder/);
+  assert.match(attempt(["DESIGNPRO_ATLAS_TOPOLOGY=hero"]).stderr, /DESIGNPRO_ATLAS_TOPOLOGY must be exactly one of hero-driver,six-surface/);
+  assert.match(attempt(["DESIGNPRO_ATLAS_CALL1_GRAPH=true"]).stderr, /DESIGNPRO_ATLAS_CALL1_GRAPH must be exactly one of off,on/);
+  // The writer and the validator agree on the vocabulary.
+  const writer = readFileSync(join(root, "configure-env.sh"), "utf8");
+  assert.match(writer, /\[\[ \$atlas_topology == "hero-driver" \]\] \|\| atlas_topology="six-surface"/);
+  assert.match(writer, /\[\[ \$atlas_call1_graph == "off" \]\] \|\| atlas_call1_graph=on/);
+  assert.match(writer, /printf 'DESIGNPRO_ATLAS_CALL1_GRAPH=%s\\n' "\$atlas_call1_graph"/);
+  const deploy = readFileSync(join(root, "..", ".github/workflows/deploy-production.yml"), "utf8");
+  assert.match(deploy, /ATLAS_CALL1_GRAPH='\$ATLAS_CALL1_GRAPH'/);
+});
+
 test("env validator fails closed when email is enabled without an exact provider contract", () => {
   const dir = mkdtempSync(join(tmpdir(), "designpro-email-env-"));
   const runtime = join(dir, "runtime.env");

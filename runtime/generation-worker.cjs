@@ -916,6 +916,9 @@ function createGenerationWorker({
   atlasProofValidatorFactory = createAtlasProofValidator,
   intervalMs = POLL_MS,
   geniePrepService = null,
+  // The Call-1 node graph worker (atlas-call1-graph.cjs), created by index.js
+  // and shared with the runtime's own poller. Absent = in-process cascade.
+  atlasCall1Graph = null,
 }) {
   if (!supabase) throw new Error("generation worker requires a Supabase client");
   const store = createGenerationStore({ supabase, workerId });
@@ -1082,6 +1085,7 @@ function createGenerationWorker({
           supabase,
           store,
           provider: imageProvider,
+          atlasCall1Graph,
           requestId,
           claimToken,
           generationId: claim.generationId,

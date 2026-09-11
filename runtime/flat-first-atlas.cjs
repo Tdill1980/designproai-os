@@ -75,6 +75,11 @@ const {
   HERO_DRIVER_TOPOLOGY, HERO_DRIVER_CONTRACT, HERO_DRIVER_PROMPT_VERSION,
   authorHeroDriverMaster, heroDriverEnabled,
 } = require("./atlas-hero-driver.cjs");
+// The durable node graph for the cascade (owner 2026-09-11: "graph
+// orchestration in parallel wherever you can improve latency"). Only the kill
+// switch is read here; the worker itself is injected by index.js so this module
+// never owns a poller.
+const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -2306,6 +2311,24 @@ async function callAtlasAuthorEdge(body, { ownerId, fetchImpl = fetch, signal, t
   return payload;
 }
 
+/**
+ * The atlas-author transport as the cascade consumes it: the edge call plus a
+ * verified download of the sheet it stored. ONE definition, used by the
+ * in-process cascade and handed to the node graph worker, so a node on the
+ * other runtime process authors through exactly the same door.
+ */
+function createAtlasAuthorTransport({ supabase, callAuthorEdge = callAtlasAuthorEdge, ownerId: defaultOwnerId = null } = {}) {
+  if (!supabase) throw new FlatAtlasError("flat_atlas_runtime_missing", "the atlas-author transport requires Supabase");
+  return async (body, { ownerId = defaultOwnerId } = {}) => {
+    const payload = await callAuthorEdge(body, { ownerId });
+    return {
+      ...payload,
+      bytes: await downloadVerified(supabase, payload.panelStoragePath, payload.panelSha256, payload.panelBytes),
+      panelByteSize: Number(payload.panelBytes || 0),
+    };
+  };
+}
+
 async function downloadVerified(supabase, storagePath, expectedHash, expectedBytes) {
   const { data, error } = await supabase.storage.from(BUCKET).download(storagePath);
   if (error || !data) throw new FlatAtlasError("flat_atlas_artifact_download_failed", `${storagePath}: ${error?.message || "missing"}`, true);
@@ -3113,19 +3136,31 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // The sheet then faces the SAME gates below as a six-surface master.
       let hero;
       try {
-        hero = await authorHeroDriverMaster({
+        const heroArgs = {
           manifest, input: authoringInput, store, logger,
           creativeContext: [String(input?.companyName || "").trim(), String(input?.industryType || "").trim(), String(input?.brandColors || "").trim()].filter(Boolean).join(" · ").slice(0, 600),
           providerRequest: { requestId, generationId, claimToken, ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
-          callEdge: async (body) => {
-            const payload = await callAuthorEdge(body, { ownerId });
-            return {
-              ...payload,
-              bytes: await downloadVerified(supabase, payload.panelStoragePath, payload.panelSha256, payload.panelBytes),
-              panelByteSize: Number(payload.panelBytes || 0),
-            };
-          },
-        });
+          callEdge: createAtlasAuthorTransport({ supabase, callAuthorEdge, ownerId }),
+        };
+        // THE GRAPH RUNS THE CASCADE when the node worker is wired and the
+        // deploy has not switched it off: each surface a durable node, claimed
+        // by either runtime process, hood/front/rear in parallel across them.
+        // The in-process cascade remains for the kill switch and for a
+        // database that has not received the graph migration yet -- that case
+        // is logged and recorded in provenance, never silent.
+        const graphWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
+        if (graphWorker) {
+          try {
+            hero = await graphWorker.author({ ...heroArgs, requestId, generationId, ownerId });
+          } catch (graphCause) {
+            if (graphCause?.code !== "designpro_atlas_call1_graph_unavailable") throw graphCause;
+            logger(`atlas call 1: node graph unavailable (${String(graphCause.message || "").slice(0, 160)}); running the cascade in-process`);
+            hero = await authorHeroDriverMaster(heroArgs);
+            hero.provenance.graph = { unavailable: true, code: graphCause.code };
+          }
+        } else {
+          hero = await authorHeroDriverMaster(heroArgs);
+        }
       } catch (cause) {
         if (cause?.code !== "flat_atlas_hero_driver_refused") throw cause;
         timings.authoringMs += Date.now() - authoringStartedAt;
@@ -4014,6 +4049,7 @@ This crop is full-bleed print artwork: it intentionally continues behind windows
 module.exports = {
   HERO_DRIVER_TOPOLOGY,
   callAtlasAuthorEdge,
+  createAtlasAuthorTransport,
   CALL_ONE_PANEL_CONTRACT,
   cutCallOnePanels,
   ATLAS_CONTRACT,

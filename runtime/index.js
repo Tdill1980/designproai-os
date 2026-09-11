@@ -32,6 +32,8 @@ const { createResendTransport, resendReadiness } = require("./resend-transport.c
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, uploadSpoolWithTus } = require("./zip-spool.cjs");
 const { createGenerationWorker } = require("./generation-worker.cjs");
 const { createPanelProFileOutputService } = require("./panelpro-file-output-service.cjs");
+const { createAtlasCall1NodeWorker, graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
+const { createAtlasAuthorTransport } = require("./flat-first-atlas.cjs");
 const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
 const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
 
@@ -127,6 +129,17 @@ const panelProfileTemplates = createPanelproTemplateService({
   apiKey:GOOGLE_AI_API_KEY,spoolDir:DESIGNPRO_SPOOL_DIR,supabaseUrl:SUPABASE_URL,
   serviceRoleKey:SUPABASE_SERVICE_ROLE_KEY,tusEndpoint:SUPABASE_TUS_ENDPOINT,
 });
+// CALL 1 NODE GRAPH (RULE 0.35 addendum, owner 2026-09-11). Every runtime
+// process polls for ready cascade nodes of ANY generation, so the two workers
+// draw hood, front and rear at once; the generation worker that owns a request
+// also ticks this same instance inline while it awaits its run. Off = the
+// in-process cascade, unchanged.
+const atlasCall1Graph = createAtlasCall1NodeWorker({
+  supabase, workerId: `${WORKER_ID}-call1-graph`, enabled: atlasCall1GraphEnabled(),
+  concurrency: Math.max(1, Math.min(6, Number(process.env.DESIGNPRO_ATLAS_CALL1_NODE_CONCURRENCY) || 3)),
+  callEdge: createAtlasAuthorTransport({ supabase }),
+  logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`),
+});
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
@@ -170,6 +183,7 @@ function stopWorkerLoops() {
   claimant = null;
   if (generationWorker) generationWorker.stop();
   generationWorker = null;
+  atlasCall1Graph.stop();
   if (deliveryTimer) clearInterval(deliveryTimer);
   deliveryTimer = null;
 }
@@ -186,8 +200,10 @@ function ensureGenerationWorker() {
     supabaseUrl: SUPABASE_URL,
     serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
     workerId: `${WORKER_ID}-calls-1-7`,
+    atlasCall1Graph,
   });
   generationWorker.start();
+  atlasCall1Graph.start();
 }
 
 function ensureRevisionHandoffs() {
@@ -233,6 +249,7 @@ async function refreshReadiness() {
       dependencies: {
         ...dependencies, wrapboxPublisher: true, notifications: notificationReadiness, enhancement: enhancementReadiness,
         generation: { started: Boolean(generationWorker), models: generationWorker?.provider?.models || [], keyCount: generationWorker?.provider?.keyCount || 0 },
+        atlasCall1Graph: atlasCall1Graph.health(),
         revisionHandoff:{started:Boolean(revisionHandoffTimer),busy:revisionHandoffBusy,lastError:revisionHandoffError},
         panelProFileOutput:panelProfileOutput.health(),
         panelProTemplates:panelProfileTemplates.status(),

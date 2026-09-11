@@ -58,6 +58,60 @@ first; then one real generation through proofs, both QC gates and WrapBox;
 only then does the deploy input flip the default. Locked by
 `tests/atlas-hero-driver-topology.test.mjs`.
 
+### RULE 0.35 ADDENDUM — THE CASCADE RUNS AS A DURABLE NODE GRAPH (owner, Trish 2026-09-11: "Graph orchestration in parallel wherever you can improve latency")
+
+The first tether ran the cascade as ONE in-process function: a `Promise.all`
+inside the generation worker, no node rows, no cross-worker claims, no
+per-surface retry. Another session named it exactly — *"it is a graph in one
+half of the system and not in the other, and the half that is failing is the
+one that is not."* The owner ruled: make it one. It is now.
+
+**`runtime/atlas-call1-graph.cjs` + migration `20260911170000_designpro_atlas_call1_graph.sql`**,
+built on the 2026-09-08 PanelProFileOutput graph pattern, not on the Calls
+8–12 kernel (whose CHECK constraints and string-patched PL/pgSQL are left
+alone):
+
+| | |
+|---|---|
+| **Run** | `designpro_atlas_call1_runs`, one per (generation request, definition hash): manifest, frozen input, creative context, provider identity. Idempotent — a re-claimed generation finds its run and its completed surfaces, spends nothing. |
+| **Nodes** | `designpro_atlas_call1_nodes`: `surface.driver` → `surface.passenger` → `surface.hood` / `surface.front` / `surface.rear` → `surface.roof` → `master.assemble`, with `depends_on` = exactly the surfaces each is SHOWN plus the exchanges it REPLAYS. Nothing else orders it; whatever is not an edge runs in parallel. |
+| **Claim** | `claim_designpro_atlas_call1_node` — `FOR UPDATE SKIP LOCKED`, parents completed, **the run's generation request still `leased`** (the claim returns the current lease token; the edge authorises the provider request against it exactly as before — RULE 0.26 unchanged). Hood, front and rear are claimable in the same instant passenger completes, and BOTH runtime processes (`runtime-1`, `runtime-2`, each `DESIGNPRO_ATLAS_CALL1_NODE_CONCURRENCY` slots, default 3) draw them. |
+| **Lease / retry** | 600 s lease, 30 s heartbeat, `max_attempts` 3 with backoff; a lost lease re-runs ONE node (the provider cache's `author:<surface>:<attempt>` keys make the re-run read its own earlier image request instead of spending another). `attempts_exhausted` → run failed; `resume_designpro_atlas_call1_run` re-arms retryable failures only. |
+| **Refusal** | A creative refusal (`flat_atlas_hero_driver_refused`, the surface drawn wrong twice) fails the node non-retryably and the run once; `author()` throws the SAME `HeroDriverRefusal`, so flat-first-atlas fails over to six-surface untouched. |
+| **Ledger** | `designpro_atlas_call1_events` (immutable): every transition of every node with the worker that held it. "What happened to the hood" is a query. |
+
+**Same primitives, same door, same gates.** A node runs `authorSurface` /
+`composePassengerPlaceholder` / `assembleHeroMaster` from
+`atlas-hero-driver.cjs` through `createAtlasAuthorTransport` (the ONE edge
+transport, exported from flat-first-atlas and handed to the node worker by
+`index.js`). The assembled sheet lands in front of the same master gates.
+`provenance.execution = "graph"` + `provenance.graph.nodes[].leaseOwner`
+record which process drew each surface.
+
+**Kill switch: `DESIGNPRO_ATLAS_CALL1_GRAPH=off`** (deploy input
+`atlas_call1_graph`, sticky in `configure-env.sh`) runs the in-process
+cascade. A database without the migration is logged and recorded as
+`provenance.graph.unavailable` and falls back in-process — never silent.
+
+**Honest latency statement.** The critical path is still THREE sequential
+model calls (driver → {hood, front, rear} → roof) whichever process runs them.
+Nodes buy durability, both-worker parallelism, per-node retry and a queryable
+timeline; they do not shorten that path. The next latency levers are
+wider wiring (roof beside hood/front/rear, showing driver + passenger only)
+and releasing the driver's 3D proof before the roof lands — both are edge
+changes to the graph definition, not new orchestration.
+
+**Deploy plumbing corrected in the same change (would have failed the dark
+deploy):** `validate-env.py` did not permit `DESIGNPRO_ATLAS_TOPOLOGY` and
+refuses an empty value, and `configure-env.sh` wrote it EMPTY for
+six-surface. The writer now spells `six-surface`; the validator permits
+`{six-surface, hero-driver}` and `DESIGNPRO_ATLAS_CALL1_GRAPH ∈ {on, off}`
+when present (never required — the upgrade lesson of run 34254151959).
+
+Locked by `tests/atlas-call1-graph.test.mjs` (the real migration on PGlite,
+a two-worker end-to-end run, the refusal path, the runtime seams) and
+`ops/tests/server-cutover.test.mjs` (the env vocabularies).
+
 ## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
 
 Measured, 2026-09-04 → 09-09: 20 generation requests, 8 delivered, 12 failed.
