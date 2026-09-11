@@ -109,10 +109,12 @@ test("processJob builds every panel, stores them under the owner's production na
       };
     },
     storage: { from(bucket) { assert.equal(bucket, "wallpro-files"); return {
-      download: async () => ({ data: new Blob([source.bytes]), error: null }),
-      upload: async (path, bytes, options) => { uploads.push({ path, size: bytes.length, contentType: options.contentType }); return { error: null }; },
+      // The master by its path; a stored panel by its own path, for stitching.
+      download: async (path) => ({ data: new Blob([stored.get(path) || source.bytes]), error: null }),
+      upload: async (path, bytes, options) => { uploads.push({ path, size: bytes.length, contentType: options.contentType }); stored.set(path, bytes); return { error: null }; },
     }; } },
   };
+  const stored = new Map();
   const job = { id: jobId, owner_id: owner, project_id: "p", version_id: "v1", request: { wallWidthIn: 30, wallHeightIn: 20, bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72 } };
   // The three panels are independent graph nodes: their Topaz calls must overlap.
   let inFlight = 0, peak = 0;
@@ -128,10 +130,33 @@ test("processJob builds every panel, stores them under the owner's production na
   assert.deepEqual(uploads.map(u => u.path).sort(), [
     `${owner}/production/${jobId}/manifest.json`, `${owner}/production/${jobId}/panel-001-12x22in.png`,
     `${owner}/production/${jobId}/panel-002-12x22in.png`, `${owner}/production/${jobId}/panel-003-9x22in.png`,
+    `${owner}/production/${jobId}/wall-32x22in.png`,
   ]);
-  assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel");
+  assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel and the whole wall");
   const final = updates.at(-1);
   assert.equal(final.status, "ready"); assert.equal(final.progress.panelsDone, 3); assert.equal(final.manifest_path, `${owner}/production/${jobId}/manifest.json`);
   assert.equal(result.manifest.contract, production.CONTRACT); assert.equal(result.manifest.panels[2].widthPx, 648);
   assert.ok(updates.some(u => u.progress?.panelsDone === 1 && u.status === undefined), "progress is reported per panel");
+  // The whole wall is one file at the same PPI: wall plus bleed, 32 x 22 in at
+  // 72 PPI, stitched from the panels' own pixels so the overlap strip is exact.
+  assert.equal(result.wholeWall.file, "wall-32x22in.png"); assert.equal(final.progress.wholeWall.path, `${owner}/production/${jobId}/wall-32x22in.png`);
+  const wall = await sharp(stored.get(result.wholeWall.path)).raw().toBuffer({ resolveWithObject: true });
+  assert.equal(wall.info.width, 2304); assert.equal(wall.info.height, 1584); assert.equal((await sharp(stored.get(result.wholeWall.path)).metadata()).density, 72);
+  const panel2 = await sharp(stored.get(result.panels[1].path)).raw().toBuffer({ resolveWithObject: true });
+  const left2 = Math.round((result.panels[1].xIn + 1) * 72);
+  // Points inside panel 2 but outside panel 3's overlap strip (36 px): the strip
+  // is written last by panel 3, whose own enhancement may differ by a level.
+  for (const [x, y] of [[0, 700], [300, 100], [panel2.info.width - 40, 1500]]) {
+    const w = (y * wall.info.width + left2 + x) * 3, p = (y * panel2.info.width + x) * 3;
+    assert.deepEqual(Array.from(wall.data.subarray(w, w + 3)), Array.from(panel2.data.subarray(p, p + 3)), `wall pixel at panel 2 (${x},${y})`);
+  }
+});
+
+test("the whole-wall file fails soft: a wall beyond the one-file budget still leaves the job ready with its panels", async () => {
+  const request = { wallWidthIn: 30, wallHeightIn: 20, bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72 };
+  const { bounds, panels } = production.planPanels(production.normalizeRequest(request));
+  await assert.rejects(production.stitchWholeWall({ request: { ...request, targetPpi: 5000 }, bounds, panels: [], panelBytes: () => null }), /one-file budget/);
+  assert.equal(production.normalizeRequest({ ...request, wholeWall: false }).wholeWall, false);
+  assert.equal(production.normalizeRequest(request).wholeWall, true);
+  assert.equal(panels.length, 3);
 });

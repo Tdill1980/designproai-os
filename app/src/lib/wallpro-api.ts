@@ -221,12 +221,19 @@ export type WallProductionPanel = {
   widthPx: number; heightPx: number; ppi: number; sha256: string; byteSize: number;
   upscale: { engine: string; model?: string; nativePpi?: number; reason?: string };
 };
+/** The whole wall (with bleed) as one file at the panel PPI, stitched from the
+ * panels' own pixels; or the reason it could not be built (too large). */
+export type WallWholeFile = { file: string; path: string; widthIn: number; heightIn: number; widthPx: number; heightPx: number; ppi: number; sha256: string; byteSize: number };
 export type WallProductionJob = {
   id: string; owner_id: string; project_id: string; version_id: string; request: Record<string, unknown>; request_hash: string;
-  status: 'queued' | 'running' | 'ready' | 'failed'; attempts: number; progress: { stage?: string; panelsTotal?: number; panelsDone?: number; nativePpi?: number; topaz?: string };
+  status: 'queued' | 'running' | 'ready' | 'failed'; attempts: number; progress: { stage?: string; panelsTotal?: number; panelsDone?: number; nativePpi?: number; topaz?: string; wholeWall?: WallWholeFile | { error: string } | null };
   panels: WallProductionPanel[]; manifest_path: string | null; error: string | null; created_at: string; updated_at: string; finished_at: string | null;
 };
-export type WallProductionRequest = { wallWidthIn: number; wallHeightIn: number; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number; mirror?: boolean; bleedIn: number; overlapIn: number; panelWidthIn: number; targetPpi: number };
+export const wholeWallFile = (job: Pick<WallProductionJob, 'progress'> | null | undefined): WallWholeFile | null => {
+  const w = job?.progress?.wholeWall;
+  return w && 'path' in w && w.path ? w : null;
+};
+export type WallProductionRequest = { wallWidthIn: number; wallHeightIn: number; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number; mirror?: boolean; bleedIn: number; overlapIn: number; panelWidthIn: number; targetPpi: number; wholeWall?: boolean };
 
 /** Requests the 150 PPI panel build for an APPROVED version. The same version and
  * geometry returns the existing live job; the runtime worker claims it and
@@ -300,20 +307,26 @@ export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDe
   const jobFor = new Map<string, WallProductionJob>();
   for (const j of (jobs.data || []) as WallProductionJob[]) if (!jobFor.has(j.version_id)) jobFor.set(j.version_id, j);
   const filePaths: string[] = [];
-  for (const j of jobFor.values()) { for (const p of j.panels || []) filePaths.push(p.path); if (j.manifest_path) filePaths.push(j.manifest_path); }
+  for (const j of jobFor.values()) { for (const p of j.panels || []) filePaths.push(p.path); if (j.manifest_path) filePaths.push(j.manifest_path); const w = wholeWallFile(j); if (w) filePaths.push(w.path); }
+  // Every version of every chosen project: the history strip RevisionStudio shows.
+  const allVersions = ((data || []) as WallVersion[]).filter(v => byProject.has(v.project_id));
   const [views, downloads] = await Promise.all([
-    openWallAssets(chosen.map(v => v.artwork_path)).catch(() => ({} as Record<string, string>)),
+    openWallAssets([...new Set(allVersions.map(v => v.artwork_path))]).catch(() => ({} as Record<string, string>)),
     openWallAssets(filePaths, { download: true }).catch(() => ({} as Record<string, string>)),
   ]);
   return chosen.map(v => {
     const j = jobFor.get(v.id) || null;
+    const whole = wholeWallFile(j);
     return {
       projectId: v.project_id, projectName: names.get(v.project_id) || 'Wall design', versionId: v.id, versionNo: v.version_no,
       approved: v.status === 'approved', designId: wallDesignId(v.id), artworkPath: v.artwork_path, artworkUrl: views[v.artwork_path] || null,
       placement: v.placement, repeatWidthIn: v.repeat_width_in ? Number(v.repeat_width_in) : null, createdAt: v.created_at, approvedAt: v.approved_at,
+      versions: allVersions.filter(x => x.project_id === v.project_id).sort((a, b) => a.version_no - b.version_no)
+        .map(x => ({ id: x.id, versionNo: x.version_no, kind: x.kind, approved: x.status === 'approved', prompt: x.prompt, createdAt: x.created_at, url: views[x.artwork_path] || null })),
       job: j ? {
         id: j.id, status: j.status, error: j.error, manifestUrl: j.manifest_path ? downloads[j.manifest_path] || null : null,
         panels: (j.panels || []).map(p => ({ number: p.number, file: p.file, widthIn: p.widthIn, heightIn: p.heightIn, widthPx: p.widthPx, heightPx: p.heightPx, ppi: p.ppi, byteSize: p.byteSize, url: downloads[p.path] || null })),
+        wholeWall: whole ? { file: whole.file, widthIn: whole.widthIn, heightIn: whole.heightIn, widthPx: whole.widthPx, heightPx: whole.heightPx, ppi: whole.ppi, byteSize: whole.byteSize, url: downloads[whole.path] || null } : null,
       } : null,
     };
   });

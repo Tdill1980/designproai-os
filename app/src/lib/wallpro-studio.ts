@@ -17,11 +17,19 @@ export type WallStudioPanel = {
   /** Signed download URL, or null when it could not be signed. */
   url: string | null;
 };
-export type WallStudioJob = { id: string; status: 'queued' | 'running' | 'ready' | 'failed'; panels: WallStudioPanel[]; manifestUrl: string | null; error: string | null };
+export type WallStudioJob = {
+  id: string; status: 'queued' | 'running' | 'ready' | 'failed'; panels: WallStudioPanel[]; manifestUrl: string | null; error: string | null;
+  /** The whole wall (with bleed) as one file at the same PPI, when it was built. */
+  wholeWall?: { file: string; widthIn: number; heightIn: number; widthPx: number; heightPx: number; ppi: number; byteSize: number; url: string | null } | null;
+};
+/** One entry of a project's immutable version history (V1, V2, ...). */
+export type WallStudioVersion = { id: string; versionNo: number; kind: string; approved: boolean; prompt: string | null; createdAt: string; url: string | null };
 export type WallStudioDesign = {
   projectId: string; projectName: string; versionId: string; versionNo: number; approved: boolean; designId: string;
   artworkPath: string; artworkUrl: string | null; placement: string; repeatWidthIn: number | null;
   createdAt: string; approvedAt: string | null;
+  /** Every version of the project, oldest first. Never only the newest. */
+  versions?: WallStudioVersion[];
   /** The latest production build for that version, when one was requested. */
   job: WallStudioJob | null;
 };
