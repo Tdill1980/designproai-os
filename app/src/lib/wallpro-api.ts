@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number };
 const db = supabase as any;
@@ -81,4 +82,65 @@ export async function getWallProject(id: string) {
   const { data, error } = await db.from('wallpro_projects').select('id,name,config').eq('id',id).maybeSingle();
   if (error || !data) throw new Error('This project could not be found in your account.');
   return data;
+}
+
+/* ── Ready-to-sell catalog (wallpro_designs) ─────────────────────────────── */
+
+/** Storefront read: approved, active designs. Anonymous browsing is allowed by policy. */
+export async function listWallCatalog(): Promise<WallCatalogRow[]> {
+  const { data, error } = await db.from('wallpro_designs').select('*').eq('is_active', true).eq('approval_status', 'approved')
+    .order('sort_order', { ascending: true }).order('design_id', { ascending: true }).limit(1000);
+  if (error) throw new Error('The design catalog could not be loaded: ' + error.message);
+  return (data || []) as WallCatalogRow[];
+}
+/** Curator read: every catalog row, hidden ones included. */
+export async function listWallCatalogAll(): Promise<WallCatalogRow[]> {
+  await wallUser();
+  const { data, error } = await db.from('wallpro_designs').select('*').order('design_id', { ascending: true }).limit(2000);
+  if (error) throw new Error('The design catalog could not be loaded: ' + error.message);
+  return (data || []) as WallCatalogRow[];
+}
+export async function getWallGeneration(requestId: string) {
+  const { data, error } = await db.from('wallpro_generations').select('id,input_hash,state,artwork_path,design_name').eq('id', requestId).maybeSingle();
+  if (error || !data) throw new Error('The generation record for this design could not be read.');
+  return data as { id: string; input_hash: string; state: string; artwork_path: string | null; design_name: string | null };
+}
+/** Copies the curator's generated master into catalog/ so every customer can
+ * open it, uploads the storefront thumbnail beside it, then upserts the design
+ * row keyed by its permanent DesignID. */
+export async function publishWallDesign(sourcePath: string, thumb: Blob | null, row: ReturnType<typeof designUpsertRow>): Promise<WallCatalogRow> {
+  // Storage objects are immutable for users, so a failed publish leaves its
+  // catalog copy behind; the row is the authority and it is only written last.
+  const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(sourcePath, row.master_path);
+  if (copyError) throw new Error('The master could not be copied into the catalog: ' + copyError.message);
+  if (thumb && row.thumb_path) {
+    const { error: thumbError } = await supabase.storage.from(WALLPRO_BUCKET).upload(row.thumb_path, thumb, { contentType: 'image/jpeg', upsert: false });
+    if (thumbError) throw new Error('The thumbnail could not be saved: ' + thumbError.message);
+  }
+  const { data, error } = await db.from('wallpro_designs').upsert(row, { onConflict: 'design_id' }).select('*').single();
+  if (error) throw new Error('The design could not be published: ' + error.message);
+  return data as WallCatalogRow;
+}
+/** Signed URLs for many catalog files at once (thumbnails for a grid). */
+export async function openWallAssets(paths: string[]): Promise<Record<string, string>> {
+  if (!paths.length) return {};
+  const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrls(paths, 3600);
+  if (error) throw new Error('The catalog images could not be opened. ' + error.message);
+  const out: Record<string, string> = {};
+  for (const item of data || []) if (item.path && item.signedUrl) out[item.path] = item.signedUrl;
+  return out;
+}
+export async function updateWallDesign(id: string, patch: Partial<Pick<WallCatalogRow, 'is_active' | 'rating' | 'title' | 'sort_order' | 'tile_width_in' | 'approval_status' | 'collection_id'>>) {
+  const { error } = await db.from('wallpro_designs').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) throw new Error('The design could not be updated: ' + error.message);
+}
+/** Removes the catalog row. The master copy under catalog/ is retained:
+ * storage objects are immutable for users, and a sold design's bytes are
+ * provenance for reprints even after it leaves the storefront. */
+export async function deleteWallDesign(row: Pick<WallCatalogRow, 'id'>) {
+  const { error } = await db.from('wallpro_designs').delete().eq('id', row.id);
+  if (error) throw new Error('The design could not be removed: ' + error.message);
+}
+export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');
 }
