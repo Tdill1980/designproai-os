@@ -199,8 +199,9 @@ on:
           - 13-panel-extend
           - 14-field-arms
           - 15-hero-to-field
+          - 16-panel-fill
       generation:
-        description: "measure-accepted-master only — generation id or 8-char prefix"
+        description: "measure-accepted-master and 16-panel-fill — generation id or 8-char prefix"
         required: false
         type: string
         default: ""
@@ -435,6 +436,7 @@ jobs:
             scripts/atlas-panel-extend-ab.mjs \
             scripts/atlas-field-arms-ab.mjs \
             scripts/atlas-hero-to-field-ab.mjs \
+            scripts/atlas-panel-fill-ab.mjs \
             scripts/fixtures/premigration-heroes.json \
             scripts/atlas-print-media-contract.mjs \
             scripts/atlas-fullbleed-metrics.mjs \
@@ -536,6 +538,15 @@ jobs:
               # July edit verbatim. `draws` caps the heroes (1-4); ≤ 8 image calls.
               runner=scripts/atlas-hero-to-field-ab.mjs
               extra_args=(--heroes "$AB_HEROES" --arms "$AB_ARMS")
+              ;;
+            16-panel-fill)
+              # Owner 2026-09-11: the wheel-well gap is a masked fill on the flat
+              # panel. Gate-convicted mask → one edit turn (subject + mask +
+              # master reference) → the model's pixels kept ONLY inside the mask
+              # → re-gated beside the deterministic fill. `draws` per surface (1-2).
+              runner=scripts/atlas-panel-fill-ab.mjs
+              extra_args=(--generation "$AB_GENERATION" --surfaces "$AB_SURFACES")
+              if [ -n "$AB_IMAGE_MODEL" ]; then extra_args+=(--model "$AB_IMAGE_MODEL"); fi
               ;;
             fetch-raw-candidates)
               # READ-ONLY. Download the refused raw candidates a failed request
