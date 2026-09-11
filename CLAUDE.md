@@ -53,6 +53,8 @@ contracts; each names its lock.
   density and stores it under `{owner}/production/{job}/` in `wallpro-files`.
   Why per panel: a 4K master over a wall is ~30 PPI and Topaz caps one request
   near 96 MP, so a whole-wall 150 PPI master is not one request; a panel is.
+  Panels are independent graph nodes and build in parallel
+  (`DESIGNPRO_WALLPRO_PANEL_CONCURRENCY`, default 3); only the manifest waits.
   Migration `20260911190000_wallpro_production_jobs.sql`; locked by
   `source-tests/runtime/wallpro-production.test.mjs`.
 
