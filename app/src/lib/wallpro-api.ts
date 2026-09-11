@@ -227,3 +227,26 @@ export async function latestWallProductionJob(versionId: string): Promise<WallPr
   if (error) throw new Error('The production job could not be read: ' + error.message);
   return (data?.[0] as WallProductionJob) || null;
 }
+
+/* ── Design-team production board (admins and testers, read-only) ───────── */
+
+/** The DesignID the team files a wall design under: the approved version's
+ * identity, in the same DID-XXXXXXXX form the vehicle studio uses. */
+export const wallDesignId = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
+
+export type WallTeamJob = WallProductionJob & { project_name: string; version_no: number | null; artwork_path: string | null };
+/** Every customer's production jobs, newest first, with the project name and
+ * version number joined in. Readable by admins and testers only (RLS). */
+export async function listWallProductionJobsForTeam(limit = 100): Promise<WallTeamJob[]> {
+  const { data, error } = await db.from('wallpro_production_jobs').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw new Error('Production jobs could not be listed: ' + error.message);
+  const jobs = (data || []) as WallProductionJob[];
+  const projectIds = [...new Set(jobs.map(j => j.project_id))], versionIds = [...new Set(jobs.map(j => j.version_id))];
+  const [projects, versions] = await Promise.all([
+    projectIds.length ? db.from('wallpro_projects').select('id,name').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_design_versions').select('id,version_no,artwork_path').in('id', versionIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  const names = new Map<string, string>((projects.data || []).map((p: any) => [p.id, p.name]));
+  const vers = new Map<string, { version_no: number; artwork_path: string }>((versions.data || []).map((v: any) => [v.id, v]));
+  return jobs.map(j => ({ ...j, project_name: names.get(j.project_id) || 'Wall design', version_no: vers.get(j.version_id)?.version_no ?? null, artwork_path: vers.get(j.version_id)?.artwork_path ?? null }));
+}

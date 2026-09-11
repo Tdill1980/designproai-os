@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
+import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, wallDesignId, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
 
 type Props = {
   /** The approved version the panels are built from, or null when none is approved. */
@@ -58,10 +58,10 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
   const stale = job && JSON.stringify(job.request) !== JSON.stringify(request);
   return <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm" aria-label="Production panels">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="font-semibold"><Sparkles className="mr-2 inline h-4 w-4 text-violet-600" />Production panels · {request.targetPpi} PPI · {fmt(request.panelWidthIn)}″ panels · {fmt(request.overlapIn)}″ overlap</h2>
+      <h2 className="font-semibold"><Sparkles className="mr-2 inline h-4 w-4 text-violet-600" />Production panels{approved ? <> · <span className="rounded bg-slate-900 px-2 py-0.5 font-mono text-sm text-white">{wallDesignId(approved.id)}</span></> : ''} · {request.targetPpi} PPI · {fmt(request.panelWidthIn)}″ panels · {fmt(request.overlapIn)}″ overlap</h2>
       {approved && <Button size="sm" disabled={busy || requesting || !!live} onClick={() => void start()}>{requesting ? 'Requesting…' : live ? 'Building…' : job ? 'Rebuild panels' : 'Build 150 PPI panels'}</Button>}
     </div>
-    <p className="mt-1 text-sm text-slate-600">Built on the server from the approved version: each panel is rasterised from the master, enhanced through Topaz, and delivered at exactly {request.targetPpi} PPI for its inches. Print files never wait for the wall photo.</p>
+    <p className="mt-1 text-sm text-slate-600">Built on the server from the approved version: each panel is rasterised from the master, enhanced through Topaz, and delivered at exactly {request.targetPpi} PPI for its inches. Print files never wait for the wall photo.{approved ? ` Your design team can download these under ${wallDesignId(approved.id)}.` : ''}</p>
     {!approved && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Approve a version to build its production panels.</p>}
     {error && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {job && <div className="mt-3 space-y-2 text-sm">
