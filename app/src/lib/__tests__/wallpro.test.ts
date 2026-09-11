@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, wallGenerationBlocker, layoutMetrics, insidePolygon, rectangularWallMask, wallPrintPanels } from '../wallpro-geometry';
+import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, wallGenerationBlocker, wallPreviewBlocker, layoutMetrics, insidePolygon, rectangularWallMask, wallPrintPanels } from '../wallpro-geometry';
 import sharp from 'sharp';
 import { createWallHandler, parseWallInput, nearestAspect, decodeWallImage, finalWallImage, imageDimensions, PRODUCTION_PPI } from '../../../../supabase/functions/generate-wall-design/handler';
 import { wallDesignPrompt } from '../../../../supabase/functions/generate-wall-design/prompt';
@@ -52,20 +52,25 @@ describe('WallPro physical geometry', () => {
     expect(validWallCorners([{x:0,y:0},{x:.1,y:0},{x:.2,y:0},{x:.3,y:0}])).toBe(false);
     for (const n of [0,-1,NaN,Infinity,2500]) expect(validWallSize(n,96)).toBe(false);
   });
-  it('blocks generation on a wall photo until all four corners are marked and valid', () => {
+  it('generates the flat rectangle on the wall size alone; corners only gate the on-wall view', () => {
     const quad = [{x:.1,y:.2},{x:.9,y:.1},{x:.8,y:.9},{x:.2,y:.7}];
-    // The saved-project failure mode: photo present, only three corner points.
-    expect(wallGenerationBlocker(true, quad.slice(0,3), 120, 96)).toMatch(/four wall corners \(1 remaining\)/);
-    expect(wallGenerationBlocker(true, [], 120, 96)).toMatch(/4 remaining/);
-    // Four points that cross are still not a wall.
-    expect(wallGenerationBlocker(true, [quad[0],quad[2],quad[1],quad[3]], 120, 96)).toMatch(/cross or form a narrow area/);
-    // Four valid corners, or no wall photo at all, may generate.
+    // A wall photo with three corners, none, or crossed corners still generates:
+    // the flat design is the product and the print file.
+    expect(wallGenerationBlocker(true, quad.slice(0,3), 120, 96)).toBeNull();
+    expect(wallGenerationBlocker(true, [], 120, 96)).toBeNull();
+    expect(wallGenerationBlocker(true, [quad[0],quad[2],quad[1],quad[3]], 120, 96)).toBeNull();
     expect(wallGenerationBlocker(true, quad, 120, 96)).toBeNull();
     expect(wallGenerationBlocker(false, [], 120, 96)).toBeNull();
-    expect(wallGenerationBlocker(false, quad.slice(0,3), 120, 96)).toBeNull();
-    // Dimensions gate first regardless of the wall photo.
+    // Only the dimensions gate the paid call.
     expect(wallGenerationBlocker(false, [], 0, 96)).toMatch(/1 and 2,400 inches/);
     expect(wallGenerationBlocker(true, quad, 120, NaN)).toMatch(/1 and 2,400 inches/);
+    // The on-wall view says what it is waiting for, and never claims to block files.
+    expect(wallPreviewBlocker(true, quad.slice(0,3))).toMatch(/four wall corners \(1 remaining\)/);
+    expect(wallPreviewBlocker(true, quad.slice(0,3))).toMatch(/print files do not wait/);
+    expect(wallPreviewBlocker(true, [])).toMatch(/4 remaining/);
+    expect(wallPreviewBlocker(true, [quad[0],quad[2],quad[1],quad[3]])).toMatch(/cross or form a narrow area/);
+    expect(wallPreviewBlocker(true, quad)).toBeNull();
+    expect(wallPreviewBlocker(false, quad.slice(0,3))).toBeNull();
   });
   it('preserves proportions for cover and contain without stretching', () => {
     expect(layoutMetrics({width:120,height:96,mode:'cover',repeatWidth:24},1)).toMatchObject({artworkWidth:120,artworkHeight:120});

@@ -9,7 +9,7 @@ import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
@@ -85,6 +85,7 @@ export default function WallPro() {
   // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
   // so no token is spent until the placement exists. Null means generation may run.
   const generationBlocker = wallGenerationBlocker(!!photo, corners, width, height);
+  const previewBlocker = wallPreviewBlocker(!!photo, corners);
   let printPanels: ReturnType<typeof planWallPrint>['panels'] = [];
   try { printPanels = planWallPrint(width, height, printSettings).panels; } catch { /* Output settings show validation. */ }
   const wallMap = cornersValid ? homography(UNIT_WALL,corners) : null;
@@ -376,13 +377,13 @@ export default function WallPro() {
     // while busy, but the saved project must record exactly what was validated.
     const wallCorners = corners, wallExclusions = exclusions;
     await run('Generating wall artwork', async () => {
-      // Hard gate, not a warning: with a wall photo, all four corners must be
-      // marked and valid before any paid call. Otherwise the artwork can never
-      // be projected onto the photo (the saved-project failure mode).
+      // The flat rectangle is the product: only the wall size gates the call.
+      // Corners decide whether the result can be imposed on the photo, not
+      // whether it exists.
       const blocker = wallGenerationBlocker(!!photo, wallCorners, width, height);
-      if (blocker) { if (photo && !validWallCorners(wallCorners)) { setMarking('wall'); setView('before'); } throw new Error(blocker); }
+      if (blocker) throw new Error(blocker);
       if (intent === 'match' && !reference) throw new Error('Upload the design to match first.');
-      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first, then mark its four corners.');
+      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first.');
       if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe the design first.');
       const user = await wallUser();
       const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
@@ -391,12 +392,15 @@ export default function WallPro() {
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
       const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
-      // The flat artwork is the production master. Setting it with a wall photo and
-      // valid corners drives the renderWallPreview compositor immediately (the
-      // preview effect keys on artwork/corners/exclusions), so the customer lands on
-      // the design projected onto their own wall with every mask preserved.
+      // The flat artwork is the production master and is shown first. With a wall
+      // photo and four valid corners the renderWallPreview compositor runs at once
+      // (the preview effect keys on artwork/corners/exclusions) and the customer
+      // lands on the design imposed on their wall; otherwise they see the flat
+      // rectangle and the on-wall view appears when the corners are in.
       const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
-      setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
+      const imposable = !!photo && validWallCorners(wallCorners);
+      setArtwork(art); setName(result.design_name); setMarking(imposable || !photo ? null : 'wall'); setView(imposable ? 'after' : 'design');
+      if (photo && !imposable) setNotice('Your flat design is ready. Mark the four wall corners on the Before view to see it imposed on your wall.');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
       try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
@@ -535,7 +539,8 @@ export default function WallPro() {
               <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
-              {photo && generationBlocker && dimensionsValid && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
+              {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
+              {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
               <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo)} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design'}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}

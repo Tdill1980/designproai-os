@@ -6,8 +6,12 @@ WallPro is the wedge product: a wall is one flat rectangle, so "output the
 panels correctly every time" is deterministic here. These are the live
 contracts; each names its lock.
 
-- **Corner gate.** With a wall photo, generation is blocked until four valid
-  corners exist (`wallGenerationBlocker`, `tests/wallpro.test.ts`).
+- **Flat first, then imposed (owner, 2026-09-11).** The flat rectangle is the
+  product and the print file, so generation needs the wall size and nothing
+  else (`wallGenerationBlocker`). With a photo and no valid corners the flat
+  design shows first; four valid corners switch on the on-wall view
+  (`wallPreviewBlocker`). Corners never block generation or print files
+  (`tests/wallpro.test.ts`).
 - **Detect my wall runs on upload.** A wall photo is sent to
   `detect-wall-openings` the moment it is chosen; corners and protected areas
   (windows, drapes, doors, outlets, furniture) land as editable preview state.
