@@ -6439,6 +6439,18 @@ export default function RevisionStudioIQ() {
                   </Button>
                   )}
 
+                  {/* WallPro print-ready panels by DesignID: the team downloads
+                      150 PPI files for any customer from one board. */}
+                  {isAdmin && (
+                  <Button
+                    variant="outline"
+                    className="w-full h-11"
+                    onClick={() => navigate("/admin/wallpro-production")}
+                  >
+                    WallPro Production (by DesignID)
+                  </Button>
+                  )}
+
                   {/* Download with stamp */}
                   <Button
                     variant="outline"

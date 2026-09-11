@@ -267,7 +267,7 @@ export default function WallPro() {
   }
   /** Preview-only: proposes corners and protected areas from the photo. Print
    * panels stay full rectangles whatever is detected; the installer trims. */
-  async function detectPhoto(asset: WallAsset) {
+  async function detectPhoto(asset: WallAsset, applyMasks = false) {
     const user = await wallUser();
     const wallPath = asset.path || await uploadWallAsset(asset, user.id);
     if (!asset.path) setPhoto(old => old && old.url === asset.url ? { ...old, path: wallPath } : old);
@@ -283,10 +283,13 @@ export default function WallPro() {
     // Segmentation masks follow the real outline of a bed, a drape or a shelf,
     // so the wall around them keeps the design. The coarse polygon list is only
     // the fallback when segmentation returned nothing usable.
-    const raster = found.masks.length && asset.width && asset.height ? await rasterizeDetectionMasks(found.masks, asset.width, asset.height).catch(() => null) : null;
+    // Owner (2026-09-11): people mark the windows and drapes themselves. Auto
+    // masks only run from the explicit button, never on upload.
+    const raster = applyMasks && found.masks.length && asset.width && asset.height ? await rasterizeDetectionMasks(found.masks, asset.width, asset.height).catch(() => null) : null;
     if (photoRef.current?.url !== asset.url) return;
     let maskCount = 0, labels: string[] = [];
-    if (raster) {
+    if (!applyMasks) { /* corners only; hand-drawn masks stay as they are */ }
+    else if (raster) {
       maskCount = found.masks.length; labels = found.masks.map(m => m.label);
       const blob = await canvasBlob(raster);
       const url = retain(URL.createObjectURL(blob));
@@ -297,24 +300,29 @@ export default function WallPro() {
     } else { setDetectedMask(null); setExclusions(found.openings.map(o => o.points)); maskCount = found.openings.length; labels = found.openings.map(o => o.label); }
     setExcludeDraft([]); setShowMasks(true);
     setView(artworkRef.current ? 'after' : 'before'); setError('');
-    const areas = maskCount ? `${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')})` : 'no areas to protect';
-    setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'Using the whole photo as the wall and ') + areas + '. Nothing to do unless you want to adjust: drag any point. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    const cornersNote = handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
+    if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes or Outline an object for anything the design must not cover. Masks affect the preview only; print panels stay full.');
+    else {
+      const areas = maskCount ? `${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')})` : 'no areas to protect';
+      setNotice(cornersNote + ' Found ' + areas + '. Drag any point to adjust; Clear detected areas removes them. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    }
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
    * customer's typing and a signed-out session or a model failure leaves the
    * upload in place and falls back to hand marking. */
-  async function detectInBackground(asset: WallAsset) {
-    setDetecting(true); setNotice('Finding your wall and the areas to protect. Enter the wall size meanwhile; nothing else is needed.');
-    try { await detectPhoto(asset); }
+  async function detectInBackground(asset: WallAsset, applyMasks = false) {
+    setDetecting(true); setNotice(applyMasks ? 'Finding windows, drapes and furniture to protect…' : 'Finding your wall. Enter the wall size meanwhile; nothing else is needed.');
+    try { await detectPhoto(asset, applyMasks); }
     catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Using the whole photo as the wall; drag the corners if the wall is smaller.'); }
     finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
-  function detectMyWall() {
+  function detectMyWall(applyMasks = false) {
     if (!photo || detecting) return;
-    cornersOrigin.current = 'default'; setMarking(null);
-    void detectInBackground(photo);
+    if (!applyMasks) cornersOrigin.current = 'default';
+    setMarking(null);
+    void detectInBackground(photo, applyMasks);
   }
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
@@ -492,10 +500,13 @@ export default function WallPro() {
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Corners and protected areas are detected automatically. A wall photo is optional when generating artwork.</p>
+          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
-              <Button className="w-full" variant="outline" disabled={!!busy || detecting} onClick={detectMyWall}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting your wall…' : 'Detect my wall again'}</Button>
-              <p className="text-xs text-slate-600">{detecting ? 'Finding the corners and the areas to protect (windows, drapes, doors, outlets, furniture). You can enter the wall size now.' : 'Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.'}</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
+                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Auto-mask windows & furniture</Button>
+              </div>
+              <p className="text-xs text-slate-600">{detecting ? 'Working on it. You can enter the wall size now.' : 'The wall corners were placed when you uploaded the photo; drag any point to adjust. Use the mask tools on the photo for windows, drapes and furniture, or try Auto-mask.'}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
@@ -506,7 +517,7 @@ export default function WallPro() {
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
               { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
               { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
