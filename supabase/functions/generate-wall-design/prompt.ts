@@ -38,6 +38,17 @@ export function wallRefinePrompt(input: { prompt: string; placement: string; mas
   ].filter(Boolean).join('\n\n');
 }
 
+/** The one retry after IMAGE_RECITATION on a match. The model declines to
+ * reproduce a reference it recognises as a published photograph (a stock
+ * photo of a slat wall, measured 3/3 on 2026-09-11), so the retry asks for an
+ * ORIGINAL covering in the reference's material through the style-inspiration
+ * path instead of a copy. Same request, same credit, one retry only. */
+export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; height: number; placement: string; referencePath?: string | null; wallPath?: string | null }) {
+  const brief = 'An original wall covering with exactly the material, pattern, motif scale, colour, grain and texture of the reference image, drawn fresh as flat straight-on artwork at real-world scale: not a copy of the photograph, and nothing of the room around it (no furniture, window, drapes, floor, lighting or perspective).'
+    + (input.prompt.trim() ? ' ' + input.prompt.trim() : '');
+  return wallDesignPrompt({ ...input, intent: 'prompt', prompt: brief });
+}
+
 export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';
   if (intent === 'refine') return wallRefinePrompt(input);

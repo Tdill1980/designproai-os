@@ -1,4 +1,4 @@
-import { wallDesignPrompt, WALL_INTENTS, type WallIntent } from './prompt.ts';
+import { wallDesignPrompt, wallMatchRecoveryPrompt, WALL_INTENTS, type WallIntent } from './prompt.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
@@ -163,14 +163,30 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       }
       if (!reservation.data.fresh) return await signedResult(reservation.data.generation);
       reserved = true;
-      const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
-        signal: AbortSignal.timeout(100_000),
-      });
-      if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
-      const result = await provider.json();
-      const final = finalWallImage(result);
+      const draw = async (text: string) => {
+        const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, ...parts.slice(1)] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
+          signal: AbortSignal.timeout(100_000),
+        });
+        if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
+        return finalWallImage(await provider.json());
+      };
+      let final: { mimeType: string; data: string };
+      let recoveredFrom: string | null = null;
+      try { final = await draw(parts[0].text); }
+      catch (err) {
+        // IMAGE_RECITATION on a match: the model declined to reproduce a
+        // reference it recognises as a published photograph. Measured 3/3 on
+        // 2026-09-11 against a stock slat-wall photo, failing the customer
+        // with nothing. One retry asks for an ORIGINAL covering in the
+        // reference's material instead of a copy; anything else re-throws.
+        const reason = err instanceof Error ? err.message.match(/\(([A-Z_]+)\)/)?.[1] || '' : '';
+        if (input.intent !== 'match' || !reason.includes('RECITATION')) throw err;
+        recoveredFrom = reason;
+        console.log(JSON.stringify({ event: 'wall_match_recitation_retry', request_id: input.requestId, reason }));
+        final = await draw(wallMatchRecoveryPrompt(input));
+      }
       const bytes = decodeWallImage(final.data);
       if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');
       // Production is judged by returned pixels over wall inches, never by the
@@ -179,7 +195,7 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const aspectRatio = requestedAspect;
       const dims = imageDimensions(bytes);
       const enlargement = dims ? Number(Math.max(input.width * PRODUCTION_PPI / dims.width, input.height * PRODUCTION_PPI / dims.height).toFixed(2)) : null;
-      console.log(JSON.stringify({ event: 'wall_master_returned', request_id: input.requestId, intent: input.intent, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, mime: final.mimeType, bytes: bytes.length, width: dims?.width ?? null, height: dims?.height ?? null, wall_in: [input.width, input.height], production_ppi: PRODUCTION_PPI, required_enlargement: enlargement }));
+      console.log(JSON.stringify({ event: 'wall_master_returned', request_id: input.requestId, intent: input.intent, recovered_from: recoveredFrom, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, mime: final.mimeType, bytes: bytes.length, width: dims?.width ?? null, height: dims?.height ?? null, wall_in: [input.width, input.height], production_ppi: PRODUCTION_PPI, required_enlargement: enlargement }));
       const ext = final.mimeType === 'image/jpeg' ? 'jpg' : final.mimeType === 'image/webp' ? 'webp' : 'png';
       const path = owner + '/generated/' + input.requestId + '.' + ext;
       const name = (input.intent === 'refine' ? 'Refined: ' + input.prompt.trim() : input.prompt.trim() || (input.intent === 'match' ? 'Matched design' : input.intent === 'wall' ? 'Design for your wall' : 'Wall design')).slice(0, 120);
@@ -191,7 +207,7 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const settled = await signedResult(finish.data);
       if (settled.status !== 200) return settled;
       const payload = await settled.json();
-      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement });
+      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement, recovered_from: recoveredFrom });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError','AbortError'].includes(err.name) ? 'The design service timed out. No automatic retry was sent.' : err instanceof Error ? err.message : 'Wall design generation failed.';
       if (reserved) {

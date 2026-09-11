@@ -25,13 +25,17 @@ export async function openWallAsset(path: string): Promise<string> {
   return data.signedUrl;
 }
 
-async function recoverWallGeneration(requestId: unknown) {
+async function readWallGeneration(requestId: unknown) {
   if (typeof requestId !== 'string' || !requestId) return null;
   const { data, error } = await db.from('wallpro_generations')
     .select('id,design_name,artwork_path,state,error')
     .eq('id', requestId)
     .maybeSingle();
-  if (error || !data || data.state !== 'completed' || !data.artwork_path) return null;
+  return error ? null : data;
+}
+async function recoverWallGeneration(requestId: unknown) {
+  const data = await readWallGeneration(requestId);
+  if (!data || data.state !== 'completed' || !data.artwork_path) return null;
   const imageUrl = await openWallAsset(data.artwork_path);
   return {
     storage_path: data.artwork_path as string,
@@ -47,8 +51,12 @@ export async function generateWall(input: Record<string, unknown>) {
     // The provider may finish and persist the artwork even if the browser loses
     // the final Edge response. Treat the generation ledger as authority before
     // showing a transport failure to the user.
-    const recovered = await recoverWallGeneration(input.requestId).catch(() => null);
-    if (recovered) return recovered;
+    const row = await readWallGeneration(input.requestId).catch(() => null);
+    if (row?.state === 'completed' && row.artwork_path) { const recovered = await recoverWallGeneration(input.requestId).catch(() => null); if (recovered) return recovered; }
+    // The ledger recorded WHY it failed (a provider refusal, a size limit).
+    // That reason is the message; "interrupted, check My wall designs" is only
+    // for a request the ledger never settled.
+    if (row?.state === 'failed' && typeof row.error === 'string' && row.error) throw new Error(row.error.replace(/ Your render credit will be returned\.?/g, ' Your render credit was returned.'));
 
     const response = (error as any).context;
     const body = await response?.clone?.().json().catch(() => null);
