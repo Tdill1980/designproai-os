@@ -23,6 +23,9 @@ const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3
 const panelClass = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
 type History = Awaited<ReturnType<typeof wallHistory>>;
 
+/** The project a reload reopens when the URL has lost its ?project=. */
+const LAST_PROJECT_KEY = 'wallpro:last-project';
+
 export default function WallPro() {
   const [params, setParams] = useSearchParams();
   const [projectId, setProjectId] = useState(() => params.get('project') || crypto.randomUUID());
@@ -415,13 +418,32 @@ export default function WallPro() {
     return () => { active = false; };
   }, [versions]);
   useEffect(() => {
-    if (loadOnce.current || !params.get('project')) return;
+    if (loadOnce.current) return;
+    const linked = params.get('project');
+    if (linked) {
+      loadOnce.current = true;
+      void run('Opening project', async () => {
+        const project = await getWallProject(linked);
+        await restore(project.config, project.id, project.name);
+      });
+      return;
+    }
+    // A reload or a sidebar click drops the ?project= from the URL; the last
+    // project the customer worked on comes back rather than a blank wall
+    // (owner, 2026-09-11: "It refreshed and they're gone"). "Start fresh" is
+    // the one way to a blank wall. Unreadable (signed out, deleted) fails soft.
+    let remembered: string | null = null;
+    try { remembered = localStorage.getItem(LAST_PROJECT_KEY); } catch { remembered = null; }
+    if (!remembered) return;
     loadOnce.current = true;
-    void run('Opening project', async () => {
-      const project = await getWallProject(params.get('project')!);
-      await restore(project.config, project.id, project.name);
-    });
+    getWallProject(remembered)
+      .then(project => run('Opening your last project', () => restore(project.config, project.id, project.name)))
+      .catch(() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing to forget */ } });
   }, []);
+  useEffect(() => {
+    const id = params.get('project');
+    if (id) try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch { /* private mode: the URL still carries it */ }
+  }, [params]);
   async function persistCurrent(art: WallAsset | null = artwork, designName = name) {
     const user = await wallUser();
     const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
@@ -505,7 +527,7 @@ export default function WallPro() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div><p className="text-xs font-semibold uppercase tracking-widest text-violet-600">DesignProAI</p><h1 className="mt-1 text-3xl font-bold">Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span></h1><p className="mt-1 text-sm text-slate-600">Your wall. Your design. Sized to fit.</p></div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" disabled={!!busy} onClick={() => window.location.assign('/printpro/wallpro')} title="Start a blank wall. Saved projects remain in My wall designs."><RotateCcw className="mr-2 h-4 w-4" />Start fresh</Button>
+          <Button variant="outline" disabled={!!busy} onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }} title="Start a blank wall. Saved projects remain in My wall designs."><RotateCcw className="mr-2 h-4 w-4" />Start fresh</Button>
           <Button variant="outline" disabled={!!busy} onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}><FolderOpen className="mr-2 h-4 w-4" />My wall designs</Button>
         </div>
       </header>

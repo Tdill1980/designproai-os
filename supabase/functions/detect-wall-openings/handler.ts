@@ -82,7 +82,7 @@ function polygonArea(points: Point[]): number {
 
 /** Validates and normalizes the model's answer. Anything malformed is dropped
  * rather than trusted: a bad corner set becomes null, a bad polygon is skipped. */
-export function normalizeDetection(raw: any): Omit<WallDetection, 'model'> {
+export function normalizeDetection(raw: any): Omit<WallDetection, 'model' | 'masks'> {
   const wall = polygon(raw?.wall, 4, 4);
   const openings: WallDetection['openings'] = [];
   for (const item of Array.isArray(raw?.openings) ? raw.openings.slice(0, 24) : []) {
