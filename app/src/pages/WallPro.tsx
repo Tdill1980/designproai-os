@@ -158,7 +158,7 @@ export default function WallPro() {
   );
   async function storedAsset(path: string): Promise<WallAsset> {
     const url = await openWallAsset(path), image = await loadWallImage(url);
-    return { path, url, aspect: image.naturalWidth / image.naturalHeight };
+    return { path, url, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
   }
   async function restore(config: any, id?: string, title?: string) {
     const [wall, art, ref] = await Promise.all([config.wallPath ? storedAsset(config.wallPath) : null, config.artworkPath ? storedAsset(config.artworkPath) : null, config.referencePath ? storedAsset(config.referencePath) : null]);
@@ -237,7 +237,7 @@ export default function WallPro() {
       // valid corners drives the renderWallPreview compositor immediately (the
       // preview effect keys on artwork/corners/exclusions), so the customer lands on
       // the design projected onto their own wall with every mask preserved.
-      const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight };
+      const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
@@ -288,15 +288,34 @@ export default function WallPro() {
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
         {!history.projects.length && !history.generations.length && <p className="py-4 text-sm text-slate-500">Your saved projects will appear here.</p>}
       </section>}
-      <div className="grid gap-5 lg:grid-cols-[350px_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. A wall photo is optional when generating artwork.</p>
             {photo && <p className="mt-3 text-sm text-slate-600">Mark all four wall corners: top left, top right, bottom right, bottom left. Generation waits until the wall is marked so the design lands on your photo.</p>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Size the artwork</h2><label className="block text-sm">Placement<select className={inputClass} value={placement} onChange={e => setPlacement(e.target.value as Placement)}><option value="cover">Fill wall — crop edges</option><option value="contain">Fit whole artwork — leave margins</option><option value="repeat">Repeat pattern at a measured size</option></select></label>
-            {placement === 'repeat' && <label className="mt-3 block text-sm">Pattern tile width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /><span className="mt-2 block text-xs text-slate-500">One tile is the entire uploaded image. Height follows its proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</span></label>}
+          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Placement and pattern scale</h2>
+            <div className="grid gap-2">{([
+              { value: 'cover', label: 'Mural', hint: 'One image fills the whole wall. Motifs scale with the wall.' },
+              { value: 'repeat', label: 'Repeating pattern', hint: 'The image is one tile, repeated at a measured size like wallpaper.' },
+              { value: 'contain', label: 'Fit whole image', hint: 'Nothing cropped; margins where it does not cover.' },
+            ] as const).map(option => <button key={option.value} type="button" onClick={() => setPlacement(option.value)} className={'rounded-lg border p-3 text-left ' + (placement === option.value ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="block text-sm font-semibold">{option.label}</span><span className="block text-xs text-slate-600">{option.hint}</span></button>)}</div>
+            {placement === 'repeat' && <div className="mt-3">
+              <p className="text-sm">Pattern scale (tile width)</p>
+              <div className="mt-1 grid grid-cols-5 gap-1">{[24, 36, 48, 72, 96].map(inches => <Button key={inches} size="sm" variant={repeatWidth === inches ? 'default' : 'outline'} onClick={() => setRepeatWidth(inches)}>{inches}″</Button>)}</div>
+              <label className="mt-2 block text-xs text-slate-600">Custom width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={repeatWidth || ''} onChange={e => setRepeatWidth(Number(e.target.value))} /></label>
+              <p className="mt-2 text-xs text-slate-500">One tile is the entire image; its height follows the image proportions.{layout.mirror ? ' Mirror repeat: every second tile is flipped.' : ''}</p>
+            </div>}
+            {artwork?.width && artwork.height && metrics && (() => {
+              // Pixels over inches at this placement. A 4K mural on a 10-foot wall
+              // is not print quality whatever the preview looks like.
+              const ppi = Math.min(artwork.width / metrics.artworkWidth, artwork.height / metrics.artworkHeight);
+              const target = printSettings.minPpi;
+              return <p role="status" className={'mt-3 rounded-lg p-3 text-sm ' + (ppi >= target ? 'bg-emerald-50 text-emerald-900' : 'bg-amber-50 text-amber-900')}>
+                <strong>{ppi.toFixed(0)} PPI</strong> at this size from a {artwork.width.toLocaleString()} × {artwork.height.toLocaleString()} px image. {ppi >= target ? `Print quality (${target} PPI needed).` : placement === 'repeat' ? `Below the ${target} PPI print target: choose a smaller tile or a higher-resolution image.` : `Below the ${target} PPI print target. If this is a pattern, choose Repeating pattern and a tile width; if it is a mural, it needs a higher-resolution master.`}
+              </p>;
+            })()}
             {placement === 'repeat' && <div className="mt-3 rounded-lg border border-slate-200 p-3">
               <label className="block text-sm">Seamless repeat<select className={inputClass} value={seamPreference} onChange={e => setSeamPreference(e.target.value as SeamlessPreference)}>
                 <option value="auto">Automatic: verify the tile, mirror if it does not join</option>
@@ -318,7 +337,11 @@ export default function WallPro() {
               <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={showPrintGuides} onChange={e => setShowPrintGuides(e.target.checked)} />Show 51-inch print panel guides</label>
             </div>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid grid-cols-3 gap-2">{(['library','ai','upload'] as const).map(mode => <Button key={mode} variant={designMode === mode ? 'default' : 'outline'} onClick={() => { setDesignMode(mode); setArtwork(null); setDesignId(null); }}>{mode === 'library' ? 'Pick a design' : mode === 'ai' ? 'Create with AI' : 'Use my artwork'}</Button>)}</div>
+          <section className={panelClass}><h2 className="mb-3 font-semibold">3. Choose your design</h2><div className="mb-4 grid gap-2">{([
+              { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
+              { mode: 'ai', label: 'Create with AI', hint: 'Describe a mural or a repeating pattern.' },
+              { mode: 'upload', label: 'Use my artwork', hint: 'Upload a mural or a pattern tile.' },
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -328,7 +351,12 @@ export default function WallPro() {
                 </button>)}</div>
                 <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
               </>}
-            </div> : designMode === 'ai' ? <div className="space-y-3"><label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+            </div> : designMode === 'ai' ? <div className="space-y-3">
+              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-2 gap-2">
+                <Button variant={placement !== 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('cover'); setArtwork(null); }}>Mural</Button>
+                <Button variant={placement === 'repeat' ? 'default' : 'outline'} onClick={() => { setPlacement('repeat'); setArtwork(null); }}>Repeating pattern</Button>
+              </div><p className="mt-1 text-xs text-slate-500">{placement === 'repeat' ? `A seamless tile is generated and repeated at ${repeatWidth}″ (set the scale in step 2).` : 'One composition sized to your wall.'}</p></div>
+              <label className="block text-sm">Describe the design<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder="Oversized blue botanicals on warm ivory, refined and hand-painted…" onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
               {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
               <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>

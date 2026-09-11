@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 export const WALLPRO_BUCKET = 'wallpro-files';
-export type WallAsset = { url: string; path?: string; file?: File; aspect: number };
+export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
 
 export async function wallUser() {

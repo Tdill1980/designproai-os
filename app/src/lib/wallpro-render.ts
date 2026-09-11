@@ -8,14 +8,14 @@ export async function loadWallImage(src: string): Promise<HTMLImageElement> {
   return image;
 }
 
-export async function validateWallUpload(file: File): Promise<{ url: string; aspect: number }> {
+export async function validateWallUpload(file: File): Promise<{ url: string; aspect: number; width: number; height: number }> {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG or WebP image. Export HEIC, PDF or TIFF to one of these formats first.');
   if (file.size > 20 * 1024 * 1024 || file.size === 0) throw new Error('Choose an image between 1 byte and 20 MB.');
   const url = URL.createObjectURL(file);
   try {
     const image = await loadWallImage(url);
     if (!image.naturalWidth || !image.naturalHeight || image.naturalWidth * image.naturalHeight > 60_000_000) throw new Error('Use an image with no more than 60 megapixels.');
-    return { url, aspect: image.naturalWidth / image.naturalHeight };
+    return { url, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
   } catch (e) { URL.revokeObjectURL(url); throw e; }
 }
 
