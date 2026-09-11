@@ -65,7 +65,7 @@ function fieldFixture() {
   })();
 }
 
-/** The one-field source with a wheel-well disc punched out of the driver territory: a refused field candidate. */
+/** The one-field source with a near-black disc inside the driver territory: a cut-out FINDING on the field (flagged, never refused). */
 let holedFieldPromise;
 function holedFieldFixture() {
   return holedFieldPromise ||= (async () => {
@@ -73,6 +73,17 @@ function holedFieldFixture() {
     const driver=fieldManifest.zones.find(zone=>zone.surfaceKey==="driver");
     const cx=driver.x+Math.round(driver.w/2), cy=driver.y+Math.round(driver.h/2), r=Math.round(Math.min(driver.w,driver.h)*0.3);
     return sharp(fieldSource).composite([{input:Buffer.from(`<svg width="4096" height="4096"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#000000"/></svg>`)}]).png().toBuffer();
+  })();
+}
+/** The one-field source with the driver territory drawn as a bright piece on a near-black surround: a BLOCKING refusal (edge hole) on the field. */
+let silhouetteFieldPromise;
+function silhouetteFieldFixture() {
+  return silhouetteFieldPromise ||= (async () => {
+    const {fieldManifest,fieldSource}=await fieldFixture();
+    const d=fieldManifest.zones.find(zone=>zone.surfaceKey==="driver");
+    // ~75% of the territory is a bright piece; its whole border ring is near-black.
+    const inset=Math.round(d.h*0.1);
+    return sharp(fieldSource).composite([{input:Buffer.from(`<svg width="4096" height="4096"><rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" fill="#000000"/><rect x="${d.x+inset}" y="${d.y+inset}" width="${d.w-inset*2}" height="${d.h-inset*2}" fill="#4fa3d1"/></svg>`)}]).png().toBuffer();
   })();
 }
 
@@ -189,12 +200,36 @@ test("the one-field contract is the primary Call 1 by default: one field call, n
   assert.equal(run.masterCalls.length,1,"a stored field design resumes without a call");
 });
 
-test("a refused one-field budget fails closed; it never falls back to the six-surface request",async t=>{
+test("a field candidate with a near-black cut-out finding is accepted in ONE call, flagged for PanelPro, never filled and never refused",async t=>{
+  // Owner 2026-09-11: "we extract panels — why is Gemini not doing it in one
+  // pass". On the field contract the near-black predicate convicts dark
+  // artwork (a rust patch, a stone wall); the finding is a human-QC flag.
   finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,undefined);
   const {source}=await fixture();const holedField=await holedFieldFixture();
   const run=harness(source);
   run.masterFor=async()=>holedField;
-  await assert.rejects(run.run(),error=>error.code==="flat_atlas_unrepaired_cutout"&&error.retryable===false&&/driver/.test(error.message));
+  const result=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:field:1"],"no second attempt is spent on a flag");
+  assert.deepEqual(result.metadata.masterCutoutSurfaces,["driver"],"the finding is recorded for PanelPro");
+  assert.equal(result.metadata.masterCutoutDisposition,"flagged-for-panelpro-qc");
+  assert.match(result.metadata.masterCutoutFindings.join(" "),/driver largestCutoutComponentRatio=/);
+  assert.deepEqual(result.metadata.cutoutFillApplied,[],"nothing is repainted on the field");
+  assert.equal(result.metadata.cutoutFillContract,null);
+  assert.equal(result.metadata.preRepairMasterHash,null,"the accepted master IS the authored candidate");
+  assert.equal(result.metadata.masterQcPassed,true);
+  assert.equal(result.callOnePanels.length,6);
+  assert.equal(run.publicMasters.length,1);
+  // Resume reproduces the same surface source without a fill and without a call.
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);assert.equal(run.masterCalls.length,1);
+});
+
+test("a BLOCKING field refusal (a piece on a near-black surround) fails closed after the budget; it never falls back to the six-surface request",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);primaryFlag(t,undefined);
+  const {source}=await fixture();const silhouette=await silhouetteFieldFixture();
+  const run=harness(source);
+  run.masterFor=async()=>silhouette;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_master_deterministic_failed"&&error.retryable===false&&/driver/.test(error.message));
   assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:field:1","master:field:2"],
     "one candidate, one unchanged fallback, then fail closed on the field contract");
   for(const call of run.masterCalls){

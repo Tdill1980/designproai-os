@@ -221,9 +221,12 @@ test("an absent semantic verdict is never claimed as final-master acceptance", (
   assert.doesNotMatch(afterLoop, /masterAcceptance: "semantic"/);
 });
 
-test("deterministic cut-out findings carry into repair", () => {
+test("deterministic cut-out findings carry into repair on six-surface, and are flagged without a fill on the field", () => {
   assert.match(loop, /masterCutoutSurfaces = cutoutSurfacesOf\(deterministic\)/);
-  assert.match(afterLoop, /fillMasterCutouts\(masterBytes, manifest, masterCutoutSurfaces\)/);
+  assert.match(afterLoop, /const cutoutFillSurfaces = cutoutFlagOnly \? \[\] : masterCutoutSurfaces;/);
+  assert.match(afterLoop, /fillMasterCutouts\(masterBytes, manifest, cutoutFillSurfaces\)/);
+  assert.match(source, /const cutoutFlagOnly = authoringTopology === "field";/);
+  assert.match(loop, /if \(masterCutoutSurfaces\.length && !cutoutFlagOnly\) \{/);
 });
 
 test("the revision records what decided acceptance and what the judge said", () => {
@@ -256,7 +259,7 @@ test("click -> master is measured in segments on the immutable revision", () => 
 
 test("repair timing wraps the real deterministic fill instead of reporting a permanent zero", () => {
   const started = afterLoop.indexOf("const repairStartedAt = Date.now()");
-  const fill = afterLoop.indexOf("await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces)");
+  const fill = afterLoop.indexOf("await fillMasterCutouts(masterBytes, manifest, cutoutFillSurfaces)");
   const completed = afterLoop.indexOf("timings.repairMs += Date.now() - repairStartedAt");
   assert.ok(started > -1 && fill > started && completed > fill,
     "repair timing must surround the actual cut-out fill");

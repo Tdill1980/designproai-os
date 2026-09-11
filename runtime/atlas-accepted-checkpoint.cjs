@@ -71,9 +71,17 @@ function assertIdentity(record, identity) {
   }
   const checks = record.state?.masterDeterministic;
   const zoneKeys = Array.isArray(checks?.zones) ? checks.zones.map((zone) => zone.surfaceKey) : [];
-  if (record.state?.masterDeterministic?.accepted !== true
+  // A cut-out finding proves acceptance only where the field contract flagged
+  // it for PanelPro human QC (owner 2026-09-11) and nothing was blocking; on
+  // six-surface a finding is a refusal and can never sit inside an accepted
+  // record. `deterministicMasterChecks.accepted` counts findings as failures,
+  // so the flagged case is proven by the empty blocking list instead.
+  const flaggedOnField = record.state?.masterCutoutDisposition === "flagged-for-panelpro-qc"
+    && Array.isArray(checks?.blockingFailures) && checks.blockingFailures.length === 0;
+  if ((record.state?.masterDeterministic?.accepted !== true && !flaggedOnField)
     || !Array.isArray(checks.blockingFailures) || checks.blockingFailures.length
-    || !Array.isArray(checks.cutoutFindings) || checks.cutoutFindings.length
+    || !Array.isArray(checks.cutoutFindings)
+    || (checks.cutoutFindings.length && !flaggedOnField)
     || zoneKeys.length !== 6 || new Set(zoneKeys).size !== 6
     || ["driver", "passenger", "hood", "roof", "front", "rear"].some((key) => !zoneKeys.includes(key))
     || record.state.outputClassReceipt?.contract !== "designpro.atlas-output-class-gate.v1"

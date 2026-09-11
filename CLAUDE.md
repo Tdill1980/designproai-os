@@ -34,13 +34,37 @@ reproduce, never a style hint. Locked by
 pin the opt-out for their own duration. Nothing in this header is a deploy
 receipt; the branch is `claude/atlas-regressions-fix-ikytc4`.
 
-Open, and NOT changed by this cutover: the near-black cut-out finding is
-still terminal on the field branch (it convicted a rust patch on `06bc1851`
-and a stone wall on `34441561338` F1); "on one square 4K image ... seen
-straight on" is sometimes read as a print object in a scene (5 of 12 masters
-in run `34539589338`, four caught by the border-ring telemetry, none by the
-gates); the code cut can slice lettering across a territory boundary. Those
-are gate and wording items, measured, with fixtures under `docs/ab/`.
+**One pass, same day.** Owner: *"we had never had any issues prior with
+logos or design in general ... ATLAS was created to fix the persistent file
+output issue: flat first, one single cohesive wrap design; we extract
+panels. Why is Gemini not doing it in one pass?"* The accepted revisions
+since 2026-09-04 all ARE one pass (one Call-1 attempt, 55–85 s to master
+and six panels, finishing off). What broke the pass was the refusal ladder:
+the six-surface first attempt drawing anatomy, then the near-black cut-out
+predicate refusing the field candidate for dark artwork (`b53702b4`: a rust
+patch; `34441561338` F1: a stone wall). So on the field contract a cut-out
+finding is now a FLAG (`cutoutFlagOnly`): the candidate is accepted as
+authored, `masterCutoutSurfaces` and `masterCutoutFindings` are recorded,
+`metadata.masterCutoutDisposition` says `flagged-for-panelpro-qc`, nothing
+is filled or repainted, and PanelPro's preflight keeps those sides from
+printing unseen (RULE 0.15). The six-surface opt-out keeps its refusal.
+Blocking structural failures (a piece on a surround, `edgeHoleRatio`) still
+refuse within the budget and fail closed. Locked in
+`tests/atlas-authoring-recovery.test.mjs`.
+
+The pre-migration chain, traced from the RestylePro source and its live
+database on 2026-09-11 (`docs/ATLAS-PRE-MIGRATION-TRUTH-2026-09-11.md`):
+every July print panel was a code crop of ONE continuous 21:9 strip with
+nothing vehicle-shaped in it (the driver view with the vehicle edited out),
+and the labeled multi-panel artboard mode was disabled in RestylePro itself.
+The one-field primary is that architecture; the remaining deltas (wide
+aspect, cover-fit slicing, overlay branding) are owner decisions listed
+there.
+
+Open, measured, with fixtures under `docs/ab/`: "on one square 4K image ...
+seen straight on" is sometimes read as a print object in a scene (5 of 12
+masters in run `34539589338`, four caught by the border-ring telemetry, none
+by the gates); the code cut can slice lettering across a territory boundary.
 
 ## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10; now the six-surface opt-out path)
 

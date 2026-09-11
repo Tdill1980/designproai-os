@@ -2447,9 +2447,12 @@ async function loadLatestAtlasRevision(supabase, requestId) {
   // The repaired sheet is recomputed, never stored: `fillMasterCutouts` is
   // deterministic, so a resumed run rebuilds exactly the bytes the first pass
   // cut and conditioned from, and the recorded `panelSourceHash` proves it.
+  // A field revision records its flagged surfaces without ever filling them
+  // (`cutoutFlagOnly`), so the resumed fill list is empty there too.
   const surfaceFill = await fillMasterCutouts(
     masterBytes, manifest,
-    Array.isArray(row.metadata?.masterCutoutSurfaces) ? row.metadata.masterCutoutSurfaces : [],
+    manifest.topology === FIELD_TOPOLOGY ? []
+      : Array.isArray(row.metadata?.masterCutoutSurfaces) ? row.metadata.masterCutoutSurfaces : [],
   );
   const surfaceSourceBytes = surfaceFill.bytes;
   const surfaceSourceHash = surfaceFill.changed ? sha256(surfaceSourceBytes) : row.master_content_hash;
@@ -3012,6 +3015,19 @@ async function generateOrReuseFlatAtlas(options) {
   let masterDelivery = recoveredState?.masterDelivery || null;
   let masterCutoutSurfaces = [];
   let masterCutoutFindings = [];
+  // ONE PASS ON THE FIELD CONTRACT (owner, Trish 2026-09-11: "we extract
+  // panels — why is Gemini not doing it in one pass"). On the one-field
+  // contract a near-black cut-out finding is a FLAG for PanelPro human QC,
+  // never a refusal and never a repaint. The predicate was built for wheel
+  // discs punched into six-surface sheets; on a continuous field with no
+  // anatomy it convicts dark artwork (b53702b4: a rust patch on a distressed
+  // Martini field; 34441561338 F1: a stone wall behind the customer's photo),
+  // and filling those would smear real design. So the candidate is accepted
+  // as authored, the surfaces are recorded in `masterCutoutSurfaces` exactly
+  // as before, PanelPro shows them as flagged, and `await_panelpro_preflight_qc`
+  // keeps them from printing unseen (RULE 0.15: a cut-out is a print defect,
+  // not a broken design). The six-surface contract keeps its refusal.
+  const cutoutFlagOnly = authoringTopology === "field";
   // The pixel measurements that actually decided acceptance, kept for the row.
   let masterDeterministic = recoveredState?.masterDeterministic || null;
   // The output-class receipt for the accepted candidate (owner ruling
@@ -3049,6 +3065,7 @@ async function generateOrReuseFlatAtlas(options) {
       outputClassReceipt, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
       maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
       authoringTopology, authoringPrimaryTopology: primaryTopology, authoringFailover: failoverFrom || null,
+      masterCutoutDisposition: masterCutoutSurfaces.length ? (cutoutFlagOnly ? "flagged-for-panelpro-qc" : "refused") : "none",
       passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
   };
   if (!recoveredCheckpoint) {
@@ -3125,7 +3142,7 @@ async function generateOrReuseFlatAtlas(options) {
     // this refusal set.
     const stillBlocking = [...(deterministic.blockingFailures || [])];
     let refusalCode = "flat_atlas_master_deterministic_failed";
-    if (masterCutoutSurfaces.length) {
+    if (masterCutoutSurfaces.length && !cutoutFlagOnly) {
       if (!stillBlocking.length) refusalCode = "flat_atlas_unrepaired_cutout";
       stillBlocking.unshift(
         `unrepaired cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
@@ -3270,11 +3287,15 @@ async function generateOrReuseFlatAtlas(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
-  if (masterCutoutSurfaces.length) {
+  if (masterCutoutSurfaces.length && !cutoutFlagOnly) {
     throw new FlatAtlasError("flat_atlas_unrepaired_cutout", "The authored master contains cutouts; restoration does not heal or reconstruct artwork");
   }
+  // On the field contract the flagged surfaces are NOT filled: the fill list
+  // is empty, the fill is the identity, and the accepted master is the
+  // authored candidate byte for byte (see `cutoutFlagOnly`).
+  const cutoutFillSurfaces = cutoutFlagOnly ? [] : masterCutoutSurfaces;
   const repairStartedAt = Date.now();
-  const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
+  const cutoutFill = await fillMasterCutouts(masterBytes, manifest, cutoutFillSurfaces);
   timings.repairMs += Date.now() - repairStartedAt;
   let surfaceSourceBytes = cutoutFill.bytes;
   let panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;
@@ -3765,6 +3786,11 @@ async function generateOrReuseFlatAtlas(options) {
       // still must not print until a human has seen them on a template.
       masterCutoutSurfaces,
       masterCutoutFindings,
+      // How a cut-out finding was handled on this contract: flagged for
+      // PanelPro human QC (field) or refused within the bounded budget
+      // (six-surface). Absent findings are "none".
+      masterCutoutDisposition: masterCutoutSurfaces.length
+        ? (cutoutFlagOnly ? "flagged-for-panelpro-qc" : "refused") : "none",
       // WHICH PASSENGER THIS RUN SHIPPED, ALWAYS STATED. (owner ruling 2026-09-07)
       //
       // Composition can decline -- on a design whose lettering could not be
