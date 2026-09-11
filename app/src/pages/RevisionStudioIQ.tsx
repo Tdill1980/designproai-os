@@ -12,6 +12,11 @@ import {
   readRevisionStudioDesign,
   historicalStudioProofs,
 } from "@/lib/revisionstudio-source";
+// WallPro is its own app on DesignProAI, like GraphicsPro: its designs sit in
+// this grid beside vehicle designs, keyed by DesignID, with the 150 PPI panels
+// downloadable from the card (owner, 2026-09-11).
+import { listWallDesignsForStudio } from "@/lib/wallpro-api";
+import { wallDesignOf, wallProjectPath, wallStudioRow } from "@/lib/wallpro-studio";
 import { renderClient } from "@/integrations/supabase/renderClient";
 import { downscaleStorageImage } from "@/lib/storage-image";
 import { type VersionCommit } from "@/lib/revision-commits";
@@ -2400,7 +2405,15 @@ export default function RevisionStudioIQ() {
       // the rows come from dpApi and arrive in exactly the shape the cards
       // below already read. Nothing about the grid, the cards or GalleryMode
       // changes -- only where a row comes from.
-      const all = await listRevisionStudioDesigns();
+      // Wall designs join the same feed. WallPro reads its own tables (a wall
+      // has no generation run), and a failure there must not hide the vehicle
+      // designs, so it fails soft to an empty set.
+      const [vehicle, walls] = await Promise.all([
+        listRevisionStudioDesigns(),
+        listWallDesignsForStudio().catch(() => []),
+      ]);
+      const all = [...vehicle, ...walls.map(wallStudioRow)]
+        .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 
       // Mode and search narrow the list in memory. The gateway already returns
       // only the caller's own runs, so the ownership branches the old query
@@ -6439,6 +6452,39 @@ export default function RevisionStudioIQ() {
                   </Button>
                   )}
 
+                  {/* A wall design's print-ready panels, right on its card: the
+                      150 PPI files built for the approved version, the manifest,
+                      and the way back into WallPro. */}
+                  {(() => {
+                    const wall = wallDesignOf(selectedRender);
+                    if (!wall) return null;
+                    const panels = wall.job?.panels || [];
+                    return (
+                      <div className="rounded-lg border border-violet-700/60 bg-violet-950/30 p-3 text-sm space-y-2" aria-label="WallPro print-ready panels">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-violet-200">WallPro · <span className="font-mono">{wall.designId}</span> · V{wall.versionNo}{wall.approved ? " approved" : " draft"}</span>
+                          <Button size="sm" variant="outline" className="h-8" onClick={() => { window.location.href = wallProjectPath(wall.projectId); }}>Open in WallPro</Button>
+                        </div>
+                        {!wall.approved && <p className="text-zinc-400">Approve a version in WallPro to build its 150 PPI panels.</p>}
+                        {wall.approved && !wall.job && <p className="text-zinc-400">No production build yet. Open in WallPro and build the panels.</p>}
+                        {wall.job && wall.job.status !== "ready" && <p className="text-zinc-400">Panels {wall.job.status === "failed" ? `failed: ${wall.job.error || "unknown error"}` : "are still building on the server"}.</p>}
+                        {panels.length > 0 && (
+                          <ul className="divide-y divide-violet-900/60 rounded border border-violet-900/60">
+                            {panels.map((p) => (
+                              <li key={p.number} className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
+                                <span className="text-zinc-300">Panel {p.number} · {p.widthIn} × {p.heightIn} in · {p.ppi} PPI · {(p.byteSize / 1024 / 1024).toFixed(0)} MB</span>
+                                {p.url ? <a className="text-violet-300 underline" href={p.url} download={p.file} rel="noopener">Download PNG</a> : <span className="text-zinc-500">link unavailable</span>}
+                              </li>
+                            ))}
+                            {wall.job?.manifestUrl && (
+                              <li className="flex items-center justify-between px-2 py-1.5"><span className="text-zinc-300">Panel manifest</span><a className="text-violet-300 underline" href={wall.job.manifestUrl} download="manifest.json" rel="noopener">JSON</a></li>
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* WallPro print-ready panels by DesignID: the team downloads
                       150 PPI files for any customer from one board. */}
                   {isAdmin && (
@@ -6710,7 +6756,9 @@ export default function RevisionStudioIQ() {
                         return;
                       }
                       if (mt === "wallpro" || mt.includes("wall")) {
-                        window.location.href = `/printpro/wallpro?renderId=${selectedRender.id}&quickQuote=1`;
+                        // The row id IS the WallPro project: reopen it with its
+                        // photo, versions and production panels.
+                        window.location.href = wallProjectPath(selectedRender.id);
                         return;
                       }
                       if (mt.includes("colorpro") || mt === "inkfusion" || mt === "colorproenhanced" || mt === "customstyling") {
@@ -6782,7 +6830,9 @@ export default function RevisionStudioIQ() {
                     })()}
                   </Button>
 
-                  {/* Delete Render */}
+                  {/* Delete Render. A wall design is owned by WallPro's own
+                      tables, not a generation run, so it is not deletable here. */}
+                  {!wallDesignOf(selectedRender) && (
                   <Button
                     variant="outline"
                     className="w-full border-red-800 text-red-400 hover:bg-red-900/30 hover:text-red-300 h-11"
@@ -6799,6 +6849,7 @@ export default function RevisionStudioIQ() {
                       <><Trash2 className="w-4 h-4 mr-2" /> Delete Render</>
                     )}
                   </Button>
+                  )}
                 </div>
 
                 {/* Original Prompt + render date/time — moved to the bottom */}

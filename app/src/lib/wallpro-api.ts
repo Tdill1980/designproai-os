@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
+import type { WallStudioDesign } from './wallpro-studio';
 export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
@@ -263,4 +264,49 @@ export async function listWallProductionJobsForTeam(limit = 100): Promise<WallTe
   const names = new Map<string, string>((projects.data || []).map((p: any) => [p.id, p.name]));
   const vers = new Map<string, { version_no: number; artwork_path: string }>((versions.data || []).map((v: any) => [v.id, v]));
   return jobs.map(j => ({ ...j, project_name: names.get(j.project_id) || 'Wall design', version_no: vers.get(j.version_id)?.version_no ?? null, artwork_path: vers.get(j.version_id)?.artwork_path ?? null }));
+}
+
+/* ── RevisionStudioIQ feed: every wall design the caller can read ─────────── */
+
+/** One row per project: the approved version when there is one (production
+ * reads only it), else the latest draft; with the latest production build and
+ * signed links for the master and each 150 PPI panel. Owners see their own
+ * projects; admins and testers see every customer's (RLS). Signed links last
+ * an hour, which outlives the grid's own refetch. */
+export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDesign[]> {
+  const { data, error } = await db.from('wallpro_design_versions').select('*').order('created_at', { ascending: false }).limit(limit * 6);
+  if (error) throw new Error('Wall designs could not be listed: ' + error.message);
+  const byProject = new Map<string, WallVersion>();
+  for (const v of (data || []) as WallVersion[]) {
+    const held = byProject.get(v.project_id);
+    if (!held || (v.status === 'approved' && held.status !== 'approved')) byProject.set(v.project_id, v);
+  }
+  const chosen = [...byProject.values()].slice(0, limit);
+  if (!chosen.length) return [];
+  const projectIds = chosen.map(v => v.project_id), versionIds = chosen.map(v => v.id);
+  const [projects, jobs] = await Promise.all([
+    db.from('wallpro_projects').select('id,name,created_at').in('id', projectIds),
+    db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }),
+  ]);
+  const names = new Map<string, string>((projects.data || []).map((p: any) => [p.id, p.name]));
+  const jobFor = new Map<string, WallProductionJob>();
+  for (const j of (jobs.data || []) as WallProductionJob[]) if (!jobFor.has(j.version_id)) jobFor.set(j.version_id, j);
+  const filePaths: string[] = [];
+  for (const j of jobFor.values()) { for (const p of j.panels || []) filePaths.push(p.path); if (j.manifest_path) filePaths.push(j.manifest_path); }
+  const [views, downloads] = await Promise.all([
+    openWallAssets(chosen.map(v => v.artwork_path)).catch(() => ({} as Record<string, string>)),
+    openWallAssets(filePaths, { download: true }).catch(() => ({} as Record<string, string>)),
+  ]);
+  return chosen.map(v => {
+    const j = jobFor.get(v.id) || null;
+    return {
+      projectId: v.project_id, projectName: names.get(v.project_id) || 'Wall design', versionId: v.id, versionNo: v.version_no,
+      approved: v.status === 'approved', designId: wallDesignId(v.id), artworkPath: v.artwork_path, artworkUrl: views[v.artwork_path] || null,
+      placement: v.placement, repeatWidthIn: v.repeat_width_in ? Number(v.repeat_width_in) : null, createdAt: v.created_at, approvedAt: v.approved_at,
+      job: j ? {
+        id: j.id, status: j.status, error: j.error, manifestUrl: j.manifest_path ? downloads[j.manifest_path] || null : null,
+        panels: (j.panels || []).map(p => ({ number: p.number, file: p.file, widthIn: p.widthIn, heightIn: p.heightIn, widthPx: p.widthPx, heightPx: p.heightPx, ppi: p.ppi, byteSize: p.byteSize, url: downloads[p.path] || null })),
+      } : null,
+    };
+  });
 }

@@ -126,12 +126,27 @@ contracts; each names its lock.
   (`tests/wallpro.test.ts`). **The client sees both at once**: the flat
   master stays on screen beside the photo pane, which shows the same file
   imposed the moment the corners exist (`WallPro.tsx` preview section).
-- **Detect my wall runs on upload.** A wall photo is sent to
-  `detect-wall-openings` the moment it is chosen; corners and protected areas
-  (windows, drapes, doors, outlets, furniture) land as editable preview state.
-  Signed-out or failed detection falls back to hand marking and never fails
-  the upload. Masks are preview-only; print panels stay full rectangles
-  (`wallpro-detect.test.ts`).
+- **Corner detection runs on upload; masks are marked by hand.** A wall photo
+  is sent to `detect-wall-openings` the moment it is chosen and only the four
+  corners land, as editable preview state; the photo starts as the full frame
+  so a missed detection never blocks the on-wall view. Protected areas
+  (windows, drapes, furniture) are hand-marked, or requested explicitly with
+  "Auto-mask windows & furniture" (segmentation masks, preview-only). Owner,
+  2026-09-11, after auto-masks swallowed the wall: "just have people mark it".
+  Signed-out or failed detection never fails the upload. Print panels stay
+  full rectangles (`wallpro-detect.test.ts`). **"Show me with AI"**
+  (`render-wall-view`) paints the flat master onto the room photo with the
+  image model and leaves everything that is not wall untouched; it is a
+  presentation picture, never a print file (`wallpro-view.test.ts`).
+- **WallPro designs live in RevisionStudioIQ and on the team board.** WallPro
+  is its own app on DesignProAI, like GraphicsPro, so its designs join the
+  RevisionStudio grid (`listWallDesignsForStudio` → `wallStudioRow`,
+  `mode_type: wallpro`, row id = project id, panels in `admin_notes.wallpro`)
+  and the admin/tester board at `/admin/wallpro-production` finds any
+  customer's 150 PPI panels by DesignID (`wallDesignId(versionId)`, e.g.
+  `DID-60553D10`). A reload without `?project=` reopens the last project
+  (`wallpro:last-project`); "Start fresh" is the only way to a blank wall.
+  Locked by `wallpro-studio.test.ts`.
 - **Seamless is measured and closed by code, never by re-asking the model.**
   `app/src/lib/wallpro-seamless.ts`; the print export refuses an unverified
   repeat (`wallpro-seamless.test.ts`).
