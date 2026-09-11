@@ -16,8 +16,9 @@ const fixed = policy.filter((line) => !line.includes("*"));
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
   // The previous 65 plus three ATLAS checkpoints/assembly modules, three PPO
   // execution modules, verified source/delivery bindings, two templates and
-  // the server-owned revision intake adapter and durable proof/authoring transports.
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 79);
+  // the server-owned revision intake adapter and durable proof/authoring transports,
+  // plus the hero-driver cascade (RULE 0.35, runtime/atlas-hero-driver.cjs).
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 80);
   for (const name of [
     "runtime/atlas-proof-transport.cjs",
     "runtime/atlas-authoring-transport.cjs",
