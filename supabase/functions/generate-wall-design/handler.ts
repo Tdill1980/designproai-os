@@ -1,4 +1,4 @@
-import { wallDesignPrompt } from './prompt.ts';
+import { wallDesignPrompt, WALL_INTENTS, type WallIntent } from './prompt.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
@@ -40,15 +40,50 @@ export function finalWallImage(result: any) {
 
 export function parseWallInput(body: any, owner: string) {
   if (!uuid.test(body.requestId || '') || !numberInRange(body.width) || !numberInRange(body.height)) throw new Error('Enter a valid wall width and height between 1 and 2,400 inches.');
-  if (typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 6000) throw new Error('Describe your wall design in 1–6,000 characters.');
+  const intent: WallIntent = body.intent === undefined || body.intent === null ? 'prompt' : body.intent;
+  if (!WALL_INTENTS.includes(intent)) throw new Error('Choose how to design: describe it, match your design, or design for your wall.');
+  const prompt = body.prompt === undefined || body.prompt === null ? '' : body.prompt;
+  if (typeof prompt !== 'string' || prompt.length > 6000) throw new Error('Describe your wall design in 1–6,000 characters.');
+  if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe your wall design in 1–6,000 characters.');
   if (!['cover', 'contain', 'repeat'].includes(body.placement)) throw new Error('Choose a mural or repeating-pattern placement.');
   const checkPath = (path: any) => {
     if (path === undefined || path === null) return null;
     if (typeof path !== 'string' || !path.startsWith(owner + '/uploads/') || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(path.split('/')[2] || '') || path.split('/').length !== 3) throw new Error('The reference image is not one of your uploaded files.');
     return path;
   };
-  return { requestId: body.requestId, prompt: body.prompt.trim(), width: body.width, height: body.height, placement: body.placement, wallPath: checkPath(body.wallPath), referencePath: checkPath(body.referencePath) };
+  const wallPath = checkPath(body.wallPath), referencePath = checkPath(body.referencePath);
+  if (intent === 'match' && !referencePath) throw new Error('Upload the design to match first.');
+  if (intent === 'wall' && !wallPath) throw new Error('Upload your wall photo first.');
+  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, wallPath, referencePath };
 }
+
+/** Pixel size of the returned image, read from the container headers (PNG
+ * IHDR, JPEG SOF, WebP VP8/VP8L/VP8X). Null when the container is unknown.
+ * This is the number production is judged by; "4K was requested" is not. */
+export function imageDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  const u32 = (i: number) => ((bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]) >>> 0;
+  if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return { width: u32(16), height: u32(20) };
+  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < bytes.length) {
+      if (bytes[i] !== 0xff) { i++; continue; }
+      const marker = bytes[i + 1];
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+      const length = (bytes[i + 2] << 8) | bytes[i + 3];
+      if ((marker >= 0xc0 && marker <= 0xcf) && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { height: (bytes[i + 5] << 8) | bytes[i + 6], width: (bytes[i + 7] << 8) | bytes[i + 8] };
+      i += 2 + length;
+    }
+    return null;
+  }
+  if (bytes.length > 30 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    const chunk = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+    if (chunk === 'VP8 ') return { width: ((bytes[26] | (bytes[27] << 8)) & 0x3fff), height: ((bytes[28] | (bytes[29] << 8)) & 0x3fff) };
+    if (chunk === 'VP8L') { const b = (bytes[21] | (bytes[22] << 8) | (bytes[23] << 16) | (bytes[24] << 24)) >>> 0; return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 }; }
+    if (chunk === 'VP8X') return { width: (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)) + 1, height: (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)) + 1 };
+  }
+  return null;
+}
+export const PRODUCTION_PPI = 150;
 
 export function nearestAspect(width: number, height: number): string {
   return ['1:1','2:3','3:2','3:4','4:3','4:5','5:4','9:16','16:9','21:9'].reduce((best, value) => {
@@ -93,7 +128,7 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // Resolve every private reference before charging or calling the provider.
       const parts: any[] = [{ text: wallDesignPrompt(input) }];
       let referenceBytes = 0;
-      for (const [label, path] of [['Wall photo — architectural context only', input.wallPath], ['Style reference / existing wall design', input.referencePath]]) {
+      for (const [label, path] of [[input.intent === 'wall' ? 'Wall photo — the room this artwork is for' : 'Wall photo — architectural context only', input.wallPath], [input.intent === 'match' ? 'Design to reproduce' : 'Style reference / existing wall design', input.referencePath]]) {
         if (!path) continue;
         const downloaded = await sb.storage.from(BUCKET).download(path);
         if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + label.toLowerCase() + ' could not be read. Upload it again before generating.', code: 'UPLOAD_UNREADABLE' }, 400);
@@ -120,15 +155,25 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const final = finalWallImage(result);
       const bytes = decodeWallImage(final.data);
       if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');
+      // Production is judged by returned pixels over wall inches, never by the
+      // size that was requested. Log both so the enlargement a wall needs is a
+      // recorded number, and hand the same numbers back to the caller.
+      const aspectRatio = input.placement === 'repeat' ? '1:1' : nearestAspect(input.width, input.height);
+      const dims = imageDimensions(bytes);
+      const enlargement = dims ? Number(Math.max(input.width * PRODUCTION_PPI / dims.width, input.height * PRODUCTION_PPI / dims.height).toFixed(2)) : null;
+      console.log(JSON.stringify({ event: 'wall_master_returned', request_id: input.requestId, intent: input.intent, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, mime: final.mimeType, bytes: bytes.length, width: dims?.width ?? null, height: dims?.height ?? null, wall_in: [input.width, input.height], production_ppi: PRODUCTION_PPI, required_enlargement: enlargement }));
       const ext = final.mimeType === 'image/jpeg' ? 'jpg' : final.mimeType === 'image/webp' ? 'webp' : 'png';
       const path = owner + '/generated/' + input.requestId + '.' + ext;
-      const name = input.prompt.trim().slice(0, 120);
+      const name = (input.prompt.trim() || (input.intent === 'match' ? 'Matched design' : input.intent === 'wall' ? 'Design for your wall' : 'Wall design')).slice(0, 120);
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: final.mimeType, upsert: false });
       if (uploaded.error) throw new Error('The design could not be saved. Your render credit will be returned.');
       const finish = await sb.rpc('finish_wallpro_generation', { p_id: input.requestId, p_owner: owner, p_path: path, p_name: name, p_error: null });
       if (finish.error) throw new Error('The design could not be recorded. Reopen My wall designs to check its status.');
       reserved = false;
-      return await signedResult(finish.data);
+      const settled = await signedResult(finish.data);
+      if (settled.status !== 200) return settled;
+      const payload = await settled.json();
+      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError','AbortError'].includes(err.name) ? 'The design service timed out. No automatic retry was sent.' : err instanceof Error ? err.message : 'Wall design generation failed.';
       if (reserved) {
