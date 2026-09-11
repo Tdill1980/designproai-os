@@ -11,7 +11,9 @@ export function rectangularWallMask(a: Point, b: Point): Point[] {
   if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
   return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
 }
-export const WALLPRO_PRINT_WIDTH = 51;
+// Printable panel width on the production roll (owner, 2026-09-11): 59.5 in,
+// with the half-inch duplicated overlap from DEFAULT_WALL_PRINT.
+export const WALLPRO_PRINT_WIDTH = 59.5;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 export function validWallSize(width: number, height: number): boolean {
@@ -39,16 +41,23 @@ export function validWallCorners(points: Point[]): boolean {
   return cross.every(n => n > 1e-6) && area >= 0.0025;
 }
 
-// Hard gate before any paid wall generation. A wall photo with fewer than four
-// valid corners can never be projected: saved projects proved the failure mode
-// (photo + artwork + exclusions, three corner points, no preview). Returning a
-// reason instead of a boolean keeps the button, the click handler and the tests
-// on one message.
-export function wallGenerationBlocker(hasPhoto: boolean, corners: Point[], width: number, height: number): string | null {
+// Gate before any paid wall generation. The flat rectangle is the product and
+// the print file, so it needs the wall size and nothing else: a wall photo
+// without corners still generates, shows the flat design first, and is imposed
+// on the photo the moment four valid corners exist (owner, 2026-09-11: "show the
+// flat rectangle first then impose it"). Returning a reason instead of a
+// boolean keeps the button, the click handler and the tests on one message.
+export function wallGenerationBlocker(_hasPhoto: boolean, _corners: Point[], width: number, height: number): string | null {
   if (!validWallSize(width, height)) return 'Enter wall dimensions between 1 and 2,400 inches.';
+  return null;
+}
+
+// What stands between the customer and the on-wall view. Never blocks
+// generation or the print files; it only says why the photo view is not ready.
+export function wallPreviewBlocker(hasPhoto: boolean, corners: Point[]): string | null {
   if (!hasPhoto) return null;
-  if (corners.length < 4) return 'Mark all four wall corners (' + (4 - corners.length) + ' remaining) before generating, so the design can be placed on your wall photo.';
-  if (!validWallCorners(corners)) return 'The wall corners cross or form a narrow area. Restart the corners clockwise from the top left before generating.';
+  if (corners.length < 4) return 'Mark all four wall corners (' + (4 - corners.length) + ' remaining) to see the design on your wall photo. The flat design and print files do not wait for this.';
+  if (!validWallCorners(corners)) return 'The wall corners cross or form a narrow area. Restart the corners clockwise from the top left to see the design on your wall.';
   return null;
 }
 

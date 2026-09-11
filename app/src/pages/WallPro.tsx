@@ -7,9 +7,10 @@ import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen,
 import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
+import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, wallGenerationBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
@@ -70,6 +71,11 @@ export default function WallPro() {
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [detecting, setDetecting] = useState(false);
+  const [productionKick, setProductionKick] = useState(0);
+  // Latest photo and corners, readable from a detection that started earlier.
+  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]);
+  photoRef.current = photo; cornersRef.current = corners;
   const [history, setHistory] = useState<History | null>(null);
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
@@ -81,6 +87,7 @@ export default function WallPro() {
   // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
   // so no token is spent until the placement exists. Null means generation may run.
   const generationBlocker = wallGenerationBlocker(!!photo, corners, width, height);
+  const previewBlocker = wallPreviewBlocker(!!photo, corners);
   let printPanels: ReturnType<typeof planWallPrint>['panels'] = [];
   try { printPanels = planWallPrint(width, height, printSettings).panels; } catch { /* Output settings show validation. */ }
   const wallMap = cornersValid ? homography(UNIT_WALL,corners) : null;
@@ -163,12 +170,10 @@ export default function WallPro() {
       const asset = { ...validated, file, url: retain(validated.url) };
       if (role === 'photo') {
         setPhoto(asset); setCorners([]); setExclusions([]); setExcludeDraft([]); setMarking('wall'); setView('before');
-        // Uploading a wall photo means "find my wall": detection runs at once. It
-        // is a preview aid, so a signed-out customer or a model failure leaves the
-        // upload in place and falls back to hand marking rather than failing it.
-        setBusy('Detecting your wall');
-        try { await detectPhoto(asset); }
-        catch (e) { setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+        // Uploading a wall photo means "find my wall": detection starts at once,
+        // in the background. It must not hold the form: the customer types the
+        // wall size while it runs, and the corner gate still guards Generate.
+        void detectInBackground(asset);
       }
       if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); await recordVersion('upload', asset, { note: file.name.slice(0, 200) }); }
       if (role === 'reference') { setReference(asset); setArtwork(null); }
@@ -253,18 +258,33 @@ export default function WallPro() {
     const wallPath = asset.path || await uploadWallAsset(asset, user.id);
     if (!asset.path) setPhoto(old => old && old.url === asset.url ? { ...old, path: wallPath } : old);
     const found = await detectWall(wallPath);
+    // The customer may have replaced the photo or tapped corners while the model
+    // was thinking. A stale answer, or one that would overwrite hand-placed
+    // corners, is dropped rather than applied on top of their work.
+    if (photoRef.current?.url !== asset.url) return;
+    const handMarked = validWallCorners(cornersRef.current);
     const cornersOk = !!found.wall && validWallCorners(found.wall);
-    if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); }
+    if (!handMarked) { if (cornersOk) { setCorners(found.wall!); setMarking(null); } else { setCorners([]); setMarking('wall'); } }
     setExclusions(found.openings.map(o => o.points)); setExcludeDraft([]); setShowMasks(true);
-    setView(artwork && cornersOk ? 'after' : 'before'); setError('');
+    setView(artwork && (cornersOk || handMarked) ? 'after' : 'before'); setError('');
     const areas = found.openings.length ? `${found.openings.length} protected area${found.openings.length === 1 ? '' : 's'} (${[...new Set(found.openings.map(o => o.label))].slice(0, 6).join(', ')})` : 'no areas to protect';
-    setNotice((cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+    setNotice((handMarked ? 'Kept the corners you marked and ' : cornersOk ? 'Wall corners placed and ' : 'The wall corners could not be placed with confidence: tap them yourself. Found ') + areas + '. Drag any point to adjust; masks affect the preview only, print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
+  }
+  /** Detection never holds the form: it is a preview aid, so it runs beside the
+   * customer's typing and a signed-out session or a model failure leaves the
+   * upload in place and falls back to hand marking. */
+  async function detectInBackground(asset: WallAsset) {
+    setDetecting(true); setNotice('Detecting your wall corners and the areas to protect. Enter the wall size meanwhile, or tap the corners yourself.');
+    try { await detectPhoto(asset); }
+    catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Tap the four corners yourself: top left, top right, bottom right, bottom left.'); }
+    finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
-  async function detectMyWall() {
-    if (!photo) return;
-    await run('Detecting your wall', () => detectPhoto(photo));
+  function detectMyWall() {
+    if (!photo || detecting) return;
+    setCorners([]); setMarking('wall');
+    void detectInBackground(photo);
   }
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
@@ -281,7 +301,10 @@ export default function WallPro() {
     await run('Approving V' + currentVersion.version_no, async () => {
       await approveWallVersion(projectId, currentVersion.id);
       setVersions(await listWallVersions(projectId));
-      setNotice(`V${currentVersion.version_no} approved. Production reads this version only; refining again creates a new draft.`);
+      setNotice(`V${currentVersion.version_no} approved. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
+      // Approval auto-runs production: the 150 PPI panels start on the server
+      // without another click (owner, 2026-09-11).
+      setProductionKick(k => k + 1);
     });
   }
   function maskPoint(e: React.PointerEvent<SVGSVGElement>) {
@@ -359,13 +382,13 @@ export default function WallPro() {
     // while busy, but the saved project must record exactly what was validated.
     const wallCorners = corners, wallExclusions = exclusions;
     await run('Generating wall artwork', async () => {
-      // Hard gate, not a warning: with a wall photo, all four corners must be
-      // marked and valid before any paid call. Otherwise the artwork can never
-      // be projected onto the photo (the saved-project failure mode).
+      // The flat rectangle is the product: only the wall size gates the call.
+      // Corners decide whether the result can be imposed on the photo, not
+      // whether it exists.
       const blocker = wallGenerationBlocker(!!photo, wallCorners, width, height);
-      if (blocker) { if (photo && !validWallCorners(wallCorners)) { setMarking('wall'); setView('before'); } throw new Error(blocker); }
+      if (blocker) throw new Error(blocker);
       if (intent === 'match' && !reference) throw new Error('Upload the design to match first.');
-      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first, then mark its four corners.');
+      if (intent === 'wall' && !photo) throw new Error('Upload your wall photo first.');
       if (intent === 'prompt' && !prompt.trim()) throw new Error('Describe the design first.');
       const user = await wallUser();
       const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
@@ -374,12 +397,15 @@ export default function WallPro() {
       if (reference && referencePath) setReference({ ...reference, path: referencePath });
       const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
-      // The flat artwork is the production master. Setting it with a wall photo and
-      // valid corners drives the renderWallPreview compositor immediately (the
-      // preview effect keys on artwork/corners/exclusions), so the customer lands on
-      // the design projected onto their own wall with every mask preserved.
+      // The flat artwork is the production master and is shown first. With a wall
+      // photo and four valid corners the renderWallPreview compositor runs at once
+      // (the preview effect keys on artwork/corners/exclusions) and the customer
+      // lands on the design imposed on their wall; otherwise they see the flat
+      // rectangle and the on-wall view appears when the corners are in.
       const art = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
-      setArtwork(art); setName(result.design_name); setMarking(null); setView(photo ? 'after' : 'design');
+      const imposable = !!photo && validWallCorners(wallCorners);
+      setArtwork(art); setName(result.design_name); setMarking(imposable || !photo ? null : 'wall'); setView(imposable ? 'after' : 'design');
+      if (photo && !imposable) setNotice('Your flat design is ready. Mark the four wall corners on the Before view to see it imposed on your wall.');
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
       try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: wallCorners, exclusions: wallExclusions, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
@@ -436,8 +462,8 @@ export default function WallPro() {
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Corners and protected areas are detected automatically. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
-              <Button className="w-full" variant="outline" disabled={!!busy} onClick={() => void detectMyWall()}><Wand2 className="mr-2 h-4 w-4" />Detect my wall again</Button>
-              <p className="text-xs text-slate-600">Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.</p>
+              <Button className="w-full" variant="outline" disabled={!!busy || detecting} onClick={detectMyWall}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting your wall…' : 'Detect my wall again'}</Button>
+              <p className="text-xs text-slate-600">{detecting ? 'Finding the corners and the areas to protect (windows, drapes, doors, outlets, furniture). You can enter the wall size now.' : 'Your wall was detected when you uploaded it: the corners and the areas to protect (windows, drapes, doors, outlets, furniture). Drag any point to adjust, or mark the four corners yourself: top left, top right, bottom right, bottom left.'}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
@@ -518,7 +544,8 @@ export default function WallPro() {
               <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
-              {photo && generationBlocker && dimensionsValid && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
+              {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
+              {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
               <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo)} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design'}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
@@ -526,8 +553,26 @@ export default function WallPro() {
         </fieldset>
         <div className="min-w-0 space-y-5">
           <section className={panelClass + ' overflow-hidden'}>
-            <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after','design'] as const).map(v => <Button size="sm" variant={view === v ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v !== 'before' && !artwork}>{v === 'before' ? 'Before' : v === 'after' ? 'On your wall' : 'Design only'}</Button>)}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Updating scale</span>}</div>
-            {photo && view !== 'design' ? <>
+            {/* Every WallPro design originates as a flat rectangle, and the client
+                sees both at once: the print master on the left and the same file
+                imposed on their photo on the right, the moment the corners exist.
+                The tabs only switch the photo pane between the original wall and
+                the imposed design; the flat master never leaves the screen. */}
+            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === 'after') === (v === 'after') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
+            <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
+            {artwork && <div>
+              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
+              <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" draggable={false} />
+              {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
+                onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
+                onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
+                onPointerUp={() => { if (maskDraft && maskDraft.w > 0.01 && maskDraft.h > 0.01) setMaskRects(old => [...old, maskDraft]); maskStart.current = null; setMaskDraft(null); }}>
+                {[...maskRects, ...(maskDraft ? [maskDraft] : [])].map((r, i) => <rect key={i} x={r.x * 100} y={r.y * 100} width={r.w * 100} height={r.h * 100} fill="rgba(255,255,255,0.45)" stroke="#7c3aed" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />)}
+              </svg>}
+              </div></div>
+            </div>}
+            {photo ? <div>
+              {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={setCorners} onMasks={setExclusions} />
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -545,14 +590,8 @@ export default function WallPro() {
               {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.' : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the drapes or object, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs text-slate-500">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
-            </> : artwork ? <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" draggable={false} />
-              {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
-                onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
-                onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
-                onPointerUp={() => { if (maskDraft && maskDraft.w > 0.01 && maskDraft.h > 0.01) setMaskRects(old => [...old, maskDraft]); maskStart.current = null; setMaskDraft(null); }}>
-                {[...maskRects, ...(maskDraft ? [maskDraft] : [])].map((r, i) => <rect key={i} x={r.x * 100} y={r.y * 100} width={r.w * 100} height={r.h * 100} fill="rgba(255,255,255,0.45)" stroke="#7c3aed" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />)}
-              </svg>}
-            </div></div> : <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
+            </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
+            </div>
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
           <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs text-slate-500">The wall photo download is a visual proof. Use Prepare print files below for full-size panel PDFs.</p></section>
@@ -562,7 +601,7 @@ export default function WallPro() {
             <div className="mt-3 flex flex-wrap gap-1">{['Change colours', 'Remove an object', 'Add an object', 'Make it busier', 'Make it simpler', 'More negative space', 'Match my reference', 'Extend the design'].map(q => <Button key={q} size="sm" variant="outline" disabled={!!busy} onClick={() => setRefinePrompt(p => (p ? p + ' ' : '') + ({ 'Change colours': 'Change the colours: ', 'Remove an object': 'Remove ', 'Add an object': 'Add ', 'Make it busier': 'Make the design busier with more motifs.', 'Make it simpler': 'Make the design simpler and more minimal.', 'More negative space': 'Keep everything but add more negative space.', 'Match my reference': 'Match the colour in the reference image.', 'Extend the design': 'Extend the design to the right, continuing the same composition.' }[q] || q))}>{q}</Button>)}</div>
             <label className="mt-3 block text-sm">Describe what you want changed<textarea className={inputClass + ' min-h-20'} maxLength={6000} value={refinePrompt} disabled={!!busy} placeholder="Make the flowers smaller and the background charcoal…" onChange={e => setRefinePrompt(e.target.value)} /></label>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button size="sm" variant={maskMode ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMaskMode(m => !m); setView('design'); }}>{maskMode ? 'Drawing mask: drag boxes on the design' : 'Only change an area'}</Button>
+              <Button size="sm" variant={maskMode ? 'default' : 'outline'} disabled={!!busy} onClick={() => setMaskMode(m => !m)}>{maskMode ? 'Drawing mask: drag boxes on the design' : 'Only change an area'}</Button>
               {maskRects.length > 0 && <><span className="text-xs text-slate-600">{maskRects.length} area{maskRects.length === 1 ? '' : 's'} selected; everything outside is kept pixel for pixel.</span><Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setMaskRects(old => old.slice(0, -1))}>Undo area</Button><Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setMaskRects([]); setMaskMode(false); }}>Clear</Button></>}
               {uploadControl('reference', reference ? 'Replace reference image' : 'Add a reference image (optional)')}
             </div>
@@ -581,6 +620,8 @@ export default function WallPro() {
               </button>)}</div></div>}
           </section>}
           {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
+          <WallProductionPanels approved={approvedVersion} autoStart={productionKick} busy={!!busy}
+            request={{ wallWidthIn: width, wallHeightIn: height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : undefined, mirror: !!layout.mirror, bleedIn: printSettings.bleed, overlapIn: printSettings.overlap, panelWidthIn: WALLPRO_PRINT_WIDTH, targetPpi: printSettings.minPpi }} />
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>
