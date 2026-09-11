@@ -81,7 +81,8 @@ export default function WallPro() {
   // design must not paint. Preview-only; print panels stay full rectangles.
   const [detectedMask, setDetectedMask] = useState<{ url: string; path: string | null } | null>(null);
   // The AI picture of the design on the wall: presentation only, never print.
-  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string } | null>(null);
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string } | null>(null);
+  const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
@@ -94,7 +95,21 @@ export default function WallPro() {
   // corners both exist, whichever arrives last: detection landing after a
   // generation, a generation landing after hand-marked corners, or a restore.
   const cornersValidNow = validWallCorners(corners);
-  useEffect(() => { if (artwork && photo && cornersValidNow) setView('after'); }, [!!artwork, !!photo, cornersValidNow]);
+  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url;
+  useEffect(() => { if (artwork && photo && cornersValidNow) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, cornersValidNow, aiViewCurrent]);
+  // The photo pane opens on the AI picture by itself: the model puts the
+  // covering on the wall and leaves the window, drapes, shelves and furniture
+  // as photographed, with no masks to mark (owner, 2026-09-11: "it should know
+  // to not wrap but keep in image"). Once per design-and-photo pair, in the
+  // background, never charged; the exact-geometry view stays one tab away.
+  const aiAutoKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!artwork || !photo || aiViewCurrent) return;
+    const key = artwork.url + '|' + photo.url;
+    if (aiAutoKey.current === key) return;
+    aiAutoKey.current = key;
+    void paintAiView(artwork, photo, true);
+  }, [artwork?.url, photo?.url]);
   const [history, setHistory] = useState<History | null>(null);
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
@@ -324,18 +339,29 @@ export default function WallPro() {
   /** ChatGPT-style "show me": the image model paints the flat master onto the
    * wall and leaves the window, drapes and furniture as photographed. No corners,
    * no masks, no token. The flat master stays the print truth. */
+  async function paintAiView(art: WallAsset, wall: WallAsset, background: boolean) {
+    const paint = async () => {
+      const user = await wallUser();
+      const wallPath = wall.path || await uploadWallAsset(wall, user.id);
+      if (!wall.path) setPhoto(old => old && old.url === wall.url ? { ...old, path: wallPath } : old);
+      const artworkPath = art.path || await uploadWallAsset(art, user.id);
+      if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+      const result = await renderWallView({ wallPath, artworkPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
+      // The design or the photo may have changed while the model painted.
+      if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
+      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url }); setView('ai');
+      setNotice('AI view ready. It is a picture for showing the design; the flat master and the production panels are what print. "On your wall" is the exact-geometry view.');
+    };
+    if (!background) { await run('Painting the design onto your wall', paint); return; }
+    // Background: the form stays usable; a signed-out or failed paint just
+    // leaves the exact-geometry view, which never needed the model.
+    setAiPainting(true);
+    try { await paint(); } catch (e) { if (artworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The exact-geometry view is on the "On your wall" tab.'); }
+    finally { setAiPainting(false); }
+  }
   async function showAiView() {
     if (!photo || !artwork) return;
-    await run('Painting the design onto your wall', async () => {
-      const user = await wallUser();
-      const wallPath = photo.path || await uploadWallAsset(photo, user.id);
-      if (!photo.path) setPhoto({ ...photo, path: wallPath });
-      const artworkPath = artwork.path || await uploadWallAsset(artwork, user.id);
-      if (!artwork.path) setArtwork({ ...artwork, path: artworkPath });
-      const result = await renderWallView({ wallPath, artworkPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
-      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath }); setView('ai');
-      setNotice('AI view ready. It is a picture for showing the design; the flat master and the production panels are what print.');
-    });
+    await paintAiView(artwork, photo, false);
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
@@ -600,7 +626,7 @@ export default function WallPro() {
                 The tabs only switch the photo pane between the original wall and
                 the imposed design; the flat master never leaves the screen. */}
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
-              {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy} onClick={() => aiView && aiView.artwork === (artwork.path || '') ? setView('ai') : void showAiView()}><Wand2 className="mr-1 h-3 w-3" />{aiView && aiView.artwork === (artwork.path || '') ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
+              {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
             <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {artwork && <div>
               {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}

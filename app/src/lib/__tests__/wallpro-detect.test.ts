@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDetectHandler, normalizeDetection, normalizeMasks, DETECT_MODEL, DETECTION_PROMPT, SEGMENTATION_PROMPT } from '../../../../supabase/functions/detect-wall-openings/handler';
+import { createDetectHandler, describeMaskAnswer, normalizeDetection, normalizeMasks, DETECT_MODEL, DETECTION_PROMPT, SEGMENTATION_PROMPT } from '../../../../supabase/functions/detect-wall-openings/handler';
 import { validWallCorners } from '../wallpro-geometry';
 
 const owner = '11111111-1111-4111-8111-111111111111';
@@ -69,6 +69,12 @@ describe('Detect my wall', () => {
     expect(SEGMENTATION_PROMPT).toMatch(/beds, sofas/); expect(SEGMENTATION_PROMPT).toMatch(/"box_2d"/);
     expect(DETECTION_PROMPT).toMatch(/drapes/); expect(DETECTION_PROMPT).toMatch(/top-left, top-right, bottom-right, bottom-left/);
     expect(normalizeMasks('garbage')).toEqual([]);
+    // Segmentation is asked without thinking (every thinking-on call on 2026-09-11 answered 0 masks).
+    expect(f.calls[1].generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    // JSON mode sometimes wraps the list in an object or drops the data-URL prefix; both still count.
+    const bare = png.replace('data:image/png;base64,', '');
+    expect(normalizeMasks({ segmentation_masks: [{ box_2d: [250, 400, 700, 600], mask: bare, label: 'window' }] })).toMatchObject([{ label: 'window', png, box: { y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 } }]);
+    expect(describeMaskAnswer({ masks: [{ box_2d: [1, 2, 3, 4], mask: 'x' }] })).toMatchObject({ type: 'object', keys: ['masks'], items: 1, firstKeys: ['box_2d', 'mask'], maskPrefix: 'x' });
   });
   it('refuses other owners\' files, unsigned callers and unreadable photos before calling the model', async () => {
     expect((await fixture({ auth: false }).invoke()).status).toBe(401);
