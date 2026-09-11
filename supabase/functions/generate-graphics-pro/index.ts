@@ -486,24 +486,51 @@ ${renderMode === 'night' ? `LIGHTING & ATMOSPHERE — NIGHT (CRITICAL):
 
 // ── Flat production prompt ─────────────────────────────────────────
 
-function buildFlatPrompt(designPrompt: string, designStyle: string): string {
-  return `You are a production file specialist for cut vinyl graphics.
+interface FlatPromptParams {
+  designPrompt: string;
+  designStyle: string;
+  vinylSubstrate?: "cut" | "printed";
+  vinylZones?: Array<{ label?: string; widthInches?: number; heightInches?: number; designPrompt?: string; filmColor?: string }>;
+  businessName?: string;
+  maxFilms?: number;
+}
 
-TASK: Create the graphic design described below as a flat production-ready artwork.
+/**
+ * The flat artwork is the INPUT to the deterministic cut-contour producer
+ * (_shared/cut-contour): its outer silhouettes become the plotter's cut line,
+ * its edge colours become the bleed, its components become the nested
+ * elements. So the design brief has to produce something a plotter can cut,
+ * not a pretty picture: solid closed shapes on pure white, nothing soft.
+ */
+function buildFlatPrompt(p: FlatPromptParams): string {
+  const substrate = p.vinylSubstrate === "cut" ? "cut" : "printed";
+  const zones = (p.vinylZones || []).filter((z) => z && (z.designPrompt || z.label));
+  const zoneLines = zones.map((z, i) => {
+    const size = z.widthInches && z.heightInches ? ` — prints ${z.widthInches}" x ${z.heightInches}"` : "";
+    const film = z.filmColor && z.filmColor !== "__custom__" ? ` — film: ${z.filmColor}` : "";
+    return `${i + 1}. ${z.label || `Graphic ${i + 1}`}${size}${film}: ${z.designPrompt || "as described in the brief"}`;
+  });
 
-DESIGN: ${designPrompt}
-STYLE: ${designStyle}
+  return `You are a production artist preparing CUT CONTOUR vinyl graphics for a professional wrap shop.
 
-REQUIREMENTS:
-1. Solid white background — no texture, no gradient, no shadows
-2. Graphic elements rendered completely flat — no perspective, no surface mapping
-3. All design elements at full opacity with clean, crisp edges
-4. No environmental effects — no shadows, reflections, lighting effects
-5. Colors must be solid and print-accurate
-6. Each separate design element should have clear spacing
-7. Output at the highest resolution possible
+TASK: Draw the graphic design described below as FLAT, PRINT-READY ARTWORK. This file is not a mockup — it is the artwork a plotter will cut around. Its outer silhouettes become the cut line.
 
-This file will be used for vinyl cutting. Clean edges are critical.`;
+DESIGN BRIEF: ${p.designPrompt}
+${p.businessName ? `BUSINESS: ${p.businessName}\n` : ""}STYLE: ${p.designStyle}
+${zoneLines.length ? `\nGRAPHICS TO DRAW (each one becomes its own cut decal, so keep them apart from each other):\n${zoneLines.join("\n")}\n` : ""}
+CUT CONTOUR RULES — NON-NEGOTIABLE:
+1. Background is PURE WHITE (#FFFFFF), completely empty. No texture, no gradient, no vignette, no scene, no vehicle, no wall.
+2. Every graphic is a SOLID, CLOSED SHAPE with a clean, crisp outer edge. That edge is where the blade cuts.
+3. NO drop shadows, glows, outer strokes, halos, soft or feathered edges, fades to white, or anything that blurs where the shape ends.
+4. Keep each graphic separated from the others by clear white space, and keep every graphic well inside the canvas — nothing touches an edge.
+5. Lettering is bold, solid letterforms — no thin scripts, no hairline serifs, no outlines thinner than a pencil. Every word spelled exactly as written in the brief.
+6. Render everything flat and straight-on: no perspective, no surface mapping, no reflections, no lighting.
+${substrate === "cut"
+    ? `7. MANUFACTURE FILM CUT: flat solid colours ONLY — at most ${p.maxFilms || 4} colours in the whole design, one colour per shape, no gradients, no photographic detail, no shading. Each colour will be plotted from a separate sheet of vinyl film.`
+    : `7. PRINT & CUT: full colour, gradients and photographic detail are allowed INSIDE a shape, but the shape's outer edge stays solid and crisp — never fade a shape into the background.`}
+8. Output at the highest resolution available.
+
+Clean edges are the whole job. A plotter follows exactly what you draw.`;
 }
 
 // ── Gemini call helper ─────────────────────────────────────────────
@@ -1310,9 +1337,16 @@ Return ONLY valid JSON, no markdown, no explanation:
 
     // ─── ACTION: generate_flat ───────────────────────────────────
     if (action === "generate_flat") {
-      const { designPrompt, designStyle, jobId } = body;
+      const { designPrompt, designStyle, jobId, vinylSubstrate, vinylZones, businessName, maxFilms } = body;
 
-      const prompt = buildFlatPrompt(designPrompt || "", designStyle || "modern");
+      const prompt = buildFlatPrompt({
+        designPrompt: designPrompt || "",
+        designStyle: designStyle || "modern",
+        vinylSubstrate: vinylSubstrate === "cut" ? "cut" : "printed",
+        vinylZones: Array.isArray(vinylZones) ? vinylZones : [],
+        businessName,
+        maxFilms: Number(maxFilms) || undefined,
+      });
       console.log("[generate_flat] Prompt length:", prompt.length);
 
       const { imageBase64, imageMimeType, error } = await callGemini(prompt, [], "1:1");
@@ -1362,9 +1396,12 @@ Return ONLY valid JSON, no markdown, no explanation:
     }
 
     // ─── ACTION: run_production ────────────────────────────────
-    // REAL production pipeline using existing cut-map, generate-cut-files,
-    // and quick-prep-pdf-export for 100% commercial cutter compatibility
-    // (Roland, Graphtec, Summa, VersaWorks, Onyx, Caldera, Flexi, SAi, EFI Fiery)
+    // Production pipeline: Topaz upscale → deterministic cut-contour kit
+    // (cut-contour-build: silhouette cut line in a CutContour spot, 1/4"
+    // colour bleed, three layers, nested sheet, PDF + SVG + ZIP) → pricing on
+    // the nested sheet. Plotter/RIP compatibility comes from the spot colour
+    // name and value, which is what Roland VersaWorks, Onyx, Caldera, Flexi,
+    // SAi and EFI Fiery key on.
     if (action === "run_production") {
       const { jobId, flatArtworkUrl, materialType = "avery", markupPercentage = 100, lineItems, surface, graphic } = body;
 
@@ -1423,107 +1460,66 @@ Return ONLY valid JSON, no markdown, no explanation:
 
         await updateJob({ flat_production_url: upscaledUrl, progress: 20 });
 
-        // ── Stage 2: CUT-MAP™ — Contour cut path ───────────────
-        // Generates magenta #FF00FF CutContour spot color SVG
-        // with 1/16" offset from edge (industry standard)
+        // ── Stages 2–4: the cut-contour kit — deterministic, one call ────
+        // cut-contour-build (file-prep mode) runs the WePrintWraps guide on
+        // the flat artwork: unified silhouette cut line in a real CutContour
+        // spot, 1/4" colour bleed, CutContour / Artwork / Bleed layers, every
+        // graphic nested on one sheet within 51.5", PDF + SVG + ZIP. The three
+        // stage keys are kept so ProductionOutput's rail reads the same.
         await updateJob({ stage: "cut_paths", progress: 25 });
-        console.log("[run_production] Stage 2: CUT-MAP™ contour cut path");
+        console.log("[run_production] Stages 2-4: cut-contour kit (silhouette, bleed, nesting, CutContour PDF)");
 
         let cutSvgUrl: string | null = null;
         let cutContourOverlayUrl: string | null = null;
-        try {
-          const cutResp = await supabase.functions.invoke("cut-map", {
-            body: {
-              user_id: userId,
-              file_url: upscaledUrl,
-              file_name: "graphics-pro-artwork.png",
-              cut_mode: "contour",           // Silhouette cut around design
-              offset_inches: 0.0625,         // 1/16" industry standard offset
-              bleed_inches: 0.125,           // 1/8" bleed extension
-            },
-          });
-
-          cutSvgUrl = cutResp.data?.svg_url || null;
-          cutContourOverlayUrl = cutResp.data?.output_url || null;
-          console.log(`[run_production] CUT-MAP: ${cutResp.data?.contour_points || 0} contour points, mode=${cutResp.data?.cut_mode}`);
-
-          if (cutSvgUrl) {
-            await updateJob({ cut_path_svg_url: cutSvgUrl, progress: 40 });
-          }
-        } catch (cutErr) {
-          console.warn("[run_production] CUT-MAP failed (non-fatal):", cutErr);
-        }
-
-        // ── Stage 3: Generate Cut Files — Element extraction + vectorization ──
-        // Uses Gemini to isolate text/logo elements → imagetracerjs vectorization
-        // → SVG with 1/4" bleed + magenta dashed trim line → ZIP
-        await updateJob({ stage: "cut_files", progress: 45 });
-        console.log("[run_production] Stage 3: Generate cut files (element extraction + vectorization)");
-
         let cutFilesZipUrl: string | null = null;
+        let productionPdfUrl: string | null = null;
         let extractedElementCount = 0;
         let vectorizedCount = 0;
+        let sheetWidthIn = 0;
+        let sheetHeightIn = 0;
+        let kitReviewFlags: string[] = [];
         try {
-          const vehicleYear = surface?.year || "";
-          const vehicleMake = surface?.make || "";
-          const vehicleModel = surface?.model || "";
-          const designName = graphic?.designPrompt || graphic?.businessName || "GraphicsPro Design";
-
-          const cutFilesResp = await supabase.functions.invoke("generate-cut-files", {
-            body: {
-              renderUrl: upscaledUrl,
-              designName,
-              vehicleYear,
-              vehicleMake,
-              vehicleModel,
-              visualizationId: jobId,
-            },
-          });
-
-          cutFilesZipUrl = cutFilesResp.data?.downloadUrl || null;
-          extractedElementCount = cutFilesResp.data?.elementCount || 0;
-          vectorizedCount = cutFilesResp.data?.vectorizedCount || 0;
-          console.log(`[run_production] Cut files: ${extractedElementCount} elements, ${vectorizedCount} vectorized`);
-
-          if (cutFilesZipUrl) {
-            await updateJob({ cut_files_zip_url: cutFilesZipUrl, progress: 65 });
-          }
-        } catch (cutFilesErr) {
-          console.warn("[run_production] Generate cut files failed (non-fatal):", cutFilesErr);
-        }
-
-        // ── Stage 4: Production PDF — RIP-compatible with CutContour layer ──
-        // DesignProAI OS correction: RestylePro handed this stage to
-        // quick-prep-pdf-export, whose hand-written "PDF" never embedded the
-        // artwork (its content stream held only comments), so the file it
-        // returned opened blank in every RIP. cut-contour-build (pdf-lib) is
-        // the deterministic builder this product already trusts for the
-        // customer's "Cut Path Proof (PDF)" button: real embedded artwork,
-        // 100% Magenta CutContour keyline, 0.5" bleed and registration marks.
-        // It takes the FLAT artwork (PNG/JPG), never the surface mockup.
-        await updateJob({ stage: "production_pdf", progress: 70 });
-        console.log("[run_production] Stage 4: Production PDF export (cut-contour-build)");
-
-        let productionPdfUrl: string | null = null;
-        try {
-          const pdfResp = await supabase.functions.invoke("cut-contour-build", {
+          // Real print size: the first zone the customer measured, else the
+          // first line item. Without either the kit is built at 150 DPI and
+          // the response says so — never a silent guess at true scale.
+          const zone = (surface?.vinylZones || []).find((z: any) => Number(z?.widthInches) > 0 && Number(z?.heightInches) > 0);
+          const item = (lineItems || []).find((li: any) => Number(li?.width) > 0 && Number(li?.height) > 0);
+          const widthIn = Number(zone?.widthInches) || Number(item?.width) || undefined;
+          const heightIn = Number(zone?.heightInches) || Number(item?.height) || undefined;
+          const label = graphic?.businessName || graphic?.designPrompt || "GraphicsPro cut contour";
+          const kitResp = await supabase.functions.invoke("cut-contour-build", {
             body: {
               file_url: upscaledUrl,
-              file_name: `GraphicsPro-${jobId}.png`,
-              options: lineItems?.[0]?.width && lineItems?.[0]?.height
-                ? { width_in: lineItems[0].width, height_in: lineItems[0].height }
-                : undefined,
+              file_name: `${String(label).replace(/[^a-z0-9-_ ]/gi, "").slice(0, 60) || "cut-contour"}.png`,
+              options: {
+                width_in: widthIn,
+                height_in: heightIn,
+                bleed_in: Number(surface?.bleedInches) > 0 ? Number(surface.bleedInches) : 0.25,
+                substrate: surface?.vinylSubstrate === "cut" ? "cut" : "printed",
+                label,
+              },
             },
           });
-
-          productionPdfUrl = pdfResp.data?.success ? (pdfResp.data?.output_url || null) : null;
-          console.log(`[run_production] Production PDF: ${productionPdfUrl ? "built" : "not built"}${pdfResp.data?.error ? ` (${pdfResp.data.error})` : ""}`);
-
-          if (productionPdfUrl) {
-            await updateJob({ cut_path_pdf_url: productionPdfUrl, progress: 80 });
+          const kit = kitResp.data;
+          if (kitResp.error || !kit?.success) {
+            console.warn("[run_production] cut-contour kit failed (non-fatal):", kitResp.error?.message || kit?.error);
+          } else {
+            cutSvgUrl = kit.svg_url || null;
+            cutContourOverlayUrl = kit.preview_url || kit.svg_url || null;
+            cutFilesZipUrl = kit.zip_url || null;
+            productionPdfUrl = kit.output_url || null;
+            extractedElementCount = Number(kit.element_count) || 0;
+            vectorizedCount = Number(kit.cut_paths) || 0;
+            sheetWidthIn = Number(kit.sheet?.widthIn) || 0;
+            sheetHeightIn = Number(kit.sheet?.heightIn) || 0;
+            kitReviewFlags = Array.isArray(kit.review_flags) ? kit.review_flags : [];
+            console.log(`[run_production] Cut-contour kit: ${extractedElementCount} element(s), ${vectorizedCount} cut path(s), sheet ${sheetWidthIn}x${sheetHeightIn} in, scale ${kit.scale}`);
           }
-        } catch (pdfErr) {
-          console.warn("[run_production] PDF export failed (non-fatal):", pdfErr);
+          await updateJob({ cut_path_svg_url: cutSvgUrl, stage: "cut_files", progress: 45 });
+          await updateJob({ cut_files_zip_url: cutFilesZipUrl, stage: "production_pdf", progress: 70 });
+          await updateJob({ cut_path_pdf_url: productionPdfUrl, progress: 80 });
+        } catch (kitErr) {
+          console.warn("[run_production] cut-contour kit threw (non-fatal):", kitErr);
         }
 
         // ── Stage 5: Pricing ────────────────────────────────────
@@ -1536,9 +1532,13 @@ Return ONLY valid JSON, no markdown, no explanation:
         // and jobs hung at "processing 85%" forever (verified live). Header
         // parse only: PNG IHDR at byte 16, JPEG SOF marker scan; first 256KB.
         const PRODUCTION_DPI = 150;
-        let nestedWidth = 0;
-        let nestedHeight = 0;
-        try {
+        let nestedWidth = sheetWidthIn;
+        let nestedHeight = sheetHeightIn;
+        // The nested sheet IS the material the customer orders (Nate reads its
+        // size off the artboard and types it into the WPW order form). Only
+        // when the kit could not be built do we fall back to the raster's
+        // pixel size at 150 DPI.
+        if (!(nestedWidth > 0 && nestedHeight > 0)) try {
           const dimResp = await fetch(upscaledUrl, { headers: { Range: "bytes=0-262143" }, signal: AbortSignal.timeout(15_000) });
           if (dimResp.ok || dimResp.status === 206) {
             const b = new Uint8Array(await dimResp.arrayBuffer());
@@ -1653,6 +1653,12 @@ Return ONLY valid JSON, no markdown, no explanation:
           extracted_element_count: extractedElementCount,
           vectorized_count: vectorizedCount,
         });
+        // WPW manual-review triggers (hairline detail, > 200 vertices, tiling)
+        // ride in concept_json so PanelPro QC sees them; best-effort.
+        if (kitReviewFlags.length) {
+          const { data: existing } = await supabase.from("graphics_pro_jobs").select("concept_json").eq("id", jobId).maybeSingle();
+          await updateJob({ concept_json: { ...(existing?.concept_json || {}), review_flags: kitReviewFlags, nested_sheet_in: { width: nestedWidth, height: nestedHeight } } });
+        }
         await updateJob({
           stage: "complete",
           progress: 100,
@@ -1675,7 +1681,7 @@ Return ONLY valid JSON, no markdown, no explanation:
         console.log("[run_production] ✅ COMPLETE — Production files ready");
         console.log(`  Print file:     ${upscaledUrl ? "✓" : "✗"}`);
         console.log(`  CutContour SVG: ${cutSvgUrl ? "✓" : "✗"}`);
-        console.log(`  Cut files ZIP:  ${cutFilesZipUrl ? "✓" : "✗"} (${extractedElementCount} elements, ${vectorizedCount} vectorized)`);
+        console.log(`  Cut files ZIP:  ${cutFilesZipUrl ? "✓" : "✗"} (${extractedElementCount} elements, ${vectorizedCount} cut paths)`);
         console.log(`  Production PDF: ${productionPdfUrl ? "✓" : "✗"}`);
 
         return new Response(
@@ -1693,11 +1699,12 @@ Return ONLY valid JSON, no markdown, no explanation:
             },
             production: {
               extractedElements: extractedElementCount,
-              vectorizedElements: vectorizedCount,
+              cutPaths: vectorizedCount,
               cutMode: "contour",
-              offsetInches: 0.0625,
-              bleedInches: 0.125,
-              spotColor: "CutContour (#FF00FF Magenta)",
+              bleedInches: Number(surface?.bleedInches) > 0 ? Number(surface.bleedInches) : 0.25,
+              nestedSheetInches: { width: nestedWidth, height: nestedHeight },
+              reviewFlags: kitReviewFlags,
+              spotColor: "CutContour (spot, CMYK 0/100/0/0, 0.25 pt stroke)",
               ripCompatible: ["VersaWorks", "Onyx", "Caldera", "Flexi", "SAi", "EFI Fiery"],
               cutterCompatible: ["Roland", "Graphtec", "Summa", "Mimaki"],
             },

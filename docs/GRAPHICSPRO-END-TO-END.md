@@ -23,6 +23,40 @@ Locks: `tests/graphicspro-end-to-end.test.mjs` (static contracts) and
 | MyVehiclePro for GraphicsPro | broken **in RestylePro too**: `MyVehicleProInline` sent colour fields only; `graphicspro-on-vehicle-photo` returns `400 Styling prompt required` on every click, and never received the mockup, so even with a prompt it would have invented a different design |
 | `quick-prep-pdf-export` (RestylePro's run_production PDF stage) | its hand-written PDF's content stream contains only comments — the artwork is never drawn. The "Production PDF" it returned opens blank |
 
+## The cut-contour files are produced, not approximated (owner, 2026-09-11: "it must design and produce cut contour designs and files")
+
+The first port only drew a magenta rectangle around a raster. That is not a
+cut-contour file. The WePrintWraps guide (Nate, *How to output cut contour
+graphics*, `docs/…` upload 2026-09-11) is now executed deterministically by
+`supabase/functions/_shared/cut-contour/` and served by `cut-contour-build`:
+
+| Nate's Illustrator step | what the producer does | where |
+|---|---|---|
+| three layers: cutline / artwork / bleed | PDF optional-content groups `CutContour`, `Artwork`, `Bleed` (+ `Film n` for film cut); SVG `<g id>` groups | `produce.ts` |
+| Pathfinder → Unite → outer silhouette | pixel-boundary trace of every element (holes included), RDP simplify, Chaikin round, re-simplify | `geometry.mjs` `traceBoundaries` / `cleanLoop` |
+| swap fill/stroke, new swatch **CutContour**, spot, CMYK 0/100/0/0 | a real PDF `Separation /CutContour /DeviceCMYK` with tint transform C1 = [0 1 0 0]; the cut path is `CS … 1 SCN 0.25 w … S` — a 0.25 pt stroke, never a fill | `produce.ts` |
+| Offset Path 1/4" on the bleed layer | Euclidean distance transform; the ring 0.25" outside the cut line is painted with the nearest artwork colour (the colour "goes a little bit further past the cut line") | `edt` / `bleedRing` |
+| Type → Create Outlines | a traced silhouette is already vector shape | — |
+| nest everything on one sheet ≤ 51.5" high, fit to artwork bounds | column packing, rotation when that is the only fit, oversize flagged for tiling; sheet inches are the order size | `shelfPack` |
+| files at 10% scale named "… 10%" when huge | sheets beyond the 200" PDF page limit are written at 10% scale with the scale in the file name, subject and SVG | `produce.ts` |
+| letters < 2", hairline detail → manual review | `hairline:` (< 0.05" feature), `vertices:` (> 200), `oversize:` flags; letter height stays with `cut-graphics-proof` | `minFeatureWidth` |
+| Manufacture Film Cut: one film per colour | colour quantisation of the element → one hidden layer per film with its own paths | `quantizeColors` |
+
+Inputs: the FLAT artwork (`generate_flat`, briefed as cut-ready: pure white
+background, solid closed shapes, no soft edges, film-cut = flat solid colours
+only) and the real print size from the customer's measured zone (else the
+first line item; else 150 DPI and the response says so). Outputs: PDF, SVG,
+ZIP (PDF + SVG + `manifest.json` with the sheet size to order), the element
+list, review flags. `run_production` uses the same call for stages 2–4 and
+prices the nested sheet.
+
+Proof: `tests/cut-contour-geometry.test.mjs` (node, pure geometry on known
+shapes) and `supabase/functions/_shared/cut-contour/produce.test.ts`
+(`deno test --allow-net --allow-read …`: Separation colour space, layers,
+stroke operators, nesting, 10% fallback, film layers). `cut-map`,
+`generate-cut-files`, VTracer and the Replicate matte are gone: nothing on
+the cut line needs a model or a secret.
+
 ## What was recovered (RULE 1: recover before you invent)
 
 Copied from `Tdill1980/restylepro-os` @ `721128e6` (2026-09-11) into
@@ -31,13 +65,11 @@ demands it:
 
 | function | role | delta |
 |---|---|---|
-| `generate-graphics-pro` | surface / mockup / flat / dimension lookup / logo job / `run_production` | bucket → `graphicspro-files`; PDF stage → `cut-contour-build`; RestylePro `production_flow_assets` vault write dropped |
+| `generate-graphics-pro` | surface / mockup / flat / dimension lookup / logo job / `run_production` | bucket → `graphicspro-files`; flat prompt briefed as cut-ready input; stages 2–4 → one `cut-contour-build` call; pricing on the nested sheet; RestylePro `production_flow_assets` vault write dropped |
 | `graphicspro-on-vehicle-photo` (+ `prompt.ts`) | MyVehiclePro for GraphicsPro | accepts `colorData.designUrl` (the approved mockup) as **IMAGE 2**, transfer prompt modelled on the proven DesignProAI transfer branch of `myvehicle-prompt-builder.ts`, `temperature 0.05` when a reference is present |
 | `edit-vehicle-photo` (+ `_shared/myvehicle-prompt-builder.ts`) | the shared MyVehiclePro fallback `pickMyVehicleEndpoint` names | bucket; `vehicle_year` coalesced to 0 (NOT NULL here) |
 | `cut-graphics-proof` | dimensioned cut-graphics spec (W×H, letter height, plotter fit) | none |
-| `cut-contour-build` | deterministic pdf-lib CutContour PDF (100% magenta keyline, 0.5″ bleed, reg marks) | bucket |
-| `cut-map` (+ `_shared/replicate-bg-remove.ts`) | CUT-MAP™ per-element contour pack | bucket |
-| `generate-cut-files` (+ `_shared/vtracer/`) | element extraction + VTracer vectorization ZIP | bucket |
+| `cut-contour-build` | file-prep mode rebuilt on the deterministic producer above (silhouette cut line, spot colour, bleed, nesting, PDF + SVG + ZIP); ORDER mode untouched | bucket + producer |
 | `vectorize-it` | proxy to the vectorize server | **no hard-coded RestylePro droplet IP**; `VECTORIZE_DROPLET_URL` required, 503 with a reason when unset |
 
 Schema: `supabase/migrations/20260911210000_graphicspro_cut_contour.sql` —
@@ -70,10 +102,11 @@ Generate
 Step 2 · Preview
   Before (zones drawn) ∥ After (mockup) · Day/Night re-render · Revise · Approve
   Cut Graphics Proof (cut-graphics-proof) · 2D Production Proof (generate-2d-proof)
-  Cut Path Proof PDF (generate_flat → cut-contour-build) · studio angles (generate-color-render)
+  Cut Contour Kit (generate_flat → cut-contour-build: PDF + SVG + ZIP, sheet size to order) · studio angles
   MyVehiclePro (vehicle jobs): customer photo + designUrl=mockup → graphicspro-on-vehicle-photo
 Approve → Step 3 · Production (run_production)
-  Topaz upscale → CUT-MAP™ contour SVG → cut files ZIP → CutContour PDF → pricing → complete
+  Topaz upscale → cut-contour-build: silhouette cut line (CutContour spot) + 1/4" bleed
+  + nested sheet → PDF, SVG, ZIP → pricing on the nested sheet → complete
   ProductionOutput polls graphics_pro_jobs and lists every file
 ```
 
@@ -86,8 +119,9 @@ recorded no-op inside `run_production`):
 |---|---|---|
 | `GOOGLE_AI_API_KEY` (already set) | every Gemini call | nothing renders |
 | `TOPAZ_API_KEY` | `run_production` stage 1 | print file ships un-upscaled |
-| `REPLICATE_API_TOKEN` | `cut-map` | no per-element contour pack |
 | `VECTORIZE_DROPLET_URL` | `vectorize-it` (studio production pack) | 503 `configured:false` |
+
+The cut line, bleed, nesting and CutContour PDF need no secret.
 
 ## Acceptance — the owner's eye, not a green suite
 
@@ -96,9 +130,10 @@ it. Leave unchecked until then.
 
 - [ ] `deploy-edge-functions.yml` dispatched for the eight GraphicsPro functions; `list_edge_functions` shows them
 - [ ] migration applied through the release gate; `graphicspro-files` public bucket present
-- [ ] `/graphics-pro-wall`: upload a wall photo → Konva ZoneMasker shows the photo → draw two zones → mockup returns with graphics inside the zones → Cut Path Proof PDF opens with the artwork and the magenta keyline
+- [ ] `/graphics-pro-wall`: upload a wall photo → Konva ZoneMasker shows the photo → draw two zones with inches → mockup returns with graphics inside the zones → Cut Contour Kit: the PDF opens in Illustrator with a `CutContour` spot swatch, the cut line follows the silhouette of each graphic, the bleed shows the artwork colour outside the cut line, the sheet size matches what the kit reports
 - [ ] `/graphics-pro` vehicle: upload driver-side photo → zones → mockup → MyVehiclePro on a second photo shows the SAME graphic
-- [ ] Approve → `run_production` reaches `complete` with print file, CutContour SVG (if REPLICATE set), cut files ZIP, CutContour PDF and pricing
+- [ ] Approve → `run_production` reaches `complete` with print file, CutContour SVG, kit ZIP, CutContour PDF and pricing on the nested sheet
+- [ ] A kit PDF sent to the plotter RIP (VersaWorks / Onyx) routes the magenta path to the blade, not the print head
 
 ## Step two — migrate the heavy stages to the DesignProAI server
 

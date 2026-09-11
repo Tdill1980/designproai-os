@@ -498,11 +498,15 @@ export function useGraphicsProV1Logic() {
     }
   }, [uploadFile, toast, startProduction]);
 
-  // Generate flat artwork (for design/commercial modes)
+  // Generate flat artwork (for design/commercial modes). The flat file is
+  // what the deterministic cut-contour producer traces, so the production
+  // method and the measured zones ride along: film-cut artwork must be flat
+  // solid colours, and each zone becomes its own cut decal.
   const generateFlat = useCallback(async (
     designPrompt: string,
     designStyle: string,
-    jobId: string | null
+    jobId: string | null,
+    cutContext?: { vinylSubstrate?: 'cut' | 'printed'; vinylZones?: VinylZone[]; businessName?: string },
   ): Promise<string | null> => {
     try {
       const { data, error: flatErr } = await supabase.functions.invoke(
@@ -513,6 +517,11 @@ export function useGraphicsProV1Logic() {
             designPrompt,
             designStyle,
             jobId,
+            vinylSubstrate: cutContext?.vinylSubstrate,
+            vinylZones: cutContext?.vinylZones?.map((z) => ({
+              label: z.label, widthInches: z.widthInches, heightInches: z.heightInches, designPrompt: z.designPrompt, filmColor: z.filmColor,
+            })),
+            businessName: cutContext?.businessName,
           },
         }
       );

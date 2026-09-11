@@ -1,6 +1,13 @@
 /**
- * cut-contour-build — DETERMINISTIC (no AI) print-ready cut-contour file builder
- * for "Design Setup / File Output" (SKU DSFO / product 289) orders.
+ * cut-contour-build — DETERMINISTIC (no AI) print-ready cut-contour file builder.
+ *
+ * FILE-PREP mode ({ file_url, options }) is the GraphicsPro product path: the
+ * flat artwork in, the WePrintWraps cut-contour kit out (silhouette cut line
+ * in a real CutContour spot, 1/4" colour bleed, three layers, nested sheet,
+ * PDF + SVG + ZIP). ORDER mode ({ proof_id }) is the historical ApprovePro
+ * layout and stays gated behind isApproveProLive().
+ *
+ * Historical header, kept: "Design Setup / File Output" (SKU DSFO / product 289) orders.
  *
  * WHY: these orders are NOT creative design jobs. The customer already supplied
  * finished artwork (a print preview + the vector source) and is paying only for
@@ -21,6 +28,9 @@ import { approveProDisabledResponse, isApproveProLive } from "../_shared/approve
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, cmyk } from "https://esm.sh/pdf-lib@1.17.1";
+// @ts-expect-error esm.sh serves jszip with a default export at runtime; its .d.ts declares only the namespace.
+import JSZip from "https://esm.sh/jszip@3.10.1";
+import { produceCutContour, DEFAULT_BLEED_IN } from "../_shared/cut-contour/produce.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,59 +113,82 @@ serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // ── FILE-PREP MODE — customer gives us a file, we hand back a CutContour
-  // print-ready file. No order, no vehicle: one sheet at the artwork's own
-  // proportions (or explicit options.width_in/height_in), with a 100% Magenta
-  // CutContour keyline + 0.5" bleed + registration marks. RIP sets final scale.
+  // ── FILE-PREP MODE — the customer's flat artwork in, a print-ready cut
+  // contour kit out, built the way WePrintWraps' own guide ("How to output
+  // cut contour graphics") does it by hand in Illustrator:
+  //   cut line  = unified outer silhouette of every element, 0.25 pt stroke,
+  //               no fill, in a real `CutContour` Separation (CMYK 0/100/0/0)
+  //   bleed     = the artwork's edge colour offset 1/4" past the cut line
+  //   layers    = CutContour / Artwork / Bleed (+ one per film for Film Cut)
+  //   nesting   = every graphic on one sheet within the 51.5" cut-contour width
+  // Deterministic — no model, no secret. See _shared/cut-contour/.
   if (!body.proof_id && body.file_url) {
     try {
       const img = await fetchImageBytes(body.file_url);
       if (!img) return jsonResponse({ success: false, error: "Could not fetch/parse the uploaded file (need PNG or JPG)", file_url: body.file_url }, 422);
 
-      const pdf = await PDFDocument.create();
-      const font = await pdf.embedFont(StandardFonts.Helvetica);
-      const embedded = img.kind === "png" ? await pdf.embedPng(img.bytes) : await pdf.embedJpg(img.bytes);
-      const MAGENTA = cmyk(0, 1, 0, 0);
-      const BLACK = cmyk(0, 0, 0, 1);
-      const GREY = cmyk(0, 0, 0, 0.55);
+      const opt = body.options || {};
+      const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : undefined; };
+      const label = String(opt.label || body.file_name || "Cut contour graphics").replace(/\.[a-z0-9]+$/i, "");
+      const result = await produceCutContour(img.bytes, {
+        widthIn: num(opt.width_in),
+        heightIn: num(opt.height_in),
+        bleedIn: num(opt.bleed_in) ?? DEFAULT_BLEED_IN,
+        substrate: opt.substrate === "cut" ? "cut" : "printed",
+        maxFilms: num(opt.max_films) ? Math.round(num(opt.max_films)!) : undefined,
+        label,
+      });
 
-      const optW = Number(body?.options?.width_in) || 0;
-      const optH = Number(body?.options?.height_in) || 0;
-      // Explicit print size if given, else the image's native pixels treated 1px=1pt.
-      let trimW = optW > 0 ? optW * PT_PER_IN : embedded.width;
-      let trimH = optH > 0 ? optH * PT_PER_IN : embedded.height;
-      let pageW = trimW + 2 * BLEED_IN * PT_PER_IN;
-      let pageH = trimH + 2 * BLEED_IN * PT_PER_IN;
-      let scaled = false;
-      if (pageW > PDF_MAX_PT || pageH > PDF_MAX_PT) {
-        const k = Math.min(PDF_MAX_PT / pageW, PDF_MAX_PT / pageH);
-        pageW *= k; pageH *= k; trimW *= k; trimH *= k; scaled = true;
-      }
-      const p = pdf.addPage([pageW, pageH]);
-      const offX = (pageW - trimW) / 2;
-      const offY = (pageH - trimH) / 2;
-
-      p.drawImage(embedded, { x: offX, y: offY, width: trimW, height: trimH });
-      p.drawRectangle({ x: offX, y: offY, width: trimW, height: trimH, borderColor: MAGENTA, borderWidth: 1 });
-      const r = 9;
-      for (const [cx, cy] of [[offX, offY], [offX + trimW, offY], [offX, offY + trimH], [offX + trimW, offY + trimH]] as [number, number][]) {
-        p.drawLine({ start: { x: cx - r, y: cy }, end: { x: cx + r, y: cy }, thickness: 0.75, color: BLACK });
-        p.drawLine({ start: { x: cx, y: cy - r }, end: { x: cx, y: cy + r }, thickness: 0.75, color: BLACK });
-      }
-      const dimLabel = optW > 0 && optH > 0 ? `${optW} x ${optH} in` : "native proportions - set scale in RIP";
-      p.drawText(`File Output - CutContour print-ready - ${dimLabel}${scaled ? "  (SCALED to fit)" : ""}`, { x: offX, y: Math.max(6, offY - 14), size: 8, font, color: GREY });
-
-      const pdfBytes = await pdf.save();
       const ts = Date.now();
-      const path = `cut-contour/file-output/${ts}_fileoutput.pdf`;
-      const { error: upErr } = await db.storage.from("graphicspro-files").upload(path, pdfBytes, { contentType: "application/pdf", upsert: true });
-      if (upErr) return jsonResponse({ success: false, error: "Storage upload failed: " + upErr.message }, 500);
-      const { data: pub } = db.storage.from("graphicspro-files").getPublicUrl(path);
+      const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "cut-contour";
+      const scaleTag = result.scale < 1 ? `-${Math.round(result.scale * 100)}pct` : "";
+      const base = `cut-contour/file-output/${ts}_${slug}`;
+      const upload = async (path: string, bytes: Uint8Array, contentType: string) => {
+        const { error: upErr } = await db.storage.from("graphicspro-files").upload(path, bytes, { contentType, upsert: true });
+        if (upErr) throw new Error("Storage upload failed: " + upErr.message);
+        return db.storage.from("graphicspro-files").getPublicUrl(path).data.publicUrl;
+      };
+      const pdfUrl = await upload(`${base}-cut-contour${scaleTag}.pdf`, result.pdf, "application/pdf");
+      const svgBytes = new TextEncoder().encode(result.svg);
+      const svgUrl = await upload(`${base}-cut-contour${scaleTag}.svg`, svgBytes, "image/svg+xml");
+
+      const manifest = {
+        label,
+        spot: result.spot,
+        layers: result.layers,
+        bleed_in: result.bleedIn,
+        scale: result.scale,
+        sheet: result.sheet,
+        elements: result.elements,
+        review_flags: result.reviewFlags,
+        files: { pdf: `${slug}-cut-contour${scaleTag}.pdf`, svg: `${slug}-cut-contour${scaleTag}.svg` },
+        how_to_order: `Order under Avery or 3M Cut Contour at weprintwraps.com and enter ${result.sheet.widthIn} x ${result.sheet.heightIn} in as the file size.`,
+      };
+      const zip = new JSZip();
+      zip.file(manifest.files.pdf, result.pdf);
+      zip.file(manifest.files.svg, svgBytes);
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+      const zipBytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+      const zipUrl = await upload(`${base}-cut-contour-kit.zip`, zipBytes, "application/zip");
+
       return jsonResponse({
         success: true,
-        output_url: pub.publicUrl,
-        output_format: "PDF (100% Magenta CutContour spot, 0.5\" bleed, reg marks)",
-        description: "Print-ready cut-contour file: your artwork with a 100% Magenta CutContour keyline, 0.5\" bleed, and registration marks.",
+        output_url: pdfUrl,
+        svg_url: svgUrl,
+        preview_url: svgUrl,
+        zip_url: zipUrl,
+        output_format: `PDF — ${result.spot.name} spot (CMYK 0/100/0/0) ${result.spot.strokeWeightPt} pt stroke · layers ${result.layers.join(" / ")} · ${result.bleedIn}" bleed${result.scale < 1 ? ` · ${Math.round(result.scale * 100)}% scale` : ""}`,
+        description: `Print-ready cut-contour kit: ${result.elements.length} graphic(s) nested on a ${result.sheet.widthIn} x ${result.sheet.heightIn} in sheet, cut line on the unified silhouette, artwork colour bled ${result.bleedIn}" past it.`,
+        sheet: result.sheet,
+        scale: result.scale,
+        elements: result.elements,
+        element_count: result.elements.length,
+        cut_paths: result.elements.reduce((n, e) => n + e.cutPaths, 0),
+        total_vertices: result.totalVertices,
+        review_flags: result.reviewFlags,
+        layers: result.layers,
+        spot: result.spot,
+        bleed_in: result.bleedIn,
       });
     } catch (err: any) {
       console.error("cut-contour file-output:", err?.message || err);

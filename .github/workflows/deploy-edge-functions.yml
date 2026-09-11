@@ -77,10 +77,10 @@ jobs:
           # GraphicsPro production stages (optional; each stage degrades to a
           # recorded no-op when its secret is absent, see docs/GRAPHICSPRO-END-TO-END.md):
           #   TOPAZ_API_KEY         run_production stage 1 (print-file upscale)
-          #   REPLICATE_API_TOKEN   cut-map (BiRefNet alpha matte per element)
           #   VECTORIZE_DROPLET_URL vectorize-it → the DesignProAI runtime vectorize endpoint
+          # The cut line, bleed, nesting and CutContour PDF need no secret:
+          # supabase/functions/_shared/cut-contour is deterministic.
           TOPAZ_API_KEY: ${{ secrets.DESIGNPRO_TOPAZ_API_KEY }}
-          REPLICATE_API_TOKEN: ${{ secrets.DESIGNPRO_REPLICATE_API_TOKEN }}
           VECTORIZE_DROPLET_URL: ${{ secrets.DESIGNPRO_VECTORIZE_DROPLET_URL }}
         run: |
           set -euo pipefail
@@ -92,7 +92,7 @@ jobs:
           else
             echo "::warning::GOOGLE_AI_API_KEY secret not available; Gemini-backed functions will fail until it is set"
           fi
-          for pair in "TOPAZ_API_KEY=${TOPAZ_API_KEY:-}" "REPLICATE_API_TOKEN=${REPLICATE_API_TOKEN:-}" "VECTORIZE_DROPLET_URL=${VECTORIZE_DROPLET_URL:-}"; do
+          for pair in "TOPAZ_API_KEY=${TOPAZ_API_KEY:-}" "VECTORIZE_DROPLET_URL=${VECTORIZE_DROPLET_URL:-}"; do
             name="${pair%%=*}"; value="${pair#*=}"
             if [[ -n "$value" ]]; then
               supabase secrets set --project-ref "$PROJECT_REF" "$pair"

@@ -45,6 +45,9 @@ const GGP = read("supabase/functions/generate-graphics-pro/index.ts");
 const GP_MVP = read("supabase/functions/graphicspro-on-vehicle-photo/index.ts");
 const GP_MVP_PROMPT = read("supabase/functions/graphicspro-on-vehicle-photo/prompt.ts");
 const VECTORIZE = read("supabase/functions/vectorize-it/index.ts");
+const CUT_BUILD = read("supabase/functions/cut-contour-build/index.ts");
+const PRODUCE = read("supabase/functions/_shared/cut-contour/produce.ts");
+const GEOMETRY = read("supabase/functions/_shared/cut-contour/geometry.mjs");
 
 const BROWSER_SOURCES = [
   "app/src/hooks/useGraphicsProV1Logic.ts",
@@ -103,17 +106,54 @@ test("every edge function the browser invokes exists here and is registered", ()
   }
 });
 
-test("run_production only fans out to functions that exist here", () => {
+test("run_production builds the cut-contour kit deterministically and fans out only to functions that exist here", () => {
   const names = invokedFunctions(GGP);
-  assert.ok(names.includes("cut-map"), "CUT-MAP is the contour stage");
-  assert.ok(names.includes("generate-cut-files"), "element extraction + vectorization is the cut-files stage");
-  assert.ok(names.includes("cut-contour-build"), "the production PDF is built by cut-contour-build (pdf-lib), not the empty quick-prep PDF");
+  assert.deepEqual([...new Set(names)], ["cut-contour-build"], "cut line, bleed, nesting and the CutContour PDF all come from cut-contour-build");
   assert.ok(!names.includes("quick-prep-pdf-export"), "quick-prep-pdf-export never embedded the artwork; it must not be the PDF stage");
+  assert.ok(!names.includes("cut-map") && !names.includes("generate-cut-files"), "no Replicate / VTracer dependency on the cut line");
+  assert.match(GGP, /options: \{\s*width_in: widthIn,\s*height_in: heightIn,\s*bleed_in:[^\n]*\n\s*substrate: surface\?\.vinylSubstrate === "cut" \? "cut" : "printed"/, "the kit gets the measured size, the bleed and the production method");
+  assert.match(GGP, /let nestedWidth = sheetWidthIn;\s*let nestedHeight = sheetHeightIn;/, "pricing uses the nested sheet the customer orders");
   for (const name of names) {
     assert.ok(existsSync(resolve(root, `supabase/functions/${name}/index.ts`)), `run_production invokes ${name}, which does not exist`);
     assert.ok(CONFIG.includes(`[functions.${name}]`), `${name} is not registered in supabase/config.toml`);
   }
   assert.ok(!stripComments(GGP).includes("production_flow_assets"), "production_flow_assets is a RestylePro vault this OS does not have");
+});
+
+test("the cut-contour producer is the WPW guide, deterministically, and cut-contour-build runs it", () => {
+  // The spot colour the RIP keys on: the literal name and 100% magenta.
+  assert.match(PRODUCE, /name: "CutContour"/);
+  assert.match(PRODUCE, /cmyk: Object\.freeze\(\{ c: 0, m: 100, y: 0, k: 0 \}\)/);
+  assert.match(PRODUCE, /strokeWeightPt: 0\.25/);
+  assert.match(PRODUCE, /PDFName\.of\("Separation"\), PDFName\.of\(CUT_CONTOUR_SPOT\.name\), PDFName\.of\("DeviceCMYK"\)/, "a real PDF Separation colour space, not a process-magenta stroke");
+  assert.match(PRODUCE, /C1: \[0, 1, 0, 0\]/);
+  assert.match(PRODUCE, /StrokingColorspace, \[PDFName\.of\(CUT_CONTOUR_SPOT\.name\)\]/);
+  // Three layers as optional content, cut line stroked never filled.
+  assert.match(PRODUCE, /const layers = \["CutContour", "Artwork", "Bleed"/);
+  assert.match(PRODUCE, /OCProperties/);
+  assert.match(PRODUCE, /cutOps\.push\(stroke\(\), popGraphicsState\(\), endOC\(\)\)/);
+  // 1/4" bleed that extends the artwork's own colour; 51.5" nesting limit; 10% scale beyond 200".
+  assert.match(PRODUCE, /DEFAULT_BLEED_IN = 0\.25/);
+  assert.match(PRODUCE, /MAX_CUT_CONTOUR_HEIGHT_IN = 51\.5/);
+  assert.match(PRODUCE, /G\.bleedRing\(elemRgba, elemMask, cw, ch, bleedPx, dist\)/);
+  assert.match(PRODUCE, /G\.shelfPack\(items, maxSheetHeightIn, gapIn\)/);
+  assert.match(PRODUCE, /const scale = Math\.max\(sheetWIn, sheetHIn\) > PDF_MAX_IN \? 0\.1 : 1/);
+  // The geometry core is pure and node-tested.
+  assert.ok(!/\bimport\b/.test(GEOMETRY), "geometry.mjs has no dependencies");
+  for (const fn of ["maskFromRgba", "edt", "traceBoundaries", "cleanLoop", "bleedRing", "quantizeColors", "shelfPack"]) {
+    assert.match(GEOMETRY, new RegExp(`export function ${fn}\\(`));
+  }
+  // cut-contour-build's file-prep mode is the producer, and returns PDF + SVG + ZIP.
+  assert.match(CUT_BUILD, /import \{ produceCutContour, DEFAULT_BLEED_IN \} from "\.\.\/_shared\/cut-contour\/produce\.ts"/);
+  assert.match(CUT_BUILD, /const result = await produceCutContour\(img\.bytes, \{/);
+  assert.match(CUT_BUILD, /output_url: pdfUrl,\s*svg_url: svgUrl,\s*preview_url: svgUrl,\s*zip_url: zipUrl/);
+  assert.ok(!/drawRectangle\(\{ x: offX, y: offY, width: trimW, height: trimH, borderColor: MAGENTA/.test(stripComments(CUT_BUILD).split("const { data: proof, error: fetchErr }")[0]), "the file-prep mode no longer draws a rectangle keyline around a raster");
+  // The flat artwork Gemini draws is briefed as cut-ready input to that producer.
+  assert.match(GGP, /Background is PURE WHITE \(#FFFFFF\)/);
+  assert.match(GGP, /Every graphic is a SOLID, CLOSED SHAPE with a clean, crisp outer edge/);
+  assert.match(GGP, /MANUFACTURE FILM CUT: flat solid colours ONLY/);
+  assert.match(V1_LOGIC, /vinylSubstrate: cutContext\?\.vinylSubstrate/);
+  assert.match(V1_UI, /substrate: surface\.vinylSubstrate,\s*label: designLabel/);
 });
 
 test("GraphicsPro files live in the public graphicspro-files bucket, never the private wrap-files", () => {
@@ -126,8 +166,6 @@ test("GraphicsPro files live in the public graphicspro-files bucket, never the p
     "supabase/functions/graphicspro-on-vehicle-photo/index.ts",
     "supabase/functions/edit-vehicle-photo/index.ts",
     "supabase/functions/cut-contour-build/index.ts",
-    "supabase/functions/cut-map/index.ts",
-    "supabase/functions/generate-cut-files/index.ts",
   ]) {
     const source = stripComments(read(path));
     assert.ok(!source.includes("wrap-files"), `${path} still writes to the private wrap-files bucket`);

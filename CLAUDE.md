@@ -123,15 +123,28 @@ sent a styling prompt or the mockup; the function 400'd on every click).
 
 - **Routes** `/graphics-pro`, `/graphics-pro-wall`, `/graphicspro` (redirect);
   sidebar key `graphicspro`, tier `complete`.
+- **The cut-contour files are PRODUCED, deterministically** (owner: "it must
+  design and produce cut contour designs and files"). `_shared/cut-contour/`
+  executes the WePrintWraps guide: unified silhouette cut line as a real PDF
+  `Separation /CutContour` (CMYK 0/100/0/0) 0.25 pt stroke, the artwork's own
+  colour bled 1/4" past it, layers CutContour / Artwork / Bleed (+ one per
+  film for Manufacture Film Cut), every graphic nested on one sheet ≤ 51.5",
+  10% scale with the scale in the name beyond the 200" PDF limit, manual-
+  review flags (hairline, > 200 vertices, tiling). `cut-contour-build`
+  file-prep mode serves it (PDF + SVG + ZIP + sheet size to order);
+  `run_production` stages 2–4 are that one call and pricing is the nested
+  sheet. The flat artwork is briefed as cut-ready input. No model, no
+  secret on the cut line; `cut-map` / `generate-cut-files` / VTracer /
+  Replicate are not carried. Locked by `tests/cut-contour-geometry.test.mjs`
+  and `_shared/cut-contour/produce.test.ts` (deno).
 - **Recovered edge functions (RULE 1)**: `generate-graphics-pro`,
   `graphicspro-on-vehicle-photo`, `edit-vehicle-photo`, `cut-graphics-proof`,
-  `cut-contour-build`, `cut-map`, `generate-cut-files`, `vectorize-it`, plus
-  `_shared/myvehicle-prompt-builder.ts`, `_shared/replicate-bg-remove.ts`,
-  `_shared/vtracer/`. Deltas are inline and deliberate: files live in the
-  **public `graphicspro-files` bucket** (wrap-files is private here); the
-  production PDF comes from `cut-contour-build` (pdf-lib) because RestylePro's
-  `quick-prep-pdf-export` never embedded the artwork; `vectorize-it` requires
-  `VECTORIZE_DROPLET_URL` and carries no RestylePro droplet IP.
+  `cut-contour-build`, `vectorize-it`, plus `_shared/myvehicle-prompt-builder.ts`.
+  Deltas are inline and deliberate: files live in the **public
+  `graphicspro-files` bucket** (wrap-files is private here); RestylePro's
+  `quick-prep-pdf-export` is not carried (its PDF never embedded the artwork);
+  `vectorize-it` requires `VECTORIZE_DROPLET_URL` and carries no RestylePro
+  droplet IP.
 - **MyVehiclePro contract**: the approved mockup rides as `colorData.designUrl`
   (IMAGE 2) and the brief as `customStylingPrompt`; vehicle jobs only.
 - **Schema** `20260911210000_graphicspro_cut_contour.sql`: the live RestylePro
