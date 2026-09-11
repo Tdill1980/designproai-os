@@ -5,23 +5,27 @@ import { loadWallImage } from '@/lib/wallpro-render';
 import { openWallAsset, type WallAsset } from '@/lib/wallpro-api';
 import { wallPrintPreflight, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import type { WallLayout } from '@/lib/wallpro-geometry';
+import { measureSeam, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 
 type Props = {
   artwork: WallAsset | null; name: string; projectId: string; layout: WallLayout;
+  /** Repeat only: the seam receipt for `artwork` as the page prepared it. The
+   * export re-measures the exact pixels it embeds before trusting it. */
+  seamless: SeamlessReceipt | null;
   settings: WallPrintSettings; onSettings: (settings: WallPrintSettings) => void;
   busy: boolean; run: (label: string, action: () => Promise<void>) => Promise<void>;
 };
 type Downloads = { signature: string; filename: string; url: string; files: { name: string; url: string }[]; panels: number };
 const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
 
-export function WallPrintOutput({ artwork, name, projectId, layout, settings, onSettings, busy, run }: Props) {
+export function WallPrintOutput({ artwork, name, projectId, layout, seamless, settings, onSettings, busy, run }: Props) {
   const [pixels, setPixels] = useState<{ url: string; width: number; height: number } | null>(null);
   const [sourceError, setSourceError] = useState('');
   const [approved, setApproved] = useState('');
   const [progress, setProgress] = useState('');
   const [downloads, setDownloads] = useState<Downloads | null>(null);
   const ownedUrls = useRef<string[]>([]);
-  const signature = JSON.stringify({ artwork: artwork?.path || artwork?.url, name, projectId, layout, settings });
+  const signature = JSON.stringify({ artwork: artwork?.path || artwork?.url, name, projectId, layout, settings, seam: seamless?.method ?? null });
   const signatureRef = useRef(signature); signatureRef.current = signature;
   useEffect(() => {
     let active = true; setPixels(null); setSourceError('');
@@ -37,11 +41,15 @@ export function WallPrintOutput({ artwork, name, projectId, layout, settings, on
   let problem = sourceError;
   try { if (pixels && pixels.url === artwork?.url) check = wallPrintPreflight(layout, settings, pixels); }
   catch (e) { problem = e instanceof Error ? e.message : 'Check the print settings.'; }
+  // A repeat is print-ready only with a verified seam. The page prepares the
+  // receipt; the export re-measures the embedded pixels before honouring it.
+  const seamBlocker = layout.mode === 'repeat' && check ? (!seamless ? 'Checking that the pattern tile joins seamlessly.' : !seamless.verified ? 'This tile does not join seamlessly. Choose Mirror repeat or Blended repeat in Size the artwork.' : '') : '';
+  const ready = !!check?.ready && !seamBlocker;
   const currentDownloads = downloads?.signature === signature ? downloads : null;
 
   async function prepare() {
-    if (!artwork || !check?.ready || approved !== signature) return;
-    const requestedSignature = signature;
+    if (!artwork || !ready || approved !== signature) return;
+    const requestedSignature = signature, receipt = seamless;
     await run('Building wall print files', async () => {
       setProgress('Preparing full-resolution artwork');
       try {
@@ -54,11 +62,24 @@ export function WallPrintOutput({ artwork, name, projectId, layout, settings, on
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('This browser could not prepare the artwork. Try a desktop browser.');
         ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0);
+        // The seam is proven on the exact pixels being embedded, never on a
+        // preview or an earlier copy. Mirror needs no measurement: its joins are
+        // identical artwork by construction.
+        let printSeam: SeamlessReceipt | null = null;
+        if (layout.mode === 'repeat') {
+          if (!receipt) throw new Error('The seam check has not finished. Wait for Size the artwork to report the tile status.');
+          setProgress('Verifying the pattern seam on the print pixels');
+          if (receipt.method === 'mirror') printSeam = receipt;
+          else {
+            const measured = measureSeam(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+            printSeam = { ...receipt, after: measured, verified: measured.seamless };
+          }
+        }
         const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('The full-resolution artwork could not be prepared.')), 'image/png'));
         const source = { bytes: new Uint8Array(await blob.arrayBuffer()), width: canvas.width, height: canvas.height };
         canvas.width = 1; canvas.height = 1;
         const { buildWallPrintPack } = await import('@/lib/wallpro-print-export');
-        const pack = await buildWallPrintPack({ name, projectId, layout: { ...layout }, settings: { ...settings }, source, onProgress: setProgress });
+        const pack = await buildWallPrintPack({ name, projectId, layout: { ...layout }, settings: { ...settings }, source, seamless: printSeam, onProgress: setProgress });
         if (signatureRef.current !== requestedSignature) throw new Error('The wall settings changed during export. Build the print files again.');
         const link = (bytes: Uint8Array, type: string) => { const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type })); ownedUrls.current.push(url); return url; };
         ownedUrls.current.forEach(URL.revokeObjectURL); ownedUrls.current = [];
@@ -84,13 +105,15 @@ export function WallPrintOutput({ artwork, name, projectId, layout, settings, on
       <p><strong>Output:</strong> {check.plan.panels.length} panels · {check.plan.bounds.height}″ printed height · final panel {check.plan.panels.at(-1)?.width}″ wide.</p>
       <p><strong>PDF widths:</strong> {check.plan.panels.map(p => p.width + '″').join(' + ')}</p>
       {check.ready ? <p className="font-medium text-emerald-700">Dimensions and source resolution pass the selected print settings.</p> : check.blockers.map(message => <p key={message} role="alert" className="text-red-700">{message}</p>)}
+      {layout.mode === 'repeat' && (seamBlocker ? <p role={seamless && !seamless.verified ? 'alert' : 'status'} className={seamless && !seamless.verified ? 'text-red-700' : 'text-slate-600'}>{seamBlocker}</p>
+        : <p className="font-medium text-emerald-700"><strong>Seam:</strong> {seamless?.method === 'mirror' ? 'mirror repeat, joins identical by construction.' : `verified to join (${(seamless?.after ?? seamless?.before)?.ratio.toFixed(2)}× the neighbouring pixel step${seamless?.method === 'blend' ? ', after deterministic seam blend' : ''}).`}</p>)}
       {!check.ready && <p>Required source at this placement: at least {check.requiredPixels.width.toLocaleString()} × {check.requiredPixels.height.toLocaleString()} pixels.</p>}
       {layout.mode === 'contain' && <p className="text-amber-800">Fit whole artwork prints white margins where the artwork does not cover the wall.</p>}
       {settings.minPpi < 150 && <p className="text-amber-800">You selected a lower resolution threshold. Inspect a physical sample at the intended viewing distance.</p>}
       {check.plan.bounds.height > 199 && <p className="text-amber-800">These long panels use PDF 1.6 large-page dimensions. Confirm the RIP reads the stated size.</p>}
     </div>}
-    <label className="mt-4 flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" disabled={busy || !check?.ready} checked={approved === signature} onChange={e => setApproved(e.target.checked ? signature : '')} />I reviewed the wall dimensions, artwork placement, bleed and overlap. I will print at 100% / actual size.</label>
-    <Button className="mt-4" disabled={busy || !check?.ready || approved !== signature} onClick={() => void prepare()}><Printer className="mr-2 h-4 w-4" />Build print files</Button>
+    <label className="mt-4 flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" disabled={busy || !ready} checked={approved === signature} onChange={e => setApproved(e.target.checked ? signature : '')} />I reviewed the wall dimensions, artwork placement, bleed and overlap. I will print at 100% / actual size.</label>
+    <Button className="mt-4" disabled={busy || !ready || approved !== signature} onClick={() => void prepare()}><Printer className="mr-2 h-4 w-4" />Build print files</Button>
     {progress && <p role="status" className="mt-3 text-sm text-violet-700">{progress}…</p>}
     {currentDownloads && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
       <p role="status" className="font-semibold text-emerald-900">Print pack ready — {currentDownloads.panels} full-size panel PDFs</p>

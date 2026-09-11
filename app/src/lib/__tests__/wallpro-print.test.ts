@@ -4,6 +4,10 @@ import sharp from 'sharp';
 import JSZip from 'jszip';
 import { DEFAULT_WALL_PRINT, planWallPrint, wallPrintPreflight } from '../wallpro-print-plan';
 import { buildWallPrintPack } from '../wallpro-print-export';
+import type { SeamlessReceipt } from '../wallpro-seamless';
+
+// A repeat may only print with a verified seam receipt. The seam module has its own tests.
+const verifiedSeam: SeamlessReceipt = { contract: 'wallpro.seamless.v1', preference: 'auto', method: 'verified', before: { width: 600, height: 400, edge: 1, interior: 1, ratio: 1, seamless: true }, after: null, verified: true };
 
 describe('WallPro printable panel geometry', () => {
   it('fits the complete printed panel inside 51 inches including overlap and outer bleed', () => {
@@ -40,7 +44,7 @@ describe('WallPro printable panel geometry', () => {
 describe('WallPro real PDF package', () => {
   it('writes full-size panel PDFs with intact image pixels, a master, install guide and verified inventory', async () => {
     const bytes=new Uint8Array(await sharp({create:{width:600,height:400,channels:3,background:'#2266aa'}}).png().toBuffer());
-    const pack=await buildWallPrintPack({name:'Print test',layout:{width:120,height:75,mode:'repeat',repeatWidth:4},settings:DEFAULT_WALL_PRINT,source:{bytes,width:600,height:400}});
+    const pack=await buildWallPrintPack({name:'Print test',layout:{width:120,height:75,mode:'repeat',repeatWidth:4},settings:DEFAULT_WALL_PRINT,source:{bytes,width:600,height:400},seamless:verifiedSeam});
     const zip=await JSZip.loadAsync(pack.zip);
     const names=Object.keys(zip.files);
     expect(names).toContain('panels/panel-001-51x77in.pdf');expect(names).toContain('panels/panel-003-21x77in.pdf');
@@ -55,7 +59,7 @@ describe('WallPro real PDF package', () => {
   });
   it('preserves large physical page dimensions with PDF UserUnit instead of truncating at 200 inches', async () => {
     const bytes=new Uint8Array(await sharp({create:{width:300,height:300,channels:3,background:'#aa5522'}}).png().toBuffer());
-    const pack=await buildWallPrintPack({name:'Long wall',layout:{width:51,height:240,mode:'repeat',repeatWidth:4},settings:{bleed:0,overlap:0,minPpi:72},source:{bytes,width:300,height:300}});
+    const pack=await buildWallPrintPack({name:'Long wall',layout:{width:51,height:240,mode:'repeat',repeatWidth:4},settings:{bleed:0,overlap:0,minPpi:72},source:{bytes,width:300,height:300},seamless:verifiedSeam});
     const pdf=Buffer.from(pack.files[0].bytes).toString('latin1');
     expect(pdf).toContain('/UserUnit 2');expect(pdf).toMatch(/\/MediaBox \[0 0 1836(?:\.0*)? 8640(?:\.0*)?\]/);
   });

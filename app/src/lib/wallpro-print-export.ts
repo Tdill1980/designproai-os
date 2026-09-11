@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
 import { layoutMetrics, type WallLayout } from './wallpro-geometry';
 import { intersectPrintRect, wallPrintPreflight, type PrintRect, type WallPrintSettings } from './wallpro-print-plan';
+import type { SeamlessReceipt } from './wallpro-seamless';
 
 export type WallPrintSource = { bytes: Uint8Array; width: number; height: number };
 export type WallPrintFile = { name: string; bytes: Uint8Array; mime: string };
@@ -21,8 +22,21 @@ function drawWall(doc: jsPDF, frame: PrintRect, layout: WallLayout, source: Wall
   const image = (x: number, y: number) => doc.addImage(source.bytes, 'PNG', px(x), py(y), m.artworkWidth * factor, m.artworkHeight * factor, 'wall-source', 'FAST');
   doc.saveGraphicsState(); clip(frame);
   if (layout.mode === 'repeat') {
+    const pageHeight = doc.internal.pageSize.getHeight();
     for (let row = Math.floor(frame.y / m.artworkHeight); row * m.artworkHeight < frame.y + frame.height - 1e-8; row++) {
-      for (let col = Math.floor(frame.x / m.artworkWidth); col * m.artworkWidth < frame.x + frame.width - 1e-8; col++) image(col * m.artworkWidth, row * m.artworkHeight);
+      for (let col = Math.floor(frame.x / m.artworkWidth); col * m.artworkWidth < frame.x + frame.width - 1e-8; col++) {
+        // Mirror repeat: odd tiles flip about their own centre, so each join
+        // places a column or row against its own copy. Same PDF transform the
+        // perimeter bleed uses; the tile pixels are never resampled.
+        const flipX = !!layout.mirror && ((col % 2) + 2) % 2 === 1, flipY = !!layout.mirror && ((row % 2) + 2) % 2 === 1;
+        if (!flipX && !flipY) { image(col * m.artworkWidth, row * m.artworkHeight); continue; }
+        const cx = px(col * m.artworkWidth) + m.artworkWidth * factor / 2;
+        const cy = pageHeight - (py(row * m.artworkHeight) + m.artworkHeight * factor / 2);
+        doc.saveGraphicsState();
+        doc.setCurrentTransformationMatrix(doc.Matrix(flipX ? -1 : 1, 0, 0, flipY ? -1 : 1, flipX ? 2 * cx : 0, flipY ? 2 * cy : 0));
+        image(col * m.artworkWidth, row * m.artworkHeight);
+        doc.restoreGraphicsState();
+      }
     }
   } else {
     // Reflect the accepted wall composition into perimeter bleed. The artwork
@@ -61,8 +75,19 @@ function fullSizePdf(frame: PrintRect, layout: WallLayout, source: WallPrintSour
   return new Uint8Array(doc.output('arraybuffer'));
 }
 
+/** A repeat may only print once its seam is proven closed: measured on the
+ * exact pixels being embedded, or closed by construction with mirror repeat.
+ * The receipt is the OS's evidence, and it rides in the manifest. */
+export function assertSeamlessForPrint(layout: WallLayout, seamless: SeamlessReceipt | null | undefined) {
+  if (layout.mode !== 'repeat') return;
+  if (!seamless || seamless.contract !== 'wallpro.seamless.v1') throw new Error('Repeat patterns need a seam check before print files can be built. Choose the artwork again.');
+  if (seamless.method === 'mirror' !== !!layout.mirror) throw new Error('The seam method and the print layout disagree. Choose the artwork again.');
+  if (!seamless.verified) throw new Error(`This tile does not join seamlessly (edge difference ${seamless.after?.ratio.toFixed(1) ?? seamless.before.ratio.toFixed(1)}× the interior). Choose Mirror repeat or Blended repeat before printing.`);
+}
+
 export async function buildWallPrintPack(input: {
   name: string; projectId?: string; layout: WallLayout; settings: WallPrintSettings; source: WallPrintSource;
+  seamless?: SeamlessReceipt | null;
   onProgress?: (message: string) => void;
 }): Promise<WallPrintPack> {
   const { layout, settings, source, onProgress } = input;
@@ -72,6 +97,7 @@ export async function buildWallPrintPack(input: {
   if (props.fileType !== 'PNG' || props.width !== source.width || props.height !== source.height) throw new Error('The print source dimensions changed. Choose the artwork again.');
   const check = wallPrintPreflight(layout, settings, source);
   if (!check.ready) throw new Error(check.blockers.join(' '));
+  assertSeamlessForPrint(layout, input.seamless);
   if (source.bytes.length * (check.plan.panels.length + 2) > maxPackBytes) throw new Error('This package would exceed 256 MB. Export a smaller wall section or use a more compact source image.');
   const id = crypto.randomUUID(), created = new Date().toISOString();
   const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'wall';
@@ -110,6 +136,9 @@ export async function buildWallPrintPack(input: {
     `Print panel PDFs at 100% / actual size using the MediaBox. Disable Fit to page. Install left to right.`,
     `Adjacent panels share ${fmt(settings.overlap)} in of identical artwork. Align the duplicate image; do not stretch panels.`,
     `Perimeter bleed: ${fmt(settings.bleed)} in. ${layout.mode === 'repeat' ? 'Pattern continues through bleed.' : 'Bleed mirrors the approved wall edges.'} Trim the outside perimeter to the measured wall.`,
+    ...(layout.mode === 'repeat' ? [input.seamless?.method === 'mirror'
+      ? `Seamless: mirror repeat. Alternate tiles are flipped, so every join is identical artwork against itself. Tile ${fmt(layout.repeatWidth)} in wide.`
+      : `Seamless: tile edges verified to join (edge difference ${(input.seamless?.after ?? input.seamless?.before)?.ratio.toFixed(2)}x interior${input.seamless?.method === 'blend' ? ', after deterministic seam blend' : ''}). Tile ${fmt(layout.repeatWidth)} in wide.`] : []),
     `Effective source resolution: ${check.ppi.toFixed(1)} PPI. Selected minimum: ${settings.minPpi} PPI. No artificial upscaling.`,
     `RGB artwork on white. Apply your printer/media ICC profile in the RIP and check a physical color sample.`,
     `Wall-photo masks are preview only. Panels contain continuous artwork; trim doors/windows during installation.`,
@@ -143,6 +172,7 @@ export async function buildWallPrintPack(input: {
   const manifest = { contract: 'wallpro.print-pack.v1', packId: id, projectId: input.projectId || null, name: input.name, createdAt: created,
     units: 'inches', printScale: 1, printableWidth: 51, wall: check.plan.wall, placement: layout, settings,
     bleedBehavior: layout.mode === 'repeat' ? 'continuous-repeat' : 'mirror-wall-perimeter', color: 'RGB; assign sRGB input and printer/media ICC in RIP',
+    seamless: layout.mode === 'repeat' ? input.seamless : null,
     source: { widthPixels: source.width, heightPixels: source.height, effectivePpi: check.ppi, sha256: await sha256(source.bytes), pixelResampling: false },
     panels, files: inventory, preflight: { passed: true, minimumPpi: settings.minPpi, allPanelsWithinPrintableWidth: panels.every(p => p.width <= 51) } };
   add('manifest.json', new TextEncoder().encode(JSON.stringify(manifest, null, 2)), 'application/json');

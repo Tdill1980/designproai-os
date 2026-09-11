@@ -1,4 +1,5 @@
 import { homography, projectPoint, validWallCorners, layoutMetrics, UNIT_WALL, insidePolygon, type Point, type WallLayout } from './wallpro-geometry';
+import { tileCoordinate } from './wallpro-seamless';
 
 export async function loadWallImage(src: string): Promise<HTMLImageElement> {
   const image = new Image();
@@ -51,7 +52,7 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
       const uv = projectPoint(h, p);
       if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 || exclusions.some(poly => insidePolygon(p, poly))) continue;
       let u: number, v: number;
-      if (layout.mode === 'repeat') { u = (uv.x * m.across) % 1; v = (uv.y * m.down) % 1; }
+      if (layout.mode === 'repeat') { u = tileCoordinate(uv.x * m.across, !!layout.mirror).u; v = tileCoordinate(uv.y * m.down, !!layout.mirror).u; }
       else { u = (uv.x * layout.width - (layout.width - m.artworkWidth) / 2) / m.artworkWidth; v = (uv.y * layout.height - (layout.height - m.artworkHeight) / 2) / m.artworkHeight; }
       if (u < 0 || u > 1 || v < 0 || v > 1) continue;
       const tx = Math.min(texture.width - 1, Math.floor(u * texture.width)), ty = Math.min(texture.height - 1, Math.floor(v * texture.height));
