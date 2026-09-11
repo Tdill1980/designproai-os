@@ -1,0 +1,76 @@
+{
+  "test": "17-v2-parity",
+  "sourceCommit": "0b8ddf9903c7aaa2905ab7452f703f0deefcd686",
+  "promptVersion": "designpro-flat-first-atlas-20260822.v2",
+  "fixture": {
+    "generationId": "5b2eb96c-77b5-4705-8cad-fef00af677fe",
+    "guideHash": "f28bab318dab08127235ee6f6d90932ec1621df1ed6ceaeda3fb1d8ef43a5d93",
+    "guideSource": "stored-aug-22-bytes",
+    "manifestHash": "f6841d54322d54fcf4a268f8b58f5dfb5764914d0a26a13e781eac9f6105c1da",
+    "houdini": {
+      "exampleId": null,
+      "exampleKey": "houdini-flat-to-finished",
+      "version": 1,
+      "source": "exact-server-release",
+      "flattenedTopViewContentHash": "aa5d811b529d5b5b26696cc92414799446d0db5aee948e86ee852a5faebe7b1c",
+      "finished3dProofContentHash": "2ea78a755f62c0158e4142f928bef61274c6d69bc7a8863c6bec5435ba4e2a85"
+    }
+  },
+  "generationConfig": {
+    "aspectRatio": "1:1",
+    "imageSize": "4K",
+    "temperature": "not sent"
+  },
+  "promptChars": 5532,
+  "parts": [
+    {
+      "index": 0,
+      "kind": "image",
+      "mimeType": "image/png",
+      "bytes": 160681,
+      "sha256": "f28bab318dab08127235ee6f6d90932ec1621df1ed6ceaeda3fb1d8ef43a5d93"
+    },
+    {
+      "index": 1,
+      "kind": "text",
+      "chars": 5532,
+      "sha256": "18e7a0e01f7bb74d42b49dfc38b63259b9556810c076cac02a51fb1107cce1a5",
+      "preview": "You are DesignPro's flat vehicle-wrap atlas artist. Create ONE continuous unwrapped livery"
+    },
+    {
+      "index": 2,
+      "kind": "text",
+      "chars": 200,
+      "sha256": "97405d50a639c453733e1079795826337ad775c1020e019c503c8fe20189d72c",
+      "preview": "PAIRED TOPOLOGY EXAMPLE — FLATTENED TOP-VIEW OUTPUT FORMAT. Study how all visible vehicle "
+    },
+    {
+      "index": 3,
+      "kind": "image",
+      "mimeType": "image/png",
+      "bytes": 1617121,
+      "sha256": "61dbd6ebe3c51f3c6b3229bf48fe8b8535c324e2e26ef8caf31550e6a93b2a0f"
+    },
+    {
+      "index": 4,
+      "kind": "text",
+      "chars": 219,
+      "sha256": "1b65f2f475b87410c9415fbc86615ef78b6eb52b7ec479b4edac0c57230b187b",
+      "preview": "PAIRED TOPOLOGY EXAMPLE — CORRESPONDING FINISHED 3D PROOF. This shows how the preceding fl"
+    },
+    {
+      "index": 5,
+      "kind": "image",
+      "mimeType": "image/png",
+      "bytes": 1602684,
+      "sha256": "36bcf13e43ed3db004fbc061565064d8be6b3d047a4fea48e57fae048e7bd8c2"
+    },
+    {
+      "index": 6,
+      "kind": "text",
+      "chars": 184,
+      "sha256": "11a5a8bced7495b924720296cdf12c0cc6df2a829d2944b5868a710af93207f6",
+      "preview": "CALL 1 TARGET: create the customer's NEW flattened top-view design in the deterministic gu"
+    }
+  ]
+}

@@ -1407,10 +1407,14 @@ not by forcing pixel mirroring. A production canary may diagnose the live graph
 when the owner explicitly requests it; the real owner-visible production DCA
 remains the final customer-path acceptance test.
 
-**v2's prompt text is not in this repository.** `flat-first-atlas.cjs` was created
-at v4, so the Aug-22 code was never committed here — the v2 evidence is
-behavioural, measured on the stored artifact, not a text diff. Do not go looking
-for a v2 source file; there isn't one.
+**CORRECTED 2026-09-11: v2's prompt text IS in this repository.** The paragraph
+that stood here ("flat-first-atlas.cjs was created at v4 ... there isn't one")
+was written from a shallow clone. The v2 module is at commit `0b8ddf99`
+(2026-08-22 04:51Z) and is vendored byte-for-byte, with the stored Flamingo
+manifest and request input, under `scripts/fixtures/atlas-v2-0b8ddf99/`.
+Sent verbatim on today's model it returned a vehicle 3 draws in 4
+(`docs/ATLAS-V2-PARITY-2026-09-11.md`, run `34615923338`); the Aug 22 master
+itself carried wheel discs and door seams on both flanks.
 
 ### 🖼️ A PROMPT MAY NOT CITE ATTACHMENTS THE REQUEST DOES NOT CARRY (2026-08-26)
 
