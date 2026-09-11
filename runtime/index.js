@@ -36,6 +36,7 @@ const { createAtlasCall1NodeWorker, graphEnabled: atlasCall1GraphEnabled } = req
 const { createAtlasAuthorTransport } = require("./flat-first-atlas.cjs");
 const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
 const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
+const { createWallProProductionWorker } = require("./wallpro-production.cjs");
 
 const PORT = Number(process.env.PORT || 3001);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
@@ -140,6 +141,12 @@ const atlasCall1Graph = createAtlasCall1NodeWorker({
   callEdge: createAtlasAuthorTransport({ supabase }),
   logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`),
 });
+// WallPro 150 PPI print panels: per-panel Topaz jobs requested by the owner for
+// an approved version. Runs beside the vehicle workers; an unconfigured Topaz
+// fails each job closed with that reason rather than shipping soft panels.
+const wallProProduction = createWallProProductionWorker({
+  supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, tusEndpoint: SUPABASE_TUS_ENDPOINT, workerId: `${WORKER_ID}-wallpro`,
+});
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
@@ -179,6 +186,7 @@ function stopWorkerLoops() {
   revisionHandoffTimer=null;
   panelProfileOutput.stop();
   panelProfileTemplates.stop();
+  wallProProduction.stop();
   if (claimant) claimant.stop();
   claimant = null;
   if (generationWorker) generationWorker.stop();
@@ -240,6 +248,7 @@ async function refreshReadiness() {
     ensureRevisionHandoffs();
     panelProfileOutput.start();
     panelProfileTemplates.start();
+    wallProProduction.start();
     readiness = {
       ready: true, service: "designproai-os", commit: GIT_SHA, workerId: WORKER_ID,
       imageModel: GOOGLE_IMAGE_MODEL, requiredEnvironment: REQUIRED_RUNTIME_ENV, publicGoLiveEnvironment: PUBLIC_GO_LIVE_ENV,

@@ -27,6 +27,7 @@ runtime/proof-sheet.cjs
 runtime/call8-proof-material.cjs
 runtime/production-provenance.cjs
 runtime/topaz-upscale.cjs
+runtime/wallpro-production.cjs
 runtime/logo-removal.cjs
 runtime/studio-os.cjs
 runtime/designiq-prompt.cjs

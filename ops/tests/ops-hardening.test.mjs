@@ -16,11 +16,13 @@ const fixed = policy.filter((line) => !line.includes("*"));
 test("one canonical policy includes every required runtime file and five deploy controls", () => {
   // The previous 65 plus three ATLAS checkpoints/assembly modules, three PPO
   // execution modules, verified source/delivery bindings, two templates and
-  // the server-owned revision intake adapter and durable proof/authoring transports,
-  // plus the hero-driver cascade (RULE 0.35, runtime/atlas-hero-driver.cjs)
-  // and its durable node graph (runtime/atlas-call1-graph.cjs).
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 81);
+  // the server-owned revision intake adapter, durable proof/authoring transports,
+  // the WallPro 150 PPI production-panel worker, plus the hero-driver cascade
+  // (RULE 0.35, runtime/atlas-hero-driver.cjs) and its durable node graph
+  // (runtime/atlas-call1-graph.cjs).
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 82);
   for (const name of [
+    "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",
     "runtime/atlas-authoring-transport.cjs",
     "runtime/inspect-atlas-provider-cache.cjs",

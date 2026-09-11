@@ -118,8 +118,14 @@ WallPro is the wedge product: a wall is one flat rectangle, so "output the
 panels correctly every time" is deterministic here. These are the live
 contracts; each names its lock.
 
-- **Corner gate.** With a wall photo, generation is blocked until four valid
-  corners exist (`wallGenerationBlocker`, `tests/wallpro.test.ts`).
+- **Flat first, then imposed (owner, 2026-09-11).** The flat rectangle is the
+  product and the print file, so generation needs the wall size and nothing
+  else (`wallGenerationBlocker`). With a photo and no valid corners the flat
+  design shows first; four valid corners switch on the on-wall view
+  (`wallPreviewBlocker`). Corners never block generation or print files
+  (`tests/wallpro.test.ts`). **The client sees both at once**: the flat
+  master stays on screen beside the photo pane, which shows the same file
+  imposed the moment the corners exist (`WallPro.tsx` preview section).
 - **Detect my wall runs on upload.** A wall photo is sent to
   `detect-wall-openings` the moment it is chosen; corners and protected areas
   (windows, drapes, doors, outlets, furniture) land as editable preview state.
@@ -147,10 +153,22 @@ contracts; each names its lock.
   canonical truth; SynthID is provenance only. `docs/wallpro/`,
   `/admin/wallpro-batch`, `wallpro-catalog.test.ts`.
 - **Production rules** (owner workbook, `docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md`):
-  one canonical master, never AI-generate panels, upscale the whole master
-  before panelization, duplicated 1-inch overlap identical on both panels,
-  seam QC, 150 effective PPI from real pixels. The production-master stage
-  (server-side upscale or tiled reconstruction) is NOT built yet.
+  one canonical master, never AI-generate panels, duplicated overlap identical
+  on both panels, seam QC, 150 effective PPI from real pixels.
+- **Production panels: 150 PPI through Topaz, per panel, on the runtime
+  (owner, 2026-09-11: "make it 150 and auto run topaz").** Approving a version
+  auto-requests `request_wallpro_production`; the droplet runtime claims the
+  job (`claim_wallpro_production_job`, `runtime/wallpro-production.cjs`),
+  rasterises each 59.5-inch panel from the approved master at native density,
+  enhances it through the same `enhancePanel` Call 12 uses (fails closed when
+  Topaz is unavailable), lands on panel inches × 150 exactly, stamps the PNG
+  density and stores it under `{owner}/production/{job}/` in `wallpro-files`.
+  Why per panel: a 4K master over a wall is ~30 PPI and Topaz caps one request
+  near 96 MP, so a whole-wall 150 PPI master is not one request; a panel is.
+  Panels are independent graph nodes and build in parallel
+  (`DESIGNPRO_WALLPRO_PANEL_CONCURRENCY`, default 3); only the manifest waits.
+  Migration `20260911190000_wallpro_production_jobs.sql`; locked by
+  `source-tests/runtime/wallpro-production.test.mjs`.
 
 ## ONE-FIELD FAIL-OVER: A REFUSED CALL 1 NEVER LEAVES THE CUSTOMER WITH NOTHING (owner-directed, Trish 2026-09-10)
 
