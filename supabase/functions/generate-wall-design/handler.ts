@@ -207,7 +207,7 @@ const toBase64 = (bytes: Uint8Array) => {
 };
 
 // Injectable boundary for contract tests. No request can supply credentials or URLs.
-export function createWallHandler(deps: { createClient: (...args: any[]) => any; supabaseUrl: string; serviceKey: string; apiKey: () => string; fetch: typeof fetch }) {
+export function createWallHandler(deps: { createClient: (...args: any[]) => any; supabaseUrl: string; serviceKey: string; apiKey: () => string; fetch: typeof fetch; complianceCheckEnabled?: () => boolean }) {
   return async (req: Request): Promise<Response> => {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (req.method !== 'POST') return response({ error: 'Method not allowed' }, 405);
@@ -326,8 +326,19 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // only. It never blocks or alters the design that was already generated
       // and paid for; wiring it as a hard gate on production is a deliberately
       // separate, later change (docs/wallpro/WALLPRO-GENIE-UI-INTEGRATION-PLAN.md).
+      //
+      // OFF BY DEFAULT since 2026-09-12, and the reason matters. Awaiting this
+      // put a second vision call (up to 20s, on a 4K image) between the
+      // finished design and the customer's response -- on top of the
+      // consultant call and the image call. The owner's generation
+      // 93487116 completed server-side and was saved, and her browser had
+      // already given up: "system didn't even show design and times out."
+      // An advisory check that nothing reads yet must never sit in the
+      // customer's critical path. Set WALLPRO_COMPLIANCE_CHECK=on to measure
+      // it deliberately; never leave it on for real traffic until it is
+      // moved off the response path entirely.
       let complianceCheck: Record<string, unknown> | null = null;
-      if (contract) {
+      if (contract && deps.complianceCheckEnabled?.()) {
         complianceCheck = await checkWallCompliance(deps.fetch, key, contract, { inlineData: { mimeType: final.mimeType, data: final.data } });
         console.log(JSON.stringify({ event: 'wall_compliance_checked', request_id: input.requestId, ...(complianceCheck || { checked: false }) }));
       }
