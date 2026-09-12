@@ -99,6 +99,44 @@ export function applyProtectedAreaMask(outPx: Uint8ClampedArray, wallPx: Uint8Cl
  * `https:` import specifier at module-load time, only at call time -- and no
  * test exercises this path, matching the same Deno-only/vitest-tested split
  * `_shared/cut-contour/produce.ts` already draws for the same library. */
+/** The graph behind "ironclad": protection is a deterministic guarantee
+ * (applyProtectedAreaMask, above), but a generative erase cannot be one --
+ * so removal gets the next best thing, verify-then-retry, instead of a
+ * single unchecked shot. A fast, cheap vision call looks ONLY inside the
+ * remove mask's white areas and asks whether the original object still
+ * shows there. Returns null (inconclusive) on any provider or parse
+ * failure rather than forcing a retry blind -- a failed check must never
+ * cost the customer an extra ~30s generation for nothing. This is an
+ * in-process check-and-retry loop, not the durable multi-worker node graph
+ * Call 1 authoring uses: that infrastructure earns its cost on a paid,
+ * multi-minute, production-blocking step, and this is a free, single-
+ * request preview view completing in one round trip. If usage ever shows
+ * this needs to survive a worker restart or run across workers, promoting
+ * it to a real graph is the same well-precedented move RULE 0.35's
+ * addendum already made for Call 1, not new architecture. */
+async function verifyRemoval(fetchImpl: typeof fetch, key: string, wallPhotoMimeType: string, wallPhotoBytes: Uint8Array, outputMimeType: string, outputBytes: Uint8Array, removeMaskBytes: Uint8Array): Promise<boolean | null> {
+  try {
+    const provider = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [
+          { text: 'Image 1 is a room photo before editing. Image 2 is the same room after a wall covering was painted in; every object inside the white, opaque areas of Image 3 (a mask) was supposed to be erased there and replaced by the wall covering. Look ONLY inside those white areas. Does Image 2 still show any part of the original object there, rather than the wall covering? Answer JSON only: {"stillVisible": true or false}.' },
+          { inlineData: { mimeType: wallPhotoMimeType, data: toBase64(wallPhotoBytes) } },
+          { inlineData: { mimeType: outputMimeType, data: toBase64(outputBytes) } },
+          { inlineData: { mimeType: 'image/png', data: toBase64(removeMaskBytes) } },
+        ] }],
+        generationConfig: { temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!provider.ok) return null;
+    const result = await provider.json();
+    const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '');
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    return typeof parsed?.stillVisible === 'boolean' ? parsed.stillVisible : null;
+  } catch { return null; }
+}
+
 async function recompositeProtectedAreas(outputBytes: Uint8Array, wallPhotoBytes: Uint8Array, maskBytes: Uint8Array): Promise<Uint8Array> {
   const { Image } = await import("https://deno.land/x/imagescript@1.2.15/mod.ts");
   const [outImg, wallImg, maskImg] = await Promise.all([
@@ -128,7 +166,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     const key = deps.apiKey();
     if (!key) return response({ error: 'The wall view is not configured.', code: 'NOT_CONFIGURED' }, 503);
     const parts: any[] = [{ text: viewPrompt(input) }];
-    let wallDims: { width: number; height: number } | null = null, total = 0, wallPhotoBytes: Uint8Array | null = null;
+    let wallDims: { width: number; height: number } | null = null, total = 0, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
     for (const [label, path] of [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]] as const) {
       const downloaded = await sb.storage.from(BUCKET).download(path);
       if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + (path === input.wallPath ? 'wall photo' : 'design') + ' could not be read.', code: 'UPLOAD_UNREADABLE' }, 400);
@@ -137,7 +175,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       total += blob.size;
       if (total > 14 * 1024 * 1024) return response({ error: 'The wall photo and design together must be under 14 MB for the AI view.' }, 400);
       const raw = new Uint8Array(await blob.arrayBuffer());
-      if (path === input.wallPath) { wallDims = imageDimensions(raw); wallPhotoBytes = raw; }
+      if (path === input.wallPath) { wallDims = imageDimensions(raw); wallPhotoBytes = raw; wallPhotoMimeType = blob.type; }
       parts.push({ text: label }, { inlineData: { mimeType: blob.type, data: toBase64(raw) } });
     }
     // Both optional masks are best effort: a missing, unreadable or oversized
@@ -157,16 +195,42 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     const maskBytes = await attachMask(input.maskPath, 'protected areas: white and opaque marks anything that must stay pixel-for-pixel exactly as photographed (windows, drapes, furniture, framed art, mirrors, TVs, shelving and everything on it). The covering never paints over a white area; it continues on the wall behind it.');
     const removeBytes = await attachMask(input.removePath, 'items to remove: white and opaque marks freestanding furniture or equipment that will be moved out of the room before the covering is installed. Erase it entirely and paint the covering through that area as if it were never there -- do not preserve it, and do not treat it as something to paint around.');
     const aspectRatio = wallDims ? nearestAspect(wallDims.width, wallDims.height) : '4:3';
-    try {
+    async function paint(requestParts: any[]): Promise<{ bytes: Uint8Array; mimeType: string }> {
       const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + VIEW_MODEL + ':generateContent', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '2K' } } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts: requestParts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '2K' } } }),
         signal: AbortSignal.timeout(100_000),
       });
       if (!provider.ok) throw new Error(provider.status === 429 ? 'The image service is busy. Try again in a moment.' : 'The wall view could not be rendered right now.');
       const final = finalWallImage(await provider.json());
-      let bytes = decodeWallImage(final.data);
-      let mimeType = final.mimeType;
+      return { bytes: decodeWallImage(final.data), mimeType: final.mimeType };
+    }
+    try {
+      let { bytes, mimeType } = await paint(parts);
+      // Ironclad has two different meanings here. Protection is a
+      // deterministic guarantee below. Removal is a generative edit, which
+      // can only ever be checked and retried, never guaranteed -- so it is:
+      // one cheap verification pass, and if the object is still there, one
+      // retry with a strengthened instruction before accepting the result.
+      let removalVerified: boolean | null = null, removalRetried = false;
+      if (removeBytes && wallPhotoBytes) {
+        const stillVisible = await verifyRemoval(deps.fetch, key, wallPhotoMimeType, wallPhotoBytes, mimeType, bytes, removeBytes);
+        if (stillVisible === true) {
+          removalRetried = true;
+          try {
+            const retryParts = [...parts, { text: 'Your previous attempt still showed the object marked for removal. Erase it completely this time: there must be no trace of it anywhere the removal mask is white, only the wall covering.' }];
+            const retried = await paint(retryParts);
+            const stillVisibleAfterRetry = await verifyRemoval(deps.fetch, key, wallPhotoMimeType, wallPhotoBytes, retried.mimeType, retried.bytes, removeBytes);
+            bytes = retried.bytes; mimeType = retried.mimeType;
+            removalVerified = stillVisibleAfterRetry === true ? false : stillVisibleAfterRetry === false ? true : null;
+          } catch (e) {
+            // The first attempt's bytes stand; removal simply could not be
+            // confirmed, never a reason to fail an otherwise-working view.
+            console.error('[render-wall-view] removal retry failed', e instanceof Error ? e.message : e);
+            removalVerified = false;
+          }
+        } else removalVerified = stillVisible === false ? true : null;
+      }
       let recomposited = false;
       // Guarantee, not hope: whatever the model actually painted, protected
       // pixels are restored from the real photo before this ever reaches the
@@ -182,8 +246,8 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false });
       if (uploaded.error) throw new Error('The wall view could not be saved.');
       const signed = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
-      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, recomposited }));
-      return response({ view_path: path, view_url: signed.data?.signedUrl || null, model: VIEW_MODEL, aspect_ratio: aspectRatio });
+      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, removalVerified, removalRetried, recomposited }));
+      return response({ view_path: path, view_url: signed.data?.signedUrl || null, model: VIEW_MODEL, aspect_ratio: aspectRatio, removal_verified: removalVerified });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The image service timed out. Try again.' : err instanceof Error ? err.message : 'The wall view failed.';
       return response({ error: message.replace(/ Your render credit will be returned\.?/g, ''), code: 'VIEW_FAILED' }, 502);
