@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, wallDesignId, wholeWallFile, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
+import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, wallDesignId, wallPanelFiles, wholeWallFile, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
 
 type Props = {
   /** The approved version the panels are built from, or null when none is approved. */
@@ -50,7 +50,7 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
   useEffect(() => {
     let active = true;
     const whole = wholeWallFile(job);
-    const paths = [...(job?.panels || []).map(p => p.path), ...(job?.manifest_path ? [job.manifest_path] : []), ...(whole ? [whole.path] : [])].filter(p => !links[p]);
+    const paths = [...(job?.panels || []).flatMap(p => wallPanelFiles(p).map(f => f.path!)), ...(job?.manifest_path ? [job.manifest_path] : []), ...(whole ? [whole.path] : [])].filter(p => !links[p]);
     if (!paths.length) return;
     openWallAssets(paths, { download: true }).then(more => { if (active) setLinks(old => ({ ...old, ...more })); }).catch(() => { /* links retry on the next poll */ });
     return () => { active = false; };
@@ -79,7 +79,9 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
       {job.panels.length > 0 && <details open={!whole} className="rounded-lg border"><summary className="cursor-pointer px-3 py-2 text-slate-700">{whole ? 'Panels, for a RIP that cannot tile' : 'Panels'} ({job.panels.length} × {fmt(request.panelWidthIn)}″)</summary><ul className="divide-y border-t">
         {job.panels.map(p => <li key={p.number} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <span>Panel {p.number} · {fmt(p.widthIn)} × {fmt(p.heightIn)} in · {p.widthPx.toLocaleString()} × {p.heightPx.toLocaleString()} px · {p.ppi} PPI{p.overlapLeftIn ? ` · ${fmt(p.overlapLeftIn)}″ overlap left` : ''} · {mb(p.byteSize)}{p.upscale?.engine === 'none' ? ' · native' : ' · Topaz'}</span>
-          {links[p.path] ? <Button asChild size="sm" variant="outline"><a href={links[p.path]} download={p.file} rel="noopener"><Download className="mr-1 h-3 w-3" />PNG</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}
+          <span className="flex flex-wrap items-center gap-1">{wallPanelFiles(p).map(f => links[f.path!]
+            ? <Button key={f.format} asChild size="sm" variant={f.format === 'tiff' ? 'default' : 'outline'}><a href={links[f.path!]} download={f.file} rel="noopener"><Download className="mr-1 h-3 w-3" />{f.format.toUpperCase()}{f.byteSize ? ` · ${mb(f.byteSize)}` : ''}</a></Button>
+            : <span key={f.format} className="text-xs text-slate-500">preparing link…</span>)}</span>
         </li>)}
         {job.status === 'ready' && job.manifest_path && <li className="flex items-center justify-between px-3 py-2"><span>Panel manifest and install notes</span>{links[job.manifest_path] ? <Button asChild size="sm" variant="ghost"><a href={links[job.manifest_path]} download="manifest.json">JSON</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}</li>}
       </ul></details>}

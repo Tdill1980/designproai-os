@@ -11,10 +11,18 @@ export function rectangularWallMask(a: Point, b: Point): Point[] {
   if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
   return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
 }
-// Printable panel width on the production roll (owner, 2026-09-11): the media
-// is 59 in wide, so a printed panel is at most 59 in INCLUDING its half-inch
-// duplicated overlap (DEFAULT_WALL_PRINT).
-export const WALLPRO_PRINT_WIDTH = 59;
+// Printable panel width on the production roll. The media is Avery HP MPI 2610
+// wall vinyl, matte/luster, and the shop's own spec sheet states it: "All
+// panels billed at 54 in width, regardless of actual printed width" (owner,
+// 2026-09-12). A printed panel is therefore at most 54 in INCLUDING its
+// half-inch duplicated overlap (DEFAULT_WALL_PRINT).
+//
+// This was 59 until 2026-09-12, which is wider than the roll — those panels
+// could not be printed at all. Historical jobs keep the width they were built
+// at; only new ones plan at 54. If the press needs an edge margin and cannot
+// image the full 54, lower this ONE constant and the runtime default beside
+// it: every panel plan, seam guide, preflight and print file follows from here.
+export const WALLPRO_PRINT_WIDTH = 54;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 export function validWallSize(width: number, height: number): boolean {

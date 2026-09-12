@@ -68,8 +68,9 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     DESIGNER_IDENTITY, CAPABILITIES,
     'Deliver one continuous flat 2D artwork image, edge to edge. This is the mural artwork before installation, not a room photograph or a photographed wall. Fine texture and crisp detail at 4K.',
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
-    // 59 inches is the roll width (WALLPRO_PRINT_WIDTH in the app; owner, 2026-09-11).
-    'Printing uses panels up to 59 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
+    // 54 inches is the roll width: Avery HP MPI 2610 wall vinyl, billed at 54 in
+    // per panel regardless of printed width (owner spec sheet, 2026-09-12).
+    'Printing uses panels up to 54 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
     // Scale is stated in inches so motifs are drawn at the size they print
     // (owner, 2026-09-11, after a mural printed with three-foot flowers).
     // THE REFERENCE SETS THE SCALE on a match (owner, 2026-09-12, looking at a

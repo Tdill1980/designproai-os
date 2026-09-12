@@ -10,22 +10,22 @@ import type { SeamlessReceipt } from '../wallpro-seamless';
 const verifiedSeam: SeamlessReceipt = { contract: 'wallpro.seamless.v1', preference: 'auto', method: 'verified', before: { width: 600, height: 400, edge: 1, interior: 1, ratio: 1, seamless: true }, after: null, verified: true };
 
 describe('WallPro printable panel geometry', () => {
-  it('fits the complete printed panel inside 59 inches, the roll width, with the half-inch overlap and outer bleed', () => {
+  it('fits the complete printed panel inside 54 inches, the roll width, with the half-inch overlap and outer bleed', () => {
     const plan = planWallPrint(120, 96, DEFAULT_WALL_PRINT);
     expect(DEFAULT_WALL_PRINT.overlap).toBe(.5);
-    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-1, 59, 98, 0], [57.5, 59, 98, .5], [116, 5, 98, .5]]);
+    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-1, 54, 98, 0], [52.5, 54, 98, .5], [106, 15, 98, .5]]);
     expect(plan.panels.reduce((n,p) => n+p.width-p.overlapLeft,0)).toBe(122);
   });
   it('does not create a duplicate final strip at exact widths', () => {
-    expect(planWallPrint(116, 96, { bleed: 1, overlap: 0, minPpi: 150 }).panels.map(p=>p.width)).toEqual([59, 59]);
+    expect(planWallPrint(106, 96, { bleed: 1, overlap: 0, minPpi: 150 }).panels.map(p=>p.width)).toEqual([54, 54]);
     expect(planWallPrint(49, 96, DEFAULT_WALL_PRINT).panels.map(p=>p.width)).toEqual([51]);
   });
   it('covers walls without gaps for fractional dimensions and overlaps', () => {
-    for (const width of [1, 50, 59, 59.125, 120, 2399.875]) for (const bleed of [0, .125, 1, 5]) for (const overlap of [0, .375, 5]) {
+    for (const width of [1, 50, 54, 54.125, 120, 2399.875]) for (const bleed of [0, .125, 1, 5]) for (const overlap of [0, .375, 5]) {
       const {panels}=planWallPrint(width, 83.125, {bleed, overlap, minPpi:150});
       expect(panels[0].x).toBeCloseTo(-bleed,6);
       expect(panels.at(-1)!.x+panels.at(-1)!.width).toBeCloseTo(width+bleed,6);
-      panels.forEach((p,i)=>{expect(p.width).toBeLessThanOrEqual(59); if(i)expect(panels[i-1].x+panels[i-1].width-p.x).toBeCloseTo(overlap,6);});
+      panels.forEach((p,i)=>{expect(p.width).toBeLessThanOrEqual(54); if(i)expect(panels[i-1].x+panels[i-1].width-p.x).toBeCloseTo(overlap,6);});
     }
   });
   it('rejects invalid settings and a falsely print-ready low-resolution mural', () => {
@@ -48,9 +48,9 @@ describe('WallPro real PDF package', () => {
     const pack=await buildWallPrintPack({name:'Print test',layout:{width:120,height:75,mode:'repeat',repeatWidth:4},settings:DEFAULT_WALL_PRINT,source:{bytes,width:600,height:400},seamless:verifiedSeam});
     const zip=await JSZip.loadAsync(pack.zip);
     const names=Object.keys(zip.files);
-    expect(names).toContain('panels/panel-001-59x77in.pdf');expect(names).toContain('panels/panel-003-5x77in.pdf');
-    const pdf=Buffer.from(await zip.file('panels/panel-001-59x77in.pdf')!.async('uint8array')).toString('latin1');
-    expect(pdf).toContain('%PDF-1.6');expect(pdf).toMatch(/\/MediaBox \[0 0 4248(?:\.0*)? 5544(?:\.0*)?\]/);
+    expect(names).toContain('panels/panel-001-54x77in.pdf');expect(names).toContain('panels/panel-003-15x77in.pdf');
+    const pdf=Buffer.from(await zip.file('panels/panel-001-54x77in.pdf')!.async('uint8array')).toString('latin1');
+    expect(pdf).toContain('%PDF-1.6');expect(pdf).toMatch(/\/MediaBox \[0 0 3888(?:\.0*)? 5544(?:\.0*)?\]/);
     expect(pdf).toMatch(/\/Width 600\s/);expect(pdf).toMatch(/\/Height 400\s/);
     expect(pdf).toContain('/TrimBox');expect(pdf).toContain('/BleedBox');
     const manifest=JSON.parse(await zip.file('manifest.json')!.async('string'));

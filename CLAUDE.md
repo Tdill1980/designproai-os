@@ -286,10 +286,27 @@ contracts; each names its lock.
   when the wall or the design itself changes. Locked by
   `wallpro-scale.test.ts`, `wallpro.test.ts` and
   `source-tests/runtime/wallpro-production.test.mjs`.
+- **The roll is 54 inches, and every panel is written as TIFF, PDF and PNG**
+  (owner spec sheet, 2026-09-12: Avery HP MPI 2610 wall vinyl, matte/luster,
+  billed per linear foot, "all panels billed at 54\" width, regardless of
+  actual printed width"). `WALLPRO_PRINT_WIDTH` and the runtime's
+  `DEFAULTS.panelWidthIn` are BOTH 54 and must stay equal; they were 59 until
+  2026-09-12, which is wider than the media, so those panels could not be
+  printed at all. Lower both if the press needs an edge margin — every panel
+  plan, seam guide, preflight and print file follows from that one number.
+  Each panel is stored three ways from the same pixels (`PRINT_FORMATS`):
+  `.tif` lossless LZW with the resolution tag (the RIP's file), `.pdf`
+  flattened — one page at the exact printed size, one FlateDecode DeviceRGB
+  image, no layers, fonts or transparency, written by hand because the runtime
+  image carries only sharp — and `.png` for the UI. A format that fails to
+  encode fails SOFT and records its reason; the panel is already stored.
+  Locked by `source-tests/runtime/wallpro-production.test.mjs`, which reads the
+  TIFF compression tag, inflates the PDF image stream back to the panel pixels
+  and checks every xref offset.
 - **The print file is ONE file.** Every production job stores the whole wall
   with bleed as one PNG at the panel PPI (`stitchWholeWall`, stitched from
   the enhanced panels' own pixels, 450 MP budget, fails soft) and every
-  surface shows it first as "Print file"; the 59-inch panels are the fallback
+  surface shows it first as "Print file"; the 54-inch panels are the fallback
   for a RIP that cannot tile. Locked by
   `source-tests/runtime/wallpro-production.test.mjs`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
@@ -314,7 +331,7 @@ contracts; each names its lock.
   (owner, 2026-09-11: "make it 150 and auto run topaz").** Approving a version
   auto-requests `request_wallpro_production`; the droplet runtime claims the
   job (`claim_wallpro_production_job`, `runtime/wallpro-production.cjs`),
-  rasterises each 59-inch panel (the roll width, overlap inside it) from the approved master at native density,
+  rasterises each 54-inch panel (the roll width, overlap inside it) from the approved master at native density,
   enhances it through the same `enhancePanel` Call 12 uses (fails closed when
   Topaz is unavailable), lands on panel inches × 150 exactly, stamps the PNG
   density and stores it under `{owner}/production/{job}/` in `wallpro-files`.

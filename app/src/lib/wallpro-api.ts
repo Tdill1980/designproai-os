@@ -216,11 +216,23 @@ export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 
 /* ── Production panels: 150 PPI print files built on the server (Topaz) ─── */
 
+/** One panel, written three ways from the same pixels: the RIP's lossless LZW
+ * TIFF, a flattened single-image PDF at the exact printed size, and the PNG the
+ * UI previews. A format that failed to encode carries `error` instead of a
+ * path; the panel itself is already stored. */
+export type WallPanelFile = { format: 'png' | 'tiff' | 'pdf'; file?: string; path?: string; sha256?: string; byteSize?: number; error?: string };
 export type WallProductionPanel = {
   number: number; file: string; path: string; xIn: number; yIn: number; widthIn: number; heightIn: number; overlapLeftIn: number;
   widthPx: number; heightPx: number; ppi: number; sha256: string; byteSize: number;
+  files?: WallPanelFile[];
   upscale: { engine: string; model?: string; nativePpi?: number; reason?: string };
 };
+/** Every stored file for a panel, newest contract first, older jobs (PNG only)
+ * included by falling back to the panel's own path. */
+export const wallPanelFiles = (panel: WallProductionPanel): WallPanelFile[] =>
+  (panel.files || []).filter(f => f.path) .length
+    ? (panel.files || []).filter(f => f.path)
+    : [{ format: 'png', file: panel.file, path: panel.path, sha256: panel.sha256, byteSize: panel.byteSize }];
 /** The whole wall (with bleed) as one file at the panel PPI, stitched from the
  * panels' own pixels; or the reason it could not be built (too large). */
 export type WallWholeFile = { file: string; path: string; widthIn: number; heightIn: number; widthPx: number; heightPx: number; ppi: number; sha256: string; byteSize: number };
