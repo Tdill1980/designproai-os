@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -178,6 +178,24 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
             >
               <Shield className="w-4 h-4 shrink-0" />
               <span className="truncate">WallPro Production</span>
+            </Link>
+          </SidebarTooltip>
+          <SidebarTooltip
+            title="WallPro Batch Generate"
+            description="Generate, curate and publish the WrapReady wall design library from the 500-prompt catalog"
+          >
+            <Link
+              to="/admin/wallpro-batch"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wallpro-batch")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span className="truncate">WallPro Batch Generate</span>
             </Link>
           </SidebarTooltip>
         </div>
