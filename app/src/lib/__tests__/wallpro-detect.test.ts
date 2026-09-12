@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDetectHandler, normalizeDetection, DETECT_MODEL, DETECTION_PROMPT } from '../../../../supabase/functions/detect-wall-openings/handler';
+import { createDetectHandler, describeMaskAnswer, normalizeDetection, normalizeMasks, DETECT_MODEL, DETECTION_PROMPT, SEGMENTATION_PROMPT } from '../../../../supabase/functions/detect-wall-openings/handler';
 import { validWallCorners } from '../wallpro-geometry';
 
 const owner = '11111111-1111-4111-8111-111111111111';
@@ -9,11 +9,22 @@ const good = { wall: [{ x: 0.05, y: 0.12 }, { x: 0.96, y: 0.15 }, { x: 0.97, y: 
   { label: 'drapes', points: [{ x: 0.3, y: 0.2 }, { x: 0.4, y: 0.2 }, { x: 0.4, y: 0.85 }, { x: 0.3, y: 0.85 }] },
 ], notes: 'The right drape hides the wall edge.' };
 
-function fixture(options: { auth?: boolean; answer?: unknown; status?: number; unreadable?: boolean } = {}) {
+const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAWk1v8QAAAABJRU5ErkJggg==';
+const segmentation = [
+  { box_2d: [250, 400, 700, 600], mask: png, label: 'window with drapes' },
+  { box_2d: [600, 0, 1000, 1000], mask: png, label: 'bed' },
+  { box_2d: [10, 10, 12, 12], mask: png, label: 'speck' },
+  { box_2d: [100, 100, 300, 300], mask: 'not a data url', label: 'bad' },
+];
+function fixture(options: { auth?: boolean; answer?: unknown; segmentation?: unknown; status?: number; unreadable?: boolean } = {}) {
   const storage = { download: vi.fn(async () => options.unreadable ? { error: { message: 'denied' } } : { data: new Blob(['photo'], { type: 'image/jpeg' }) }) };
   const sb = { auth: { getUser: vi.fn(async () => options.auth === false ? { error: true } : { data: { user: { id: owner } } }) }, storage: { from: vi.fn(() => storage) } };
   const calls: any[] = [];
-  const provider = vi.fn(async (_url: any, init: any) => { calls.push(JSON.parse(init.body)); return options.status ? new Response('{}', { status: options.status }) : Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(options.answer ?? good) }] } }] }); });
+  const provider = vi.fn(async (_url: any, init: any) => {
+    const body = JSON.parse(init.body); calls.push(body);
+    if (body.contents[0].parts[0].text === SEGMENTATION_PROMPT) return Response.json({ candidates: [{ content: { parts: [{ text: '```json\n' + JSON.stringify(options.segmentation ?? segmentation) + '\n```' }] } }] });
+    return options.status ? new Response('{}', { status: options.status }) : Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(options.answer ?? good) }] } }] });
+  });
   const handler = createDetectHandler({ createClient: () => sb, supabaseUrl: 'https://own.supabase.co', serviceKey: 'k', apiKey: () => 'provider-test-key', fetch: provider as any });
   const invoke = (body: any = { wallPath }) => handler(new Request('https://own.supabase.co/functions/v1/detect-wall-openings', { method: 'POST', headers: { authorization: 'Bearer t' }, body: JSON.stringify(body) }));
   return { invoke, calls, provider, storage };
@@ -41,15 +52,29 @@ describe('Detect my wall', () => {
     expect(messy.notes).toBeNull();
     expect(normalizeDetection(null)).toEqual({ wall: null, openings: [], notes: null });
   });
-  it('asks the vision model with the photo, at temperature 0, for JSON on the fixed schema, and charges nothing', async () => {
+  it('asks the vision model with the photo, at temperature 0, for corners on the fixed schema and segmentation masks in parallel, and charges nothing', async () => {
     const f = fixture(); const result = await f.invoke();
     expect(result.status).toBe(200);
-    expect(await result.json()).toMatchObject({ model: DETECT_MODEL, openings: [{ label: 'window' }, { label: 'drapes' }] });
+    const body = await result.json();
+    expect(body).toMatchObject({ model: DETECT_MODEL, openings: [{ label: 'window' }, { label: 'drapes' }] });
+    // Pixel masks: the speck and the malformed entry are dropped; boxes are normalized from the 0..1000 grid.
+    expect(body.masks.map((m: any) => m.label)).toEqual(['window with drapes', 'bed']);
+    expect(body.masks[0].box).toEqual({ y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 }); expect(body.masks[0].png).toBe(png);
+    expect(f.calls).toHaveLength(2);
     const request = f.calls[0];
     expect(request.generationConfig).toMatchObject({ temperature: 0, responseMimeType: 'application/json' });
     expect(request.contents[0].parts[0].text).toBe(DETECTION_PROMPT);
     expect(request.contents[0].parts[1].inlineData.mimeType).toBe('image/jpeg');
+    expect(f.calls[1].contents[0].parts[0].text).toBe(SEGMENTATION_PROMPT); expect(f.calls[1].generationConfig.responseSchema).toBeUndefined();
+    expect(SEGMENTATION_PROMPT).toMatch(/beds, sofas/); expect(SEGMENTATION_PROMPT).toMatch(/"box_2d"/);
     expect(DETECTION_PROMPT).toMatch(/drapes/); expect(DETECTION_PROMPT).toMatch(/top-left, top-right, bottom-right, bottom-left/);
+    expect(normalizeMasks('garbage')).toEqual([]);
+    // Segmentation is asked without thinking (every thinking-on call on 2026-09-11 answered 0 masks).
+    expect(f.calls[1].generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    // JSON mode sometimes wraps the list in an object or drops the data-URL prefix; both still count.
+    const bare = png.replace('data:image/png;base64,', '');
+    expect(normalizeMasks({ segmentation_masks: [{ box_2d: [250, 400, 700, 600], mask: bare, label: 'window' }] })).toMatchObject([{ label: 'window', png, box: { y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 } }]);
+    expect(describeMaskAnswer({ masks: [{ box_2d: [1, 2, 3, 4], mask: 'x' }] })).toMatchObject({ type: 'object', keys: ['masks'], items: 1, firstKeys: ['box_2d', 'mask'], maskPrefix: 'x' });
   });
   it('refuses other owners\' files, unsigned callers and unreadable photos before calling the model', async () => {
     expect((await fixture({ auth: false }).invoke()).status).toBe(401);

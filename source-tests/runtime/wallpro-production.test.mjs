@@ -23,10 +23,10 @@ async function fakeTopaz(_url, init) {
   return new Response(out, { status: 200, headers: { "content-type": "image/png" } });
 }
 
-test("plans 59.5-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
+test("plans 59-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
   const { panels } = production.planPanels(production.normalizeRequest({ wallWidthIn: 120, wallHeightIn: 96 }));
-  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 59.5, 98, 0], [58, 59.5, 98, .5], [117, 4, 98, .5]]);
-  assert.equal(production.DEFAULTS.panelWidthIn, 59.5); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
+  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 59, 98, 0], [57.5, 59, 98, .5], [116, 5, 98, .5]]);
+  assert.equal(production.DEFAULTS.panelWidthIn, 59); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
   assert.throws(() => production.normalizeRequest({ wallWidthIn: 0, wallHeightIn: 96 }), /1 to 2,400/);
 });
 
@@ -66,6 +66,24 @@ test("continues a repeat through the bleed and flips odd tiles for a mirror repe
   assert.deepEqual(px(69, 60), px(70, 60));
   // Bleed (px 0..10) is tile -1, flipped: its pixel next to tile 0 equals tile 0's first column.
   assert.deepEqual(px(9, 60), px(10, 60));
+});
+
+test("centres a tile larger than the wall, exactly as the browser does for a mural scaled past 100%", async () => {
+  const source = await master();
+  // A 60-inch tile of the 3:2 master on the 30 x 20 wall: twice the wall in
+  // both axes, so the wall shows the master's middle half (x 25%..75%).
+  const req = request({ placement: "repeat", repeatWidthIn: 60 });
+  assert.deepEqual([production.layoutMetrics(req, 1.5).originX, production.layoutMetrics(req, 1.5).originY], [-15, -10]);
+  const { panels } = production.planPanels(req);
+  const panel = await production.rasterPanel(source, req, panels[0], 10);
+  const raw = await sharp(panel.bytes).raw().toBuffer();
+  const px = (x, y) => Array.from(raw.subarray((y * 120 + x) * 3, (y * 120 + x) * 3 + 3));
+  // Wall inch 0 (panel px 10) is the master's x = 25%: red channel about 64, not 0.
+  assert.ok(Math.abs(px(10, 100)[0] - 64) < 6, `left wall edge red=${px(10, 100)[0]}`);
+  // Wall top (panel px 10 down) is the master's y = 25%: green about 64.
+  assert.ok(Math.abs(px(60, 10)[1] - 64) < 6, `top wall edge green=${px(60, 10)[1]}`);
+  // A tile smaller than the wall still starts at the wall's corner.
+  assert.equal(production.layoutMetrics(request({ placement: "repeat", repeatWidthIn: 6 }), 1.5).originX, 0);
 });
 
 test("produces a 150-class panel through Topaz when the source is below target, exact resize when it is not", async () => {
@@ -109,10 +127,12 @@ test("processJob builds every panel, stores them under the owner's production na
       };
     },
     storage: { from(bucket) { assert.equal(bucket, "wallpro-files"); return {
-      download: async () => ({ data: new Blob([source.bytes]), error: null }),
-      upload: async (path, bytes, options) => { uploads.push({ path, size: bytes.length, contentType: options.contentType }); return { error: null }; },
+      // The master by its path; a stored panel by its own path, for stitching.
+      download: async (path) => ({ data: new Blob([stored.get(path) || source.bytes]), error: null }),
+      upload: async (path, bytes, options) => { uploads.push({ path, size: bytes.length, contentType: options.contentType }); stored.set(path, bytes); return { error: null }; },
     }; } },
   };
+  const stored = new Map();
   const job = { id: jobId, owner_id: owner, project_id: "p", version_id: "v1", request: { wallWidthIn: 30, wallHeightIn: 20, bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72 } };
   // The three panels are independent graph nodes: their Topaz calls must overlap.
   let inFlight = 0, peak = 0;
@@ -128,10 +148,33 @@ test("processJob builds every panel, stores them under the owner's production na
   assert.deepEqual(uploads.map(u => u.path).sort(), [
     `${owner}/production/${jobId}/manifest.json`, `${owner}/production/${jobId}/panel-001-12x22in.png`,
     `${owner}/production/${jobId}/panel-002-12x22in.png`, `${owner}/production/${jobId}/panel-003-9x22in.png`,
+    `${owner}/production/${jobId}/wall-32x22in.png`,
   ]);
-  assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel");
+  assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel and the whole wall");
   const final = updates.at(-1);
   assert.equal(final.status, "ready"); assert.equal(final.progress.panelsDone, 3); assert.equal(final.manifest_path, `${owner}/production/${jobId}/manifest.json`);
   assert.equal(result.manifest.contract, production.CONTRACT); assert.equal(result.manifest.panels[2].widthPx, 648);
   assert.ok(updates.some(u => u.progress?.panelsDone === 1 && u.status === undefined), "progress is reported per panel");
+  // The whole wall is one file at the same PPI: wall plus bleed, 32 x 22 in at
+  // 72 PPI, stitched from the panels' own pixels so the overlap strip is exact.
+  assert.equal(result.wholeWall.file, "wall-32x22in.png"); assert.equal(final.progress.wholeWall.path, `${owner}/production/${jobId}/wall-32x22in.png`);
+  const wall = await sharp(stored.get(result.wholeWall.path)).raw().toBuffer({ resolveWithObject: true });
+  assert.equal(wall.info.width, 2304); assert.equal(wall.info.height, 1584); assert.equal((await sharp(stored.get(result.wholeWall.path)).metadata()).density, 72);
+  const panel2 = await sharp(stored.get(result.panels[1].path)).raw().toBuffer({ resolveWithObject: true });
+  const left2 = Math.round((result.panels[1].xIn + 1) * 72);
+  // Points inside panel 2 but outside panel 3's overlap strip (36 px): the strip
+  // is written last by panel 3, whose own enhancement may differ by a level.
+  for (const [x, y] of [[0, 700], [300, 100], [panel2.info.width - 40, 1500]]) {
+    const w = (y * wall.info.width + left2 + x) * 3, p = (y * panel2.info.width + x) * 3;
+    assert.deepEqual(Array.from(wall.data.subarray(w, w + 3)), Array.from(panel2.data.subarray(p, p + 3)), `wall pixel at panel 2 (${x},${y})`);
+  }
+});
+
+test("the whole-wall file fails soft: a wall beyond the one-file budget still leaves the job ready with its panels", async () => {
+  const request = { wallWidthIn: 30, wallHeightIn: 20, bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72 };
+  const { bounds, panels } = production.planPanels(production.normalizeRequest(request));
+  await assert.rejects(production.stitchWholeWall({ request: { ...request, targetPpi: 5000 }, bounds, panels: [], panelBytes: () => null }), /one-file budget/);
+  assert.equal(production.normalizeRequest({ ...request, wholeWall: false }).wholeWall, false);
+  assert.equal(production.normalizeRequest(request).wholeWall, true);
+  assert.equal(panels.length, 3);
 });

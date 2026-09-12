@@ -179,17 +179,119 @@ contracts; each names its lock.
   (`tests/wallpro.test.ts`). **The client sees both at once**: the flat
   master stays on screen beside the photo pane, which shows the same file
   imposed the moment the corners exist (`WallPro.tsx` preview section).
-- **Detect my wall runs on upload.** A wall photo is sent to
-  `detect-wall-openings` the moment it is chosen; corners and protected areas
-  (windows, drapes, doors, outlets, furniture) land as editable preview state.
-  Signed-out or failed detection falls back to hand marking and never fails
-  the upload. Masks are preview-only; print panels stay full rectangles
-  (`wallpro-detect.test.ts`).
+- **Upload takes the photo the phone actually gives us (owner, 2026-09-12,
+  from an iPhone: "button won't press for upload").** The picker is opened by a
+  real `<button>` calling a `sr-only` input's `click()`, never a transparent
+  file input laid over a label — on a phone that overlay is one hit-test away
+  from doing nothing, and a tap that does nothing reads as a broken app. The
+  accept list is wide (`image/*` plus the HEIC/HEIF extensions) so the iOS
+  photo picker offers every photo, and `prepareWallUpload`
+  (`app/src/lib/wallpro-render.ts`) converts what comes back: a JPG, PNG or
+  WebP passes through byte for byte so a print-ready upload is never
+  re-compressed, and anything else — above all iPhone HEIC — is decoded and
+  re-encoded to JPEG once in the browser, under the 58 MP ceiling the
+  validator enforces. The old "export HEIC first" refusal is gone: nobody
+  exports a file while standing in front of a wall. Locked by
+  `needsWallTranscode` tests in `wallpro.test.ts`.
+- **Corner detection runs on upload; masks are marked by hand.** A wall photo
+  is sent to `detect-wall-openings` the moment it is chosen and only the four
+  corners land, as editable preview state; the photo starts as the full frame
+  so a missed detection never blocks the on-wall view. Protected areas
+  (windows, drapes, furniture) are hand-marked, or requested explicitly with
+  "Auto-mask windows & furniture" (segmentation masks, preview-only). Owner,
+  2026-09-11, after auto-masks swallowed the wall: "just have people mark it".
+  Signed-out or failed detection never fails the upload. Print panels stay
+  full rectangles (`wallpro-detect.test.ts`). **"Show me with AI"**
+  (`render-wall-view`) paints the flat master onto the room photo with the
+  image model and leaves everything that is not wall untouched; it is a
+  presentation picture, never a print file (`wallpro-view.test.ts`).
+- **WallPro designs live in RevisionStudioIQ and on the team board.** WallPro
+  is its own app on DesignProAI, like GraphicsPro, so its designs join the
+  RevisionStudio grid (`listWallDesignsForStudio` → `wallStudioRow`,
+  `mode_type: wallpro`, row id = project id, panels in `admin_notes.wallpro`)
+  and the admin/tester board at `/admin/wallpro-production` finds any
+  customer's 150 PPI panels by DesignID (`wallDesignId(versionId)`, e.g.
+  `DID-60553D10`). A reload without `?project=` reopens the last project
+  (`wallpro:last-project`); "Start fresh" is the only way to a blank wall.
+  Locked by `wallpro-studio.test.ts`.
 - **Seamless is measured and closed by code, never by re-asking the model.**
   `app/src/lib/wallpro-seamless.ts`; the print export refuses an unverified
   repeat (`wallpro-seamless.test.ts`).
-- **Placement and pattern scale are explicit**, with a live PPI readout: a
-  4K master is never called print-ready unless pixels over wall inches say so.
+- **Scale is decided by code from the wall inches, never asked of the
+  customer** (owner, 2026-09-11, after a mural printed with three-foot
+  flowers: "WallPro should use its brain and know how to scale").
+  `app/src/lib/wallpro-scale.ts`: the brief's words and the wall width pick
+  tile-versus-mural (`autoWallScale`) and the tile's real-world width
+  (`autoRepeatWidthIn`: about four repeats across, 6-inch steps, 18 to 48);
+  the generator is told that width and the mural's inches so motifs are
+  drawn at print size (`prompt.ts`); production tiles at exactly that width.
+  Auto is the product; Mural and Repeating pattern remain overrides. A 4K
+  master is never called print-ready unless pixels over wall inches say so.
+  **On a match, the uploaded reference IS the scale baseline** (owner,
+  2026-09-12, looking at a matched tropical mural returned at a quarter size:
+  "not matched and the pattern is too small, there should be a base line"). A
+  reference photograph of a covering already depicts a wall-sized area, so
+  the baseline is MEASURED off a real installed wall, not assumed. The owner
+  photographed the same design hung in her own room (2026-09-12, "this is the
+  size pattern, see the difference"): against a 74-inch sofa and a 26-inch
+  shelf the anthurium blooms print about 10 inches, which puts that design's
+  full repeat at 74 to 87 inches on a 142-inch wall. The generic four-across
+  (36") was half life size; treating the file as one wall width (142") was
+  double. `autoMatchRepeatWidthIn` therefore repeats a matched design about
+  TWICE across the wall, on the same 6-inch steps, clamped 48 to 96 — 72 inches
+  on that wall, inside the measured band, with the pattern-size slider reaching
+  the rest of it (110% is 79 inches). Naming the material ("slatted", "floral",
+  "stone") describes the reference and never re-scales it; only a brief asking
+  for one scene makes it a mural. The tile sentence "a bloom or a leaf a few
+  inches across" directly contradicted the match instruction to keep the
+  reference's motif scale, so a match never receives it. The match branch of `prompt.ts` states the baseline and never
+  carries the small-motif or many-elements sentences. The pattern-size slider
+  is then how a customer tiles it down from there. Locked by
+  `wallpro-scale.test.ts` and the match-prompt tests in `wallpro.test.ts`.
+- **A design uploaded to match goes on the wall before a token is spent**
+  (owner, 2026-09-12: "I'm uploading an image and it's not showing on the
+  image"). `previewArt` falls back to the reference on the match intent, so the
+  flat pane and the on-wall composite show it at once, labelled "Your uploaded
+  design — not print-ready yet". Preview only: every print, version and
+  production path still reads `artwork`, which exists only after a generation.
+  A finished generation also scrolls the page to `#wall-preview` and names the
+  two view buttons in the notice, because on a phone the preview card sits
+  below the fold and a completed design looked like nothing had happened
+  (owner: "what button do I push so I see the recreated design on the photo I
+  provide" — none; it lands there by itself).
+  Locked by `wallpro-scale.test.ts` and `wallpro.test.ts`.
+- **Pattern size is PatternPro's slider, ported (owner, 2026-09-12: "Look at
+  PatternPro, we literally had this").** Reference: `restylepro-os`
+  `src/components/tools/modes/WrapByTheYardMode.tsx` (30–300 % slider, the
+  swatch previewed as `background-size: 100/scale%` repeated). In WallPro the
+  design is the swatch: `patternSizeAtScale` draws it at the percentage of its
+  generated width, a mural being one swatch the size of the wall (smaller
+  repeats it, bigger crops it to the middle). **The 59-inch panels never
+  change; the design is what scales.** Deterministic, no token, and one
+  geometry everywhere: a tile larger than the wall is centred on it by
+  `tileOrigin` in `wallpro-geometry.ts` and the identical rule in
+  `runtime/wallpro-production.cjs`, so the flat pane, the on-wall view and the
+  print file agree. **Pattern size never changes print size** (owner,
+  2026-09-12): `planPanels` / `planWallPrint` read wall inches, bleed, overlap
+  and the 59-inch roll only, so the wall, the panel count and the file's
+  dimensions are identical at every percentage — the only thing that changes is
+  how big the design is drawn on them. The honest limit on "bigger" is
+  resolution, and the control states it live: `patternPpi` shows the master's
+  own pixels over the inches it is drawn across, and `maxPrintSafeScale` offers
+  the largest fully sharp size rather than letting Topaz invent detail
+  silently. The slider commits on release (`onValueCommit`, with a 400 ms
+  fallback for touch and keyboard) and previews instantly in CSS meanwhile, so
+  one exact canvas render happens per decision instead of one per tick; the
+  on-wall composite keeps its last image while the next renders and only blanks
+  when the wall or the design itself changes. Locked by
+  `wallpro-scale.test.ts`, `wallpro.test.ts` and
+  `source-tests/runtime/wallpro-production.test.mjs`.
+- **The print file is ONE file.** Every production job stores the whole wall
+  with bleed as one PNG at the panel PPI (`stitchWholeWall`, stitched from
+  the enhanced panels' own pixels, 450 MP budget, fails soft) and every
+  surface shows it first as "Print file"; the 59-inch panels are the fallback
+  for a RIP that cannot tile. Locked by
+  `source-tests/runtime/wallpro-production.test.mjs`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
   my design (`match`: the reference IS the design), Design for my wall
   (`wall`), Describe a design (`prompt`), Use my print-ready file. The
@@ -212,7 +314,7 @@ contracts; each names its lock.
   (owner, 2026-09-11: "make it 150 and auto run topaz").** Approving a version
   auto-requests `request_wallpro_production`; the droplet runtime claims the
   job (`claim_wallpro_production_job`, `runtime/wallpro-production.cjs`),
-  rasterises each 59.5-inch panel from the approved master at native density,
+  rasterises each 59-inch panel (the roll width, overlap inside it) from the approved master at native density,
   enhances it through the same `enhancePanel` Call 12 uses (fails closed when
   Topaz is unavailable), lands on panel inches × 150 exactly, stamps the PNG
   density and stores it under `{owner}/production/{job}/` in `wallpro-files`.

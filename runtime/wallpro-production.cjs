@@ -6,7 +6,7 @@
  *
  * Why per panel: a 4K master over a 142-inch wall is ~29 PPI, and Topaz caps a
  * single request near 96 MP, so a whole-wall 150 PPI master (300+ MP) is not
- * one request. Each 59.5-inch print panel IS within reach: rasterise the panel
+ * one request. Each 59-inch print panel (the roll width) IS within reach: rasterise the panel
  * from the approved master at its native density, enhance through Topaz to the
  * engine ceiling (the same `enhancePanel` Call 12 uses for vehicle panels,
  * failing closed when Topaz is unavailable), land exactly on panel inches x
@@ -25,7 +25,7 @@ const { directTusEndpoint, TUS_CHUNK_BYTES, MAX_STANDARD_UPLOAD_BYTES } = requir
 
 const BUCKET = "wallpro-files";
 const CONTRACT = "wallpro.production-panels.v1";
-const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59.5, targetPpi: 150 });
+const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59, targetPpi: 150 });
 const MAX_TILE_PLACEMENTS = 20000;
 // Panels build in parallel. Three 130 MP panels in flight is ~1.5 GB of raw
 // pixels plus Topaz round-trips; the env can widen or narrow it per droplet.
@@ -50,6 +50,10 @@ function normalizeRequest(raw = {}, version = {}) {
     mirror: raw.mirror === true,
     bleedIn: num(raw.bleedIn, DEFAULTS.bleedIn), overlapIn: num(raw.overlapIn, DEFAULTS.overlapIn),
     panelWidthIn: num(raw.panelWidthIn, DEFAULTS.panelWidthIn), targetPpi: num(raw.targetPpi, DEFAULTS.targetPpi),
+    // One whole-wall file beside the panels, for a RIP that tiles itself
+    // (Brice, 2026-09-11: "one big panel"). Stitched from the enhanced panels,
+    // so it is the same pixels the panels carry, never a second enhancement.
+    wholeWall: raw.wholeWall !== false,
   };
   const inRange = (n, lo, hi) => Number.isFinite(n) && n >= lo && n <= hi;
   if (!inRange(request.wallWidthIn, 1, 2400) || !inRange(request.wallHeightIn, 1, 2400)) fail("wallpro_request_invalid", "Wall dimensions must be 1 to 2,400 inches");
@@ -81,10 +85,18 @@ function layoutMetrics(request, aspect) {
   if (request.placement === "repeat") {
     const repeatHeight = request.repeatWidthIn / aspect;
     if (width / request.repeatWidthIn > 1000 || height / repeatHeight > 1000) fail("wallpro_request_invalid", "The repeat is too small for this wall");
-    return { artworkWidth: request.repeatWidthIn, artworkHeight: repeatHeight, across: width / request.repeatWidthIn, down: height / repeatHeight };
+    // Tile (0, 0) sits at the wall's top-left corner, or is centred on the
+    // wall in an axis where the tile is larger than the wall (a mural scaled
+    // past 100% by the pattern-scale slider). Identical to `tileOrigin` in
+    // app/src/lib/wallpro-geometry.ts, so preview and print are one geometry.
+    return { artworkWidth: request.repeatWidthIn, artworkHeight: repeatHeight, across: width / request.repeatWidthIn, down: height / repeatHeight, originX: tileOrigin(width, request.repeatWidthIn), originY: tileOrigin(height, repeatHeight) };
   }
   const scale = (request.placement === "cover" ? Math.max : Math.min)(width / aspect, height);
-  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1 };
+  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1, originX: 0, originY: 0 };
+}
+
+function tileOrigin(wallIn, tileIn) {
+  return tileIn > wallIn + 1e-9 ? (wallIn - tileIn) / 2 : 0;
 }
 
 /** The master's density at the placement it is printed at. */
@@ -119,10 +131,12 @@ async function rasterPanel(source, request, panel, ppi) {
       return variants.get(key);
     };
     const overlays = [];
-    for (let row = Math.floor(panel.y / m.artworkHeight); row * m.artworkHeight < panel.y + panel.height - 1e-8; row++) {
-      for (let col = Math.floor(panel.x / m.artworkWidth); col * m.artworkWidth < panel.x + panel.width - 1e-8; col++) {
+    // The panel in tile-grid inches: its wall position minus where tile (0, 0) starts.
+    const gx = panel.x - m.originX, gy = panel.y - m.originY;
+    for (let row = Math.floor(gy / m.artworkHeight); row * m.artworkHeight < gy + panel.height - 1e-8; row++) {
+      for (let col = Math.floor(gx / m.artworkWidth); col * m.artworkWidth < gx + panel.width - 1e-8; col++) {
         if (overlays.length > MAX_TILE_PLACEMENTS) fail("wallpro_request_invalid", "This wall needs more than 20,000 pattern placements");
-        const left = Math.round((col * m.artworkWidth - panel.x) * ppi), top = Math.round((row * m.artworkHeight - panel.y) * ppi);
+        const left = Math.round((col * m.artworkWidth - gx) * ppi), top = Math.round((row * m.artworkHeight - gy) * ppi);
         const sx = Math.max(0, -left), sy = Math.max(0, -top);
         const sw = Math.min(tw - sx, Wpx - Math.max(left, 0)), sh = Math.min(th - sy, Hpx - Math.max(top, 0));
         if (sw <= 0 || sh <= 0) continue;
@@ -256,13 +270,64 @@ async function processJob(job, deps) {
     landed += 1;
     await update({ panels: done, progress: progress("building", landed) });
   });
+  // The whole wall as one file, stitched from the panels just built. It fails
+  // soft: the panels are the deliverable and are already stored, so a wall too
+  // large for one file (or a runtime out of memory) reports why and the job is
+  // still ready.
+  let wholeWall = null;
+  if (request.wholeWall) {
+    await update({ panels: done, progress: { ...progress("stitching", done.length) } });
+    try {
+      const downloads = new Map();
+      for (const panel of done) {
+        const { data, error } = await supabase.storage.from(BUCKET).download(panel.path);
+        if (error || !data) fail("wallpro_panel_unreadable", `panel ${panel.number} could not be re-read for stitching: ${error?.message || "empty"}`);
+        downloads.set(panel.number, Buffer.from(await data.arrayBuffer()));
+      }
+      const stitched = await stitchWholeWall({ request, bounds, panels: done, panelBytes: (n) => downloads.get(n) });
+      const file = `wall-${fmt(bounds.width)}x${fmt(bounds.height)}in.png`;
+      const stored = await uploadBytes(deps, prefix + file, stitched.bytes, "image/png");
+      wholeWall = { file, path: stored.storagePath, widthIn: bounds.width, heightIn: bounds.height, widthPx: stitched.width, heightPx: stitched.height, ppi: request.targetPpi, sha256: stored.contentHash, byteSize: stored.byteSize };
+    } catch (err) {
+      wholeWall = { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
   const manifest = { contract: CONTRACT, jobId: job.id, versionId: job.version_id, projectId: job.project_id, generatedAt: new Date().toISOString(), request, bounds,
     source: { path: source.path, widthPx: source.width, heightPx: source.height, sha256: source.sha256, nativePpi: clean(sourcePpi(source, request)) },
-    panels: done, install: `Adjacent panels share ${fmt(request.overlapIn)} in of identical artwork; align the duplicate image, never stretch. Perimeter bleed ${fmt(request.bleedIn)} in. Every PNG is ${request.targetPpi} PPI at its stated inches.` };
+    panels: done, wholeWall, install: `Adjacent panels share ${fmt(request.overlapIn)} in of identical artwork; align the duplicate image, never stretch. Perimeter bleed ${fmt(request.bleedIn)} in. Every PNG is ${request.targetPpi} PPI at its stated inches.${wholeWall && wholeWall.path ? ` ${wholeWall.file} is the whole wall including bleed as one file at the same PPI, for a RIP that tiles itself.` : ""}` };
   const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2));
   const storedManifest = await uploadBytes(deps, prefix + "manifest.json", manifestBytes, "application/json");
-  await update({ status: "ready", panels: done, manifest_path: storedManifest.storagePath, finished_at: new Date().toISOString(), progress: progress("ready", done.length) });
-  return { panels: done, manifest };
+  await update({ status: "ready", panels: done, manifest_path: storedManifest.storagePath, finished_at: new Date().toISOString(), progress: { ...progress("ready", done.length), wholeWall } });
+  return { panels: done, manifest, wholeWall };
+}
+
+/** Pixel budget for one whole-wall file. A 142 x 96 in wall with bleed is
+ * ~317 MP at 150 PPI (~950 MB raw); beyond this the runtime would swap. */
+const MAX_WHOLE_WALL_PIXELS = 450e6;
+
+/**
+ * Stitches the finished panels into one wall image. Every panel already sits
+ * at the target PPI and shares `overlapIn` of identical artwork with its
+ * neighbour, so each one is copied row by row at its own inch offset into one
+ * raw RGB canvas; later panels overwrite the duplicate strip with the same
+ * pixels. One panel is decoded at a time to keep the peak near canvas + one panel.
+ */
+async function stitchWholeWall({ request, bounds, panels, panelBytes }) {
+  const ppi = request.targetPpi;
+  const width = Math.max(1, Math.round(bounds.width * ppi)), height = Math.max(1, Math.round(bounds.height * ppi));
+  if (width * height > MAX_WHOLE_WALL_PIXELS) fail("wallpro_whole_wall_too_large", `${width} x ${height} px is beyond the ${MAX_WHOLE_WALL_PIXELS / 1e6} MP one-file budget; print from the panels`);
+  const canvas = Buffer.alloc(width * height * 3, 255);
+  for (const panel of [...panels].sort((a, b) => a.number - b.number)) {
+    const raw = await sharp(panelBytes(panel.number), { limitInputPixels: false }).flatten({ background: WHITE }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const pw = raw.info.width, ph = raw.info.height;
+    if (raw.info.channels !== 3) fail("wallpro_panel_unreadable", `panel ${panel.number} decoded with ${raw.info.channels} channels`);
+    const left = Math.min(width - 1, Math.max(0, Math.round((panel.xIn - bounds.x) * ppi)));
+    const top = Math.min(height - 1, Math.max(0, Math.round((panel.yIn - bounds.y) * ppi)));
+    const cols = Math.min(pw, width - left), rows = Math.min(ph, height - top);
+    for (let y = 0; y < rows; y++) raw.data.copy(canvas, ((top + y) * width + left) * 3, y * pw * 3, y * pw * 3 + cols * 3);
+  }
+  const bytes = await sharp(canvas, { raw: { width, height, channels: 3 }, limitInputPixels: false }).withMetadata({ density: ppi }).png({ compressionLevel: 6 }).toBuffer();
+  return { bytes, width, height };
 }
 
 /** Runs `fn` over `items` with at most `limit` in flight; rejects on the first failure. */
@@ -306,5 +371,5 @@ function createWallProProductionWorker({ supabase, supabaseUrl, serviceRoleKey, 
 
 module.exports = Object.freeze({
   BUCKET, CONTRACT, DEFAULTS, PANEL_CONCURRENCY, WallProProductionError,
-  normalizeRequest, planPanels, layoutMetrics, sourcePpi, rasterPanel, producePanel, processJob, createWallProProductionWorker, mapConcurrent,
+  normalizeRequest, planPanels, layoutMetrics, sourcePpi, rasterPanel, producePanel, processJob, createWallProProductionWorker, mapConcurrent, stitchWholeWall, MAX_WHOLE_WALL_PIXELS,
 });

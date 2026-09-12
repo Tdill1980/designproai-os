@@ -3,6 +3,7 @@ import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, va
 import sharp from 'sharp';
 import { createWallHandler, parseWallInput, nearestAspect, decodeWallImage, finalWallImage, imageDimensions, PRODUCTION_PPI } from '../../../../supabase/functions/generate-wall-design/handler';
 import { wallDesignPrompt } from '../../../../supabase/functions/generate-wall-design/prompt';
+import { needsWallTranscode } from '../wallpro-render';
 const owner = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const input = { requestId, prompt: 'Blue botanicals', width: 120, height: 96, placement: 'cover', wallPath: owner + '/uploads/33333333-3333-4333-8333-333333333333.jpg' };
@@ -15,21 +16,21 @@ describe('WallPro physical geometry', () => {
     expect(insidePolygon({x:.2,y:.5},mask)).toBe(false);
     expect(()=>rectangularWallMask({x:.3,y:.2},{x:.3,y:.9})).toThrow();
   });
-  it('plans 59.5-inch print panels with a correctly sized final panel', () => {
+  it('plans 59-inch print panels with a correctly sized final panel', () => {
     const panels = wallPrintPanels(150,96);
-    expect(panels.map(p => p.width)).toEqual([59.5,59.5,31]);
-    expect(panels.map(p => p.start)).toEqual([0,59.5,119]);
+    expect(panels.map(p => p.width)).toEqual([59,59,32]);
+    expect(panels.map(p => p.start)).toEqual([0,59,118]);
     expect(panels.reduce((n,p) => n+p.width,0)).toBe(150);
-    expect(wallPrintPanels(119,96)).toHaveLength(2);
-    expect(wallPrintPanels(59.75,96).map(p => p.width)).toEqual([59.5,.25]);
+    expect(wallPrintPanels(118,96)).toHaveLength(2);
+    expect(wallPrintPanels(59.25,96).map(p => p.width)).toEqual([59,.25]);
   });
-  it('keeps pattern registration continuous across a 59.5-inch print seam', () => {
+  it('keeps pattern registration continuous across a 59-inch print seam', () => {
     const seam = wallPrintPanels(150,96)[1].start;
     const uv = artworkPoint({x:seam/150,y:.5},{width:150,height:96,mode:'repeat',repeatWidth:24},1);
-    expect(uv?.x).toBeCloseTo((59.5/24)%1,10);
+    expect(uv?.x).toBeCloseTo((59/24)%1,10);
     const quad=[{x:.1,y:.1},{x:.9,y:.2},{x:.8,y:.9},{x:.2,y:.8}];
     const seamPoint=projectPoint(homography(UNIT_WALL,quad),{x:seam/150,y:0});
-    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(59.5/150,10);
+    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(59/150,10);
   });
   it('keeps a 24-inch tile physically constant when the wall doubles', () => {
     const a = layoutMetrics({ width:120,height:96,mode:'repeat',repeatWidth:24 },2);
@@ -38,6 +39,19 @@ describe('WallPro physical geometry', () => {
     expect(b).toMatchObject({ across:10,down:8,artworkWidth:24,artworkHeight:12 });
     expect(artworkPoint({x:12/120,y:6/96},{width:120,height:96,mode:'repeat',repeatWidth:24},2)).toEqual({x:0.5,y:0.5});
     expect(artworkPoint({x:12/240,y:6/96},{width:240,height:96,mode:'repeat',repeatWidth:24},2)).toEqual({x:0.5,y:0.5});
+  });
+  it('centres a tile larger than the wall, so a mural scaled past 100% shows its middle', () => {
+    // A 2:1 master as a 240-inch tile on a 120 x 96 wall: 120 wider than the
+    // wall, so tile (0,0) starts 60 inches left of it; 120 tall on a 96 wall,
+    // so 12 inches above it. The wall's centre is the tile's centre.
+    const layout = { width: 120, height: 96, mode: 'repeat' as const, repeatWidth: 240 };
+    expect(layoutMetrics(layout, 2)).toMatchObject({ artworkWidth: 240, artworkHeight: 120, originX: -60, originY: -12 });
+    const centre = artworkPoint({ x: 0.5, y: 0.5 }, layout, 2)!;
+    expect(centre.x).toBeCloseTo(0.5, 10); expect(centre.y).toBeCloseTo(0.5, 10);
+    const left = artworkPoint({ x: 0, y: 0 }, layout, 2)!;
+    expect(left.x).toBeCloseTo(0.25, 10); expect(left.y).toBeCloseTo(0.1, 10);
+    // A tile smaller than the wall still starts at the wall's corner.
+    expect(layoutMetrics({ ...layout, repeatWidth: 24 }, 2)).toMatchObject({ originX: 0, originY: 0 });
   });
   it('maps perspective corners exactly and round-trips interior points', () => {
     const quad = [{x:.1,y:.2},{x:.9,y:.1},{x:.8,y:.9},{x:.2,y:.7}];
@@ -86,7 +100,7 @@ describe('WallPro physical geometry', () => {
   });
 });
 
-function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
+function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; recitationFirst?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
   const finalData = options.image ? Buffer.from(options.image).toString('base64') : btoa('final');
   const calls:any[]=[];
   const stored={state:'completed',artwork_path:owner+'/generated/'+requestId+'.png',design_name:'Blue Botanicals'};
@@ -100,7 +114,10 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
     if(name==='reserve_wallpro_generation') return options.noTokens ? {error:{message:'no_tokens'}} : {data:{fresh:options.fresh!==false,generation:stored}};
     return {data:stored};
   })};
-  const provider=vi.fn(async (_url:any,init:any) => { calls.push(['provider',JSON.parse(init.body)]); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
+  const provider=vi.fn(async (url:any,init:any) => {
+    // The fast text model, asked to describe the covering before a words-only retry.
+    if (String(url).includes('gemini-2.5-flash')) { calls.push(['describe',JSON.parse(init.body)]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]}); }
+    calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
   const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any});
   const invoke=(body:any=input)=>handler(new Request('https://own.supabase.co/functions/v1/generate-wall-design',{method:'POST',headers:{authorization:'Bearer user-test-token'},body:JSON.stringify(body)}));
   return {handler,invoke,calls,provider,sb,storage};
@@ -141,6 +158,15 @@ describe('WallPro generation boundary', () => {
     const match = wallDesignPrompt({ prompt:'make the background ivory', width:142, height:95, placement:'cover', intent:'match', referencePath: ref });
     expect(match).toMatch(/IS the design/); expect(match).toMatch(/Apply only these requested changes: make the background ivory/); expect(match).not.toMatch(/Design brief:/);
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'repeat', intent:'match', referencePath: ref })).toMatch(/true seamless tile/);
+    // A photographed wall (a slat wall, an existing wallpaper) means the covering, never the room; panels are the 59-inch roll.
+    expect(match).toMatch(/photograph of a room or of an installed wall, the design is the WALL COVERING/); expect(match).toMatch(/leave out the room itself: furniture, window, drapes/);
+    expect(match).toMatch(/panels up to 59 inches wide/); expect(match).not.toMatch(/51 inches/);
+    // Scale in inches: a tile is told its print width and repeat count; a mural is told its real size.
+    const tile = wallDesignPrompt({ prompt:'Blush florals', width:142, height:96, placement:'repeat', repeatWidthIn: 36 });
+    expect(tile).toMatch(/prints exactly 36 inches wide on the wall and repeats about 4 times/); expect(tile).toMatch(/never one motif filling the tile/);
+    expect(wallDesignPrompt({ prompt:'A mountain mural', width:142, height:96, placement:'cover' })).toMatch(/prints at 142 by 96 inches: scale every element to that real size/);
+    expect(parseWallInput({ ...input, placement:'repeat', repeatWidthIn: 36 }, owner).repeatWidthIn).toBe(36);
+    expect(parseWallInput({ ...input, placement:'cover', repeatWidthIn: 36 }, owner).repeatWidthIn).toBeNull();
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'cover', intent:'wall', wallPath: input.wallPath })).toMatch(/design the wall covering you would specify for this room/);
     expect(wallDesignPrompt({ prompt:'Blue botanicals', width:142, height:95, placement:'cover', referencePath: ref })).toMatch(/style inspiration/);
     // The provider sees the reference labeled as the design to reproduce, and the record gets a name.
@@ -149,6 +175,26 @@ describe('WallPro generation boundary', () => {
     const parts=f.calls.find(c=>c[0]==='provider')[1].contents[0].parts;
     expect(parts.some((p:any)=>p.text==='Design to reproduce')).toBe(true);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_name).toBe('Matched design');
+  });
+  it('recovers a match refused as IMAGE_RECITATION with one original-covering retry; nothing else retries', async () => {
+    const ref = owner + '/uploads/44444444-4444-4444-8444-444444444444.png';
+    const f=fixture({recitationFirst:true}); const result=await f.invoke({...input, intent:'match', prompt:'', placement:'repeat', referencePath: ref});
+    expect(result.status).toBe(200); expect((await result.json()).recovered_from).toBe('IMAGE_RECITATION');
+    const providerCalls=f.calls.filter(c=>c[0]==='provider'); expect(providerCalls).toHaveLength(2);
+    expect(providerCalls[0][1].contents[0].parts[0].text).toMatch(/IS the design/);
+    const retry=providerCalls[1][1].contents[0].parts;
+    // The fast model described the reference, and the retry drew from those words with NO photograph attached.
+    const describe=f.calls.filter(c=>c[0]==='describe'); expect(describe).toHaveLength(1);
+    expect(describe[0][1].contents[0].parts[0].text).toMatch(/Describe the wall covering/); expect(describe[0][1].contents[0].parts[1].inlineData).toBeTruthy();
+    expect(retry[0].text).toMatch(/matching this description of the customer's reference: "Vertical white-oak slats/); expect(retry[0].text).toMatch(/not a copy of any photograph/); expect(retry[0].text).toMatch(/seamless repeating tile/);
+    expect(retry[0].text).not.toMatch(/reference image/); expect(retry.filter((p:any)=>p.inlineData)).toHaveLength(0);
+    // One reservation, one finish, no refund.
+    expect(f.calls.filter(c=>c[0]==='reserve_wallpro_generation')).toHaveLength(1);
+    expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeNull();
+    // A prompt-intent recitation is not a match and is not retried: the credit is returned.
+    const g=fixture({recitationFirst:true}); const r=await g.invoke({...input, referencePath: ref});
+    expect(r.status).toBe(502); expect((await r.json()).error).toMatch(/IMAGE_RECITATION/); expect(g.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
+    expect(g.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toMatch(/IMAGE_RECITATION/);
   });
   it('refines the current version in place: source required, mask optional, framing from the source pixels', async () => {
     const source = owner + '/generated/55555555-5555-4555-8555-555555555555.png', mask = owner + '/uploads/66666666-6666-4666-8666-666666666666.png';
@@ -212,5 +258,46 @@ describe('WallPro generation boundary', () => {
     const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.provider).toHaveBeenCalledTimes(1);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_path:null});
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeTruthy();
+  });
+});
+
+describe('Taking the photo the phone actually gives us', () => {
+  it('passes a print-safe file through untouched and converts everything else', () => {
+    // A print-ready upload is never re-compressed.
+    expect(needsWallTranscode('image/jpeg', 'wall.jpg')).toBe(false);
+    expect(needsWallTranscode('image/png', 'master.png')).toBe(false);
+    expect(needsWallTranscode('image/webp', 'tile.webp')).toBe(false);
+    // What an iPhone camera actually produces.
+    expect(needsWallTranscode('image/heic', 'IMG_4021.HEIC')).toBe(true);
+    expect(needsWallTranscode('image/heif', 'IMG_4021.heif')).toBe(true);
+    expect(needsWallTranscode('image/avif', 'shot.avif')).toBe(true);
+    // Some pickers report no type at all: the extension decides.
+    expect(needsWallTranscode('', 'IMG_4021.HEIC')).toBe(true);
+    expect(needsWallTranscode('', 'wall.JPG')).toBe(false);
+    expect(needsWallTranscode('', 'wall.jpeg')).toBe(false);
+    expect(needsWallTranscode('', '')).toBe(true);
+  });
+});
+
+describe('A match reproduces the reference at its own scale', () => {
+  const ref = 'owner/uploads/ref.png';
+  it('never tells the model to draw small motifs when the reference sets the scale', () => {
+    const cover = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref });
+    expect(cover).toMatch(/reference is the scale baseline/);
+    expect(cover).toMatch(/at the size it appears in the reference/);
+    expect(cover).not.toMatch(/a bloom or a leaf a few inches across/);
+    // The generic mural sentence, which tells the model to fit "many elements"
+    // onto a large wall, is exactly what shrank a matched design.
+    expect(cover).not.toMatch(/scale every element to that real size/);
+    // The measured baseline: a matched design repeats about twice across.
+    const tile = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72, intent: 'match', referencePath: ref });
+    expect(tile).toMatch(/prints 72 inches wide on the wall and repeats about 2 times across it/);
+    expect(tile).toMatch(/Hold the reference's own motif scale/);
+    expect(tile).toMatch(/not with many smaller copies of them/);
+    expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
+  });
+  it('leaves the prompt and wall intents on the wall-sized scale brain', () => {
+    expect(wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 36 })).toMatch(/a bloom or a leaf a few inches across/);
+    expect(wallDesignPrompt({ prompt: 'A mountain mural', width: 142, height: 96, placement: 'cover' })).toMatch(/scale every element to that real size/);
   });
 });

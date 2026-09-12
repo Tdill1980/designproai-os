@@ -12,7 +12,54 @@ const response = (data: unknown, status = 200) => new Response(JSON.stringify(da
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
 export type Point = { x: number; y: number };
-export type WallDetection = { wall: Point[] | null; openings: { label: string; points: Point[] }[]; model: string; notes: string | null };
+/** A pixel-accurate mask: a grayscale PNG (data URL) that fills `box`, normalized
+ * 0..1 in photo coordinates; values above 127 are protected. */
+export type WallMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string };
+export type WallDetection = { wall: Point[] | null; openings: { label: string; points: Point[] }[]; masks: WallMask[]; model: string; notes: string | null };
+
+// Boxes and coarse polygons around a bed or a window-plus-drapes swallow the
+// wall around them (measured 2026-09-11: a six-box answer left the design in
+// slivers). Segmentation returns the object's real outline, so the wall beside
+// a drape or above a bed keeps the design.
+export const SEGMENTATION_PROMPT = [
+  'Give the segmentation masks for every object on or in front of the largest wall in this photograph that a printed wall covering must not cover: windows and glass, curtains, drapes and their rods, doors and door frames, cabinets and shelving units against the wall, mounted televisions, frames and artwork hanging on the wall, outlets, switches, vents, and furniture standing in front of the wall such as beds, sofas, desks and dressers.',
+  'Do not include the floor, the ceiling, adjacent walls, or the wall surface itself.',
+  'Output a JSON list of segmentation masks where each entry contains the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", and the text label in the key "label". Use descriptive labels.',
+].join(' ');
+const MAX_MASKS = 24, MAX_MASK_BYTES = 2_000_000;
+
+/** Validates the segmentation answer: box_2d is [ymin, xmin, ymax, xmax] on a
+ * 0..1000 grid and mask is a PNG data URL. Anything else is dropped. */
+/** The list of masks wherever the model put it: a top-level array, or the one
+ * array-valued key of a wrapping object (JSON mode sometimes answers
+ * `{ "masks": [...] }` or `{ "segmentation_masks": [...] }`). */
+export function maskList(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') { for (const v of Object.values(raw as Record<string, unknown>)) if (Array.isArray(v)) return v; }
+  return [];
+}
+/** Why a segmentation answer yielded nothing, for the log. */
+export function describeMaskAnswer(raw: unknown): Record<string, unknown> {
+  const list = maskList(raw), first = list[0] as any;
+  return { type: Array.isArray(raw) ? 'array' : typeof raw, keys: raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.keys(raw as object).slice(0, 8) : [], items: list.length,
+    firstKeys: first && typeof first === 'object' ? Object.keys(first).slice(0, 8) : [], maskPrefix: typeof first?.mask === 'string' ? first.mask.slice(0, 40) : typeof first?.mask, box: first?.box_2d };
+}
+export function normalizeMasks(raw: unknown): WallMask[] {
+  const out: WallMask[] = [];
+  for (const item of maskList(raw).slice(0, MAX_MASKS)) {
+    const b = (item as any)?.box_2d;
+    let png = (item as any)?.mask;
+    if (!Array.isArray(b) || b.length !== 4 || !b.every((n: unknown) => typeof n === 'number' && Number.isFinite(n))) continue;
+    // A bare base64 PNG (no data-URL prefix) is accepted as the same thing.
+    if (typeof png === 'string' && !png.startsWith('data:') && /^iVBORw0KGgo/.test(png.trim())) png = 'data:image/png;base64,' + png.trim();
+    if (typeof png !== 'string' || !png.startsWith('data:image/png;base64,') || png.length > MAX_MASK_BYTES) continue;
+    const c = (n: number) => Math.min(1, Math.max(0, n / 1000));
+    const box = { y0: c(b[0]), x0: c(b[1]), y1: c(b[2]), x1: c(b[3]) };
+    if (box.x1 - box.x0 < 0.005 || box.y1 - box.y0 < 0.005) continue;
+    out.push({ label: String((item as any)?.label || 'protected area').slice(0, 40), box, png });
+  }
+  return out;
+}
 
 export const DETECTION_PROMPT = [
   'This is a photograph of an interior wall that will receive a printed wall covering. Answer with JSON only.',
@@ -52,7 +99,7 @@ function polygonArea(points: Point[]): number {
 
 /** Validates and normalizes the model's answer. Anything malformed is dropped
  * rather than trusted: a bad corner set becomes null, a bad polygon is skipped. */
-export function normalizeDetection(raw: any): Omit<WallDetection, 'model'> {
+export function normalizeDetection(raw: any): Omit<WallDetection, 'model' | 'masks'> {
   const wall = polygon(raw?.wall, 4, 4);
   const openings: WallDetection['openings'] = [];
   for (const item of Array.isArray(raw?.openings) ? raw.openings.slice(0, 24) : []) {
@@ -88,19 +135,40 @@ export function createDetectHandler(deps: { createClient: (...args: any[]) => an
     const blob = downloaded.data as Blob;
     if (!imageTypes.includes(blob.type) || blob.size > 20 * 1024 * 1024) return response({ error: 'The wall photo must be JPG, PNG or WebP and no larger than 20 MB.' }, 400);
     try {
-      const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + DETECT_MODEL + ':generateContent', {
+      const image = { inlineData: { mimeType: blob.type, data: toBase64(new Uint8Array(await blob.arrayBuffer())) } };
+      const ask = (text: string, schema?: unknown, extra: Record<string, unknown> = {}) => deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + DETECT_MODEL + ':generateContent', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: DETECTION_PROMPT }, { inlineData: { mimeType: blob.type, data: toBase64(new Uint8Array(await blob.arrayBuffer())) } }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: DETECTION_SCHEMA } }),
+        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, image] }], generationConfig: { temperature: 0, responseMimeType: 'application/json', ...(schema ? { responseSchema: schema } : {}), ...extra } }),
         signal: AbortSignal.timeout(60_000),
       });
+      // Segmentation is asked without thinking: Google's own guidance for
+      // 2.5 mask output, and every thinking-on call today answered 0 masks.
+      const segmentationConfig = { thinkingConfig: { thinkingBudget: 0 } };
+      const parseText = async (provider: Response) => {
+        const result = await provider.json();
+        const text = result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '';
+        return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      };
+      // Corners and segmentation are independent questions, asked in parallel.
+      // Segmentation is the better answer for protected areas; the polygon list
+      // is kept only as the fallback when that call cannot be used.
+      const [provider, segmentation] = await Promise.all([ask(DETECTION_PROMPT, DETECTION_SCHEMA), ask(SEGMENTATION_PROMPT, undefined, segmentationConfig).catch(() => null)]);
       if (!provider.ok) throw new Error(provider.status === 429 ? 'The detection service is busy. Try again in a moment.' : 'The wall could not be analysed. Mark the corners and openings by hand.');
-      const result = await provider.json();
-      const text = result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '';
       let parsed: any;
-      try { parsed = JSON.parse(text); } catch { throw new Error('The wall could not be analysed. Mark the corners and openings by hand.'); }
+      try { parsed = await parseText(provider); } catch { throw new Error('The wall could not be analysed. Mark the corners and openings by hand.'); }
+      let masks: WallMask[] = [];
+      if (segmentation?.ok) {
+        try {
+          const answer = await parseText(segmentation);
+          masks = normalizeMasks(answer);
+          // An empty answer is the thing to diagnose: say what shape came back.
+          if (!masks.length) console.warn(JSON.stringify({ event: 'wall_segmentation_empty', owner, wallPath, answer: describeMaskAnswer(answer) }));
+        } catch (err) { console.warn(JSON.stringify({ event: 'wall_segmentation_unreadable', owner, wallPath, error: String(err) })); }
+      }
+      else if (segmentation) console.warn(JSON.stringify({ event: 'wall_segmentation_failed', owner, wallPath, status: segmentation.status }));
       const detection = normalizeDetection(parsed);
-      console.log(JSON.stringify({ event: 'wall_detected', owner, wallPath, model: DETECT_MODEL, corners: !!detection.wall, openings: detection.openings.length }));
-      return response({ ...detection, model: DETECT_MODEL });
+      console.log(JSON.stringify({ event: 'wall_detected', owner, wallPath, model: DETECT_MODEL, corners: !!detection.wall, openings: detection.openings.length, masks: masks.length }));
+      return response({ ...detection, masks, model: DETECT_MODEL });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The detection service timed out. Mark the corners and openings by hand.' : err instanceof Error ? err.message : 'Wall detection failed.';
       return response({ error: message, code: 'DETECTION_FAILED' }, 502);
