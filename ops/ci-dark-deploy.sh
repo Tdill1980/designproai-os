@@ -23,6 +23,22 @@ trap cleanup EXIT
 
 if [[ -L /opt/designproai-os/current ]] && \
    [[ $(readlink -f /opt/designproai-os/current) == "/opt/designproai-os/releases/$EXACT_SHA" ]]; then
+  # A FLAG FLIP ON THE RELEASE ALREADY RUNNING. The Call-1 flags
+  # (ATLAS_PANEL_FINISH, ATLAS_TOPOLOGY, ATLAS_CALL1_GRAPH) only ever reach the
+  # droplet through the env writer below, which this branch used to skip -- so
+  # a dispatch of the current SHA with a flag set printed ALREADY_COMPLETE and
+  # changed nothing, under a green run. An explicit flag means the operator
+  # wants the running release reconfigured: rewrite the environment through
+  # the one writer (it consumes the secrets on stdin exactly as a full deploy
+  # does), restart the service so both runtime replicas re-read it, and prove
+  # acceptance again. An empty flag set keeps the pure no-op: nothing touched.
+  if [[ -n ${ATLAS_PANEL_FINISH:-}${ATLAS_TOPOLOGY:-}${ATLAS_CALL1_GRAPH:-} ]]; then
+    "$control/configure-env.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY
+    systemctl restart designproai-os.service
+    "$control/acceptance.sh" "$EXACT_SHA"
+    echo "FLAGS_APPLIED: exact release already accepted; runtime environment rewritten and the service restarted"
+    exit 0
+  fi
   "$control/acceptance.sh" "$EXACT_SHA"
   cat >/dev/null
   echo "ALREADY_COMPLETE: exact release is locally accepted; no deployment performed"

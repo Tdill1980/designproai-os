@@ -618,3 +618,25 @@ test("config.toml declares one project-wide Storage limit that outranks the buck
   // configuration choice.
   assert.ok(Number(declared[1]) > 50_000_000, "the project-wide limit must exceed the 50 MB hosted default");
 });
+
+test("a flag dispatch of the release already running rewrites the environment and restarts, never a silent no-op", () => {
+  // Measured 2026-09-12: with 9c4fe89 current on the droplet, a dispatch of
+  // that SHA with atlas_topology=hero-driver would have printed
+  // ALREADY_COMPLETE before configure-env.sh ran, and the flag would have
+  // been dropped under a green run. The flags only reach the droplet through
+  // the env writer, so the accepted-release branch must run it when a flag is
+  // explicitly given -- and still touch nothing when none is.
+  const start = remote.indexOf('== "/opt/designproai-os/releases/$EXACT_SHA" ]]; then');
+  const end = remote.indexOf('"$control/backup.sh"');
+  assert.ok(start > 0 && end > start);
+  const accepted = remote.slice(start, end);
+  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\} \]\]; then/);
+  const flagged = accepted.slice(accepted.indexOf("if [[ -n"), accepted.indexOf("FLAGS_APPLIED"));
+  assert.match(flagged, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY[\s\S]*systemctl restart designproai-os\.service[\s\S]*acceptance\.sh" "\$EXACT_SHA"/,
+    "env writer, then restart, then acceptance -- in that order");
+  assert.doesNotMatch(flagged, /deploy\.sh|install\.sh|backup\.sh/, "a flag flip never re-installs the release");
+  assert.match(accepted, /FLAGS_APPLIED: exact release already accepted; runtime environment rewritten and the service restarted/);
+  // The empty-flag path is untouched: acceptance, drain stdin, no-op.
+  const noop = accepted.slice(accepted.indexOf("FLAGS_APPLIED"));
+  assert.match(noop, /acceptance\.sh" "\$EXACT_SHA"\n\s*cat >\/dev\/null\n\s*echo "ALREADY_COMPLETE/);
+});
