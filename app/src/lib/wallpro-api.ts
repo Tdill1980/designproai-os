@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { dpApi } from './designpro-api';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 import type { WallStudioDesign } from './wallpro-studio';
+import type { WallGenerationRow, WallQcReview } from './wallpro-qc';
 export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
@@ -379,4 +380,109 @@ export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDe
       } : null,
     };
   });
+}
+
+/* ── WallPanelPro Studio: every generation, its QC and its release gate ──── */
+
+/** One row of the studio board: the model call, what became of it, the team's
+ * QC log and the production build, joined into the single object the board
+ * renders. A generation with no version is the timed-out case and carries
+ * `version: null` — that is the signal, not a missing field. */
+export type WallStudioEntry = {
+  generation: WallGenerationRow;
+  /** The version the customer's browser recorded, when it got that far. */
+  version: WallVersion | null;
+  projectId: string | null;
+  projectName: string | null;
+  /** Every QC review for that version, newest-first ordering is not assumed. */
+  reviews: WallQcReview[];
+  /** The latest production build for that version, when one was requested. */
+  job: WallProductionJob | null;
+  /** Signed preview URL for the generated master, when it could be signed. */
+  artworkUrl: string | null;
+};
+
+/** The studio feed: the newest generations across every customer, with what
+ * happened to each. Admins and testers only (RLS on every table read here).
+ *
+ * The generation table is the spine deliberately. Listing projects or versions
+ * would show only the designs that survived the round trip, which is exactly
+ * the set that never needed this board. */
+export async function listWallStudioFeed(limit = 60): Promise<WallStudioEntry[]> {
+  const gens = await db.from('wallpro_generations').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (gens.error) throw new Error('Generations could not be listed: ' + gens.error.message);
+  const generations = (gens.data || []) as WallGenerationRow[];
+  if (!generations.length) return [];
+  const ids = generations.map(g => g.id);
+  const vers = await db.from('wallpro_design_versions').select('*').in('generation_id', ids);
+  if (vers.error) throw new Error('Design versions could not be listed: ' + vers.error.message);
+  const versions = (vers.data || []) as WallVersion[];
+  const versionFor = new Map<string, WallVersion>();
+  for (const v of versions) if (v.generation_id && !versionFor.has(v.generation_id)) versionFor.set(v.generation_id, v);
+
+  const projectIds = [...new Set(versions.map(v => v.project_id))];
+  const versionIds = versions.map(v => v.id);
+  const [projects, reviews, jobs, links] = await Promise.all([
+    projectIds.length ? db.from('wallpro_projects').select('id,name').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_qc_reviews').select('*').in('version_id', versionIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    // A generation that failed has no artwork path; signing is best effort so
+    // one unsignable object never empties the board.
+    openWallAssets([...new Set(generations.map(g => g.artwork_path).filter(Boolean) as string[])]).catch(() => ({} as Record<string, string>)),
+  ]);
+  const names = new Map<string, string>(((projects as any).data || []).map((p: any) => [p.id, p.name]));
+  const reviewsFor = new Map<string, WallQcReview[]>();
+  for (const r of (((reviews as any).data || []) as WallQcReview[])) {
+    const list = reviewsFor.get(r.version_id) || [];
+    list.push(r); reviewsFor.set(r.version_id, list);
+  }
+  const jobFor = new Map<string, WallProductionJob>();
+  for (const j of (((jobs as any).data || []) as WallProductionJob[])) if (!jobFor.has(j.version_id)) jobFor.set(j.version_id, j);
+
+  return generations.map(g => {
+    const version = versionFor.get(g.id) || null;
+    return {
+      generation: g,
+      version,
+      projectId: version?.project_id ?? null,
+      projectName: version ? names.get(version.project_id) || 'Wall design' : null,
+      reviews: version ? reviewsFor.get(version.id) || [] : [],
+      job: version ? jobFor.get(version.id) || null : null,
+      artworkUrl: g.artwork_path ? links[g.artwork_path] || null : null,
+    };
+  });
+}
+
+/** Writes the project and version row a timed-out browser never wrote, from the
+ * generation's own stored input. Creates no artwork: the bytes already exist
+ * and are not touched. Idempotent — a generation that already has a version
+ * returns it with `recovered: false`.
+ *
+ * generateWall already re-reads the ledger when the invoke itself errors, so
+ * this is the backstop for the cases that path cannot reach: the customer
+ * closed or reloaded the tab, or the request hung without ever settling, so no
+ * client code ran to catch it. */
+export async function recoverOrphanedWallGeneration(generationId: string): Promise<{ recovered: boolean; version: WallVersion; project: { id: string; name: string } }> {
+  const { data, error } = await db.rpc('recover_wallpro_generation', { p_generation_id: generationId });
+  if (error) {
+    const code = String(error.message || '');
+    throw new Error(
+      code.includes('not_authorised') ? 'Recovery is for admins and testers only.'
+      : code.includes('generation_not_found') ? 'That generation no longer exists.'
+      : code.includes('generation_not_completed') ? 'That generation never produced artwork, so there is nothing to recover.'
+      : 'The design could not be recovered: ' + code);
+  }
+  return data as { recovered: boolean; version: WallVersion; project: { id: string; name: string } };
+}
+
+/** Records a designer QC sign-off against one immutable version. Append-only:
+ * a later review supersedes an earlier one without erasing it. */
+export async function recordWallQcReview(input: { versionId: string; projectId: string; verdict: 'released' | 'hold'; checks: Record<string, boolean>; notes: string }): Promise<WallQcReview> {
+  const user = await wallUser();
+  const { data, error } = await db.from('wallpro_qc_reviews').insert({
+    version_id: input.versionId, project_id: input.projectId, reviewer_id: user.id,
+    verdict: input.verdict, checks: input.checks, notes: input.notes.trim() || null,
+  }).select('*').single();
+  if (error) throw new Error('The QC review could not be recorded: ' + error.message);
+  return data as WallQcReview;
 }

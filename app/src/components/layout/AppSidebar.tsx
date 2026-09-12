@@ -295,6 +295,30 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   all day and reaches QC from there (owner, 2026-09-12).
                   Staff-only -- isAdmin covers the admin and tester roles, the
                   same two RequireAdmin and the board's RLS already allow. */}
+              {/* The studio comes FIRST of the two, because it answers the
+                  question the team asks most: did that customer's design
+                  actually take. Production is where the print files are once
+                  it did. */}
+              {tool.key === "wallpro" && isAdmin && (
+                <SidebarTooltip
+                  title="WallPanelPro Studio"
+                  description="Every wall generation, whether it took when the customer timed out, designer QC and the release gate"
+                >
+                  <Link
+                    to="/admin/wallpro-studio"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/admin/wallpro-studio")
+                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
+                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                    )}
+                  >
+                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">PanelPro Studio</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
               {tool.key === "wallpro" && isAdmin && (
                 <SidebarTooltip
                   title="WallPro QC / Production"
