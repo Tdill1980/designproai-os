@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -40,6 +41,20 @@ test("plans 54-inch panels with the half-inch duplicated overlap exactly like th
   const { panels } = production.planPanels(production.normalizeRequest({ wallWidthIn: 120, wallHeightIn: 96 }));
   assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 54, 98, 0], [52.5, 54, 98, .5], [106, 15, 98, .5]]);
   assert.equal(production.DEFAULTS.panelWidthIn, 54); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
+  // THE TWO 54s ARE ONE NUMBER AND MUST STAY EQUAL.
+  //
+  // The browser plans panels with WALLPRO_PRINT_WIDTH and the runtime cuts them
+  // with DEFAULTS.panelWidthIn. They were BOTH 59 until 2026-09-12, which is
+  // wider than the Avery HP MPI 2610 roll -- those panels could not be printed
+  // at all. The geometry file's own comment invites lowering this one constant
+  // if the press needs an edge margin, which is exactly the change that would
+  // silently split the two halves apart: the customer would be quoted and shown
+  // one panel plan and the press handed another.
+  const geometry = readFileSync(new URL('../../app/src/lib/wallpro-geometry.ts', import.meta.url), 'utf8');
+  const clientWidth = Number(/export const WALLPRO_PRINT_WIDTH = (\d+(?:\.\d+)?)/.exec(geometry)?.[1]);
+  assert.ok(Number.isFinite(clientWidth), 'WALLPRO_PRINT_WIDTH could not be read from wallpro-geometry.ts');
+  assert.equal(clientWidth, production.DEFAULTS.panelWidthIn,
+    'WALLPRO_PRINT_WIDTH and the runtime panel width have drifted apart: the browser would plan panels the press cannot cut.');
   assert.throws(() => production.normalizeRequest({ wallWidthIn: 0, wallHeightIn: 96 }), /1 to 2,400/);
 });
 

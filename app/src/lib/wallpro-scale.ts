@@ -191,3 +191,48 @@ export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; 
   if (input.intent === 'wall') return repeat('Designing for the room.');
   return input.wallWidthIn > 96 ? repeat('A wall this wide would blow a single composition up past life size.') : mural('A wall this size holds one composition.');
 }
+
+/**
+ * WHICH PICTURE THE FLAT PANE SHOWS.
+ *
+ * Owner, 2026-09-12, on a matched design: "why does it keep generating the
+ * pattern I uploaded to match with much smaller pattern... when I clicked
+ * generate it had correct pattern on wall and I had to manually adjust bar
+ * just to see it the right size."
+ *
+ * Nothing was generating small. The stored generation rows show the scale
+ * brain sending exactly what it should — a 120" wall gets a 60" repeat, a 142"
+ * wall gets 72", about two across. What the pane was showing in that moment
+ * was the BARE GENERATED TILE: one 60-inch tile, which is HALF the wall, in a
+ * square box, next to a reference photograph that depicts a whole wall. It
+ * reads as half size because it IS half the wall.
+ *
+ * The pane already held the last wall-scale render across a re-render, but on
+ * the first paint after a generation there is no last one, and the exact
+ * canvas pass over a 4096-square tile takes seconds on a phone. That window is
+ * the one the customer reaches for the slider in — so the UI was teaching them
+ * to enlarge a pattern that was already right, and out of the measured band.
+ *
+ *   tile    only while a refinement mask is being drawn, where the tile is the
+ *           correct picture because the mask coordinates belong to it (and as
+ *           the last resort when the wall geometry is not known yet).
+ *   css     instant tiling at wall scale — under the moving slider, and on the
+ *           first paint before the exact canvas exists.
+ *   canvas  the exact render, once it is ready.
+ */
+export type FlatPaneView = 'tile' | 'canvas' | 'css';
+
+export function flatPaneView(input: {
+  /** A refinement mask is open or drawn: the tile is the right picture. */
+  maskActive: boolean;
+  /** The slider is mid-move, so the exact canvas is out of date. */
+  settling: boolean;
+  /** An exact wall-scale render is available (this scale's or the last one's). */
+  hasCanvas: boolean;
+  /** Wall geometry is known, so CSS can tile at wall scale. */
+  hasCssTile: boolean;
+}): FlatPaneView {
+  if (input.maskActive) return 'tile';
+  if (input.settling || !input.hasCanvas) return input.hasCssTile ? 'css' : 'tile';
+  return 'canvas';
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale } from '../wallpro-scale';
+import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView } from '../wallpro-scale';
 
 // A 142 x 96 wall and a square master.
 const wall = { width: 142, height: 96, aspect: 1 };
@@ -107,5 +107,36 @@ describe('WallPro scale brain', () => {
     expect(autoWallScale({ intent: 'prompt', prompt: 'Blush florals', wallWidthIn: 142, chosen: 'cover' })).toMatchObject({ placement: 'cover' });
     expect(autoWallScale({ intent: 'prompt', prompt: 'A mural', wallWidthIn: 80, chosen: 'repeat' })).toMatchObject({ placement: 'repeat', repeatWidthIn: 48 });
     expect(autoWallScale({ intent: 'prompt', prompt: 'Blush florals', wallWidthIn: 142 }).reason).toMatch(/real size/);
+  });
+});
+
+describe('the flat pane never shows a bare tile as the design', () => {
+  // THE REGRESSION. Owner, 2026-09-12, on a matched design: "why does it keep
+  // generating the pattern I uploaded to match with much smaller pattern".
+  // Nothing generated small -- the pane was showing ONE 60" tile, half of her
+  // 120" wall, beside a reference photo of a whole wall. This is the first
+  // paint after a generation: no exact canvas yet, slider untouched.
+  it('draws at wall scale on the first paint, before the exact canvas exists', () => {
+    expect(flatPaneView({ maskActive: false, settling: false, hasCanvas: false, hasCssTile: true })).toBe('css');
+  });
+
+  it('uses the exact canvas once it is ready', () => {
+    expect(flatPaneView({ maskActive: false, settling: false, hasCanvas: true, hasCssTile: true })).toBe('canvas');
+  });
+
+  // Every slider move re-rendered the canvas, and each move dropped back to
+  // the bare tile -- which is what made "too small" look confirmed each time.
+  it('stays at wall scale while the slider is moving', () => {
+    expect(flatPaneView({ maskActive: false, settling: true, hasCanvas: true, hasCssTile: true })).toBe('css');
+  });
+
+  // The one legitimate use of the bare tile: mask coordinates belong to it.
+  it('shows the bare tile while a refinement mask is open, whatever else is true', () => {
+    expect(flatPaneView({ maskActive: true, settling: false, hasCanvas: true, hasCssTile: true })).toBe('tile');
+    expect(flatPaneView({ maskActive: true, settling: true, hasCanvas: false, hasCssTile: false })).toBe('tile');
+  });
+
+  it('falls back to the tile only when the wall geometry is unknown', () => {
+    expect(flatPaneView({ maskActive: false, settling: false, hasCanvas: false, hasCssTile: false })).toBe('tile');
   });
 });

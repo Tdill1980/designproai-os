@@ -49,7 +49,12 @@ select policies_are(
         'designpro_owner_read_flat_atlas_previews','designpro_owner_read_generation_views',
         'designpro_owner_read_wrap_files','wallpro_file_read','wallpro_file_upload',
         'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read',
-        'graphicspro_files_public_read','graphicspro_files_owner_upload'],
+        'graphicspro_files_public_read','graphicspro_files_owner_upload',
+        -- RESTRICTIVE, not permissive: it grants nothing and only withholds a
+        -- WallPro production file until a human has released that job
+        -- (20260912240000). It appears here because the allowlist covers every
+        -- policy on storage.objects, permissive or not.
+        'wallpro_production_needs_human_release'],
   'only exact DesignPro Storage policies are installed by this bootstrap'
 );
 select set_config('storage.operation','object.sign',true);

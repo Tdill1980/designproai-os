@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WALL_TARGET_PPI, buildWallPanelProStudio, jobIsStale, panelHealth, versionStage,
+  WALL_TARGET_PPI, buildWallPanelProStudio, deliveryMessage, deliveryState, jobIsStale, panelHealth,
+  panelMap, validationDueAt, validationHoursLeft, versionStage,
   wallDesignIdOf, wallForensicRecord,
 } from '../wallpro-panelpro';
 import type { WallQcReview, WallGenerationRow } from '../wallpro-qc';
@@ -202,5 +203,114 @@ describe('the forensic record', () => {
     // The brief the version was judged against travels with it.
     expect(record.brief.prompt).toBe('sage green leaves');
     expect(record.production).toBeNull();
+  });
+});
+
+describe('the panelization QC shows', () => {
+  const cut = (over: Partial<any> = {}): any => ({
+    number: 1, file: 'p1.png', path: 'x/p1.png', xIn: -1, yIn: -1, widthIn: 55, heightIn: 98,
+    overlapLeftIn: 0, widthPx: 8250, heightPx: 14700, ppi: 150, sha256: 'a', byteSize: 1,
+    upscale: { engine: 'topaz' }, ...over,
+  });
+  // A 142" wall on a 54" roll with 1" bleed and 1/2" overlap.
+  const threePanel = job({
+    request: { wallWidthIn: 142, wallHeightIn: 96, panelWidthIn: 54, overlapIn: 0.5, bleedIn: 1, targetPpi: 150, placement: 'repeat' },
+    panels: [
+      cut({ number: 1, xIn: -1, widthIn: 54, overlapLeftIn: 0 }),
+      cut({ number: 2, xIn: 52.5, widthIn: 54, overlapLeftIn: 0.5 }),
+      cut({ number: 3, xIn: 106, widthIn: 37, overlapLeftIn: 0.5 }),
+    ],
+  });
+
+  it('reports the half-inch overlap from the panel that was CUT, not the request', () => {
+    // The request is what was asked for; the panel is what exists. If a job was
+    // built before a spec change, QC must see the built number.
+    const stated = panelMap(job({
+      request: { wallWidthIn: 142, wallHeightIn: 96, panelWidthIn: 54, overlapIn: 2, bleedIn: 1, targetPpi: 150 },
+      panels: [cut({ number: 1, xIn: 0, widthIn: 54 }), cut({ number: 2, xIn: 53.5, widthIn: 54, overlapLeftIn: 0.5 })],
+    }))!;
+    expect(stated.overlapIn).toBe(0.5);
+  });
+
+  it('counts seams as panels minus one', () => {
+    expect(panelMap(threePanel)!.seams).toBe(2);
+    expect(panelMap(job({ panels: [cut()] }))!.seams).toBe(0);
+  });
+
+  it('lays every panel out to scale across the printed width', () => {
+    const map = panelMap(threePanel)!;
+    // -1 (bleed) through 143 = 144 inches of printed width.
+    expect(map.totalWidthIn).toBe(144);
+    expect(map.entries[0].leftPct).toBe(0);
+    expect(map.entries.map(e => e.number)).toEqual([1, 2, 3]);
+    // Panel 2 starts at 52.5, which is 53.5 inches from the left bleed edge.
+    expect(map.entries[1].leftPct).toBeCloseTo((53.5 / 144) * 100, 6);
+    // The overlap band is drawn at the same scale as the panel it sits on.
+    expect(map.entries[1].overlapPct).toBeCloseTo((0.5 / 144) * 100, 6);
+    expect(map.entries[0].overlapPct).toBe(0);
+  });
+
+  it('carries the shop spec the reviewer signs against', () => {
+    const map = panelMap(threePanel)!;
+    expect(map.panelWidthIn).toBe(54);
+    expect(map.bleedIn).toBe(1);
+    expect(map.targetPpi).toBe(150);
+  });
+
+  it('has nothing to draw before the panels exist', () => {
+    expect(panelMap(null)).toBeNull();
+    expect(panelMap(job())).toBeNull();
+  });
+});
+
+describe('the human validation window', () => {
+  // Owner, 2026-09-12: "these are our real customers of wpw we can't risk going
+  // 100% ai". `ready` means READY FOR VALIDATION; released_at is the separate
+  // fact that a person signed the panels off.
+  const cutAt = '2026-09-12T20:00:00Z';
+  const readyJob = (over: Partial<any> = {}) => job({ status: 'ready', finished_at: cutAt, ...over });
+
+  it('never calls freshly cut panels released', () => {
+    expect(deliveryState(readyJob())).toBe('validating');
+  });
+
+  it('is released only once a person signed it', () => {
+    expect(deliveryState(readyJob({ released_at: '2026-09-12T21:00:00Z', released_by: OWNER }))).toBe('released');
+  });
+
+  it('separates building and failing from validating', () => {
+    expect(deliveryState(job({ status: 'running' }))).toBe('building');
+    expect(deliveryState(job({ status: 'queued' }))).toBe('building');
+    expect(deliveryState(job({ status: 'failed' }))).toBe('failed');
+    expect(deliveryState(null)).toBe('not-requested');
+  });
+
+  // The clock runs from the moment the panels were CUT, not from the order:
+  // review cannot start before there is something to review.
+  it('counts 24 hours from the cut, not the order', () => {
+    const due = validationDueAt(readyJob())!;
+    expect(due.toISOString()).toBe('2026-09-13T20:00:00.000Z');
+    expect(validationHoursLeft(readyJob(), Date.parse('2026-09-12T22:00:00Z'))).toBe(22);
+    // Past due reads zero, never negative.
+    expect(validationHoursLeft(readyJob(), Date.parse('2026-09-14T00:00:00Z'))).toBe(0);
+  });
+
+  it('has no clock once released or while still building', () => {
+    expect(validationHoursLeft(readyJob({ released_at: cutAt, released_by: OWNER }))).toBeNull();
+    expect(validationHoursLeft(job({ status: 'running' }))).toBeNull();
+  });
+
+  // The wait is the service, not an apology for it.
+  it('tells the customer a person is checking, and says we do not skip it', () => {
+    const message = deliveryMessage(readyJob(), Date.parse('2026-09-12T22:00:00Z'))!;
+    expect(message.title).toMatch(/production team/i);
+    expect(message.detail).toMatch(/a person is checking/i);
+    expect(message.detail).toMatch(/do not hand over unchecked/i);
+    expect(message.detail).toMatch(/22 hours/);
+  });
+
+  it('says a released pack was checked by a person, not just generated', () => {
+    const message = deliveryMessage(readyJob({ released_at: cutAt, released_by: OWNER }))!;
+    expect(message.detail).toMatch(/checked by a person/i);
   });
 });
