@@ -95,16 +95,30 @@ export function layoutMetrics(layout: WallLayout, aspect: number) {
     if (!Number.isFinite(layout.repeatWidth) || layout.repeatWidth < 1 || layout.repeatWidth > 2400) throw new Error('Enter a pattern tile width between 1 and 2,400 inches.');
     const repeatHeight = layout.repeatWidth / aspect;
     if (layout.width / layout.repeatWidth > 1000 || layout.height / repeatHeight > 1000) throw new Error('The repeat is too small for this preview. Increase its width.');
-    return { artworkWidth: layout.repeatWidth, artworkHeight: repeatHeight, across: layout.width / layout.repeatWidth, down: layout.height / repeatHeight };
+    // The tile grid starts at the wall's top-left corner. A tile larger than
+    // the wall in an axis (a mural scaled past 100%) is centred on it instead,
+    // so the wall shows the middle of the design, as PatternPro's preview
+    // crops an oversized swatch. `originX/Y` are the wall-inch coordinates of
+    // tile (0, 0)'s corner; identical in runtime/wallpro-production.cjs.
+    return { artworkWidth: layout.repeatWidth, artworkHeight: repeatHeight, across: layout.width / layout.repeatWidth, down: layout.height / repeatHeight, originX: tileOrigin(layout.width, layout.repeatWidth), originY: tileOrigin(layout.height, repeatHeight) };
   }
   const scale = (layout.mode === 'cover' ? Math.max : Math.min)(layout.width / aspect, layout.height);
-  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1 };
+  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1, originX: 0, originY: 0 };
+}
+
+export function tileOrigin(wallIn: number, tileIn: number): number {
+  return tileIn > wallIn + 1e-9 ? (wallIn - tileIn) / 2 : 0;
+}
+
+/** Tile-grid coordinate (in tiles) of a wall point given in inches. */
+export function tileCoordinateAt(inches: number, origin: number, tileIn: number, mirror: boolean): number {
+  return tileCoordinate((inches - origin) / tileIn, mirror).u;
 }
 
 export function artworkPoint(p: Point, layout: WallLayout, aspect: number): Point | null {
   if (p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return null;
   const m = layoutMetrics(layout, aspect);
-  if (layout.mode === 'repeat') return { x: tileCoordinate(p.x * m.across, !!layout.mirror).u, y: tileCoordinate(p.y * m.down, !!layout.mirror).u };
+  if (layout.mode === 'repeat') return { x: tileCoordinateAt(p.x * layout.width, m.originX, m.artworkWidth, !!layout.mirror), y: tileCoordinateAt(p.y * layout.height, m.originY, m.artworkHeight, !!layout.mirror) };
   const x = (p.x * layout.width - (layout.width - m.artworkWidth) / 2) / m.artworkWidth;
   const y = (p.y * layout.height - (layout.height - m.artworkHeight) / 2) / m.artworkHeight;
   return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;

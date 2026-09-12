@@ -14,7 +14,8 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { autoRepeatWidthIn, autoWallScale, patternScaleLabel, patternSizeAtScale, stepPatternScale, type PatternSize } from '@/lib/wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternScaleLabel, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { Slider } from '@/components/ui/slider';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -105,23 +106,30 @@ export default function WallPro() {
   // and the tab offers to repaint.
   const scaleKey = placement + '|' + (placement === 'repeat' ? repeatWidth : 0);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
-  /** PATTERN SCALE: the motifs' size as a percentage of the size they were
-   * generated at (owner, 2026-09-12: "the pattern design", not the panel).
-   * The base is the version as generated; the percentage re-tiles the same
-   * master deterministically. No regeneration, no token. The flat pane shows
-   * the print master at the chosen scale, the on-wall view updates at once,
+  /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
+   * "the pattern design size larger and smaller … look at PatternPro, we
+   * literally had this"): 30 to 300 percent of the size the design was
+   * generated at. The design is the swatch; the slider draws it bigger or
+   * smaller across the wall, repeated. The 59-inch panels never change. The
+   * base is the version as generated; the percentage re-tiles the same master
+   * deterministically, no regeneration, no token. The flat pane shows the
+   * print master at the chosen scale, the on-wall view updates at once,
    * production uses it on Rebuild, and the project remembers it. */
   const [patternScale, setPatternScale] = useState(100);
   const patternBase: PatternSize = currentVersion
     ? { placement: currentVersion.placement, repeatWidthIn: Number(currentVersion.repeat_width_in) || autoRepeatWidthIn(width) }
     : { placement, repeatWidthIn: repeatWidth };
-  function stepPattern(direction: 'bigger' | 'smaller') {
-    const pct = stepPatternScale(patternScale, direction);
-    if (pct === null) return;
-    const next = patternSizeAtScale(patternBase, width, pct);
+  const wallBox: WallBox = { width, height, aspect: artwork?.aspect || 1 };
+  const scaleSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function applyPatternScale(percent: number) {
+    const pct = clampPatternScale(percent);
+    const next = patternSizeAtScale(patternBase, wallBox, pct);
     setPatternScale(pct); setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
-    setNotice(`Pattern scale ${patternScaleLabel(patternBase, width, pct)}. The print master and the on-wall view update now; the AI picture repaints when you open it; production uses this scale when rebuilt.`);
-    wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+    // The project remembers the slider once it rests, not on every tick.
+    if (scaleSave.current) clearTimeout(scaleSave.current);
+    scaleSave.current = setTimeout(() => {
+      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+    }, 600);
   }
   useEffect(() => { if (artwork && photo && cornersValidNow) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, cornersValidNow, aiViewCurrent]);
   // The photo pane opens on the AI picture by itself: the model puts the
@@ -267,7 +275,7 @@ export default function WallPro() {
     setPhoto(wall); setArtwork(art); setReference(ref); setWidth(config.width || 120); setHeight(config.height || 96);
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
-    setPatternScale(typeof config.patternScale === 'number' && config.patternScale >= 25 && config.patternScale <= 200 ? config.patternScale : 100);
+    setPatternScale(typeof config.patternScale === 'number' && config.patternScale >= PATTERN_SCALE_MIN && config.patternScale <= PATTERN_SCALE_MAX ? clampPatternScale(config.patternScale) : 100);
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setMaskRects([]); setMaskMode(false); setRefinePrompt('');
@@ -681,14 +689,17 @@ export default function WallPro() {
             <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {artwork && <div>
               {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
-              {/* Bigger / Smaller: the pattern's real-world size on this wall, stepped
-                  without a new generation (owner, 2026-09-12). */}
-              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern scale">
-                <span className="font-semibold">Pattern scale</span>
-                <Button size="sm" variant="outline" disabled={!!busy || stepPatternScale(patternScale, 'smaller') === null} onClick={() => stepPattern('smaller')} aria-label="Smaller pattern">− Smaller</Button>
-                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, width, patternScale)}</span>
-                <Button size="sm" variant="outline" disabled={!!busy || stepPatternScale(patternScale, 'bigger') === null} onClick={() => stepPattern('bigger')} aria-label="Bigger pattern">+ Bigger</Button>
-                <span className="text-xs text-slate-500">The design's motifs, smaller or bigger on your wall. Deterministic, no token.</span>
+              {/* Pattern size, as PatternPro's slider: the design itself drawn
+                  smaller or bigger across the wall, 30% to 300%, with no new
+                  generation (owner, 2026-09-12). The panels do not change. */}
+              <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern size">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">Pattern size</span>
+                  <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, wallBox, patternScale)}</span>
+                </div>
+                <Slider aria-label="Pattern size" min={PATTERN_SCALE_MIN} max={PATTERN_SCALE_MAX} step={PATTERN_SCALE_STEP} value={[patternScale]} disabled={!!busy} onValueChange={v => applyPatternScale(v[0])} />
+                <div className="mt-1 flex justify-between text-[11px] text-slate-500"><span>30% smaller</span><span>100% as generated</span><span>300% bigger</span></div>
+                <p className="mt-1 text-xs text-slate-500">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
               </div>
               <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={maskMode || maskRects.length > 0 || !flatCurrent ? artwork.url : flatCurrent} alt={maskMode || maskRects.length > 0 || !flatCurrent ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className="max-h-[650px] max-w-full object-contain" draggable={false} />
               {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}

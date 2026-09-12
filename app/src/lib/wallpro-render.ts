@@ -1,6 +1,5 @@
-import { homography, projectPoint, validWallCorners, layoutMetrics, UNIT_WALL, insidePolygon, type Point, type WallLayout } from './wallpro-geometry';
+import { homography, projectPoint, validWallCorners, layoutMetrics, tileCoordinateAt, UNIT_WALL, insidePolygon, type Point, type WallLayout } from './wallpro-geometry';
 import { maskFlags } from './wallpro-masks';
-import { tileCoordinate } from './wallpro-seamless';
 
 export async function loadWallImage(src: string): Promise<HTMLImageElement> {
   const image = new Image();
@@ -56,7 +55,7 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
       const uv = projectPoint(h, p);
       if (uv.x < 0 || uv.x > 1 || uv.y < 0 || uv.y > 1 || (protectedPx && protectedPx[y * canvas.width + x]) || exclusions.some(poly => insidePolygon(p, poly))) continue;
       let u: number, v: number;
-      if (layout.mode === 'repeat') { u = tileCoordinate(uv.x * m.across, !!layout.mirror).u; v = tileCoordinate(uv.y * m.down, !!layout.mirror).u; }
+      if (layout.mode === 'repeat') { u = tileCoordinateAt(uv.x * layout.width, m.originX, m.artworkWidth, !!layout.mirror); v = tileCoordinateAt(uv.y * layout.height, m.originY, m.artworkHeight, !!layout.mirror); }
       else { u = (uv.x * layout.width - (layout.width - m.artworkWidth) / 2) / m.artworkWidth; v = (uv.y * layout.height - (layout.height - m.artworkHeight) / 2) / m.artworkHeight; }
       if (u < 0 || u > 1 || v < 0 || v > 1) continue;
       const tx = Math.min(texture.width - 1, Math.floor(u * texture.width)), ty = Math.min(texture.height - 1, Math.floor(v * texture.height));
@@ -86,11 +85,14 @@ export async function renderFlatWall(artworkUrl: string, layout: WallLayout, max
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   const tw = m.artworkWidth * scale, th = m.artworkHeight * scale;
   if (layout.mode === 'repeat') {
-    for (let row = 0; row * th < canvas.height; row++) {
-      for (let col = 0; col * tw < canvas.width; col++) {
+    // Tile (0, 0) sits at the origin: the wall's corner, or centred when the
+    // tile is larger than the wall (a mural scaled past 100%).
+    const ox = m.originX * scale, oy = m.originY * scale;
+    for (let row = 0; oy + row * th < canvas.height; row++) {
+      for (let col = 0; ox + col * tw < canvas.width; col++) {
         const flipX = !!layout.mirror && col % 2 === 1, flipY = !!layout.mirror && row % 2 === 1;
         ctx.save();
-        ctx.translate(col * tw + (flipX ? tw : 0), row * th + (flipY ? th : 0));
+        ctx.translate(ox + col * tw + (flipX ? tw : 0), oy + row * th + (flipY ? th : 0));
         ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
         ctx.drawImage(art, 0, 0, tw, th);
         ctx.restore();

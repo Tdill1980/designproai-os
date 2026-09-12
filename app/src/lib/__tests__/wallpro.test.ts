@@ -39,6 +39,19 @@ describe('WallPro physical geometry', () => {
     expect(artworkPoint({x:12/120,y:6/96},{width:120,height:96,mode:'repeat',repeatWidth:24},2)).toEqual({x:0.5,y:0.5});
     expect(artworkPoint({x:12/240,y:6/96},{width:240,height:96,mode:'repeat',repeatWidth:24},2)).toEqual({x:0.5,y:0.5});
   });
+  it('centres a tile larger than the wall, so a mural scaled past 100% shows its middle', () => {
+    // A 2:1 master as a 240-inch tile on a 120 x 96 wall: 120 wider than the
+    // wall, so tile (0,0) starts 60 inches left of it; 120 tall on a 96 wall,
+    // so 12 inches above it. The wall's centre is the tile's centre.
+    const layout = { width: 120, height: 96, mode: 'repeat' as const, repeatWidth: 240 };
+    expect(layoutMetrics(layout, 2)).toMatchObject({ artworkWidth: 240, artworkHeight: 120, originX: -60, originY: -12 });
+    const centre = artworkPoint({ x: 0.5, y: 0.5 }, layout, 2)!;
+    expect(centre.x).toBeCloseTo(0.5, 10); expect(centre.y).toBeCloseTo(0.5, 10);
+    const left = artworkPoint({ x: 0, y: 0 }, layout, 2)!;
+    expect(left.x).toBeCloseTo(0.25, 10); expect(left.y).toBeCloseTo(0.1, 10);
+    // A tile smaller than the wall still starts at the wall's corner.
+    expect(layoutMetrics({ ...layout, repeatWidth: 24 }, 2)).toMatchObject({ originX: 0, originY: 0 });
+  });
   it('maps perspective corners exactly and round-trips interior points', () => {
     const quad = [{x:.1,y:.2},{x:.9,y:.1},{x:.8,y:.9},{x:.2,y:.7}];
     expect(validWallCorners(quad)).toBe(true);

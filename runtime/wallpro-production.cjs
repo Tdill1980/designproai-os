@@ -85,10 +85,18 @@ function layoutMetrics(request, aspect) {
   if (request.placement === "repeat") {
     const repeatHeight = request.repeatWidthIn / aspect;
     if (width / request.repeatWidthIn > 1000 || height / repeatHeight > 1000) fail("wallpro_request_invalid", "The repeat is too small for this wall");
-    return { artworkWidth: request.repeatWidthIn, artworkHeight: repeatHeight, across: width / request.repeatWidthIn, down: height / repeatHeight };
+    // Tile (0, 0) sits at the wall's top-left corner, or is centred on the
+    // wall in an axis where the tile is larger than the wall (a mural scaled
+    // past 100% by the pattern-scale slider). Identical to `tileOrigin` in
+    // app/src/lib/wallpro-geometry.ts, so preview and print are one geometry.
+    return { artworkWidth: request.repeatWidthIn, artworkHeight: repeatHeight, across: width / request.repeatWidthIn, down: height / repeatHeight, originX: tileOrigin(width, request.repeatWidthIn), originY: tileOrigin(height, repeatHeight) };
   }
   const scale = (request.placement === "cover" ? Math.max : Math.min)(width / aspect, height);
-  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1 };
+  return { artworkWidth: aspect * scale, artworkHeight: scale, across: 1, down: 1, originX: 0, originY: 0 };
+}
+
+function tileOrigin(wallIn, tileIn) {
+  return tileIn > wallIn + 1e-9 ? (wallIn - tileIn) / 2 : 0;
 }
 
 /** The master's density at the placement it is printed at. */
@@ -123,10 +131,12 @@ async function rasterPanel(source, request, panel, ppi) {
       return variants.get(key);
     };
     const overlays = [];
-    for (let row = Math.floor(panel.y / m.artworkHeight); row * m.artworkHeight < panel.y + panel.height - 1e-8; row++) {
-      for (let col = Math.floor(panel.x / m.artworkWidth); col * m.artworkWidth < panel.x + panel.width - 1e-8; col++) {
+    // The panel in tile-grid inches: its wall position minus where tile (0, 0) starts.
+    const gx = panel.x - m.originX, gy = panel.y - m.originY;
+    for (let row = Math.floor(gy / m.artworkHeight); row * m.artworkHeight < gy + panel.height - 1e-8; row++) {
+      for (let col = Math.floor(gx / m.artworkWidth); col * m.artworkWidth < gx + panel.width - 1e-8; col++) {
         if (overlays.length > MAX_TILE_PLACEMENTS) fail("wallpro_request_invalid", "This wall needs more than 20,000 pattern placements");
-        const left = Math.round((col * m.artworkWidth - panel.x) * ppi), top = Math.round((row * m.artworkHeight - panel.y) * ppi);
+        const left = Math.round((col * m.artworkWidth - gx) * ppi), top = Math.round((row * m.artworkHeight - gy) * ppi);
         const sx = Math.max(0, -left), sy = Math.max(0, -top);
         const sw = Math.min(tw - sx, Wpx - Math.max(left, 0)), sh = Math.min(th - sy, Hpx - Math.max(top, 0));
         if (sw <= 0 || sh <= 0) continue;

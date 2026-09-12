@@ -161,6 +161,19 @@ contracts; each names its lock.
   Auto is the product; Mural and Repeating pattern remain overrides. A 4K
   master is never called print-ready unless pixels over wall inches say so.
   Locked by `wallpro-scale.test.ts` and `wallpro.test.ts`.
+- **Pattern size is PatternPro's slider, ported (owner, 2026-09-12: "Look at
+  PatternPro, we literally had this").** Reference: `restylepro-os`
+  `src/components/tools/modes/WrapByTheYardMode.tsx` (30–300 % slider, the
+  swatch previewed as `background-size: 100/scale%` repeated). In WallPro the
+  design is the swatch: `patternSizeAtScale` draws it at the percentage of its
+  generated width, a mural being one swatch the size of the wall (smaller
+  repeats it, bigger crops it to the middle). **The 59-inch panels never
+  change; the design is what scales.** Deterministic, no token, and one
+  geometry everywhere: a tile larger than the wall is centred on it by
+  `tileOrigin` in `wallpro-geometry.ts` and the identical rule in
+  `runtime/wallpro-production.cjs`, so the flat pane, the on-wall view and the
+  print file agree. Locked by `wallpro-scale.test.ts`, `wallpro.test.ts` and
+  `source-tests/runtime/wallpro-production.test.mjs`.
 - **The print file is ONE file.** Every production job stores the whole wall
   with bleed as one PNG at the panel PPI (`stitchWholeWall`, stitched from
   the enhanced panels' own pixels, 450 MP budget, fails soft) and every

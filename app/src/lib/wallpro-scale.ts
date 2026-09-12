@@ -27,49 +27,68 @@ export function autoRepeatWidthIn(wallWidthIn: number): number {
 }
 
 export type PatternSize = { placement: WallPlacement; repeatWidthIn: number };
+export type WallBox = { width: number; height: number; aspect: number };
 
 /**
- * PATTERN SCALE: the size of the motifs in the design, as a percentage of the
- * size they were generated at. Owner, 2026-09-12: "what you were scaling is
- * the entire panel size; I am saying the pattern design." A design generated
- * as a 36-inch tile at 100% prints its flowers at the size the model drew
- * them; at 50% the same tile prints 18 inches wide, so every flower is half
- * the size and there are twice as many across. Deterministic: the same master,
- * re-tiled; no regeneration, no token.
+ * PATTERN SCALE, exactly as RestylePro's PatternPro had it (owner, 2026-09-12:
+ * "Look at PatternPro, we literally had this"): the design is the swatch, and a
+ * 30 to 300 percent slider draws that swatch bigger or smaller on the surface,
+ * repeated. `WrapByTheYardMode.tsx` previews it as `background-size: 100/scale%`
+ * with `background-repeat: repeat`; WallPro does the same thing in inches so
+ * the preview, the on-wall view and the print file are one geometry.
+ *
+ * The panels do not change. The 59-inch panels are the roll; what changes is
+ * how big the design is drawn across them. Deterministic: the same master,
+ * re-tiled at a new width; no regeneration, no token.
+ *
+ * At 100 percent the design is exactly as generated (a tile at its generated
+ * width, a mural filling the wall). A mural is one swatch the size of the wall,
+ * so 50 percent draws it half size and repeats it, and 200 percent draws it at
+ * twice the wall and shows the middle, the way PatternPro's preview crops an
+ * oversized swatch.
  */
-export const PATTERN_SCALE_STEPS = [25, 33, 50, 67, 80, 100, 125, 150, 200] as const;
-export type PatternScale = (typeof PATTERN_SCALE_STEPS)[number];
+export const PATTERN_SCALE_MIN = 30;
+export const PATTERN_SCALE_MAX = 300;
+export const PATTERN_SCALE_STEP = 10;
 
-/** The next step up or down, or null at the end of the range. */
-export function stepPatternScale(current: number, direction: 'bigger' | 'smaller'): PatternScale | null {
-  const steps = PATTERN_SCALE_STEPS;
-  if (direction === 'bigger') return steps.find(s => s > current) ?? null;
-  const below = steps.filter(s => s < current);
-  return below.length ? below[below.length - 1] : null;
+/** Snap a slider value onto the 10-percent steps inside 30 to 300. */
+export function clampPatternScale(percent: number): number {
+  if (!Number.isFinite(percent)) return 100;
+  const snapped = Math.round(percent / PATTERN_SCALE_STEP) * PATTERN_SCALE_STEP;
+  return Math.min(PATTERN_SCALE_MAX, Math.max(PATTERN_SCALE_MIN, snapped));
 }
 
-/**
- * The placement and tile width that print the design's motifs at `percent`
- * of their generated size. A generated tile scales its width. A generated
- * mural (one composition across the wall) at 100% stays one piece; below
- * 100% it becomes a repeat of that composition at `percent` of the wall
- * width, so the motifs shrink and the design repeats; above 100% a mural
- * cannot grow (it already fills the wall) and stays one piece.
- */
-export function patternSizeAtScale(base: PatternSize, wallWidthIn: number, percent: number): PatternSize {
-  const pct = Math.min(200, Math.max(25, percent)) / 100;
-  if (base.placement === 'repeat') return { placement: 'repeat', repeatWidthIn: Math.max(1, Math.round(base.repeatWidthIn * pct * 10) / 10) };
-  if (pct >= 1) return { placement: base.placement, repeatWidthIn: base.repeatWidthIn };
-  return { placement: 'repeat', repeatWidthIn: Math.max(1, Math.round(wallWidthIn * pct * 10) / 10) };
+/** The swatch width at 100 percent: a tile's generated width, or for a mural
+ * the width it covers the wall at (wider than the wall when the wall is taller
+ * than the master's proportions). */
+export function patternBaseWidthIn(base: PatternSize, wall: WallBox): number {
+  if (base.placement === 'repeat') return base.repeatWidthIn;
+  const coverWidth = Math.max(wall.width, wall.height * wall.aspect);
+  return base.placement === 'cover' ? coverWidth : Math.min(wall.width, wall.height * wall.aspect);
 }
 
-/** "100% · motifs as generated · 36″ repeat, 4 across" */
-export function patternScaleLabel(base: PatternSize, wallWidthIn: number, percent: number): string {
-  const size = patternSizeAtScale(base, wallWidthIn, percent);
-  const motifs = percent === 100 ? 'motifs as generated' : percent < 100 ? `motifs ${percent}% size` : `motifs ${percent}% size`;
-  if (size.placement !== 'repeat') return `${percent}% · ${motifs} · one piece across the wall`;
-  const across = Math.max(1, Math.round(wallWidthIn / size.repeatWidthIn));
-  return `${percent}% · ${motifs} · ${size.repeatWidthIn}″ repeat, ${across} across`;
+/** The placement and swatch width that draw the design at `percent`. */
+export function patternSizeAtScale(base: PatternSize, wall: WallBox, percent: number): PatternSize {
+  const pct = clampPatternScale(percent);
+  if (pct === 100) return { placement: base.placement, repeatWidthIn: base.repeatWidthIn };
+  const width = patternBaseWidthIn(base, wall) * (pct / 100);
+  return { placement: 'repeat', repeatWidthIn: Math.max(1, Math.round(width * 10) / 10) };
+}
+
+/** PatternPro's words for the slider position. */
+export function patternScaleWord(percent: number): string {
+  const s = percent / 100;
+  return s < 0.6 ? 'Micro' : s < 0.8 ? 'Small' : s < 1.2 ? 'Standard' : s < 2 ? 'Large' : s < 2.5 ? 'Bold' : 'Extreme';
+}
+
+/** "150% · Large · the design repeats every 54″" */
+export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: number): string {
+  const pct = clampPatternScale(percent);
+  const size = patternSizeAtScale(base, wall, pct);
+  const head = `${pct}% · ${patternScaleWord(pct)}`;
+  if (pct === 100) return `${head} · as generated`;
+  if (size.repeatWidthIn >= wall.width - 1e-9) return `${head} · one piece, ${size.repeatWidthIn}″ wide, cropped to the wall`;
+  return `${head} · the design repeats every ${size.repeatWidthIn}″`;
 }
 
 /**
