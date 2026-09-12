@@ -12,7 +12,7 @@ import { rasterizeDetectionMasks } from '@/lib/wallpro-masks';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
-import { validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
+import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
@@ -169,6 +169,7 @@ export default function WallPro() {
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
   const previewVersion = useRef(0);
   const previewIdentity = useRef(''), previewUrl = useRef<string | null>(null);
+  const uploadInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const retain = (url: string) => { if (url.startsWith('blob:')) urls.current.add(url); return url; };
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
   const dimensionsValid = validWallSize(width, height);
@@ -291,8 +292,12 @@ export default function WallPro() {
   async function fileSelected(file: File | undefined, role: 'photo' | 'artwork' | 'reference') {
     if (!file) return;
     await run('Opening image', async () => {
-      const validated = await validateWallUpload(file);
-      const asset = { ...validated, file, url: retain(validated.url) };
+      // An iPhone hands us HEIC; this converts it once, here, and passes a
+      // JPG, PNG or WebP through untouched so a print-ready upload is never
+      // re-compressed.
+      const ready = await prepareWallUpload(file);
+      const validated = await validateWallUpload(ready);
+      const asset = { ...validated, file: ready, url: retain(validated.url) };
       if (role === 'photo') {
         setPhoto(asset); setCorners(fullFrame()); cornersOrigin.current = 'default'; setExclusions([]); setDetectedMask(null); setExcludeDraft([]); setMarking(null); setView('before');
         // Uploading a wall photo means "find my wall": detection starts at once,
@@ -304,11 +309,20 @@ export default function WallPro() {
       if (role === 'reference') { setReference(asset); setArtwork(null); }
     });
   }
+  // A real button that opens the picker, not a transparent file input laid over
+  // a label: on a phone the overlay is one hit-test away from doing nothing,
+  // and a tap that does nothing is indistinguishable from a broken app. The
+  // accept list stays wide so the iOS photo picker offers every photo —
+  // `prepareWallUpload` converts whatever comes back.
   const uploadControl = (role: 'photo' | 'artwork' | 'reference', label: string) => (
-    <label className="relative flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-medium hover:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500">
-      <Upload size={18} />{label}
-      <input aria-label={label} type="file" accept="image/jpeg,image/png,image/webp" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" onChange={e => { void fileSelected(e.target.files?.[0], role); e.target.value = ''; }} />
-    </label>
+    <div>
+      <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
+        onChange={e => { void fileSelected(e.target.files?.[0], role); e.target.value = ''; }} />
+      <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
+        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-medium hover:border-violet-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+        <Upload size={18} />{label}
+      </button>
+    </div>
   );
   async function storedAsset(path: string): Promise<WallAsset> {
     const url = await openWallAsset(path), image = await loadWallImage(url);
@@ -668,7 +682,7 @@ export default function WallPro() {
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">JPG, PNG or WebP · up to 20 MB. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
+          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>

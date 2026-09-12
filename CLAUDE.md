@@ -126,6 +126,20 @@ contracts; each names its lock.
   (`tests/wallpro.test.ts`). **The client sees both at once**: the flat
   master stays on screen beside the photo pane, which shows the same file
   imposed the moment the corners exist (`WallPro.tsx` preview section).
+- **Upload takes the photo the phone actually gives us (owner, 2026-09-12,
+  from an iPhone: "button won't press for upload").** The picker is opened by a
+  real `<button>` calling a `sr-only` input's `click()`, never a transparent
+  file input laid over a label — on a phone that overlay is one hit-test away
+  from doing nothing, and a tap that does nothing reads as a broken app. The
+  accept list is wide (`image/*` plus the HEIC/HEIF extensions) so the iOS
+  photo picker offers every photo, and `prepareWallUpload`
+  (`app/src/lib/wallpro-render.ts`) converts what comes back: a JPG, PNG or
+  WebP passes through byte for byte so a print-ready upload is never
+  re-compressed, and anything else — above all iPhone HEIC — is decoded and
+  re-encoded to JPEG once in the browser, under the 58 MP ceiling the
+  validator enforces. The old "export HEIC first" refusal is gone: nobody
+  exports a file while standing in front of a wall. Locked by
+  `needsWallTranscode` tests in `wallpro.test.ts`.
 - **Corner detection runs on upload; masks are marked by hand.** A wall photo
   is sent to `detect-wall-openings` the moment it is chosen and only the four
   corners land, as editable preview state; the photo starts as the full frame
