@@ -302,3 +302,80 @@ export function wallForensicRecord(project: WallStudioProjectRecord, record: Wal
     })),
   };
 }
+
+/* ── Panelization, as the job actually cut it ───────────────────────────── */
+
+/**
+ * THE PANEL MAP, READ OFF THE JOB — NEVER RECOMPUTED IN THE BROWSER.
+ *
+ * Owner, 2026-09-12: "make sure specs show 1/2\" overlap lets show panelization
+ * there."
+ *
+ * The same rule the vehicle board follows for its dimension sheet: every number
+ * here was stamped on the panel by the runtime when it cut it. Re-deriving the
+ * plan in the browser from the wall inches would produce a SECOND set of
+ * numbers that agrees with the first only by luck — and a QC reviewer checking
+ * a panel against the wrong one has no way to tell which they are holding.
+ *
+ * Positions are returned as percentages of the full printed width (bleed
+ * included), so the map draws at any size without the caller doing arithmetic
+ * the runtime has already done.
+ */
+export type PanelMapEntry = {
+  number: number;
+  /** Left edge, as a percentage of the whole printed wall. */
+  leftPct: number;
+  widthPct: number;
+  /** Width of the duplicated overlap band on this panel's LEFT edge. */
+  overlapPct: number;
+  widthIn: number;
+  heightIn: number;
+  overlapLeftIn: number;
+  ppi: number;
+};
+
+export type PanelMap = {
+  entries: PanelMapEntry[];
+  /** Total printed width in inches, bleed included. */
+  totalWidthIn: number;
+  /** The overlap every seam shares, in inches. Half an inch per the WPW spec. */
+  overlapIn: number;
+  bleedIn: number;
+  panelWidthIn: number;
+  targetPpi: number;
+  /** Seams = panels - 1. Zero on a wall that fits one panel. */
+  seams: number;
+};
+
+export function panelMap(job: WallProductionJob | null): PanelMap | null {
+  const panels = job?.panels || [];
+  if (!job || !panels.length) return null;
+  const request = (job.request || {}) as Record<string, unknown>;
+  const starts = panels.map(p => Number(p.xIn));
+  const ends = panels.map(p => Number(p.xIn) + Number(p.widthIn));
+  if (starts.some(n => !Number.isFinite(n)) || ends.some(n => !Number.isFinite(n))) return null;
+  const left = Math.min(...starts), right = Math.max(...ends);
+  const totalWidthIn = right - left;
+  if (!(totalWidthIn > 0)) return null;
+  const pct = (inches: number) => (inches / totalWidthIn) * 100;
+  return {
+    entries: panels.map(p => ({
+      number: p.number,
+      leftPct: pct(Number(p.xIn) - left),
+      widthPct: pct(Number(p.widthIn)),
+      overlapPct: pct(Number(p.overlapLeftIn) || 0),
+      widthIn: Number(p.widthIn),
+      heightIn: Number(p.heightIn),
+      overlapLeftIn: Number(p.overlapLeftIn) || 0,
+      ppi: Number(p.ppi),
+    })),
+    totalWidthIn: Math.round(totalWidthIn * 100) / 100,
+    // Read off a real panel first: the request states what was ASKED for, the
+    // panel states what was CUT, and QC cares about what was cut.
+    overlapIn: panels.slice(1).map(p => Number(p.overlapLeftIn) || 0).find(n => n > 0) ?? Number(request.overlapIn) ?? 0,
+    bleedIn: Number(request.bleedIn) || 0,
+    panelWidthIn: Number(request.panelWidthIn) || 0,
+    targetPpi: Number(request.targetPpi) || 0,
+    seams: Math.max(0, panels.length - 1),
+  };
+}

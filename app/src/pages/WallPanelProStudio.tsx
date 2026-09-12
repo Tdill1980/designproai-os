@@ -41,7 +41,7 @@ import {
   wallPanelFiles, wholeWallFile,
 } from '@/lib/wallpro-api';
 import {
-  STAGE_LABEL, jobIsStale, panelHealth, versionStage, wallForensicRecord, WALL_TARGET_PPI,
+  STAGE_LABEL, jobIsStale, panelHealth, panelMap, versionStage, wallForensicRecord, WALL_TARGET_PPI,
   type WallPanelProStudio as StudioModel, type WallStudioProjectRecord, type WallStudioVersionRecord,
 } from '@/lib/wallpro-panelpro';
 import {
@@ -205,11 +205,56 @@ function PrintFiles({ record }: { record: WallStudioVersionRecord }) {
   const health = panelHealth(job);
   const request = job.request as Record<string, any>;
   const stale = jobIsStale(record);
+  const map = panelMap(job);
 
   return <div className="space-y-3">
     {stale && <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
       These files were built before this version's current approval. Re-request production before releasing them.
     </p>}
+
+    {/* PANELIZATION, as the job actually cut it (owner, 2026-09-12: "make sure
+        specs show 1/2\u201d overlap lets show panelization there"). Drawn from
+        each panel's own stamped xIn / widthIn / overlapLeftIn, never re-derived
+        from the wall inches in the browser -- a second set of numbers would
+        agree with the first only by luck, and a reviewer holding the wrong one
+        cannot tell. The overlap figure is read off a real panel rather than off
+        the request: the request says what was asked for, the panel says what
+        was cut, and QC cares about what was cut. */}
+    {map && <div className="rounded-xl border border-slate-300 bg-white p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Panelization</span>
+        <span className="text-xs font-semibold">
+          {map.entries.length} {map.entries.length === 1 ? 'panel' : 'panels'} · {map.seams} {map.seams === 1 ? 'seam' : 'seams'} · {num(map.totalWidthIn)}″ total with bleed
+        </span>
+      </div>
+      {/* Every panel to scale across the printed width, with its duplicated
+          overlap band hatched on the left edge where it meets its neighbour. */}
+      <div className="relative h-20 w-full overflow-hidden rounded-lg border border-slate-300 bg-slate-100">
+        {map.entries.map(entry => <div key={entry.number}
+          className="absolute inset-y-0 border-r-2 border-dashed border-violet-500/70 bg-violet-500/10"
+          style={{ left: `${entry.leftPct}%`, width: `${entry.widthPct}%` }}>
+          {entry.overlapPct > 0 && <div className="absolute inset-y-0 left-0 bg-amber-400/45"
+            style={{ width: `${entry.overlapPct}%` }} title={`${num(entry.overlapLeftIn)}″ duplicated overlap`} />}
+          <span className="absolute inset-x-0 top-1 text-center text-[10px] font-bold text-slate-700">P{entry.number}</span>
+          <span className="absolute inset-x-0 bottom-1 text-center text-[9px] text-slate-600">{num(entry.widthIn)}″</span>
+        </div>)}
+      </div>
+      <p className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm bg-amber-400/70" />{num(map.overlapIn)}″ duplicated overlap at every seam</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-3 w-3 rounded-sm border-r-2 border-dashed border-violet-500 bg-violet-500/10" />panel edge</span>
+        <span>{num(map.bleedIn)}″ perimeter bleed</span>
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Adjacent panels carry the SAME artwork through the overlap. Align the duplicate image at install; never stretch it.
+      </p>
+      {/* The spec the shop prints to, stated where QC signs it off. */}
+      <ul className="mt-2 grid gap-x-4 gap-y-1 text-[11px] text-slate-600 sm:grid-cols-2">
+        <li><strong>Roll width</strong> {num(map.panelWidthIn)}″ · Avery HP MPI 2610 wall vinyl, matte/luster</li>
+        <li><strong>Overlap</strong> {num(map.overlapIn)}″ duplicated, identical on both panels</li>
+        <li><strong>Bleed</strong> {num(map.bleedIn)}″ on the wall perimeter only, never at a seam</li>
+        <li><strong>Resolution</strong> {map.targetPpi} PPI at the stated inches, per panel</li>
+      </ul>
+    </div>}
 
     {/* Measured, not assumed: every figure is one the runtime stamped. */}
     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs sm:grid-cols-4">
