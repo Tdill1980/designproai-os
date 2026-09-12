@@ -2,6 +2,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { dpApi } from './designpro-api';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 import type { WallStudioDesign } from './wallpro-studio';
+import type { WallGenerationRow, WallQcReview } from './wallpro-qc';
+import { buildWallPanelProStudio, type WallPanelProStudio } from './wallpro-panelpro';
 export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
@@ -379,4 +381,96 @@ export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDe
       } : null,
     };
   });
+}
+
+/* ── WallPanelProStudio: the project lineage, DesignID and version history ─ */
+
+/** Everything the studio renders, read in one pass. Admins and testers only
+ * (RLS on every table below).
+ *
+ * TWO SPINES, deliberately. Projects and their versions are the lineage the
+ * board is organised by -- the same DesignID and V1..Vn RevisionStudioIQ
+ * already shows. The generation table is read BESIDE it, because a version row
+ * is written by the customer's browser: a generation that completed and never
+ * became a version exists only there, and that is the row the team opens this
+ * board to find. */
+export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProStudio> {
+  const [gens, vers] = await Promise.all([
+    db.from('wallpro_generations').select('*').order('created_at', { ascending: false }).limit(limit * 3),
+    db.from('wallpro_design_versions').select('*').order('created_at', { ascending: false }).limit(limit * 6),
+  ]);
+  if (gens.error) throw new Error('Generations could not be listed: ' + gens.error.message);
+  if (vers.error) throw new Error('Design versions could not be listed: ' + vers.error.message);
+  const generations = (gens.data || []) as WallGenerationRow[];
+  const versions = (vers.data || []) as WallVersion[];
+
+  const projectIds = [...new Set(versions.map(v => v.project_id))];
+  const versionIds = versions.map(v => v.id);
+  const [projects, reviews, jobs, urls] = await Promise.all([
+    projectIds.length ? db.from('wallpro_projects').select('id,name,owner_id,created_at,updated_at').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_qc_reviews').select('*').in('version_id', versionIds) : Promise.resolve({ data: [], error: null }),
+    versionIds.length ? db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    // Signing is best effort so one unreadable object never empties the board.
+    openWallAssets([...new Set([
+      ...versions.map(v => v.artwork_path),
+      ...generations.map(g => g.artwork_path).filter(Boolean) as string[],
+    ])]).catch(() => ({} as Record<string, string>)),
+  ]);
+
+  return buildWallPanelProStudio({
+    projects: ((projects as any).data || []) as Array<{ id: string; name: string; owner_id: string; created_at: string; updated_at: string }>,
+    versions,
+    generations,
+    reviews: (((reviews as any).data || []) as WallQcReview[]),
+    jobs: (((jobs as any).data || []) as WallProductionJob[]),
+    urls,
+  });
+}
+
+/** Signed download links for a job's print files, requested only when a version
+ * is opened. Signing every panel of every job on the index would be dozens of
+ * links nobody clicked. */
+export async function openWallPrintFiles(job: WallProductionJob): Promise<Record<string, string>> {
+  const paths = new Set<string>();
+  for (const panel of job.panels || []) {
+    for (const file of wallPanelFiles(panel)) if (file.path) paths.add(file.path);
+  }
+  if (job.manifest_path) paths.add(job.manifest_path);
+  const whole = wholeWallFile(job);
+  if (whole) paths.add(whole.path);
+  return paths.size ? openWallAssets([...paths], { download: true }) : {};
+}
+
+/** Writes the project and version row a timed-out browser never wrote, from the
+ * generation's own stored input. Creates no artwork: the bytes already exist
+ * and are not touched. Idempotent — a generation that already has a version
+ * returns it with `recovered: false`.
+ *
+ * generateWall already re-reads the ledger when the invoke itself errors, so
+ * this is the backstop for the cases that path cannot reach: the customer
+ * closed or reloaded the tab, or the request hung without ever settling, so no
+ * client code ran to catch it. */
+export async function recoverOrphanedWallGeneration(generationId: string): Promise<{ recovered: boolean; version: WallVersion; project: { id: string; name: string } }> {
+  const { data, error } = await db.rpc('recover_wallpro_generation', { p_generation_id: generationId });
+  if (error) {
+    const code = String(error.message || '');
+    throw new Error(
+      code.includes('not_authorised') ? 'Recovery is for admins and testers only.'
+      : code.includes('generation_not_found') ? 'That generation no longer exists.'
+      : code.includes('generation_not_completed') ? 'That generation never produced artwork, so there is nothing to recover.'
+      : 'The design could not be recovered: ' + code);
+  }
+  return data as { recovered: boolean; version: WallVersion; project: { id: string; name: string } };
+}
+
+/** Records a designer QC sign-off against one immutable version. Append-only:
+ * a later review supersedes an earlier one without erasing it. */
+export async function recordWallQcReview(input: { versionId: string; projectId: string; verdict: 'released' | 'hold'; checks: Record<string, boolean>; notes: string }): Promise<WallQcReview> {
+  const user = await wallUser();
+  const { data, error } = await db.from('wallpro_qc_reviews').insert({
+    version_id: input.versionId, project_id: input.projectId, reviewer_id: user.id,
+    verdict: input.verdict, checks: input.checks, notes: input.notes.trim() || null,
+  }).select('*').single();
+  if (error) throw new Error('The QC review could not be recorded: ' + error.message);
+  return data as WallQcReview;
 }

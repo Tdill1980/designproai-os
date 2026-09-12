@@ -41,6 +41,8 @@ export default function WallPro() {
   const [zones, setZones] = useState<WallZone[]>([]);
   const [addingZone, setAddingZone] = useState(false);
   const [newZoneLabel, setNewZoneLabel] = useState('');
+  /** The manual mask tools are a correction, not a step: hidden until asked for. */
+  const [showMaskTools, setShowMaskTools] = useState(false);
   /** Signed URLs for the OTHER zones' masters, so they can be drawn onto this
    * zone's photo preview. Keyed by storage path. */
   const [zoneArt, setZoneArt] = useState<Record<string, string>>({});
@@ -225,6 +227,10 @@ export default function WallPro() {
   // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
   // so no token is spent until the placement exists. Null means generation may run.
   const generationBlocker = wallGenerationBlocker(!!photo, corners, width, height);
+  /** One definition for the Generate gate, shared by the in-form button and
+   * the sticky phone bar so the two can never disagree about readiness. */
+  const generateDisabled = !!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo);
+  const generateLabel = intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design';
   const previewBlocker = wallPreviewBlocker(!!photo, corners);
   let printPanels: ReturnType<typeof planWallPrint>['panels'] = [];
   try { printPanels = planWallPrint(width, height, printSettings).panels; } catch { /* Output settings show validation. */ }
@@ -940,7 +946,7 @@ export default function WallPro() {
               {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
               {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
-              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!generationBlocker || (intent === 'prompt' && !prompt.trim()) || (intent === 'match' && !reference) || (intent === 'wall' && !photo)} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{intent === 'match' ? 'Recreate my design print-ready' : intent === 'wall' ? 'Design for my wall' : 'Generate wall design'}</Button>
+              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
@@ -1030,6 +1036,23 @@ export default function WallPro() {
                   : 'Your wall has not been found in this photo yet, so the design cannot be placed on it. Tap "Re-mark wall corners" and tap the four corners of the wall, clockwise from the top left.'}
                 {' '}Your print files do not wait for this — they are already correct.
               </p>}
+              {/* Masking runs automatically now, so the page states what it
+                  DID instead of asking the customer to do it. The manual tools
+                  stay one tap away for a correction, but they no longer read
+                  as a required step (owner, 2026-09-12: "system should be auto
+                  masking behind the scenes... still shows buttons asking to
+                  mask, very confusing"). */}
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                <p className="text-xs text-slate-700">
+                  {detecting
+                    ? 'Finding what to protect on this wall…'
+                    : detectedMask || removeMask || exclusions.length
+                      ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
+                      : 'Nothing needed protecting on this wall.'}
+                  {' '}<button type="button" className="font-semibold text-violet-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done adjusting' : 'Adjust'}</button>
+                </p>
+              </div>
+              {showMaskTools && <>
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />Re-mark wall corners</Button>
@@ -1045,6 +1068,7 @@ export default function WallPro() {
                 {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); }}>Clear detected areas</Button>}
               </div>
               <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
+              </>}
               {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs text-slate-500">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
@@ -1090,5 +1114,14 @@ export default function WallPro() {
         </div>
       </div>
     </div>
+    {/* On a phone the form and the wall photo stack, so marking corners puts
+        Generate a full screen away and the customer scrolls up and down to
+        reach it (owner, 2026-09-12: "I'm scrolling down and up just to hit
+        generate"). The action follows them instead. `bottom-16` clears the
+        app's own bottom nav. */}
+    {!artwork && !busy && <div className="fixed inset-x-0 bottom-16 z-40 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
+      <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
+      {generationBlocker && <p className="mt-1 text-center text-[11px] text-slate-600">{generationBlocker}</p>}
+    </div>}
   </main>;
 }

@@ -77,6 +77,9 @@ const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
 const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
+// The WallPro answer to the vehicle PanelPro board: every generation, whether it
+// took, designer QC and the release gate (owner, 2026-09-12).
+const WallPanelProStudio = lazyWithRetry(() => import("./pages/WallPanelProStudio"));
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
 import { RequirePanelOutputReviewer } from "@/components/RequirePanelOutputReviewer";
@@ -374,6 +377,11 @@ const App = () => {
           <Route path="/printpro/wallpro" element={<WallPro />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          {/* WallPanelProStudio, named as the owner names it. Index by DesignID,
+              then one design with its version rail. */}
+          <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
+          <Route path="/wallpanelprostudio/:projectId" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
+          <Route path="/admin/wallpro-studio" element={<Navigate to="/wallpanelprostudio" replace />} />
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />

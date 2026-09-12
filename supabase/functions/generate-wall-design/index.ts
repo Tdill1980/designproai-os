@@ -7,4 +7,7 @@ Deno.serve(createWallHandler({
   serviceKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
   apiKey: () => Deno.env.get('GOOGLE_AI_API_KEY') || Deno.env.get('GEMINI_API_KEY') || '',
   fetch,
+  // Off unless deliberately switched on: it is an extra vision call sitting
+  // between the finished design and the customer's response. See handler.ts.
+  complianceCheckEnabled: () => Deno.env.get('WALLPRO_COMPLIANCE_CHECK') === 'on',
 }));

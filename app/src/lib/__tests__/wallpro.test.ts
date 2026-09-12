@@ -100,7 +100,7 @@ describe('WallPro physical geometry', () => {
   });
 });
 
-function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; recitationFirst?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array } = {}) {
+function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolean; providerFailure?: boolean; recitationFirst?: boolean; noTokens?: boolean; image?: Uint8Array; download?: Uint8Array; complianceCheck?: boolean } = {}) {
   const finalData = options.image ? Buffer.from(options.image).toString('base64') : btoa('final');
   const calls:any[]=[];
   const stored={state:'completed',artwork_path:owner+'/generated/'+requestId+'.png',design_name:'Blue Botanicals'};
@@ -135,7 +135,7 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
       calls.push(['describe',body]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]});
     }
     calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
-  const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any});
+  const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any,complianceCheckEnabled:()=>options.complianceCheck===true});
   const invoke=(body:any=input)=>handler(new Request('https://own.supabase.co/functions/v1/generate-wall-design',{method:'POST',headers:{authorization:'Bearer user-test-token'},body:JSON.stringify(body)}));
   return {handler,invoke,calls,provider,sb,storage};
 }
@@ -275,13 +275,22 @@ describe('WallPro generation boundary', () => {
     expect(drawn).toMatch(/monstera leaves/); expect(drawn).toMatch(/deep forest green/);
     expect(drawn).toMatch(/FORBIDDEN/); expect(drawn).toMatch(/unrequested text/);
     expect(drawn.length).toBeLessThan(4000);
-    // The advisory compliance check ran once, after the image, and never
-    // altered the response beyond adding its own verdict for visibility.
-    expect(f.calls.filter(c=>c[0]==='comply')).toHaveLength(1);
+    // The advisory compliance check is OFF by default and must NOT sit in the
+    // customer's critical path: awaiting a second vision call between the
+    // finished design and the response is what made a completed generation
+    // time out in the browser on 2026-09-12.
+    expect(f.calls.filter(c=>c[0]==='comply')).toHaveLength(0);
     expect(f.sb.storage.from).toHaveBeenCalledWith('wallpro-files');
     expect(new TextDecoder().decode(f.storage.upload.mock.calls[0][1])).toBe('final');
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_error:null,p_path:owner+'/generated/'+requestId+'.png'});
-    expect(await result.json()).toMatchObject({scene_render:false,image_url:'https://example.test/signed-result',compliance_check:{compliant:true}});
+    expect(await result.json()).toMatchObject({scene_render:false,image_url:'https://example.test/signed-result',compliance_check:null});
+  });
+  it('runs the compliance check only when it is explicitly switched on',async () => {
+    const f=fixture({complianceCheck:true});
+    const result=await f.invoke();
+    expect(result.status).toBe(200);
+    expect(f.calls.filter(c=>c[0]==='comply')).toHaveLength(1);
+    expect(await result.json()).toMatchObject({compliance_check:{compliant:true}});
   });
   it('settles failure through the atomic refund and never retries the provider',async () => {
     const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
