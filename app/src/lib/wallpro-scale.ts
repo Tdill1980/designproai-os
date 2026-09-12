@@ -26,6 +26,39 @@ export function autoRepeatWidthIn(wallWidthIn: number): number {
   return Math.min(48, Math.max(18, Math.round(raw / 6) * 6));
 }
 
+/** The tile widths a customer steps through with Bigger / Smaller: the sizes
+ * wallpaper is sold in, then wide repeats, then the whole wall as one piece. */
+export const PATTERN_SIZE_LADDER = [12, 18, 24, 30, 36, 42, 48, 60, 72, 96, 120] as const;
+
+export type PatternSize = { placement: WallPlacement; repeatWidthIn: number };
+
+/** The customer-facing name of a size: "36″ tile · 4 across" or "Whole wall, one piece". */
+export function patternSizeLabel(size: PatternSize, wallWidthIn: number): string {
+  if (size.placement !== 'repeat') return 'Whole wall, one piece';
+  const across = Math.max(1, Math.round(wallWidthIn / size.repeatWidthIn));
+  return `${size.repeatWidthIn}″ tile · ${across} across`;
+}
+
+/**
+ * One step bigger or smaller, with no regeneration: the same master is
+ * tiled at the next width on the ladder. Bigger past the widest tile that
+ * still repeats on this wall becomes the whole wall as one piece; Smaller
+ * from the whole wall lands on the widest tile that repeats at least twice.
+ * Null means the edge was already reached.
+ */
+export function stepPatternSize(size: PatternSize, wallWidthIn: number, direction: 'bigger' | 'smaller'): PatternSize | null {
+  const ladder = PATTERN_SIZE_LADDER.filter(w => w * 2 <= wallWidthIn);
+  if (!ladder.length) return size.placement === 'repeat' && direction === 'bigger' ? { placement: 'cover', repeatWidthIn: size.repeatWidthIn } : null;
+  if (size.placement !== 'repeat') return direction === 'smaller' ? { placement: 'repeat', repeatWidthIn: ladder[ladder.length - 1] } : null;
+  const index = ladder.findIndex(w => w >= size.repeatWidthIn);
+  if (direction === 'bigger') {
+    const next = index === -1 ? null : ladder[index + (ladder[index] === size.repeatWidthIn ? 1 : 0)];
+    return next ? { placement: 'repeat', repeatWidthIn: next } : { placement: 'cover', repeatWidthIn: size.repeatWidthIn };
+  }
+  const below = ladder.filter(w => w < size.repeatWidthIn);
+  return below.length ? { placement: 'repeat', repeatWidthIn: below[below.length - 1] } : null;
+}
+
 /**
  * Tile or mural, and how wide the tile prints, from the brief and the wall.
  *  match   the reference is a covering (wallpaper, a slat wall, a stone wall):
