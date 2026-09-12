@@ -43,11 +43,21 @@ export function wallRefinePrompt(input: { prompt: string; placement: string; mas
  * photo of a slat wall, measured 3/3 on 2026-09-11), so the retry asks for an
  * ORIGINAL covering in the reference's material through the style-inspiration
  * path instead of a copy. Same request, same credit, one retry only. */
-export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; referencePath?: string | null; wallPath?: string | null }) {
-  const brief = 'An original wall covering with exactly the material, pattern, motif scale, colour, grain and texture of the reference image, drawn fresh as flat straight-on artwork at real-world scale: not a copy of the photograph, and nothing of the room around it (no furniture, window, drapes, floor, lighting or perspective).'
+export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; referencePath?: string | null; wallPath?: string | null; description?: string | null }) {
+  // With a description the retry carries NO photograph: measured 2026-09-11
+  // 19:36, a retry that still attached the customer's own photo was refused
+  // again, so the filter matches the image, not the words.
+  const described = (input.description || '').trim();
+  const brief = (described
+    ? `An original wall covering matching this description of the customer's reference: "${described}". Drawn fresh as flat straight-on artwork at real-world scale; not a copy of any photograph, and nothing of a room around it (no furniture, window, drapes, floor, lighting or perspective).`
+    : 'An original wall covering with exactly the material, pattern, motif scale, colour, grain and texture of the reference image, drawn fresh as flat straight-on artwork at real-world scale: not a copy of the photograph, and nothing of the room around it (no furniture, window, drapes, floor, lighting or perspective).')
     + (input.prompt.trim() ? ' ' + input.prompt.trim() : '');
-  return wallDesignPrompt({ ...input, intent: 'prompt', prompt: brief });
+  return wallDesignPrompt({ ...input, intent: 'prompt', prompt: brief, referencePath: described ? null : input.referencePath, wallPath: described ? null : input.wallPath });
 }
+
+/** What the fast text model is asked about the reference before a
+ * words-only retry: the covering, never the room. */
+export const COVERING_DESCRIPTION_PROMPT = 'Describe the wall covering or wall surface material in this photograph for a designer who cannot see it: the material, the pattern or motif, the colours, the real-world size of the repeating element in inches (for example slat width and gap, tile size, motif size), the finish and the texture. Two to four plain sentences. Say nothing about the room, furniture, windows or lighting.';
 
 export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';

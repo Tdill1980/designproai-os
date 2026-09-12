@@ -322,15 +322,19 @@ export default function WallPro() {
       // Persisted for restores; a failed upload keeps the in-memory mask working.
       uploadWallAsset({ url, aspect: asset.aspect, file: new File([blob], 'protected-areas.png', { type: 'image/png' }) }, user.id)
         .then(path => setDetectedMask(old => old && old.url === url ? { ...old, path } : old)).catch(() => { /* preview keeps the in-memory mask */ });
-    } else { setDetectedMask(null); setExclusions(found.openings.map(o => o.points)); maskCount = found.openings.length; labels = found.openings.map(o => o.label); }
+    } else {
+      // No true masks came back. The detector's coarse polygons are NOT a
+      // substitute: a box around a window swallows the wall beside it (owner,
+      // 2026-09-11: "it's way over and masking wall and items"). Apply nothing
+      // and say so; the AI picture never needed masks in the first place.
+      setDetectedMask(null);
+    }
     setExcludeDraft([]); setShowMasks(true);
     setView(artworkRef.current ? 'after' : 'before'); setError('');
     const cornersNote = handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
     if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes or Outline an object for anything the design must not cover. Masks affect the preview only; print panels stay full.');
-    else {
-      const areas = maskCount ? `${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')})` : 'no areas to protect';
-      setNotice(cornersNote + ' Found ' + areas + '. Drag any point to adjust; Clear detected areas removes them. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
-    }
+    else if (maskCount) setNotice(cornersNote + ` Found ${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')}). Clear detected areas removes them. Masks affect the preview only; print panels stay full.` + (found.notes ? ' ' + found.notes : ''));
+    else setNotice(cornersNote + ' The objects could not be outlined precisely, so nothing was masked. Use Mask window / drapes for the window, or the AI picture, which keeps the room as photographed without masks.');
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
    * customer's typing and a signed-out session or a model failure leaves the
@@ -666,6 +670,7 @@ export default function WallPro() {
                   <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setExcludeDraft([]); setMarking(cornersValid ? null : 'wall'); }}>Cancel mask</Button>
                 </>}
                 {!!exclusions.length && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions(old => old.slice(0,-1))}>Remove last mask</Button>}
+                {exclusions.length > 1 && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions([])}>Clear all masks</Button>}
                 {detectedMask && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setDetectedMask(null)}>Clear detected areas</Button>}
               </div>
               <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. Use Outline an object for irregular edges. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
