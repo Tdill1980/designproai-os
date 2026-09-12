@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-89), [
+  assert.deepEqual(names.slice(-90), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -277,6 +277,10 @@ test("ordered migration chain retains existing production boundaries and appends
     // WallPro purchase entitlements: SKU-based Stripe purchase gate on
     // request_wallpro_production (owner ruling, 2026-09-12 pricing correction).
     "20260912130000_wallpro_purchase_entitlements.sql",
+    // WPW order sync: the repeat cohort becomes measurable from this side
+    // (owner, 2026-09-12: "those repeats are who we will track and optimize
+    // on for a saas").
+    "20260912220000_wpw_orders_sync.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

@@ -220,3 +220,8 @@ verify_jwt = false
 [functions.wpw-oauth-link]
 # The handler validates the caller from the Authorization header itself.
 verify_jwt = false
+
+[functions.wpw-sync-orders]
+# Cron/staff caller, not a user: the handler requires the WPW_SYNC_SECRET
+# header and rejects anything else, so there is no JWT to verify.
+verify_jwt = false
