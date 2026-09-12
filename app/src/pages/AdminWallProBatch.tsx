@@ -55,7 +55,12 @@ export default function AdminWallProBatch() {
   const [filter, setFilter] = useState<WallBatchFilter>({ segment: 'all', industry: 'all', designType: 'all', intensity: 'all' });
   const [batchSize, setBatchSize] = useState(10);
   const [includePublished, setIncludePublished] = useState(false);
-  const [tileWidthIn, setTileWidthIn] = useState(DEFAULT_TILE_WIDTH_IN);
+  // Default the new-batch UI to the measured architectural baseline — a
+  // decorative repeat about TWICE across the tile's own square canvas
+  // (`autoMatchRepeatWidthIn(96) === 48`), not the four-across craft scale
+  // `DEFAULT_TILE_WIDTH_IN` still names for legacy rows with no stored width.
+  // The curator can still type any width per batch or per job.
+  const [tileWidthIn, setTileWidthIn] = useState(48);
   const [examples, setExamples] = useState<WallAsset[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [running, setRunning] = useState(false);
@@ -111,7 +116,15 @@ export default function AdminWallProBatch() {
     try {
       const dims = batchDimensions(job.mode);
       const referencePath = job.referenceIndex == null ? null : referencePaths[job.referenceIndex] || null;
-      const result = await generateWall({ requestId, prompt: job.entry.prompt, width: dims.width, height: dims.height, placement: dims.placement, wallPath: null, referencePath });
+      // The curator's own tile-width field was collected and stored on every
+      // job but never sent: a repeat batch job asked the model for artwork
+      // with no repeat width at all, so the model had nothing to draw motifs
+      // at real size against — the same root cause as the customer-facing
+      // "pattern too small" report, on this surface too. It rides the same
+      // generate-wall-design request the customer designer uses, through the
+      // same two-persona pipeline (consultant enriches, designer composes at
+      // architectural scale, told this exact motif size).
+      const result = await generateWall({ requestId, prompt: job.entry.prompt, width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath });
       const measured = await measureAsset(result.image_url);
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the

@@ -377,7 +377,19 @@ contracts; each names its lock.
 - **Ready-to-sell catalog (WrapReady Designs, wall medium).** DesignID =
   the library `WPB-0001..0500`; GenerationID + master SHA-256 are the
   canonical truth; SynthID is provenance only. `docs/wallpro/`,
-  `/admin/wallpro-batch`, `wallpro-catalog.test.ts`.
+  `/admin/wallpro-batch`, `wallpro-catalog.test.ts`. **The batch generator
+  calls the same `generate-wall-design` edge function the customer designer
+  does** (`generateWall`), so every batch job already runs through the
+  two-persona pipeline (RULE above) and its industry design knowledge — but it
+  was NOT sending the tile width the curator's own "Repeat tile width" field
+  collected, so a repeat batch job told the model nothing about motif scale at
+  all (owner, 2026-09-12: "redo the batch generator to follow the same edge
+  functions"). `runOne` now passes `repeatWidthIn: job.tileWidthIn` on a repeat
+  job. The batch UI's own default also moves from the legacy four-across craft
+  scale (`DEFAULT_TILE_WIDTH_IN`, 24, kept only as the fallback for historical
+  rows with no stored width) to the measured two-across architectural baseline,
+  48 inches on the tile's own 96-inch square canvas — the curator can still
+  type any width per batch or per job.
 - **Production rules** (owner workbook, `docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md`):
   one canonical master, never AI-generate panels, duplicated overlap identical
   on both panels, seam QC, 150 effective PPI from real pixels.
