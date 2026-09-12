@@ -119,6 +119,42 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
 }
 
 /**
+ * Several zones of ONE photograph in a single picture: a mural on the wall and
+ * brick on the fireplace (owner, 2026-09-12: "you can get two in same photo
+ * upload"). Each zone's design is composited onto the RESULT of the pass
+ * before it, so the passes stack on one photo rather than replacing each
+ * other. The zone being edited is drawn last so it sits on top.
+ *
+ * Each pass carries its own corners and its own layout (its own real-world
+ * inches), because an accent zone is measured on itself, not on the wall
+ * behind it. Preview fidelity only: print files are produced per zone from
+ * that zone's own master, and never from this composite.
+ */
+export async function renderZonesPreview(
+  photoUrl: string,
+  zones: { artworkUrl: string; corners: Point[]; exclusions?: Point[][]; layout: WallLayout; maskUrl?: string | null }[],
+  cancelled: () => boolean = () => false,
+): Promise<HTMLCanvasElement> {
+  if (!zones.length) throw new Error('No zone to draw.');
+  let source = photoUrl;
+  let output: HTMLCanvasElement | null = null;
+  const intermediates: string[] = [];
+  try {
+    for (const zone of zones) {
+      output = await renderWallPreview(source, zone.artworkUrl, zone.corners, zone.exclusions || [], zone.layout, cancelled, zone.maskUrl ?? null);
+      if (cancelled()) throw new Error('Preview superseded.');
+      // This pass becomes the "photo" the next zone paints onto.
+      source = URL.createObjectURL(await canvasBlob(output));
+      intermediates.push(source);
+    }
+  } finally {
+    // The canvas returned is independent of these, so every hand-off URL goes.
+    for (const url of intermediates) URL.revokeObjectURL(url);
+  }
+  return output!;
+}
+
+/**
  * The flat print master as it will print across the whole wall: the tile
  * repeated (flipped on alternate tiles when the layout mirrors) or the mural
  * fitted, on a canvas in the wall's proportions. This is what "pattern scale"

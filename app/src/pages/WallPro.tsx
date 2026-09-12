@@ -10,10 +10,11 @@ import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
+import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
-import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
+import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
@@ -32,6 +33,17 @@ const LAST_PROJECT_KEY = 'wallpro:last-project';
 export default function WallPro() {
   const [params, setParams] = useSearchParams();
   const [projectId, setProjectId] = useState(() => params.get('project') || crypto.randomUUID());
+  // Two wraps on one photo (wallpro-zones.ts): a zone is another project row
+  // carrying the same wallPath, so versions, production and entitlements all
+  // work per zone with nothing new underneath them.
+  const [parentProjectId, setParentProjectId] = useState<string | null>(null);
+  const [zoneLabel, setZoneLabel] = useState<string | null>(null);
+  const [zones, setZones] = useState<WallZone[]>([]);
+  const [addingZone, setAddingZone] = useState(false);
+  const [newZoneLabel, setNewZoneLabel] = useState('');
+  /** Signed URLs for the OTHER zones' masters, so they can be drawn onto this
+   * zone's photo preview. Keyed by storage path. */
+  const [zoneArt, setZoneArt] = useState<Record<string, string>>({});
   const [name, setName] = useState('My wall design');
   const [photo, setPhoto] = useState<WallAsset | null>(null);
   const [artwork, setArtwork] = useState<WallAsset | null>(null);
@@ -110,6 +122,11 @@ export default function WallPro() {
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  // Read by a detection that starts in the same tick a zone is created, before
+  // React has committed the state -- an accent zone must never auto-protect
+  // the very object it exists to wrap.
+  const accentRef = useRef(false);
+  accentRef.current = !!parentProjectId;
   // Nobody has to tap corners. A photo starts as the whole frame ('default'),
   // detection tightens it when it can ('detected'), and only a customer's own
   // tap or drag ('manual') is ever protected from being replaced.
@@ -178,7 +195,7 @@ export default function WallPro() {
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
-      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
   useEffect(() => { if (artwork && photo && wallLocated) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, wallLocated, aiViewCurrent]);
@@ -290,7 +307,7 @@ export default function WallPro() {
     // stays on screen (marked "updating") instead of blanking. Anything that
     // changes WHICH wall or WHICH design is shown clears it at once, so a
     // stale picture can never be mistaken for the new one.
-    const identity = [photo?.url, previewArt?.url, tileArtwork?.url, JSON.stringify(corners), JSON.stringify(exclusions), detectedMask?.url, editingPhoto].join('|');
+    const identity = [photo?.url, previewArt?.url, tileArtwork?.url, JSON.stringify(corners), JSON.stringify(exclusions), detectedMask?.url, editingPhoto, projectId, JSON.stringify(Object.keys(zoneArt).sort())].join('|');
     if (identity !== previewIdentity.current) {
       previewIdentity.current = identity;
       setPreview(null);
@@ -299,7 +316,16 @@ export default function WallPro() {
     canvas.current = null;
     if (editingPhoto || !photo || !previewArt || !tileArtwork || !seamReady || !wallLocated || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
-    renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current, detectedMask?.url ?? null)
+    // Any other zone already wrapped on this same photo is drawn first, so the
+    // customer sees the fireplace and the wall together. Each sibling carries
+    // its own corners and its own inches; the zone being edited goes on last.
+    const passes = [
+      ...otherZonesWithArtwork(zones, projectId)
+        .filter(z => z.artworkPath && zoneArt[z.artworkPath])
+        .map(z => ({ artworkUrl: zoneArt[z.artworkPath!], corners: z.corners, layout: { width: z.width, height: z.height, mode: z.placement, repeatWidth: z.repeatWidth } as WallLayout })),
+      { artworkUrl: tileArtwork.url, corners, exclusions, layout, maskUrl: detectedMask?.url ?? null },
+    ];
+    renderZonesPreview(photo.url, passes, () => version !== previewVersion.current)
       .then(async output => {
         const blob = await canvasBlob(output);
         if (version !== previewVersion.current) return;
@@ -312,7 +338,7 @@ export default function WallPro() {
       .catch(e => { if (version === previewVersion.current) setError(e.message); })
       .finally(() => { if (version === previewVersion.current) setRendering(false); });
     return () => { previewVersion.current++; };
-  }, [photo, artwork, corners, exclusions, detectedMask?.url, width, height, placement, repeatWidth, editingPhoto, seamCurrent]);
+  }, [photo, artwork, corners, exclusions, detectedMask?.url, width, height, placement, repeatWidth, editingPhoto, seamCurrent, zones, zoneArt, projectId]);
   useEffect(() => () => { if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); }, []);
 
   async function run(label: string, action: () => Promise<void>) {
@@ -369,6 +395,8 @@ export default function WallPro() {
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setMaskRects([]); setMaskMode(false); setRefinePrompt('');
+    setParentProjectId(isAccentZone(config) ? String(config.parentProjectId) : null);
+    setZoneLabel(typeof config.zoneLabel === 'string' && config.zoneLabel.trim() ? config.zoneLabel.trim().slice(0, 40) : null);
     if (id) {
       const rows = await listWallVersions(id).catch(() => [] as WallVersion[]);
       setVersions(rows);
@@ -416,7 +444,7 @@ export default function WallPro() {
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -449,9 +477,15 @@ export default function WallPro() {
     // (applyMasks is kept only for the manual "Detect wall corners again" /
     // re-run path), classified fixed vs movable by wallpro-occlusion.ts.
     const { fixed, movable } = splitDetectedMasks(found.masks);
+    // An accent zone wraps a fireplace, a chimney breast or a niche -- exactly
+    // the architecture the main wall's pass correctly protects as `fixed`.
+    // Protecting it here would refuse to paint the thing the customer chose to
+    // wrap, so the protect mask is skipped in a zone. Movable clutter standing
+    // in front of it is still removed: that instruction is right either way.
+    const accent = accentRef.current;
     const [fixedRaster, movableRaster] = applyMasks && asset.width && asset.height
       ? await Promise.all([
-          fixed.length ? rasterizeDetectionMasks(fixed, asset.width, asset.height).catch(() => null) : null,
+          fixed.length && !accent ? rasterizeDetectionMasks(fixed, asset.width, asset.height).catch(() => null) : null,
           movable.length ? rasterizeDetectionMasks(movable, asset.width, asset.height).catch(() => null) : null,
         ])
       : [null, null];
@@ -485,8 +519,11 @@ export default function WallPro() {
     }
     setExcludeDraft([]); setShowMasks(true);
     setView(artworkRef.current ? 'after' : 'before'); setError('');
-    const cornersNote = handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
-    if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes for a single item, or Protect a busy area to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
+    const cornersNote = accent
+      ? 'Mark the four corners of the area you are wrapping, and enter ITS size -- not the whole wall\'s.'
+      : handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
+    if (accent) setNotice(cornersNote + (removeCount ? ` Anything standing in front of it will be painted through (${[...new Set(removeLabels)].slice(0, 4).join(', ')}).` : '') + ' Nothing here is auto-protected: this zone exists to cover it.');
+    else if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes for a single item, or Protect a busy area to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
     else if (maskCount || removeCount) {
       const parts: string[] = [];
       if (maskCount) parts.push(`kept ${maskCount} area${maskCount === 1 ? '' : 's'} exactly as photographed (${[...new Set(labels)].slice(0, 6).join(', ')})`);
@@ -574,7 +611,7 @@ export default function WallPro() {
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
@@ -672,6 +709,25 @@ export default function WallPro() {
     wallProEntitlements(currentVersionId).then(rows => { if (active) setEntitlements(rows); }).catch(() => { if (active) setEntitlements([]); });
     return () => { active = false; };
   }, [currentVersionId]);
+  // The other zones wrapped on this same photograph. Signed out or offline
+  // just means no switcher: a single zone works exactly as it always has.
+  useEffect(() => {
+    if (!photo?.path) { setZones([]); return; }
+    let active = true;
+    const here = { wallPath: photo.path, parentProjectId, zoneLabel, artworkPath: artwork?.path || null, corners, width, height, placement, repeatWidth, patternScale };
+    wallHistory()
+      .then(rows => { if (active) setZones(zonesInGroup(rows.projects as any[], projectId, here)); })
+      .catch(() => { if (active) setZones([]); });
+    return () => { active = false; };
+  }, [photo?.path, projectId, parentProjectId, zoneLabel, artwork?.path, currentVersionId]);
+  // Signed masters for the other zones, for the combined on-photo preview.
+  useEffect(() => {
+    const paths = otherZonesWithArtwork(zones, projectId).map(z => z.artworkPath!).filter(Boolean);
+    if (!paths.length) { setZoneArt({}); return; }
+    let active = true;
+    openWallAssets(paths).then(map => { if (active) setZoneArt(map); }).catch(() => { if (active) setZoneArt({}); });
+    return () => { active = false; };
+  }, [zones, projectId]);
   // Returning from Stripe: the webhook records the entitlement asynchronously,
   // so this re-checks a few times rather than trusting the redirect alone.
   useEffect(() => {
@@ -697,7 +753,7 @@ export default function WallPro() {
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, prompt, designMode, designId, currentVersionId });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -745,11 +801,49 @@ export default function WallPro() {
       if (photo) setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
       await recordVersion('create', art, { intent, prompt, referencePath, generationId: result.request_id, note: result.design_name, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null });
+    });
+  }
+  /** The config this zone is currently sitting on, for a save before leaving it. */
+  function liveConfig() {
+    return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
+  }
+  /**
+   * Wrap a SECOND area of the same photograph -- a fireplace in brick beside a
+   * mural on the wall behind it (owner, 2026-09-12). It is another project on
+   * the same wallPath, so it gets its own corners, its own inches, its own
+   * design, its own print files and its own purchase, with nothing new
+   * underneath it. The zone being left is saved first so switching back finds
+   * it whole.
+   */
+  async function addAccentZone(label: string) {
+    if (!photo?.path) return;
+    const zoneName = label.trim().slice(0, 40) || 'Accent zone';
+    await run('Adding the zone', async () => {
+      const user = await wallUser();
+      await saveWallProject(projectId, user.id, name, liveConfig());
+      const id = crypto.randomUUID();
+      const config = accentZoneConfig({ wallPath: photo.path }, zoneGroupId(projectId, { parentProjectId }), zoneName);
+      await saveWallProject(id, user.id, zoneName, config);
+      await restore(config, id, zoneName);
+      // restore() sets the state, but detection starts in this same tick.
+      accentRef.current = true;
+      setAddingZone(false); setNewZoneLabel('');
+      if (photoRef.current) void detectInBackground(photoRef.current, true);
+    });
+  }
+  /** Move to another zone of this photo, saving the one being left. */
+  async function openZone(id: string) {
+    if (id === projectId) return;
+    await run('Opening the zone', async () => {
+      const user = await wallUser().catch(() => null);
+      if (user) await saveWallProject(projectId, user.id, name, liveConfig()).catch(() => { /* the zone still opens */ });
+      const row = await getWallProject(id);
+      await restore(row.config, row.id, row.name);
     });
   }
   function finishMask(points: Point[]) {
@@ -900,6 +994,28 @@ export default function WallPro() {
               </div></div>
             </div>}
             {photo ? <div>
+              {/* Two wraps on one photo: the mural on the wall, brick on the
+                  fireplace. Each zone is its own design and its own purchase. */}
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {zones.map(z => (
+                  <Button key={z.projectId} size="sm" variant={z.projectId === projectId ? 'default' : 'outline'} disabled={!!busy}
+                    onClick={() => void openZone(z.projectId)}>
+                    {z.zoneLabel || 'Main wall'}{z.artworkPath ? '' : ' · empty'}
+                  </Button>
+                ))}
+                {!addingZone
+                  ? <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setAddingZone(true); setNewZoneLabel('Fireplace'); }} title="Wrap another area of this same photo in a different design">+ Wrap another area</Button>
+                  : <span className="flex items-center gap-1">
+                      <input className="h-8 w-36 rounded-md border px-2 text-sm" autoFocus value={newZoneLabel} placeholder="Fireplace" maxLength={40}
+                        onChange={e => setNewZoneLabel(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') void addAccentZone(newZoneLabel); if (e.key === 'Escape') { setAddingZone(false); setNewZoneLabel(''); } }} />
+                      <Button size="sm" disabled={!!busy} onClick={() => void addAccentZone(newZoneLabel)}>Add</Button>
+                      <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setAddingZone(false); setNewZoneLabel(''); }}>Cancel</Button>
+                    </span>}
+              </div>
+              {parentProjectId && <p className="mb-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
+                Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
+              </p>}
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
               {view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl bg-slate-100"><img src={aiView.url} alt="AI picture of the design on your wall" className="w-full object-contain" /><p className="p-2 text-xs text-slate-500">AI picture for showing the design. The flat master and the production panels are what print.</p></div> :
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
