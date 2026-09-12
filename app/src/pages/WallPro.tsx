@@ -16,6 +16,9 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
+import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
+import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
@@ -155,6 +158,32 @@ export default function WallPro() {
   // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
   // and the tab offers to repaint.
   const scaleKey = placement + '|' + (placement === 'repeat' ? repeatWidth : 0);
+  // THE AI VIEW IS AN INTERNAL TOOL NOW (owner, 2026-09-12: "drop the ai view
+  // from customer path"). Staff only, and hidden the moment a staff member
+  // switches to View as Customer -- the person checking the customer path must
+  // not be the one person who cannot see what the customer gets.
+  const [staff, setStaff] = useState(false);
+  const [viewingAsCustomer, setViewingAsCustomer] = useState(() => {
+    try { return localStorage.getItem(VIEW_AS_KEY) === 'free'; } catch { return false; }
+  });
+  useEffect(() => {
+    let live = true;
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const user = data.session?.user;
+      if (!user) { if (live) setStaff(false); return; }
+      if (isAllowlistedAdmin(user.email)) { if (live) setStaff(true); return; }
+      const { data: role } = await supabase.from('user_roles').select('role').eq('user_id', user.id).in('role', ['admin', 'tester']).limit(1).maybeSingle();
+      if (live) setStaff(!!role);
+    });
+    // The toggle writes localStorage from another component, so re-read it on
+    // focus rather than trusting the value this component mounted with.
+    const reread = () => { try { setViewingAsCustomer(localStorage.getItem(VIEW_AS_KEY) === 'free'); } catch { /* keep what we have */ } };
+    window.addEventListener('focus', reread);
+    window.addEventListener('storage', reread);
+    return () => { live = false; window.removeEventListener('focus', reread); window.removeEventListener('storage', reread); };
+  }, []);
+  const aiAvailable = aiViewAvailable({ staff, viewingAsCustomer });
+  useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
    * "the pattern design size larger and smaller … look at PatternPro, we
@@ -200,7 +229,12 @@ export default function WallPro() {
       wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
-  useEffect(() => { if (artwork && photo && wallLocated) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, wallLocated, aiViewCurrent]);
+  // The photo pane opens on the DETERMINISTIC composite, always. It used to
+  // open on the AI picture whenever one existed, which made a freehand repaint
+  // the first thing a customer saw of their own design (owner, 2026-09-12:
+  // "the design it generated and design on photo appear to be different that
+  // should never be the case").
+  useEffect(() => { if (artwork && photo && wallLocated) setView('after'); }, [!!artwork, !!photo, wallLocated]);
   // The photo pane opens on the AI picture by itself: the model puts the
   // covering on the wall and leaves the window, drapes, shelves and furniture
   // as photographed, with no masks to mark (owner, 2026-09-11: "it should know
@@ -208,12 +242,12 @@ export default function WallPro() {
   // background, never charged; the exact-geometry view stays one tab away.
   const aiAutoKey = useRef<string | null>(null);
   useEffect(() => {
-    if (!artwork || !photo || aiViewCurrent) return;
+    if (!artwork || !photo || aiViewCurrent || !aiAvailable) return;
     const key = artwork.url + '|' + photo.url;
     if (aiAutoKey.current === key) return;
     aiAutoKey.current = key;
     void paintAiView(artwork, photo, true);
-  }, [artwork?.url, photo?.url]);
+  }, [artwork?.url, photo?.url, aiAvailable]);
   const [history, setHistory] = useState<History | null>(null);
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
@@ -632,8 +666,12 @@ export default function WallPro() {
     finally { setAiPainting(false); }
   }
   async function showAiView() {
-    if (!photo || !artwork) return;
-    await paintAiView(artwork, photo, false);
+    // tileArtwork, not artwork: the seam-corrected file is what the
+    // deterministic composite and the print file both use, so repainting from
+    // the raw generation made the AI view differ from the print on TWO counts
+    // rather than one (owner, 2026-09-12).
+    if (!photo || !artwork || !tileArtwork) return;
+    await paintAiView(tileArtwork, photo, false);
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
@@ -655,6 +693,16 @@ export default function WallPro() {
   }
   async function approveCurrent() {
     if (!currentVersion) return;
+    // NEVER FROM THE AI VIEW. Approving starts the 150 PPI panel build and is a
+    // statement about the print file; the AI view is a freehand painting of one
+    // and its motifs do not match. The guard lives here, on the action, rather
+    // than only on who can see the view, so it survives the view ever being put
+    // back in front of customers.
+    if (!canCommitFromView(view)) {
+      setView('after');
+      setNotice('That was the artist\u2019s impression, not your print file. This is the real one \u2014 approve from here.');
+      return;
+    }
     await run('Approving V' + currentVersion.version_no, async () => {
       await approveWallVersion(projectId, currentVersion.id);
       setVersions(await listWallVersions(projectId));
@@ -1012,7 +1060,7 @@ export default function WallPro() {
                 The tabs only switch the photo pane between the original wall and
                 the imposed design; the flat master never leaves the screen. */}
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
-              {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
+              {artwork && aiAvailable && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
             <div className={photo && previewArt ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {previewArt && <div>
               {/* Say which picture this is. "THE PRINT MASTER · 4096 × 4096 PX"
@@ -1081,7 +1129,16 @@ export default function WallPro() {
                 Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
               </p>}
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
-              {view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl bg-slate-100"><img src={aiView.url} alt="AI picture of the design on your wall" className="w-full object-contain" /><p className="p-2 text-xs text-slate-500">AI picture for showing the design. The flat master and the production panels are what print.</p></div> :
+              {view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-slate-100">
+                <div className="relative">
+                  <img src={aiView.url} alt="Artist's impression of the design on your wall — not the print file" className="w-full object-contain" />
+                  {/* ON the image, because a caption under it sits below the
+                      fold on a phone and was read as a footnote. */}
+                  <span className="absolute left-2 top-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 shadow">{AI_VIEW_BADGE}</span>
+                </div>
+                <p className="p-2 text-xs text-amber-900">{AI_VIEW_EXPLAINER}</p>
+                <div className="px-2 pb-2"><Button size="sm" variant="outline" onClick={() => setView('after')}>Show the real print file</Button></div>
+              </div> :
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
               {/* The corners default to the WHOLE PHOTO so a missed detection never
                   blocks the on-wall view — but then the design covers the ceiling,
@@ -1154,7 +1211,7 @@ export default function WallPro() {
             {currentVersionId && (entitled
               ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-semibold text-emerald-900">Print-ready wall file unlocked for this version.</p>
               : <div className="mt-3 flex items-center gap-2">
-                  <Button variant="outline" disabled={!!busy} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, 'wallpro_custom_file', '/printpro/wallpro')); })}>Unlock My Print-Ready Wall File — $149</Button>
+                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, 'wallpro_custom_file', '/printpro/wallpro')); })}>Unlock My Print-Ready Wall File — $149</Button>
                   <span className="text-xs text-slate-500">Seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
