@@ -1,4 +1,4 @@
-import { wallDesignPrompt, wallMatchRecoveryPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent } from './prompt.ts';
+import { wallDesignPrompt, wallMatchRecoveryPrompt, wallConsultantPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent } from './prompt.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
@@ -18,6 +18,35 @@ export async function describeCovering(fetchImpl: typeof fetch, key: string, ima
   const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim().replace(/\s+/g, ' ');
   return text.length >= 20 ? text.slice(0, 900) : null;
 }
+/**
+ * Persona 1: the consultant. Ported from the vehicle stack's
+ * `persona-csr-enrich`, which is why its designs are specific and WallPro's
+ * were generic — the designer was being handed five raw words inside a wall of
+ * persona text. One fast text call turns those words into a brief with named
+ * colours, arrangement and flow.
+ *
+ * Fails SOFT and fast: no answer, bad JSON or a timeout means the customer's
+ * own words go through exactly as before. A consultant that cannot answer must
+ * never cost a generation.
+ */
+export async function enrichWallBrief(fetchImpl: typeof fetch, key: string, input: Parameters<typeof wallConsultantPrompt>[0]): Promise<{ brief: string; palette: string[]; style: string } | null> {
+  try {
+    const provider = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models/' + DESCRIBE_MODEL + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: wallConsultantPrompt(input) }] }], generationConfig: { temperature: 0.9, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!provider.ok) return null;
+    const result = await provider.json();
+    const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim();
+    const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    const brief = String(parsed?.enrichedBrief || '').trim();
+    if (brief.length < 20) return null;
+    const palette = Array.isArray(parsed?.colorPalette) ? parsed.colorPalette.filter((c: unknown) => typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c)).slice(0, 6) : [];
+    return { brief: brief.slice(0, 1200), palette, style: String(parsed?.designStyle || '').trim().slice(0, 60) };
+  } catch { return null; }
+}
+
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -181,6 +210,18 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       }
       if (!reservation.data.fresh) return await signedResult(reservation.data.generation);
       reserved = true;
+      // Persona 1, the consultant — AFTER the credit is reserved, so a request
+      // that never charges never spends this call either. It runs only on the
+      // intents that author from words: a match reproduces the customer's
+      // reference and a refine edits an existing version. Fails soft, so the
+      // customer's own words go through unchanged if it cannot answer.
+      if (input.intent === 'prompt' || input.intent === 'wall') {
+        const consulted = await enrichWallBrief(deps.fetch, key, input);
+        if (consulted) {
+          parts[0].text = wallDesignPrompt({ ...input, prompt: consulted.brief + (consulted.palette.length ? ` Palette: ${consulted.palette.join(', ')}.` : '') });
+          console.log(JSON.stringify({ event: 'wall_brief_enriched', request_id: input.requestId, intent: input.intent, style: consulted.style, palette: consulted.palette, brief_chars: consulted.brief.length, prompt_chars: parts[0].text.length }));
+        }
+      }
       const draw = async (text: string, images: any[] = parts.slice(1)) => {
         const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },

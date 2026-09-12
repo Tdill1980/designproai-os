@@ -1,20 +1,34 @@
 // Creative identity and translation ported from RestylePro generate-wall-design v116.
 // Physical placement is deterministic after authoring; no vehicle prompts are modified.
-const DESIGNER_IDENTITY =
-      `You are the senior creative director at a premium sign & graphics company that builds install-ready wall murals, environmental branding, and printed vinyl wraps for luxury and commercial interiors — boutique hotels, corporate lobbies and offices, flagship retail, fine dining, bars, malls, fitness clubs and gyms, modern apartments and homes, schools and universities, and lifestyle spaces. Your work is what interior designers and architects spec at $30–$150 per square foot installed — the aesthetic of Williams Sonoma Home, Restoration Hardware, and Schumacher wallpaper. Every design is built with tangible depth and texture: dimensional shading, tactile surface detail (paper grain, brush stroke, stone, woven fiber, metallic leaf, ink bleed), layered hierarchy, and refined color harmony. Nothing flat or clip-art — the viewer should be able to feel the paper, the pigment, and the hand of the designer.`;
+/**
+ * The wall designer, built on the PROVEN vehicle stack (RULE 1).
+ * Reference: `supabase/functions/_shared/persona-designer-prompt.ts`, whose
+ * own header states the rule this file had broken —
+ *   "IMPORTANT: Prompt length = quality killer. Keep under 4K chars total.
+ *    Every word must earn its place."
+ * Measured 2026-09-12, on the owner's report that "design gen is horrendous":
+ * the assembled wall prompt was 4,501 characters, of which 3,342 were generic
+ * persona boilerplate and 44 were the customer's actual brief. The persona
+ * outweighed the design 76 to 1, so every wall came back as the average of the
+ * persona rather than the customer's idea.
+ *
+ * The vehicle stack solves this with TWO personas, not a longer one: a
+ * consultant turns the customer's words into a specific brief (colours, flow,
+ * elements), and the designer prompt stays short because the brief carries the
+ * content. WallPro now does the same — `wallConsultantPrompt` below.
+ */
+const WALL_DESIGNER =
+      `You are an elite interior graphic designer for architectural printing. Your murals and wallcoverings are specified by architects and interior designers at $30-$150 per square foot installed — the level of Schumacher, Restoration Hardware and Williams Sonoma Home. You work at a real large-format print shop.
 
-/** The discipline, named (owner, 2026-09-12: "give it an interior graphic
- * designer persona for architectural printing"). The identity above says who
- * the work is for; this says how a wall is actually composed, because the
- * generator was answering with dense craft-fair repeats. */
-const ARCHITECTURAL_SCALE =
-      `You are composing ARCHITECTURAL GRAPHICS, not fabric or gift wrap. The viewer stands six to twelve feet from this wall and sees it whole, so the composition is read at room scale: a clear hierarchy of a few large forms, generous negative space, and detail that rewards walking up to it rather than detail that is the whole idea. Motifs are drawn at the size a hand-painted mural or a specified wallcovering uses — a bloom the size of a dinner plate, a frond the length of a forearm — never a dense field of small repeated units. Colour is a controlled palette of three to five values with one accent, matched to interior finishes, never a rainbow. Edges, overlaps and shadows are deliberate; nothing floats on a blank ground by accident. If the result would look at home on a quilt, a greeting card, a phone case or a craft-market tablecloth, it is wrong for this wall.`;
+COMPOSE AT ROOM SCALE. The viewer stands six to twelve feet back and reads the wall whole: a few large forms, generous negative space, hierarchy before detail, three to five values plus one accent. Every element carries tangible material — paper grain, brush stroke, ink bleed, leaf, stone, woven fibre — with dimensional shading and layered depth. Nothing flat, nothing clip-art, and nothing that would look at home on a quilt, a greeting card or a phone case.
 
-const CAPABILITIES =
-      `Your output spans the full range a premium sign & graphics shop delivers: large-format murals and wallpaper; environmental branding (company logos, brand marks, tagline walls, mission statements, values walls, donor walls, wayfinding); typography-driven designs (custom letterforms, hand-lettered headlines, editorial display type, manifesto walls); mixed media (typography layered with graphic forms, illustration, photography, or pattern); and refined decorative art (botanical, abstract, geometric, architectural). When the brief calls for text or branding, render clean, crisp, production-ready letterforms — vector-sharp, correctly spelled, no gibberish or AI scribble. When the brief does not call for text, omit it entirely — no spurious captions, labels, borders, or watermarks.`;
+Render text only when the brief asks for it, and then vector-sharp and correctly spelled. Otherwise no captions, labels, borders or watermarks.`;
 
-const DESIGN_TRANSLATION =
-      `Translate the brief into refined design geometry: "botanical" → oversized dimensional florals with painterly shading and negative space; "industrial" → layered concrete, brushed metal, and architectural linework; "abstract" → sculptural color fields with intentional gesture; "geometric" → precise repeating modules with depth and shadow; "luxury" → deep jewel tones, brass or gold accents, marble and velvet textures; "minimalist" → bold negative space, one hero element, restrained palette; "lifestyle/sports" → dynamic motion, layered graphic forms; "typography/branding" → bold editorial headline type with hierarchy, optional supporting marks or iconography; references like "art deco" or "mid-century" translate into period-accurate pattern vocabulary, not literal copies.`;
+/** What the designer says before the image, ported from the vehicle designer's
+ * DESIGN ANCHOR: it names the design and fixes its colours and placement in
+ * words, so a refinement has something exact to hold onto. */
+const DESIGN_ANCHOR =
+      `Before the image, output: 1) a design name, 2 to 4 words; 2) DESIGN ANCHOR — three sentences fixing the palette with hex values, the placement and scale of each major element, and the direction the composition flows.`;
 
 /** The four customer entry paths, as the generator understands them.
  *  prompt  describe a design; the optional reference is style inspiration.
@@ -34,7 +48,7 @@ export const WALL_INTENTS: readonly WallIntent[] = ['prompt', 'match', 'wall', '
 export function wallRefinePrompt(input: { prompt: string; placement: string; maskPath?: string | null; referencePath?: string | null }) {
   const tile = input.placement === 'repeat';
   return [
-    DESIGNER_IDENTITY,
+    WALL_DESIGNER,
     'The first image is the customer\'s current wall design. Produce the NEXT VERSION of this same design by applying only the change requested below. Everything the change does not name stays exactly as it is: composition, motif placement and scale, palette, rendering style, framing, edges and overall character. This is an edit of the existing artwork, not a new design.',
     'Requested change: ' + input.prompt.trim(),
     input.maskPath ? 'A mask image follows the design: only the WHITE region of the mask may change. The BLACK region must remain identical to the current design.' : '',
@@ -66,13 +80,44 @@ export function wallMatchRecoveryPrompt(input: { prompt: string; width: number; 
  * words-only retry: the covering, never the room. */
 export const COVERING_DESCRIPTION_PROMPT = 'Describe the wall covering or wall surface material in this photograph for a designer who cannot see it: the material, the pattern or motif, the colours, the real-world size of the repeating element in inches (for example slat width and gap, tile size, motif size), the finish and the texture. Two to four plain sentences. Say nothing about the room, furniture, windows or lighting.';
 
+/**
+ * Persona 1, the consultant — ported from `supabase/functions/persona-csr-enrich`.
+ * A fast text-only call that turns "blush florals" into a brief a designer can
+ * execute without guessing. The vehicle stack has spent this call since it was
+ * built, and it is why its designs are specific rather than generic.
+ */
+export function wallConsultantPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent }) {
+  const tile = input.placement === 'repeat';
+  return `You are a senior interior designer and wallcovering consultant with fifteen years of specifying murals and printed wallcoverings for hotels, offices, retail and homes. You know what reads well at room scale, what prints, and what a client recognises as the thing they pictured.
+
+A client has described what they want for one wall:
+"${input.prompt.trim() || 'No brief given — propose the covering you would specify for this wall.'}"
+
+The wall is ${input.width} inches wide by ${input.height} inches high.${tile && input.repeatWidthIn ? ` The design will print as a pattern repeating every ${input.repeatWidthIn} inches, about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across the wall.` : ' The design will print as one composition across the whole wall.'}
+
+Enrich this into a brief a designer can execute. Respond in EXACTLY this JSON, no markdown and no code fences:
+
+{
+  "enrichedBrief": "Two or three sentences of specific direction: the subject and its treatment, the named colours, how the elements are arranged and how the composition flows. Specific enough to execute without guessing, and it must keep the client's own idea rather than replace it.",
+  "colorPalette": ["#hex1", "#hex2", "#hex3", "#hex4"],
+  "designStyle": "One or two words for the energy, for example 'Botanical Editorial' or 'Quiet Industrial'"
+}
+
+Rules:
+- The shorter the client's words, the MORE direction you add. Five words needs three full sentences of specifics.
+- Three to five hex colours that work together on a wall, not a rainbow.
+- Name real materials and treatments, never adjectives alone.
+- Say what is LARGE and what is quiet: a wall needs a hierarchy, not an even field of motifs.
+- Keep the client's core idea. Enhance it, do not replace it.`;
+}
+
 export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';
   if (intent === 'refine') return wallRefinePrompt(input);
   const brief = input.prompt.trim();
   const tile = input.placement === 'repeat';
   return [
-    DESIGNER_IDENTITY, CAPABILITIES, intent === 'match' ? '' : ARCHITECTURAL_SCALE,
+    WALL_DESIGNER,
     'Deliver one continuous flat 2D artwork image, edge to edge. This is the mural artwork before installation, not a room photograph or a photographed wall. Fine texture and crisp detail at 4K.',
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
     // 54 inches is the roll width: Avery HP MPI 2610 wall vinyl, billed at 54 in
@@ -104,7 +149,7 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
         + (tile ? ' Make it a true seamless tile while keeping the motif scale.' : '') + (brief ? ' Apply only these requested changes: ' + brief : ' No changes were requested.')
       : 'The labeled reference image is style inspiration or an existing wall design. Use its visual direction to create flat artwork following the brief. Do not recreate its surrounding room.') : '',
     intent === 'match' ? '' : intent === 'wall' && !brief ? 'Design brief: design the wall covering you would specify for this room, chosen from its architecture, light and existing palette.' : 'Design brief: ' + brief,
-    intent === 'match' ? '' : DESIGN_TRANSLATION,
+    intent === 'match' ? '' : DESIGN_ANCHOR,
     'Generate the finished artwork image now. Return the image only, with no written explanation or design proposal.'
   ].filter(Boolean).join('\n\n');
 }
