@@ -39,6 +39,12 @@ export default function WallPro() {
   // design faithfully · wall: design for the wall photo · upload: a print-ready file.
   const [designMode, setDesignMode] = useState<'library' | 'ai' | 'match' | 'wall' | 'upload'>('ai');
   const intent = designMode === 'match' ? 'match' : designMode === 'wall' ? 'wall' : 'prompt';
+  // A design uploaded to match IS the design (WallPro contract), so it goes on
+  // the wall the moment it is chosen, before a token is spent — owner,
+  // 2026-09-12: "I'm uploading an image and it's not showing on the image".
+  // It is a preview only: every print, version and production path below still
+  // reads `artwork`, which exists only after a generation.
+  const previewArt = artwork || (intent === 'match' ? reference : null);
   // Design session: every artwork the customer lands on is an immutable
   // version; refinement edits the current one; exactly one is approved and
   // production reads only it. docs/wallpro/WALLPRO-REFINEMENT-WORKFLOW.md
@@ -125,10 +131,10 @@ export default function WallPro() {
   const patternBase: PatternSize = currentVersion
     ? { placement: currentVersion.placement, repeatWidthIn: Number(currentVersion.repeat_width_in) || autoRepeatWidthIn(width) }
     : { placement, repeatWidthIn: repeatWidth };
-  const wallBox: WallBox = { width, height, aspect: artwork?.aspect || 1 };
-  const masterPx = { width: artwork?.width || 0, height: artwork?.height || 0 };
-  const draftPpi = artwork ? patternPpi(masterPx, patternBase, wallBox, scaleDraft) : 0;
-  const printSafeMax = artwork ? maxPrintSafeScale(masterPx, patternBase, wallBox, printSettings.minPpi) : null;
+  const wallBox: WallBox = { width, height, aspect: previewArt?.aspect || 1 };
+  const masterPx = { width: previewArt?.width || 0, height: previewArt?.height || 0 };
+  const draftPpi = previewArt ? patternPpi(masterPx, patternBase, wallBox, scaleDraft) : 0;
+  const printSafeMax = previewArt ? maxPrintSafeScale(masterPx, patternBase, wallBox, printSettings.minPpi) : null;
   const scaleSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scaleCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { setScaleDraft(patternScale); }, [patternScale]);
@@ -189,12 +195,12 @@ export default function WallPro() {
   const seamCurrent = seam && seam.key === seamKey ? seam : null;
   // What the preview samples and the print embeds. For a repeat this is the
   // seam-derived artwork; the layout carries mirror when that method was chosen.
-  const tileArtwork = seamCurrent ? seamCurrent.artwork : artwork;
+  const tileArtwork = seamCurrent ? seamCurrent.artwork : previewArt;
   const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
   const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
   const seamReady = placement !== 'repeat' || !!seamCurrent;
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
-  try { if (artwork) metrics = layoutMetrics(layout, artwork.aspect); } catch { /* visible validation below */ }
+  try { if (previewArt) metrics = layoutMetrics(layout, previewArt.aspect); } catch { /* visible validation below */ }
   // The flat pane shows the print master as it prints across the wall at the
   // current pattern scale; while a refinement mask is being drawn it shows the
   // generated tile itself, which is what the mask coordinates belong to.
@@ -214,9 +220,9 @@ export default function WallPro() {
   // the draft size, the way PatternPro previewed a swatch. Approximate for a
   // mirrored repeat (CSS cannot flip alternate tiles); the exact canvas
   // replaces it the moment the slider rests.
-  const draftDrawnIn = artwork ? patternDrawnWidthIn(patternBase, wallBox, scaleDraft) : 0;
-  const draftTile = artwork && draftDrawnIn > 0
-    ? { fraction: draftDrawnIn / width, position: `${draftDrawnIn >= width ? 'center' : 'left'} ${draftDrawnIn / artwork.aspect >= height ? 'center' : 'top'}` }
+  const draftDrawnIn = previewArt ? patternDrawnWidthIn(patternBase, wallBox, scaleDraft) : 0;
+  const draftTile = previewArt && draftDrawnIn > 0
+    ? { fraction: draftDrawnIn / width, position: `${draftDrawnIn >= width ? 'center' : 'left'} ${draftDrawnIn / previewArt.aspect >= height ? 'center' : 'top'}` }
     : null;
   const scaleSettling = scaleDraft !== patternScale;
 
@@ -259,14 +265,14 @@ export default function WallPro() {
     // stays on screen (marked "updating") instead of blanking. Anything that
     // changes WHICH wall or WHICH design is shown clears it at once, so a
     // stale picture can never be mistaken for the new one.
-    const identity = [photo?.url, artwork?.url, tileArtwork?.url, JSON.stringify(corners), JSON.stringify(exclusions), detectedMask?.url, editingPhoto].join('|');
+    const identity = [photo?.url, previewArt?.url, tileArtwork?.url, JSON.stringify(corners), JSON.stringify(exclusions), detectedMask?.url, editingPhoto].join('|');
     if (identity !== previewIdentity.current) {
       previewIdentity.current = identity;
       setPreview(null);
       if (previewUrl.current) { URL.revokeObjectURL(previewUrl.current); previewUrl.current = null; }
     }
     canvas.current = null;
-    if (editingPhoto || !photo || !artwork || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
+    if (editingPhoto || !photo || !previewArt || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
     renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current, detectedMask?.url ?? null)
       .then(async output => {
@@ -744,9 +750,9 @@ export default function WallPro() {
                 the imposed design; the flat master never leaves the screen. */}
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
               {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
-            <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
-            {artwork && <div>
-              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
+            <div className={photo && previewArt ? 'grid gap-4 xl:grid-cols-2' : ''}>
+            {previewArt && <div>
+              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · {artwork ? 'Flat design — the print master' : 'Your uploaded design — not print-ready yet'}{previewArt.width && previewArt.height ? ` · ${previewArt.width} × ${previewArt.height} px` : ''}</p>}
               {/* Pattern size, as PatternPro's slider: the design itself drawn
                   smaller or bigger across the wall, 30% to 300%, with no new
                   generation (owner, 2026-09-12). The panels do not change. */}
@@ -774,8 +780,8 @@ export default function WallPro() {
               </div>
               <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block">
               {scaleSettling && draftTile && !maskMode && maskRects.length === 0
-                ? <div role="img" aria-label={`Print master across the wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || artwork).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />
-                : <img src={maskMode || maskRects.length > 0 || !flatShown ? artwork.url : flatShown} alt={maskMode || maskRects.length > 0 || !flatShown ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className={'max-h-[650px] max-w-full object-contain' + (flatShown && !flatCurrent ? ' opacity-70' : '')} draggable={false} />}
+                ? <div role="img" aria-label={`Print master across the wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || previewArt).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />
+                : <img src={maskMode || maskRects.length > 0 || !flatShown ? previewArt.url : flatShown} alt={maskMode || maskRects.length > 0 || !flatShown ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className={'max-h-[650px] max-w-full object-contain' + (flatShown && !flatCurrent ? ' opacity-70' : '')} draggable={false} />}
               {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
                 onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
                 onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}

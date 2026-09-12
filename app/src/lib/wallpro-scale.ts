@@ -14,6 +14,12 @@ export type WallScaleDecision = { placement: WallPlacement; repeatWidthIn: numbe
 
 /** Words that mean "a covering that repeats", the way wallpaper does. */
 const PATTERN_WORDS = /\b(pattern|patterns|wallpaper|repeat|repeating|seamless|tile|tiles|tiled|floral|florals|flowers|botanical|botanicals|leaves|foliage|geometric|geometrics|stripe|stripes|striped|dots?|polka|damask|paisley|chevron|herringbone|lattice|trellis|plaid|check|checks|checkered|texture|textures|textured|grain|wood|woodgrain|slat|slats|slatted|stone|marble|brick|concrete|plaster|linen|weave|woven|grasscloth|terrazzo|mosaic|shiplap|tropical|palm|palms|fern|ferns)\b/i;
+/** An explicit request for a repeating tile, as opposed to a word that merely
+ * describes what the reference is made of. "Slatted", "floral" and "stone"
+ * name a material; "repeating", "seamless" and "tile" ask for a repeat. On a
+ * match the difference decides whether the customer's own reference keeps its
+ * scale, so the two lists stay separate (owner, 2026-09-12). */
+const REPEAT_REQUEST_WORDS = /\b(repeat|repeats|repeating|repeated|seamless|tile|tiles|tiled|tiling|wallpaper)\b/i;
 /** Words that mean one composition sized to the wall. */
 const MURAL_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest|map|logo|logos|brand|branding|wordmark|typography|lettering|quote|quotes|slogan|tagline|manifesto|mission|values|portrait|photo|photograph|illustration|artwork|painting|collage|timeline|wayfinding|donor)\b/i;
 
@@ -139,7 +145,15 @@ export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; 
   const saysMural = MURAL_WORDS.test(brief), saysPattern = PATTERN_WORDS.test(brief);
   const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall so motifs print at real size.` });
   const mural = (why: string) => ({ placement: 'cover' as const, repeatWidthIn, reason: `${why} One composition sized to the ${input.wallWidthIn}″ wall.` });
-  if (input.intent === 'match') return saysMural && !saysPattern ? mural('The brief asks for a mural.') : repeat('A matched design is a covering.');
+  // MATCH: the uploaded reference IS the design, so the reference is the scale
+  // baseline — reproduced across the wall at the size it depicts, not shrunk
+  // into four tiles (owner, 2026-09-12: "not matched and the pattern is too
+  // small, there should be a baseline"). A reference photograph of a covering
+  // already shows a wall-sized area, so this is what reproduces it life size.
+  // Only an explicit ask for a repeat overrides it; naming the material does not.
+  if (input.intent === 'match') return REPEAT_REQUEST_WORDS.test(brief)
+    ? repeat('You asked for a repeating tile.')
+    : mural('The design you uploaded sets the scale.');
   if (saysPattern && !saysMural) return repeat('The brief describes a pattern.');
   if (saysMural && !saysPattern) return mural('The brief describes a mural.');
   if (input.intent === 'wall') return repeat('Designing for the room.');

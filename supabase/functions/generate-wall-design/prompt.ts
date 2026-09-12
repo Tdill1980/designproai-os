@@ -72,7 +72,17 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     'Printing uses panels up to 59 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
     // Scale is stated in inches so motifs are drawn at the size they print
     // (owner, 2026-09-11, after a mural printed with three-foot flowers).
-    tile ? `Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.${input.repeatWidthIn ? ` This tile prints exactly ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it: draw every motif at the physical size it will be seen at in the room (a bloom or a leaf a few inches across, a slat or a stripe at its real width), never one motif filling the tile.` : ''}`
+    // THE REFERENCE SETS THE SCALE on a match (owner, 2026-09-12, looking at a
+    // matched tropical mural whose motifs came back a quarter of their size:
+    // "it looks like crap, not matched, and the pattern is too small — there
+    // should be a baseline"). The generic tile sentence below tells the model
+    // to draw "a bloom a few inches across", which directly contradicts
+    // reproducing the reference faithfully. A match never receives it.
+    intent === 'match'
+      ? (tile
+        ? `Create one square seamless repeating tile${input.repeatWidthIn ? ` that prints ${input.repeatWidthIn} inches wide on the wall` : ''}. Opposite edges must join and motifs must continue cleanly across every boundary — but the reference's own motif scale is the scale. Do not shrink its motifs to fit the tile.`
+        : `Reproduce the reference as one continuous covering for a wall ${input.width} inches wide by ${input.height} inches high. The reference is the scale baseline: a reference showing a wall-sized area reproduces at that size, so every leaf, bloom, slat, stripe or tile lands at the size it appears in the reference. Do not shrink the design into many small repeats and do not blow one element up past the wall.`)
+      : tile ? `Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.${input.repeatWidthIn ? ` This tile prints exactly ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it: draw every motif at the physical size it will be seen at in the room (a bloom or a leaf a few inches across, a slat or a stripe at its real width), never one motif filling the tile.` : ''}`
       : `Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges. The mural prints at ${input.width} by ${input.height} inches: scale every element to that real size, so a wall this large carries many elements at true scale rather than two or three blown past life size, unless the brief asks for one hero element.`,
     input.wallPath ? (intent === 'wall'
       ? 'The wall photograph is the space this artwork is for. Read its architecture, light, existing colours and furnishings so the design belongs in that room, but output flat artwork only: do not reproduce the room, floor, furniture, windows, drapes or perspective in the image. Wall placement is performed separately.'
