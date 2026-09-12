@@ -1,22 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { autoRepeatWidthIn, autoWallScale, patternSizeLabel, stepPatternSize } from '../wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, patternScaleLabel, patternSizeAtScale, stepPatternScale } from '../wallpro-scale';
 
-describe('Bigger / Smaller on a finished design', () => {
-  it('steps the same master along the ladder, up to the whole wall and back, without leaving the wall', () => {
-    const wall = 142;
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 36 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 42 });
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 36 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 30 });
-    // 60 is the widest tile that still repeats twice on 142 (72 would not); one more step is the whole wall.
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 48 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 60 });
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 60 }, wall, 'bigger')).toEqual({ placement: 'cover', repeatWidthIn: 60 });
-    expect(stepPatternSize({ placement: 'cover', repeatWidthIn: 36 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 60 });
-    expect(stepPatternSize({ placement: 'cover', repeatWidthIn: 36 }, wall, 'bigger')).toBeNull();
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 12 }, wall, 'smaller')).toBeNull();
-    // An off-ladder width (a hand value from before) snaps to the ladder on either step.
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 33 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 36 });
-    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 33 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 30 });
-    expect(patternSizeLabel({ placement: 'repeat', repeatWidthIn: 36 }, wall)).toBe('36″ tile · 4 across');
-    expect(patternSizeLabel({ placement: 'cover', repeatWidthIn: 36 }, wall)).toBe('Whole wall, one piece');
+describe('Pattern scale: the motifs, not the panel', () => {
+  it('scales a generated tile so the motifs print at a percentage of their generated size', () => {
+    const tile = { placement: 'repeat' as const, repeatWidthIn: 36 };
+    expect(patternSizeAtScale(tile, 142, 100)).toEqual({ placement: 'repeat', repeatWidthIn: 36 });
+    expect(patternSizeAtScale(tile, 142, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 18 });
+    expect(patternSizeAtScale(tile, 142, 200)).toEqual({ placement: 'repeat', repeatWidthIn: 72 });
+    expect(patternSizeAtScale(tile, 142, 33)).toEqual({ placement: 'repeat', repeatWidthIn: 11.9 });
+    expect(patternScaleLabel(tile, 142, 50)).toBe('50% · motifs 50% size · 18″ repeat, 8 across');
+    expect(patternScaleLabel(tile, 142, 100)).toBe('100% · motifs as generated · 36″ repeat, 4 across');
+  });
+  it('a mural shrinks by repeating itself and cannot grow past the wall', () => {
+    const mural = { placement: 'cover' as const, repeatWidthIn: 36 };
+    expect(patternSizeAtScale(mural, 142, 100)).toEqual({ placement: 'cover', repeatWidthIn: 36 });
+    expect(patternSizeAtScale(mural, 142, 150)).toEqual({ placement: 'cover', repeatWidthIn: 36 });
+    expect(patternSizeAtScale(mural, 142, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 71 });
+    expect(patternScaleLabel(mural, 142, 100)).toBe('100% · motifs as generated · one piece across the wall');
+    expect(patternScaleLabel(mural, 142, 50)).toBe('50% · motifs 50% size · 71″ repeat, 2 across');
+  });
+  it('steps through fixed percentages and stops at the ends', () => {
+    expect(stepPatternScale(100, 'smaller')).toBe(80); expect(stepPatternScale(100, 'bigger')).toBe(125);
+    expect(stepPatternScale(25, 'smaller')).toBeNull(); expect(stepPatternScale(200, 'bigger')).toBeNull();
+    expect(stepPatternScale(90, 'bigger')).toBe(100); expect(stepPatternScale(90, 'smaller')).toBe(80);
   });
 });
 

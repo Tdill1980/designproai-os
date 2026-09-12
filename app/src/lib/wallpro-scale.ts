@@ -26,37 +26,50 @@ export function autoRepeatWidthIn(wallWidthIn: number): number {
   return Math.min(48, Math.max(18, Math.round(raw / 6) * 6));
 }
 
-/** The tile widths a customer steps through with Bigger / Smaller: the sizes
- * wallpaper is sold in, then wide repeats, then the whole wall as one piece. */
-export const PATTERN_SIZE_LADDER = [12, 18, 24, 30, 36, 42, 48, 60, 72, 96, 120] as const;
-
 export type PatternSize = { placement: WallPlacement; repeatWidthIn: number };
 
-/** The customer-facing name of a size: "36″ tile · 4 across" or "Whole wall, one piece". */
-export function patternSizeLabel(size: PatternSize, wallWidthIn: number): string {
-  if (size.placement !== 'repeat') return 'Whole wall, one piece';
-  const across = Math.max(1, Math.round(wallWidthIn / size.repeatWidthIn));
-  return `${size.repeatWidthIn}″ tile · ${across} across`;
+/**
+ * PATTERN SCALE: the size of the motifs in the design, as a percentage of the
+ * size they were generated at. Owner, 2026-09-12: "what you were scaling is
+ * the entire panel size; I am saying the pattern design." A design generated
+ * as a 36-inch tile at 100% prints its flowers at the size the model drew
+ * them; at 50% the same tile prints 18 inches wide, so every flower is half
+ * the size and there are twice as many across. Deterministic: the same master,
+ * re-tiled; no regeneration, no token.
+ */
+export const PATTERN_SCALE_STEPS = [25, 33, 50, 67, 80, 100, 125, 150, 200] as const;
+export type PatternScale = (typeof PATTERN_SCALE_STEPS)[number];
+
+/** The next step up or down, or null at the end of the range. */
+export function stepPatternScale(current: number, direction: 'bigger' | 'smaller'): PatternScale | null {
+  const steps = PATTERN_SCALE_STEPS;
+  if (direction === 'bigger') return steps.find(s => s > current) ?? null;
+  const below = steps.filter(s => s < current);
+  return below.length ? below[below.length - 1] : null;
 }
 
 /**
- * One step bigger or smaller, with no regeneration: the same master is
- * tiled at the next width on the ladder. Bigger past the widest tile that
- * still repeats on this wall becomes the whole wall as one piece; Smaller
- * from the whole wall lands on the widest tile that repeats at least twice.
- * Null means the edge was already reached.
+ * The placement and tile width that print the design's motifs at `percent`
+ * of their generated size. A generated tile scales its width. A generated
+ * mural (one composition across the wall) at 100% stays one piece; below
+ * 100% it becomes a repeat of that composition at `percent` of the wall
+ * width, so the motifs shrink and the design repeats; above 100% a mural
+ * cannot grow (it already fills the wall) and stays one piece.
  */
-export function stepPatternSize(size: PatternSize, wallWidthIn: number, direction: 'bigger' | 'smaller'): PatternSize | null {
-  const ladder = PATTERN_SIZE_LADDER.filter(w => w * 2 <= wallWidthIn);
-  if (!ladder.length) return size.placement === 'repeat' && direction === 'bigger' ? { placement: 'cover', repeatWidthIn: size.repeatWidthIn } : null;
-  if (size.placement !== 'repeat') return direction === 'smaller' ? { placement: 'repeat', repeatWidthIn: ladder[ladder.length - 1] } : null;
-  const index = ladder.findIndex(w => w >= size.repeatWidthIn);
-  if (direction === 'bigger') {
-    const next = index === -1 ? null : ladder[index + (ladder[index] === size.repeatWidthIn ? 1 : 0)];
-    return next ? { placement: 'repeat', repeatWidthIn: next } : { placement: 'cover', repeatWidthIn: size.repeatWidthIn };
-  }
-  const below = ladder.filter(w => w < size.repeatWidthIn);
-  return below.length ? { placement: 'repeat', repeatWidthIn: below[below.length - 1] } : null;
+export function patternSizeAtScale(base: PatternSize, wallWidthIn: number, percent: number): PatternSize {
+  const pct = Math.min(200, Math.max(25, percent)) / 100;
+  if (base.placement === 'repeat') return { placement: 'repeat', repeatWidthIn: Math.max(1, Math.round(base.repeatWidthIn * pct * 10) / 10) };
+  if (pct >= 1) return { placement: base.placement, repeatWidthIn: base.repeatWidthIn };
+  return { placement: 'repeat', repeatWidthIn: Math.max(1, Math.round(wallWidthIn * pct * 10) / 10) };
+}
+
+/** "100% · motifs as generated · 36″ repeat, 4 across" */
+export function patternScaleLabel(base: PatternSize, wallWidthIn: number, percent: number): string {
+  const size = patternSizeAtScale(base, wallWidthIn, percent);
+  const motifs = percent === 100 ? 'motifs as generated' : percent < 100 ? `motifs ${percent}% size` : `motifs ${percent}% size`;
+  if (size.placement !== 'repeat') return `${percent}% · ${motifs} · one piece across the wall`;
+  const across = Math.max(1, Math.round(wallWidthIn / size.repeatWidthIn));
+  return `${percent}% · ${motifs} · ${size.repeatWidthIn}″ repeat, ${across} across`;
 }
 
 /**
