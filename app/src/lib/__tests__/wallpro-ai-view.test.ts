@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aiViewAvailable, canCommitFromView, resolveWallView, AI_VIEW_BADGE } from '../wallpro-ai-view';
+import { aiViewAvailable, canCommitFromView, resolveWallView, AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE } from '../wallpro-ai-view';
 
 describe('the AI view is off the customer path', () => {
   // Owner, 2026-09-12: "drop the ai view from customer path". A customer
@@ -51,10 +51,26 @@ describe('nothing is committed from a painting of the design', () => {
   });
 });
 
-describe('the badge says what it is', () => {
-  it('names it an impression and denies it is the print file', () => {
-    expect(AI_VIEW_BADGE).toMatch(/impression/i);
-    expect(AI_VIEW_BADGE).toMatch(/not your print file/i);
+describe('the labels sell rather than disclaim', () => {
+  // Owner, 2026-09-12: "What does that even mean? What benefit is there at
+  // dating artist impression? Why wouldn't anyone buy it? There is no trust
+  // signal." The staff badge names the tool by its job; it is not a warning,
+  // and it is not estate-agent jargon.
+  it('names the staff tool by what it is for', () => {
+    expect(AI_VIEW_BADGE).toBe('Marketing render');
+    expect(AI_VIEW_BADGE).not.toMatch(/impression|not your/i);
+    expect(AI_VIEW_EXPLAINER).toMatch(/ads|case stud/i);
+  });
+
+  // The view customers buy from makes a POSITIVE, specific claim: it is the
+  // print file, not a picture of one. That is the trust signal that was
+  // missing entirely.
+  it('claims the print file on the customer view, without hedging', () => {
+    expect(PRINT_TRUTH_BADGE).toMatch(/exact print geometry/i);
+    expect(PRINT_TRUTH_LINE).toMatch(/actual print file/i);
+    expect(PRINT_TRUTH_LINE).toMatch(/what the press prints/i);
+    // No weasel words: a trust signal that hedges is not one.
+    expect(PRINT_TRUTH_LINE).not.toMatch(/approximate|roughly|should be|preview only|may differ/i);
   });
 });
 

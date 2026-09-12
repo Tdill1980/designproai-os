@@ -68,7 +68,38 @@ export function canCommitFromView(view: WallViewKey): boolean {
   return view !== 'ai';
 }
 
-/** Said on the image itself, not in a caption below the fold. */
-export const AI_VIEW_BADGE = 'Artist’s impression — not your print file';
+/**
+ * WHAT THE STAFF BADGE SAYS, AND WHY IT IS NOT A WARNING.
+ *
+ * It first read "Artist's impression - not your print file". Owner, 2026-09-12:
+ * "What does that even mean? What benefit is there at dating artist impression?
+ * Why wouldn't anyone buy it? There is no trust signal."
+ *
+ * Right twice. "Artist's impression" is estate-agent jargon, and the whole
+ * label is a NEGATIVE - it says what the picture is not. That is customer-grade
+ * defensive wording stamped on a view customers can no longer reach, while the
+ * view they DO buy from carried no positive claim at all.
+ *
+ * So this names the tool by its job. Staff reach for it to make a render for an
+ * ad or a case study; that is what it says.
+ */
+export const AI_VIEW_BADGE = 'Marketing render';
 export const AI_VIEW_EXPLAINER =
-  'The image model repaints the wall freehand from your master, so its motifs and spacing will not match the file that prints. Internal use only: use "On your wall" for anything a customer sees or approves.';
+  'For ads, case studies and social. The image model repaints the wall freehand, so its motifs will not match the file that prints \u2014 fine here, never fine in front of a customer. Customers only ever see the exact print geometry.';
+
+/**
+ * THE TRUST SIGNAL ON THE VIEW CUSTOMERS ACTUALLY BUY FROM.
+ *
+ * The deterministic composite is not "a preview" and must not be sold as one.
+ * It is the print file itself, mapped onto the customer's own wall through the
+ * corners they marked - so what they approve is, pixel for pixel, what the
+ * press receives. Almost nothing in this market can say that, and WallPro was
+ * saying nothing at all.
+ *
+ * Specific and checkable, never a reassuring adjective: on screen the claim is
+ * followed by the panel count, the roll width and the resolution that the same
+ * geometry produced.
+ */
+export const PRINT_TRUTH_BADGE = 'Exact print geometry';
+export const PRINT_TRUTH_LINE =
+  'This is your actual print file on your wall \u2014 not a simulation of it. What you approve is what the press prints.';

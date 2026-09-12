@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
@@ -17,7 +17,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
+import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
@@ -1149,17 +1149,31 @@ export default function WallPro() {
               </p>}
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
               {view === 'compare' && canCompare && preview ? <BeforeAfter before={photo.url} after={preview} alt="Your design on your wall, compared with the original" name={name} /> :
-              view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-slate-100">
+              view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border border-slate-300 bg-slate-100">
                 <div className="relative">
                   <img src={aiView.url} alt="Artist's impression of the design on your wall — not the print file" className="w-full object-contain" />
                   {/* ON the image, because a caption under it sits below the
                       fold on a phone and was read as a footnote. */}
-                  <span className="absolute left-2 top-2 rounded-full bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 shadow">{AI_VIEW_BADGE}</span>
+                  <span className="absolute left-2 top-2 rounded-full bg-slate-900/75 px-3 py-1 text-xs font-bold text-white shadow">{AI_VIEW_BADGE}</span>
                 </div>
-                <p className="p-2 text-xs text-amber-900">{AI_VIEW_EXPLAINER}</p>
-                <div className="px-2 pb-2"><Button size="sm" variant="outline" onClick={() => setView('after')}>Show the real print file</Button></div>
+                <p className="p-2 text-xs text-slate-600">{AI_VIEW_EXPLAINER}</p>
+                <div className="px-2 pb-2"><Button size="sm" variant="outline" onClick={() => setView('after')}>Back to the print geometry</Button></div>
               </div> :
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
+              {/* THE TRUST SIGNAL (owner, 2026-09-12: "There is no trust signal").
+                  The composite is not a preview of the print file, it IS the
+                  print file on their wall, and that is the reason to buy. Said
+                  positively and backed on the same line by the numbers the same
+                  geometry produced, so it is checkable rather than reassuring. */}
+              {(view === 'after' || view === 'compare') && preview && billing && <div className="mt-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3">
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-emerald-900">
+                  <ShieldCheck className="h-4 w-4 shrink-0" />{PRINT_TRUTH_BADGE}
+                </p>
+                <p className="mt-1 text-xs text-emerald-900">{PRINT_TRUTH_LINE}</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} · {WALLPRO_PRINT_WIDTH}″ roll · {billing.panelLengthIn}″ long · {printSettings.minPpi} PPI · seams {seamReceipt ? 'verified' : 'checked on export'}
+                </p>
+              </div>}
               {/* The corners default to the WHOLE PHOTO so a missed detection never
                   blocks the on-wall view — but then the design covers the ceiling,
                   the floor and the furniture, which reads as "it didn't work"
