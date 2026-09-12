@@ -60,6 +60,8 @@ describe('Detect my wall', () => {
     // Pixel masks: the speck and the malformed entry are dropped; boxes are normalized from the 0..1000 grid.
     expect(body.masks.map((m: any) => m.label)).toEqual(['window with drapes', 'bed']);
     expect(body.masks[0].box).toEqual({ y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 }); expect(body.masks[0].png).toBe(png);
+    // Unclassified items default to fixed/protected -- the safer side of the error.
+    expect(body.masks.map((m: any) => m.class)).toEqual(['fixed', 'fixed']);
     expect(f.calls).toHaveLength(2);
     const request = f.calls[0];
     expect(request.generationConfig).toMatchObject({ temperature: 0, responseMimeType: 'application/json' });
@@ -75,6 +77,25 @@ describe('Detect my wall', () => {
     const bare = png.replace('data:image/png;base64,', '');
     expect(normalizeMasks({ segmentation_masks: [{ box_2d: [250, 400, 700, 600], mask: bare, label: 'window' }] })).toMatchObject([{ label: 'window', png, box: { y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 } }]);
     expect(describeMaskAnswer({ masks: [{ box_2d: [1, 2, 3, 4], mask: 'x' }] })).toMatchObject({ type: 'object', keys: ['masks'], items: 1, firstKeys: ['box_2d', 'mask'], maskPrefix: 'x' });
+  });
+  it('classifies each object fixed vs movable, common-sense examples in the prompt, and defaults an unrecognised or missing class to fixed', async () => {
+    expect(SEGMENTATION_PROMPT).toMatch(/"fixed"/); expect(SEGMENTATION_PROMPT).toMatch(/"movable"/);
+    expect(SEGMENTATION_PROMPT).toMatch(/exercise equipment/); expect(SEGMENTATION_PROMPT).toMatch(/mounted TV|window/);
+    expect(SEGMENTATION_PROMPT).toMatch(/unsure, classify it "fixed"/);
+    const mixed = [
+      { box_2d: [100, 100, 300, 300], mask: png, label: 'window', class: 'fixed' },
+      { box_2d: [400, 400, 600, 600], mask: png, label: 'exercise bike', class: 'movable' },
+      { box_2d: [700, 700, 900, 900], mask: png, label: 'lamp', class: 'unrecognised-value' },
+      { box_2d: [50, 50, 150, 150], mask: png, label: 'mirror' }, // no class field at all
+    ];
+    const f = fixture({ segmentation: mixed }); const result = await f.invoke();
+    const body = await result.json();
+    expect(body.masks.map((m: any) => ({ label: m.label, class: m.class }))).toEqual([
+      { label: 'window', class: 'fixed' },
+      { label: 'exercise bike', class: 'movable' },
+      { label: 'lamp', class: 'fixed' },
+      { label: 'mirror', class: 'fixed' },
+    ]);
   });
   it('refuses other owners\' files, unsigned callers and unreadable photos before calling the model', async () => {
     expect((await fixture({ auth: false }).invoke()).status).toBe(401);

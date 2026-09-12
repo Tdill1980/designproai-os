@@ -12,19 +12,39 @@ const response = (data: unknown, status = 200) => new Response(JSON.stringify(da
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
 export type Point = { x: number; y: number };
+/** Whether an installer could leave this exactly where it is, or would clear
+ * it out of the room before the wrap goes up. `fixed` is protected -- the
+ * covering routes around it and the customer's photo shows it unchanged.
+ * `movable` is disregarded -- the covering paints straight through it, as if
+ * it had already been carried out of the room, exactly the way a customer
+ * would actually prep a room for installation. */
+export type OcclusionClass = 'fixed' | 'movable';
 /** A pixel-accurate mask: a grayscale PNG (data URL) that fills `box`, normalized
  * 0..1 in photo coordinates; values above 127 are protected. */
-export type WallMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string };
+export type WallMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string; class: OcclusionClass };
 export type WallDetection = { wall: Point[] | null; openings: { label: string; points: Point[] }[]; masks: WallMask[]; model: string; notes: string | null };
 
 // Boxes and coarse polygons around a bed or a window-plus-drapes swallow the
 // wall around them (measured 2026-09-11: a six-box answer left the design in
 // slivers). Segmentation returns the object's real outline, so the wall beside
 // a drape or above a bed keeps the design.
+//
+// Every object is also classified fixed vs movable (owner, 2026-09-12: "an
+// exercise bike parked in front -- remove. Window -- place around it. Use
+// common sense."). A window, a mounted TV, built-in shelving or an
+// architectural niche cannot be carried out of the room, so the covering must
+// route around it and the photo must keep showing it. Freestanding furniture,
+// exercise equipment, floor lamps and anything else just sitting in front of
+// the wall would be moved before the wrap goes up in real life, so the
+// covering paints straight through it instead of preserving it. Ambiguous
+// items default to fixed (below): protecting something that should have been
+// removed is a cosmetic miss, but erasing something the customer actually
+// wanted kept is the wrong side of that error to be on.
 export const SEGMENTATION_PROMPT = [
-  'Give the segmentation masks for every object on or in front of the largest wall in this photograph that a printed wall covering must not cover: windows and glass, curtains, drapes and their rods, doors and door frames, cabinets and shelving units against the wall, mounted televisions, frames and artwork hanging on the wall, outlets, switches, vents, and furniture standing in front of the wall such as beds, sofas, desks and dressers.',
+  'Give the segmentation masks for every object on or in front of the largest wall in this photograph that a printed wall covering must not simply paint over unconsidered: windows and glass, curtains, drapes and their rods, doors and door frames, cabinets and shelving units against the wall, mounted televisions, frames and artwork hanging on the wall, outlets, switches, vents, mirrors, architectural niches or mantels that project from the wall, and furniture or equipment standing in front of the wall such as beds, sofas, desks, dressers, chairs and exercise equipment.',
   'Do not include the floor, the ceiling, adjacent walls, or the wall surface itself.',
-  'Output a JSON list of segmentation masks where each entry contains the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", and the text label in the key "label". Use descriptive labels.',
+  'Classify each object as "fixed" -- part of the room\'s architecture or mounted to the wall, which an installer could never move, such as a window, a door, built-in shelving, a mounted TV, a mirror, or a mantel -- or "movable" -- freestanding furniture or equipment sitting in front of the wall that would be carried out of the room before the wrap is installed, such as a chair, a bed, a lamp, or exercise equipment. When genuinely unsure, classify it "fixed".',
+  'Output a JSON list of segmentation masks where each entry contains the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", the text label in the key "label", and the classification in the key "class" (exactly "fixed" or "movable"). Use descriptive labels.',
 ].join(' ');
 const MAX_MASKS = 24, MAX_MASK_BYTES = 2_000_000;
 
@@ -56,7 +76,10 @@ export function normalizeMasks(raw: unknown): WallMask[] {
     const c = (n: number) => Math.min(1, Math.max(0, n / 1000));
     const box = { y0: c(b[0]), x0: c(b[1]), y1: c(b[2]), x1: c(b[3]) };
     if (box.x1 - box.x0 < 0.005 || box.y1 - box.y0 < 0.005) continue;
-    out.push({ label: String((item as any)?.label || 'protected area').slice(0, 40), box, png });
+    // Anything other than a clean "movable" answer defaults to fixed/protected
+    // -- the safer side of the error, per the rule above.
+    const cls: OcclusionClass = (item as any)?.class === 'movable' ? 'movable' : 'fixed';
+    out.push({ label: String((item as any)?.label || 'protected area').slice(0, 40), box, png, class: cls });
   }
   return out;
 }
