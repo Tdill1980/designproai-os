@@ -1,10 +1,11 @@
 -- wpw_link_otps — cross-domain WPW account-link verification codes.
 --
--- Ported from restylepro-os's proven wpw-oauth-link (RULE 1: recover, don't
--- invent). A shop's DesignProAI signup email can differ from the email their
--- WePrintWraps orders are under (e.g. signed up under an LLC domain, ordered
--- with a personal gmail). requestOtp/verifyOtp prove ownership of that alt
--- inbox instead of requiring a matching domain.
+-- Backs the wpw-oauth-link edge function's cross-domain link mode (RULE 1:
+-- recover, don't invent — this is a proven pattern, adapted). A shop's
+-- DesignProAI signup email can differ from the email their WePrintWraps
+-- orders are under (e.g. signed up under an LLC domain, ordered with a
+-- personal gmail). requestOtp/verifyOtp prove ownership of that alt inbox
+-- instead of requiring a matching domain.
 --
 -- Service-role only: the edge function is the sole reader/writer. No client
 -- (anon or authenticated) may ever read a code hash or an unverified link
