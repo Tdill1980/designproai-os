@@ -144,6 +144,17 @@ export const MyVehicleProInline = ({
         colorData.panelName = designName || colorName || "Design";
       }
 
+      // GraphicsPro: graphicspro-on-vehicle-photo refuses a request with
+      // neither a styling prompt nor a design reference (it used to 400 with
+      // "Styling prompt required" on every click, because this panel only
+      // ever sent colour fields). The approved mockup IS the design, so it
+      // rides along as designUrl and the design name doubles as the prompt.
+      if (toolSource === "GraphicsPro") {
+        if (renderUrl) colorData.designUrl = renderUrl;
+        colorData.designName = designName || colorName || "Cut vinyl graphic";
+        colorData.customStylingPrompt = designName || colorName || "Reproduce the attached cut vinyl graphic exactly";
+      }
+
       const endpoint = pickMyVehicleEndpoint(toolSource);
       const { data, error } = await renderClient.functions.invoke(endpoint, {
         body: {

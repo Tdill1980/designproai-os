@@ -16,10 +16,10 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 
 const STAGES = [
-  { key: "upscale", label: "Upscaling (ESRGAN)", icon: <Image className="w-4 h-4" /> },
-  { key: "cut_paths", label: "CUT-MAP™ Contour", icon: <Scissors className="w-4 h-4" /> },
-  { key: "cut_files", label: "Element Extraction", icon: <FileText className="w-4 h-4" /> },
-  { key: "production_pdf", label: "Production PDF", icon: <FileText className="w-4 h-4" /> },
+  { key: "upscale", label: "Upscaling print file", icon: <Image className="w-4 h-4" /> },
+  { key: "cut_paths", label: "Silhouette cut line (CutContour)", icon: <Scissors className="w-4 h-4" /> },
+  { key: "cut_files", label: "Bleed & nesting — cut files pack", icon: <FileText className="w-4 h-4" /> },
+  { key: "production_pdf", label: "CutContour PDF", icon: <FileText className="w-4 h-4" /> },
   { key: "pricing", label: "Pricing", icon: <DollarSign className="w-4 h-4" /> },
   { key: "packaging", label: "Packaging", icon: <Package className="w-4 h-4" /> },
   { key: "complete", label: "Complete", icon: <CheckCircle2 className="w-4 h-4" /> },
@@ -37,14 +37,14 @@ interface JobData {
   progress: number;
   mockup_render_url: string | null;
   flat_production_url: string | null;
-  vectorized_url: string | null;
+  vector_svg_url: string | null;
   cut_path_svg_url: string | null;
   cut_path_pdf_url: string | null;
   cut_path_eps_url: string | null;
   cut_files_zip_url: string | null;
   cut_contour_overlay_url: string | null;
   extracted_element_count: number | null;
-  vectorized_count: number | null;
+  vector_element_count: number | null;
   wholesale_price: number | null;
   retail_price: number | null;
   total_sqft: number | null;
@@ -72,7 +72,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
     const fetchJob = async () => {
       const { data } = await supabase
         .from("graphics_pro_jobs")
-        .select("status, stage, progress, mockup_render_url, flat_production_url, vectorized_url, cut_path_svg_url, cut_path_pdf_url, cut_path_eps_url, cut_files_zip_url, cut_contour_overlay_url, extracted_element_count, vectorized_count, wholesale_price, retail_price, total_sqft, material_type, nested_width_inches, nested_height_inches, error_message")
+        .select("status, stage, progress, mockup_render_url, flat_production_url, vector_svg_url, cut_path_svg_url, cut_path_pdf_url, cut_path_eps_url, cut_files_zip_url, cut_contour_overlay_url, extracted_element_count, vector_element_count, wholesale_price, retail_price, total_sqft, material_type, nested_width_inches, nested_height_inches, error_message")
         .eq("id", jobId)
         .single();
 
@@ -220,7 +220,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
               <div>
                 <p className="text-xs text-muted-foreground">Dimensions</p>
                 <p className="text-sm font-medium text-foreground">
-                  {job.nested_width_inches}" x {job.nested_height_inches}"
+                  {job.nested_width_inches}" x {job.nested_height_inches}" <span className="text-xs text-muted-foreground">nested sheet</span>
                 </p>
               </div>
               <div>
@@ -256,7 +256,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
                 <h3 className="text-lg font-semibold text-foreground">CutPath Map</h3>
               </div>
               <p className="text-xs text-muted-foreground mb-3">
-                Magenta #FF00FF CutContour spot color — 1/16" offset from edge. Ready for your plotter/cutter.
+                CutContour spot colour (CMYK 0/100/0/0) as a 0.25 pt stroke on the unified silhouette of every graphic, artwork colour bled past the cut line, nested on one sheet. Ready for your plotter/cutter.
               </p>
 
               {/* Visual preview of cut contour */}
@@ -268,7 +268,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
                     className="w-full max-h-64 object-contain"
                   />
                   <div className="px-3 py-1.5 bg-fuchsia-500/10 text-center">
-                    <p className="text-[10px] text-fuchsia-300">CutPath Map Preview — magenta line shows where your cutter will cut</p>
+                    <p className="text-[10px] text-fuchsia-300">Cut contour preview — the magenta line is where your cutter will cut</p>
                   </div>
                 </div>
               )}
@@ -277,7 +277,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
                 {job.cut_path_svg_url && (
                   <FileRow
                     label="CutContour SVG"
-                    description='Plotter-ready SVG — magenta #FF00FF spot color, 1/16" offset contour path'
+                    description='Editable SVG — CutContour / Artwork / Bleed layers, silhouette cut path'
                     onClick={() => downloadFile(job.cut_path_svg_url!, `CutContour-${jobId}.svg`)}
                     accent="fuchsia"
                   />
@@ -285,16 +285,16 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
                 {job.cut_path_pdf_url && (
                   <FileRow
                     label="Production PDF"
-                    description="Artwork + CutContour layers — send directly to RIP software"
+                    description="Print-ready PDF — real CutContour spot colour, three layers — send directly to RIP software"
                     onClick={() => downloadFile(job.cut_path_pdf_url!, `Production-${jobId}.pdf`)}
                     accent="fuchsia"
                   />
                 )}
                 {job.cut_contour_overlay_url && (
                   <FileRow
-                    label="Cut Contour Overlay"
-                    description="Visual preview of cut path overlaid on artwork (for proofing)"
-                    onClick={() => downloadFile(job.cut_contour_overlay_url!, `contour-overlay-${jobId}.png`)}
+                    label="Cut Contour Preview"
+                    description="Cut path drawn over the artwork (for proofing)"
+                    onClick={() => downloadFile(job.cut_contour_overlay_url!, `contour-preview-${jobId}.svg`)}
                     accent="fuchsia"
                   />
                 )}
@@ -318,15 +318,15 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
               )}
               {job.flat_production_url && (
                 <FileRow
-                  label="Print File (ESRGAN Upscaled)"
+                  label="Print File (upscaled)"
                   description="High-resolution production artwork — ready for print & cut"
                   onClick={() => downloadFile(job.flat_production_url!, `print-file-${jobId}.png`)}
                 />
               )}
               {job.cut_files_zip_url && (
                 <FileRow
-                  label={`Cut Files Pack (ZIP)${job.extracted_element_count ? ` — ${job.extracted_element_count} elements` : ""}`}
-                  description='Each element extracted + vectorized SVGs with 1/4" bleed — ready for weeding'
+                  label={`Cut Contour Kit (ZIP)${job.extracted_element_count ? ` — ${job.extracted_element_count} graphic${job.extracted_element_count === 1 ? "" : "s"} nested` : ""}`}
+                  description='CutContour PDF + editable SVG + manifest with the nested sheet size to order'
                   onClick={() => downloadFile(job.cut_files_zip_url!, `CutFiles-${jobId}.zip`)}
                 />
               )}

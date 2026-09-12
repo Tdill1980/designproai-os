@@ -72,7 +72,7 @@ export function useGraphicsProV1Logic() {
     const path = `renders/${user.id}/GraphicsProV1/${folder}/${Date.now()}.${ext}`;
 
     const { error: uploadErr } = await supabase.storage
-      .from("wrap-files")
+      .from("graphicspro-files")
       .upload(path, file, { contentType: file.type, upsert: true });
 
     if (uploadErr) {
@@ -80,7 +80,7 @@ export function useGraphicsProV1Logic() {
       return null;
     }
 
-    const { data: { publicUrl } } = supabase.storage.from("wrap-files").getPublicUrl(path);
+    const { data: { publicUrl } } = supabase.storage.from("graphicspro-files").getPublicUrl(path);
     return publicUrl;
   }, []);
 
@@ -498,11 +498,15 @@ export function useGraphicsProV1Logic() {
     }
   }, [uploadFile, toast, startProduction]);
 
-  // Generate flat artwork (for design/commercial modes)
+  // Generate flat artwork (for design/commercial modes). The flat file is
+  // what the deterministic cut-contour producer traces, so the production
+  // method and the measured zones ride along: film-cut artwork must be flat
+  // solid colours, and each zone becomes its own cut decal.
   const generateFlat = useCallback(async (
     designPrompt: string,
     designStyle: string,
-    jobId: string | null
+    jobId: string | null,
+    cutContext?: { vinylSubstrate?: 'cut' | 'printed'; vinylZones?: VinylZone[]; businessName?: string; surfaceType?: string | null },
   ): Promise<string | null> => {
     try {
       const { data, error: flatErr } = await supabase.functions.invoke(
@@ -513,6 +517,12 @@ export function useGraphicsProV1Logic() {
             designPrompt,
             designStyle,
             jobId,
+            vinylSubstrate: cutContext?.vinylSubstrate,
+            vinylZones: cutContext?.vinylZones?.map((z) => ({
+              label: z.label, widthInches: z.widthInches, heightInches: z.heightInches, designPrompt: z.designPrompt, filmColor: z.filmColor,
+            })),
+            businessName: cutContext?.businessName,
+            surfaceType: cutContext?.surfaceType ?? undefined,
           },
         }
       );
@@ -619,7 +629,7 @@ export function useGraphicsProV1Logic() {
         .from("graphics_pro_jobs" as any)
         .update({
           cut_path_svg_url: svgUrl,
-          vectorized_url: svgUrl,
+          vector_svg_url: svgUrl,
           status: "complete",
           stage: "complete",
           progress: 100,

@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-86), [
+  assert.deepEqual(names.slice(-87), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -268,6 +268,10 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260911190000_wallpro_production_jobs.sql",
     // WallPro production reaches the design team: admin/tester read of projects, versions, jobs and files.
     "20260911200000_wallpro_team_production_read.sql",
+    // GraphicsPro (owner 2026-09-11): graphics_pro_jobs / pricing / shop markup
+    // and the public graphicspro-files bucket the recovered RestylePro product
+    // reads. docs/GRAPHICSPRO-END-TO-END.md.
+    "20260911210000_graphicspro_cut_contour.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

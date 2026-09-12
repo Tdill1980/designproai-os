@@ -48,7 +48,8 @@ select policies_are(
   ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs',
         'designpro_owner_read_flat_atlas_previews','designpro_owner_read_generation_views',
         'designpro_owner_read_wrap_files','wallpro_file_read','wallpro_file_upload',
-        'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read'],
+        'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read',
+        'graphicspro_files_public_read','graphicspro_files_owner_upload'],
   'only exact DesignPro Storage policies are installed by this bootstrap'
 );
 select set_config('storage.operation','object.sign',true);

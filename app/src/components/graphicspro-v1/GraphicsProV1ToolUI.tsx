@@ -190,11 +190,13 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
     }
   }, [mockupResult, surface, graphic, toast]);
 
-  // 2D Cut-Path Proof — the print-ready CutContour file (100% magenta cut lines,
-  // 0.5" bleed, registration marks) via cut-contour-build. CRITICAL: cut paths
-  // must trace the FLAT artwork, not the vehicle/surface mockup photo, so we
-  // flatten the design first (generate_flat) and feed THAT to the builder.
+  // Cut Contour kit — the print-ready files, built the way the WePrintWraps
+  // guide does it: the FLAT artwork (never the mockup photo) is traced into a
+  // unified silhouette cut line in a real CutContour spot, the artwork colour
+  // is bled 1/4" past it, and every graphic is nested on one sheet. The zones
+  // the customer measured give the true print size.
   const [cutPathPdfUrl, setCutPathPdfUrl] = useState<string | null>(null);
+  const [cutKit, setCutKit] = useState<{ svgUrl: string | null; zipUrl: string | null; sheet: { widthIn: number; heightIn: number } | null; elements: number; reviewFlags: string[]; scale: number; mirrored: boolean; vector: boolean } | null>(null);
   const [isGeneratingCutPath, setIsGeneratingCutPath] = useState(false);
   const handleBuildCutPathProof = useCallback(async () => {
     if (!mockupResult) {
@@ -204,27 +206,54 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
     setIsGeneratingCutPath(true);
     try {
       const designLabel = graphic.businessName || graphic.designPrompt || "Custom Graphics";
-      const flatUrl = await generateFlat(graphic.designPrompt || designLabel, graphic.designStyle || "", mockupResult.jobId);
+      const zones = surface.source === 'upload' ? surface.uploadedAngles.flatMap((a) => a.zones) : surface.vinylZones;
+      const flatUrl = await generateFlat(graphic.designPrompt || designLabel, graphic.designStyle || "", mockupResult.jobId, {
+        vinylSubstrate: surface.vinylSubstrate, vinylZones: zones, businessName: graphic.businessName, surfaceType: surface.type,
+      });
       if (!flatUrl) {
-        toast({ title: "Couldn't flatten the artwork", description: "The cut path needs flat artwork — try again.", variant: "destructive" });
+        toast({ title: "Couldn't flatten the artwork", description: "The cut contour needs flat artwork — try again.", variant: "destructive" });
         return;
       }
+      const measured = zones.find((z) => z.widthInches > 0 && z.heightInches > 0);
       const { data, error } = await renderClient.functions.invoke("cut-contour-build", {
-        body: { file_url: flatUrl, file_name: `${designLabel.replace(/[^a-z0-9-_ ]/gi, "").slice(0, 60) || "cut-graphic"}.png` },
+        body: {
+          file_url: flatUrl,
+          file_name: `${designLabel.replace(/[^a-z0-9-_ ]/gi, "").slice(0, 60) || "cut-graphic"}.png`,
+          options: {
+            width_in: measured?.widthInches,
+            height_in: measured?.heightInches,
+            bleed_in: surface.bleedInches ?? 0.25,
+            substrate: surface.vinylSubstrate,
+            label: designLabel,
+            surface: surface.type,
+            // Window graphics mounted inside the glass are applied face-out: reverse cut.
+            mirror: surface.type === 'glass' && surface.glassMount === 'interior',
+          },
+        },
       });
       const url = (data as any)?.output_url;
       if (error || !(data as any)?.success || !url) {
-        toast({ title: "Cut path proof failed", description: (data as any)?.error || error?.message || "Try again", variant: "destructive" });
+        toast({ title: "Cut contour kit failed", description: (data as any)?.error || error?.message || "Try again", variant: "destructive" });
         return;
       }
       setCutPathPdfUrl(url);
-      toast({ title: "Cut Path Proof ready", description: "Print-ready CutContour PDF (magenta cut lines + bleed + reg marks)." });
+      setCutKit({
+        svgUrl: (data as any)?.svg_url || null,
+        zipUrl: (data as any)?.zip_url || null,
+        sheet: (data as any)?.sheet || null,
+        elements: Number((data as any)?.element_count) || 0,
+        reviewFlags: Array.isArray((data as any)?.review_flags) ? (data as any).review_flags : [],
+        scale: Number((data as any)?.scale) || 1,
+        mirrored: (data as any)?.mirrored === true,
+        vector: (data as any)?.vector === true,
+      });
+      toast({ title: "Cut Contour kit ready", description: (data as any)?.description || "CutContour PDF + SVG + ZIP." });
     } catch (e: any) {
       toast({ title: "Cut path proof error", description: e?.message || "Try again", variant: "destructive" });
     } finally {
       setIsGeneratingCutPath(false);
     }
-  }, [mockupResult, graphic, generateFlat, toast]);
+  }, [mockupResult, graphic, surface, generateFlat, toast]);
 
   // AUTO-GENERATE studio angles the moment a design/mockup is created for a
   // vehicle job — no extra click. Keeps the design on the uploaded photo(s) and
@@ -580,7 +609,8 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
       flatUrl = await generateFlat(
         `Recreate this logo exactly as clean flat artwork for vinyl cutting. ${graphic.logoRecreatePrompt || "Maintain original design."}`,
         graphic.designStyle || "modern",
-        mockupResult.jobId
+        mockupResult.jobId,
+        { vinylSubstrate: surface.vinylSubstrate, businessName: graphic.businessName, surfaceType: surface.type },
       );
     } else if (graphic.mode === "upload" && graphic.uploadedArtworkUrls.length > 0) {
       // Use the first uploaded artwork directly
@@ -593,7 +623,13 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
           ? `${graphic.businessName} commercial graphics package`
           : graphic.designPrompt,
         graphic.designStyle,
-        mockupResult.jobId
+        mockupResult.jobId,
+        {
+          vinylSubstrate: surface.vinylSubstrate,
+          vinylZones: surface.source === 'upload' ? surface.uploadedAngles.flatMap((a) => a.zones) : surface.vinylZones,
+          businessName: graphic.businessName,
+          surfaceType: surface.type,
+        },
       );
     } else if (graphic.mode === "restyle" && graphic.restyleSourceUrl) {
       flatUrl = graphic.restyleSourceUrl;
@@ -1006,17 +1042,43 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
                       {isGeneratingCutPath ? (
                         <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Building cut path…</>
                       ) : (
-                        <><Scissors className="w-4 h-4 mr-2" /> Cut Path Proof (PDF)</>
+                        <><Scissors className="w-4 h-4 mr-2" /> Cut Contour Kit (PDF + SVG)</>
                       )}
                     </Button>
                   </div>
                   {cutPathPdfUrl && (
                     <div className="mt-3 rounded-md border border-fuchsia-200 bg-fuchsia-50/40 px-3 py-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-fuchsia-900 mb-1">2D Cut-Path Proof — print-ready</p>
-                      <p className="text-[11px] text-gray-600 mb-1.5">100% magenta CutContour cut lines · 0.5″ bleed · registration marks.</p>
-                      <a href={cutPathPdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-700 hover:underline">
-                        <Download className="w-3.5 h-3.5" /> Open / download CutContour PDF
-                      </a>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-fuchsia-900 mb-1">Cut Contour kit — print-ready</p>
+                      <p className="text-[11px] text-gray-600 mb-1.5">
+                        <span className="font-mono">CutContour</span> spot (CMYK 0/100/0/0) 0.25 pt cut line on the unified silhouette · artwork colour bled {surface.bleedInches ?? 0.25}″ past it · layers CutContour / Artwork / Bleed
+                        {cutKit?.sheet ? ` · nested sheet ${cutKit.sheet.widthIn}″ × ${cutKit.sheet.heightIn}″ (${cutKit.elements} graphic${cutKit.elements === 1 ? '' : 's'})` : ''}
+                        {cutKit && cutKit.scale < 1 ? ` · file at ${Math.round(cutKit.scale * 100)}% scale — print at ${Math.round(100 / cutKit.scale)}%` : ''}
+                        {cutKit?.vector ? ' · vector film layers' : ''}
+                        {cutKit?.mirrored ? ' · REVERSE CUT for interior-mount glass (mirrored, reads correctly from outside)' : ''}
+                      </p>
+                      {cutKit?.sheet && (
+                        <p className="text-[11px] text-gray-600 mb-1.5">Order under Avery or 3M Cut Contour and enter <span className="font-semibold">{cutKit.sheet.widthIn}″ × {cutKit.sheet.heightIn}″</span> as the file size.</p>
+                      )}
+                      {cutKit && cutKit.reviewFlags.length > 0 && (
+                        <ul className="mb-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 list-disc list-inside">
+                          {cutKit.reviewFlags.map((f) => <li key={f}>{f.replace(/^[a-z]+:/, '')}</li>)}
+                        </ul>
+                      )}
+                      <div className="flex flex-wrap gap-3">
+                        <a href={cutPathPdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-700 hover:underline">
+                          <Download className="w-3.5 h-3.5" /> CutContour PDF
+                        </a>
+                        {cutKit?.svgUrl && (
+                          <a href={cutKit.svgUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-700 hover:underline">
+                            <Download className="w-3.5 h-3.5" /> Editable SVG
+                          </a>
+                        )}
+                        {cutKit?.zipUrl && (
+                          <a href={cutKit.zipUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-fuchsia-700 hover:underline">
+                            <Download className="w-3.5 h-3.5" /> Kit ZIP
+                          </a>
+                        )}
+                      </div>
                     </div>
                   )}
                   {twoDProofUrl && (
@@ -1035,16 +1097,21 @@ export function GraphicsProV1ToolUI({ initialSurfaceType }: GraphicsProV1ToolUIP
             </Card>
           )}
 
-          {/* MyVehiclePro — brand differentiator: apply this graphic to a customer's actual vehicle photo */}
-          <MyVehicleProInline
-            modeType="graphicspro"
-            finishType={vinylFinish}
-            vehicleYear={surface.year}
-            vehicleMake={surface.make}
-            vehicleModel={surface.model}
-            renderUrl={mockupResult.mockupUrl}
-            designName="Graphic"
-          />
+          {/* MyVehiclePro — brand differentiator: apply this graphic to a
+              customer's actual vehicle photo. Vehicle jobs only (a wall or
+              storefront graphic has no vehicle to see it on); the approved
+              mockup is the design reference and the brief is the prompt. */}
+          {(surface.type === 'vehicle' || surface.source === 'upload') && (
+            <MyVehicleProInline
+              modeType="graphicspro"
+              finishType={vinylFinish}
+              vehicleYear={surface.year}
+              vehicleMake={surface.make}
+              vehicleModel={surface.model}
+              renderUrl={mockupResult.mockupUrl}
+              designName={graphic.businessName || graphic.designPrompt || "Cut vinyl graphic"}
+            />
+          )}
 
           {/* ApprovePro — Send for Client Approval */}
           <Button

@@ -26,6 +26,7 @@ import {
   Ruler,
   Package,
   Image as ImageIcon,
+  Scissors,
   LayoutDashboard,
   CreditCard,
   type LucideIcon,
@@ -58,6 +59,15 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     pillar: "design",
     tier: "starter",
     description: "Upload a wall, create or upload artwork, and preview it at measured scale",
+  },
+  {
+    key: "graphicspro",
+    label: "GraphicsPro",
+    route: "/graphics-pro",
+    icon: Scissors,
+    pillar: "design",
+    tier: "complete",
+    description: "Cut-contour graphics on a wall, a vehicle or a storefront — mark the zones on your own photo, mockup, cut files",
   },
   // ── DESIGN ───────────────────────────────────────────────────
   {

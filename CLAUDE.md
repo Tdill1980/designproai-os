@@ -112,6 +112,59 @@ Locked by `tests/atlas-call1-graph.test.mjs` (the real migration on PGlite,
 a two-worker end-to-end run, the refusal path, the runtime seams) and
 `ops/tests/server-cutover.test.mjs` (the env vocabularies).
 
+## ✂️ GRAPHICSPRO IS ROUTED, PORTED AND LOCKED (owner-directed, Trish 2026-09-11: "Graphicspro must work end to end")
+
+Full record: `docs/GRAPHICSPRO-END-TO-END.md`. What was measured: the
+GraphicsPro product in `app/src` was a byte-identical RestylePro copy that no
+route served, and every edge function it invokes and every table it reads was
+absent from this repository and from the DesignProAI Supabase project.
+MyVehiclePro for GraphicsPro was broken in RestylePro as well (the panel never
+sent a styling prompt or the mockup; the function 400'd on every click).
+
+- **Routes** `/graphics-pro`, `/graphics-pro-wall`, `/graphics-pro-window`,
+  `/graphicspro` (redirect); sidebar key `graphicspro`, tier `complete`. One
+  tool serves walls, windows and vehicles; interior-mount window graphics are
+  cut in REVERSE (the kit is mirrored); vehicle zones come from every
+  uploaded angle.
+- **The cut-contour files are PRODUCED, deterministically** (owner: "it must
+  design and produce cut contour designs and files"). `_shared/cut-contour/`
+  executes the WePrintWraps guide: unified silhouette cut line as a real PDF
+  `Separation /CutContour` (CMYK 0/100/0/0) 0.25 pt stroke, the artwork's own
+  colour bled 1/4" past it, layers CutContour / Artwork / Bleed for Print &
+  Cut and — WPW File Prep: "layered vector files are required" — one vector
+  film layer per colour with offset-path bleeds and no raster for
+  Manufacture Film Cut, every graphic nested on one sheet ≤ 51.5", 10% scale
+  with the scale in the name beyond the 200" PDF limit, manual-review flags
+  (letters under 2", hairline, > 200 vertices, tiling). `cut-contour-build`
+  file-prep mode serves it (PDF + SVG + ZIP + sheet size to order);
+  `run_production` stages 2–4 are that one call and pricing is the nested
+  sheet. The flat artwork is briefed as cut-ready input. No model, no
+  secret on the cut line; `cut-map` / `generate-cut-files` / VTracer /
+  Replicate are not carried. Locked by `tests/cut-contour-geometry.test.mjs`
+  and `_shared/cut-contour/produce.test.ts` (deno).
+- **Recovered edge functions (RULE 1)**: `generate-graphics-pro`,
+  `graphicspro-on-vehicle-photo`, `edit-vehicle-photo`, `cut-graphics-proof`,
+  `cut-contour-build`, `vectorize-it`, plus `_shared/myvehicle-prompt-builder.ts`.
+  Deltas are inline and deliberate: files live in the **public
+  `graphicspro-files` bucket** (wrap-files is private here); RestylePro's
+  `quick-prep-pdf-export` is not carried (its PDF never embedded the artwork);
+  `vectorize-it` requires `VECTORIZE_DROPLET_URL` and carries no RestylePro
+  droplet IP.
+- **MyVehiclePro contract**: the approved mockup rides as `colorData.designUrl`
+  (IMAGE 2) and the brief as `customStylingPrompt`; vehicle jobs only.
+- **Schema** `20260911210000_graphicspro_cut_contour.sql`: the live RestylePro
+  shapes, `surface_type` admits `'studio'`, `shop_pricing_config.user_id`
+  UNIQUE, pricing seeded (Avery 6.32 / 3M 6.92 per sq ft).
+- **Konva on the customer's photo** is the existing `ZoneMasker` (react-konva)
+  on wall, storefront and every uploaded vehicle angle; the rectangles are
+  burned into the photo (`composeZoneOverlay`) and sent first as the hard mask.
+- **Step two, not started**: move Topaz / VTracer / BiRefNet stages onto the
+  droplet runtime as a durable node graph (the WallPro production pattern),
+  then signed reads. Acceptance is the owner's eye on a fresh generation.
+
+Locked by `tests/graphicspro-end-to-end.test.mjs` and
+`supabase/tests/graphicspro_cut_contour.test.sql`.
+
 ## 🧱 WALLPRO ACTIVE CONTRACTS (owner-directed, Trish 2026-09-11)
 
 WallPro is the wedge product: a wall is one flat rectangle, so "output the

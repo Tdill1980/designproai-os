@@ -68,6 +68,14 @@ const ApproveProUnavailable = () => (
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
+// GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
+// The V1 tool is the product (surface → Konva ZoneMasker on the customer's
+// photo → mockup → cut graphics proof / CutContour PDF / production files).
+// It was carried into this repo intact and never routed; see
+// docs/GRAPHICSPRO-END-TO-END.md.
+const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
+const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
+const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
 const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
 import { SessionGuard } from "@/components/SessionGuard";
 import { RequireAdmin } from "@/components/RequireAdmin";
@@ -367,6 +375,10 @@ const App = () => {
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
+          <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
+          <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
+          <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />
+          <Route path="/graphicspro" element={<Navigate to="/graphics-pro" replace />} />
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
           <Route path="/printpro/production-os" element={<ProductionOS />} />
