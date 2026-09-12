@@ -81,6 +81,37 @@ export function patternScaleWord(percent: number): string {
   return s < 0.6 ? 'Micro' : s < 0.8 ? 'Small' : s < 1.2 ? 'Standard' : s < 2 ? 'Large' : s < 2.5 ? 'Bold' : 'Extreme';
 }
 
+/** One tap per word, so the slider is not the only way to get there. */
+export const PATTERN_SCALE_PRESETS = [50, 70, 100, 150, 220, 300] as const;
+
+/** How wide the design is drawn on the wall, in inches, at this percentage.
+ * The same number for a tile and for a mural, which is why one slider governs
+ * both: a mural is simply a swatch the size of the wall. */
+export function patternDrawnWidthIn(base: PatternSize, wall: WallBox, percent: number): number {
+  return patternBaseWidthIn(base, wall) * (clampPatternScale(percent) / 100);
+}
+
+/**
+ * The real resolution the design prints at, in pixels per inch: the master's
+ * own pixels spread over the inches it is drawn across. Enlarging a design
+ * does not add detail, so this falls as the slider rises — the one honest
+ * limit on "bigger". Print size never changes with it; only sharpness does.
+ */
+export function patternPpi(masterPx: { width: number; height: number }, base: PatternSize, wall: WallBox, percent: number): number {
+  const drawn = patternDrawnWidthIn(base, wall, percent);
+  if (!Number.isFinite(masterPx.width) || masterPx.width <= 0 || drawn <= 0) return 0;
+  return masterPx.width / drawn;
+}
+
+/** The largest slider step that still meets `minPpi` from the master's own
+ * pixels, or null when even the smallest step cannot. */
+export function maxPrintSafeScale(masterPx: { width: number; height: number }, base: PatternSize, wall: WallBox, minPpi: number): number | null {
+  for (let pct = PATTERN_SCALE_MAX; pct >= PATTERN_SCALE_MIN; pct -= PATTERN_SCALE_STEP) {
+    if (patternPpi(masterPx, base, wall, pct) + 1e-9 >= minPpi) return pct;
+  }
+  return null;
+}
+
 /** "150% · Large · the design repeats every 54″" */
 export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: number): string {
   const pct = clampPatternScale(percent);

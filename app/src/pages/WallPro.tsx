@@ -14,7 +14,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternScaleLabel, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -116,15 +116,34 @@ export default function WallPro() {
    * print master at the chosen scale, the on-wall view updates at once,
    * production uses it on Rebuild, and the project remembers it. */
   const [patternScale, setPatternScale] = useState(100);
+  // While the slider is moving, `scaleDraft` leads and the flat pane previews
+  // it instantly in CSS, exactly the way PatternPro previewed a swatch. The
+  // committed scale, which drives the real canvas renders and the print
+  // geometry, only follows when the slider rests — one exact render per
+  // decision instead of one per tick.
+  const [scaleDraft, setScaleDraft] = useState(100);
   const patternBase: PatternSize = currentVersion
     ? { placement: currentVersion.placement, repeatWidthIn: Number(currentVersion.repeat_width_in) || autoRepeatWidthIn(width) }
     : { placement, repeatWidthIn: repeatWidth };
   const wallBox: WallBox = { width, height, aspect: artwork?.aspect || 1 };
+  const masterPx = { width: artwork?.width || 0, height: artwork?.height || 0 };
+  const draftPpi = artwork ? patternPpi(masterPx, patternBase, wallBox, scaleDraft) : 0;
+  const printSafeMax = artwork ? maxPrintSafeScale(masterPx, patternBase, wallBox, printSettings.minPpi) : null;
   const scaleSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scaleCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { setScaleDraft(patternScale); }, [patternScale]);
+  /** A slider tick: instant preview only. */
+  function draftPatternScale(percent: number) {
+    setScaleDraft(clampPatternScale(percent));
+    // Touch and keyboard do not always fire a commit; this guarantees one.
+    if (scaleCommit.current) clearTimeout(scaleCommit.current);
+    scaleCommit.current = setTimeout(() => applyPatternScale(percent), 400);
+  }
   function applyPatternScale(percent: number) {
+    if (scaleCommit.current) clearTimeout(scaleCommit.current);
     const pct = clampPatternScale(percent);
     const next = patternSizeAtScale(patternBase, wallBox, pct);
-    setPatternScale(pct); setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
+    setScaleDraft(pct); setPatternScale(pct); setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
@@ -149,6 +168,7 @@ export default function WallPro() {
   const [artworkDownload, setArtworkDownload] = useState<{ source: string; url: string; name: string } | null>(null);
   const urls = useRef(new Set<string>()), canvas = useRef<HTMLCanvasElement | null>(null), loadOnce = useRef(false);
   const previewVersion = useRef(0);
+  const previewIdentity = useRef(''), previewUrl = useRef<string | null>(null);
   const retain = (url: string) => { if (url.startsWith('blob:')) urls.current.add(url); return url; };
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
   const dimensionsValid = validWallSize(width, height);
@@ -185,7 +205,19 @@ export default function WallPro() {
     renderFlatWall(tileArtwork.url, layout).then(canvas => { if (active) setFlatPreview({ key: flatKey, url: canvas.toDataURL('image/jpeg', 0.9) }); }).catch(() => { /* the generated tile stays on screen */ });
     return () => { active = false; };
   }, [flatKey, seamReady]);
+  // The exact render for this scale, or the previous one while the next is
+  // still drawing — never a jump back to the bare tile.
   const flatCurrent = flatPreview && flatPreview.key === flatKey ? flatPreview.url : null;
+  const flatShown = flatCurrent || (flatPreview && tileArtwork && flatPreview.key.startsWith(tileArtwork.url + '|') ? flatPreview.url : null);
+  // The instant preview under the moving slider: the master tiled in CSS at
+  // the draft size, the way PatternPro previewed a swatch. Approximate for a
+  // mirrored repeat (CSS cannot flip alternate tiles); the exact canvas
+  // replaces it the moment the slider rests.
+  const draftDrawnIn = artwork ? patternDrawnWidthIn(patternBase, wallBox, scaleDraft) : 0;
+  const draftTile = artwork && draftDrawnIn > 0
+    ? { fraction: draftDrawnIn / width, position: `${draftDrawnIn >= width ? 'center' : 'left'} ${draftDrawnIn / artwork.aspect >= height ? 'center' : 'top'}` }
+    : null;
+  const scaleSettling = scaleDraft !== patternScale;
 
   useEffect(() => {
     if (!seamKey || !artwork) { setSeam(null); setSeamBusy(false); return; }
@@ -222,8 +254,17 @@ export default function WallPro() {
 
   useEffect(() => {
     const version = ++previewVersion.current;
-    let ownedPreview: string | null = null;
-    setPreview(null); canvas.current = null;
+    // A pattern-size change re-renders the same wall, so the last composite
+    // stays on screen (marked "updating") instead of blanking. Anything that
+    // changes WHICH wall or WHICH design is shown clears it at once, so a
+    // stale picture can never be mistaken for the new one.
+    const identity = [photo?.url, artwork?.url, tileArtwork?.url, JSON.stringify(corners), JSON.stringify(exclusions), detectedMask?.url, editingPhoto].join('|');
+    if (identity !== previewIdentity.current) {
+      previewIdentity.current = identity;
+      setPreview(null);
+      if (previewUrl.current) { URL.revokeObjectURL(previewUrl.current); previewUrl.current = null; }
+    }
+    canvas.current = null;
     if (editingPhoto || !photo || !artwork || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
     renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current, detectedMask?.url ?? null)
@@ -231,13 +272,16 @@ export default function WallPro() {
         const blob = await canvasBlob(output);
         if (version !== previewVersion.current) return;
         canvas.current = output;
-        ownedPreview = URL.createObjectURL(blob);
-        setPreview(ownedPreview);
+        const url = URL.createObjectURL(blob);
+        if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
+        previewUrl.current = url;
+        setPreview(url);
       })
       .catch(e => { if (version === previewVersion.current) setError(e.message); })
       .finally(() => { if (version === previewVersion.current) setRendering(false); });
-    return () => { previewVersion.current++; if (ownedPreview) URL.revokeObjectURL(ownedPreview); };
+    return () => { previewVersion.current++; };
   }, [photo, artwork, corners, exclusions, detectedMask?.url, width, height, placement, repeatWidth, editingPhoto, seamCurrent]);
+  useEffect(() => () => { if (previewUrl.current) URL.revokeObjectURL(previewUrl.current); }, []);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError(''); setNotice(''); beginAppBusy();
@@ -695,13 +739,29 @@ export default function WallPro() {
               <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern size">
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                   <span className="font-semibold">Pattern size</span>
-                  <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, wallBox, patternScale)}</span>
+                  <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, wallBox, scaleDraft)}</span>
                 </div>
-                <Slider aria-label="Pattern size" min={PATTERN_SCALE_MIN} max={PATTERN_SCALE_MAX} step={PATTERN_SCALE_STEP} value={[patternScale]} disabled={!!busy} onValueChange={v => applyPatternScale(v[0])} />
+                <Slider aria-label="Pattern size" min={PATTERN_SCALE_MIN} max={PATTERN_SCALE_MAX} step={PATTERN_SCALE_STEP} value={[scaleDraft]} disabled={!!busy} onValueChange={v => draftPatternScale(v[0])} onValueCommit={v => applyPatternScale(v[0])} />
                 <div className="mt-1 flex justify-between text-[11px] text-slate-500"><span>30% smaller</span><span>100% as generated</span><span>300% bigger</span></div>
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {PATTERN_SCALE_PRESETS.map(p => <Button key={p} size="sm" variant={scaleDraft === p ? 'default' : 'outline'} className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(p)}>{patternScaleWord(p)} {p}%</Button>)}
+                  {scaleDraft !== 100 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(100)}><RotateCcw className="mr-1 h-3 w-3" />Reset</Button>}
+                </div>
+                {/* Bigger spreads the same pixels over more inches, so the
+                    honest limit on "bigger" is resolution, never print size:
+                    the wall, the panels and the file stay exactly as they are. */}
+                {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'text-slate-500' : 'text-amber-700')}>
+                  {draftPpi >= printSettings.minPpi
+                    ? `${Math.round(draftPpi)} PPI from the design's own pixels — above your ${printSettings.minPpi} PPI minimum. Wall size, panels and print file are unchanged at every size.`
+                    : `${Math.round(draftPpi)} PPI from the design's own pixels, under your ${printSettings.minPpi} PPI minimum. The print file stays the same size; Topaz fills the detail in, which invents it rather than recovering it.`}
+                  {printSafeMax !== null && printSafeMax < scaleDraft && <> <button type="button" className="underline underline-offset-2" disabled={!!busy} onClick={() => applyPatternScale(printSafeMax)}>Use {printSafeMax}%, the largest fully sharp size</button>.</>}
+                </p>}
                 <p className="mt-1 text-xs text-slate-500">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
               </div>
-              <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={maskMode || maskRects.length > 0 || !flatCurrent ? artwork.url : flatCurrent} alt={maskMode || maskRects.length > 0 || !flatCurrent ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className="max-h-[650px] max-w-full object-contain" draggable={false} />
+              <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block">
+              {scaleSettling && draftTile && !maskMode && maskRects.length === 0
+                ? <div role="img" aria-label={`Print master across the wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || artwork).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />
+                : <img src={maskMode || maskRects.length > 0 || !flatShown ? artwork.url : flatShown} alt={maskMode || maskRects.length > 0 || !flatShown ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className={'max-h-[650px] max-w-full object-contain' + (flatShown && !flatCurrent ? ' opacity-70' : '')} draggable={false} />}
               {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
                 onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
                 onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}

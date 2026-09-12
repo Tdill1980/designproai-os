@@ -172,7 +172,20 @@ contracts; each names its lock.
   geometry everywhere: a tile larger than the wall is centred on it by
   `tileOrigin` in `wallpro-geometry.ts` and the identical rule in
   `runtime/wallpro-production.cjs`, so the flat pane, the on-wall view and the
-  print file agree. Locked by `wallpro-scale.test.ts`, `wallpro.test.ts` and
+  print file agree. **Pattern size never changes print size** (owner,
+  2026-09-12): `planPanels` / `planWallPrint` read wall inches, bleed, overlap
+  and the 59-inch roll only, so the wall, the panel count and the file's
+  dimensions are identical at every percentage — the only thing that changes is
+  how big the design is drawn on them. The honest limit on "bigger" is
+  resolution, and the control states it live: `patternPpi` shows the master's
+  own pixels over the inches it is drawn across, and `maxPrintSafeScale` offers
+  the largest fully sharp size rather than letting Topaz invent detail
+  silently. The slider commits on release (`onValueCommit`, with a 400 ms
+  fallback for touch and keyboard) and previews instantly in CSS meanwhile, so
+  one exact canvas render happens per decision instead of one per tick; the
+  on-wall composite keeps its last image while the next renders and only blanks
+  when the wall or the design itself changes. Locked by
+  `wallpro-scale.test.ts`, `wallpro.test.ts` and
   `source-tests/runtime/wallpro-production.test.mjs`.
 - **The print file is ONE file.** Every production job stores the whole wall
   with bleed as one PNG at the panel PPI (`stitchWholeWall`, stitched from
