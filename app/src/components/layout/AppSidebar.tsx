@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Lock, Sparkles, Crown, Shield, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -250,8 +250,8 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               : "";
 
             return (
+              <Fragment key={tool.key}>
               <SidebarTooltip
-                key={tool.key}
                 title={`${tool.label}${statusSuffix}`}
                 description={tool.description}
               >
@@ -290,6 +290,32 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   )}
                 </Link>
               </SidebarTooltip>
+              {/* The QC / production board belongs with the tool it serves, not
+                  buried in the Admin block: the design team lives in WallPro
+                  all day and reaches QC from there (owner, 2026-09-12).
+                  Staff-only -- isAdmin covers the admin and tester roles, the
+                  same two RequireAdmin and the board's RLS already allow. */}
+              {tool.key === "wallpro" && isAdmin && (
+                <SidebarTooltip
+                  title="WallPro QC / Production"
+                  description="Approved versions, 150 PPI panels and print files for any customer, filed by DesignID"
+                >
+                  <Link
+                    to="/admin/wallpro-production"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/admin/wallpro-production")
+                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
+                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                    )}
+                  >
+                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">QC / Production</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
+              </Fragment>
             );
           })}
         </div>
