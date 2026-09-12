@@ -174,6 +174,27 @@ contracts; each names its lock.
   drawn at print size (`prompt.ts`); production tiles at exactly that width.
   Auto is the product; Mural and Repeating pattern remain overrides. A 4K
   master is never called print-ready unless pixels over wall inches say so.
+  **On a match, the uploaded reference IS the scale baseline** (owner,
+  2026-09-12, looking at a matched tropical mural returned at a quarter size:
+  "not matched and the pattern is too small, there should be a base line"). A
+  reference photograph of a covering already depicts a wall-sized area, so
+  reproducing it once across the wall is what lands it life size; forcing it
+  into the generic four-repeats tile shrank every motif about fourfold, and the
+  tile sentence ("a bloom or a leaf a few inches across") directly contradicted
+  the match instruction to keep the reference's motif scale. `autoWallScale`
+  therefore returns `cover` for `match` unless the brief explicitly asks for a
+  repeat (`REPEAT_REQUEST_WORDS` — "repeating", "seamless", "tile"); naming the
+  material ("slatted", "floral", "stone") describes the reference and never
+  re-scales it. The match branch of `prompt.ts` states the baseline and never
+  carries the small-motif or many-elements sentences. The pattern-size slider
+  is then how a customer tiles it down from there. Locked by
+  `wallpro-scale.test.ts` and the match-prompt tests in `wallpro.test.ts`.
+- **A design uploaded to match goes on the wall before a token is spent**
+  (owner, 2026-09-12: "I'm uploading an image and it's not showing on the
+  image"). `previewArt` falls back to the reference on the match intent, so the
+  flat pane and the on-wall composite show it at once, labelled "Your uploaded
+  design — not print-ready yet". Preview only: every print, version and
+  production path still reads `artwork`, which exists only after a generation.
   Locked by `wallpro-scale.test.ts` and `wallpro.test.ts`.
 - **Pattern size is PatternPro's slider, ported (owner, 2026-09-12: "Look at
   PatternPro, we literally had this").** Reference: `restylepro-os`

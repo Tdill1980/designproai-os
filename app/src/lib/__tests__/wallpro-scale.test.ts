@@ -66,9 +66,22 @@ describe('WallPro scale brain', () => {
     expect(autoWallScale({ intent: 'prompt', prompt: 'Blush florals with sage leaves', wallWidthIn: 142 })).toMatchObject({ placement: 'repeat', repeatWidthIn: 36 });
     expect(autoWallScale({ intent: 'prompt', prompt: 'A mountain landscape mural at sunset', wallWidthIn: 142 })).toMatchObject({ placement: 'cover' });
     expect(autoWallScale({ intent: 'prompt', prompt: 'Our logo and the words Welcome Home', wallWidthIn: 60 })).toMatchObject({ placement: 'cover' });
-    expect(autoWallScale({ intent: 'match', prompt: 'Make the wall wrap like this slatted wall', wallWidthIn: 142 })).toMatchObject({ placement: 'repeat', repeatWidthIn: 36 });
     expect(autoWallScale({ intent: 'match', prompt: 'keep this as one mural scene', wallWidthIn: 142 })).toMatchObject({ placement: 'cover' });
     expect(autoWallScale({ intent: 'wall', prompt: '', wallWidthIn: 120 })).toMatchObject({ placement: 'repeat', repeatWidthIn: 30 });
+  });
+  it('on a match the uploaded reference is the scale baseline, and naming the material does not shrink it', () => {
+    // The defect this encodes: a matched tropical mural came back at a quarter
+    // size because "floral" forced a 36-inch tile (owner, 2026-09-12).
+    const match = (prompt: string) => autoWallScale({ intent: 'match', prompt, wallWidthIn: 142 });
+    expect(match('')).toMatchObject({ placement: 'cover' });
+    expect(match('Make the wall wrap like this slatted wall')).toMatchObject({ placement: 'cover' });
+    expect(match('tropical floral with monstera leaves')).toMatchObject({ placement: 'cover' });
+    expect(match('stone feature wall').reason).toMatch(/sets the scale/);
+    // Only an explicit ask for a repeat overrides it.
+    expect(match('turn it into a repeating pattern')).toMatchObject({ placement: 'repeat', repeatWidthIn: 36 });
+    expect(match('make it a seamless tile')).toMatchObject({ placement: 'repeat' });
+    // And an explicit choice still wins over everything.
+    expect(autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 142, chosen: 'repeat' })).toMatchObject({ placement: 'repeat' });
   });
   it('with no clue, a wall wider than 8 ft repeats and a smaller one is a mural; a choice always wins', () => {
     expect(autoWallScale({ intent: 'prompt', prompt: 'something calm', wallWidthIn: 142 })).toMatchObject({ placement: 'repeat' });

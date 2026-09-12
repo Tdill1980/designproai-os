@@ -278,3 +278,24 @@ describe('Taking the photo the phone actually gives us', () => {
     expect(needsWallTranscode('', '')).toBe(true);
   });
 });
+
+describe('A match reproduces the reference at its own scale', () => {
+  const ref = 'owner/uploads/ref.png';
+  it('never tells the model to draw small motifs when the reference sets the scale', () => {
+    const cover = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref });
+    expect(cover).toMatch(/reference is the scale baseline/);
+    expect(cover).toMatch(/at the size it appears in the reference/);
+    expect(cover).not.toMatch(/a bloom or a leaf a few inches across/);
+    // The generic mural sentence, which tells the model to fit "many elements"
+    // onto a large wall, is exactly what shrank a matched design.
+    expect(cover).not.toMatch(/scale every element to that real size/);
+    const tile = wallDesignPrompt({ prompt: 'make it a seamless tile', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 36, intent: 'match', referencePath: ref });
+    expect(tile).toMatch(/seamless repeating tile that prints 36 inches wide/);
+    expect(tile).toMatch(/Do not shrink its motifs to fit the tile/);
+    expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
+  });
+  it('leaves the prompt and wall intents on the wall-sized scale brain', () => {
+    expect(wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 36 })).toMatch(/a bloom or a leaf a few inches across/);
+    expect(wallDesignPrompt({ prompt: 'A mountain mural', width: 142, height: 96, placement: 'cover' })).toMatch(/scale every element to that real size/);
+  });
+});
