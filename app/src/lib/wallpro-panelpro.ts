@@ -379,3 +379,87 @@ export function panelMap(job: WallProductionJob | null): PanelMap | null {
     seams: Math.max(0, panels.length - 1),
   };
 }
+
+/* ── The human validation window ────────────────────────────────────────── */
+
+/**
+ * GENIE WALL PANELIZER — WHAT THE CUSTOMER IS TOLD WHILE A HUMAN CHECKS.
+ *
+ * Owner, 2026-09-12: "a wall version of the Genie Universal Panelizer this can
+ * act as a value ad while we create panels which will take 24 hours for my
+ * human team to validate ais panels ... these are our real customers of wpw we
+ * can't risk going 100% ai."
+ *
+ * So `ready` on a production job means READY FOR VALIDATION, not ready for the
+ * customer, and `released_at` is the separate fact that a person signed the
+ * panels off. 20260912240000 enforces that in storage: until a human releases,
+ * the customer cannot read the files at all.
+ *
+ * The window is a selling point, not an apology, and it is stated as one. A
+ * competitor hands over whatever the model produced; WePrintWraps has a person
+ * measure it against the wall first. That is the reason the trade buys here.
+ */
+export const WALL_VALIDATION_HOURS = 24;
+
+export type WallDelivery =
+  | 'not-requested'   // no production job yet
+  | 'building'        // the panelizer is cutting
+  | 'validating'      // cut, waiting on the human team
+  | 'released'        // a person signed it off; the customer has the files
+  | 'failed';
+
+export function deliveryState(job: WallProductionJob | null): WallDelivery {
+  if (!job) return 'not-requested';
+  if (job.status === 'failed') return 'failed';
+  if (job.status !== 'ready') return 'building';
+  return (job as { released_at?: string | null }).released_at ? 'released' : 'validating';
+}
+
+/**
+ * When the team's 24 hours are up, measured from the moment the panels were
+ * actually cut rather than from when the order was placed — the clock is a
+ * promise about human review, and review cannot start before there is
+ * something to review.
+ */
+export function validationDueAt(job: WallProductionJob | null): Date | null {
+  const finished = job?.finished_at;
+  if (!finished) return null;
+  const at = new Date(finished).getTime();
+  if (!Number.isFinite(at)) return null;
+  return new Date(at + WALL_VALIDATION_HOURS * 3600_000);
+}
+
+/** Whole hours left in the window, floored at zero. Null when not validating. */
+export function validationHoursLeft(job: WallProductionJob | null, now: number = Date.now()): number | null {
+  const due = validationDueAt(job);
+  if (!due || deliveryState(job) !== 'validating') return null;
+  return Math.max(0, Math.ceil((due.getTime() - now) / 3600_000));
+}
+
+/** What the customer reads. Positive: this is the service, not the delay. */
+export function deliveryMessage(job: WallProductionJob | null, now: number = Date.now()): { title: string; detail: string } | null {
+  const state = deliveryState(job);
+  if (state === 'not-requested') return null;
+  if (state === 'failed') return {
+    title: 'The panel build stopped',
+    detail: 'Our team has been notified and will rebuild your panels. Nothing was charged twice.',
+  };
+  if (state === 'building') {
+    const done = Number(job?.progress?.panelsDone) || 0, total = Number(job?.progress?.panelsTotal) || 0;
+    return {
+      title: total ? `Cutting your panels · ${done}/${total}` : 'Cutting your panels',
+      detail: 'Your approved design is being cut to the roll and enhanced to print resolution, panel by panel.',
+    };
+  }
+  if (state === 'validating') {
+    const left = validationHoursLeft(job, now);
+    return {
+      title: 'Your panels are with our production team',
+      detail: `A person is checking every panel against your wall measurements, the seams and the print resolution before anything is released${left !== null ? ` — usually within ${left} ${left === 1 ? 'hour' : 'hours'}` : ''}. We do not hand over unchecked files.`,
+    };
+  }
+  return {
+    title: 'Released by our production team',
+    detail: 'Checked by a person, not just generated. Your print-ready files are ready to download.',
+  };
+}

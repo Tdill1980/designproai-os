@@ -251,6 +251,10 @@ export type WallProductionJob = {
   id: string; owner_id: string; project_id: string; version_id: string; request: Record<string, unknown>; request_hash: string;
   status: 'queued' | 'running' | 'ready' | 'failed'; attempts: number; progress: { stage?: string; panelsTotal?: number; panelsDone?: number; nativePpi?: number; topaz?: string; wholeWall?: WallWholeFile | { error: string } | null };
   panels: WallProductionPanel[]; manifest_path: string | null; error: string | null; created_at: string; updated_at: string; finished_at: string | null;
+  /** A HUMAN signed these panels off. Until it is set, `status: 'ready'` means
+   * ready for VALIDATION, not ready for the customer -- and 20260912240000
+   * makes that binding in storage, not just advisory. */
+  released_at?: string | null; released_by?: string | null; release_note?: string | null;
 };
 export const wholeWallFile = (job: Pick<WallProductionJob, 'progress'> | null | undefined): WallWholeFile | null => {
   const w = job?.progress?.wholeWall;
@@ -473,4 +477,21 @@ export async function recordWallQcReview(input: { versionId: string; projectId: 
   }).select('*').single();
   if (error) throw new Error('The QC review could not be recorded: ' + error.message);
   return data as WallQcReview;
+}
+
+/** A person releases the cut panels to the customer. Staff only, and refused
+ * unless the design team has already recorded a `released` QC verdict for that
+ * version -- the sign-off and the handover are one act. */
+export async function releaseWallProductionJob(jobId: string, note?: string): Promise<WallProductionJob> {
+  const { data, error } = await db.rpc('release_wallpro_production_job', { p_job_id: jobId, p_note: note ?? null });
+  if (error) {
+    const code = String(error.message || '');
+    throw new Error(
+      code.includes('not_authorised') ? 'Releasing panels is for admins and testers only.'
+      : code.includes('qc_release_required') ? 'Record a QC release for this version first — panels are never handed over unchecked.'
+      : code.includes('job_not_ready') ? 'The panels are not finished building yet.'
+      : code.includes('job_not_found') ? 'That production job no longer exists.'
+      : 'The panels could not be released: ' + code);
+  }
+  return data as WallProductionJob;
 }

@@ -38,10 +38,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import {
   loadWallPanelProStudio, openWallPrintFiles, recordWallQcReview, recoverOrphanedWallGeneration,
-  wallPanelFiles, wholeWallFile,
+  releaseWallProductionJob, wallPanelFiles, wholeWallFile,
 } from '@/lib/wallpro-api';
 import {
-  STAGE_LABEL, jobIsStale, panelHealth, panelMap, versionStage, wallForensicRecord, WALL_TARGET_PPI,
+  STAGE_LABEL, deliveryState, jobIsStale, panelHealth, panelMap, validationHoursLeft, versionStage,
+  wallForensicRecord, WALL_TARGET_PPI, WALL_VALIDATION_HOURS,
   type WallPanelProStudio as StudioModel, type WallStudioProjectRecord, type WallStudioVersionRecord,
 } from '@/lib/wallpro-panelpro';
 import {
@@ -315,6 +316,12 @@ function QcGate({ design, record, onChanged }: { design: WallStudioProjectRecord
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  async function run(action: () => Promise<unknown>, failure: string) {
+    setBusy(true); setError('');
+    try { await action(); }
+    catch (e) { setError(e instanceof Error ? e.message : failure); }
+    finally { setBusy(false); }
+  }
   // A new version is a new judgement: never carry the last one's ticks over.
   useEffect(() => { setChecks({}); setNotes(''); setError(''); }, [record.version.id]);
 
@@ -372,6 +379,40 @@ function QcGate({ design, record, onChanged }: { design: WallStudioProjectRecord
       </Button>
       {!canRelease(checks, placement) && <span className="text-xs text-slate-500">Every check that applies has to be ticked to release.</span>}
     </div>
+
+    {/* THE HANDOVER. Separate from the verdict on purpose: the QC review says
+        the DESIGN passed, this says the cut PANELS were checked against it and
+        may go to the customer. Until it is pressed the customer cannot read
+        the files at all -- 20260912240000 enforces that in storage, so this is
+        a gate rather than a label (owner, 2026-09-12: "we can't risk going
+        100% ai"). The RPC refuses unless a release verdict is already on
+        record, so the two cannot drift apart. */}
+    {record.job && record.job.status === 'ready' && <div className="mt-4 border-t border-slate-200 pt-3">
+      {deliveryState(record.job) === 'released'
+        ? <p className="text-sm font-semibold text-emerald-700">
+            Released to the customer{record.job.released_at ? ` on ${when(record.job.released_at)}` : ''}
+            {record.job.released_by ? ` by ${short(record.job.released_by)}` : ''}.
+          </p>
+        : <div className="space-y-2">
+            <p className="text-sm">
+              <strong>The customer cannot download these panels yet.</strong>{' '}
+              {(() => { const left = validationHoursLeft(record.job); return left === null
+                ? `They are inside the ${WALL_VALIDATION_HOURS}-hour validation window.`
+                : `${left} ${left === 1 ? 'hour' : 'hours'} left of the ${WALL_VALIDATION_HOURS}-hour window they were promised.`; })()}
+            </p>
+            <p className="text-xs text-slate-600">
+              Check the panel map, the {'\u00bd'}″ overlap at every seam and the resolution against the wall
+              measurements before releasing. If anything is wrong, hold the version instead and fix or
+              rebuild — nothing reaches the customer while it is held.
+            </p>
+            <Button size="sm" disabled={busy || record.release !== 'released'}
+              title={record.release === 'released' ? undefined : 'Record a QC release for this version first.'}
+              onClick={() => void run(async () => { await releaseWallProductionJob(record.job!.id, notes); onChanged(); }, 'The panels could not be released.')}>
+              <ShieldCheck className="mr-1 h-4 w-4" />Release panels to the customer
+            </Button>
+            {record.release !== 'released' && <p className="text-xs text-slate-500">Tick the checks and press Release for print first — the handover needs a verdict on record.</p>}
+          </div>}
+    </div>}
   </div>;
 }
 

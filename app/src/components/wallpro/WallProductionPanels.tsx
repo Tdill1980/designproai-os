@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Download, Loader2, Sparkles } from 'lucide-react';
+import { Download, Loader2, Sparkles, ShieldCheck } from 'lucide-react';
+import { deliveryMessage, deliveryState } from '@/lib/wallpro-panelpro';
 import { Button } from '@/components/ui/button';
 import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, wallDesignId, wallPanelFiles, wholeWallFile, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
 
@@ -69,6 +70,22 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
     {job && <div className="mt-3 space-y-2 text-sm">
       {live && <p role="status" className="flex items-center gap-2 text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{job.status === 'queued' ? 'Queued for the production runtime…' : `Building panel ${Math.min((job.progress.panelsDone || 0) + 1, job.progress.panelsTotal || 0)} of ${job.progress.panelsTotal || '?'}${job.progress.nativePpi ? ` · master is ${job.progress.nativePpi} PPI native, Topaz ${job.progress.topaz || ''} to ${request.targetPpi}` : ''}`}</p>}
       {job.status === 'failed' && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">The build failed: {job.error || 'unknown error'}. Rebuild to try again.</p>}
+      {/* GENIE WALL PANELIZER -- THE WINDOW, STATED AS THE SERVICE IT IS.
+          `ready` means cut, not handed over: a person checks every panel
+          against the wall measurements, the seams and the resolution before
+          anything is released, and until they do the files are unreadable
+          (20260912240000). Owner, 2026-09-12: "these are our real customers of
+          wpw we can't risk going 100% ai." A competitor ships whatever the
+          model produced; this is the reason the trade buys here, so it is sold
+          rather than apologised for. */}
+      {(() => { const message = deliveryMessage(job); const state = deliveryState(job); return message && state !== 'failed' && state !== 'building'
+        ? <div className={'rounded-xl border p-3 ' + (state === 'released' ? 'border-emerald-300 bg-emerald-50' : 'border-sky-300 bg-sky-50')}>
+            <p className={'flex items-center gap-2 text-sm font-semibold ' + (state === 'released' ? 'text-emerald-900' : 'text-sky-900')}>
+              <ShieldCheck className="h-4 w-4 shrink-0" />{message.title}
+            </p>
+            <p className={'mt-1 text-xs ' + (state === 'released' ? 'text-emerald-900' : 'text-sky-900')}>{message.detail}</p>
+          </div>
+        : null; })()}
       {stale && !live && <p className="text-xs text-amber-800">These panels were built for a different wall size or placement. Rebuild for the current settings.</p>}
       {/* THE print file first: the whole wall as one PNG. Panels are the fallback for a RIP that cannot tile. */}
       {job.status === 'ready' && whole && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-violet-400 bg-violet-50 px-4 py-3">
