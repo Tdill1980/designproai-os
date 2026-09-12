@@ -634,6 +634,12 @@ export default function WallPro() {
       const imposable = !!photo && validWallCorners(liveCorners);
       setArtwork(art); setName(result.design_name); setMarking(imposable || !photo ? null : 'wall'); setView(imposable ? 'after' : 'design');
       if (photo && !imposable) setNotice('Your flat design is ready. Mark the four wall corners on the Before view to see it imposed on your wall.');
+      // On a phone the preview is a card below the fold, so a finished design
+      // looked like nothing had happened — owner, 2026-09-12: "what button do I
+      // push so I see the recreated design on the photo I provide". Nothing to
+      // push: it goes on the photo by itself and the page moves to it.
+      else if (imposable) setNotice('Your design is on your wall photo. "On your wall" is the exact print geometry; "Show me with AI" paints a photo-real picture of the room.');
+      if (photo) setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
       try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
@@ -742,7 +748,7 @@ export default function WallPro() {
           </section>
         </fieldset>
         <div className="min-w-0 space-y-5">
-          <section className={panelClass + ' overflow-hidden'}>
+          <section id="wall-preview" className={panelClass + ' overflow-hidden'}>
             {/* Every WallPro design originates as a flat rectangle, and the client
                 sees both at once: the print master on the left and the same file
                 imposed on their photo on the right, the moment the corners exist.

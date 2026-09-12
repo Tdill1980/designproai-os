@@ -178,14 +178,20 @@ contracts; each names its lock.
   2026-09-12, looking at a matched tropical mural returned at a quarter size:
   "not matched and the pattern is too small, there should be a base line"). A
   reference photograph of a covering already depicts a wall-sized area, so
-  reproducing it once across the wall is what lands it life size; forcing it
-  into the generic four-repeats tile shrank every motif about fourfold, and the
-  tile sentence ("a bloom or a leaf a few inches across") directly contradicted
-  the match instruction to keep the reference's motif scale. `autoWallScale`
-  therefore returns `cover` for `match` unless the brief explicitly asks for a
-  repeat (`REPEAT_REQUEST_WORDS` — "repeating", "seamless", "tile"); naming the
-  material ("slatted", "floral", "stone") describes the reference and never
-  re-scales it. The match branch of `prompt.ts` states the baseline and never
+  the baseline is MEASURED off a real installed wall, not assumed. The owner
+  photographed the same design hung in her own room (2026-09-12, "this is the
+  size pattern, see the difference"): against a 74-inch sofa and a 26-inch
+  shelf the anthurium blooms print about 10 inches, which puts that design's
+  full repeat at 74 to 87 inches on a 142-inch wall. The generic four-across
+  (36") was half life size; treating the file as one wall width (142") was
+  double. `autoMatchRepeatWidthIn` therefore repeats a matched design about
+  TWICE across the wall, on the same 6-inch steps, clamped 48 to 96 — 72 inches
+  on that wall, inside the measured band, with the pattern-size slider reaching
+  the rest of it (110% is 79 inches). Naming the material ("slatted", "floral",
+  "stone") describes the reference and never re-scales it; only a brief asking
+  for one scene makes it a mural. The tile sentence "a bloom or a leaf a few
+  inches across" directly contradicted the match instruction to keep the
+  reference's motif scale, so a match never receives it. The match branch of `prompt.ts` states the baseline and never
   carries the small-motif or many-elements sentences. The pattern-size slider
   is then how a customer tiles it down from there. Locked by
   `wallpro-scale.test.ts` and the match-prompt tests in `wallpro.test.ts`.
@@ -195,6 +201,11 @@ contracts; each names its lock.
   flat pane and the on-wall composite show it at once, labelled "Your uploaded
   design — not print-ready yet". Preview only: every print, version and
   production path still reads `artwork`, which exists only after a generation.
+  A finished generation also scrolls the page to `#wall-preview` and names the
+  two view buttons in the notice, because on a phone the preview card sits
+  below the fold and a completed design looked like nothing had happened
+  (owner: "what button do I push so I see the recreated design on the photo I
+  provide" — none; it lands there by itself).
   Locked by `wallpro-scale.test.ts` and `wallpro.test.ts`.
 - **Pattern size is PatternPro's slider, ported (owner, 2026-09-12: "Look at
   PatternPro, we literally had this").** Reference: `restylepro-os`

@@ -289,9 +289,11 @@ describe('A match reproduces the reference at its own scale', () => {
     // The generic mural sentence, which tells the model to fit "many elements"
     // onto a large wall, is exactly what shrank a matched design.
     expect(cover).not.toMatch(/scale every element to that real size/);
-    const tile = wallDesignPrompt({ prompt: 'make it a seamless tile', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 36, intent: 'match', referencePath: ref });
-    expect(tile).toMatch(/seamless repeating tile that prints 36 inches wide/);
-    expect(tile).toMatch(/Do not shrink its motifs to fit the tile/);
+    // The measured baseline: a matched design repeats about twice across.
+    const tile = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72, intent: 'match', referencePath: ref });
+    expect(tile).toMatch(/prints 72 inches wide on the wall and repeats about 2 times across it/);
+    expect(tile).toMatch(/Hold the reference's own motif scale/);
+    expect(tile).toMatch(/not with many smaller copies of them/);
     expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
   });
   it('leaves the prompt and wall intents on the wall-sized scale brain', () => {

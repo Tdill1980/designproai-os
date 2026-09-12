@@ -32,6 +32,26 @@ export function autoRepeatWidthIn(wallWidthIn: number): number {
   return Math.min(48, Math.max(18, Math.round(raw / 6) * 6));
 }
 
+/**
+ * The baseline for a design uploaded to match: it repeats about TWICE across
+ * the wall, which is how a decorative wallpaper mural is actually hung.
+ *
+ * Measured from the owner's own installed wall, 2026-09-12 ("this is the size
+ * pattern, see the difference"): against a 74-inch sofa and a 26-inch shelf,
+ * the anthurium blooms print about 10 inches, which puts that design's full
+ * repeat at roughly 74 to 87 inches on a 142-inch wall. One-across (142") is
+ * about twice life size; the generic four-across (36") is about half. Two
+ * across lands inside the measured band, and the pattern-size slider covers
+ * the rest of it — 110% of 72 is 79 inches.
+ *
+ * Kept on the same 6-inch steps as `autoRepeatWidthIn`, never under 4 feet
+ * nor over 8.
+ */
+export function autoMatchRepeatWidthIn(wallWidthIn: number): number {
+  if (!Number.isFinite(wallWidthIn) || wallWidthIn <= 0) return 72;
+  return Math.min(96, Math.max(48, Math.round(wallWidthIn / 2 / 6) * 6));
+}
+
 export type PatternSize = { placement: WallPlacement; repeatWidthIn: number };
 export type WallBox = { width: number; height: number; aspect: number };
 
@@ -139,21 +159,24 @@ export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: num
  * A customer's explicit choice (`chosen`) always wins.
  */
 export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null }): WallScaleDecision {
-  const repeatWidthIn = autoRepeatWidthIn(input.wallWidthIn);
+  // A matched design keeps the reference's own scale, so its repeat is the
+  // wallpaper baseline (about two across), not the generic four across.
+  const repeatWidthIn = input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn);
   if (input.chosen) return { placement: input.chosen, repeatWidthIn, reason: input.chosen === 'repeat' ? `Repeating pattern, as chosen, at ${repeatWidthIn}″ for a ${input.wallWidthIn}″ wall.` : 'Mural, as chosen: one composition sized to the wall.' };
   const brief = input.prompt || '';
   const saysMural = MURAL_WORDS.test(brief), saysPattern = PATTERN_WORDS.test(brief);
   const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall so motifs print at real size.` });
   const mural = (why: string) => ({ placement: 'cover' as const, repeatWidthIn, reason: `${why} One composition sized to the ${input.wallWidthIn}″ wall.` });
-  // MATCH: the uploaded reference IS the design, so the reference is the scale
-  // baseline — reproduced across the wall at the size it depicts, not shrunk
-  // into four tiles (owner, 2026-09-12: "not matched and the pattern is too
-  // small, there should be a baseline"). A reference photograph of a covering
-  // already shows a wall-sized area, so this is what reproduces it life size.
-  // Only an explicit ask for a repeat overrides it; naming the material does not.
-  if (input.intent === 'match') return REPEAT_REQUEST_WORDS.test(brief)
-    ? repeat('You asked for a repeating tile.')
-    : mural('The design you uploaded sets the scale.');
+  // MATCH: the uploaded reference IS the design, so it keeps its own scale.
+  // The baseline is MEASURED, not assumed: `autoMatchRepeatWidthIn` above puts
+  // it at about two repeats across, from the owner's installed wall. The
+  // generic four-across made it half size; treating the file as one wall width
+  // made it double. Naming the material ("slatted", "floral", "stone")
+  // describes the reference and never re-scales it — only a brief that asks
+  // for one scene makes it a mural.
+  if (input.intent === 'match') return saysMural && !REPEAT_REQUEST_WORDS.test(brief)
+    ? mural('The design you uploaded is one scene.')
+    : { placement: 'repeat', repeatWidthIn, reason: `The design you uploaded sets the scale: it repeats every ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall, about twice, the way wallpaper is hung.` };
   if (saysPattern && !saysMural) return repeat('The brief describes a pattern.');
   if (saysMural && !saysPattern) return mural('The brief describes a mural.');
   if (input.intent === 'wall') return repeat('Designing for the room.');
