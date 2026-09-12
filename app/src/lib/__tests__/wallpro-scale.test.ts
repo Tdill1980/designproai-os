@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { autoRepeatWidthIn, autoWallScale } from '../wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, patternSizeLabel, stepPatternSize } from '../wallpro-scale';
+
+describe('Bigger / Smaller on a finished design', () => {
+  it('steps the same master along the ladder, up to the whole wall and back, without leaving the wall', () => {
+    const wall = 142;
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 36 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 42 });
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 36 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 30 });
+    // 60 is the widest tile that still repeats twice on 142 (72 would not); one more step is the whole wall.
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 48 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 60 });
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 60 }, wall, 'bigger')).toEqual({ placement: 'cover', repeatWidthIn: 60 });
+    expect(stepPatternSize({ placement: 'cover', repeatWidthIn: 36 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 60 });
+    expect(stepPatternSize({ placement: 'cover', repeatWidthIn: 36 }, wall, 'bigger')).toBeNull();
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 12 }, wall, 'smaller')).toBeNull();
+    // An off-ladder width (a hand value from before) snaps to the ladder on either step.
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 33 }, wall, 'bigger')).toEqual({ placement: 'repeat', repeatWidthIn: 36 });
+    expect(stepPatternSize({ placement: 'repeat', repeatWidthIn: 33 }, wall, 'smaller')).toEqual({ placement: 'repeat', repeatWidthIn: 30 });
+    expect(patternSizeLabel({ placement: 'repeat', repeatWidthIn: 36 }, wall)).toBe('36″ tile · 4 across');
+    expect(patternSizeLabel({ placement: 'cover', repeatWidthIn: 36 }, wall)).toBe('Whole wall, one piece');
+  });
+});
 
 describe('WallPro scale brain', () => {
   it('sizes the repeat from the wall: about four across, on 6-inch steps, 18 to 48', () => {

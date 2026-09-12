@@ -14,7 +14,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { autoWallScale } from '@/lib/wallpro-scale';
+import { autoWallScale, patternSizeLabel, stepPatternSize } from '@/lib/wallpro-scale';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -86,7 +86,7 @@ export default function WallPro() {
   // design must not paint. Preview-only; print panels stay full rectangles.
   const [detectedMask, setDetectedMask] = useState<{ url: string; path: string | null } | null>(null);
   // The AI picture of the design on the wall: presentation only, never print.
-  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string } | null>(null);
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
@@ -100,7 +100,21 @@ export default function WallPro() {
   // corners both exist, whichever arrives last: detection landing after a
   // generation, a generation landing after hand-marked corners, or a restore.
   const cornersValidNow = validWallCorners(corners);
-  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url;
+  // The AI picture is for one design, one photo and one pattern size; a step
+  // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
+  // and the tab offers to repaint.
+  const scaleKey = placement + '|' + (placement === 'repeat' ? repeatWidth : 0);
+  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
+  /** Bigger / Smaller on the design in front of the customer: the same master
+   * tiled at the next width, no regeneration, no token. Production picks the
+   * new size up on Rebuild; the project remembers it. */
+  function stepPattern(direction: 'bigger' | 'smaller') {
+    const next = stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, direction);
+    if (!next) return;
+    setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
+    setNotice(`Pattern size: ${patternSizeLabel(next, width)}. The on-wall view updates now; the AI picture repaints when you open it; production panels use this size when rebuilt.`);
+    wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the size still applies on screen */ });
+  }
   useEffect(() => { if (artwork && photo && cornersValidNow) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, cornersValidNow, aiViewCurrent]);
   // The photo pane opens on the AI picture by itself: the model puts the
   // covering on the wall and leaves the window, drapes, shelves and furniture
@@ -358,7 +372,7 @@ export default function WallPro() {
       const result = await renderWallView({ wallPath, artworkPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
       // The design or the photo may have changed while the model painted.
       if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
-      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url }); setView('ai');
+      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0) }); setView('ai');
       setNotice('AI view ready. It is a picture for showing the design; the flat master and the production panels are what print. "On your wall" is the exact-geometry view.');
     };
     if (!background) { await run('Painting the design onto your wall', paint); return; }
@@ -646,6 +660,15 @@ export default function WallPro() {
             <div className={photo && artwork ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {artwork && <div>
               {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
+              {/* Bigger / Smaller: the pattern's real-world size on this wall, stepped
+                  without a new generation (owner, 2026-09-12). */}
+              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern size">
+                <span className="font-semibold">Pattern size</span>
+                <Button size="sm" variant="outline" disabled={!!busy || !stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, 'smaller')} onClick={() => stepPattern('smaller')} aria-label="Smaller pattern">− Smaller</Button>
+                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternSizeLabel({ placement, repeatWidthIn: repeatWidth }, width)}</span>
+                <Button size="sm" variant="outline" disabled={!!busy || !stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, 'bigger')} onClick={() => stepPattern('bigger')} aria-label="Bigger pattern">+ Bigger</Button>
+                <span className="text-xs text-slate-500">No token. Watch it on your wall.</span>
+              </div>
               <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" draggable={false} />
               {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
                 onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
