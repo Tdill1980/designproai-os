@@ -68,6 +68,24 @@ test("continues a repeat through the bleed and flips odd tiles for a mirror repe
   assert.deepEqual(px(9, 60), px(10, 60));
 });
 
+test("centres a tile larger than the wall, exactly as the browser does for a mural scaled past 100%", async () => {
+  const source = await master();
+  // A 60-inch tile of the 3:2 master on the 30 x 20 wall: twice the wall in
+  // both axes, so the wall shows the master's middle half (x 25%..75%).
+  const req = request({ placement: "repeat", repeatWidthIn: 60 });
+  assert.deepEqual([production.layoutMetrics(req, 1.5).originX, production.layoutMetrics(req, 1.5).originY], [-15, -10]);
+  const { panels } = production.planPanels(req);
+  const panel = await production.rasterPanel(source, req, panels[0], 10);
+  const raw = await sharp(panel.bytes).raw().toBuffer();
+  const px = (x, y) => Array.from(raw.subarray((y * 120 + x) * 3, (y * 120 + x) * 3 + 3));
+  // Wall inch 0 (panel px 10) is the master's x = 25%: red channel about 64, not 0.
+  assert.ok(Math.abs(px(10, 100)[0] - 64) < 6, `left wall edge red=${px(10, 100)[0]}`);
+  // Wall top (panel px 10 down) is the master's y = 25%: green about 64.
+  assert.ok(Math.abs(px(60, 10)[1] - 64) < 6, `top wall edge green=${px(60, 10)[1]}`);
+  // A tile smaller than the wall still starts at the wall's corner.
+  assert.equal(production.layoutMetrics(request({ placement: "repeat", repeatWidthIn: 6 }), 1.5).originX, 0);
+});
+
 test("produces a 150-class panel through Topaz when the source is below target, exact resize when it is not", async () => {
   const source = await master();
   const req = request({ targetPpi: 72 });

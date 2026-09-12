@@ -1,28 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { autoRepeatWidthIn, autoWallScale, patternScaleLabel, patternSizeAtScale, stepPatternScale } from '../wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternBaseWidthIn, patternScaleLabel, patternScaleWord, patternSizeAtScale } from '../wallpro-scale';
 
-describe('Pattern scale: the motifs, not the panel', () => {
-  it('scales a generated tile so the motifs print at a percentage of their generated size', () => {
+// A 142 x 96 wall and a square master.
+const wall = { width: 142, height: 96, aspect: 1 };
+
+describe('Pattern size: PatternPro\'s slider, the design not the panel', () => {
+  it('a generated tile draws at a percentage of its generated width', () => {
     const tile = { placement: 'repeat' as const, repeatWidthIn: 36 };
-    expect(patternSizeAtScale(tile, 142, 100)).toEqual({ placement: 'repeat', repeatWidthIn: 36 });
-    expect(patternSizeAtScale(tile, 142, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 18 });
-    expect(patternSizeAtScale(tile, 142, 200)).toEqual({ placement: 'repeat', repeatWidthIn: 72 });
-    expect(patternSizeAtScale(tile, 142, 33)).toEqual({ placement: 'repeat', repeatWidthIn: 11.9 });
-    expect(patternScaleLabel(tile, 142, 50)).toBe('50% · motifs 50% size · 18″ repeat, 8 across');
-    expect(patternScaleLabel(tile, 142, 100)).toBe('100% · motifs as generated · 36″ repeat, 4 across');
+    expect(patternSizeAtScale(tile, wall, 100)).toEqual({ placement: 'repeat', repeatWidthIn: 36 });
+    expect(patternSizeAtScale(tile, wall, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 18 });
+    expect(patternSizeAtScale(tile, wall, 200)).toEqual({ placement: 'repeat', repeatWidthIn: 72 });
+    expect(patternSizeAtScale(tile, wall, 300)).toEqual({ placement: 'repeat', repeatWidthIn: 108 });
+    expect(patternSizeAtScale(tile, wall, 30)).toEqual({ placement: 'repeat', repeatWidthIn: 10.8 });
+    expect(patternScaleLabel(tile, wall, 50)).toBe('50% · Micro · the design repeats every 18″');
+    expect(patternScaleLabel(tile, wall, 100)).toBe('100% · Standard · as generated');
+    expect(patternScaleLabel(tile, wall, 150)).toBe('150% · Large · the design repeats every 54″');
   });
-  it('a mural shrinks by repeating itself and cannot grow past the wall', () => {
+  it('a mural is one swatch the size of the wall: smaller repeats it, bigger crops it', () => {
     const mural = { placement: 'cover' as const, repeatWidthIn: 36 };
-    expect(patternSizeAtScale(mural, 142, 100)).toEqual({ placement: 'cover', repeatWidthIn: 36 });
-    expect(patternSizeAtScale(mural, 142, 150)).toEqual({ placement: 'cover', repeatWidthIn: 36 });
-    expect(patternSizeAtScale(mural, 142, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 71 });
-    expect(patternScaleLabel(mural, 142, 100)).toBe('100% · motifs as generated · one piece across the wall');
-    expect(patternScaleLabel(mural, 142, 50)).toBe('50% · motifs 50% size · 71″ repeat, 2 across');
+    expect(patternBaseWidthIn(mural, wall)).toBe(142);
+    expect(patternBaseWidthIn(mural, { width: 60, height: 96, aspect: 1 })).toBe(96); // covering a tall wall needs a wider swatch
+    expect(patternSizeAtScale(mural, wall, 100)).toEqual({ placement: 'cover', repeatWidthIn: 36 });
+    expect(patternSizeAtScale(mural, wall, 50)).toEqual({ placement: 'repeat', repeatWidthIn: 71 });
+    expect(patternSizeAtScale(mural, wall, 200)).toEqual({ placement: 'repeat', repeatWidthIn: 284 });
+    expect(patternScaleLabel(mural, wall, 100)).toBe('100% · Standard · as generated');
+    expect(patternScaleLabel(mural, wall, 50)).toBe('50% · Micro · the design repeats every 71″');
+    expect(patternScaleLabel(mural, wall, 200)).toBe('200% · Bold · one piece, 284″ wide, cropped to the wall');
   });
-  it('steps through fixed percentages and stops at the ends', () => {
-    expect(stepPatternScale(100, 'smaller')).toBe(80); expect(stepPatternScale(100, 'bigger')).toBe(125);
-    expect(stepPatternScale(25, 'smaller')).toBeNull(); expect(stepPatternScale(200, 'bigger')).toBeNull();
-    expect(stepPatternScale(90, 'bigger')).toBe(100); expect(stepPatternScale(90, 'smaller')).toBe(80);
+  it('the slider runs 30 to 300 on 10-percent steps and uses PatternPro\'s words', () => {
+    expect(clampPatternScale(0)).toBe(30); expect(clampPatternScale(1000)).toBe(300); expect(clampPatternScale(87)).toBe(90); expect(clampPatternScale(NaN)).toBe(100);
+    expect(['Micro', 'Small', 'Standard', 'Large', 'Bold', 'Extreme']).toEqual([50, 70, 100, 150, 220, 300].map(patternScaleWord));
   });
 });
 
