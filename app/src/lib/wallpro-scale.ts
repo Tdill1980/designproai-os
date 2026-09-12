@@ -23,13 +23,22 @@ const REPEAT_REQUEST_WORDS = /\b(repeat|repeats|repeating|repeated|seamless|tile
 /** Words that mean one composition sized to the wall. */
 const MURAL_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest|map|logo|logos|brand|branding|wordmark|typography|lettering|quote|quotes|slogan|tagline|manifesto|mission|values|portrait|photo|photograph|illustration|artwork|painting|collage|timeline|wayfinding|donor)\b/i;
 
-/** The tile width the wall wants: about four repeats across, on the 6-inch
- * steps wallpaper is sold in, never smaller than 18 nor wider than 48. A 96-inch
- * wall gets 24, a 142-inch wall 36, a 240-inch wall 48. */
-export function autoRepeatWidthIn(wallWidthIn: number): number {
-  if (!Number.isFinite(wallWidthIn) || wallWidthIn <= 0) return 24;
-  const raw = wallWidthIn / 4;
-  return Math.min(48, Math.max(18, Math.round(raw / 6) * 6));
+/** Materials whose repeat is genuinely small: the unit is a slat, a plank, a
+ * tile or a weave, and it has a real-world width of a few inches. A botanical
+ * or a damask is not one of these, and asking for four of them across a wall
+ * is what produced a craft-fair print (owner, 2026-09-12: "pattern way too
+ * small"). */
+const FINE_MATERIAL_WORDS = /\b(grasscloth|linen|weave|woven|burlap|hessian|canvas|plaster|concrete|stucco|plain|solid|plank|planks|slat|slats|slatted|shiplap|woodgrain|grain|subway|brick|bricks|tile|tiles|mosaic|terrazzo|herringbone|chevron|basketweave|stripe|stripes|striped|pinstripe|dots?|polka|check|checks|checkered|gingham|houndstooth)\b/i;
+
+/** The tile width a DECORATIVE pattern wants: about two repeats across, the
+ * same measured baseline a matched design gets, because that is the size a
+ * wallpaper mural is actually hung at. A fine material — a slat, a plank, a
+ * tile, a weave — keeps the old four-across, because its unit really is a few
+ * inches wide. Both stay on the 6-inch steps wallpaper is sold in. */
+export function autoRepeatWidthIn(wallWidthIn: number, brief = ''): number {
+  if (!Number.isFinite(wallWidthIn) || wallWidthIn <= 0) return FINE_MATERIAL_WORDS.test(brief) ? 24 : 72;
+  if (FINE_MATERIAL_WORDS.test(brief)) return Math.min(48, Math.max(18, Math.round(wallWidthIn / 4 / 6) * 6));
+  return autoMatchRepeatWidthIn(wallWidthIn);
 }
 
 /**
@@ -161,7 +170,7 @@ export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: num
 export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null }): WallScaleDecision {
   // A matched design keeps the reference's own scale, so its repeat is the
   // wallpaper baseline (about two across), not the generic four across.
-  const repeatWidthIn = input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn);
+  const repeatWidthIn = input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn, input.prompt || '');
   if (input.chosen) return { placement: input.chosen, repeatWidthIn, reason: input.chosen === 'repeat' ? `Repeating pattern, as chosen, at ${repeatWidthIn}″ for a ${input.wallWidthIn}″ wall.` : 'Mural, as chosen: one composition sized to the wall.' };
   const brief = input.prompt || '';
   const saysMural = MURAL_WORDS.test(brief), saysPattern = PATTERN_WORDS.test(brief);
