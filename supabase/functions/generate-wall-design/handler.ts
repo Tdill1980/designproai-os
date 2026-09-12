@@ -1,4 +1,4 @@
-import { wallDesignPrompt, wallMatchRecoveryPrompt, wallConsultantPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent } from './prompt.ts';
+import { wallDesignPrompt, wallMatchRecoveryPrompt, wallConsultantPrompt, wallComplianceCheckPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent, type WallDesignContract } from './prompt.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
@@ -18,32 +18,84 @@ export async function describeCovering(fetchImpl: typeof fetch, key: string, ima
   const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim().replace(/\s+/g, ' ');
   return text.length >= 20 ? text.slice(0, 900) : null;
 }
+/** Trims and slices; returns '' rather than throwing on a non-string. */
+const str = (v: unknown, max: number) => typeof v === 'string' ? v.trim().slice(0, max) : '';
+/** An array of trimmed, non-empty strings, capped in count and per-item length. */
+const strList = (v: unknown, maxItems: number, maxLen: number): string[] =>
+  Array.isArray(v) ? v.filter((i): i is string => typeof i === 'string' && i.trim().length > 0).map((i) => i.trim().slice(0, maxLen)).slice(0, maxItems) : [];
+
 /**
- * Persona 1: the consultant. Ported from the vehicle stack's
- * `persona-csr-enrich`, which is why its designs are specific and WallPro's
- * were generic — the designer was being handed five raw words inside a wall of
- * persona text. One fast text call turns those words into a brief with named
- * colours, arrangement and flow.
+ * Persona 1: the consultant, run as a BRIEF COMPILER. Ported from the vehicle
+ * stack's `persona-csr-enrich`, which is why its designs are specific and
+ * WallPro's were generic — the designer was being handed five raw words inside
+ * a wall of persona text. One fast text call turns those words into a typed
+ * Design Contract: what the customer specified (immutable) versus what is
+ * genuinely open to the designer.
+ *
+ * Owner correction (2026-09-12): the old {enrichedBrief, colorPalette,
+ * designStyle} shape handed the designer prose it was "free to reinterpret" —
+ * that is how a literal request (an exact subject, an exact scene) kept
+ * coming back as generic category art. Low temperature here is deliberate:
+ * this stage extracts and preserves, it does not invent.
  *
  * Fails SOFT and fast: no answer, bad JSON or a timeout means the customer's
  * own words go through exactly as before. A consultant that cannot answer must
  * never cost a generation.
  */
-export async function enrichWallBrief(fetchImpl: typeof fetch, key: string, input: Parameters<typeof wallConsultantPrompt>[0]): Promise<{ brief: string; palette: string[]; style: string } | null> {
+export async function enrichWallBrief(fetchImpl: typeof fetch, key: string, input: Parameters<typeof wallConsultantPrompt>[0]): Promise<{ contract: WallDesignContract; brief: string } | null> {
   try {
     const provider = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models/' + DESCRIBE_MODEL + ':generateContent', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: wallConsultantPrompt(input) }] }], generationConfig: { temperature: 0.9, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } }),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: wallConsultantPrompt(input) }] }], generationConfig: { temperature: 0.15, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } }),
       signal: AbortSignal.timeout(20_000),
     });
     if (!provider.ok) return null;
     const result = await provider.json();
     const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim();
     const parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
-    const brief = String(parsed?.enrichedBrief || '').trim();
-    if (brief.length < 20) return null;
-    const palette = Array.isArray(parsed?.colorPalette) ? parsed.colorPalette.filter((c: unknown) => typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c)).slice(0, 6) : [];
-    return { brief: brief.slice(0, 1200), palette, style: String(parsed?.designStyle || '').trim().slice(0, 60) };
+    const customerIntent = str(parsed?.customerIntent, 300);
+    const compositionDirection = str(parsed?.compositionDirection, 500);
+    if (customerIntent.length < 5 && compositionDirection.length < 5) return null;
+    const contract: WallDesignContract = {
+      customerIntent, compositionDirection,
+      requiredSubjects: strList(parsed?.requiredSubjects, 10, 200),
+      requiredElements: strList(parsed?.requiredElements, 10, 200),
+      requiredColors: strList(parsed?.requiredColors, 8, 60),
+      businessContext: str(parsed?.businessContext, 200),
+      designObjective: str(parsed?.designObjective, 200) || 'custom commercial wall mural',
+      focalHierarchy: str(parsed?.focalHierarchy, 300),
+      negativeSpaceZones: str(parsed?.negativeSpaceZones, 300),
+      realismLevel: str(parsed?.realismLevel, 60) || 'editorial realism',
+      typography: str(parsed?.typography, 200) || null,
+      logoTreatment: str(parsed?.logoTreatment, 200) || null,
+      mustPreserve: strList(parsed?.mustPreserve, 15, 200),
+      forbiddenInventions: strList(parsed?.forbiddenInventions, 15, 150),
+    };
+    // A brief summary for logs and for the one remaining plain-prose consumer
+    // (the recitation-recovery retry, which needs a short description, not a
+    // structured contract).
+    const brief = [customerIntent, compositionDirection].filter(Boolean).join(' ').slice(0, 600);
+    return { contract, brief };
+  } catch { return null; }
+}
+
+/**
+ * Post-generation creative compliance check (advisory — logged, never blocks
+ * or alters the returned design). See docs/wallpro/
+ * WALLPRO-GENIE-UI-INTEGRATION-PLAN.md: wiring this as a hard gate on
+ * production is a deliberately separate, later change.
+ */
+export async function checkWallCompliance(fetchImpl: typeof fetch, key: string, contract: WallDesignContract, imagePart: any): Promise<Record<string, unknown> | null> {
+  try {
+    const provider = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models/' + DESCRIBE_MODEL + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: wallComplianceCheckPrompt(contract) }, imagePart] }], generationConfig: { temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } } }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!provider.ok) return null;
+    const result = await provider.json();
+    const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim();
+    return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
   } catch { return null; }
 }
 
@@ -215,17 +267,24 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // intents that author from words: a match reproduces the customer's
       // reference and a refine edits an existing version. Fails soft, so the
       // customer's own words go through unchanged if it cannot answer.
+      let contract: WallDesignContract | null = null;
       if (input.intent === 'prompt' || input.intent === 'wall') {
         const consulted = await enrichWallBrief(deps.fetch, key, input);
         if (consulted) {
-          parts[0].text = wallDesignPrompt({ ...input, prompt: consulted.brief + (consulted.palette.length ? ` Palette: ${consulted.palette.join(', ')}.` : '') });
-          console.log(JSON.stringify({ event: 'wall_brief_enriched', request_id: input.requestId, intent: input.intent, style: consulted.style, palette: consulted.palette, brief_chars: consulted.brief.length, prompt_chars: parts[0].text.length }));
+          contract = consulted.contract;
+          parts[0].text = wallDesignPrompt({ ...input, contract });
+          console.log(JSON.stringify({ event: 'wall_brief_enriched', request_id: input.requestId, intent: input.intent, required_subjects: contract.requiredSubjects, required_colors: contract.requiredColors, business_context: contract.businessContext, prompt_chars: parts[0].text.length }));
         }
       }
       const draw = async (text: string, images: any[] = parts.slice(1)) => {
         const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, ...images] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
+          // temperature 0.7: creative freedom for Persona 2, deliberately only
+          // where the Design Contract leaves the composition open (owner
+          // direction, 2026-09-12). UNMEASURED — no A/B exists yet showing this
+          // beats the provider default on this endpoint; watch real output
+          // before treating 0.7 as settled.
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, ...images] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' }, temperature: 0.7 } }),
           signal: AbortSignal.timeout(100_000),
         });
         if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
@@ -263,6 +322,15 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const dims = imageDimensions(bytes);
       const enlargement = dims ? Number(Math.max(input.width * PRODUCTION_PPI / dims.width, input.height * PRODUCTION_PPI / dims.height).toFixed(2)) : null;
       console.log(JSON.stringify({ event: 'wall_master_returned', request_id: input.requestId, intent: input.intent, recovered_from: recoveredFrom, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, mime: final.mimeType, bytes: bytes.length, width: dims?.width ?? null, height: dims?.height ?? null, wall_in: [input.width, input.height], production_ppi: PRODUCTION_PPI, required_enlargement: enlargement }));
+      // Advisory creative compliance check — logged and returned for visibility
+      // only. It never blocks or alters the design that was already generated
+      // and paid for; wiring it as a hard gate on production is a deliberately
+      // separate, later change (docs/wallpro/WALLPRO-GENIE-UI-INTEGRATION-PLAN.md).
+      let complianceCheck: Record<string, unknown> | null = null;
+      if (contract) {
+        complianceCheck = await checkWallCompliance(deps.fetch, key, contract, { inlineData: { mimeType: final.mimeType, data: final.data } });
+        console.log(JSON.stringify({ event: 'wall_compliance_checked', request_id: input.requestId, ...(complianceCheck || { checked: false }) }));
+      }
       const ext = final.mimeType === 'image/jpeg' ? 'jpg' : final.mimeType === 'image/webp' ? 'webp' : 'png';
       const path = owner + '/generated/' + input.requestId + '.' + ext;
       const name = (input.intent === 'refine' ? 'Refined: ' + input.prompt.trim() : input.prompt.trim() || (input.intent === 'match' ? 'Matched design' : input.intent === 'wall' ? 'Design for your wall' : 'Wall design')).slice(0, 120);
@@ -274,7 +342,7 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const settled = await signedResult(finish.data);
       if (settled.status !== 200) return settled;
       const payload = await settled.json();
-      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement, recovered_from: recoveredFrom });
+      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement, recovered_from: recoveredFrom, compliance_check: complianceCheck });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError','AbortError'].includes(err.name) ? 'The design service timed out. No automatic retry was sent.' : err instanceof Error ? err.message : 'Wall design generation failed.';
       if (reserved) {
