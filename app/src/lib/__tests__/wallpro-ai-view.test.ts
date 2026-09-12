@@ -57,3 +57,16 @@ describe('the badge says what it is', () => {
     expect(AI_VIEW_BADGE).toMatch(/not your print file/i);
   });
 });
+
+describe('the compare view is a real file view', () => {
+  // Before/after is the most screenshot-and-send picture WallPro makes. It is
+  // built from the deterministic composite, so it may be committed from; the
+  // AI view stays the only view that cannot.
+  it('allows approval and checkout from the before/after', () => {
+    expect(canCommitFromView('compare')).toBe(true);
+  });
+
+  it('is never rewritten when the AI view goes away', () => {
+    expect(resolveWallView('compare', false)).toBe('compare');
+  });
+});

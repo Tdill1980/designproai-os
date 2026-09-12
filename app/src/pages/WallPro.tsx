@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2 } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
+import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
@@ -103,7 +104,7 @@ export default function WallPro() {
   const [corners, setCorners] = useState<Point[]>([]), [exclusions, setExclusions] = useState<Point[][]>([]);
   const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | null>('wall');
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
-  const [view, setView] = useState<'before' | 'after' | 'design' | 'ai'>('before');
+  const [view, setView] = useState<'before' | 'after' | 'design' | 'ai' | 'compare'>('before');
   const showPrintGuides = false; // Print-seam guides on the photo are an internal aid; the customer page keeps them off.
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [showMasks, setShowMasks] = useState(true);
@@ -183,6 +184,8 @@ export default function WallPro() {
     return () => { live = false; window.removeEventListener('focus', reread); window.removeEventListener('storage', reread); };
   }, []);
   const aiAvailable = aiViewAvailable({ staff, viewingAsCustomer });
+  // A comparison needs both halves: the untouched photo and a real composite.
+  const canCompare = !!photo && !!artwork && wallLocated && !!preview;
   useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
@@ -1060,6 +1063,11 @@ export default function WallPro() {
                 The tabs only switch the photo pane between the original wall and
                 the imposed design; the flat master never leaves the screen. */}
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
+              {/* Before and after (owner, 2026-09-12: "Before and afters will
+                  speak volumes"). Offered only once a real composite exists --
+                  a comparison against nothing is a broken picture, not a tease.
+                  The after is always the deterministic composite. */}
+              {canCompare && <Button size="sm" variant={view === 'compare' ? 'default' : 'outline'} onClick={() => setView('compare')}><MoveHorizontal className="mr-1 h-3 w-3" />Before &amp; after</Button>}
               {artwork && aiAvailable && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
             <div className={photo && previewArt ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {previewArt && <div>
@@ -1128,8 +1136,9 @@ export default function WallPro() {
               {parentProjectId && <p className="mb-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
                 Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
               </p>}
-              {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
-              {view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-slate-100">
+              {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
+              {view === 'compare' && canCompare && preview ? <BeforeAfter before={photo.url} after={preview} alt="Your design on your wall, compared with the original" name={name} /> :
+              view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-slate-100">
                 <div className="relative">
                   <img src={aiView.url} alt="Artist's impression of the design on your wall — not the print file" className="w-full object-contain" />
                   {/* ON the image, because a caption under it sits below the

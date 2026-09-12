@@ -43,7 +43,7 @@ export function aiViewAvailable(input: { staff: boolean; viewingAsCustomer: bool
   return input.staff && !input.viewingAsCustomer;
 }
 
-export type WallViewKey = 'before' | 'design' | 'after' | 'ai';
+export type WallViewKey = 'before' | 'design' | 'after' | 'ai' | 'compare';
 
 /**
  * The view to fall back to when the AI view is not available to this session.
