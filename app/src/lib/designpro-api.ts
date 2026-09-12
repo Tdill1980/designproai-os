@@ -1390,6 +1390,21 @@ export const dpApi = {
     request<{ productionPack: boolean; logoPack: boolean }>(
       `/purchases/entitlements/${encodeURIComponent(generationId)}`,
     ),
+  /**
+   * Open a WallPro purchase and get the Stripe checkout URL. Same gateway,
+   * same Stripe account as the vehicle checkout above -- its own product
+   * family and its own identity (a WallPro design version, not a
+   * generationId), because WallPro has no workflow-run graph to key against.
+   */
+  createWallProCheckoutSession: (input: {
+    versionId: string;
+    product: "wallpro_catalog_file" | "wallpro_custom_file" | "wallpro_room_design_file" | "wallpro_file_prep";
+    returnPath?: string;
+  }) =>
+    request<{ url: string; productType: string; amountCents: number }>("/wallpro/checkout/sessions", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   runOwnerEndToEndTest: (generationId: string) =>
     request<{ accepted: true; noStripe: true; entitlementId: string | null }>(
       "/testing/owner-entitlements",

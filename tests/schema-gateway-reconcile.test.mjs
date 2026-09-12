@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-88), [
+  assert.deepEqual(names.slice(-89), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -274,6 +274,9 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260911210000_graphicspro_cut_contour.sql",
     // WPW WooCommerce wiring phase 1: cross-domain OTP codes for wpw-oauth-link.
     "20260912120000_wpw_link_otps.sql",
+    // WallPro purchase entitlements: SKU-based Stripe purchase gate on
+    // request_wallpro_production (owner ruling, 2026-09-12 pricing correction).
+    "20260912130000_wallpro_purchase_entitlements.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

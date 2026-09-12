@@ -1289,6 +1289,47 @@ const PURCHASE_PRODUCTS = Object.freeze({
   }),
 });
 
+/**
+ * WALLPRO PRODUCTS — priced by how much original creative work each design
+ * path actually took, not one flat number for all of them (owner ruling,
+ * 2026-09-12, correcting an earlier $199-flat-plus-full-print-credit
+ * proposal: at the real $3.50/sq ft print price a full credit erases nearly
+ * all of the design fee on anything but a large wall).
+ *
+ * Phase 1 wires wallpro_custom_file alone end to end and proves one real
+ * exported file before the rest are exposed in the product; all four are
+ * declared here now so adding a price later never touches this schema.
+ * A print-credit-toward-production discount is deliberately NOT built here —
+ * that becomes its own configurable mechanism once there is real purchase
+ * volume to decide it from.
+ */
+const WALLPRO_PURCHASE_PRODUCTS = Object.freeze({
+  wallpro_catalog_file: Object.freeze({
+    productType: "wallpro_catalog_file",
+    name: "WallPro Print-Ready File — Catalog Design",
+    description: "Your chosen WrapReady design, prepared for your exact wall as a seamless, panelized production file.",
+    amountCents: 7900,
+  }),
+  wallpro_custom_file: Object.freeze({
+    productType: "wallpro_custom_file",
+    name: "WallPro Print-Ready File — Custom Design",
+    description: "Your described or matched design, prepared for your exact wall as a seamless, panelized production file.",
+    amountCents: 14900,
+  }),
+  wallpro_room_design_file: Object.freeze({
+    productType: "wallpro_room_design_file",
+    name: "WallPro Print-Ready File — Designed for Your Wall",
+    description: "A design created specifically for your wall photo, prepared as a seamless, panelized production file.",
+    amountCents: 19900,
+  }),
+  wallpro_file_prep: Object.freeze({
+    productType: "wallpro_file_prep",
+    name: "WallPro File Correction",
+    description: "Correction and re-preparation of your production file.",
+    amountCents: 4900,
+  }),
+});
+
 /** Stripe wants form encoding, and this is the whole of what we send it. */
 function stripeForm(fields) {
   const params = new URLSearchParams();
@@ -2260,9 +2301,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // The metadata is what the checkout put there; the amount is what
         // Stripe says was actually charged, not what the session asked for.
         const metadata = object.metadata || {};
-        if (!PURCHASE_PRODUCTS[String(metadata.product_type || "")]) {
-          return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
-        }
+        const productType = String(metadata.product_type || "");
         // amount_total is authoritative WHEN STRIPE SENT IT, including when it is
         // zero. This used to be an OR-chain onto the session metadata, which fell
         // back to the LIST PRICE on any fully-discounted order -- so a free pack
@@ -2271,15 +2310,36 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const amountCents = object.amount_total == null
           ? Number(metadata.amount_cents || 0)
           : Number(object.amount_total);
+        const userEmail = String(metadata.user_email || object.customer_email || "");
+
+        if (WALLPRO_PURCHASE_PRODUCTS[productType]) {
+          // Own product family, own runtime action, own entitlement table --
+          // never designpro_purchase_entitlements (welded to the vehicle
+          // workflow-run graph WallPro does not have). No promo/credit
+          // handling yet: that is a deliberately separate, later mechanism.
+          const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "wallpro-confirm", {
+            checkoutSessionId: String(object.id || ""),
+            paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
+            productType,
+            versionId: String(metadata.wallpro_version_id || ""),
+            amountCents,
+            userEmail,
+          });
+          return json(res, 200, { received: true, ...confirmed });
+        }
+
+        if (!PURCHASE_PRODUCTS[productType]) {
+          return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
+        }
         const discountCents = Number(object.total_details?.amount_discount || 0);
         const promotionCode = stripePromotionCode(object);
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
-          productType: String(metadata.product_type),
+          productType,
           generationId: String(metadata.generation_id || ""),
           amountCents,
-          userEmail: String(metadata.user_email || object.customer_email || ""),
+          userEmail,
           promotionCode,
           discountCents,
         });
@@ -3065,6 +3125,46 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // Nothing is recorded here. The proven flow records on the verified
         // webhook and the session id is the transaction identity, so a pending
         // row would only be a second place for the truth to live.
+        return json(res, 200, { url: String(stripeSession.url), productType: spec.productType, amountCents: spec.amountCents });
+      }
+
+      // WALLPRO CHECKOUT. Same account, same webhook, its own identity: a
+      // WallPro version, not a vehicle generationId. The version lookup runs
+      // as the CALLER'S OWN token, so RLS is what proves ownership here —
+      // there is no separate owner check to get wrong.
+      if (req.method === "POST" && url.pathname === "/api/wallpro/checkout/sessions") {
+        if (!cfg.stripeSecretKey) return json(res, 503, { error: "checkout_not_configured" });
+        const body = await readBody(req);
+        const spec = WALLPRO_PURCHASE_PRODUCTS[String(body.product || "")];
+        if (!spec) return json(res, 400, { error: "unknown_product" });
+        const versionId = String(body.versionId || "");
+        if (!UUID_PATTERN.test(versionId)) return json(res, 400, { error: "version_id_invalid" });
+        const versionResponse = await upstream(fetchImpl,
+          `${cfg.supabaseUrl}/rest/v1/wallpro_design_versions?id=eq.${versionId}&select=id,project_id`,
+          { method: "GET" }, token, cfg);
+        if (!versionResponse.ok) return json(res, 503, { error: "wallpro_version_lookup_unavailable" });
+        const versionRows = await versionResponse.json().catch(() => []);
+        const version = Array.isArray(versionRows) ? versionRows[0] : null;
+        if (!version) return json(res, 404, { error: "wallpro_version_not_found" });
+        const returnPath = typeof body.returnPath === "string" && body.returnPath.startsWith("/")
+          ? body.returnPath : "/printpro/wallpro";
+        const stripeSession = await stripeCall(fetchImpl, cfg, "checkout/sessions", stripeForm({
+          mode: "payment",
+          "line_items[0][quantity]": 1,
+          "line_items[0][price_data][currency]": "usd",
+          "line_items[0][price_data][unit_amount]": spec.amountCents,
+          "line_items[0][price_data][product_data][name]": spec.name,
+          "line_items[0][price_data][product_data][description]": spec.description,
+          customer_email: user.email || undefined,
+          allow_promotion_codes: true,
+          success_url: `${cfg.appOrigin}${returnPath}?project=${encodeURIComponent(version.project_id)}&wallproPurchase=${spec.productType}`,
+          cancel_url: `${cfg.appOrigin}${returnPath}?project=${encodeURIComponent(version.project_id)}&wallproPurchase=cancelled`,
+          "metadata[product_type]": spec.productType,
+          "metadata[wallpro_version_id]": String(version.id),
+          "metadata[user_id]": user.id,
+          "metadata[user_email]": user.email || "",
+          "metadata[amount_cents]": String(spec.amountCents),
+        }));
         return json(res, 200, { url: String(stripeSession.url), productType: spec.productType, amountCents: spec.amountCents });
       }
 
