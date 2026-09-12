@@ -71,6 +71,50 @@ gateway already know them. No print credit is hard-coded anywhere, by decision.
 
 ---
 
+## 3.5 WallPanelPro Studio — built, MERGED PENDING, migration NOT APPLIED
+
+`/admin/wallpro-studio`, sidebar → WallPro → **PanelPro Studio** (admins and
+testers). What the owner asked for on 2026-09-12: *"That's where I can instantly
+check if it took when they time out and it's where we do back end designer QC
+checks and release gate just like current vehicle wrap panelpro version."*
+
+**Why it is a new board and not `/admin/wallpro-production`.** That board lists
+PRODUCTION JOBS, which exist only after a version is approved. The break happens
+earlier: a version row is written by the **customer's browser** once
+`generate-wall-design` answers. When the browser gives up first, the generation
+is `completed` on the server with its artwork in storage and nothing downstream
+— real, paid for, and invisible to every team surface. So this board is spined
+on `wallpro_generations`, the row the **server** writes.
+
+**Measured on designproai-os-prod, 2026-09-12 21:00Z: 8 of 27 wall generations
+are orphaned right now.** All 8 belong to `trish@weprintwraps.com`, so this is
+a measurement of the owner's own test sessions, not yet a customer-facing rate —
+but roughly three in ten generations were produced and never delivered, and
+generation `93487116` (today, 20:43Z, "Matched design", 120×96) is the exact one
+reported as *"didn't even show design and times out"*. It took. The artwork is
+in storage.
+
+| capability | state |
+|---|---|
+| Did it take — `landed` / `orphaned` / `running` / `stalled` / `failed` | **code-locked** (`wallpro-qc.test.ts`) |
+| Recovery — writes the project + version row the browser lost | **code-locked**, needs the migration |
+| Designer QC — 6 wall checks, seam dropped on non-repeating designs | **code-locked** |
+| Release gate — append-only, newest verdict live in both directions | **code-locked** |
+
+**Blocked on `20260912230000_wallpro_panelpro_studio.sql`.** Until it applies:
+the team read on `wallpro_generations` does not exist, so the board renders
+empty; `wallpro_qc_reviews` does not exist, so QC cannot be recorded; and
+`recover_wallpro_generation` does not exist, so the 8 orphans stay orphaned.
+The page, the route and the sidebar entry ship with the droplet deploy and will
+look broken until the migration lands — that is expected, not a regression.
+
+**Recovery is not a producer.** It copies no pixels and touches no artwork; it
+records the row that was lost, from the generation's own stored input, and is
+idempotent. It lands as a NEW project rather than guessing which existing
+project a lost generation belonged to.
+
+---
+
 ## 4. NOT BUILT
 
 Listed so nothing here is mistaken for done.
