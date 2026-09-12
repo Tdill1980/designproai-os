@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternBaseWidthIn, patternScaleLabel, patternScaleWord, patternSizeAtScale } from '../wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale } from '../wallpro-scale';
 
 // A 142 x 96 wall and a square master.
 const wall = { width: 142, height: 96, aspect: 1 };
@@ -26,6 +26,26 @@ describe('Pattern size: PatternPro\'s slider, the design not the panel', () => {
     expect(patternScaleLabel(mural, wall, 100)).toBe('100% · Standard · as generated');
     expect(patternScaleLabel(mural, wall, 50)).toBe('50% · Micro · the design repeats every 71″');
     expect(patternScaleLabel(mural, wall, 200)).toBe('200% · Bold · one piece, 284″ wide, cropped to the wall');
+  });
+  it('reports the real resolution, which falls as the design grows and never touches print size', () => {
+    const tile = { placement: 'repeat' as const, repeatWidthIn: 36 };
+    const master = { width: 4096, height: 4096 };
+    expect(patternDrawnWidthIn(tile, wall, 100)).toBe(36);
+    expect(patternDrawnWidthIn(tile, wall, 200)).toBe(72);
+    expect(Math.round(patternPpi(master, tile, wall, 100))).toBe(114);
+    expect(Math.round(patternPpi(master, tile, wall, 50))).toBe(228);
+    expect(Math.round(patternPpi(master, tile, wall, 200))).toBe(57);
+    // A mural is drawn across the whole wall, so it is far coarser to start with.
+    expect(Math.round(patternPpi(master, { placement: 'cover', repeatWidthIn: 36 }, wall, 100))).toBe(29);
+    expect(patternPpi({ width: 0, height: 0 }, tile, wall, 100)).toBe(0);
+  });
+  it('names the largest size that still meets the print minimum, or none', () => {
+    const tile = { placement: 'repeat' as const, repeatWidthIn: 36 };
+    // 4096 px over 36 inches is 113.8 PPI at 100%: 150 PPI needs 70%.
+    expect(maxPrintSafeScale({ width: 4096, height: 4096 }, tile, wall, 150)).toBe(70);
+    expect(maxPrintSafeScale({ width: 4096, height: 4096 }, tile, wall, 72)).toBe(150);
+    // A mural on this wall cannot reach 150 PPI at any size on the slider.
+    expect(maxPrintSafeScale({ width: 4096, height: 4096 }, { placement: 'cover', repeatWidthIn: 36 }, wall, 150)).toBeNull();
   });
   it('the slider runs 30 to 300 on 10-percent steps and uses PatternPro\'s words', () => {
     expect(clampPatternScale(0)).toBe(30); expect(clampPatternScale(1000)).toBe(300); expect(clampPatternScale(87)).toBe(90); expect(clampPatternScale(NaN)).toBe(100);
