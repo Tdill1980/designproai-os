@@ -232,7 +232,11 @@ contracts; each names its lock.
   flowers: "WallPro should use its brain and know how to scale").
   `app/src/lib/wallpro-scale.ts`: the brief's words and the wall width pick
   tile-versus-mural (`autoWallScale`) and the tile's real-world width
-  (`autoRepeatWidthIn`: about four repeats across, 6-inch steps, 18 to 48);
+  (`autoRepeatWidthIn`: about TWO repeats across — the same measured baseline a
+  match gets — unless the brief names a genuinely fine material, a slat, plank,
+  tile or weave (`FINE_MATERIAL_WORDS`), which keeps four across. Four across
+  for a botanical is what produced a dense craft-fair print, owner 2026-09-12:
+  "design gen is horrendous, also pattern way too small");
   the generator is told that width and the mural's inches so motifs are
   drawn at print size (`prompt.ts`); production tiles at exactly that width.
   Auto is the product; Mural and Repeating pattern remain overrides. A 4K
@@ -319,6 +323,17 @@ contracts; each names its lock.
   surface shows it first as "Print file"; the 54-inch panels are the fallback
   for a RIP that cannot tile. Locked by
   `source-tests/runtime/wallpro-production.test.mjs`.
+- **The generator composes ARCHITECTURAL GRAPHICS** (owner, 2026-09-12: "give
+  it an interior graphic designer persona for architectural printing").
+  `ARCHITECTURAL_SCALE` in `prompt.ts` is sent on every authoring intent and
+  withheld from `match`, which reproduces the reference instead: the wall is
+  read whole from six to twelve feet, so a few large forms with real negative
+  space, motifs at hand-painted-mural size, three to five values plus one
+  accent, and an explicit veto on anything that would look at home on a quilt
+  or a phone case. The tile instruction states the hero motif's size in inches
+  from the repeat width instead of the old "a bloom or a leaf a few inches
+  across", which was the sentence producing the dense all-over prints. Locked
+  by the prompt tests in `wallpro.test.ts`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
   my design (`match`: the reference IS the design), Design for my wall
   (`wall`), Describe a design (`prompt`), Use my print-ready file. The

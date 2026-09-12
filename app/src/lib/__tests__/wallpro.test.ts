@@ -162,8 +162,8 @@ describe('WallPro generation boundary', () => {
     expect(match).toMatch(/photograph of a room or of an installed wall, the design is the WALL COVERING/); expect(match).toMatch(/leave out the room itself: furniture, window, drapes/);
     expect(match).toMatch(/panels up to 54 inches wide/); expect(match).not.toMatch(/51 inches/);
     // Scale in inches: a tile is told its print width and repeat count; a mural is told its real size.
-    const tile = wallDesignPrompt({ prompt:'Blush florals', width:142, height:96, placement:'repeat', repeatWidthIn: 36 });
-    expect(tile).toMatch(/prints exactly 36 inches wide on the wall and repeats about 4 times/); expect(tile).toMatch(/never one motif filling the tile/);
+    const tile = wallDesignPrompt({ prompt:'Blush florals', width:142, height:96, placement:'repeat', repeatWidthIn: 72 });
+    expect(tile).toMatch(/prints 72 inches wide on the wall and repeats about 2 times/); expect(tile).toMatch(/do not let one motif fill the whole tile/);
     expect(wallDesignPrompt({ prompt:'A mountain mural', width:142, height:96, placement:'cover' })).toMatch(/prints at 142 by 96 inches: scale every element to that real size/);
     expect(parseWallInput({ ...input, placement:'repeat', repeatWidthIn: 36 }, owner).repeatWidthIn).toBe(36);
     expect(parseWallInput({ ...input, placement:'cover', repeatWidthIn: 36 }, owner).repeatWidthIn).toBeNull();
@@ -285,7 +285,7 @@ describe('A match reproduces the reference at its own scale', () => {
     const cover = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref });
     expect(cover).toMatch(/reference is the scale baseline/);
     expect(cover).toMatch(/at the size it appears in the reference/);
-    expect(cover).not.toMatch(/a bloom or a leaf a few inches across/);
+    expect(cover).not.toMatch(/architectural scale/);
     // The generic mural sentence, which tells the model to fit "many elements"
     // onto a large wall, is exactly what shrank a matched design.
     expect(cover).not.toMatch(/scale every element to that real size/);
@@ -294,10 +294,19 @@ describe('A match reproduces the reference at its own scale', () => {
     expect(tile).toMatch(/prints 72 inches wide on the wall and repeats about 2 times across it/);
     expect(tile).toMatch(/Hold the reference's own motif scale/);
     expect(tile).toMatch(/not with many smaller copies of them/);
-    expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
+    expect(tile).not.toMatch(/architectural scale/);
   });
   it('leaves the prompt and wall intents on the wall-sized scale brain', () => {
-    expect(wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 36 })).toMatch(/a bloom or a leaf a few inches across/);
+    const tile = wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });
+    expect(tile).toMatch(/compose it at architectural scale/);
+    expect(tile).toMatch(/a hero bloom or frond 18 to 36 inches across/);
+    expect(tile).toMatch(/Do not fill the tile with many small motifs/);
+    // The instruction that produced a dense craft print is gone for good.
+    expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
+    expect(tile).toMatch(/ARCHITECTURAL GRAPHICS, not fabric or gift wrap/);
+    // A match reproduces the reference, so it is never given the persona's
+    // composition rules on top of it.
+    expect(wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref })).not.toMatch(/ARCHITECTURAL GRAPHICS/);
     expect(wallDesignPrompt({ prompt: 'A mountain mural', width: 142, height: 96, placement: 'cover' })).toMatch(/scale every element to that real size/);
   });
 });
