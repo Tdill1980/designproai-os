@@ -3,6 +3,7 @@
 // those, thresholded, is one RGBA mask at preview resolution: white and opaque
 // where the design must not paint, transparent elsewhere. Preview-only: print
 // panels stay full rectangles and the installer trims on site.
+import type { Point } from './wallpro-geometry';
 export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string };
 export const MASK_THRESHOLD = 127;
 export const MASK_MAX_EDGE = 1600;
@@ -45,6 +46,38 @@ export async function rasterizeDetectionMasks(masks: DetectedMask[], photoWidth:
   if (!painted) return null;
   uctx.putImageData(out, 0, 0);
   return union;
+}
+
+/** Combines hand-drawn exclusion polygons and any already-detected protected-
+ * area mask into ONE white-on-transparent PNG at (capped) photo resolution.
+ * The deterministic "on your wall" composite already reads `exclusions` and
+ * the detected mask directly during its own render; this gives the AI
+ * photorealistic view (and the post-generation recomposite that makes its
+ * result a guarantee, not a hope) the exact same protected areas instead of
+ * prose alone. Returns null when nothing is protected, so the AI view's
+ * request is byte-for-byte unchanged in the common case. */
+export async function buildProtectedAreaMask(exclusions: Point[][], detectedMaskUrl: string | null, photoWidth: number, photoHeight: number): Promise<HTMLCanvasElement | null> {
+  if (!exclusions.length && !detectedMaskUrl) return null;
+  const scale = Math.min(1, MASK_MAX_EDGE / Math.max(photoWidth, photoHeight));
+  const width = Math.max(1, Math.round(photoWidth * scale)), height = Math.max(1, Math.round(photoHeight * scale));
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+  let painted = false;
+  if (detectedMaskUrl) {
+    try { const img = await loadImage(detectedMaskUrl); ctx.drawImage(img, 0, 0, width, height); painted = true; } catch { /* union continues without it */ }
+  }
+  if (exclusions.length) {
+    ctx.fillStyle = '#ffffff';
+    for (const poly of exclusions) {
+      if (poly.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x * width, poly[0].y * height);
+      for (const p of poly.slice(1)) ctx.lineTo(p.x * width, p.y * height);
+      ctx.closePath(); ctx.fill();
+      painted = true;
+    }
+  }
+  return painted ? canvas : null;
 }
 
 /** Reads a mask image into a per-pixel protected flag at the given size. */

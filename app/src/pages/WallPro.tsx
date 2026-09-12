@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
-import { rasterizeDetectionMasks } from '@/lib/wallpro-masks';
+import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
@@ -457,9 +457,9 @@ export default function WallPro() {
     setExcludeDraft([]); setShowMasks(true);
     setView(artworkRef.current ? 'after' : 'before'); setError('');
     const cornersNote = handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
-    if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes or Outline an object for anything the design must not cover. Masks affect the preview only; print panels stay full.');
+    if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes for a single item, or Protect a busy area to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
     else if (maskCount) setNotice(cornersNote + ` Found ${maskCount} protected area${maskCount === 1 ? '' : 's'} (${[...new Set(labels)].slice(0, 6).join(', ')}). Clear detected areas removes them. Masks affect the preview only; print panels stay full.` + (found.notes ? ' ' + found.notes : ''));
-    else setNotice(cornersNote + ' The objects could not be outlined precisely, so nothing was masked. Use Mask window / drapes for the window, or the AI picture, which keeps the room as photographed without masks.');
+    else setNotice(cornersNote + ' The objects could not be outlined precisely, so nothing was masked. Use Mask window / drapes for the window, Protect a busy area for a cluttered wall, or the AI picture, which keeps the room as photographed without masks.');
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
    * customer's typing and a signed-out session or a model failure leaves the
@@ -480,7 +480,21 @@ export default function WallPro() {
       if (!wall.path) setPhoto(old => old && old.url === wall.url ? { ...old, path: wallPath } : old);
       const artworkPath = art.path || await uploadWallAsset(art, user.id);
       if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-      const result = await renderWallView({ wallPath, artworkPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
+      // Hand-drawn masks and any auto-detected protected areas apply to the AI
+      // view too, not only the deterministic "on your wall" composite -- best
+      // effort: a mask that fails to build or upload just leaves the AI view
+      // running on its prose instruction alone, exactly as it always has.
+      let maskPath: string | null = null;
+      if ((exclusions.length || detectedMask?.url) && wall.width && wall.height) {
+        try {
+          const maskCanvas = await buildProtectedAreaMask(exclusions, detectedMask?.url ?? null, wall.width, wall.height);
+          if (maskCanvas) {
+            const blob = await canvasBlob(maskCanvas);
+            maskPath = await uploadWallAsset({ url: wall.url, aspect: wall.aspect, file: new File([blob], 'protected-areas.png', { type: 'image/png' }) }, user.id);
+          }
+        } catch { /* the AI view still renders from the prose instruction alone */ }
+      }
+      const result = await renderWallView({ wallPath, artworkPath, maskPath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
       // The design or the photo may have changed while the model painted.
       if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
       setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0) }); setView('ai');
@@ -856,7 +870,7 @@ export default function WallPro() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />Re-mark wall corners</Button>
                 <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Mask window / drapes</Button>
-                <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Outline an object</Button>
+                <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Protect a busy area</Button>
                 {marking === 'exclude' && <Button size="sm" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish mask</Button>}
                 {(marking === 'exclude' || marking === 'rectangle') && <>
                   <Button size="sm" variant="ghost" disabled={!!busy || !excludeDraft.length} onClick={() => setExcludeDraft(old => old.slice(0,-1))}>Undo mask point</Button>
@@ -866,8 +880,8 @@ export default function WallPro() {
                 {exclusions.length > 1 && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions([])}>Clear all masks</Button>}
                 {detectedMask && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setDetectedMask(null)}>Clear detected areas</Button>}
               </div>
-              <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. Use Outline an object for irregular edges. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
-              {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the drapes or object, then choose Finish mask.'}</p>}
+              <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
+              {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs text-slate-500">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
             </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}

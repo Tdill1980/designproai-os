@@ -109,8 +109,12 @@ export async function detectWall(wallPath: string): Promise<{ wall: { x: number;
 
 /** AI view on the wall: the image model paints the flat master onto the wall
  * in the room photo and leaves everything else as photographed. Presentation
- * only; the flat master stays the print truth. No token charged. */
-export async function renderWallView(input: { wallPath: string; artworkPath: string; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number }): Promise<{ view_path: string; view_url: string; model: string }> {
+ * only; the flat master stays the print truth. No token charged. An optional
+ * maskPath (see buildProtectedAreaMask) tells the edge function which areas
+ * must survive pixel-for-pixel -- both as an explicit instruction to the
+ * model and as a deterministic recomposite after it, so a busy wall's
+ * windows, drapes and frames are a guarantee, not a hope. */
+export async function renderWallView(input: { wallPath: string; artworkPath: string; maskPath?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number }): Promise<{ view_path: string; view_url: string; model: string }> {
   const { data, error } = await supabase.functions.invoke('render-wall-view', { body: input });
   if (error) {
     const response = (error as any).context;
