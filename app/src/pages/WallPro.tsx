@@ -12,7 +12,7 @@ import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels'
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
-import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
+import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -20,7 +20,7 @@ import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
-import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -186,6 +186,7 @@ export default function WallPro() {
   const aiAvailable = aiViewAvailable({ staff, viewingAsCustomer });
   // A comparison needs both halves: the untouched photo and a real composite.
   const canCompare = !!photo && !!artwork && wallLocated && !!preview;
+  const billing = wallBilling(width, height, printSettings, WALLPRO_PRINT_WIDTH);
   useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
@@ -210,7 +211,6 @@ export default function WallPro() {
   const wallBox: WallBox = { width, height, aspect: previewArt?.aspect || 1 };
   const masterPx = { width: previewArt?.width || 0, height: previewArt?.height || 0 };
   const draftPpi = previewArt ? patternPpi(masterPx, patternBase, wallBox, scaleDraft) : 0;
-  const printSafeMax = previewArt ? maxPrintSafeScale(masterPx, patternBase, wallBox, printSettings.minPpi) : null;
   const scaleSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scaleCommit = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { setScaleDraft(patternScale); }, [patternScale]);
@@ -1093,11 +1093,22 @@ export default function WallPro() {
                 {/* Bigger spreads the same pixels over more inches, so the
                     honest limit on "bigger" is resolution, never print size:
                     the wall, the panels and the file stay exactly as they are. */}
-                {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'text-slate-500' : 'text-amber-700')}>
+                {/* THE NUMBER IS INFORMATION; THE OLD BUTTON WAS BAD ADVICE.
+                    "Use 40%, the largest fully sharp size" sat here and, on the
+                    owner's own 120-inch wall, 40% of a 60-inch repeat is a
+                    24-inch repeat -- four-plus across, the craft-fair density
+                    the scale brain exists to prevent. It told customers to undo
+                    the measured baseline to chase sharpness that the pipeline
+                    already supplies: production runs Topaz per 54-inch panel to
+                    reach 150 PPI, which is the whole reason that stage exists.
+                    Owner, 2026-09-12: "Keep it lower resolution" -- hold the
+                    pattern at the size it should print and accept the native
+                    density. The honest figure stays on screen; the call to
+                    action that fought the baseline is gone. */}
+                {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'text-slate-500' : 'text-slate-600')}>
                   {draftPpi >= printSettings.minPpi
                     ? `${Math.round(draftPpi)} PPI from the design's own pixels — above your ${printSettings.minPpi} PPI minimum. Wall size, panels and print file are unchanged at every size.`
-                    : `${Math.round(draftPpi)} PPI from the design's own pixels, under your ${printSettings.minPpi} PPI minimum. The print file stays the same size; Topaz fills the detail in, which invents it rather than recovering it.`}
-                  {printSafeMax !== null && printSafeMax < scaleDraft && <> <button type="button" className="underline underline-offset-2" disabled={!!busy} onClick={() => applyPatternScale(printSafeMax)}>Use {printSafeMax}%, the largest fully sharp size</button>.</>}
+                    : `${Math.round(draftPpi)} PPI native from the design's own pixels. Production enhances every ${WALLPRO_PRINT_WIDTH}″ panel through Topaz to ${printSettings.minPpi} PPI, so keep the pattern at the size it should print — shrinking it to raise this number is not the fix.`}
                 </p>}
                 <p className="mt-1 text-xs text-slate-500">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
               </div>
@@ -1234,6 +1245,16 @@ export default function WallPro() {
           {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
           <WallProductionPanels approved={approvedVersion} autoStart={productionKick} busy={!!busy}
             request={{ wallWidthIn: width, wallHeightIn: height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : undefined, mirror: !!layout.mirror, bleedIn: printSettings.bleed, overlapIn: printSettings.overlap, panelWidthIn: WALLPRO_PRINT_WIDTH, targetPpi: printSettings.minPpi, wholeWall: true }} />
+          {/* WHAT WPW ACTUALLY BILLS. The spec sheet bills per LINEAR FOOT and
+              bills every panel at the full 54-inch roll width regardless of
+              what is printed on it, so wall square footage is not the number:
+              a 142-inch wall bills 162 inches of roll width. Shown from the
+              same geometry the panels are planned with. */}
+          {billing && <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+            <strong className="text-slate-900">WePrintWraps billing · {billing.linearFeet} linear ft</strong>{' '}
+            — {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long, each billed at the {billing.billedWidthIn}″ roll width whatever is printed on it
+            ({billing.billedSqFt} sq ft billed for a {billing.wallSqFt} sq ft wall). Avery HP MPI 2610 wall vinyl, matte/luster.
+          </p>}
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>

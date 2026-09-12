@@ -59,3 +59,53 @@ export function intersectPrintRect(a: PrintRect, b: PrintRect): PrintRect | null
   const height = Math.min(a.y + a.height, b.y + b.height) - y;
   return width > 1e-8 && height > 1e-8 ? { x, y, width, height } : null;
 }
+
+/**
+ * WHAT WEPRINTWRAPS ACTUALLY BILLS (owner spec sheet, 2026-09-12: Avery HP MPI
+ * 2610 wall vinyl, matte/luster, billed per linear foot, "all panels billed at
+ * 54 in width, regardless of actual printed width").
+ *
+ * Square footage of the wall is NOT the bill, and the gap is not small. A 142
+ * inch wall needs three panels — 54, 54 and 34 — but the narrow one is billed
+ * at the full 54, so the shop bills 162 inches of roll width for 142 inches of
+ * wall. Quoting off wall area understates every job whose width is not a clean
+ * multiple of 54, which is nearly all of them.
+ *
+ * Linear feet run along the roll, so a panel's LENGTH is the wall height plus
+ * its bleed. Width never enters the linear-foot figure — that is the whole
+ * point of billing every panel at the roll width.
+ */
+export type WallBilling = {
+  panels: number;
+  /** Roll length consumed, in feet: what the price per linear foot multiplies. */
+  linearFeet: number;
+  /** Printed length of one panel, in inches (wall height plus bleed both ends). */
+  panelLengthIn: number;
+  /** Billed width per panel — the roll, not the printed width. */
+  billedWidthIn: number;
+  /** Billed area in square feet, at the billed width. */
+  billedSqFt: number;
+  /** The wall's own area, for the honest comparison. */
+  wallSqFt: number;
+};
+
+export function wallBilling(
+  width: number,
+  height: number,
+  settings: WallPrintSettings,
+  rollWidthIn: number,
+): WallBilling | null {
+  if (![width, height, rollWidthIn].every(n => Number.isFinite(n) && n > 0)) return null;
+  if (!Number.isFinite(settings.bleed) || settings.bleed < 0) return null;
+  const panels = Math.ceil(width / rollWidthIn);
+  const panelLengthIn = height + 2 * settings.bleed;
+  const linearFeet = Math.round(((panels * panelLengthIn) / 12) * 100) / 100;
+  return {
+    panels,
+    linearFeet,
+    panelLengthIn: Math.round(panelLengthIn * 100) / 100,
+    billedWidthIn: rollWidthIn,
+    billedSqFt: Math.round(((panels * rollWidthIn * panelLengthIn) / 144) * 100) / 100,
+    wallSqFt: Math.round(((width * height) / 144) * 100) / 100,
+  };
+}
