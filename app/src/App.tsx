@@ -377,7 +377,11 @@ const App = () => {
           <Route path="/printpro/wallpro" element={<WallPro />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
-          <Route path="/admin/wallpro-studio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
+          {/* WallPanelProStudio, named as the owner names it. Index by DesignID,
+              then one design with its version rail. */}
+          <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
+          <Route path="/wallpanelprostudio/:projectId" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
+          <Route path="/admin/wallpro-studio" element={<Navigate to="/wallpanelprostudio" replace />} />
           <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />

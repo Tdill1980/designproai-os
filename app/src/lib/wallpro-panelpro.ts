@@ -1,0 +1,304 @@
+// WallPanelProStudio: the WallPro lineage, in the shape PanelPro Studio uses.
+//
+// Owner, 2026-09-12: "We already create design id, version history and show up
+// in RevisionStudioIQ so mirror what would work to give wallpro its own
+// wallpanelprostudio."
+//
+// So this does not invent a lineage. WallPro already has all three pieces:
+//
+//   DesignID         wallDesignId(versionId) -> DID-XXXXXXXX   (wallpro-api.ts)
+//   version history  wallpro_design_versions, V1..Vn, immutable (20260911150000)
+//   the studio feed  listWallDesignsForStudio -> wallStudioRow  (wallpro-studio.ts)
+//
+// The vehicle board (PanelProStudioBoard.tsx) is keyed on one job with a
+// version rail inside it, and selecting a version scopes the WHOLE workspace so
+// V1's assets can never sit beside V2's. The wall equivalent of that job is the
+// PROJECT, and the rail is its versions. That is the only structural change;
+// every identity below is one WallPro already mints.
+//
+// WHAT REPLACES "PROOF | PANEL". A vehicle has six surfaces, so the vehicle
+// board pairs each surface's 3D proof with its print panel and checks both came
+// from one master. A wall is ONE flat rectangle -- that is the whole reason
+// WallPro is the wedge product -- so the honest pair is the FLAT MASTER (what
+// the design is) beside the PRINT FILES (what actually prints): the 54" panels
+// and the one-file whole wall, at their measured PPI. The lineage check the
+// vehicle board makes by comparing hashes is structural here: a production job
+// carries `version_id`, so it cannot be built from another version. What CAN go
+// wrong is staleness and resolution, so those are what is checked.
+//
+// Pure: no Supabase client, no React.
+import type { WallGenerationRow, WallQcReview, WallReleaseState } from './wallpro-qc';
+import { generationOutcome, releaseState, type WallGenerationOutcome } from './wallpro-qc';
+import type { WallProductionJob, WallVersion } from './wallpro-api';
+
+/** The DesignID a wall version is filed under, in the DID-XXXXXXXX form the
+ * vehicle studio uses. Re-exported here so the studio has one import. */
+export const wallDesignIdOf = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
+
+/** The print target every wall panel is enhanced to (runtime/wallpro-production.cjs). */
+export const WALL_TARGET_PPI = 150;
+
+export type WallStudioVersionRecord = {
+  version: WallVersion;
+  /** This version's own DesignID. Every version has one, as on the vehicle side. */
+  designId: string;
+  /** The generation that authored it, when the version records one. */
+  generation: WallGenerationRow | null;
+  outcome: WallGenerationOutcome;
+  reviews: WallQcReview[];
+  release: WallReleaseState;
+  /** The newest production build for this exact version. */
+  job: WallProductionJob | null;
+  artworkUrl: string | null;
+};
+
+export type WallStudioProjectRecord = {
+  projectId: string;
+  projectName: string;
+  ownerId: string;
+  /** The project's headline DesignID: the approved version's, else the newest. */
+  designId: string;
+  /** V1..Vn, oldest first — never only the newest (RULE 0.22). */
+  versions: WallStudioVersionRecord[];
+  approvedVersionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** A generation that produced artwork and never became a version: the timeout.
+ * It has no project and no DesignID yet, which is exactly the problem. */
+export type WallOrphanRecord = {
+  generation: WallGenerationRow;
+  artworkUrl: string | null;
+};
+
+export type WallPanelProStudio = {
+  designs: WallStudioProjectRecord[];
+  orphans: WallOrphanRecord[];
+};
+
+/**
+ * Build the studio from the rows as read.
+ *
+ * The project's headline DesignID follows `listWallDesignsForStudio`'s own
+ * rule -- the approved version when there is one, because production reads only
+ * it, else the newest draft -- so a design filed here and the same design in
+ * RevisionStudioIQ carry the same DID rather than two answers about one job.
+ */
+export function buildWallPanelProStudio(input: {
+  projects: Array<{ id: string; name: string; owner_id?: string | null; created_at?: string | null; updated_at?: string | null }>;
+  versions: WallVersion[];
+  generations: WallGenerationRow[];
+  reviews: WallQcReview[];
+  jobs: WallProductionJob[];
+  urls: Record<string, string>;
+  now?: number;
+}): WallPanelProStudio {
+  const now = input.now ?? Date.now();
+  const generationById = new Map(input.generations.map(g => [g.id, g]));
+  const reviewsByVersion = new Map<string, WallQcReview[]>();
+  for (const review of input.reviews) {
+    const list = reviewsByVersion.get(review.version_id) || [];
+    list.push(review); reviewsByVersion.set(review.version_id, list);
+  }
+  // Newest job per version: a rebuild supersedes, it does not accumulate.
+  const jobByVersion = new Map<string, WallProductionJob>();
+  for (const job of input.jobs) {
+    const held = jobByVersion.get(job.version_id);
+    if (!held || new Date(job.created_at).getTime() > new Date(held.created_at).getTime()) {
+      jobByVersion.set(job.version_id, job);
+    }
+  }
+
+  const byProject = new Map<string, WallVersion[]>();
+  for (const version of input.versions) {
+    const list = byProject.get(version.project_id) || [];
+    list.push(version); byProject.set(version.project_id, list);
+  }
+
+  const projectRows = new Map(input.projects.map(p => [p.id, p]));
+  const designs: WallStudioProjectRecord[] = [];
+  for (const [projectId, rows] of byProject) {
+    const versions = [...rows].sort((a, b) => a.version_no - b.version_no);
+    const records: WallStudioVersionRecord[] = versions.map(version => {
+      const generation = version.generation_id ? generationById.get(version.generation_id) || null : null;
+      const reviews = reviewsByVersion.get(version.id) || [];
+      return {
+        version,
+        designId: wallDesignIdOf(version.id),
+        generation,
+        // A version row EXISTS, so whatever authored it landed. A version with
+        // no generation is an upload or a catalog pick, which also landed.
+        outcome: generation ? generationOutcome(generation, true, now) : 'landed',
+        reviews,
+        release: releaseState(reviews),
+        job: jobByVersion.get(version.id) || null,
+        artworkUrl: input.urls[version.artwork_path] || null,
+      };
+    });
+    const approved = records.find(r => r.version.status === 'approved') || null;
+    const newest = records[records.length - 1];
+    const project = projectRows.get(projectId);
+    designs.push({
+      projectId,
+      projectName: project?.name || 'Wall design',
+      ownerId: newest.version.owner_id,
+      designId: (approved || newest).designId,
+      versions: records,
+      approvedVersionId: approved?.version.id || null,
+      createdAt: project?.created_at || versions[0].created_at,
+      updatedAt: project?.updated_at || newest.version.created_at,
+    });
+  }
+  designs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+  // Everything the version table never claimed. This is the lane that makes the
+  // studio worth opening when a customer says it timed out.
+  const claimed = new Set(input.versions.map(v => v.generation_id).filter(Boolean) as string[]);
+  const orphans = input.generations
+    .filter(g => !claimed.has(g.id) && generationOutcome(g, false, now) === 'orphaned')
+    .map(g => ({ generation: g, artworkUrl: (g.artwork_path && input.urls[g.artwork_path]) || null }));
+
+  return { designs, orphans };
+}
+
+/* ── What the studio reports about one version ──────────────────────────── */
+
+/**
+ * The version's place in the workflow, in the words the team uses. Mirrors the
+ * vehicle board's StatePill without inventing a second state machine: every
+ * value is read off rows that already exist.
+ */
+export type WallVersionStage =
+  | 'draft'            // authored, not approved by the customer
+  | 'approved'         // the customer approved it; production reads only this
+  | 'building'         // the runtime is cutting panels
+  | 'panels-ready'     // print files exist
+  | 'build-failed'     // the panel build failed
+  | 'held'             // QC held it: it may not print
+  | 'released';        // QC released it: it may print
+
+export function versionStage(record: WallStudioVersionRecord): WallVersionStage {
+  if (record.release === 'held') return 'held';
+  if (record.release === 'released') return 'released';
+  if (record.job?.status === 'failed') return 'build-failed';
+  if (record.job?.status === 'ready') return 'panels-ready';
+  if (record.job) return 'building';
+  return record.version.status === 'approved' ? 'approved' : 'draft';
+}
+
+export const STAGE_LABEL: Record<WallVersionStage, string> = {
+  draft: 'Draft',
+  approved: 'Approved by customer',
+  building: 'Building panels',
+  'panels-ready': 'Print files ready',
+  'build-failed': 'Panel build failed',
+  held: 'Held in QC',
+  released: 'Released for print',
+};
+
+/**
+ * Whether the print files on screen were built from the version as it now
+ * stands. A wall job carries `version_id`, so it can never be built from
+ * another version — but it CAN predate the approval it is shown under, which
+ * happens when a version is un-approved and re-approved with different
+ * geometry. That is the wall's equivalent of the vehicle board's
+ * different-masters check, and it is the one it can honestly make.
+ */
+export function jobIsStale(record: WallStudioVersionRecord): boolean {
+  const approvedAt = record.version.approved_at;
+  if (!record.job || !approvedAt) return false;
+  return new Date(record.job.created_at).getTime() < new Date(approvedAt).getTime();
+}
+
+/**
+ * The print files' own measured health. Every number is one the runtime stamped
+ * on the panel; nothing is recomputed in the browser, for the same reason the
+ * vehicle board reads its dimension sheet off the artifacts — a second set of
+ * numbers agrees with the first only by luck.
+ */
+export function panelHealth(job: WallProductionJob | null) {
+  const panels = job?.panels || [];
+  if (!panels.length) return null;
+  const ppis = panels.map(p => Number(p.ppi)).filter(n => Number.isFinite(n) && n > 0);
+  const minPpi = ppis.length ? Math.min(...ppis) : null;
+  const widths = panels.map(p => Number(p.widthIn)).filter(n => Number.isFinite(n) && n > 0);
+  return {
+    panelCount: panels.length,
+    minPpi,
+    /** False when any panel came back under the 150 PPI print target. */
+    meetsTarget: minPpi !== null && minPpi >= WALL_TARGET_PPI,
+    widestPanelIn: widths.length ? Math.max(...widths) : null,
+    /** Panels that fell back to native pixels because Topaz was unavailable. */
+    nativePanels: panels.filter(p => p.upscale?.engine === 'none').length,
+    totalBytes: panels.reduce((sum, p) => sum + (Number(p.byteSize) || 0), 0),
+  };
+}
+
+/**
+ * The design-team record for one version, downloadable as JSON.
+ *
+ * The vehicle board's forensic record, on WallPro's own fields. Nothing is
+ * recomputed: every value came from the canonical project, version, generation,
+ * QC or job row.
+ */
+export function wallForensicRecord(project: WallStudioProjectRecord, record: WallStudioVersionRecord) {
+  const version = record.version;
+  return {
+    contract: 'wallpro.panelpro-forensic-record.v1',
+    projectId: project.projectId,
+    projectName: project.projectName,
+    ownerId: project.ownerId,
+    designId: record.designId,
+    version: version.version_no,
+    versionId: version.id,
+    parentVersionId: version.parent_version_id,
+    kind: version.kind,
+    status: version.status,
+    createdAt: version.created_at,
+    approvedAt: version.approved_at,
+    artwork: {
+      path: version.artwork_path,
+      widthPx: version.width_px,
+      heightPx: version.height_px,
+      sha256: version.sha256,
+      placement: version.placement,
+      repeatWidthIn: version.repeat_width_in,
+    },
+    brief: {
+      intent: version.intent,
+      prompt: version.prompt,
+      generationId: version.generation_id,
+      generationInput: record.generation?.input ?? null,
+      chargeSource: record.generation?.charge_source ?? null,
+    },
+    qc: {
+      release: record.release,
+      reviews: record.reviews.map(r => ({
+        verdict: r.verdict, reviewerId: r.reviewer_id, checks: r.checks,
+        notes: r.notes, createdAt: r.created_at,
+      })),
+    },
+    production: record.job
+      ? {
+          jobId: record.job.id,
+          status: record.job.status,
+          request: record.job.request,
+          stale: jobIsStale(record),
+          health: panelHealth(record.job),
+          panels: record.job.panels.map(p => ({
+            number: p.number, file: p.file, widthIn: p.widthIn, heightIn: p.heightIn,
+            widthPx: p.widthPx, heightPx: p.heightPx, ppi: p.ppi, sha256: p.sha256,
+            overlapLeftIn: p.overlapLeftIn, upscale: p.upscale,
+          })),
+          manifestPath: record.job.manifest_path,
+        }
+      : null,
+    /** The whole lineage, never only the selected version (RULE 0.22). */
+    history: project.versions.map(v => ({
+      version: v.version.version_no, versionId: v.version.id, designId: v.designId,
+      kind: v.version.kind, prompt: v.version.prompt, createdAt: v.version.created_at,
+      status: v.version.status, release: v.release,
+    })),
+  };
+}

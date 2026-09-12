@@ -301,21 +301,21 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   it did. */}
               {tool.key === "wallpro" && isAdmin && (
                 <SidebarTooltip
-                  title="WallPanelPro Studio"
-                  description="Every wall generation, whether it took when the customer timed out, designer QC and the release gate"
+                  title="WallPanelProStudio"
+                  description="Every wall design by DesignID with its version history, print files, designer QC and the release gate — plus the designs that took while the customer timed out"
                 >
                   <Link
-                    to="/admin/wallpro-studio"
+                    to="/wallpanelprostudio"
                     onClick={onNavigate}
                     className={cn(
                       "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
-                      isActive("/admin/wallpro-studio")
+                      isActive("/wallpanelprostudio")
                         ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
                         : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
                     )}
                   >
                     <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">PanelPro Studio</span>
+                    <span className="truncate">WallPanelProStudio</span>
                   </Link>
                 </SidebarTooltip>
               )}

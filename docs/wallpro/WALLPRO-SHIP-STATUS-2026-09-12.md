@@ -71,12 +71,31 @@ gateway already know them. No print credit is hard-coded anywhere, by decision.
 
 ---
 
-## 3.5 WallPanelPro Studio — built, MERGED PENDING, migration NOT APPLIED
+## 3.5 WallPanelProStudio — built, MERGE PENDING, migration NOT APPLIED
 
-`/admin/wallpro-studio`, sidebar → WallPro → **PanelPro Studio** (admins and
-testers). What the owner asked for on 2026-09-12: *"That's where I can instantly
+`/wallpanelprostudio`, and `/wallpanelprostudio/:projectId` for one design.
+Sidebar → WallPro → **WallPanelProStudio** (admins and testers).
+`/admin/wallpro-studio` redirects. What the owner asked for on 2026-09-12: *"That's where I can instantly
 check if it took when they time out and it's where we do back end designer QC
 checks and release gate just like current vehicle wrap panelpro version."*
+
+**It mirrors the lineage WallPro already has** (owner: *"We already create
+design id, version history and show up in RevisionStudioIQ so mirror what would
+work"*). Nothing new is minted: the DesignID is `wallDesignId(versionId)`, the
+version rail is `wallpro_design_versions` V1..Vn, and the head version follows
+`listWallDesignsForStudio`'s own rule — approved if there is one, else newest —
+so a design carries the SAME DID here and in RevisionStudioIQ. The vehicle board
+is one job with a version rail inside it; WallPro's equivalent of that job is the
+PROJECT, and selecting a version scopes the whole workspace. That is the only
+structural change.
+
+Where the vehicle board pairs each surface's 3D proof with its print panel, a
+wall is ONE flat rectangle, so the honest pair is **FLAT MASTER ∥ PRINT FILES** —
+the design beside the 54" panels and the one-file whole wall, at their measured
+PPI. The vehicle board's different-masters check has no wall counterpart (a job
+carries `version_id`, so it cannot be built from another version); what can go
+wrong is **staleness** (a build predating the current approval) and
+**resolution** (lowest panel PPI against 150), so those are what is checked.
 
 **Why it is a new board and not `/admin/wallpro-production`.** That board lists
 PRODUCTION JOBS, which exist only after a version is approved. The break happens

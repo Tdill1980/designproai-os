@@ -3,6 +3,7 @@ import { dpApi } from './designpro-api';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 import type { WallStudioDesign } from './wallpro-studio';
 import type { WallGenerationRow, WallQcReview } from './wallpro-qc';
+import { buildWallPanelProStudio, type WallPanelProStudio } from './wallpro-panelpro';
 export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
@@ -382,75 +383,62 @@ export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDe
   });
 }
 
-/* ── WallPanelPro Studio: every generation, its QC and its release gate ──── */
+/* ── WallPanelProStudio: the project lineage, DesignID and version history ─ */
 
-/** One row of the studio board: the model call, what became of it, the team's
- * QC log and the production build, joined into the single object the board
- * renders. A generation with no version is the timed-out case and carries
- * `version: null` — that is the signal, not a missing field. */
-export type WallStudioEntry = {
-  generation: WallGenerationRow;
-  /** The version the customer's browser recorded, when it got that far. */
-  version: WallVersion | null;
-  projectId: string | null;
-  projectName: string | null;
-  /** Every QC review for that version, newest-first ordering is not assumed. */
-  reviews: WallQcReview[];
-  /** The latest production build for that version, when one was requested. */
-  job: WallProductionJob | null;
-  /** Signed preview URL for the generated master, when it could be signed. */
-  artworkUrl: string | null;
-};
-
-/** The studio feed: the newest generations across every customer, with what
- * happened to each. Admins and testers only (RLS on every table read here).
+/** Everything the studio renders, read in one pass. Admins and testers only
+ * (RLS on every table below).
  *
- * The generation table is the spine deliberately. Listing projects or versions
- * would show only the designs that survived the round trip, which is exactly
- * the set that never needed this board. */
-export async function listWallStudioFeed(limit = 60): Promise<WallStudioEntry[]> {
-  const gens = await db.from('wallpro_generations').select('*').order('created_at', { ascending: false }).limit(limit);
+ * TWO SPINES, deliberately. Projects and their versions are the lineage the
+ * board is organised by -- the same DesignID and V1..Vn RevisionStudioIQ
+ * already shows. The generation table is read BESIDE it, because a version row
+ * is written by the customer's browser: a generation that completed and never
+ * became a version exists only there, and that is the row the team opens this
+ * board to find. */
+export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProStudio> {
+  const [gens, vers] = await Promise.all([
+    db.from('wallpro_generations').select('*').order('created_at', { ascending: false }).limit(limit * 3),
+    db.from('wallpro_design_versions').select('*').order('created_at', { ascending: false }).limit(limit * 6),
+  ]);
   if (gens.error) throw new Error('Generations could not be listed: ' + gens.error.message);
-  const generations = (gens.data || []) as WallGenerationRow[];
-  if (!generations.length) return [];
-  const ids = generations.map(g => g.id);
-  const vers = await db.from('wallpro_design_versions').select('*').in('generation_id', ids);
   if (vers.error) throw new Error('Design versions could not be listed: ' + vers.error.message);
+  const generations = (gens.data || []) as WallGenerationRow[];
   const versions = (vers.data || []) as WallVersion[];
-  const versionFor = new Map<string, WallVersion>();
-  for (const v of versions) if (v.generation_id && !versionFor.has(v.generation_id)) versionFor.set(v.generation_id, v);
 
   const projectIds = [...new Set(versions.map(v => v.project_id))];
   const versionIds = versions.map(v => v.id);
-  const [projects, reviews, jobs, links] = await Promise.all([
-    projectIds.length ? db.from('wallpro_projects').select('id,name').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
+  const [projects, reviews, jobs, urls] = await Promise.all([
+    projectIds.length ? db.from('wallpro_projects').select('id,name,owner_id,created_at,updated_at').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_qc_reviews').select('*').in('version_id', versionIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
-    // A generation that failed has no artwork path; signing is best effort so
-    // one unsignable object never empties the board.
-    openWallAssets([...new Set(generations.map(g => g.artwork_path).filter(Boolean) as string[])]).catch(() => ({} as Record<string, string>)),
+    // Signing is best effort so one unreadable object never empties the board.
+    openWallAssets([...new Set([
+      ...versions.map(v => v.artwork_path),
+      ...generations.map(g => g.artwork_path).filter(Boolean) as string[],
+    ])]).catch(() => ({} as Record<string, string>)),
   ]);
-  const names = new Map<string, string>(((projects as any).data || []).map((p: any) => [p.id, p.name]));
-  const reviewsFor = new Map<string, WallQcReview[]>();
-  for (const r of (((reviews as any).data || []) as WallQcReview[])) {
-    const list = reviewsFor.get(r.version_id) || [];
-    list.push(r); reviewsFor.set(r.version_id, list);
-  }
-  const jobFor = new Map<string, WallProductionJob>();
-  for (const j of (((jobs as any).data || []) as WallProductionJob[])) if (!jobFor.has(j.version_id)) jobFor.set(j.version_id, j);
 
-  return generations.map(g => {
-    const version = versionFor.get(g.id) || null;
-    return {
-      generation: g,
-      version,
-      projectId: version?.project_id ?? null,
-      projectName: version ? names.get(version.project_id) || 'Wall design' : null,
-      reviews: version ? reviewsFor.get(version.id) || [] : [],
-      job: version ? jobFor.get(version.id) || null : null,
-      artworkUrl: g.artwork_path ? links[g.artwork_path] || null : null,
-    };
+  return buildWallPanelProStudio({
+    projects: ((projects as any).data || []) as Array<{ id: string; name: string; owner_id: string; created_at: string; updated_at: string }>,
+    versions,
+    generations,
+    reviews: (((reviews as any).data || []) as WallQcReview[]),
+    jobs: (((jobs as any).data || []) as WallProductionJob[]),
+    urls,
   });
+}
+
+/** Signed download links for a job's print files, requested only when a version
+ * is opened. Signing every panel of every job on the index would be dozens of
+ * links nobody clicked. */
+export async function openWallPrintFiles(job: WallProductionJob): Promise<Record<string, string>> {
+  const paths = new Set<string>();
+  for (const panel of job.panels || []) {
+    for (const file of wallPanelFiles(panel)) if (file.path) paths.add(file.path);
+  }
+  if (job.manifest_path) paths.add(job.manifest_path);
+  const whole = wholeWallFile(job);
+  if (whole) paths.add(whole.path);
+  return paths.size ? openWallAssets([...paths], { download: true }) : {};
 }
 
 /** Writes the project and version row a timed-out browser never wrote, from the
