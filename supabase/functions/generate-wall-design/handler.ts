@@ -1,7 +1,23 @@
-import { wallDesignPrompt, wallMatchRecoveryPrompt, WALL_INTENTS, type WallIntent } from './prompt.ts';
+import { wallDesignPrompt, wallMatchRecoveryPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent } from './prompt.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
+/** The fast text model that describes a reference before a words-only retry. */
+export const DESCRIBE_MODEL = 'gemini-2.5-flash';
+
+/** The covering in the reference image, in words, from the fast text model.
+ * Null when it cannot answer; the retry then goes without a description. */
+export async function describeCovering(fetchImpl: typeof fetch, key: string, imagePart: any): Promise<string | null> {
+  const provider = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/models/' + DESCRIBE_MODEL + ':generateContent', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: COVERING_DESCRIPTION_PROMPT }, imagePart] }], generationConfig: { temperature: 0, thinkingConfig: { thinkingBudget: 0 } } }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!provider.ok) return null;
+  const result = await provider.json();
+  const text = String(result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '').trim().replace(/\s+/g, ' ');
+  return text.length >= 20 ? text.slice(0, 900) : null;
+}
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -165,10 +181,10 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       }
       if (!reservation.data.fresh) return await signedResult(reservation.data.generation);
       reserved = true;
-      const draw = async (text: string) => {
+      const draw = async (text: string, images: any[] = parts.slice(1)) => {
         const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + MODEL + ':generateContent', {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, ...parts.slice(1)] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
+          body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text }, ...images] }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: requestedAspect, imageSize: '4K' } } }),
           signal: AbortSignal.timeout(100_000),
         });
         if (!provider.ok) throw new Error(provider.status === 429 ? 'The design service is busy. Your render credit will be returned.' : 'The design service could not complete this request. Your render credit will be returned.');
@@ -186,8 +202,16 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
         const reason = err instanceof Error ? err.message.match(/\(([A-Z_]+)\)/)?.[1] || '' : '';
         if (input.intent !== 'match' || !reason.includes('RECITATION')) throw err;
         recoveredFrom = reason;
-        console.log(JSON.stringify({ event: 'wall_match_recitation_retry', request_id: input.requestId, reason }));
-        final = await draw(wallMatchRecoveryPrompt(input));
+        // The filter matches the photograph, not the words (a retry that still
+        // attached the customer's own photo was refused again, 2026-09-11
+        // 19:36). So: the fast text model describes the covering in the
+        // reference, and the retry draws from those words with NO image
+        // attached. The description is best effort; without one the retry
+        // still goes, with the images, as the lesser chance.
+        const referencePart = [...parts].reverse().find((p: any) => p?.inlineData) || null;
+        const description = referencePart ? await describeCovering(deps.fetch, key, referencePart).catch(() => null) : null;
+        console.log(JSON.stringify({ event: 'wall_match_recitation_retry', request_id: input.requestId, reason, described: !!description, description }));
+        final = await draw(wallMatchRecoveryPrompt({ ...input, description }), description ? [] : parts.slice(1));
       }
       const bytes = decodeWallImage(final.data);
       if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');

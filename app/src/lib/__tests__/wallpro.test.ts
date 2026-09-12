@@ -100,7 +100,10 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
     if(name==='reserve_wallpro_generation') return options.noTokens ? {error:{message:'no_tokens'}} : {data:{fresh:options.fresh!==false,generation:stored}};
     return {data:stored};
   })};
-  const provider=vi.fn(async (_url:any,init:any) => { calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
+  const provider=vi.fn(async (url:any,init:any) => {
+    // The fast text model, asked to describe the covering before a words-only retry.
+    if (String(url).includes('gemini-2.5-flash')) { calls.push(['describe',JSON.parse(init.body)]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]}); }
+    calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
   const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any});
   const invoke=(body:any=input)=>handler(new Request('https://own.supabase.co/functions/v1/generate-wall-design',{method:'POST',headers:{authorization:'Bearer user-test-token'},body:JSON.stringify(body)}));
   return {handler,invoke,calls,provider,sb,storage};
@@ -166,9 +169,12 @@ describe('WallPro generation boundary', () => {
     const providerCalls=f.calls.filter(c=>c[0]==='provider'); expect(providerCalls).toHaveLength(2);
     expect(providerCalls[0][1].contents[0].parts[0].text).toMatch(/IS the design/);
     const retry=providerCalls[1][1].contents[0].parts;
-    expect(retry[0].text).toMatch(/style inspiration/); expect(retry[0].text).toMatch(/not a copy of the photograph/); expect(retry[0].text).toMatch(/seamless repeating tile/);
-    // The wall photo and the reference ride the retry too; one reservation, one finish, no refund.
-    expect(retry.filter((p:any)=>p.inlineData)).toHaveLength(2);
+    // The fast model described the reference, and the retry drew from those words with NO photograph attached.
+    const describe=f.calls.filter(c=>c[0]==='describe'); expect(describe).toHaveLength(1);
+    expect(describe[0][1].contents[0].parts[0].text).toMatch(/Describe the wall covering/); expect(describe[0][1].contents[0].parts[1].inlineData).toBeTruthy();
+    expect(retry[0].text).toMatch(/matching this description of the customer's reference: "Vertical white-oak slats/); expect(retry[0].text).toMatch(/not a copy of any photograph/); expect(retry[0].text).toMatch(/seamless repeating tile/);
+    expect(retry[0].text).not.toMatch(/reference image/); expect(retry.filter((p:any)=>p.inlineData)).toHaveLength(0);
+    // One reservation, one finish, no refund.
     expect(f.calls.filter(c=>c[0]==='reserve_wallpro_generation')).toHaveLength(1);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeNull();
     // A prompt-intent recitation is not a match and is not retried: the credit is returned.
