@@ -3,6 +3,7 @@ import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, va
 import sharp from 'sharp';
 import { createWallHandler, parseWallInput, nearestAspect, decodeWallImage, finalWallImage, imageDimensions, PRODUCTION_PPI } from '../../../../supabase/functions/generate-wall-design/handler';
 import { wallDesignPrompt } from '../../../../supabase/functions/generate-wall-design/prompt';
+import { needsWallTranscode } from '../wallpro-render';
 const owner = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
 const input = { requestId, prompt: 'Blue botanicals', width: 120, height: 96, placement: 'cover', wallPath: owner + '/uploads/33333333-3333-4333-8333-333333333333.jpg' };
@@ -257,5 +258,23 @@ describe('WallPro generation boundary', () => {
     const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.provider).toHaveBeenCalledTimes(1);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_path:null});
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeTruthy();
+  });
+});
+
+describe('Taking the photo the phone actually gives us', () => {
+  it('passes a print-safe file through untouched and converts everything else', () => {
+    // A print-ready upload is never re-compressed.
+    expect(needsWallTranscode('image/jpeg', 'wall.jpg')).toBe(false);
+    expect(needsWallTranscode('image/png', 'master.png')).toBe(false);
+    expect(needsWallTranscode('image/webp', 'tile.webp')).toBe(false);
+    // What an iPhone camera actually produces.
+    expect(needsWallTranscode('image/heic', 'IMG_4021.HEIC')).toBe(true);
+    expect(needsWallTranscode('image/heif', 'IMG_4021.heif')).toBe(true);
+    expect(needsWallTranscode('image/avif', 'shot.avif')).toBe(true);
+    // Some pickers report no type at all: the extension decides.
+    expect(needsWallTranscode('', 'IMG_4021.HEIC')).toBe(true);
+    expect(needsWallTranscode('', 'wall.JPG')).toBe(false);
+    expect(needsWallTranscode('', 'wall.jpeg')).toBe(false);
+    expect(needsWallTranscode('', '')).toBe(true);
   });
 });

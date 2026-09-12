@@ -8,8 +8,58 @@ export async function loadWallImage(src: string): Promise<HTMLImageElement> {
   return image;
 }
 
+/** The formats the whole chain already handles losslessly end to end. */
+const WALL_UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+/** 58 MP leaves headroom under the 60 MP guard below after rounding. */
+const TRANSCODE_MAX_PIXELS = 58_000_000;
+
+/**
+ * Whether a chosen file has to be re-encoded before the app can use it.
+ * A JPG, PNG or WebP passes through byte for byte, so an uploaded print-ready
+ * file is never re-compressed. Anything else — above all HEIC/HEIF, which is
+ * what an iPhone camera actually produces — is transcoded once, in the browser.
+ * Some pickers report an empty type, so the extension is the fallback.
+ */
+export function needsWallTranscode(type: string, name = ''): boolean {
+  if (WALL_UPLOAD_TYPES.includes(type)) return false;
+  if (type) return true;
+  return !/\.(jpe?g|png|webp)$/i.test(name);
+}
+
+/**
+ * Take the photo the phone actually gives us. iPhones shoot HEIC, and the
+ * old contract rejected it outright ("export it first"), which is not a thing
+ * anyone does while standing in front of a wall. Safari decodes HEIC natively,
+ * so one canvas pass turns it into the JPEG the rest of the chain expects —
+ * including the storage upload, which names the object by its content type.
+ */
+export async function prepareWallUpload(file: File): Promise<File> {
+  if (!needsWallTranscode(file.type, file.name)) return file;
+  if (file.size > 60 * 1024 * 1024 || file.size === 0) throw new Error('Choose an image between 1 byte and 60 MB.');
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadWallImage(url).catch(() => {
+      throw new Error('This device cannot open that image. Take the photo again, or choose a JPG, PNG or WebP file.');
+    });
+    const pixels = image.naturalWidth * image.naturalHeight;
+    if (!pixels) throw new Error('That image has no pixels. Choose another file.');
+    const scale = Math.min(1, Math.sqrt(TRANSCODE_MAX_PIXELS / pixels));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('This browser could not convert the image. Choose a JPG, PNG or WebP file.');
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('This browser could not convert the image. Choose a JPG, PNG or WebP file.');
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } finally { URL.revokeObjectURL(url); }
+}
+
 export async function validateWallUpload(file: File): Promise<{ url: string; aspect: number; width: number; height: number }> {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPG, PNG or WebP image. Export HEIC, PDF or TIFF to one of these formats first.');
+  // Reached only for a file `prepareWallUpload` could not convert, so the
+  // message names what is left rather than telling an iPhone owner to export.
+  if (!WALL_UPLOAD_TYPES.includes(file.type)) throw new Error('Use a photo or an image file. A PDF or a TIFF has to be exported to JPG, PNG or WebP first.');
   if (file.size > 20 * 1024 * 1024 || file.size === 0) throw new Error('Choose an image between 1 byte and 20 MB.');
   const url = URL.createObjectURL(file);
   try {
