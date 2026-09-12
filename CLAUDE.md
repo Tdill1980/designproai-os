@@ -323,17 +323,46 @@ contracts; each names its lock.
   surface shows it first as "Print file"; the 54-inch panels are the fallback
   for a RIP that cannot tile. Locked by
   `source-tests/runtime/wallpro-production.test.mjs`.
-- **The generator composes ARCHITECTURAL GRAPHICS** (owner, 2026-09-12: "give
-  it an interior graphic designer persona for architectural printing").
-  `ARCHITECTURAL_SCALE` in `prompt.ts` is sent on every authoring intent and
-  withheld from `match`, which reproduces the reference instead: the wall is
-  read whole from six to twelve feet, so a few large forms with real negative
-  space, motifs at hand-painted-mural size, three to five values plus one
-  accent, and an explicit veto on anything that would look at home on a quilt
-  or a phone case. The tile instruction states the hero motif's size in inches
-  from the repeat width instead of the old "a bloom or a leaf a few inches
-  across", which was the sentence producing the dense all-over prints. Locked
-  by the prompt tests in `wallpro.test.ts`.
+- **TWO PERSONAS, ported from the vehicle stack (RULE 1)** — owner, 2026-09-12:
+  "look at the vehicle wrap designer edge functions… persona based designer".
+  References: `supabase/functions/persona-csr-enrich` (consultant) and
+  `_shared/persona-designer-prompt.ts` (designer), whose own header states the
+  rule WallPro had broken: *"Prompt length = quality killer. Keep under 4K
+  chars total. Every word must earn its place."*
+  **Measured when "design gen is horrendous" was reported:** the assembled wall
+  prompt was **4,501 characters, of which 3,342 were generic persona
+  boilerplate and 44 were the customer's brief** — the persona outweighed the
+  design 76 to 1, so every wall came back as the average of the persona. Adding
+  more persona text made it worse, which is what the first attempt at this did.
+  The vehicle stack solves it with two personas, not a longer one:
+  `wallConsultantPrompt` (persona 1) turns the customer's words into a brief
+  with named colours, arrangement and flow, and `WALL_DESIGNER` (persona 2)
+  stays short because the brief now carries the content. `DESIGN_TRANSLATION`,
+  `CAPABILITIES` and `ARCHITECTURAL_SCALE` are deleted: a consultant writing
+  specifics beats a generic lookup table. Assembled prompts are now ~2.3–2.7 K
+  and a test fails the build above 4 K.
+  `enrichWallBrief` runs on `prompt` and `wall` only (a match reproduces the
+  reference, a refine edits a version), **after the credit is reserved** so an
+  unreserved request never spends it, and **fails soft** — no answer, bad JSON
+  or a timeout and the customer's own words go through unchanged. The designer
+  also emits a name and a `DESIGN ANCHOR` (palette in hex, placement, flow)
+  before the image, exactly as the vehicle designer does, so a refinement has
+  something exact to hold. The tile instruction states the hero motif's size in
+  inches from the repeat width instead of the old "a bloom or a leaf a few
+  inches across", which was the sentence producing dense all-over prints.
+  **The consultant applies real industry design knowledge when a business or
+  space type is named** (owner, 2026-09-12: "a wrap for a restaurant... using a
+  knowledge baseline... amplifies prompts... like a real custom wrap/wallpaper
+  designer"), the same move the vehicle stack makes inferring an industry from
+  a company name (`persona-csr-enrich`, "infer the industry from the company
+  name"). It draws on Gemini's own knowledge of how that kind of space is
+  actually designed by working commercial interior designers — palettes,
+  materials, motifs, mood — and states that language explicitly in the brief.
+  This is amplification, never replacement: every subject, colour, mood or
+  style word the client actually used survives into the brief unchanged, and a
+  named business type is licence to fill in what was left unsaid, never to
+  invent a different subject. Locked by the prompt-budget, consultant and
+  handler tests in `wallpro.test.ts`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
   my design (`match`: the reference IS the design), Design for my wall
   (`wall`), Describe a design (`prompt`), Use my print-ready file. The

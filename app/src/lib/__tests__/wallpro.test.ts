@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { artworkPoint, homography, projectPoint, UNIT_WALL, validWallCorners, validWallSize, wallGenerationBlocker, wallPreviewBlocker, layoutMetrics, insidePolygon, rectangularWallMask, wallPrintPanels } from '../wallpro-geometry';
 import sharp from 'sharp';
 import { createWallHandler, parseWallInput, nearestAspect, decodeWallImage, finalWallImage, imageDimensions, PRODUCTION_PPI } from '../../../../supabase/functions/generate-wall-design/handler';
-import { wallDesignPrompt } from '../../../../supabase/functions/generate-wall-design/prompt';
+import { wallDesignPrompt, wallConsultantPrompt } from '../../../../supabase/functions/generate-wall-design/prompt';
 import { needsWallTranscode } from '../wallpro-render';
 const owner = '11111111-1111-4111-8111-111111111111';
 const requestId = '22222222-2222-4222-8222-222222222222';
@@ -116,7 +116,12 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
   })};
   const provider=vi.fn(async (url:any,init:any) => {
     // The fast text model, asked to describe the covering before a words-only retry.
-    if (String(url).includes('gemini-2.5-flash')) { calls.push(['describe',JSON.parse(init.body)]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]}); }
+    if (String(url).includes('gemini-2.5-flash')) {
+      const body=JSON.parse(init.body); const asked=String(body.contents[0].parts[0].text);
+      // Persona 1, the consultant, enriching the brief before the designer draws.
+      if (asked.includes('wallcovering consultant')) { calls.push(['consult',body]); return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({enrichedBrief:'Oversized monstera and bird-of-paradise forms on a deep forest ground, three blooms per repeat with open space between them.',colorPalette:['#1c2b22','#8f9b7a','#f0cfc6'],designStyle:'Botanical Editorial'})}]}}]}); }
+      calls.push(['describe',body]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]});
+    }
     calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
   const handler=createWallHandler({createClient:()=>sb,supabaseUrl:'https://own.supabase.co',serviceKey:'private-test-key',apiKey:()=> 'provider-test-key',fetch:provider as any});
   const invoke=(body:any=input)=>handler(new Request('https://own.supabase.co/functions/v1/generate-wall-design',{method:'POST',headers:{authorization:'Bearer user-test-token'},body:JSON.stringify(body)}));
@@ -248,16 +253,72 @@ describe('WallPro generation boundary', () => {
     const f=fixture({fresh:false}); const result=await f.invoke(); expect(result.status).toBe(200); expect(f.provider).not.toHaveBeenCalled(); expect(f.storage.upload).not.toHaveBeenCalled();
   });
   it('records and returns only the final artwork through private signed access',async () => {
-    const f=fixture(); const result=await f.invoke(); expect(result.status).toBe(200); expect(f.provider).toHaveBeenCalledTimes(1);
+    const f=fixture(); const result=await f.invoke(); expect(result.status).toBe(200);
+    expect(f.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
+    // The consultant ran once, before the one image request, and what it wrote
+    // is what the designer was handed — not the customer's five raw words.
+    expect(f.calls.filter(c=>c[0]==='consult')).toHaveLength(1);
+    const drawn=f.calls.find(c=>c[0]==='provider')![1].contents[0].parts[0].text;
+    expect(drawn).toMatch(/Oversized monstera and bird-of-paradise forms/);
+    expect(drawn).toMatch(/Palette: #1c2b22, #8f9b7a, #f0cfc6\./);
+    expect(drawn.length).toBeLessThan(4000);
     expect(f.sb.storage.from).toHaveBeenCalledWith('wallpro-files');
     expect(new TextDecoder().decode(f.storage.upload.mock.calls[0][1])).toBe('final');
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_error:null,p_path:owner+'/generated/'+requestId+'.png'});
     expect(await result.json()).toMatchObject({scene_render:false,image_url:'https://example.test/signed-result'});
   });
   it('settles failure through the atomic refund and never retries the provider',async () => {
-    const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.provider).toHaveBeenCalledTimes(1);
+    const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_path:null});
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1].p_error).toBeTruthy();
+  });
+});
+
+describe('Two personas, and a prompt short enough to read', () => {
+  const ref = 'owner/uploads/ref.png';
+  // The vehicle designer's own header states the rule this file had broken:
+  // "Prompt length = quality killer. Keep under 4K chars total."
+  const LIMIT = 4000;
+  it('keeps every assembled prompt under the vehicle stack\'s 4K ceiling', () => {
+    const cases = [
+      wallDesignPrompt({ prompt: 'Blush florals with sage leaves', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 }),
+      wallDesignPrompt({ prompt: 'A mountain landscape mural', width: 240, height: 120, placement: 'cover', wallPath: 'o/uploads/w.jpg', intent: 'wall' }),
+      wallDesignPrompt({ prompt: 'x'.repeat(1200), width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72, referencePath: ref }),
+      wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref }),
+    ];
+    for (const text of cases) expect(text.length).toBeLessThan(LIMIT);
+    // And the boilerplate that crowded the brief out is gone: 3,342 characters
+    // of it, against a 44-character brief, when "design gen is horrendous".
+    expect(cases[0].length).toBeLessThan(2600);
+  });
+  it('asks the consultant for specifics, and the designer for an anchor', () => {
+    const consult = wallConsultantPrompt({ prompt: 'blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });
+    expect(consult).toMatch(/senior interior designer and wallcovering consultant/);
+    expect(consult).toMatch(/"blush florals"/);
+    expect(consult).toMatch(/repeating every 72 inches, about 2 times across/);
+    expect(consult).toMatch(/enrichedBrief/); expect(consult).toMatch(/colorPalette/);
+    expect(consult).toMatch(/the MORE direction you add/);
+    expect(consult).toMatch(/Keep the client's core idea/);
+    // No brief at all still asks for a specification rather than nothing.
+    expect(wallConsultantPrompt({ prompt: '', width: 142, height: 96, placement: 'cover' })).toMatch(/propose the covering you would specify/);
+    // A named business type is real design knowledge to apply — the same move
+    // the vehicle stack makes inferring an industry from a company name — and
+    // it must still lead with whatever the client actually said (owner,
+    // 2026-09-12: "a wrap for a restaurant... using a knowledge baseline...
+    // amplifies prompts... like a real custom wrap/wallpaper designer").
+    const restaurant = wallConsultantPrompt({ prompt: 'a wrap for a modern Italian restaurant', width: 142, height: 96, placement: 'cover' });
+    expect(restaurant).toMatch(/business or space type/);
+    expect(restaurant).toMatch(/real knowledge of how that specific kind of space is actually designed/);
+    expect(restaurant).toMatch(/amplification, not replacement/);
+    expect(restaurant).toMatch(/every specific the client actually gave/);
+    expect(restaurant).toMatch(/not licence to invent a subject the client never asked for/);
+    // The designer names the design and fixes it in words, as the vehicle
+    // designer's DESIGN ANCHOR does, so a refinement has something to hold.
+    const design = wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });
+    expect(design).toMatch(/DESIGN ANCHOR/);
+    expect(design).toMatch(/palette with hex values/);
+    // A match reproduces the reference; it is never asked to compose or anchor.
+    expect(wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref })).not.toMatch(/DESIGN ANCHOR/);
   });
 });
 
@@ -303,10 +364,7 @@ describe('A match reproduces the reference at its own scale', () => {
     expect(tile).toMatch(/Do not fill the tile with many small motifs/);
     // The instruction that produced a dense craft print is gone for good.
     expect(tile).not.toMatch(/a bloom or a leaf a few inches across/);
-    expect(tile).toMatch(/ARCHITECTURAL GRAPHICS, not fabric or gift wrap/);
-    // A match reproduces the reference, so it is never given the persona's
-    // composition rules on top of it.
-    expect(wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref })).not.toMatch(/ARCHITECTURAL GRAPHICS/);
+    expect(tile).toMatch(/COMPOSE AT ROOM SCALE/);
     expect(wallDesignPrompt({ prompt: 'A mountain mural', width: 142, height: 96, placement: 'cover' })).toMatch(/scale every element to that real size/);
   });
 });
