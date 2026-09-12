@@ -111,6 +111,15 @@ export default function WallPro() {
   // corners both exist, whichever arrives last: detection landing after a
   // generation, a generation landing after hand-marked corners, or a restore.
   const cornersValidNow = validWallCorners(corners);
+  // The corners default to the WHOLE PHOTO so nothing errors before detection
+  // lands. But painting the design across the whole frame hides the room
+  // entirely: the customer sees her flat design twice and her photo gone
+  // (owner, 2026-09-12: "the photo disappeared and it just shows the same
+  // image twice"). So the on-wall composite waits until the wall has actually
+  // been located — detected, marked by hand, or restored — and until then the
+  // photo pane stays on the photo and says what it needs. Print files never
+  // wait on this; they are built from the flat master.
+  const wallLocated = cornersValidNow && cornerSource !== 'default';
   // The AI picture is for one design, one photo and one pattern size; a step
   // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
   // and the tab offers to repaint.
@@ -160,7 +169,7 @@ export default function WallPro() {
       wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
-  useEffect(() => { if (artwork && photo && cornersValidNow) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, cornersValidNow, aiViewCurrent]);
+  useEffect(() => { if (artwork && photo && wallLocated) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, wallLocated, aiViewCurrent]);
   // The photo pane opens on the AI picture by itself: the model puts the
   // covering on the wall and leaves the window, drapes, shelves and furniture
   // as photographed, with no masks to mark (owner, 2026-09-11: "it should know
@@ -276,7 +285,7 @@ export default function WallPro() {
       if (previewUrl.current) { URL.revokeObjectURL(previewUrl.current); previewUrl.current = null; }
     }
     canvas.current = null;
-    if (editingPhoto || !photo || !previewArt || !tileArtwork || !seamReady || !cornersValid || !dimensionsValid || !metrics) { setRendering(false); return; }
+    if (editingPhoto || !photo || !previewArt || !tileArtwork || !seamReady || !wallLocated || !dimensionsValid || !metrics) { setRendering(false); return; }
     setRendering(true);
     renderWallPreview(photo.url, tileArtwork.url, corners, exclusions, layout, () => version !== previewVersion.current, detectedMask?.url ?? null)
       .then(async output => {
@@ -758,7 +767,7 @@ export default function WallPro() {
                 imposed on their photo on the right, the moment the corners exist.
                 The tabs only switch the photo pane between the original wall and
                 the imposed design; the flat master never leaves the screen. */}
-            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && cornersValid)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
+            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
               {artwork && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs text-slate-500"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
             <div className={photo && previewArt ? 'grid gap-4 xl:grid-cols-2' : ''}>
             {previewArt && <div>
@@ -809,8 +818,11 @@ export default function WallPro() {
                   the floor and the furniture, which reads as "it didn't work"
                   (owner, 2026-09-12). Say which it is instead of leaving her to
                   guess from the picture. */}
-              {view === 'after' && artwork && cornerSource === 'default' && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                {detecting ? 'Still looking for your wall. ' : 'Your wall has not been found in this photo, '}the design is covering the whole picture, not just the wall. Mark the four wall corners with "Re-mark wall corners" and it will sit on the wall only. Your print files are already correct either way.
+              {artwork && !wallLocated && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                {detecting
+                  ? 'Still looking for your wall in this photo. "On your wall" switches on by itself the moment it is found.'
+                  : 'Your wall has not been found in this photo yet, so the design cannot be placed on it. Tap "Re-mark wall corners" and tap the four corners of the wall, clockwise from the top left.'}
+                {' '}Your print files do not wait for this — they are already correct.
               </p>}
               <label className="mt-3 flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">

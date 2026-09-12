@@ -196,7 +196,17 @@ contracts; each names its lock.
 - **Corner detection runs on upload; masks are marked by hand.** A wall photo
   is sent to `detect-wall-openings` the moment it is chosen and only the four
   corners land, as editable preview state; the photo starts as the full frame
-  so a missed detection never blocks the on-wall view. Protected areas
+  so nothing errors before detection lands. **That default is never displayed.**
+  The on-wall composite waits for `wallLocated` — valid corners AND
+  `cornerSource !== 'default'`, so detected, hand-marked or restored — because
+  painting the design across the untouched full frame covers the room: the flat
+  pane and the photo pane then show the same picture and the photo is gone
+  (owner, 2026-09-12: "I replaced artwork and clicked show on my wall didn't
+  work", then "the photo disappeared and it just shows the same image twice").
+  Until the wall is located the photo pane stays on the photo, the "On your
+  wall" tab is not offered, and a notice says whether detection is still
+  running or the four corners need marking. Print files never wait on any of
+  it. Protected areas
   (windows, drapes, furniture) are hand-marked, or requested explicitly with
   "Auto-mask windows & furniture" (segmentation masks, preview-only). Owner,
   2026-09-11, after auto-masks swallowed the wall: "just have people mark it".
