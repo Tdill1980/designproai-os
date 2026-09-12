@@ -1,6 +1,9 @@
 // AI view on the wall: the customer's room photo plus the flat print master go
-// to the image model, which paints the covering onto the wall surface only and
-// leaves windows, drapes, furniture and everything else exactly as photographed.
+// to the image model, which paints the covering onto the wall surface. Fixed
+// architecture (windows, drapes, mounted TVs, built-ins) stays exactly as
+// photographed; freestanding furniture or equipment DesignPro's own detection
+// classified as movable (wallpro-occlusion.ts on the client) is erased and
+// painted through instead, as an installer would after clearing the room.
 // This is a presentation picture, the ChatGPT-style "show me", and never a
 // print file: the flat master stays the production truth. No token is charged.
 import { decodeWallImage, finalWallImage } from '../generate-wall-design/handler.ts';
@@ -18,10 +21,10 @@ export function viewPrompt(input: { placement: string; repeatWidthIn: number | n
     : `The design is one mural that fills the whole wall edge to edge${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`;
   return [
     'Image 1 is a photograph of a customer\'s room. Image 2 is the flat print master of a printed wall covering.',
-    'Render the SAME photograph with the wall covering installed on its main wall. Keep the camera, framing, lens, lighting, colours and every object exactly as photographed: furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork and anything else that is not the flat wall surface stays untouched and in front of the covering.',
+    'Render the SAME photograph with the wall covering installed on its main wall. Keep the camera, framing, lens, lighting and colours exactly as photographed. Every object that is not the flat wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork -- stays untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal, in which case follow that instruction instead.',
     'The covering appears only on the flat wall surface, running behind furniture and around the window and drapes, with correct perspective, realistic lighting, soft shadows and the wall\'s own texture where the room lighting falls on it.',
     scale,
-    'Do not restyle the room, add or remove objects, move the camera, crop, add borders or text, or change the design\'s colours or motifs. Output only the rendered photograph.',
+    'Do not restyle the room, move the camera, crop, add borders or text, or change the design\'s colours or motifs. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
   ].join(' ');
 }
 
@@ -62,6 +65,10 @@ export function parseViewInput(body: any, owner: string) {
     // hand-drawn masks / detected objects (see buildProtectedAreaMask). Absent
     // for the common case, in which this view behaves exactly as before.
     maskPath: body?.maskPath == null ? null : check(body.maskPath, ['uploads']),
+    // Optional: the opposite instruction -- items DesignPro's own detection
+    // classified as movable (wallpro-occlusion.ts), erased and painted
+    // through rather than protected.
+    removePath: body?.removePath == null ? null : check(body.removePath, ['uploads']),
     placement: body?.placement === 'repeat' ? 'repeat' : 'cover',
     repeatWidthIn: num(body?.repeatWidthIn), wallWidthIn: num(body?.wallWidthIn), wallHeightIn: num(body?.wallHeightIn),
   };
@@ -133,20 +140,22 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       if (path === input.wallPath) { wallDims = imageDimensions(raw); wallPhotoBytes = raw; }
       parts.push({ text: label }, { inlineData: { mimeType: blob.type, data: toBase64(raw) } });
     }
-    // A protected-area mask is best effort: a missing, unreadable or oversized
-    // mask silently drops the mask alone, never the whole view -- the customer
-    // already has a correct render without it, from the prose instruction.
-    let maskBytes: Uint8Array | null = null;
-    if (input.maskPath) {
-      const downloaded = await sb.storage.from(BUCKET).download(input.maskPath).catch(() => ({ data: null, error: true } as const));
-      if (downloaded.data && (downloaded.data as Blob).type === 'image/png' && (downloaded.data as Blob).size <= 10 * 1024 * 1024) {
-        maskBytes = new Uint8Array(await (downloaded.data as Blob).arrayBuffer());
-        parts.push(
-          { text: 'Image 3 — protected areas: white and opaque marks anything that must stay pixel-for-pixel exactly as photographed (windows, drapes, furniture, framed art, mirrors, TVs, shelving and everything on it). The covering never paints over a white area; it continues on the wall behind it.' },
-          { inlineData: { mimeType: 'image/png', data: toBase64(maskBytes) } },
-        );
-      }
+    // Both optional masks are best effort: a missing, unreadable or oversized
+    // mask silently drops that mask alone, never the whole view -- the
+    // customer already has a correct render without it, from the prose
+    // instruction. Image numbers advance dynamically so the wording is right
+    // whether one, both, or neither mask is present.
+    let nextImage = 3;
+    async function attachMask(path: string | null, instruction: string): Promise<Uint8Array | null> {
+      if (!path) return null;
+      const downloaded = await sb.storage.from(BUCKET).download(path).catch(() => ({ data: null, error: true } as const));
+      if (!downloaded.data || (downloaded.data as Blob).type !== 'image/png' || (downloaded.data as Blob).size > 10 * 1024 * 1024) return null;
+      const bytes = new Uint8Array(await (downloaded.data as Blob).arrayBuffer());
+      parts.push({ text: `Image ${nextImage++} — ${instruction}` }, { inlineData: { mimeType: 'image/png', data: toBase64(bytes) } });
+      return bytes;
     }
+    const maskBytes = await attachMask(input.maskPath, 'protected areas: white and opaque marks anything that must stay pixel-for-pixel exactly as photographed (windows, drapes, furniture, framed art, mirrors, TVs, shelving and everything on it). The covering never paints over a white area; it continues on the wall behind it.');
+    const removeBytes = await attachMask(input.removePath, 'items to remove: white and opaque marks freestanding furniture or equipment that will be moved out of the room before the covering is installed. Erase it entirely and paint the covering through that area as if it were never there -- do not preserve it, and do not treat it as something to paint around.');
     const aspectRatio = wallDims ? nearestAspect(wallDims.width, wallDims.height) : '4:3';
     try {
       const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + VIEW_MODEL + ':generateContent', {
@@ -173,7 +182,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false });
       if (uploaded.error) throw new Error('The wall view could not be saved.');
       const signed = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
-      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, recomposited }));
+      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, recomposited }));
       return response({ view_path: path, view_url: signed.data?.signedUrl || null, model: VIEW_MODEL, aspect_ratio: aspectRatio });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The image service timed out. Try again.' : err instanceof Error ? err.message : 'The wall view failed.';

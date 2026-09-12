@@ -4,7 +4,13 @@
 // where the design must not paint, transparent elsewhere. Preview-only: print
 // panels stay full rectangles and the installer trims on site.
 import type { Point } from './wallpro-geometry';
-export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string };
+/** See wallpro-occlusion.ts: `fixed` is protected (kept exactly as
+ * photographed), `movable` is disregarded (the covering paints through it,
+ * as an installer would after clearing the room). Unclassified/legacy data
+ * defaults to `fixed` -- protecting something that should have been removed
+ * is a cosmetic miss, not a wrong reveal. */
+export type OcclusionClass = 'fixed' | 'movable';
+export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string; class?: OcclusionClass };
 export const MASK_THRESHOLD = 127;
 export const MASK_MAX_EDGE = 1600;
 

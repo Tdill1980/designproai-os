@@ -48,6 +48,25 @@ describe('AI view on the wall', () => {
   it('parses an omitted mask as null and refuses a mask that is not the owner\'s', () => {
     expect(parseViewInput({ wallPath, artworkPath }, owner).maskPath).toBeNull();
     expect(() => parseViewInput({ wallPath, artworkPath, maskPath: '99999999-9999-4999-8999-999999999999/uploads/x.png' }, owner)).toThrow(/your own files/);
+    expect(parseViewInput({ wallPath, artworkPath }, owner).removePath).toBeNull();
+    expect(() => parseViewInput({ wallPath, artworkPath, removePath: '99999999-9999-4999-8999-999999999999/uploads/x.png' }, owner)).toThrow(/your own files/);
+  });
+  it('attaches a supplied remove mask with the erase-and-paint-through instruction, numbered after the protect mask when both are present', async () => {
+    const removePath = owner + '/uploads/88888888-8888-4888-8888-888888888888.png';
+    const onlyRemove = fixture();
+    const r1 = await onlyRemove.invoke({ wallPath, artworkPath, removePath, placement: 'cover' });
+    expect(r1.status).toBe(200);
+    const parts1 = onlyRemove.calls[0].contents[0].parts;
+    expect(parts1.filter((p: any) => p.inlineData)).toHaveLength(3);
+    expect(parts1.some((p: any) => p.text === 'Image 3 — items to remove: white and opaque marks freestanding furniture or equipment that will be moved out of the room before the covering is installed. Erase it entirely and paint the covering through that area as if it were never there -- do not preserve it, and do not treat it as something to paint around.')).toBe(true);
+
+    const both = fixture();
+    const r2 = await both.invoke({ wallPath, artworkPath, maskPath, removePath, placement: 'cover' });
+    expect(r2.status).toBe(200);
+    const parts2 = both.calls[0].contents[0].parts;
+    expect(parts2.filter((p: any) => p.inlineData)).toHaveLength(4);
+    expect(parts2.some((p: any) => p.text?.startsWith('Image 3 — protected areas'))).toBe(true);
+    expect(parts2.some((p: any) => p.text?.startsWith('Image 4 — items to remove'))).toBe(true);
   });
   it('attaches a supplied protected-area mask as a third image with the never-paint-over-white instruction', async () => {
     const f = fixture();
