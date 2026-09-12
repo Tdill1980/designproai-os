@@ -1294,7 +1294,7 @@ Return ONLY valid JSON, no markdown, no explanation:
           business_tagline: businessTagline,
           business_logo_url: businessLogoUrl,
           uploaded_artwork_urls: artworkUrls.length > 0 ? artworkUrls : null,
-          restyle_prompt: restylePrompt,
+          styling_prompt: restylePrompt,
           vinyl_finish: vinylFinish,
           mockup_render_url: publicUrl,
           // Persist the zone data + cyan-outlined overlay so RevisionStudio
@@ -1665,7 +1665,7 @@ Return ONLY valid JSON, no markdown, no explanation:
           cut_files_zip_url: cutFilesZipUrl,
           cut_contour_overlay_url: cutContourOverlayUrl,
           extracted_element_count: extractedElementCount,
-          vectorized_count: vectorizedCount,
+          vector_element_count: vectorizedCount,
         });
         // WPW manual-review triggers (hairline detail, > 200 vertices, tiling)
         // ride in concept_json so PanelPro QC sees them; best-effort.

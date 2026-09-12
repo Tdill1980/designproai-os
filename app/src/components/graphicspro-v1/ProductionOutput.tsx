@@ -37,14 +37,14 @@ interface JobData {
   progress: number;
   mockup_render_url: string | null;
   flat_production_url: string | null;
-  vectorized_url: string | null;
+  vector_svg_url: string | null;
   cut_path_svg_url: string | null;
   cut_path_pdf_url: string | null;
   cut_path_eps_url: string | null;
   cut_files_zip_url: string | null;
   cut_contour_overlay_url: string | null;
   extracted_element_count: number | null;
-  vectorized_count: number | null;
+  vector_element_count: number | null;
   wholesale_price: number | null;
   retail_price: number | null;
   total_sqft: number | null;
@@ -72,7 +72,7 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
     const fetchJob = async () => {
       const { data } = await supabase
         .from("graphics_pro_jobs")
-        .select("status, stage, progress, mockup_render_url, flat_production_url, vectorized_url, cut_path_svg_url, cut_path_pdf_url, cut_path_eps_url, cut_files_zip_url, cut_contour_overlay_url, extracted_element_count, vectorized_count, wholesale_price, retail_price, total_sqft, material_type, nested_width_inches, nested_height_inches, error_message")
+        .select("status, stage, progress, mockup_render_url, flat_production_url, vector_svg_url, cut_path_svg_url, cut_path_pdf_url, cut_path_eps_url, cut_files_zip_url, cut_contour_overlay_url, extracted_element_count, vector_element_count, wholesale_price, retail_price, total_sqft, material_type, nested_width_inches, nested_height_inches, error_message")
         .eq("id", jobId)
         .single();
 

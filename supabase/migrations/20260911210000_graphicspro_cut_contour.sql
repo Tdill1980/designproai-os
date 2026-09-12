@@ -11,8 +11,8 @@
 -- project on 2026-09-11 (information_schema + pg_constraint), not re-imagined.
 -- Deltas, each deliberate:
 --   * shop_id / quote_id stay as nullable uuid columns (the generated types
---     carry them) but without foreign keys: shop_profiles and quotes are
---     predecessor tables this OS does not have.
+--     carry them) but without foreign keys: the shop-profile and quote
+--     tables they pointed at are predecessor tables this OS does not have.
 --   * surface_type additionally admits 'studio' — the UI's SurfaceType union
 --     has carried it since the Studio artboard shipped, and the live CHECK
 --     silently rejected every studio job insert (jobId came back null).
@@ -45,7 +45,7 @@ CREATE TABLE public.graphics_pro_jobs (
   business_tagline text,
   business_logo_url text,
   uploaded_artwork_urls text[],
-  restyle_prompt text,
+  styling_prompt text,
   vinyl_finish text DEFAULT 'glossy' CHECK (vinyl_finish IN ('glossy','matte','satin','reflective')),
   mockup_render_url text,
   detail_render_url text,
@@ -55,7 +55,7 @@ CREATE TABLE public.graphics_pro_jobs (
     'approved','processing','complete','failed')),
   approved_at timestamptz,
   flat_production_url text,
-  vectorized_url text,
+  vector_svg_url text,
   cut_path_pdf_url text,
   cut_path_eps_url text,
   cut_path_svg_url text,
@@ -78,7 +78,7 @@ CREATE TABLE public.graphics_pro_jobs (
   cut_files_zip_url text,
   cut_contour_overlay_url text,
   extracted_element_count integer,
-  vectorized_count integer,
+  vector_element_count integer,
   concept_json jsonb
 );
 CREATE INDEX graphics_pro_jobs_user_created ON public.graphics_pro_jobs(user_id, created_at DESC);

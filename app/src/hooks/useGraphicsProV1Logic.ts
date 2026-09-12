@@ -629,7 +629,7 @@ export function useGraphicsProV1Logic() {
         .from("graphics_pro_jobs" as any)
         .update({
           cut_path_svg_url: svgUrl,
-          vectorized_url: svgUrl,
+          vector_svg_url: svgUrl,
           status: "complete",
           stage: "complete",
           progress: 100,

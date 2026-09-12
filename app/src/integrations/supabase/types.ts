@@ -5097,7 +5097,7 @@ export type Database = {
           output_zip_url: string | null
           progress: number | null
           quote_id: string | null
-          restyle_prompt: string | null
+          styling_prompt: string | null
           retail_price: number | null
           shop_id: string | null
           stage: string | null
@@ -5111,8 +5111,8 @@ export type Database = {
           updated_at: string | null
           uploaded_artwork_urls: string[] | null
           user_id: string
-          vectorized_count: number | null
-          vectorized_url: string | null
+          vector_element_count: number | null
+          vector_svg_url: string | null
           vehicle_area: string | null
           vehicle_make: string | null
           vehicle_model: string | null
@@ -5153,7 +5153,7 @@ export type Database = {
           output_zip_url?: string | null
           progress?: number | null
           quote_id?: string | null
-          restyle_prompt?: string | null
+          styling_prompt?: string | null
           retail_price?: number | null
           shop_id?: string | null
           stage?: string | null
@@ -5167,8 +5167,8 @@ export type Database = {
           updated_at?: string | null
           uploaded_artwork_urls?: string[] | null
           user_id: string
-          vectorized_count?: number | null
-          vectorized_url?: string | null
+          vector_element_count?: number | null
+          vector_svg_url?: string | null
           vehicle_area?: string | null
           vehicle_make?: string | null
           vehicle_model?: string | null
@@ -5209,7 +5209,7 @@ export type Database = {
           output_zip_url?: string | null
           progress?: number | null
           quote_id?: string | null
-          restyle_prompt?: string | null
+          styling_prompt?: string | null
           retail_price?: number | null
           shop_id?: string | null
           stage?: string | null
@@ -5223,8 +5223,8 @@ export type Database = {
           updated_at?: string | null
           uploaded_artwork_urls?: string[] | null
           user_id?: string
-          vectorized_count?: number | null
-          vectorized_url?: string | null
+          vector_element_count?: number | null
+          vector_svg_url?: string | null
           vehicle_area?: string | null
           vehicle_make?: string | null
           vehicle_model?: string | null
