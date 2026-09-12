@@ -118,8 +118,20 @@ function fixture(options: { auth?: boolean; unreadable?: boolean; fresh?: boolea
     // The fast text model, asked to describe the covering before a words-only retry.
     if (String(url).includes('gemini-2.5-flash')) {
       const body=JSON.parse(init.body); const asked=String(body.contents[0].parts[0].text);
-      // Persona 1, the consultant, enriching the brief before the designer draws.
-      if (asked.includes('wallcovering consultant')) { calls.push(['consult',body]); return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({enrichedBrief:'Oversized monstera and bird-of-paradise forms on a deep forest ground, three blooms per repeat with open space between them.',colorPalette:['#1c2b22','#8f9b7a','#f0cfc6'],designStyle:'Botanical Editorial'})}]}}]}); }
+      // Persona 1, the brief compiler, extracting the Design Contract before the designer draws.
+      if (asked.includes('design brief compiler')) { calls.push(['consult',body]); return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({
+        customerIntent:'Oversized monstera and bird-of-paradise forms on a deep forest ground.',
+        requiredSubjects:[],requiredElements:['monstera leaves','bird-of-paradise blooms'],requiredColors:['deep forest green'],
+        businessContext:'',designObjective:'custom commercial wall mural',
+        compositionDirection:'Three blooms per repeat with open space between them.',
+        focalHierarchy:'The blooms are large and dominant; the foliage stays quiet.',
+        negativeSpaceZones:'Open ground between each bloom group.',
+        realismLevel:'editorial realism',typography:null,logoTreatment:null,
+        mustPreserve:['monstera leaves','bird-of-paradise blooms','deep forest green'],
+        forbiddenInventions:['unrequested text','random additional flora'],
+      })}]}}]}); }
+      // The advisory post-generation compliance check.
+      if (asked.includes('reviewing a finished wall mural design')) { calls.push(['comply',body]); return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({compliant:true,missingSubjects:[],missingElements:[],missingColors:[],forbiddenFound:[],businessContextSurvived:true,notes:'ok'})}]}}]}); }
       calls.push(['describe',body]); return Response.json({candidates:[{content:{parts:[{text:'Vertical white-oak slats about 1.5 inches wide with 0.5 inch dark gaps, matte, fine straight grain.'}]}}]});
     }
     calls.push(['provider',JSON.parse(init.body)]); if (options.recitationFirst && calls.filter(c=>c[0]==='provider').length===1) return Response.json({candidates:[{finishReason:'IMAGE_RECITATION',content:{parts:[]}}]}); return options.providerFailure ? new Response('{}',{status:503}) : Response.json({candidates:[{content:{parts:[{thought:true,inlineData:{data:btoa('thought'),mimeType:'image/png'}},{text:'Blue Botanicals'},{inlineData:{data:finalData,mimeType:'image/png'}}]}}]}); });
@@ -259,13 +271,17 @@ describe('WallPro generation boundary', () => {
     // is what the designer was handed — not the customer's five raw words.
     expect(f.calls.filter(c=>c[0]==='consult')).toHaveLength(1);
     const drawn=f.calls.find(c=>c[0]==='provider')![1].contents[0].parts[0].text;
-    expect(drawn).toMatch(/Oversized monstera and bird-of-paradise forms/);
-    expect(drawn).toMatch(/Palette: #1c2b22, #8f9b7a, #f0cfc6\./);
+    expect(drawn).toMatch(/BINDING DESIGN REQUIREMENTS/);
+    expect(drawn).toMatch(/monstera leaves/); expect(drawn).toMatch(/deep forest green/);
+    expect(drawn).toMatch(/FORBIDDEN/); expect(drawn).toMatch(/unrequested text/);
     expect(drawn.length).toBeLessThan(4000);
+    // The advisory compliance check ran once, after the image, and never
+    // altered the response beyond adding its own verdict for visibility.
+    expect(f.calls.filter(c=>c[0]==='comply')).toHaveLength(1);
     expect(f.sb.storage.from).toHaveBeenCalledWith('wallpro-files');
     expect(new TextDecoder().decode(f.storage.upload.mock.calls[0][1])).toBe('final');
     expect(f.calls.filter(c=>c[0]==='finish_wallpro_generation')[0][1]).toMatchObject({p_owner:owner,p_error:null,p_path:owner+'/generated/'+requestId+'.png'});
-    expect(await result.json()).toMatchObject({scene_render:false,image_url:'https://example.test/signed-result'});
+    expect(await result.json()).toMatchObject({scene_render:false,image_url:'https://example.test/signed-result',compliance_check:{compliant:true}});
   });
   it('settles failure through the atomic refund and never retries the provider',async () => {
     const f=fixture({providerFailure:true}); expect((await f.invoke()).status).toBe(502); expect(f.calls.filter(c=>c[0]==='provider')).toHaveLength(1);
@@ -291,27 +307,29 @@ describe('Two personas, and a prompt short enough to read', () => {
     // of it, against a 44-character brief, when "design gen is horrendous".
     expect(cases[0].length).toBeLessThan(2600);
   });
-  it('asks the consultant for specifics, and the designer for an anchor', () => {
+  it('asks the consultant (brief compiler) for a Design Contract, and the designer for an anchor', () => {
     const consult = wallConsultantPrompt({ prompt: 'blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });
-    expect(consult).toMatch(/senior interior designer and wallcovering consultant/);
+    expect(consult).toMatch(/design brief compiler/);
+    expect(consult).toMatch(/EXTRACTION and PRESERVATION, not creative invention/);
     expect(consult).toMatch(/"blush florals"/);
     expect(consult).toMatch(/repeating every 72 inches, about 2 times across/);
-    expect(consult).toMatch(/enrichedBrief/); expect(consult).toMatch(/colorPalette/);
-    expect(consult).toMatch(/the MORE direction you add/);
-    expect(consult).toMatch(/Keep the client's core idea/);
+    expect(consult).toMatch(/requiredSubjects/); expect(consult).toMatch(/requiredElements/); expect(consult).toMatch(/requiredColors/);
+    expect(consult).toMatch(/mustPreserve/); expect(consult).toMatch(/forbiddenInventions/);
+    expect(consult).toMatch(/IMMUTABLE/);
+    // Owner correction, 2026-09-12: the old instruction to "draw on your own
+    // real knowledge of how that specific kind of space is actually
+    // designed" invited category stereotypes ("spa" -> generic botanical
+    // mural). It must be gone, replaced with knowledge that improves
+    // execution but never substitutes for the client's own subject.
+    expect(consult).not.toMatch(/draw on your own real knowledge of how that specific kind of space is actually designed/);
+    expect(consult).toMatch(/Never substitute generic industry imagery for a subject or concept supplied by the customer/);
     // No brief at all still asks for a specification rather than nothing.
     expect(wallConsultantPrompt({ prompt: '', width: 142, height: 96, placement: 'cover' })).toMatch(/propose the covering you would specify/);
-    // A named business type is real design knowledge to apply — the same move
-    // the vehicle stack makes inferring an industry from a company name — and
-    // it must still lead with whatever the client actually said (owner,
-    // 2026-09-12: "a wrap for a restaurant... using a knowledge baseline...
-    // amplifies prompts... like a real custom wrap/wallpaper designer").
+    // A named business type still informs HOW the client's own subject is
+    // executed — it must never be licence to replace that subject.
     const restaurant = wallConsultantPrompt({ prompt: 'a wrap for a modern Italian restaurant', width: 142, height: 96, placement: 'cover' });
     expect(restaurant).toMatch(/business or space type/);
-    expect(restaurant).toMatch(/real knowledge of how that specific kind of space is actually designed/);
-    expect(restaurant).toMatch(/amplification, not replacement/);
-    expect(restaurant).toMatch(/every specific the client actually gave/);
-    expect(restaurant).toMatch(/not licence to invent a subject the client never asked for/);
+    expect(restaurant).toMatch(/informs HOW the client's own subject is composed/);
     // The designer names the design and fixes it in words, as the vehicle
     // designer's DESIGN ANCHOR does, so a refinement has something to hold.
     const design = wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });
@@ -319,6 +337,35 @@ describe('Two personas, and a prompt short enough to read', () => {
     expect(design).toMatch(/palette with hex values/);
     // A match reproduces the reference; it is never asked to compose or anchor.
     expect(wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', intent: 'match', referencePath: ref })).not.toMatch(/DESIGN ANCHOR/);
+  });
+  it('reframes the designer as a commercial environmental/wrap designer, not a luxury wallpaper stylist', () => {
+    const design = wallDesignPrompt({ prompt: 'A mountain mural', width: 142, height: 96, placement: 'cover' });
+    expect(design).toMatch(/Senior Environmental Graphic Designer and Large-Format Wrap Designer/);
+    expect(design).not.toMatch(/elite interior graphic designer/);
+    expect(design).not.toMatch(/Schumacher|Restoration Hardware|Williams Sonoma/);
+  });
+  it('hands the designer a binding contract, not reinterpretable prose', () => {
+    const contract = {
+      customerIntent: 'A woman reclining while receiving a facial treatment, sage green leaves, soft background.',
+      requiredSubjects: ['woman reclining while receiving a facial treatment'],
+      requiredElements: ['sage green botanical leaves', 'soft understated background'],
+      requiredColors: ['sage green'],
+      businessContext: 'med spa / esthetics',
+      designObjective: 'custom commercial wall mural',
+      compositionDirection: 'The figure is the focal point; leaves frame without crowding.',
+      focalHierarchy: 'The reclining figure is large and dominant; leaves are quiet support.',
+      negativeSpaceZones: 'Open background around the figure.',
+      realismLevel: 'editorial realism',
+      typography: null, logoTreatment: null,
+      mustPreserve: ['woman receiving facial', 'sage leaves', 'soft background'],
+      forbiddenInventions: ['additional people', 'random spa equipment', 'gold luxury accents', 'unrequested text'],
+    };
+    const design = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'cover', contract });
+    expect(design).toMatch(/BINDING DESIGN REQUIREMENTS/);
+    expect(design).toMatch(/REQUIRED SUBJECTS/); expect(design).toMatch(/woman reclining while receiving a facial treatment/);
+    expect(design).toMatch(/REQUIRED COLORS/); expect(design).toMatch(/sage green/);
+    expect(design).toMatch(/FORBIDDEN/); expect(design).toMatch(/gold luxury accents/);
+    expect(design).not.toMatch(/Design brief:/);
   });
 });
 
