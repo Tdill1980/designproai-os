@@ -301,6 +301,17 @@ describe('Two personas, and a prompt short enough to read', () => {
     expect(consult).toMatch(/Keep the client's core idea/);
     // No brief at all still asks for a specification rather than nothing.
     expect(wallConsultantPrompt({ prompt: '', width: 142, height: 96, placement: 'cover' })).toMatch(/propose the covering you would specify/);
+    // A named business type is real design knowledge to apply — the same move
+    // the vehicle stack makes inferring an industry from a company name — and
+    // it must still lead with whatever the client actually said (owner,
+    // 2026-09-12: "a wrap for a restaurant... using a knowledge baseline...
+    // amplifies prompts... like a real custom wrap/wallpaper designer").
+    const restaurant = wallConsultantPrompt({ prompt: 'a wrap for a modern Italian restaurant', width: 142, height: 96, placement: 'cover' });
+    expect(restaurant).toMatch(/business or space type/);
+    expect(restaurant).toMatch(/real knowledge of how that specific kind of space is actually designed/);
+    expect(restaurant).toMatch(/amplification, not replacement/);
+    expect(restaurant).toMatch(/every specific the client actually gave/);
+    expect(restaurant).toMatch(/not licence to invent a subject the client never asked for/);
     // The designer names the design and fixes it in words, as the vehicle
     // designer's DESIGN ANCHOR does, so a refinement has something to hold.
     const design = wallDesignPrompt({ prompt: 'Blush florals', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72 });

@@ -95,6 +95,8 @@ A client has described what they want for one wall:
 
 The wall is ${input.width} inches wide by ${input.height} inches high.${tile && input.repeatWidthIn ? ` The design will print as a pattern repeating every ${input.repeatWidthIn} inches, about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across the wall.` : ' The design will print as one composition across the whole wall.'}
 
+If the brief names or clearly implies a business or space type — a restaurant, a spa, a gym, a dental office, a law firm, a boutique hotel, a bar, a salon, a nursery, a tech office — draw on your own real knowledge of how that specific kind of space is actually designed by working commercial interior designers: the palettes, materials, motifs and mood that read as "restaurant" versus "medical office" versus "gym" to someone standing in the room. Name that industry's real design language explicitly in the brief you write, the way a design magazine would describe it. This is amplification, not replacement: every specific the client actually gave — a subject, a colour, a mood, a style — stays and leads; the industry knowledge fills in only what the client left unsaid.
+
 Enrich this into a brief a designer can execute. Respond in EXACTLY this JSON, no markdown and no code fences:
 
 {
@@ -108,7 +110,8 @@ Rules:
 - Three to five hex colours that work together on a wall, not a rainbow.
 - Name real materials and treatments, never adjectives alone.
 - Say what is LARGE and what is quiet: a wall needs a hierarchy, not an even field of motifs.
-- Keep the client's core idea. Enhance it, do not replace it.`;
+- Keep the client's core idea. Enhance it, do not replace it: every subject, colour, mood or style word the client used must survive into the brief unchanged, even where industry knowledge adds the rest.
+- A named business or space type is real design knowledge to apply, not licence to invent a subject the client never asked for.`;
 }
 
 export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null }) {

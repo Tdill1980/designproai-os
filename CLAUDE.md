@@ -350,8 +350,19 @@ contracts; each names its lock.
   something exact to hold. The tile instruction states the hero motif's size in
   inches from the repeat width instead of the old "a bloom or a leaf a few
   inches across", which was the sentence producing dense all-over prints.
-  Locked by the prompt-budget, consultant and handler tests in
-  `wallpro.test.ts`.
+  **The consultant applies real industry design knowledge when a business or
+  space type is named** (owner, 2026-09-12: "a wrap for a restaurant... using a
+  knowledge baseline... amplifies prompts... like a real custom wrap/wallpaper
+  designer"), the same move the vehicle stack makes inferring an industry from
+  a company name (`persona-csr-enrich`, "infer the industry from the company
+  name"). It draws on Gemini's own knowledge of how that kind of space is
+  actually designed by working commercial interior designers — palettes,
+  materials, motifs, mood — and states that language explicitly in the brief.
+  This is amplification, never replacement: every subject, colour, mood or
+  style word the client actually used survives into the brief unchanged, and a
+  named business type is licence to fill in what was left unsaid, never to
+  invent a different subject. Locked by the prompt-budget, consultant and
+  handler tests in `wallpro.test.ts`.
 - **Five entry paths are generator intents**: Pick a design (catalog), Match
   my design (`match`: the reference IS the design), Design for my wall
   (`wall`), Describe a design (`prompt`), Use my print-ready file. The
