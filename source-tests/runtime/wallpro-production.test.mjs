@@ -15,6 +15,19 @@ async function master() {
   return { bytes, width: 300, height: 200 };
 }
 const request = (over = {}) => production.normalizeRequest({ wallWidthIn: 30, wallHeightIn: 20, placement: "cover", bleedIn: 1, overlapIn: 0.5, panelWidthIn: 12, targetPpi: 72, ...over });
+/** One short tag out of a TIFF's first IFD, so "LZW" is read, not assumed. */
+function tiffTag(buffer, wanted) {
+  const little = buffer.toString("latin1", 0, 2) === "II";
+  const u16 = (at) => (little ? buffer.readUInt16LE(at) : buffer.readUInt16BE(at));
+  const u32 = (at) => (little ? buffer.readUInt32LE(at) : buffer.readUInt32BE(at));
+  const ifd = u32(4);
+  for (let i = 0; i < u16(ifd); i++) {
+    const entry = ifd + 2 + i * 12;
+    if (u16(entry) === wanted) return u16(entry + 8);
+  }
+  return null;
+}
+
 /** Fake Topaz: returns exactly the requested output geometry as a resize of the input. */
 async function fakeTopaz(_url, init) {
   const form = init.body;
@@ -23,10 +36,10 @@ async function fakeTopaz(_url, init) {
   return new Response(out, { status: 200, headers: { "content-type": "image/png" } });
 }
 
-test("plans 59-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
+test("plans 54-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
   const { panels } = production.planPanels(production.normalizeRequest({ wallWidthIn: 120, wallHeightIn: 96 }));
-  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 59, 98, 0], [57.5, 59, 98, .5], [116, 5, 98, .5]]);
-  assert.equal(production.DEFAULTS.panelWidthIn, 59); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
+  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 54, 98, 0], [52.5, 54, 98, .5], [106, 15, 98, .5]]);
+  assert.equal(production.DEFAULTS.panelWidthIn, 54); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
   assert.throws(() => production.normalizeRequest({ wallWidthIn: 0, wallHeightIn: 96 }), /1 to 2,400/);
 });
 
@@ -145,11 +158,19 @@ test("processJob builds every panel, stores them under the owner's production na
   assert.equal(result.panels.length, 3);
   assert.ok(peak >= 2, `panels built in parallel (peak ${peak})`);
   assert.deepEqual(result.panels.map(p => p.number), [1, 2, 3]);
+  // Every panel lands three ways from the same pixels: the RIP's TIFF, a
+  // flattened PDF, and the PNG the UI previews.
   assert.deepEqual(uploads.map(u => u.path).sort(), [
-    `${owner}/production/${jobId}/manifest.json`, `${owner}/production/${jobId}/panel-001-12x22in.png`,
-    `${owner}/production/${jobId}/panel-002-12x22in.png`, `${owner}/production/${jobId}/panel-003-9x22in.png`,
+    `${owner}/production/${jobId}/manifest.json`,
+    `${owner}/production/${jobId}/panel-001-12x22in.pdf`, `${owner}/production/${jobId}/panel-001-12x22in.png`, `${owner}/production/${jobId}/panel-001-12x22in.tif`,
+    `${owner}/production/${jobId}/panel-002-12x22in.pdf`, `${owner}/production/${jobId}/panel-002-12x22in.png`, `${owner}/production/${jobId}/panel-002-12x22in.tif`,
+    `${owner}/production/${jobId}/panel-003-9x22in.pdf`, `${owner}/production/${jobId}/panel-003-9x22in.png`, `${owner}/production/${jobId}/panel-003-9x22in.tif`,
     `${owner}/production/${jobId}/wall-32x22in.png`,
   ]);
+  assert.deepEqual(result.panels[0].files.map(f => f.format), ["png", "tiff", "pdf"]);
+  assert.ok(result.panels.every(p => p.files.every(f => f.path && f.byteSize > 0 && !f.error)), "every print format stored");
+  assert.equal(uploads.filter(u => u.contentType === "image/tiff").length, 3);
+  assert.equal(uploads.filter(u => u.contentType === "application/pdf").length, 3);
   assert.equal(uploads.at(-1).path, `${owner}/production/${jobId}/manifest.json`, "the manifest waits for every panel and the whole wall");
   const final = updates.at(-1);
   assert.equal(final.status, "ready"); assert.equal(final.progress.panelsDone, 3); assert.equal(final.manifest_path, `${owner}/production/${jobId}/manifest.json`);
@@ -177,4 +198,52 @@ test("the whole-wall file fails soft: a wall beyond the one-file budget still le
   assert.equal(production.normalizeRequest({ ...request, wholeWall: false }).wholeWall, false);
   assert.equal(production.normalizeRequest(request).wholeWall, true);
   assert.equal(panels.length, 3);
+});
+
+test("writes every panel as a lossless TIFF and a flattened PDF beside the PNG", async () => {
+  const source = await master();
+  const req = request({ targetPpi: 72 });
+  const { panels } = production.planPanels(req);
+  const produced = await production.producePanel({ source, request: req, panel: panels[0], readiness, fetchImpl: fakeTopaz, apiKey: "k" });
+
+  // TIFF: same pixels, lossless, and it opens at its true printed size.
+  const tiff = await production.panelTiff(produced.bytes, req.targetPpi);
+  const meta = await sharp(tiff).metadata();
+  assert.equal(meta.format, "tiff");
+  assert.equal(meta.width, produced.widthPx); assert.equal(meta.height, produced.heightPx);
+  assert.equal(meta.density, req.targetPpi);
+  // Compression tag (259) read straight out of the first IFD: 5 is LZW.
+  assert.equal(tiffTag(tiff, 259), 5);
+  // Lossless means pixel-for-pixel, not "looks the same".
+  const fromPng = await sharp(produced.bytes).removeAlpha().raw().toBuffer();
+  const fromTiff = await sharp(tiff).removeAlpha().raw().toBuffer();
+  assert.ok(fromPng.equals(fromTiff), "TIFF pixels differ from the PNG");
+
+  // PDF: one page at the panel's exact printed size in points, one image, no
+  // fonts, no transparency — and a valid cross-reference table.
+  const pdf = await production.panelPdf(produced.bytes, produced.widthPx, produced.heightPx, panels[0].width, panels[0].height);
+  const text = pdf.toString("latin1");
+  assert.ok(text.startsWith("%PDF-1.7"), "not a PDF");
+  assert.ok(text.trimEnd().endsWith("%%EOF"), "PDF not terminated");
+  assert.match(text, new RegExp(`/MediaBox\\[0 0 ${panels[0].width * 72} ${panels[0].height * 72}\\]`));
+  assert.match(text, new RegExp(`/Width ${produced.widthPx}/Height ${produced.heightPx}`));
+  assert.match(text, /\/ColorSpace\/DeviceRGB\/BitsPerComponent 8\/Filter\/FlateDecode/);
+  assert.ok(!text.includes("/Font"), "a flattened print PDF carries no fonts");
+  // The xref offsets must actually point at their objects, or a RIP rejects it.
+  const startxref = Number(text.slice(text.lastIndexOf("startxref") + 9).trim().split("\n")[0]);
+  // "xref", the "0 N" header and the free entry come first; then one row per object.
+  const rows = text.slice(startxref).split("\n").slice(3, 8);
+  rows.forEach((row, index) => {
+    const at = Number(row.slice(0, 10));
+    assert.ok(text.startsWith(`${index + 1} 0 obj`, at), `object ${index + 1} is not at its xref offset ${at}`);
+  });
+  // The image stream inflates back to the panel's own pixels.
+  const zlib = await import("node:zlib");
+  const start = pdf.indexOf(Buffer.from("stream\n", "latin1"), pdf.indexOf(Buffer.from("/Filter/FlateDecode", "latin1"))) + 7;
+  const inflated = zlib.inflateSync(pdf.subarray(start, start + Number(text.match(/\/Length (\d+)>>\nstream/)[1])));
+  assert.ok(inflated.equals(fromPng), "PDF image stream differs from the panel pixels");
+
+  // And the formats the job actually writes are exactly these two beside the PNG.
+  assert.deepEqual(production.PRINT_FORMATS.map(f => [f.name, f.extension, f.contentType]),
+    [["tiff", "tif", "image/tiff"], ["pdf", "pdf", "application/pdf"]]);
 });

@@ -6,11 +6,11 @@
  *
  * Why per panel: a 4K master over a 142-inch wall is ~29 PPI, and Topaz caps a
  * single request near 96 MP, so a whole-wall 150 PPI master (300+ MP) is not
- * one request. Each 59-inch print panel (the roll width) IS within reach: rasterise the panel
+ * one request. Each 54-inch print panel (the roll width) IS within reach: rasterise the panel
  * from the approved master at its native density, enhance through Topaz to the
  * engine ceiling (the same `enhancePanel` Call 12 uses for vehicle panels,
  * failing closed when Topaz is unavailable), land exactly on panel inches x
- * target PPI, stamp the PNG density, and store it under the owner's private
+ * target PPI, stamp the density, write it as TIFF, flattened PDF and PNG, and store it under the owner's private
  * namespace. Geometry (panel plan, placement metrics, perimeter bleed mirror,
  * repeat tiling) mirrors app/src/lib/wallpro-print-plan.ts and
  * wallpro-print-export.ts so the server files match the browser proofs.
@@ -19,13 +19,19 @@
 const sharp = require("sharp");
 const { createHash } = require("node:crypto");
 const { Readable } = require("node:stream");
+const zlib = require("node:zlib");
 const tus = require("tus-js-client");
 const { enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { directTusEndpoint, TUS_CHUNK_BYTES, MAX_STANDARD_UPLOAD_BYTES } = require("./zip-spool.cjs");
 
 const BUCKET = "wallpro-files";
 const CONTRACT = "wallpro.production-panels.v1";
-const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 59, targetPpi: 150 });
+// 54 in is the roll: Avery HP MPI 2610 wall vinyl, and the shop bills every
+// panel at 54 in regardless of its actual printed width (owner spec sheet,
+// 2026-09-12). Must stay equal to WALLPRO_PRINT_WIDTH in
+// app/src/lib/wallpro-geometry.ts — it was 59 until 2026-09-12, wider than the
+// media, so those panels could not be printed.
+const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 54, targetPpi: 150 });
 const MAX_TILE_PLACEMENTS = 20000;
 // Panels build in parallel. Three 130 MP panels in flight is ~1.5 GB of raw
 // pixels plus Topaz round-trips; the env can widen or narrow it per droplet.
@@ -203,6 +209,77 @@ async function producePanel({ source, request, panel, readiness, fetchImpl, apiK
   return { bytes, widthPx: targetWidthPx, heightPx: targetHeightPx, upscale, rasterPpi: clean(working) };
 }
 
+/**
+ * Deflate a sharp pipeline's raw RGB without ever holding the uncompressed
+ * image: a 54 x 98 in panel at 150 PPI is 8100 x 14700 px, 357 MB raw.
+ */
+function deflateRaw(pipeline) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const deflate = zlib.createDeflate({ level: 6 });
+    deflate.on("data", (chunk) => chunks.push(chunk));
+    deflate.on("end", () => resolve(Buffer.concat(chunks)));
+    deflate.on("error", reject);
+    pipeline.on("error", reject);
+    pipeline.pipe(deflate);
+  });
+}
+
+/** The RIP's file: lossless LZW TIFF carrying the same pixels as the PNG, with
+ * the resolution tag set so it opens at its true printed size. */
+async function panelTiff(pngBytes, ppi) {
+  return await sharp(pngBytes, { limitInputPixels: false })
+    .tiff({ compression: "lzw", predictor: "horizontal", xres: ppi / 25.4, yres: ppi / 25.4, resolutionUnit: "inch" })
+    .toBuffer();
+}
+
+/**
+ * A FLATTENED print PDF: one page, one image, no layers, no transparency, no
+ * fonts, no spot colours. The page is the panel's exact printed size in PDF
+ * points (72 per inch) and the image is the panel's own pixels, lossless
+ * (FlateDecode DeviceRGB) — so the PDF, the TIFF and the PNG are the same
+ * artwork and a shop can rip whichever its workflow prefers.
+ *
+ * Written by hand rather than with a PDF library: the runtime image carries
+ * sharp and nothing else, and a single-image PDF is a hundred lines of
+ * structure. Object 4 is the image, object 5 the content stream that places it.
+ */
+async function panelPdf(pngBytes, widthPx, heightPx, widthIn, heightIn) {
+  const image = await deflateRaw(sharp(pngBytes, { limitInputPixels: false }).flatten({ background: WHITE }).removeAlpha().toColourspace("srgb").raw());
+  const W = Number((widthIn * 72).toFixed(4)), H = Number((heightIn * 72).toFixed(4));
+  const content = Buffer.from(`q\n${W} 0 0 ${H} 0 0 cm\n/Im0 Do\nQ\n`, "latin1");
+  const objects = [
+    "<</Type/Catalog/Pages 2 0 R>>",
+    "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${W} ${H}]/TrimBox[0 0 ${W} ${H}]/Resources<</XObject<</Im0 4 0 R>>/ProcSet[/PDF/ImageC]>>/Contents 5 0 R>>`,
+    { dict: `<</Type/XObject/Subtype/Image/Width ${widthPx}/Height ${heightPx}/ColorSpace/DeviceRGB/BitsPerComponent 8/Filter/FlateDecode/Length ${image.length}>>`, stream: image },
+    { dict: `<</Length ${content.length}>>`, stream: content },
+  ];
+  const parts = [Buffer.from("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n", "latin1")];
+  let offset = parts[0].length;
+  const offsets = [];
+  objects.forEach((object, index) => {
+    const body = typeof object === "string"
+      ? Buffer.from(`${object}\n`, "latin1")
+      : Buffer.concat([Buffer.from(`${object.dict}\nstream\n`, "latin1"), object.stream, Buffer.from("\nendstream\n", "latin1")]);
+    const chunk = Buffer.concat([Buffer.from(`${index + 1} 0 obj\n`, "latin1"), body, Buffer.from("endobj\n", "latin1")]);
+    offsets.push(offset);
+    offset += chunk.length;
+    parts.push(chunk);
+  });
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const at of offsets) xref += `${String(at).padStart(10, "0")} 00000 n \n`;
+  xref += `trailer\n<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${offset}\n%%EOF\n`;
+  parts.push(Buffer.from(xref, "latin1"));
+  return Buffer.concat(parts);
+}
+
+/** What every panel is written as, beside the PNG the UI previews. */
+const PRINT_FORMATS = Object.freeze([
+  Object.freeze({ name: "tiff", extension: "tif", contentType: "image/tiff", encode: (produced, _panel, request) => panelTiff(produced.bytes, request.targetPpi) }),
+  Object.freeze({ name: "pdf", extension: "pdf", contentType: "application/pdf", encode: (produced, panel) => panelPdf(produced.bytes, produced.widthPx, produced.heightPx, panel.width, panel.height) }),
+]);
+
 /** Immutable write into the owner's production namespace: a path that already
  * exists must hold these exact bytes, never different ones. */
 async function standardUpload(storage, storagePath, bytes, contentType) {
@@ -262,9 +339,24 @@ async function processJob(job, deps) {
   let landed = 0;
   await mapConcurrent(panels, deps.concurrency || PANEL_CONCURRENCY, async (panel) => {
     const produced = await producePanel({ source, request, panel, readiness, fetchImpl: deps.fetchImpl, apiKey: deps.apiKey, signal: deps.signal });
-    const file = `panel-${String(panel.number).padStart(3, "0")}-${fmt(panel.width)}x${fmt(panel.height)}in.png`;
+    const base = `panel-${String(panel.number).padStart(3, "0")}-${fmt(panel.width)}x${fmt(panel.height)}in`;
+    const file = `${base}.png`;
     const stored = await uploadBytes(deps, prefix + file, produced.bytes, "image/png");
-    done.push({ number: panel.number, file, path: stored.storagePath, xIn: panel.x, yIn: panel.y, widthIn: panel.width, heightIn: panel.height, overlapLeftIn: panel.overlapLeft,
+    const files = [{ format: "png", file, path: stored.storagePath, sha256: stored.contentHash, byteSize: stored.byteSize }];
+    // The shop's own print formats, beside the PNG: lossless LZW TIFF and a
+    // flattened single-image PDF at the panel's exact printed size. Written one
+    // at a time so only one encode is in memory, and each fails SOFT — the PNG
+    // is already stored, so an encoder problem must not cost the whole job.
+    for (const format of PRINT_FORMATS) {
+      try {
+        const bytes = await format.encode(produced, panel, request);
+        const out = await uploadBytes(deps, `${prefix}${base}.${format.extension}`, bytes, format.contentType);
+        files.push({ format: format.name, file: `${base}.${format.extension}`, path: out.storagePath, sha256: out.contentHash, byteSize: out.byteSize });
+      } catch (err) {
+        files.push({ format: format.name, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    done.push({ number: panel.number, file, path: stored.storagePath, files, xIn: panel.x, yIn: panel.y, widthIn: panel.width, heightIn: panel.height, overlapLeftIn: panel.overlapLeft,
       widthPx: produced.widthPx, heightPx: produced.heightPx, ppi: request.targetPpi, sha256: stored.contentHash, byteSize: stored.byteSize, upscale: produced.upscale });
     done.sort((a, b) => a.number - b.number);
     landed += 1;
@@ -294,7 +386,7 @@ async function processJob(job, deps) {
   }
   const manifest = { contract: CONTRACT, jobId: job.id, versionId: job.version_id, projectId: job.project_id, generatedAt: new Date().toISOString(), request, bounds,
     source: { path: source.path, widthPx: source.width, heightPx: source.height, sha256: source.sha256, nativePpi: clean(sourcePpi(source, request)) },
-    panels: done, wholeWall, install: `Adjacent panels share ${fmt(request.overlapIn)} in of identical artwork; align the duplicate image, never stretch. Perimeter bleed ${fmt(request.bleedIn)} in. Every PNG is ${request.targetPpi} PPI at its stated inches.${wholeWall && wholeWall.path ? ` ${wholeWall.file} is the whole wall including bleed as one file at the same PPI, for a RIP that tiles itself.` : ""}` };
+    panels: done, wholeWall, install: `Adjacent panels share ${fmt(request.overlapIn)} in of identical artwork; align the duplicate image, never stretch. Perimeter bleed ${fmt(request.bleedIn)} in. Every panel is ${request.targetPpi} PPI at its stated inches and is written three ways from the same pixels: .tif (lossless LZW, for the RIP), .pdf (flattened, one image at exact printed size) and .png. Panels are ${fmt(request.panelWidthIn)} in wide to fit the roll.${wholeWall && wholeWall.path ? ` ${wholeWall.file} is the whole wall including bleed as one file at the same PPI, for a RIP that tiles itself.` : ""}` };
   const manifestBytes = Buffer.from(JSON.stringify(manifest, null, 2));
   const storedManifest = await uploadBytes(deps, prefix + "manifest.json", manifestBytes, "application/json");
   await update({ status: "ready", panels: done, manifest_path: storedManifest.storagePath, finished_at: new Date().toISOString(), progress: { ...progress("ready", done.length), wholeWall } });
@@ -372,4 +464,5 @@ function createWallProProductionWorker({ supabase, supabaseUrl, serviceRoleKey, 
 module.exports = Object.freeze({
   BUCKET, CONTRACT, DEFAULTS, PANEL_CONCURRENCY, WallProProductionError,
   normalizeRequest, planPanels, layoutMetrics, sourcePpi, rasterPanel, producePanel, processJob, createWallProProductionWorker, mapConcurrent, stitchWholeWall, MAX_WHOLE_WALL_PIXELS,
+  panelTiff, panelPdf, PRINT_FORMATS,
 });

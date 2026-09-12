@@ -16,21 +16,21 @@ describe('WallPro physical geometry', () => {
     expect(insidePolygon({x:.2,y:.5},mask)).toBe(false);
     expect(()=>rectangularWallMask({x:.3,y:.2},{x:.3,y:.9})).toThrow();
   });
-  it('plans 59-inch print panels with a correctly sized final panel', () => {
+  it('plans 54-inch print panels with a correctly sized final panel', () => {
     const panels = wallPrintPanels(150,96);
-    expect(panels.map(p => p.width)).toEqual([59,59,32]);
-    expect(panels.map(p => p.start)).toEqual([0,59,118]);
+    expect(panels.map(p => p.width)).toEqual([54,54,42]);
+    expect(panels.map(p => p.start)).toEqual([0,54,108]);
     expect(panels.reduce((n,p) => n+p.width,0)).toBe(150);
-    expect(wallPrintPanels(118,96)).toHaveLength(2);
-    expect(wallPrintPanels(59.25,96).map(p => p.width)).toEqual([59,.25]);
+    expect(wallPrintPanels(108,96)).toHaveLength(2);
+    expect(wallPrintPanels(54.25,96).map(p => p.width)).toEqual([54,.25]);
   });
-  it('keeps pattern registration continuous across a 59-inch print seam', () => {
+  it('keeps pattern registration continuous across a 54-inch print seam', () => {
     const seam = wallPrintPanels(150,96)[1].start;
     const uv = artworkPoint({x:seam/150,y:.5},{width:150,height:96,mode:'repeat',repeatWidth:24},1);
-    expect(uv?.x).toBeCloseTo((59/24)%1,10);
+    expect(uv?.x).toBeCloseTo((54/24)%1,10);
     const quad=[{x:.1,y:.1},{x:.9,y:.2},{x:.8,y:.9},{x:.2,y:.8}];
     const seamPoint=projectPoint(homography(UNIT_WALL,quad),{x:seam/150,y:0});
-    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(59/150,10);
+    expect(projectPoint(homography(quad,UNIT_WALL),seamPoint).x).toBeCloseTo(54/150,10);
   });
   it('keeps a 24-inch tile physically constant when the wall doubles', () => {
     const a = layoutMetrics({ width:120,height:96,mode:'repeat',repeatWidth:24 },2);
@@ -158,9 +158,9 @@ describe('WallPro generation boundary', () => {
     const match = wallDesignPrompt({ prompt:'make the background ivory', width:142, height:95, placement:'cover', intent:'match', referencePath: ref });
     expect(match).toMatch(/IS the design/); expect(match).toMatch(/Apply only these requested changes: make the background ivory/); expect(match).not.toMatch(/Design brief:/);
     expect(wallDesignPrompt({ prompt:'', width:142, height:95, placement:'repeat', intent:'match', referencePath: ref })).toMatch(/true seamless tile/);
-    // A photographed wall (a slat wall, an existing wallpaper) means the covering, never the room; panels are the 59-inch roll.
+    // A photographed wall (a slat wall, an existing wallpaper) means the covering, never the room; panels are the 54-inch roll.
     expect(match).toMatch(/photograph of a room or of an installed wall, the design is the WALL COVERING/); expect(match).toMatch(/leave out the room itself: furniture, window, drapes/);
-    expect(match).toMatch(/panels up to 59 inches wide/); expect(match).not.toMatch(/51 inches/);
+    expect(match).toMatch(/panels up to 54 inches wide/); expect(match).not.toMatch(/51 inches/);
     // Scale in inches: a tile is told its print width and repeat count; a mural is told its real size.
     const tile = wallDesignPrompt({ prompt:'Blush florals', width:142, height:96, placement:'repeat', repeatWidthIn: 36 });
     expect(tile).toMatch(/prints exactly 36 inches wide on the wall and repeats about 4 times/); expect(tile).toMatch(/never one motif filling the tile/);
