@@ -69,6 +69,39 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
   return canvas;
 }
 
+/**
+ * The flat print master as it will print across the whole wall: the tile
+ * repeated (flipped on alternate tiles when the layout mirrors) or the mural
+ * fitted, on a canvas in the wall's proportions. This is what "pattern scale"
+ * changes, so the flat pane shows it; the generated tile itself is unchanged.
+ */
+export async function renderFlatWall(artworkUrl: string, layout: WallLayout, maxPx = 1800): Promise<HTMLCanvasElement> {
+  const art = await loadWallImage(artworkUrl);
+  const aspect = art.naturalWidth / art.naturalHeight;
+  const m = layoutMetrics(layout, aspect);
+  const scale = maxPx / Math.max(layout.width, layout.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(layout.width * scale)); canvas.height = Math.max(1, Math.round(layout.height * scale));
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const tw = m.artworkWidth * scale, th = m.artworkHeight * scale;
+  if (layout.mode === 'repeat') {
+    for (let row = 0; row * th < canvas.height; row++) {
+      for (let col = 0; col * tw < canvas.width; col++) {
+        const flipX = !!layout.mirror && col % 2 === 1, flipY = !!layout.mirror && row % 2 === 1;
+        ctx.save();
+        ctx.translate(col * tw + (flipX ? tw : 0), row * th + (flipY ? th : 0));
+        ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+        ctx.drawImage(art, 0, 0, tw, th);
+        ctx.restore();
+      }
+    }
+  } else {
+    ctx.drawImage(art, (canvas.width - tw) / 2, (canvas.height - th) / 2, tw, th);
+  }
+  return canvas;
+}
+
 export function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not export the preview.')), 'image/png'));
 }

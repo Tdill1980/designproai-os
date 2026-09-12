@@ -12,9 +12,9 @@ import { rasterizeDetectionMasks } from '@/lib/wallpro-masks';
 import { DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
-import { validateWallUpload, loadWallImage, renderWallPreview, canvasBlob } from '@/lib/wallpro-render';
+import { validateWallUpload, loadWallImage, renderWallPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { autoWallScale, patternSizeLabel, stepPatternSize } from '@/lib/wallpro-scale';
+import { autoRepeatWidthIn, autoWallScale, patternScaleLabel, patternSizeAtScale, stepPatternScale, type PatternSize } from '@/lib/wallpro-scale';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
@@ -105,15 +105,23 @@ export default function WallPro() {
   // and the tab offers to repaint.
   const scaleKey = placement + '|' + (placement === 'repeat' ? repeatWidth : 0);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
-  /** Bigger / Smaller on the design in front of the customer: the same master
-   * tiled at the next width, no regeneration, no token. Production picks the
-   * new size up on Rebuild; the project remembers it. */
+  /** PATTERN SCALE: the motifs' size as a percentage of the size they were
+   * generated at (owner, 2026-09-12: "the pattern design", not the panel).
+   * The base is the version as generated; the percentage re-tiles the same
+   * master deterministically. No regeneration, no token. The flat pane shows
+   * the print master at the chosen scale, the on-wall view updates at once,
+   * production uses it on Rebuild, and the project remembers it. */
+  const [patternScale, setPatternScale] = useState(100);
+  const patternBase: PatternSize = currentVersion
+    ? { placement: currentVersion.placement, repeatWidthIn: Number(currentVersion.repeat_width_in) || autoRepeatWidthIn(width) }
+    : { placement, repeatWidthIn: repeatWidth };
   function stepPattern(direction: 'bigger' | 'smaller') {
-    const next = stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, direction);
-    if (!next) return;
-    setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
-    setNotice(`Pattern size: ${patternSizeLabel(next, width)}. The on-wall view updates now; the AI picture repaints when you open it; production panels use this size when rebuilt.`);
-    wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the size still applies on screen */ });
+    const pct = stepPatternScale(patternScale, direction);
+    if (pct === null) return;
+    const next = patternSizeAtScale(patternBase, width, pct);
+    setPatternScale(pct); setPlacement(next.placement); setRepeatWidth(next.repeatWidthIn);
+    setNotice(`Pattern scale ${patternScaleLabel(patternBase, width, pct)}. The print master and the on-wall view update now; the AI picture repaints when you open it; production uses this scale when rebuilt.`);
+    wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
   }
   useEffect(() => { if (artwork && photo && cornersValidNow) setView(aiViewCurrent ? 'ai' : 'after'); }, [!!artwork, !!photo, cornersValidNow, aiViewCurrent]);
   // The photo pane opens on the AI picture by itself: the model puts the
@@ -158,6 +166,18 @@ export default function WallPro() {
   const seamReady = placement !== 'repeat' || !!seamCurrent;
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (artwork) metrics = layoutMetrics(layout, artwork.aspect); } catch { /* visible validation below */ }
+  // The flat pane shows the print master as it prints across the wall at the
+  // current pattern scale; while a refinement mask is being drawn it shows the
+  // generated tile itself, which is what the mask coordinates belong to.
+  const [flatPreview, setFlatPreview] = useState<{ key: string; url: string } | null>(null);
+  const flatKey = tileArtwork && metrics ? [tileArtwork.url, placement, repeatWidth, width, height, !!layout.mirror].join('|') : '';
+  useEffect(() => {
+    if (!tileArtwork || !flatKey || !seamReady) return;
+    let active = true;
+    renderFlatWall(tileArtwork.url, layout).then(canvas => { if (active) setFlatPreview({ key: flatKey, url: canvas.toDataURL('image/jpeg', 0.9) }); }).catch(() => { /* the generated tile stays on screen */ });
+    return () => { active = false; };
+  }, [flatKey, seamReady]);
+  const flatCurrent = flatPreview && flatPreview.key === flatKey ? flatPreview.url : null;
 
   useEffect(() => {
     if (!seamKey || !artwork) { setSeam(null); setSeamBusy(false); return; }
@@ -247,6 +267,7 @@ export default function WallPro() {
     setPhoto(wall); setArtwork(art); setReference(ref); setWidth(config.width || 120); setHeight(config.height || 96);
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
+    setPatternScale(typeof config.patternScale === 'number' && config.patternScale >= 25 && config.patternScale <= 200 ? config.patternScale : 100);
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setMaskRects([]); setMaskMode(false); setRefinePrompt('');
@@ -397,7 +418,7 @@ export default function WallPro() {
   async function restoreVersion(version: WallVersion) {
     await run('Restoring V' + version.version_no, async () => {
       const art = await storedAsset(version.artwork_path);
-      setArtwork(art); setCurrentVersionId(version.id); setPlacement(version.placement); if (version.repeat_width_in) setRepeatWidth(Number(version.repeat_width_in));
+      setArtwork(art); setCurrentVersionId(version.id); setPlacement(version.placement); if (version.repeat_width_in) setRepeatWidth(Number(version.repeat_width_in)); setPatternScale(100);
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
@@ -528,7 +549,7 @@ export default function WallPro() {
       // motifs are drawn at the size they print.
       const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
       const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
-      setPlacement(placement); setRepeatWidth(repeatWidth);
+      setPlacement(placement); setRepeatWidth(repeatWidth); setPatternScale(100);
       const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master and is shown first. With a wall
@@ -662,14 +683,14 @@ export default function WallPro() {
               {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">1 · Flat design — the print master{artwork.width && artwork.height ? ` · ${artwork.width} × ${artwork.height} px` : ''}</p>}
               {/* Bigger / Smaller: the pattern's real-world size on this wall, stepped
                   without a new generation (owner, 2026-09-12). */}
-              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern size">
-                <span className="font-semibold">Pattern size</span>
-                <Button size="sm" variant="outline" disabled={!!busy || !stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, 'smaller')} onClick={() => stepPattern('smaller')} aria-label="Smaller pattern">− Smaller</Button>
-                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternSizeLabel({ placement, repeatWidthIn: repeatWidth }, width)}</span>
-                <Button size="sm" variant="outline" disabled={!!busy || !stepPatternSize({ placement, repeatWidthIn: repeatWidth }, width, 'bigger')} onClick={() => stepPattern('bigger')} aria-label="Bigger pattern">+ Bigger</Button>
-                <span className="text-xs text-slate-500">No token. Watch it on your wall.</span>
+              <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" aria-label="Pattern scale">
+                <span className="font-semibold">Pattern scale</span>
+                <Button size="sm" variant="outline" disabled={!!busy || stepPatternScale(patternScale, 'smaller') === null} onClick={() => stepPattern('smaller')} aria-label="Smaller pattern">− Smaller</Button>
+                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, width, patternScale)}</span>
+                <Button size="sm" variant="outline" disabled={!!busy || stepPatternScale(patternScale, 'bigger') === null} onClick={() => stepPattern('bigger')} aria-label="Bigger pattern">+ Bigger</Button>
+                <span className="text-xs text-slate-500">The design's motifs, smaller or bigger on your wall. Deterministic, no token.</span>
               </div>
-              <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={artwork.url} alt="Flat wall artwork" className="max-h-[650px] max-w-full object-contain" draggable={false} />
+              <div className="flex min-h-80 items-center justify-center rounded-xl bg-slate-100 p-4"><div className="relative inline-block"><img src={maskMode || maskRects.length > 0 || !flatCurrent ? artwork.url : flatCurrent} alt={maskMode || maskRects.length > 0 || !flatCurrent ? 'Generated tile' : 'Print master across the wall at the current pattern scale'} className="max-h-[650px] max-w-full object-contain" draggable={false} />
               {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
                 onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
                 onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
