@@ -215,3 +215,8 @@ verify_jwt = false
 
 [functions.vectorize-it]
 verify_jwt = false
+
+# ── WPW WooCommerce wiring ────────────────────────────────────────────────
+[functions.wpw-oauth-link]
+# The handler validates the caller from the Authorization header itself.
+verify_jwt = false

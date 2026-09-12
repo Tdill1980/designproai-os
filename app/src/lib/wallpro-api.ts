@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { dpApi } from './designpro-api';
 import type { WallCatalogRow, designUpsertRow } from './wallpro-catalog';
 import type { WallStudioDesign } from './wallpro-studio';
 export const WALLPRO_BUCKET = 'wallpro-files';
@@ -254,10 +255,38 @@ export async function requestWallProduction(versionId: string, request: WallProd
   const { data, error } = await db.rpc('request_wallpro_production', { p_version_id: versionId, p_request: request });
   if (error) {
     const code = String(error.message || '');
-    throw new Error(code.includes('not_approved') ? 'Approve this version first; production panels are built from the approved version only.'
+    throw new Error(code.includes('entitlement_required') ? 'Unlock your print-ready wall file first — production panels are paid work.'
+      : code.includes('not_approved') ? 'Approve this version first; production panels are built from the approved version only.'
       : code.includes('not_found') ? 'The approved version could not be found.' : 'Production panels could not be requested: ' + code);
   }
   return data as WallProductionJob;
+}
+
+/* ── WallPro purchases: SKU-based, gateway-issued Stripe checkout ────────── */
+
+export type WallProSku = 'wallpro_catalog_file' | 'wallpro_custom_file' | 'wallpro_room_design_file' | 'wallpro_file_prep';
+export type WallProEntitlement = { id: string; version_id: string; product_type: WallProSku; amount_cents: number; paid_at: string };
+
+/** Whether this exact version has a paid entitlement (any SKU). RLS scopes the
+ * read to the caller's own rows, so no explicit owner filter is needed. */
+export async function wallProEntitlements(versionId: string): Promise<WallProEntitlement[]> {
+  const { data, error } = await db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at').eq('version_id', versionId);
+  if (error) throw new Error('Entitlements could not be read: ' + error.message);
+  return (data || []) as WallProEntitlement[];
+}
+
+/** Opens a WallPro purchase through the gateway (the one process that talks to
+ * Stripe, same account as the vehicle checkout) and returns the checkout URL. */
+export async function startWallProCheckout(versionId: string, product: WallProSku, returnPath?: string): Promise<string> {
+  try {
+    const session = await dpApi.createWallProCheckoutSession({ versionId, product, returnPath });
+    return session.url;
+  } catch (e) {
+    const code = e instanceof Error ? e.message : String(e);
+    throw new Error(code === 'checkout_not_configured' ? 'Purchases are not configured yet.'
+      : code === 'wallpro_version_not_found' ? 'This design version could not be found.'
+      : 'Checkout could not be started: ' + code);
+  }
 }
 export async function getWallProductionJob(id: string): Promise<WallProductionJob> {
   const { data, error } = await db.from('wallpro_production_jobs').select('*').eq('id', id).single();

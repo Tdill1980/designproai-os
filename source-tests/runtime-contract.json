@@ -42,6 +42,7 @@
     "complete_production_panel_dispatch",
     "complete_workflow_stage",
     "confirm_designpro_purchase",
+    "confirm_wallpro_purchase",
     "create_designpro_production_workflow",
     "defer_workflow_stage",
     "designpro_paid_products",

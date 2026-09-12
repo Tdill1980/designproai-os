@@ -16,7 +16,7 @@ import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, type WallAsset, type WallVersion, type WallVersionKind } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -58,6 +58,11 @@ export default function WallPro() {
   const maskStart = useRef<{ x: number; y: number } | null>(null);
   const currentVersion = versions.find(v => v.id === currentVersionId) || null;
   const approvedVersion = versions.find(v => v.status === 'approved') || null;
+  // Paid entitlements for the current version. Production export is gated on
+  // this server-side (request_wallpro_production); the button here is the
+  // purchase path, not the security boundary.
+  const [entitlements, setEntitlements] = useState<WallProEntitlement[]>([]);
+  const entitled = entitlements.length > 0;
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
   const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
@@ -599,6 +604,29 @@ export default function WallPro() {
     const id = params.get('project');
     if (id) try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch { /* private mode: the URL still carries it */ }
   }, [params]);
+  useEffect(() => {
+    if (!currentVersionId) { setEntitlements([]); return; }
+    let active = true;
+    wallProEntitlements(currentVersionId).then(rows => { if (active) setEntitlements(rows); }).catch(() => { if (active) setEntitlements([]); });
+    return () => { active = false; };
+  }, [currentVersionId]);
+  // Returning from Stripe: the webhook records the entitlement asynchronously,
+  // so this re-checks a few times rather than trusting the redirect alone.
+  useEffect(() => {
+    const purchase = params.get('wallproPurchase');
+    if (!purchase || !currentVersionId) return;
+    setParams(p => { const next = new URLSearchParams(p); next.delete('wallproPurchase'); return next; }, { replace: true });
+    if (purchase === 'cancelled') { setNotice('Checkout was cancelled. Nothing was charged.'); return; }
+    setNotice('Payment received — confirming your entitlement…');
+    let attempts = 0;
+    const poll = () => wallProEntitlements(currentVersionId).then(rows => {
+      if (rows.length) { setEntitlements(rows); setNotice('Purchase confirmed. Your print-ready wall file can now be produced.'); return; }
+      attempts += 1;
+      if (attempts < 6) setTimeout(poll, 2000);
+    }).catch(() => {});
+    poll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, currentVersionId]);
   async function persistCurrent(art: WallAsset | null = artwork, designName = name) {
     const user = await wallUser();
     const wallPath = photo ? await uploadWallAsset(photo, user.id) : null;
@@ -863,6 +891,12 @@ export default function WallPro() {
               {currentVersion?.status === 'approved' && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">V{currentVersion.version_no} approved</span>}
               <span className="text-xs text-slate-500">1 design token per refinement.</span>
             </div>
+            {currentVersionId && (entitled
+              ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-semibold text-emerald-900">Print-ready wall file unlocked for this version.</p>
+              : <div className="mt-3 flex items-center gap-2">
+                  <Button variant="outline" disabled={!!busy} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, 'wallpro_custom_file', '/printpro/wallpro')); })}>Unlock My Print-Ready Wall File — $149</Button>
+                  <span className="text-xs text-slate-500">Seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
+                </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:border-violet-400')}>
                 <div className="aspect-[4/3] overflow-hidden rounded bg-slate-100">{versionThumbs[v.artwork_path] && <img src={versionThumbs[v.artwork_path]} alt={'Version ' + v.version_no} className="h-full w-full object-cover" loading="lazy" />}</div>

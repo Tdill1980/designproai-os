@@ -439,6 +439,40 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
 });
 
 /**
+ * WALLPRO PURCHASE CONFIRM. Same reasoning as /internal/purchases/confirm --
+ * recording the entitlement is the whole of it -- against WallPro's own
+ * table (wallpro_purchase_entitlements) and its own identity (a design
+ * version, not a vehicle generationId). No promotion/discount handling yet;
+ * that is a deliberately separate mechanism the owner has not specified.
+ */
+app.post("/internal/purchases/wallpro-confirm", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "paymentIntentId", "productType", "userEmail", "versionId"])) {
+      return res.status(400).json({ error: "wallpro_purchase_confirm_request_invalid" });
+    }
+    if (!["wallpro_catalog_file", "wallpro_custom_file", "wallpro_room_design_file", "wallpro_file_prep"].includes(String(body.productType))) {
+      return res.status(400).json({ error: "unknown_product_type" });
+    }
+    if (!Number.isInteger(body.amountCents) || body.amountCents <= 0) {
+      return res.status(400).json({ error: "purchase_amount_invalid" });
+    }
+    const { data, error } = await supabase.rpc("confirm_wallpro_purchase", {
+      p_checkout_session_id: String(body.checkoutSessionId || ""),
+      p_payment_intent_id: body.paymentIntentId == null ? null : String(body.paymentIntentId),
+      p_product_type: String(body.productType),
+      p_version_id: canonicalUuid(body.versionId, "versionId"),
+      p_amount_cents: Number(body.amountCents),
+      p_user_email: body.userEmail ? String(body.userEmail) : null,
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    return res.status(200).json(data);
+  } catch (error) {
+    return res.status(400).json({ error: String(error.message || error) });
+  }
+});
+
+/**
  * RUN UPSCALE, ON ONE SURFACE, ON PURPOSE.
  *
  * Call 12 enhances all six surfaces automatically once the purchase gate and
