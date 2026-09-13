@@ -1,9 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_WALL_PRINT, wallBilling } from '../wallpro-print-plan';
 import { WALLPRO_PRINT_WIDTH } from '../wallpro-geometry';
 import {
-  WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, payeeForLine, wallDesignFeeCents, wallQuote,
-  type WallDesignMode,
+  WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, payeeForLine, wallDesignFeeCents, wallProSkuFor,
+  wallQuote, type WallDesignMode,
 } from '../wallpro-pricing';
 
 // The owner's own wall: 142 × 96 on the 54" roll with 1" bleed.
@@ -45,6 +46,32 @@ describe('the launch price list', () => {
   it('promises print-ready files and a human check on every design line', () => {
     for (const mode of Object.keys(WALL_DESIGN_SKUS) as WallDesignMode[]) {
       expect(WALL_DESIGN_SKUS[mode].detail).toMatch(/human-checked/i);
+    }
+  });
+});
+
+describe('the page and the till charge the same number', () => {
+  // THE ONE FAILURE THAT MATTERS HERE. Stripe is charged by the GATEWAY's own
+  // WALLPRO_PURCHASE_PRODUCTS table; this page quotes from WALL_DESIGN_SKUS. If
+  // those two drift, the customer agrees to one price and is charged another,
+  // and nothing in either file would notice. So the real gateway source is read
+  // and compared -- not a copy of it, and not a mock.
+  const gateway = readFileSync(new URL('../../../../gateway/src/server.mjs', import.meta.url), 'utf8');
+  const table = gateway.slice(gateway.indexOf('const WALLPRO_PURCHASE_PRODUCTS'));
+  const gatewayCents = Object.fromEntries(
+    [...table.matchAll(/(wallpro_[a-z_]+): Object\.freeze\(\{[\s\S]*?amountCents: (\d+)/g)].map(m => [m[1], Number(m[2])]),
+  );
+
+  it('found the gateway table at all', () => {
+    // A silent zero-match regex would make every assertion below vacuous.
+    expect(Object.keys(gatewayCents).sort()).toEqual([
+      'wallpro_catalog_file', 'wallpro_custom_file', 'wallpro_file_prep', 'wallpro_room_design_file',
+    ]);
+  });
+
+  it('quotes exactly what the gateway will charge, path by path', () => {
+    for (const mode of Object.keys(WALL_DESIGN_SKUS) as WallDesignMode[]) {
+      expect(gatewayCents[wallProSkuFor(mode)]).toBe(wallDesignFeeCents(mode));
     }
   });
 });

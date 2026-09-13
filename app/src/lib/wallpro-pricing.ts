@@ -56,12 +56,27 @@ export const WPW_WALL_FILM_RATE_PER_SQFT = 3.5;
  */
 export type WallDesignMode = 'library' | 'ai' | 'match' | 'wall' | 'upload';
 
+/**
+ * The Stripe product each path checks out as.
+ *
+ * These four strings are the gateway's own `WALLPRO_PURCHASE_PRODUCTS` keys and
+ * the CHECK constraint on `wallpro_purchase_entitlements.product_type`. Naming
+ * them here rather than choosing a SKU at the checkout call site is what keeps
+ * the price the customer was quoted and the price Stripe charges the same
+ * number: the gateway is the authority on the amount, this table is the
+ * authority on which product a path buys, and a test asserts they agree.
+ */
+export type WallProSku =
+  | 'wallpro_catalog_file' | 'wallpro_custom_file' | 'wallpro_room_design_file' | 'wallpro_file_prep';
+
 export type WallDesignSku = {
   /** What the customer chose, in the owner's own words from the price list. */
   label: string;
   cents: number;
   /** What they get for it. The deliverable, never the activity. */
   detail: string;
+  /** The gateway product this path checks out as. */
+  sku: WallProSku;
 };
 
 /** The launch price list, exactly as the owner set it. */
@@ -70,28 +85,38 @@ export const WALL_DESIGN_SKUS: Record<WallDesignMode, WallDesignSku> = {
     label: 'Ready-to-Print Design',
     cents: 7900,
     detail: 'A catalog design, scaled and panelized to your wall, print-ready files, human-checked before release',
+    sku: 'wallpro_catalog_file',
   },
   ai: {
     label: 'Describe a Design',
     cents: 14900,
     detail: 'Designed from your description, print-ready files, human-checked before release',
+    sku: 'wallpro_custom_file',
   },
+  // Describe and Match are the same price and the same gateway product: both
+  // are one custom design, arrived at from a sentence or from a picture.
   match: {
     label: 'Match My Design',
     cents: 14900,
     detail: 'Your design recreated at print resolution, print-ready files, human-checked before release',
+    sku: 'wallpro_custom_file',
   },
   wall: {
     label: 'Design for My Wall',
     cents: 19900,
     detail: 'A designer reads your room and designs for it, print-ready files, human-checked before release',
+    sku: 'wallpro_room_design_file',
   },
   upload: {
     label: 'File Prep',
     cents: 4900,
     detail: 'Your own artwork prepared for print: scaled, bled, panelized to the roll, human-checked before release',
+    sku: 'wallpro_file_prep',
   },
 };
+
+/** The gateway product one entry path checks out as. */
+export const wallProSkuFor = (mode: WallDesignMode): WallProSku => WALL_DESIGN_SKUS[mode].sku;
 
 /** The design fee for one entry path, in cents. */
 export const wallDesignFeeCents = (mode: WallDesignMode) => WALL_DESIGN_SKUS[mode].cents;
