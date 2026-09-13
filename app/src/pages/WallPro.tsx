@@ -1017,7 +1017,12 @@ export default function WallPro() {
             <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
               Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span>
             </h1>
-            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Your wall. Your design. Sized to fit.</p>
+            {/* The owner's own words for what this tool IS (2026-09-13:
+                "a persistent header that says WallPro custom wall wrap file
+                output"). It names the deliverable -- a print file -- rather
+                than describing the feeling of using it, which is what the
+                trade buyer is actually here for. */}
+            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Custom wall wrap file output</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
