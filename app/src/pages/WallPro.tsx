@@ -185,6 +185,29 @@ export default function WallPro() {
     return () => { live = false; window.removeEventListener('focus', reread); window.removeEventListener('storage', reread); };
   }, []);
   const aiAvailable = aiViewAvailable({ staff, viewingAsCustomer });
+  // WHERE THE PAGE HEADER STICKS, MEASURED RATHER THAN GUESSED.
+  //
+  // Owner, 2026-09-12: "One of the items was persistent header yet it's not
+  // done on mobile or desktop." It never stuck on either, and the cause was
+  // not styling: the app's own site header (components/Header.tsx) is ALSO
+  // `sticky top-0`, at z-50. Two stickies pinned to the same offset do not
+  // stack -- the higher one wins and the second slides underneath it and is
+  // never seen. So this one has to pin at the site header's HEIGHT.
+  //
+  // That height is content-sized and differs between breakpoints, so it is
+  // read off the element instead of hard-coded, and re-read on resize. The
+  // selector excludes this header by id, or with the site header absent it
+  // would measure itself and pin below its own height.
+  const [stickyTop, setStickyTop] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const bar = document.querySelector('header.sticky:not(#wallpro-header)');
+      setStickyTop(bar instanceof HTMLElement ? Math.round(bar.getBoundingClientRect().height) : 0);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   // A comparison needs both halves: the untouched photo and a real composite.
   const canCompare = !!photo && !!artwork && wallLocated && !!preview;
   const billing = wallBilling(width, height, printSettings, WALLPRO_PRINT_WIDTH);
@@ -977,18 +1000,32 @@ export default function WallPro() {
           bar from eating the preview it sits above. The tagline is desktop
           only for the same reason. It bleeds to the screen edges with a
           blurred ground so content scrolling under it stays readable. */}
-      <header className="sticky top-0 z-30 -mx-4 border-b border-slate-200/80 bg-slate-50/90 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-slate-50/70 md:-mx-8 md:px-8 md:py-4">
-        <div className="mx-auto flex max-w-7xl flex-nowrap items-center justify-between gap-3">
+      <header
+        id="wallpro-header"
+        style={{ top: stickyTop }}
+        className="sticky z-30 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 md:-mx-8 md:px-8 md:py-4"
+      >
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+          {/* A PROPER HEADER, on both breakpoints (owner, 2026-09-12: "there is
+              no break under logo no tagline"). The eyebrow, the wordmark and
+              the tagline each get their own line, the way a product header
+              reads, rather than the one cramped row this was. The tagline is
+              what tells a first-time visitor what WallPro is, so it earns its
+              line on a phone too. */}
           <div className="min-w-0">
-            <p className="hidden text-xs font-semibold uppercase tracking-widest text-violet-600 md:block">DesignProAI</p>
-            <h1 className="truncate text-xl font-bold md:mt-1 md:text-3xl">Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span></h1>
-            <p className="mt-1 hidden text-sm text-slate-600 md:block">Your wall. Your design. Sized to fit.</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600 md:text-xs">DesignProAI</p>
+            <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
+              Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span>
+            </h1>
+            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Your wall. Your design. Sized to fit.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button variant="outline" size="icon" className="md:hidden" disabled={!!busy} aria-label="Start fresh" title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}><RotateCcw className="h-4 w-4" /></Button>
-            <Button variant="outline" size="icon" className="md:hidden" disabled={!!busy} aria-label="My wall designs" title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}><FolderOpen className="h-4 w-4" /></Button>
-            <Button variant="outline" className="hidden md:inline-flex" disabled={!!busy} onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }} title="Start a blank wall. Saved projects remain in My wall designs."><RotateCcw className="mr-2 h-4 w-4" />Start fresh</Button>
-            <Button variant="outline" className="hidden md:inline-flex" disabled={!!busy} onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}><FolderOpen className="mr-2 h-4 w-4" />My wall designs</Button>
+            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
+              <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
+            </Button>
+            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
+              <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
+            </Button>
           </div>
         </div>
       </header>
@@ -1057,7 +1094,10 @@ export default function WallPro() {
         <div className="min-w-0 space-y-5">
           {/* scroll-mt clears the sticky header: a finished design scrolls
               itself here, and without it the heading lands underneath. */}
-          <section id="wall-preview" className={panelClass + ' overflow-hidden scroll-mt-20 md:scroll-mt-32'}>
+          {/* Scroll margin clears BOTH sticky bars -- the site header, measured
+              into stickyTop, plus this page's own -- so the design a finished
+              generation scrolls itself to does not land underneath them. */}
+          <section id="wall-preview" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
             {/* Every WallPro design originates as a flat rectangle, and the client
                 sees both at once: the print master on the left and the same file
                 imposed on their photo on the right, the moment the corners exist.
