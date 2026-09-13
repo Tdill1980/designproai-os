@@ -3,8 +3,24 @@
 -- The point of these assertions is that the SHAPE is right before any customer
 -- data is scoped to it (Phase 1b). A tenancy bug found after real shops exist
 -- is a data migration; found here it is an edit.
+--
+-- NOTHING HERE COMPARES A `name`-TYPED STRING, DELIBERATELY. The first version
+-- of this file asserted with results_eq() against text[] literals, reading
+-- pg_class.relname and pg_proc.proname. Those columns are type `name`, whose
+-- collation is "C"; the expected arrays are text at the database default. Two
+-- IMPLICIT collations that disagree is the one case Postgres refuses to resolve
+-- -- "could not determine which collation to use for string comparison" -- and
+-- because the comparison happens inside pgTAP's own record-vs-record IF, it
+-- RAISES rather than failing an assertion, which aborts the whole file: 5 of 14
+-- tests ran and nine never reported at all.
+--
+-- An explicit COLLATE on the query column would settle it, but the better fix
+-- is that none of these questions is really about strings. "Is RLS on" is a
+-- boolean, "are all four helpers SECURITY DEFINER" is a boolean, and "do the
+-- four exist" is a count. Asked that way they say what they mean and the
+-- collation question never arises.
 BEGIN;
-SELECT plan(14);
+SELECT plan(17);
 
 -- ── the four tables and their RLS ───────────────────────────────────────────
 SELECT has_table('public','franchises','franchises exists');
@@ -12,11 +28,11 @@ SELECT has_table('public','shops','shops exists');
 SELECT has_table('public','shop_members','shop_members exists');
 SELECT has_table('public','franchise_admins','franchise_admins exists');
 
-SELECT results_eq(
-  $$ SELECT relname::text FROM pg_class
-      WHERE relname IN ('franchises','shops','shop_members','franchise_admins')
-        AND relrowsecurity IS FALSE $$,
-  ARRAY[]::text[],
+SELECT is(
+  (SELECT bool_and(relrowsecurity) FROM pg_class
+    WHERE oid IN ('public.franchises'::regclass, 'public.shops'::regclass,
+                  'public.shop_members'::regclass, 'public.franchise_admins'::regclass)),
+  true,
   'every tenant table has row security enabled'
 );
 
@@ -24,15 +40,21 @@ SELECT results_eq(
 -- SECURITY DEFINER is not decoration here: a policy runs with the querying
 -- user's privileges, so an inline EXISTS against shop_members from an
 -- `authenticated` session would fail and take the whole read down with it.
-SELECT results_eq(
-  $$ SELECT p.proname::text FROM pg_proc p
-       JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = 'public'
-        AND p.proname IN ('user_shop_ids','is_shop_member','is_shop_admin','is_franchise_admin')
-        AND p.prosecdef IS TRUE
-      ORDER BY 1 $$,
-  ARRAY['is_franchise_admin','is_shop_admin','is_shop_member','user_shop_ids'],
-  'all four tenancy helpers exist and are SECURITY DEFINER'
+SELECT is(
+  (SELECT count(DISTINCT p.proname)::int FROM pg_proc p
+     JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('user_shop_ids','is_shop_member','is_shop_admin','is_franchise_admin')),
+  4,
+  'all four tenancy helpers exist'
+);
+SELECT is(
+  (SELECT bool_and(p.prosecdef) FROM pg_proc p
+     JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('user_shop_ids','is_shop_member','is_shop_admin','is_franchise_admin')),
+  true,
+  'every tenancy helper is SECURITY DEFINER'
 );
 
 -- ── the branding columns the white-label header reads ───────────────────────
@@ -45,9 +67,12 @@ SELECT has_column('public','shops','slug','shop slug — the per-shop link key')
 SELECT has_column('public','shops','logo_url','shop logo for the header');
 
 -- ── seats ───────────────────────────────────────────────────────────────────
-SELECT results_eq(
-  $$ SELECT unnest(enum_range(NULL::public.shop_member_role))::text ORDER BY 1 $$,
-  ARRAY['admin','member','owner'],
+-- One aggregated string compared to one literal: a single collation source, so
+-- there is nothing to reconcile.
+SELECT is(
+  (SELECT string_agg(v::text, ',' ORDER BY v::text)
+     FROM unnest(enum_range(NULL::public.shop_member_role)) v),
+  'admin,member,owner',
   'seat roles are owner/admin/member'
 );
 
