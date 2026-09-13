@@ -1,4 +1,5 @@
 import { wallDesignPrompt, wallMatchRecoveryPrompt, wallConsultantPrompt, wallComplianceCheckPrompt, COVERING_DESCRIPTION_PROMPT, WALL_INTENTS, type WallIntent, type WallDesignContract } from './prompt.ts';
+import { classifyWallDomain, type DesignDomain } from './domain.ts';
 
 const BUCKET = 'wallpro-files';
 const MODEL = 'gemini-3-pro-image';
@@ -162,7 +163,18 @@ export function parseWallInput(body: any, owner: string) {
   if (intent === 'wall' && !wallPath) throw new Error('Upload your wall photo first.');
   if (intent === 'refine' && !sourcePath) throw new Error('There is no current design version to refine.');
   if (intent === 'refine' && !prompt.trim()) throw new Error('Describe what you want changed.');
-  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, repeatWidthIn, wallPath, referencePath, sourcePath, maskPath };
+  // Advisory-only domain hints (owner spec, 2026-09-13): a curator batch job
+  // may already know its library industry/room/style, and a curator may
+  // explicitly override the classifier. Never required, never overrides a
+  // word of the customer's own brief — see domain.ts's module header.
+  const shortStr = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim().slice(0, 120) : null;
+  const libraryIndustry = shortStr(body.libraryIndustry);
+  const libraryRoom = shortStr(body.libraryRoom);
+  const libraryStyle = shortStr(body.libraryStyle);
+  const designDomain: DesignDomain | null = body.designDomain === 'commercial' || body.designDomain === 'residential' ? body.designDomain : null;
+  const commercialSpaceType = shortStr(body.commercialSpaceType);
+  const residentialSpaceType = shortStr(body.residentialSpaceType);
+  return { requestId: body.requestId, intent, prompt: prompt.trim(), width: body.width, height: body.height, placement: body.placement, repeatWidthIn, wallPath, referencePath, sourcePath, maskPath, libraryIndustry, libraryRoom, libraryStyle, designDomain, commercialSpaceType, residentialSpaceType };
 }
 
 /** Pixel size of the returned image, read from the container headers (PNG
@@ -268,12 +280,24 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       // reference and a refine edits an existing version. Fails soft, so the
       // customer's own words go through unchanged if it cannot answer.
       let contract: WallDesignContract | null = null;
+      // Domain classification (owner spec, 2026-09-13): code-only, run once
+      // here so it is available for the consultant's contract, the response
+      // payload (curator visibility) and — via the merged contract below —
+      // the advisory compliance check. Never a second AI call; see
+      // domain.ts's module header.
+      const domainInfo = classifyWallDomain({ prompt: input.prompt, libraryIndustry: input.libraryIndustry, libraryRoom: input.libraryRoom, libraryStyle: input.libraryStyle, overrideDomain: input.designDomain, overrideCommercialSpaceType: input.commercialSpaceType, overrideResidentialSpaceType: input.residentialSpaceType });
       if (input.intent === 'prompt' || input.intent === 'wall') {
         const consulted = await enrichWallBrief(deps.fetch, key, input);
         if (consulted) {
-          contract = consulted.contract;
+          // Re-classify with the consultant's own businessContext folded in —
+          // it is often a stronger signal than the raw prompt alone (e.g. a
+          // brief that only names "the reception area" but whose enriched
+          // businessContext reads "corporate office lobby").
+          const resolved = domainInfo.source === 'library' || domainInfo.source === 'override' ? domainInfo
+            : classifyWallDomain({ prompt: input.prompt, businessContext: consulted.contract.businessContext, libraryIndustry: input.libraryIndustry, libraryRoom: input.libraryRoom, libraryStyle: input.libraryStyle, overrideDomain: input.designDomain, overrideCommercialSpaceType: input.commercialSpaceType, overrideResidentialSpaceType: input.residentialSpaceType });
+          contract = { ...consulted.contract, designDomain: resolved.designDomain, commercialSpaceType: resolved.commercialSpaceType, residentialSpaceType: resolved.residentialSpaceType, designStyle: resolved.designStyle };
           parts[0].text = wallDesignPrompt({ ...input, contract });
-          console.log(JSON.stringify({ event: 'wall_brief_enriched', request_id: input.requestId, intent: input.intent, required_subjects: contract.requiredSubjects, required_colors: contract.requiredColors, business_context: contract.businessContext, prompt_chars: parts[0].text.length }));
+          console.log(JSON.stringify({ event: 'wall_brief_enriched', request_id: input.requestId, intent: input.intent, required_subjects: contract.requiredSubjects, required_colors: contract.requiredColors, business_context: contract.businessContext, design_domain: contract.designDomain, commercial_space_type: contract.commercialSpaceType, residential_space_type: contract.residentialSpaceType, design_style: contract.designStyle, domain_source: resolved.source, prompt_chars: parts[0].text.length }));
         }
       }
       const draw = async (text: string, images: any[] = parts.slice(1)) => {
@@ -353,7 +377,13 @@ export function createWallHandler(deps: { createClient: (...args: any[]) => any;
       const settled = await signedResult(finish.data);
       if (settled.status !== 200) return settled;
       const payload = await settled.json();
-      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement, recovered_from: recoveredFrom, compliance_check: complianceCheck });
+      // Curator/customer-visible domain classification (owner spec,
+      // 2026-09-13). Additive only — every existing consumer reads the
+      // fields it already knows about and ignores these.
+      const domain = contract?.designDomain ? contract : domainInfo;
+      return response({ ...payload, model: MODEL, requested_image_size: '4K', aspect_ratio: aspectRatio, width: dims?.width ?? null, height: dims?.height ?? null, production_ppi: PRODUCTION_PPI, required_enlargement: enlargement, recovered_from: recoveredFrom, compliance_check: complianceCheck,
+        design_domain: domain.designDomain, commercial_space_type: (domain as any).commercialSpaceType ?? null, residential_space_type: (domain as any).residentialSpaceType ?? null, design_style: (domain as any).designStyle ?? null,
+        design_contract: contract });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError','AbortError'].includes(err.name) ? 'The design service timed out. No automatic retry was sent.' : err instanceof Error ? err.message : 'Wall design generation failed.';
       if (reserved) {
