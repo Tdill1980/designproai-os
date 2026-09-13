@@ -26,6 +26,7 @@
  * `printpro` mirror but no longer surface as standalone dropdowns.
  */
 import { FILM_COST_PER_YARD, WALL_FILM } from "@/lib/quick-quote";
+import { WPW_WALL_FILM_RATE_PER_SQFT } from "@/lib/wallpro-pricing";
 
 export type QuoteCategory =
   | "avery"
@@ -50,6 +51,16 @@ export interface QuoteProduct {
   /** WePrintWraps WooCommerce product id when this mirrors a WPW SKU */
   wooProductId?: number;
   wooProductUrl?: string;
+  /**
+   * The in-app design tool that produces the print file for this product.
+   *
+   * Owner, 2026-09-13: "wpw already has a wall product just wire it to the
+   * wallpro design page." The wall wrap below is the existing WePrintWraps SKU;
+   * what it lacked was any route from "I want a wall wrap" to the tool that
+   * designs one. A product with a designRoute can offer that path instead of
+   * ending at a price.
+   */
+  designRoute?: string;
   /**
    * When true, the product stays in the catalog (so findProductById and
    * already-saved quotes keep resolving it) but is filtered out of the
@@ -97,7 +108,7 @@ export const QUOTE_CATEGORIES: QuoteCategoryMeta[] = [
     label: "WallPro — Wall Wrap Printing",
     short: "WallPro",
     description:
-      "Avery HP MPI 2610 wall film — $3.25/lf, 54\" panels, install-ready",
+      "Avery HP MPI 2610 wall film — $3.50/sq ft, 54\" panels, install-ready",
   },
   {
     id: "services",
@@ -525,20 +536,32 @@ export const PRINTPRO_PRODUCTS: QuoteProduct[] = [
   },
 ];
 
-// ── WallPro (Avery HP MPI 2610, 54" panels, per linear foot) ───────
+// ── WallPro (Avery HP MPI 2610, 54" panels, per SQUARE FOOT) ───────
 // Mirrors https://weprintwraps.com/our-products/wall-wrap-printed-vinyl/.
-// Renamed from "Wall Wrap Printing" to "WallPro" because the in-app
-// page also offers prompt-based wall design generation.
+//
+// PRICED BY THE SQUARE FOOT, AT THE LAUNCH RATE. Owner, 2026-09-13: "all
+// printed wrap is priced by the sq ft only", at $3.50/sq ft. This entry read
+// $3.25 per LINEAR FOOT of 54" roll, which is neither the unit nor the number:
+// a linear foot of roll is 4.5 sq ft, so it was quoting about $0.72/sq ft --
+// the material cost, sold as if it were the price. WALL_FILM.pricePerLinearFoot
+// is left alone deliberately; it is the shop's own material-cost figure and
+// quick-quote's estimator still uses it as exactly that.
+//
+// AND IT NOW LEADS SOMEWHERE. Owner, same message: "wpw already has a wall
+// product just wire it to the wallpro design page." Printing is only half the
+// job -- the customer still has to have artwork -- so the product carries the
+// route to the tool that makes it.
 export const WALLPRO_PRODUCTS: QuoteProduct[] = [
   {
     id: "wallpro-avery-2610",
     name: "WallPro — Avery HP MPI 2610 Wall Wrap",
     subName: `${WALL_FILM.finish} · ${WALL_FILM.panelWidthInches}" panels · matte/luster`,
     category: "wallpro",
-    price: WALL_FILM.pricePerLinearFoot, // $3.25 / linear foot
-    unit: "linear_foot",
+    price: WPW_WALL_FILM_RATE_PER_SQFT, // $3.50 / sq ft
+    unit: "sqft",
     wooProductUrl:
       "https://weprintwraps.com/our-products/wall-wrap-printed-vinyl/",
+    designRoute: "/printpro/wallpro",
   },
 ];
 

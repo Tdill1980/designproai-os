@@ -18,8 +18,29 @@ on:
 permissions:
   contents: read
 
+# THE EVENT IS PART OF THE KEY, AND THAT IS THE WHOLE FIX.
+#
+# This group used to be `designpro-release-<pr number or ref>`. On main both a
+# PUSH (the merge's own gate) and a WORKFLOW_DISPATCH (the protected production
+# migration) have no pull_request.number, so both resolved to
+# `designpro-release-refs/heads/main` -- one group, cancel-in-progress, so
+# whichever entered second killed the first. Two runs that share nothing but a
+# branch name, wired together by accident.
+#
+# It has cost a release twice, in opposite directions (2026-08-26): dispatching
+# right after a merge cancelled the push gate, which left deploy-production.yml
+# selecting `event=push&status=success` artifacts and asserting exactly one --
+# it found zero. An hour later the push gate cancelled the dispatch instead, so
+# the migration never ran. Both times the shipped artifact looked fine and the
+# pipeline had silently dropped a step.
+#
+# Adding the event name separates them. Every cancellation that was ever wanted
+# still happens -- a new PR push still supersedes its own older run, a newer
+# merge still supersedes an older merge -- because those share an event name
+# too. The only pair that can no longer cancel each other is the pair that
+# never should have: a merge gate and a deliberate operator dispatch.
 concurrency:
-  group: designpro-release-${{ github.event.pull_request.number || github.ref }}
+  group: designpro-release-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:

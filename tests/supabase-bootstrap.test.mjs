@@ -12,8 +12,8 @@ const migrations = await Promise.all(
 );
 const sql = migrations.join('\n');
 
-test('fresh bootstrap contains one ordered one-hundred-nine-migration chain', () => {
-  assert.equal(migrationNames.length, 109);
+test('fresh bootstrap contains one ordered one-hundred-ten-migration chain', () => {
+  assert.equal(migrationNames.length, 110);
   assert.deepEqual(
     migrationNames.map((name) => name.slice(0, 14)),
     [
@@ -93,6 +93,7 @@ test('fresh bootstrap contains one ordered one-hundred-nine-migration chain', ()
       '20260910070849', '20260911120000', '20260911150000', '20260911170000',
       '20260911190000', '20260911200000', '20260911210000', '20260912120000', '20260912130000',
       '20260912220000', '20260912230000', '20260912240000',
+      '20260913000000',
     ],
   );
 });

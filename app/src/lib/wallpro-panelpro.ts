@@ -30,6 +30,10 @@
 import type { WallGenerationRow, WallQcReview, WallReleaseState } from './wallpro-qc';
 import { generationOutcome, releaseState, type WallGenerationOutcome } from './wallpro-qc';
 import type { WallProductionJob, WallVersion } from './wallpro-api';
+import { WALLPRO_PRINT_WIDTH as WALLPRO_ROLL_IN } from './wallpro-geometry';
+import type {
+  PanelizerPiece, PanelizerPieceState, PanelizerRun, PanelizerStage, PanelizerStageState,
+} from './panelizer-progress';
 
 /** The DesignID a wall version is filed under, in the DID-XXXXXXXX form the
  * vehicle studio uses. Re-exported here so the studio has one import. */
@@ -461,5 +465,83 @@ export function deliveryMessage(job: WallProductionJob | null, now: number = Dat
   return {
     title: 'Released by our production team',
     detail: 'Checked by a person, not just generated. Your print-ready files are ready to download.',
+  };
+}
+
+/* ── GENIE Universal Panelizer: WallPro's run ───────────────────────────── */
+
+/**
+ * WallPro's panelizer run, for the shared progress surface.
+ *
+ * Owner, 2026-09-13: "the custom Wallpro genie universal panelizer progress
+ * page gives 24 hours for our design team to qc and prep files for print".
+ *
+ * So the human check is a STAGE here, sitting between the machine finishing and
+ * the customer receiving — the same fact the storage gate enforces
+ * (20260912240000), said out loud where the buyer can see it. It is the answer
+ * to "why does this cost more than a $0 AI visualiser".
+ *
+ * A panel glows when its FILE exists, never when a step merely ran.
+ */
+export function wallPanelizerRun(
+  record: WallStudioVersionRecord,
+  projectName: string,
+  now: number = Date.now(),
+): PanelizerRun {
+  const job = record.job;
+  const state = deliveryState(job);
+  const message = deliveryMessage(job, now);
+  const map = panelMap(job);
+  const planned = Number(job?.progress?.panelsTotal) || map?.entries.length || 0;
+  const built = job?.panels?.length || 0;
+
+  // One piece per panel the press receives. Before any exist we still show the
+  // planned count so the customer knows how big their job is.
+  const pieces: PanelizerPiece[] = (job?.panels || []).map(panel => ({
+    id: 'panel-' + panel.number,
+    label: `Panel ${panel.number}`,
+    detail: `${Number(panel.widthIn)}″ × ${Number(panel.heightIn)}″ · ${panel.ppi} PPI`,
+    state: (state === 'failed' ? 'failed' : 'done') as PanelizerPieceState,
+  }));
+  for (let n = built + 1; n <= planned; n += 1) {
+    pieces.push({
+      id: 'panel-' + n,
+      label: `Panel ${n}`,
+      state: (n === built + 1 && state === 'building' ? 'active' : 'pending') as PanelizerPieceState,
+    });
+  }
+
+  const approved = record.version.status === 'approved';
+  const stage = (
+    key: string, label: string, explanation: string, s: PanelizerStageState,
+  ): PanelizerStage => ({ key, label, explanation, state: s });
+
+  return {
+    product: 'wallpro',
+    title: projectName,
+    reference: record.designId,
+    stages: [
+      stage('design', 'Your design', 'The wall design you approved. Every file below is cut from it and nothing else.',
+        approved ? 'complete' : 'waiting'),
+      stage('panelize', 'Panelised to the roll',
+        `Split into ${planned || 'the'} panel${planned === 1 ? '' : 's'} at the ${map?.panelWidthIn || WALLPRO_ROLL_IN}″ roll width, with ${map?.overlapIn ?? 0.5}″ of duplicated artwork at every seam.`,
+        state === 'not-requested' ? 'pending' : state === 'building' ? 'running' : state === 'failed' ? 'failed' : 'complete'),
+      stage('resolution', `Enhanced to ${WALL_TARGET_PPI} PPI`,
+        'Each panel is brought to print resolution individually, so a big wall stays sharp at arm’s length.',
+        state === 'building' ? 'running' : state === 'failed' ? 'failed' : state === 'not-requested' ? 'pending' : 'complete'),
+      // THE ONE THAT SELLS IT.
+      stage('human', `Checked by our production team`,
+        'A person measures every panel against your wall, checks the seams and the print resolution, and fixes anything wrong before it reaches you. We do not hand over unchecked files.',
+        state === 'validating' ? 'waiting' : state === 'released' ? 'complete' : 'pending'),
+      stage('release', 'Print-ready files released',
+        'Your files, cleared for the press.',
+        state === 'released' ? 'complete' : 'pending'),
+    ],
+    pieces,
+    outcome: state === 'failed' ? 'failed'
+      : state === 'released' ? 'ready'
+        : state === 'validating' ? 'validating' : 'building',
+    headline: message?.title ?? 'Approve your design to start the panel build',
+    detail: message?.detail ?? 'Panels are cut from the approved version only.',
   };
 }

@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-92), [
+  assert.deepEqual(names.slice(-93), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -288,6 +288,9 @@ test("ordered migration chain retains existing production boundaries and appends
     // WallPro panels do not reach a customer until a human has validated them
     // (owner, 2026-09-12: "we can't risk going 100% ai").
     "20260912240000_wallpro_human_release_gate.sql",
+    // Multi-tenant phase 1, ported from restylepro-os: the franchise/shop spine
+    // the white-label WallPro link and the vehicle suite both sit on.
+    "20260913000000_designpro_multi_tenant_phase1.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
