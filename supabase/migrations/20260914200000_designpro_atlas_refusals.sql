@@ -36,6 +36,19 @@ CREATE INDEX IF NOT EXISTS designpro_atlas_refusals_storage_path_idx
 ALTER TABLE public.designpro_atlas_refusals ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.designpro_atlas_refusals FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT ON public.designpro_atlas_refusals TO service_role;
+-- The storage policy below runs its EXISTS as the calling role, so
+-- authenticated needs table-level SELECT (exactly as
+-- designpro_flat_atlas_revisions grants it); the row policy keeps that read
+-- to the owner's own refusals or design staff. Without the grant EVERY
+-- storage.objects read by an authenticated user fails with "permission
+-- denied for table designpro_atlas_refusals" (shadow run, 2026-09-14).
+GRANT SELECT ON public.designpro_atlas_refusals TO authenticated;
+DROP POLICY IF EXISTS designpro_atlas_refusals_owner_read ON public.designpro_atlas_refusals;
+CREATE POLICY designpro_atlas_refusals_owner_read
+  ON public.designpro_atlas_refusals
+  FOR SELECT
+  TO authenticated
+  USING (owner_id=(SELECT auth.uid()) OR designpro_private.caller_is_design_staff());
 
 COMMENT ON TABLE public.designpro_atlas_refusals IS
   'One row per Call-1 A.T.L.A.S. candidate the master gates refused: which request, which topology and attempt, why, and the exact raw bytes in Storage. Written by the runtime, read by the owner through designpro_atlas_refusal_paths.';
