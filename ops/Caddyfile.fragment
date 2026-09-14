@@ -57,6 +57,65 @@ www.designproai.com {
   }
 }
 
+# WALLPRO, SERVED UNDER THE PARTNER'S OWN BRAND.
+#
+# Owner, 2026-09-14: the WePrintWraps jumbo menu's "Wall Wrap" and "WallWrap
+# Design" entries must not bounce a customer onto a visibly different domain
+# mid-funnel. WePrintWraps already runs tools this way (quote.weprintwraps.com),
+# so WallPro follows that pattern instead of an iframe -- which the owner ruled
+# out on 2026-09-13: "I don't want embeds on wallpro / That's a generic way to
+# do it and is not good ui."
+#
+# It serves the SAME immutable web artifact as os.designproai.com. There is no
+# second build, no second deploy and no divergence: the app decides what the
+# ROOT of this host renders (isWallProPartnerHost -> the Wall Wrap page), so
+# every other route still resolves and /printpro/wallpro is still the designer.
+#
+# ⚠️ DNS MUST EXIST BEFORE THIS DEPLOYS. Caddy provisions a Let's Encrypt
+# certificate per host on first request, which requires
+# wallpro.weprintwraps.com to already resolve to this droplet. Deploying this
+# block against absent DNS leaves Caddy retrying ACME for a host that cannot be
+# validated -- the other sites stay up, but the partner host will not serve.
+# Create the CNAME first, then deploy.
+#
+# No /api, no /worker and no /designpro-worker here on purpose. This host is a
+# customer-facing selling surface; the gateway and worker paths belong to the
+# operating host, and a partner brand is exactly where an accidentally exposed
+# internal path would be least expected and most costly.
+wallpro.weprintwraps.com {
+  encode zstd gzip
+
+  handle {
+    root * /opt/designproai-os/public/web/dist
+    try_files {path} /index.html
+    @immutable path /assets/*
+    header @immutable Cache-Control "public, max-age=31536000, immutable"
+    @mutable not path /assets/*
+    header @mutable Cache-Control "no-cache, must-revalidate"
+    file_server
+  }
+
+  header {
+    -Server
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    # SAMEORIGIN rather than DENY: this is the one host a partner may
+    # legitimately want to frame from their own site later. It still refuses
+    # framing by anyone else.
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
+
+  log {
+    output file /var/log/caddy/wallpro-partner-access.log {
+      roll_size 25MiB
+      roll_keep 10
+      roll_keep_for 336h
+    }
+  }
+}
+
 os.designproai.com {
   encode zstd gzip
 
