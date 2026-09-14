@@ -1347,15 +1347,29 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               production facts rather than as the billing basis.
               The design line is the entry path they actually took, at its launch
               price, so what they are paying for is named rather than implied. */}
+          {/* ONE PRICE, IN ONE PLACE. This block used to list the design AND
+              the film and then a combined Total -- while the printing card
+              further down quoted the film again on its own. A customer
+              scrolling past both read $480.35, then $331.35, and could not
+              tell which one they were paying. Two totals on a purchase page is
+              a lost order, not a cosmetic nit.
+              So on the partner page this block is the DESIGN purchase only,
+              and the printing card below owns the film price and its button.
+              Each number appears once, next to the thing that buys it. On the
+              DesignProAI route there is no printing card, so the full quote
+              stays as it was. */}
           {quote && <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-            {quote.lines.map(line => <p key={line.label} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 last:border-0">
-              <span><strong className="text-slate-900">{line.label}</strong> — {line.detail}</span>
-              <span className="shrink-0 font-semibold text-slate-900">{formatMoney(line.cents)}</span>
-            </p>)}
+            {quote.lines
+              .filter(line => !(theme.showPrintOffer && line.label === 'Wall wrap film, printed'))
+              .map(line => <p key={line.label} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 last:border-0">
+                <span><strong className="text-slate-900">{line.label}</strong> — {line.detail}</span>
+                <span className="shrink-0 font-semibold text-slate-900">{formatMoney(line.cents)}</span>
+              </p>)}
             <p className="mt-1 flex items-baseline justify-between gap-3 border-t border-slate-300 pt-1">
-              <span className="font-semibold text-slate-900">Total</span>
-              <span className="text-sm font-bold text-slate-900">{formatMoney(quote.totalCents)}</span>
+              <span className="font-semibold text-slate-900">{theme.showPrintOffer ? 'Design + print-ready files' : 'Total'}</span>
+              <span className="text-sm font-bold text-slate-900">{formatMoney(theme.showPrintOffer ? quote.totalCents - (quote.lines.find(l => l.label === 'Wall wrap film, printed')?.cents ?? 0) : quote.totalCents)}</span>
             </p>
+            {theme.showPrintOffer && <p className="mt-1 text-[11px] text-slate-500">Printing is priced separately below — it is optional, and the files are yours either way.</p>}
             {billing && <p className="mt-1 text-[11px] text-slate-500">
               Printed as {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long on the {billing.billedWidthIn}″ roll ({billing.linearFeet} linear ft), Avery HP MPI 2610 wall vinyl, matte/luster. Half-inch overlap at every seam.
             </p>}
