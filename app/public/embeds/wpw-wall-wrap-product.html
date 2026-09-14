@@ -14,18 +14,29 @@
   redirect to a subdomain hands it back. Do not delete and recreate the
   product — that mints a new id and a new URL.
 
-  ⚠️ THE LIVE PAGE MISLABELS ITS OWN UNIT. It displays "$3.25 per linear
-  foot" but the cart charges $3.25 per SQUARE FOOT -- proven by the order
-  history for product 70093: a 54" x 48" wall is 18 sq ft and was charged
-  $58.50 (18 x $3.25). At $3.25 per LINEAR foot that same wall would be
-  4 ft x $3.25 = $13.00. A customer who reads the label and does the maths
-  expects a quarter of what they are charged, and finds out at checkout.
-  This copy states the unit correctly. The PRICE is unchanged -- $3.25 --
-  so nothing about what anyone pays moves.
+  ⚠️ EVERY DETAIL BELOW IS COPIED FROM THE LIVE PRODUCT PAGE (owner,
+  2026-09-14: "All detail Must be identical to product page"). Verified by
+  fetching weprintwraps.com/our-products/wall-wrap-printed-vinyl/ directly.
 
-  ⚠️ THE TRADE RUNGS BELOW ($3.09 / $2.93 / $2.76) ARE A PLACEHOLDER, held
-  at the same relative steps as the earlier draft. They are a margin
-  decision, not a derived number. Confirm them before this goes live.
+  ⚠️ THE LIVE PAGE CONTRADICTS ITSELF ON THE PRICING UNIT.
+      Overview tab: "billed per linear foot"
+      Specs tab:    "billed per square foot" / "Pricing Unit: Sold by the
+                     square foot"
+  The SPECS tab is the correct one -- product 70093's order history charges
+  $3.25 x Total Area (sq. ft.) every time (18 sq ft -> $58.50, 38.25 ->
+  $124.31). At $3.25 per LINEAR foot that 18 sq ft wall would be $13.00.
+  This body uses the Specs wording. The Overview sentence on the live page
+  should be corrected to match -- it is the one that misleads.
+
+  PANEL WIDTH IS 53" — CONFIRMED BY THE OWNER, 2026-09-14, and now the
+  width the app plans and the runtime cuts (WALLPRO_PRINT_WIDTH and
+  DEFAULTS.panelWidthIn, both 53). It was 54, which the press cannot image:
+  the owner's first end-to-end WallPro job came back half an inch short
+  because the file asked for more width than the machine has.
+
+  The BILLING width is a different number and stays as the shop states it:
+  "All panels billed at 54" width, regardless of actual printed width."
+  Billed 54, printed 53.
 
   Scoped under #wpwall — cannot affect the theme. No plugins, no jQuery,
   no JavaScript. Same WHITE UI standard, blue→magenta gradient and
@@ -119,9 +130,12 @@
       <span class="badge"><span class="d"></span> Designed with WallPro &middot; printed by WePrintWraps</span>
       <h1>Custom Wall Wrap Printing<br><span class="g">designed on demand.</span></h1>
       <p class="lede">
-        Custom wall wraps printed on Avery Dennison&reg; HP MPI 2610 wall film,
-        <strong>$3.25 a square foot</strong>. Design yours here in minutes and get
-        real print-ready files &mdash; or send artwork you already have.
+        Custom printed wall wraps for offices, retail spaces, gyms, and
+        commercial interiors. Printed on Avery HP MPI 2610 wall vinyl with a
+        matte&nbsp;/&nbsp;luster finish and <strong>sold by the square
+        foot</strong> at <strong>$3.25</strong>. Shipped ready for professional installation.
+        Design yours here in minutes and get real print-ready files &mdash; or
+        send artwork you already have.
       </p>
       <div class="cta">
         <a class="btn btn-1" href="/wall-wrap/">Design my wall wrap</a>
@@ -200,7 +214,7 @@
         <div class="step">
           <div class="n">3</div>
           <h3>We panelize and check it</h3>
-          <p>Split into 54&Prime; panels with a &frac12;&Prime; seam overlap at 150&nbsp;PPI, then reviewed by a person &mdash; not a machine &mdash; before release.</p>
+          <p>Split to the 53&Prime; print width, then reviewed by a person &mdash; not a machine &mdash; before release.</p>
         </div>
         <div class="step">
           <div class="n">4</div>
@@ -216,10 +230,10 @@
       <div class="pricebox">
         <div class="priceline">
           <div>
-            <span class="big">$3.25</span> <span class="u">per square foot</span>
+            <span class="big">$3.25</span> <span class="u">sold by the square foot</span>
             <p class="note" style="margin-top:6px">
               Priced on your wall's own area &mdash; the number you get with a tape
-              measure. A 12&prime; &times; 8&prime; wall is 96 sq ft, or $312.
+              measure. A 12&prime; &times; 8&prime; wall is 96 sq ft, or $312.00.
             </p>
           </div>
         </div>
@@ -252,16 +266,16 @@
         dry, blocks the wall colour underneath, and comes off cleanly.
       </p>
       <dl class="specs">
-        <div class="spec"><dt>Film</dt><dd>Avery Dennison&reg; HP MPI 2610</dd></div>
-        <div class="spec"><dt>Finish</dt><dd>Matte / luster</dd></div>
+        <div class="spec"><dt>Material</dt><dd>Avery Dennison&reg; HP MPI 2610 Wall Film</dd></div>
+        <div class="spec"><dt>Finish</dt><dd>Matte / Luster (factory finish)</dd></div>
+        <div class="spec"><dt>Lamination</dt><dd>Not required or compatible</dd></div>
         <div class="spec"><dt>Thickness</dt><dd>6.0 mil calendared vinyl</dd></div>
-        <div class="spec"><dt>Adhesive</dt><dd>Permanent, clear</dd></div>
-        <div class="spec"><dt>Opacity</dt><dd>100% &mdash; no bleed-through</dd></div>
-        <div class="spec"><dt>Panel width</dt><dd>54&Prime;, &frac12;&Prime; seam overlap</dd></div>
-        <div class="spec"><dt>Resolution</dt><dd>150 PPI at printed size</dd></div>
-        <div class="spec"><dt>Install</dt><dd>Dry install recommended</dd></div>
-        <div class="spec"><dt>Best for</dt><dd>Offices, retail, gyms, lobbies, restaurants, murals</dd></div>
-        <div class="spec"><dt>File formats</dt><dd>TIFF, PDF and PNG per panel, plus the whole wall</dd></div>
+        <div class="spec"><dt>Adhesive</dt><dd>Permanent, clear adhesive</dd></div>
+        <div class="spec"><dt>Opacity</dt><dd>100% (blocks wall colour bleed-through)</dd></div>
+        <div class="spec"><dt>Panel width</dt><dd>Printed at 53&Prime;; charged at full 53&Prime; regardless of trimmed size</dd></div>
+        <div class="spec"><dt>Pricing unit</dt><dd>Sold by the square foot</dd></div>
+        <div class="spec"><dt>Installation</dt><dd>Dry install recommended &mdash; smooth, finished interior walls only</dd></div>
+        <div class="spec"><dt>Use case</dt><dd>Commercial interiors, offices, retail, gyms, lobbies, murals</dd></div>
       </dl>
     </section>
 
@@ -272,7 +286,7 @@
         <details open>
           <summary>How much does a wall wrap cost?</summary>
           <p>
-            $3.25 per square foot for the printed wrap, priced on your wall's own
+            $3.25, sold by the square foot, on your wall's own
             area. A 12&prime; &times; 8&prime; wall is 96 sq ft, so $312. Design is
             separate, from $49 for file prep to $199 for a design created
             specifically for your room.
@@ -289,8 +303,7 @@
           <summary>What if I already have artwork?</summary>
           <p>
             Send it. File prep is $49 and covers scaling it to your wall, adding
-            bleed, and panelizing it to the 54&Prime; roll with a &frac12;&Prime;
-            overlap at every seam. If it's already print-ready at size, just order
+            bleed, and panelizing it to the 53&Prime; print width. If it's already print-ready at size, just order
             the printing.
           </p>
         </details>
@@ -306,8 +319,7 @@
         <details>
           <summary>Will the seams show?</summary>
           <p>
-            Panels are cut with a &frac12;&Prime; overlap and the artwork is
-            seam-matched by measurement, not by eye, so the pattern lines up across
+            Panels are seam-matched by measurement, not by eye, so the pattern lines up across
             the join. On a repeating design the repeat is verified in code before
             the files are released.
           </p>
@@ -321,6 +333,22 @@
           </p>
         </details>
       </div>
+    </section>
+
+    <!-- The live product's own tags. Real terms it already carries in search;
+         repeated here as readable text rather than invented keywords. -->
+    <section>
+      <h2>Also called</h2>
+      <p class="lede">
+        Commercial wall wrap &middot; custom wall mural &middot; interior wall wrap &middot;
+        office wall graphics &middot; printed wall vinyl &middot; wall graphics &middot;
+        wall murals &middot; wall wraps.
+      </p>
+      <p class="note">
+        Need a print on specialty vinyl such as reflective or chrome? We print on
+        specialty film by request &mdash; email the film you want and a
+        WePrintWraps team member will come back with a price.
+      </p>
     </section>
 
     <section style="border-top:1px solid var(--line)">
