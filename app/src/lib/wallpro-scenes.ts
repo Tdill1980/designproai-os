@@ -44,9 +44,12 @@ export function sceneUpsertRow(draft: WallSceneDraft) {
  * covers the wall. Identical to what the customer page builds for their own
  * photo, so the mockup shows exactly what they would get.
  */
-export function sceneLayoutFor(design: Pick<WallCatalogRow, 'mode' | 'tile_width_in'>, scene: Pick<WallCatalogScene, 'wall_width_in' | 'wall_height_in'>, fallbackTileIn: number): WallLayout {
+export function sceneLayoutFor(design: Pick<WallCatalogRow, 'mode' | 'tile_width_in'> & { seam?: { method: string } | null }, scene: Pick<WallCatalogScene, 'wall_width_in' | 'wall_height_in'>, fallbackTileIn: number): WallLayout {
   const repeatWidth = design.mode === 'repeat' ? design.tile_width_in ?? fallbackTileIn : scene.wall_width_in;
-  return { width: scene.wall_width_in, height: scene.wall_height_in, mode: design.mode === 'repeat' ? 'repeat' : 'cover', repeatWidth };
+  // A tile published as a mirror repeat prints mirrored (the print export
+  // refuses any other layout for it), so the mockup must tile it the same
+  // way or it shows seams the wall will never have.
+  return { width: scene.wall_width_in, height: scene.wall_height_in, mode: design.mode === 'repeat' ? 'repeat' : 'cover', repeatWidth, mirror: design.mode === 'repeat' && design.seam?.method === 'mirror' };
 }
 
 const feet = (inches: number) => {

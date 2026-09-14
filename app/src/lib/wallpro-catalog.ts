@@ -6,7 +6,7 @@
 //   GenerationID  the wallpro_generations row whose master was approved.
 //   SynthID       Google's pixel provenance; expected on every master, never a key.
 // Rules: docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md
-import type { SeamlessReceipt } from './wallpro-seamless';
+import { seamlessReceipt, type SeamlessReceipt, type SeamReport } from './wallpro-seamless';
 // The professional design-domain classifier is the SAME module the edge
 // function uses to pick Persona 2 (supabase/functions/generate-wall-design/
 // domain.ts) — one classifier, not a second copy that can drift. It is a
@@ -288,6 +288,22 @@ export function batchCreativeBrief(entry: Pick<WallPromptEntry, 'prompt' | 'desi
     PHOTOREAL_TYPES.has(entry.designType) ? '' : FLAT_PRINT_CONTRACT,
     `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, print-made character, nothing generic or clip-art.`,
   ].filter(Boolean).join(' ');
+}
+
+/**
+ * The batch seam ladder (owner, 2026-09-14: "Seamless", and the standing
+ * contract "seamless is measured and closed by code, never by re-asking the
+ * model"). A tile that measures seamless publishes as generated. One that
+ * does not is closed by BLEND first — the deterministic crossfaded outer
+ * frame keeps every motif upright — and by MIRROR only when the blend still
+ * does not measure clean. Mirror flips alternate tiles, which is invisible on
+ * abstract texture and plainly wrong on cranes, leaves or lettering; it used
+ * to be the only fallback.
+ */
+export function batchSeamDecision(before: SeamReport, blendedAfter: SeamReport | null): SeamlessReceipt {
+  if (before.seamless) return seamlessReceipt('auto', before, null, 'verified');
+  if (blendedAfter?.seamless) return seamlessReceipt('auto', before, blendedAfter, 'blend');
+  return seamlessReceipt('auto', before, null, 'mirror');
 }
 
 /** Effective print resolution of a catalog master at its default placement:

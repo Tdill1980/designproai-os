@@ -155,11 +155,19 @@ export async function getWallGeneration(requestId: string) {
 /** Copies the curator's generated master into catalog/ so every customer can
  * open it, uploads the storefront thumbnail beside it, then upserts the design
  * row keyed by its permanent DesignID. */
-export async function publishWallDesign(sourcePath: string, thumb: Blob | null, row: ReturnType<typeof designUpsertRow>): Promise<WallCatalogRow> {
+export async function publishWallDesign(source: string | Blob, thumb: Blob | null, row: ReturnType<typeof designUpsertRow>): Promise<WallCatalogRow> {
   // Storage objects are immutable for users, so a failed publish leaves its
   // catalog copy behind; the row is the authority and it is only written last.
-  const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(sourcePath, row.master_path);
-  if (copyError) throw new Error('The master could not be copied into the catalog: ' + copyError.message);
+  // The source is the generated master's storage path, or — for a repeat the
+  // seam ladder closed by blend — the blended pixels themselves, since those
+  // are what is sold and what the row's hash names.
+  if (typeof source === 'string') {
+    const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(source, row.master_path);
+    if (copyError) throw new Error('The master could not be copied into the catalog: ' + copyError.message);
+  } else {
+    const { error: uploadError } = await supabase.storage.from(WALLPRO_BUCKET).upload(row.master_path, source, { contentType: source.type, upsert: false });
+    if (uploadError) throw new Error('The blended master could not be saved into the catalog: ' + uploadError.message);
+  }
   if (thumb && row.thumb_path) {
     const { error: thumbError } = await supabase.storage.from(WALLPRO_BUCKET).upload(row.thumb_path, thumb, { contentType: 'image/jpeg', upsert: false });
     if (thumbError) throw new Error('The thumbnail could not be saved: ' + thumbError.message);

@@ -14,8 +14,8 @@ import { validateWallUpload, prepareWallUpload, loadWallImage, canvasBlob, rende
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { sceneUpsertRow, sceneLayoutFor, mockupCaption, DEFAULT_SCENE_WALL_IN, FULL_FRAME_CORNERS, type WallCatalogScene } from '@/lib/wallpro-scenes';
 import type { Point } from '@/lib/wallpro-geometry';
-import { measureSeam, seamlessReceipt, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import { measureSeam, blendSeamless, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, batchSeamDecision, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
 import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
 
 const LIBRARY = library as WallPromptEntry[];
@@ -36,6 +36,8 @@ type Job = {
   requestId: string | null; imageUrl: string | null; storagePath: string | null; widthPx: number; heightPx: number;
   seam: SeamlessReceipt | null; error: string | null; ms: number | null; rating: number | null; tileWidthIn: number; published: WallCatalogRow | null;
   contract: WallDesignContract | null; complianceCheck: Record<string, unknown> | null;
+  /** The seam-closed tile when the ladder chose blend: these bytes are what publishes. */
+  blendedMaster: Blob | null;
 };
 
 function Stars({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
@@ -52,6 +54,22 @@ async function measureAsset(url: string) {
   const report = measureSeam(ctx.getImageData(0, 0, tile.width, tile.height).data, tile.width, tile.height);
   tile.width = 1; tile.height = 1;
   return { report, widthPx: image.naturalWidth, heightPx: image.naturalHeight, image };
+}
+/** Closes a tile's seams by the deterministic blend and measures the result;
+ * the caller decides whether the closed tile is good enough to publish. */
+async function blendTile(url: string) {
+  const image = await loadWallImage(url);
+  const c = document.createElement('canvas');
+  c.width = image.naturalWidth; c.height = image.naturalHeight;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('This browser could not read the generated image.');
+  ctx.drawImage(image, 0, 0);
+  const closed = blendSeamless(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+  const after = measureSeam(closed, c.width, c.height);
+  ctx.putImageData(new ImageData(closed, c.width, c.height), 0, 0);
+  const blob = await canvasBlob(c);
+  c.width = 1; c.height = 1;
+  return { after, blob };
 }
 /** The mockup as a listing image: the composite with its true-size caption
  * burned into a bar along the bottom, so the number travels with the picture
@@ -149,7 +167,7 @@ export default function AdminWallProBatch() {
     const id = 'wallbatch_' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     setBatchId(id); stop.current = false;
     const plan = planWallBatch(matching.slice(0, batchSize), examples.length);
-    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null, contract: null, complianceCheck: null })));
+    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null, contract: null, complianceCheck: null, blendedMaster: null })));
     setError('');
   }
   const patch = (id: string, p: Partial<Job>) => setJobs(old => old.map(j => j.id === id ? { ...j, ...p } : j));
@@ -184,8 +202,15 @@ export default function AdminWallProBatch() {
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the
       // same rule the customer page applies; murals carry no seam.
-      const seam = job.mode === 'repeat' ? seamlessReceipt('auto', measured.report, null) : null;
-      patch(job.id, { status: 'done', imageUrl: result.image_url, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, ms: Date.now() - t0,
+      // The seam ladder: verified as generated → closed by blend → mirror.
+      // Closed by code, never by re-asking the model (owner contract).
+      let seam: SeamlessReceipt | null = null, blendedMaster: Blob | null = null, imageUrl = result.image_url;
+      if (job.mode === 'repeat') {
+        const closed = measured.report.seamless ? null : await blendTile(result.image_url);
+        seam = batchSeamDecision(measured.report, closed?.after ?? null);
+        if (seam.method === 'blend' && closed) { blendedMaster = closed.blob; imageUrl = URL.createObjectURL(closed.blob); urls.current.push(imageUrl); }
+      }
+      patch(job.id, { status: 'done', imageUrl, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, blendedMaster, ms: Date.now() - t0,
         contract: (result as any).design_contract ?? null, complianceCheck: (result as any).compliance_check ?? null });
     } catch (e) {
       patch(job.id, { status: 'failed', error: e instanceof Error ? e.message : 'Generation failed.', ms: Date.now() - t0 });
@@ -215,10 +240,16 @@ export default function AdminWallProBatch() {
       const user = await wallUser();
       const generation = await getWallGeneration(job.requestId!);
       if (generation.state !== 'completed' || !generation.artwork_path) throw new Error('The generation record is not complete.');
-      const source = await openWallAsset(generation.artwork_path);
-      const response = await fetch(source);
-      if (!response.ok) throw new Error('The master could not be read for hashing.');
-      const blob = await response.blob();
+      // A blend-closed repeat publishes its closed bytes: that is the tile the
+      // customer buys, so its hash, pixels and thumbnail all come from it.
+      let blob: Blob, source: string;
+      if (job.blendedMaster) { blob = job.blendedMaster; source = URL.createObjectURL(blob); urls.current.push(source); }
+      else {
+        source = await openWallAsset(generation.artwork_path);
+        const response = await fetch(source);
+        if (!response.ok) throw new Error('The master could not be read for hashing.');
+        blob = await response.blob();
+      }
       const sha = await sha256Hex(await blob.arrayBuffer());
       const measured = await measureAsset(source);
       const fileId = crypto.randomUUID();
@@ -227,7 +258,7 @@ export default function AdminWallProBatch() {
         masterPath: catalogMasterPath(fileId, blob.type), thumbPath: catalogThumbPath(fileId), masterSha256: sha, widthPx: measured.widthPx, heightPx: measured.heightPx,
         seam: job.seam, rating: job.rating, batchId, createdBy: user.id, previousVersion: existing?.master_version ?? 0 });
       const thumb = await thumbnailOf(measured.image);
-      const saved = await publishWallDesign(generation.artwork_path, thumb, row);
+      const saved = await publishWallDesign(job.blendedMaster ?? generation.artwork_path, thumb, row);
       patch(job.id, { published: saved });
       await refreshCatalog();
     });
@@ -364,7 +395,7 @@ export default function AdminWallProBatch() {
             <p className="text-slate-500">{job.entry.industry} · {job.entry.room} · {job.entry.designType} · {job.entry.intensity}</p>
             <span className={'inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ' + (libraryEntryDomain(job.entry).designDomain === 'commercial' ? 'bg-sky-100 text-sky-800' : 'bg-fuchsia-100 text-fuchsia-800')}>{domainLabel(libraryEntryDomain(job.entry))}</span>
             {job.status === 'done' && <>
-              {job.seam && <p className={job.seam.method === 'verified' ? 'text-emerald-700' : 'text-amber-700'}>{job.seam.method === 'verified' ? `Seam verified as generated (${job.seam.before.ratio.toFixed(2)}×).` : `Seam ${job.seam.before.ratio.toFixed(1)}× its neighbours: publishes as mirror repeat.`}</p>}
+              {job.seam && <p className={job.seam.method === 'verified' ? 'text-emerald-700' : job.seam.method === 'blend' ? 'text-sky-700' : 'text-amber-700'}>{job.seam.method === 'verified' ? `Seam verified as generated (${job.seam.before.ratio.toFixed(2)}×).` : job.seam.method === 'blend' ? `Seam ${job.seam.before.ratio.toFixed(1)}× as generated, closed by blend to ${job.seam.after?.ratio.toFixed(2)}× — motifs stay upright; the closed tile is what publishes.` : `Seam ${job.seam.before.ratio.toFixed(1)}× and the blend could not close it: publishes as mirror repeat (alternate tiles flipped).`}</p>}
               <p className="text-slate-500">{job.widthPx}×{job.heightPx} px · {catalogEffectivePpi({ mode: job.mode, tile_width_in: job.tileWidthIn, width_px: job.widthPx, height_px: job.heightPx }).toFixed(0)} PPI at {job.mode === 'repeat' ? job.tileWidthIn + '″ tile' : '144″ wall'}{job.published ? ` · published v${job.published.master_version}` : ''}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Stars value={job.rating} onChange={v => patch(job.id, { rating: v })} />

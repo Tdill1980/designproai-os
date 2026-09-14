@@ -19,10 +19,14 @@ describe('WallPro room scenes and true-scale mockups', () => {
   it('imposes a repeat at its own tile width on the real wall, and a mural over the whole wall', () => {
     const scene = { wall_width_in: 168, wall_height_in: 108 };
     const tile = sceneLayoutFor({ mode: 'repeat', tile_width_in: 48 }, scene, 24);
-    expect(tile).toEqual({ width: 168, height: 108, mode: 'repeat', repeatWidth: 48 });
+    expect(tile).toEqual({ width: 168, height: 108, mode: 'repeat', repeatWidth: 48, mirror: false });
     // On a 14-foot wall the tile stays exactly 48 inches — that is the whole point of the mockup.
     expect(layoutMetrics(tile, 1)).toMatchObject({ artworkWidth: 48, artworkHeight: 48 });
     expect(sceneLayoutFor({ mode: 'repeat', tile_width_in: null }, scene, 24).repeatWidth).toBe(24);
+    // The mockup tiles a mirror-published repeat mirrored, exactly as the print does.
+    expect(sceneLayoutFor({ mode: 'repeat', tile_width_in: 48, seam: { method: 'mirror' } }, scene, 24).mirror).toBe(true);
+    expect(sceneLayoutFor({ mode: 'repeat', tile_width_in: 48, seam: { method: 'verified' } }, scene, 24).mirror).toBe(false);
+    expect(sceneLayoutFor({ mode: 'mural', tile_width_in: null, seam: null }, scene, 24).mirror).toBe(false);
     expect(sceneLayoutFor({ mode: 'mural', tile_width_in: null }, scene, 24)).toMatchObject({ mode: 'cover', width: 168, height: 108 });
   });
   it('captions the mockup with the real repeat size and the real wall size', () => {
