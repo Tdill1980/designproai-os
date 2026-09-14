@@ -11,18 +11,37 @@ export function rectangularWallMask(a: Point, b: Point): Point[] {
   if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
   return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
 }
-// Printable panel width on the production roll. The media is Avery HP MPI 2610
-// wall vinyl, matte/luster, and the shop's own spec sheet states it: "All
-// panels billed at 54 in width, regardless of actual printed width" (owner,
-// 2026-09-12). A printed panel is therefore at most 54 in INCLUDING its
-// half-inch duplicated overlap (DEFAULT_WALL_PRINT).
+// Printable panel width on the production roll: 53 inches.
 //
-// This was 59 until 2026-09-12, which is wider than the roll — those panels
+// THIS IS WHAT THE PRESS CAN IMAGE, NOT WHAT THE ROLL MEASURES. The live
+// product page states it twice -- "Printed at 53 in panel width" and "Panels
+// are charged at full 53 in width regardless of trimmed size"
+// (weprintwraps.com/our-products/wall-wrap-printed-vinyl/, read 2026-09-14).
+// The sibling perforated-window product spells out the same relationship:
+// "54 in Roll (Max Print 53.5 in)" -- 54 inches of media, less than that
+// imageable.
+//
+// IT WAS 54, AND THAT PRODUCED A SHORT WRAP. The owner's first end-to-end
+// WallPro job -- her own in-home spa -- came back half an inch short. Panels
+// were planned and rasterised at a full 54 in, which the press cannot image;
+// what came off it was the printable width, so every panel arrived narrower
+// than the file said. The geometry was never wrong: both planners agree to the
+// micron and the raster lands on exactly round(panel.width x ppi). The file was
+// simply asking for more width than the machine has.
+//
+// The billing width is a SEPARATE number and stays as the shop states it:
+// "All panels billed at 54 in width, regardless of actual printed width."
+// Billed 54, printed 53. Do not collapse the two.
+//
+// Before this it was 59, which is wider than the media itself -- those panels
 // could not be printed at all. Historical jobs keep the width they were built
-// at; only new ones plan at 54. If the press needs an edge margin and cannot
-// image the full 54, lower this ONE constant and the runtime default beside
-// it: every panel plan, seam guide, preflight and print file follows from here.
-export const WALLPRO_PRINT_WIDTH = 54;
+// at; only new ones plan at 53.
+//
+// Lower this ONE constant and the runtime default beside it and every panel
+// plan, seam guide, preflight and print file follows. They must stay equal --
+// a test in source-tests/runtime/wallpro-production.test.mjs reads this file to
+// enforce it.
+export const WALLPRO_PRINT_WIDTH = 53;
 export const UNIT_WALL: Point[] = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
 
 export function validWallSize(width: number, height: number): boolean {

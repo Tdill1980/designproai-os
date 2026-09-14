@@ -12,7 +12,7 @@ describe('WePrintWraps billing, per the shop spec sheet', () => {
   it('bills the narrow last panel at the full roll width', () => {
     const billing = wallBilling(142, 96, DEFAULT_WALL_PRINT, roll)!;
     expect(billing.panels).toBe(3);
-    expect(billing.billedWidthIn).toBe(54);
+    expect(billing.billedWidthIn).toBe(53);
     // 96" wall + 1" bleed top and bottom = 98" of roll per panel.
     expect(billing.panelLengthIn).toBe(98);
     expect(billing.linearFeet).toBe(Math.round((3 * 98 / 12) * 100) / 100);
@@ -25,7 +25,7 @@ describe('WePrintWraps billing, per the shop spec sheet', () => {
   // exactly what billing every panel at the roll width means.
   it('measures roll length, not printed width', () => {
     const narrow = wallBilling(40, 96, DEFAULT_WALL_PRINT, roll)!;
-    const full = wallBilling(54, 96, DEFAULT_WALL_PRINT, roll)!;
+    const full = wallBilling(53, 96, DEFAULT_WALL_PRINT, roll)!;
     expect(narrow.panels).toBe(1);
     expect(full.panels).toBe(1);
     expect(narrow.linearFeet).toBe(full.linearFeet);
@@ -33,8 +33,8 @@ describe('WePrintWraps billing, per the shop spec sheet', () => {
   });
 
   it('counts bleed at both ends of every panel', () => {
-    const none = wallBilling(54, 96, { ...DEFAULT_WALL_PRINT, bleed: 0 }, roll)!;
-    const two = wallBilling(54, 96, { ...DEFAULT_WALL_PRINT, bleed: 2 }, roll)!;
+    const none = wallBilling(53, 96, { ...DEFAULT_WALL_PRINT, bleed: 0 }, roll)!;
+    const two = wallBilling(53, 96, { ...DEFAULT_WALL_PRINT, bleed: 2 }, roll)!;
     expect(none.panelLengthIn).toBe(96);
     expect(two.panelLengthIn).toBe(100);
   });

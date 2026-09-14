@@ -37,11 +37,11 @@ async function fakeTopaz(_url, init) {
   return new Response(out, { status: 200, headers: { "content-type": "image/png" } });
 }
 
-test("plans 54-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
+test("plans 53-inch panels with the half-inch duplicated overlap exactly like the browser", () => {
   const { panels } = production.planPanels(production.normalizeRequest({ wallWidthIn: 120, wallHeightIn: 96 }));
-  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 54, 98, 0], [52.5, 54, 98, .5], [106, 15, 98, .5]]);
-  assert.equal(production.DEFAULTS.panelWidthIn, 54); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
-  // THE TWO 54s ARE ONE NUMBER AND MUST STAY EQUAL.
+  assert.deepEqual(panels.map(p => [p.x, p.width, p.height, p.overlapLeft]), [[-1, 53, 98, 0], [51.5, 53, 98, .5], [104, 17, 98, .5]]);
+  assert.equal(production.DEFAULTS.panelWidthIn, 53); assert.equal(production.DEFAULTS.overlapIn, 0.5); assert.equal(production.DEFAULTS.targetPpi, 150);
+  // THE TWO 53s ARE ONE NUMBER AND MUST STAY EQUAL.
   //
   // The browser plans panels with WALLPRO_PRINT_WIDTH and the runtime cuts them
   // with DEFAULTS.panelWidthIn. They were BOTH 59 until 2026-09-12, which is

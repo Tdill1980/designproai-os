@@ -258,7 +258,13 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
     // 54 inches is the roll width: Avery HP MPI 2610 wall vinyl, billed at 54 in
     // per panel regardless of printed width (owner spec sheet, 2026-09-12).
-    'Printing uses panels up to 54 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
+    // 53 is the PRINTABLE panel width -- it must equal WALLPRO_PRINT_WIDTH in
+    // app/src/lib/wallpro-geometry.ts and DEFAULTS.panelWidthIn in
+    // runtime/wallpro-production.cjs. This said 54 while the press images 53,
+    // so the designer was being told a seam pitch the production files do not
+    // use. A test in wallpro.test.ts asserts this exact sentence, which is what
+    // stops the three from drifting apart again.
+    'Printing uses panels up to 53 inches wide. Keep the artwork continuous across print seams; do not draw panel divisions, seam lines or print marks into the image.',
     // Scale is stated in inches so motifs are drawn at the size they print
     // (owner, 2026-09-11, after a mural printed with three-foot flowers).
     // THE REFERENCE SETS THE SCALE on a match (owner, 2026-09-12, looking at a
