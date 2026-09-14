@@ -121,10 +121,12 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     eyebrow: 'WePrintWraps',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    // The owner's line, verbatim (2026-09-14): "Custom Wrap Design , Output
-    // Files , and Print on Demand". It names the three things sold, in the
-    // order they happen, which the previous line ("delivered FAST") did not.
-    tagline: 'Custom Wrap Design, Output Files, and Print on Demand',
+    // The owner, 2026-09-14, on what the header has to make obvious: "Clear
+    // persistent header custom instant wall wrap design and file output buy
+    // film". THREE things are for sale on this page and a visitor has to see
+    // all three without scrolling -- most of all the last one, because the
+    // customer who already has artwork was the one this page did not serve.
+    tagline: 'Custom instant wall wrap design · print-ready file output · buy printed film',
     showPrintOffer: true,
     // REAL JOBS ONLY. Each entry is a room WePrintWraps actually wrapped,
     // photographed twice from one camera position. Drop the two files at the

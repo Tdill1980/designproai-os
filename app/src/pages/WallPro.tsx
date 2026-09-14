@@ -18,6 +18,7 @@ import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuF
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
+import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -1414,6 +1415,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               Not shown on the DesignProAI route: that customer came for the
               tool, and the printing is a partner's business. */}
           {theme.showPrintOffer && <WallProPrintOffer billing={billing} />}
+          {/* THE THIRD THING THIS PAGE SELLS (owner, 2026-09-14: "buttons so
+              they can directly buy printed wrap film if they don't need a new
+              design"). It takes the wall's own square footage, so a customer who
+              measured in step 1 sees a real price without entering anything
+              twice -- and it does not require a design, a photo or an approved
+              version, which is the whole point of it. */}
+          {theme.showPrintOffer && <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />}
         </div>
       </div>
     </div>
