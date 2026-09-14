@@ -13,8 +13,10 @@ import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-m
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
-import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallQuote } from '@/lib/wallpro-pricing';
+import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
+import { wallBrand, type WallBrandKey } from '@/lib/wallpro-brand';
+import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -37,7 +39,18 @@ type History = Awaited<ReturnType<typeof wallHistory>>;
 /** The project a reload reopens when the URL has lost its ?project=. */
 const LAST_PROJECT_KEY = 'wallpro:last-project';
 
-export default function WallPro() {
+/**
+ * The wall designer. ONE component, worn by whichever brand is serving it.
+ *
+ * Owner, 2026-09-14: the WePrintWraps page "should BE the tool". /wall-wrap
+ * therefore renders THIS, with brand="weprintwraps" -- not a second page that
+ * describes it. Every capability is the same one the DesignProAI route has,
+ * because it is literally the same component: photo upload, corner pinning,
+ * the five entry paths, style reference, match upload, before/after, and the
+ * print files. A copy would have drifted within a week.
+ */
+export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
+  const theme = wallBrand(brand);
   const [params, setParams] = useSearchParams();
   const [projectId, setProjectId] = useState(() => params.get('project') || crypto.randomUUID());
   // Two wraps on one photo (wallpro-zones.ts): a zone is another project row
@@ -1018,16 +1031,16 @@ export default function WallPro() {
               what tells a first-time visitor what WallPro is, so it earns its
               line on a phone too. */}
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600 md:text-xs">DesignProAI</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600 md:text-xs">{theme.eyebrow}</p>
             <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
-              Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span>
+              {theme.wordmarkLead}<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">{theme.wordmarkAccent}</span>
             </h1>
             {/* The owner's own words for what this tool IS (2026-09-13:
                 "a persistent header that says WallPro custom wall wrap file
                 output"). It names the deliverable -- a print file -- rather
                 than describing the feeling of using it, which is what the
                 trade buyer is actually here for. */}
-            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Custom wall wrap file output</p>
+            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">{theme.tagline}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
@@ -1301,8 +1314,17 @@ export default function WallPro() {
             {currentVersionId && (entitled
               ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-semibold text-emerald-900">Print-ready wall file unlocked for this version.</p>
               : <div className="mt-3 flex items-center gap-2">
-                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, 'wallpro_custom_file', '/printpro/wallpro')); })}>Unlock My Print-Ready Wall File — $149</Button>
-                  <span className="text-xs text-slate-500">Seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
+                  {/* CHARGE FOR THE PATH THEY TOOK. This button used to send
+                      'wallpro_custom_file' and say $149 for EVERY entry path,
+                      so a customer who picked the $79 catalog design was
+                      charged $149 and one who had the $199 room design done
+                      was undercharged by $50. designMode is the SKU (owner's
+                      launch list, 2026-09-14), so the button now names and
+                      charges what they actually chose, and the return path
+                      follows the brand's own page so a WePrintWraps customer
+                      is not dropped onto the DesignProAI route after paying. */}
+                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
+                  <span className="text-xs text-slate-500">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:border-violet-400')}>
@@ -1339,6 +1361,15 @@ export default function WallPro() {
             </p>}
           </div>}
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
+          {/* THE PRODUCT PAGE'S THIRD PURCHASE. Owner, 2026-09-14: this is
+              "THE Product Page ... that they will purchase design and files
+              and print from", and "the print is same wire for WPW orig
+              wallproduct" -- so the printing is bought through WooCommerce
+              product 70093 exactly as it always was, on the wall size they
+              already typed. Design + files are the Stripe checkout above.
+              Not shown on the DesignProAI route: that customer came for the
+              tool, and the printing is a partner's business. */}
+          {theme.showPrintOffer && <WallProPrintOffer billing={billing} />}
         </div>
       </div>
     </div>
