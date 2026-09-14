@@ -2,6 +2,35 @@
 
 ## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
 
+> **STATUS 2026-09-14 — HERO-DRIVER IS OFF IN PRODUCTION (owner: "1st call should
+> be atlas proof … we got it to produce in under 45 seconds before").** Flag
+> dispatched back to `six-surface` on deploy run 1275 (`FLAGS_APPLIED`). The
+> cascade cannot pass on a real vehicle as built: a driver flank is ~3.6:1
+> (Porsche 178.4″×48.84″ → drift 1.55–1.59) and Gemini 3 Pro Image's widest
+> `aspectRatio` is 21:9, so `MAX_ASPECT_DRIFT_RATIO=1.12` refuses every driver
+> tile before content is even judged. Three real runs (09-13, 09-14 ×2), 0/3,
+> each burning ~94 s and two image calls in FRONT of the ~40 s six-surface
+> ATLAS call. Splitting the flank into tiles would fix the aspect but not the
+> model's die-cut prior (every refusal since 09-06 is the vehicle's shape drawn
+> into the sheet), so tiling is shelved, not planned. Do not re-enable the flag
+> without a probe run that passes on a real vehicle manifest.
+>
+> What was missing and is now built: **the refusal ledger.** 13 refused sheets
+> accumulated (09-06 → 09-14) in `wrap-files/atlas-call1/` that no human could
+> see while the gates that refused them were tuned blind. Every refused Call-1
+> candidate is now recorded in `designpro_atlas_refusals` (runtime
+> `recordAtlasRefusal`, best-effort), read by the owner through
+> `designpro_atlas_refusal_paths` → gateway
+> `GET /api/generation/requests/:id/atlas-refusals` (signs via storage policy
+> `designpro_owner_sign_atlas_refusals`), and shown on the failure screen
+> (`AtlasRefusedSheets`) with each gate's verdict verbatim. Judge the gates
+> from those pixels before touching a threshold. Two candidates to judge first:
+> the 09-06 "no healing" ruling refuses cutouts although a deterministic
+> ~100 ms `atlas-cutout-fill` exists (wheel-arch/glass regions are trimmed at
+> install), and the output-class inspector refused a *"vintage Porsche Martini
+> race team"* brief because "the image contains a side profile of a race car" —
+> the artwork's subject, not a vehicle mockup.
+
 **Supersedes the "one image request" half of the 2026-08-31 artifact-graph
 contract and the 2026-09-06 six-surface restoration wherever they conflict.
 The gates, the lineage, the assembly and everything after Call 1 are untouched.**

@@ -9,18 +9,23 @@ import {
   isUnconfirmedProviderOutcome,
 } from "@/lib/designpro-generation-error";
 
+import { AtlasRefusedSheetsLoader } from "./AtlasRefusedSheets";
+
 type Props = {
   isAtlas: boolean;
   error: string | null;
   errorCode: string | null;
   generationId?: string | null;
+  /** The failed request: when known, the refused Call-1 candidates are shown under the retry. */
+  requestId?: string | null;
   onStartNew: () => void;
 };
 
 /** Only navigation is available when a paid image request has an unknown outcome. */
-export function DesignGenerationFailure({ isAtlas, error, errorCode, generationId, onStartNew }: Props) {
+export function DesignGenerationFailure({ isAtlas, error, errorCode, generationId, requestId, onStartNew }: Props) {
   const unconfirmed = isAtlas && isUnconfirmedProviderOutcome(errorCode);
   const savedGenerationId = toUuidOrNull(generationId);
+  const refusalRequestId = isAtlas && !unconfirmed ? toUuidOrNull(requestId) : null;
   return (
     <div role="alert" className="absolute inset-0 flex flex-col overflow-y-auto bg-gradient-to-br from-red-500/5 via-background to-red-500/10 p-6">
       <div className="my-auto flex shrink-0 flex-col items-center gap-4">
@@ -60,6 +65,7 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
               <RefreshCw className="w-4 h-4" />
               {isAtlas ? "Start New ATLAS Run" : "Relaunch"}
             </Button>
+            {refusalRequestId && <AtlasRefusedSheetsLoader requestId={refusalRequestId} />}
           </>
         )}
       </div>

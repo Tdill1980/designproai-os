@@ -194,7 +194,7 @@ async function cutoutLoopFixtures() {
 }
 
 function runCutoutLoop(candidates) {
-  const requests=[],stored=new Map();let inserted=null;let publications=0;
+  const requests=[],stored=new Map(),ledger=[];let inserted=null;let publications=0;
   const query={select(){return this},eq(){return this},order(){return this},limit(){return this},
     async maybeSingle(){return {data:null,error:null}},
     insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
@@ -204,7 +204,9 @@ function runCutoutLoop(candidates) {
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
     provider:{},
-    supabase:{from(){return query},async rpc(){return {data:true,error:null}}},
+    // The refusal ledger is its own table: a refused candidate is RECORDED
+    // there and must never be mistaken for an atlas revision insert.
+    supabase:{from(table){return table==='designpro_atlas_refusals'?{async insert(row){ledger.push(row);return {error:null}}}:query},async rpc(){return {data:true,error:null}}},
     store:{async putImmutableBytes(row){stored.set(row.storagePath,row.bytes);return {storagePath:row.storagePath,contentHash:sha(row.bytes),byteSize:row.bytes.length}}},
     onMasterReady(){publications++},
     callEdge:async body=>{
@@ -214,7 +216,7 @@ function runCutoutLoop(candidates) {
         masterStoragePath:paths[index],masterSha256:sha(candidates[index])}};
     },
   });
-  return {done,requests,stored,paths,get inserted(){return inserted},get publications(){return publications}};
+  return {done,requests,stored,paths,ledger,get inserted(){return inserted},get publications(){return publications}};
 }
 
 test('cutout-only first candidate uses the unchanged fallback and publishes only a clean master',async()=>{
@@ -255,6 +257,19 @@ test('two cutout candidates fail closed with retrievable paths and the measured 
   assert.equal(run.requests.length,2,'a cutout refusal must use exactly the existing two-attempt budget');
   assert.deepEqual(creativeBody(run.requests[1]),creativeBody(run.requests[0]));
   assert.equal(run.inserted,null,'refused artwork cannot become an atlas revision');
+  // Both refused candidates land in the ledger with the gate's own verdict and
+  // their exact raw identities, so a human can look at them.
+  assert.equal(run.ledger.length,2,'every refused candidate is recorded');
+  assert.deepEqual(run.ledger.map(row=>row.attempt),[1,2]);
+  assert.deepEqual(run.ledger.map(row=>row.storage_path),run.paths);
+  for(const row of run.ledger){
+    assert.equal(row.topology,'six-surface');
+    assert.equal(row.code,'flat_atlas_unrepaired_cutout');
+    assert.equal(row.sha256,sha(hole));
+    assert.match(row.reason,/hood largestCutoutComponentRatio=/);
+    assert.equal(row.request_id,'11111111-1111-4111-8111-111111111111');
+    assert.equal(row.owner_id,'33333333-3333-4333-8333-333333333333');
+  }
   assert.equal(run.publications,0,'refused artwork cannot start proofs');
   assert.equal([...run.stored.keys()].some(path=>path.includes('/master/')||path.includes('/panels/')),false);
 });

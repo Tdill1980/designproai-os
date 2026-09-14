@@ -2745,6 +2745,45 @@ function atlasRevisionIdentity(options) {
 }
 
 /**
+ * THE REFUSAL LEDGER. Every Call-1 candidate the master gates refuse is
+ * already in Storage; this records WHICH request, topology and attempt it
+ * belonged to and WHY, so the owner can look at it (gateway
+ * /atlas-refusals, storage policy designpro_owner_sign_atlas_refusals).
+ * Thirteen refused sheets accumulated 2026-09-06 → 09-14 that nobody could
+ * see while the gates that refused them were tuned blind.
+ *
+ * Best-effort by construction: a ledger write must never turn a refusal into
+ * a different failure, and a database that predates the migration must not
+ * change the authoring outcome. Failures are logged and swallowed.
+ */
+async function recordAtlasRefusal(supabase, row, logger = () => {}) {
+  try {
+    const sha256 = String(row?.sha256 || "").toLowerCase();
+    if (!row?.storagePath || !HASH_RE.test(sha256)) return false;
+    const { error } = await supabase.from("designpro_atlas_refusals").insert({
+      request_id: row.requestId,
+      generation_id: row.generationId || null,
+      owner_id: row.ownerId,
+      tenant_key: row.tenantKey || null,
+      topology: String(row.topology || "six-surface"),
+      attempt: Math.max(1, Number(row.attempt) || 1),
+      code: String(row.code || "flat_atlas_master_refused").slice(0, 120),
+      reason: String(row.reason || "").slice(0, 1000),
+      storage_path: String(row.storagePath),
+      sha256: String(row.sha256).toLowerCase(),
+      byte_size: Number.isFinite(Number(row.byteSize)) ? Number(row.byteSize) : null,
+      content_type: row.contentType ? String(row.contentType) : null,
+      model: row.model ? String(row.model).slice(0, 120) : null,
+    });
+    if (error) throw new Error(error.message || String(error));
+    return true;
+  } catch (cause) {
+    logger(`atlas call 1: refusal ledger write skipped (${String(cause?.message || cause).slice(0, 160)})`);
+    return false;
+  }
+}
+
+/**
  * Topology selection is the ONLY thing this wrapper does. A caller that names a
  * topology (the fail-over recursions below, a harness) gets exactly that; a
  * caller that names none gets hero-driver when the deploy flag says so and a
@@ -3262,6 +3301,15 @@ async function generateOrReuseFlatAtlasResolved(options) {
       .filter((item) => item?.masterStoragePath && HASH_RE.test(String(item.masterSha256 || "")))
       .map((item) => `${item.masterStoragePath} sha256=${item.masterSha256}`)
       .join(", ");
+    await recordAtlasRefusal(supabase, {
+      requestId, generationId, ownerId, tenantKey, authoringTopology,
+      topology: authoringTopology, attempt, code: refusalCode, reason: refusalReason,
+      storagePath: generated?.provenance?.masterStoragePath,
+      sha256: generated?.provenance?.masterSha256,
+      byteSize: generated?.bytes?.length,
+      contentType: generated?.provenance?.masterContentType || generated?.contentType,
+      model: generated?.model,
+    }, logger);
     if (attempt === maxAuthoringAttempts) {
       const refusal = new FlatAtlasError(
         refusalCode,
@@ -4094,7 +4142,7 @@ module.exports = {
   atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
-    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT,
+    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
     activeZoneMaskSvg,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.

@@ -205,6 +205,26 @@ export type FlatAtlasCallOnePanel = {
  * can inspect. The manifest is represented by identity because it is consumed
  * by the server-side slicer, not interpreted in the browser.
  */
+/**
+ * One Call-1 candidate the master gates refused: the gate's verdict verbatim
+ * and, when the owner may sign it, the raw sheet the model drew. Never a
+ * storage path.
+ */
+export type AtlasRefusal = {
+  id: string;
+  topology: "six-surface" | "field" | "hero-driver";
+  attempt: number;
+  code: string;
+  reason: string;
+  sha256: string;
+  byteSize: number | null;
+  contentType: string | null;
+  model: string | null;
+  createdAt: string | null;
+  signedUrl?: string;
+  expiresIn?: number;
+};
+
 export type FlatAtlasRevision = {
   id: string;
   generationId: string;
@@ -1151,6 +1171,9 @@ export const dpApi = {
    */
   listFlatAtlasRevisions: (requestId: string) =>
     request<FlatAtlasRevision[]>(`/generation/requests/${encodeURIComponent(requestId)}/atlas`),
+  /** The Call-1 candidates the gates refused on this request, signed for the owner. */
+  listAtlasRefusals: (requestId: string) =>
+    request<AtlasRefusal[]>(`/generation/requests/${encodeURIComponent(requestId)}/atlas-refusals`),
   /**
    * "Generate this angle again." The old view is superseded, never mutated, so
    * anything Calls 8+ already hashed stays trustworthy.
