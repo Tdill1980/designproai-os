@@ -1415,21 +1415,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               already typed. Design + files are the Stripe checkout above.
               Not shown on the DesignProAI route: that customer came for the
               tool, and the printing is a partner's business. */}
-          {theme.showPrintOffer && <WallProPrintOffer billing={billing} />}
-          {/* THE THIRD THING THIS PAGE SELLS (owner, 2026-09-14: "buttons so
-              they can directly buy printed wrap film if they don't need a new
-              design"). It takes the wall's own square footage, so a customer who
-              measured in step 1 sees a real price without entering anything
-              twice -- and it does not require a design, a photo or an approved
-              version, which is the whole point of it. */}
-          {theme.showPrintOffer && <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />}
-          {/* The product-page half: the questions and the search terms the wall
-              product page answered. A page that REPLACES a product page has to
-              answer what it answered, or the questions arrive as phone calls and
-              the rankings go elsewhere. */}
-          {theme.showPrintOffer && <WallProProductDetail />}
         </div>
       </div>
+
+      {/* ── BELOW THE TOOL: FULL WIDTH ──────────────────────────────────────
+          These three used to sit INSIDE the right-hand column of the
+          [400px | rest] grid, which meant that once the form ended the page ran
+          on for another two thousand pixels with a 400px column of nothing
+          beside it (owner, 2026-09-14: "It needs to look like a real tool
+          page"). The designer is a two-column workspace; what you buy after it
+          is not, and it should use the whole page.
+
+          Order is the customer's: what your design costs to print, then film on
+          its own for the buyer who needs no design, then the questions. */}
+      {theme.showPrintOffer && <div className="mt-5 space-y-5">
+        <WallProPrintOffer billing={billing} />
+        {/* THE THIRD THING THIS PAGE SELLS (owner, 2026-09-14: "buttons so they
+            can directly buy printed wrap film if they don't need a new
+            design"). It takes the wall's own square footage, so a customer who
+            measured in step 1 sees a real price without entering anything
+            twice -- and needs no design, photo or approved version. */}
+        <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />
+        {/* The product-page half: the questions and the search terms the wall
+            product page answered. A page that REPLACES a product page has to
+            answer what it answered, or the questions arrive as phone calls and
+            the rankings go elsewhere. */}
+        <WallProProductDetail />
+      </div>}
     </div>
     {/* On a phone the form and the wall photo stack, so marking corners puts
         Generate a full screen away and the customer scrolls up and down to
