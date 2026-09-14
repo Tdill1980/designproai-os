@@ -9,13 +9,20 @@ import { Helmet } from 'react-helmet-async';
 import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson, Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import library from '@/data/wallpro-prompt-library.json';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, type WallAsset } from '@/lib/wallpro-api';
-import { validateWallUpload, loadWallImage, canvasBlob } from '@/lib/wallpro-render';
-import { measureSeam, seamlessReceipt, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, writeWallBriefs, type WallAsset, type WallGeneratedBrief, type WallBriefRequest } from '@/lib/wallpro-api';
+import { WALL_PRESETS, WALL_CATEGORIES, WALL_CATEGORY_LABELS, presetAsEntry, presetDomain, generatedBriefAsEntry, type WallCategory } from '@/data/wallpro-presets';
+import { validateWallUpload, prepareWallUpload, loadWallImage, canvasBlob, renderWallPreview } from '@/lib/wallpro-render';
+import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
+import { sceneUpsertRow, sceneLayoutFor, mockupCaption, DEFAULT_SCENE_WALL_IN, FULL_FRAME_CORNERS, type WallCatalogScene } from '@/lib/wallpro-scenes';
+import type { Point } from '@/lib/wallpro-geometry';
+import { measureSeam, blendSeamless, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, briefForEntry, batchSeamDecision, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
 import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
 
 const LIBRARY = library as WallPromptEntry[];
+/** RestylePro's natural-language preset library, as batch entries. */
+const PRESET_ENTRIES = WALL_PRESETS.map(presetAsEntry);
+type BriefSource = 'presets' | 'ai' | 'library';
 const INDUSTRIES = [...new Set(LIBRARY.map(e => e.industry))].sort();
 const DESIGN_TYPES = [...new Set(LIBRARY.map(e => e.designType))].sort();
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
@@ -33,6 +40,8 @@ type Job = {
   requestId: string | null; imageUrl: string | null; storagePath: string | null; widthPx: number; heightPx: number;
   seam: SeamlessReceipt | null; error: string | null; ms: number | null; rating: number | null; tileWidthIn: number; published: WallCatalogRow | null;
   contract: WallDesignContract | null; complianceCheck: Record<string, unknown> | null;
+  /** The seam-closed tile when the ladder chose blend: these bytes are what publishes. */
+  blendedMaster: Blob | null;
 };
 
 function Stars({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
@@ -50,6 +59,35 @@ async function measureAsset(url: string) {
   tile.width = 1; tile.height = 1;
   return { report, widthPx: image.naturalWidth, heightPx: image.naturalHeight, image };
 }
+/** Closes a tile's seams by the deterministic blend and measures the result;
+ * the caller decides whether the closed tile is good enough to publish. */
+async function blendTile(url: string) {
+  const image = await loadWallImage(url);
+  const c = document.createElement('canvas');
+  c.width = image.naturalWidth; c.height = image.naturalHeight;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('This browser could not read the generated image.');
+  ctx.drawImage(image, 0, 0);
+  const closed = blendSeamless(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+  const after = measureSeam(closed, c.width, c.height);
+  ctx.putImageData(new ImageData(closed, c.width, c.height), 0, 0);
+  const blob = await canvasBlob(c);
+  c.width = 1; c.height = 1;
+  return { after, blob };
+}
+/** The mockup as a listing image: the composite with its true-size caption
+ * burned into a bar along the bottom, so the number travels with the picture
+ * wherever it is posted. JPEG, since it is a photograph. */
+async function listingJpeg(composite: HTMLCanvasElement, caption: string): Promise<Blob> {
+  const bar = Math.max(28, Math.round(composite.height * 0.05));
+  const c = document.createElement('canvas'); c.width = composite.width; c.height = composite.height + bar;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(composite, 0, 0);
+  ctx.fillStyle = '#111827'; ctx.fillRect(0, composite.height, c.width, bar);
+  ctx.fillStyle = '#ffffff'; ctx.font = `${Math.round(bar * 0.5)}px system-ui, sans-serif`; ctx.textBaseline = 'middle';
+  ctx.fillText(caption, Math.round(bar * 0.4), composite.height + bar / 2);
+  return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('Mockup export failed.')), 'image/jpeg', 0.9));
+}
 async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
   const scale = Math.min(1, CATALOG_THUMB_PX / Math.max(image.naturalWidth, image.naturalHeight));
   const c = document.createElement('canvas');
@@ -59,7 +97,19 @@ async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
 }
 
 export default function AdminWallProBatch() {
-  const [tab, setTab] = useState<'generator' | 'gallery' | 'history'>('generator');
+  const [tab, setTab] = useState<'generator' | 'gallery' | 'history' | 'scenes'>('generator');
+  // Room scenes (stock photographs with the feature wall's corners and real
+  // inches recorded once) and the "In a room" mockup modal for a published design.
+  const [scenes, setScenes] = useState<WallCatalogScene[]>([]);
+  const [sceneThumbs, setSceneThumbs] = useState<Record<string, string>>({});
+  const [scenePhoto, setScenePhoto] = useState<WallAsset | null>(null);
+  const [sceneCorners, setSceneCorners] = useState<Point[]>(FULL_FRAME_CORNERS);
+  const [sceneCornerSource, setSceneCornerSource] = useState<'default' | 'detected' | 'marked'>('default');
+  const [sceneName, setSceneName] = useState('');
+  const [sceneRoom, setSceneRoom] = useState('living_room');
+  const [sceneWall, setSceneWall] = useState<{ width: number; height: number }>({ ...DEFAULT_SCENE_WALL_IN });
+  const [mockupRow, setMockupRow] = useState<WallCatalogRow | null>(null);
+  const [mockups, setMockups] = useState<{ scene: WallCatalogScene; canvas: HTMLCanvasElement; url: string; caption: string }[]>([]);
   const [filter, setFilter] = useState<WallBatchFilter>({ segment: 'all', industry: 'all', designType: 'all', intensity: 'all', domain: 'all' });
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [batchSize, setBatchSize] = useState(10);
@@ -84,8 +134,35 @@ export default function AdminWallProBatch() {
   const urls = useRef<string[]>([]);
   useEffect(() => () => urls.current.forEach(u => URL.revokeObjectURL(u)), []);
 
+  // Where the batch's briefs come from (owner, 2026-09-14: "natural language
+  // prompts required … pattern how RP's Vehicle Batch design app"). Presets
+  // and AI-written briefs are customer-voice prose sent to the consultant
+  // verbatim; the legacy 500-row spec-sheet library is kept as a third
+  // source and still rewritten by batchCreativeBrief.
+  const [briefSource, setBriefSource] = useState<BriefSource>('presets');
+  const [presetCategory, setPresetCategory] = useState<WallCategory | 'all'>('all');
+  const [aiBriefs, setAiBriefs] = useState<WallGeneratedBrief[]>([]);
+  const [aiSpace, setAiSpace] = useState('');
+  const [aiRendering, setAiRendering] = useState<NonNullable<WallBriefRequest['rendering']>>('any');
+  const [aiMode, setAiMode] = useState<NonNullable<WallBriefRequest['mode']>>('any');
+
   const published = useMemo(() => new Set(catalog.map(r => r.design_id)), [catalog]);
-  const matching = useMemo(() => selectLibraryEntries(LIBRARY, filter, published, includePublished), [filter, published, includePublished]);
+  const matching = useMemo(() => {
+    if (briefSource === 'ai') return aiBriefs.map(generatedBriefAsEntry);
+    if (briefSource === 'presets') {
+      const pool = PRESET_ENTRIES.filter(e => presetCategory === 'all' || e.tags.includes(presetCategory));
+      return selectLibraryEntries(pool, { domain: filter.domain, designType: filter.designType }, published, includePublished);
+    }
+    return selectLibraryEntries(LIBRARY, filter, published, includePublished);
+  }, [briefSource, aiBriefs, presetCategory, filter, published, includePublished]);
+
+  async function writeBriefs() {
+    await guarded('Writing briefs', async () => {
+      const domain = filter.domain === 'residential' ? 'residential' : 'commercial';
+      const result = await writeWallBriefs({ domain, count: batchSize, space: aiSpace.trim() || null, rendering: aiRendering, mode: aiMode });
+      setAiBriefs(result.prompts);
+    });
+  }
 
   async function refreshCatalog() {
     const rows = await listWallCatalogAll();
@@ -93,7 +170,14 @@ export default function AdminWallProBatch() {
     const paths = rows.map(r => r.thumb_path || r.master_path);
     setThumbs(await openWallAssets(paths).catch(() => ({})));
   }
-  useEffect(() => { refreshCatalog().catch(e => setError(e.message)); }, []);
+  async function refreshScenes() {
+    const rows = await listWallScenesAll();
+    setScenes(rows);
+    setSceneThumbs(await openWallAssets(rows.map(r => r.image_path)).catch(() => ({})));
+  }
+  // Scenes fail soft: a database without 20260914160000 yet must not take
+  // the generator down with it.
+  useEffect(() => { refreshCatalog().catch(e => setError(e.message)); refreshScenes().catch(() => {}); }, []);
 
   async function guarded(label: string, action: () => Promise<void>) {
     setBusy(label); setError('');
@@ -114,7 +198,7 @@ export default function AdminWallProBatch() {
     const id = 'wallbatch_' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     setBatchId(id); stop.current = false;
     const plan = planWallBatch(matching.slice(0, batchSize), examples.length);
-    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null, contract: null, complianceCheck: null })));
+    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null, contract: null, complianceCheck: null, blendedMaster: null })));
     setError('');
   }
   const patch = (id: string, p: Partial<Job>) => setJobs(old => old.map(j => j.id === id ? { ...j, ...p } : j));
@@ -140,17 +224,25 @@ export default function AdminWallProBatch() {
       // a word of the library prompt itself. Without this the classifier had
       // only the prompt text to read, which is weaker for a library entry
       // that already names its business/room explicitly.
-      // The model gets the listing-quality creative brief, never the raw
-      // library prompt: 72% of that text is production-pipeline instruction
-      // the pipeline already enforces in code (see batchCreativeBrief). The
-      // published row still records entry.prompt as the production contract.
-      const result = await generateWall({ requestId, prompt: batchCreativeBrief(job.entry), width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style });
+      // The consultant persona receives a customer-voice brief, the way
+      // RestylePro's batch fed its personas (owner, 2026-09-14): a preset or
+      // AI-written brief goes VERBATIM; only the legacy spec-sheet library is
+      // rewritten first (see briefForEntry). The published row records
+      // entry.prompt, which for a natural brief IS what the designer saw.
+      const result = await generateWall({ requestId, prompt: briefForEntry(job.entry), width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style, designDomain: job.entry.domain ?? undefined });
       const measured = await measureAsset(result.image_url);
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the
       // same rule the customer page applies; murals carry no seam.
-      const seam = job.mode === 'repeat' ? seamlessReceipt('auto', measured.report, null) : null;
-      patch(job.id, { status: 'done', imageUrl: result.image_url, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, ms: Date.now() - t0,
+      // The seam ladder: verified as generated → closed by blend → mirror.
+      // Closed by code, never by re-asking the model (owner contract).
+      let seam: SeamlessReceipt | null = null, blendedMaster: Blob | null = null, imageUrl = result.image_url;
+      if (job.mode === 'repeat') {
+        const closed = measured.report.seamless ? null : await blendTile(result.image_url);
+        seam = batchSeamDecision(measured.report, closed?.after ?? null);
+        if (seam.method === 'blend' && closed) { blendedMaster = closed.blob; imageUrl = URL.createObjectURL(closed.blob); urls.current.push(imageUrl); }
+      }
+      patch(job.id, { status: 'done', imageUrl, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, blendedMaster, ms: Date.now() - t0,
         contract: (result as any).design_contract ?? null, complianceCheck: (result as any).compliance_check ?? null });
     } catch (e) {
       patch(job.id, { status: 'failed', error: e instanceof Error ? e.message : 'Generation failed.', ms: Date.now() - t0 });
@@ -180,10 +272,16 @@ export default function AdminWallProBatch() {
       const user = await wallUser();
       const generation = await getWallGeneration(job.requestId!);
       if (generation.state !== 'completed' || !generation.artwork_path) throw new Error('The generation record is not complete.');
-      const source = await openWallAsset(generation.artwork_path);
-      const response = await fetch(source);
-      if (!response.ok) throw new Error('The master could not be read for hashing.');
-      const blob = await response.blob();
+      // A blend-closed repeat publishes its closed bytes: that is the tile the
+      // customer buys, so its hash, pixels and thumbnail all come from it.
+      let blob: Blob, source: string;
+      if (job.blendedMaster) { blob = job.blendedMaster; source = URL.createObjectURL(blob); urls.current.push(source); }
+      else {
+        source = await openWallAsset(generation.artwork_path);
+        const response = await fetch(source);
+        if (!response.ok) throw new Error('The master could not be read for hashing.');
+        blob = await response.blob();
+      }
       const sha = await sha256Hex(await blob.arrayBuffer());
       const measured = await measureAsset(source);
       const fileId = crypto.randomUUID();
@@ -192,12 +290,71 @@ export default function AdminWallProBatch() {
         masterPath: catalogMasterPath(fileId, blob.type), thumbPath: catalogThumbPath(fileId), masterSha256: sha, widthPx: measured.widthPx, heightPx: measured.heightPx,
         seam: job.seam, rating: job.rating, batchId, createdBy: user.id, previousVersion: existing?.master_version ?? 0 });
       const thumb = await thumbnailOf(measured.image);
-      const saved = await publishWallDesign(generation.artwork_path, thumb, row);
+      const saved = await publishWallDesign(job.blendedMaster ?? generation.artwork_path, thumb, row);
       patch(job.id, { published: saved });
       await refreshCatalog();
     });
   }
   async function publishAll() { for (const job of jobs) if (job.status === 'done' && !job.published) await publish(job); }
+
+  async function addScenePhoto(files: FileList | null) {
+    const file = files?.[0]; if (!file) return;
+    await guarded('Opening the room photo', async () => {
+      const prepared = await prepareWallUpload(file);
+      const v = await validateWallUpload(prepared);
+      urls.current.push(v.url);
+      setScenePhoto({ ...v, file: prepared }); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default');
+      if (!sceneName) setSceneName(file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
+      // Detection reads the photo from storage; a miss leaves the curator marking by hand.
+      const user = await wallUser();
+      const path = await uploadWallAsset({ ...v, file: prepared }, user.id);
+      setScenePhoto(p => p ? { ...p, path } : p);
+      const detected = await detectWall(path).catch(() => null);
+      if (detected?.wall && detected.wall.length === 4) { setSceneCorners(detected.wall); setSceneCornerSource('detected'); }
+    });
+  }
+  async function saveScene() {
+    if (!scenePhoto?.path) return;
+    await guarded('Saving scene', async () => {
+      // A full-frame "wall" would paint the whole room (the same defect the
+      // customer page refuses to display, 2026-09-12).
+      if (sceneCornerSource === 'default') throw new Error('Mark the four corners of the feature wall first — a full-frame wall would paint the whole room.');
+      const user = await wallUser();
+      const ext = scenePhoto.file?.type === 'image/png' ? 'png' : scenePhoto.file?.type === 'image/webp' ? 'webp' : 'jpg';
+      const row = sceneUpsertRow({ name: sceneName, room: sceneRoom, imagePath: 'catalog/' + crypto.randomUUID() + '.' + ext, widthPx: scenePhoto.width || 0, heightPx: scenePhoto.height || 0, corners: sceneCorners, wallWidthIn: sceneWall.width, wallHeightIn: sceneWall.height, createdBy: user.id, sortOrder: scenes.length });
+      await publishWallScene(scenePhoto.path!, row);
+      setScenePhoto(null); setSceneName(''); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default');
+      await refreshScenes();
+    });
+  }
+  /** Imposes the design's own master on every active scene at TRUE size —
+   * the customer page's deterministic composite, no AI — one room at a time
+   * so the first appears while the rest render. */
+  async function openMockups(row: WallCatalogRow) {
+    const active = scenes.filter(s => s.is_active);
+    if (!active.length) { setError('Add at least one room scene on the Scenes tab first.'); return; }
+    setMockupRow(row); setMockups([]);
+    await guarded(`Rendering ${row.design_id} in ${active.length} room${active.length === 1 ? '' : 's'}`, async () => {
+      const art = await openWallAsset(row.master_path);
+      const out: typeof mockups = [];
+      for (const scene of active) {
+        const photo = sceneThumbs[scene.image_path] || await openWallAsset(scene.image_path);
+        const canvas = await renderWallPreview(photo, art, scene.corners, [], sceneLayoutFor(row, scene, DEFAULT_TILE_WIDTH_IN));
+        const url = URL.createObjectURL(await canvasBlob(canvas)); urls.current.push(url);
+        out.push({ scene, canvas, url, caption: mockupCaption(row, scene, DEFAULT_TILE_WIDTH_IN) });
+        setMockups([...out]);
+      }
+    });
+  }
+  async function saveMockups() {
+    if (!mockupRow || !mockups.length) return;
+    await guarded('Saving mockups for ' + mockupRow.design_id, async () => {
+      const blobs = await Promise.all(mockups.map(async m => ({ sceneId: m.scene.id, caption: m.caption, blob: await listingJpeg(m.canvas, m.caption) })));
+      await saveWallDesignMockups(mockupRow.id, blobs);
+      await refreshCatalog();
+      setMockupRow(null); setMockups([]);
+    });
+  }
 
   const done = jobs.filter(j => j.status === 'done').length, failed = jobs.filter(j => j.status === 'failed').length, processed = jobs.filter(j => j.status === 'done' || j.status === 'failed').length;
   const galleryRows = catalog
@@ -214,22 +371,32 @@ export default function AdminWallProBatch() {
         <div className="text-xs text-slate-500">{catalog.length} in catalog · {catalog.filter(r => r.is_active).length} active · {LIBRARY.length - published.size} library prompts unpublished</div>
       </header>
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
-      <div className="flex gap-2">{(['generator', 'gallery', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : `History (${batches.length})`}</Button>)}</div>
+      <div className="flex gap-2">{(['generator', 'gallery', 'scenes', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : t === 'scenes' ? `Room scenes (${scenes.length})` : `History (${batches.length})`}</Button>)}</div>
 
       {tab === 'generator' && <>
         <section className={panelClass}>
           <h2 className="font-semibold">Batch settings</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(['presets', 'ai', 'library'] as const).map(s => <Button key={s} size="sm" variant={briefSource === s ? 'default' : 'outline'} disabled={running || !!busy} onClick={() => { setBriefSource(s); if (s === 'ai') { if (filter.domain === 'all') setFilter(f => ({ ...f, domain: 'residential' })); if (batchSize > 20) setBatchSize(20); } }}>{s === 'presets' ? `Brief presets (${PRESET_ENTRIES.length})` : s === 'ai' ? 'AI brief writer' : `Legacy library (${LIBRARY.length})`}</Button>)}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Presets and AI-written briefs are customer-voice prose sent to the consultant persona word for word — the way RestylePro's batch ran. The legacy library is a spec sheet and is rewritten into a brief first.</p>
           <fieldset disabled={running || !!busy} className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <label className="text-sm">Segment<select className={inputClass} value={filter.segment} onChange={e => setFilter(f => ({ ...f, segment: e.target.value as WallBatchFilter['segment'] }))}><option value="all">All</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select></label>
-            <label className="text-sm">Domain<select className={inputClass} value={filter.domain} onChange={e => setFilter(f => ({ ...f, domain: e.target.value as WallBatchFilter['domain'] }))}><option value="all">Commercial + Residential</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
-            <label className="text-sm lg:col-span-2">Industry<select className={inputClass} value={filter.industry} onChange={e => setFilter(f => ({ ...f, industry: e.target.value }))}><option value="all">All industries</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-            <label className="text-sm">Design type<select className={inputClass} value={filter.designType} onChange={e => setFilter(f => ({ ...f, designType: e.target.value }))}><option value="all">All types</option>{DESIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
-            <label className="text-sm">Intensity<select className={inputClass} value={filter.intensity} onChange={e => setFilter(f => ({ ...f, intensity: e.target.value as WallIntensity | 'all' }))}><option value="all">Any</option>{(['Quiet', 'Balanced', 'Statement'] as const).map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-            <label className="text-sm">Batch size<select className={inputClass} value={batchSize} onChange={e => setBatchSize(Number(e.target.value))}>{[5, 10, 15, 20, 25, 50].map(n => <option key={n} value={n}>{n} designs</option>)}</select></label>
+            <label className="text-sm">Domain<select className={inputClass} value={filter.domain} onChange={e => setFilter(f => ({ ...f, domain: e.target.value as WallBatchFilter['domain'] }))}>{briefSource !== 'ai' && <option value="all">Commercial + Residential</option>}<option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
+            {briefSource === 'library' && <label className="text-sm">Segment<select className={inputClass} value={filter.segment} onChange={e => setFilter(f => ({ ...f, segment: e.target.value as WallBatchFilter['segment'] }))}><option value="all">All</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select></label>}
+            {briefSource === 'library' && <label className="text-sm lg:col-span-2">Industry<select className={inputClass} value={filter.industry} onChange={e => setFilter(f => ({ ...f, industry: e.target.value }))}><option value="all">All industries</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></label>}
+            {briefSource === 'presets' && <label className="text-sm lg:col-span-2">Space<select className={inputClass} value={presetCategory} onChange={e => setPresetCategory(e.target.value as WallCategory | 'all')}><option value="all">All spaces</option>{WALL_CATEGORIES.filter(c => filter.domain === 'all' || presetDomain(c) === filter.domain).map(c => <option key={c} value={c}>{WALL_CATEGORY_LABELS[c]}</option>)}</select></label>}
+            {briefSource !== 'ai' && <label className="text-sm">Design type<select className={inputClass} value={filter.designType} onChange={e => setFilter(f => ({ ...f, designType: e.target.value }))}><option value="all">All types</option>{DESIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>}
+            {briefSource === 'library' && <label className="text-sm">Intensity<select className={inputClass} value={filter.intensity} onChange={e => setFilter(f => ({ ...f, intensity: e.target.value as WallIntensity | 'all' }))}><option value="all">Any</option>{(['Quiet', 'Balanced', 'Statement'] as const).map(i => <option key={i} value={i}>{i}</option>)}</select></label>}
+            {briefSource === 'ai' && <label className="text-sm lg:col-span-2">Space (optional)<input className={inputClass} placeholder="e.g. nursery, restaurant, dental office" value={aiSpace} onChange={e => setAiSpace(e.target.value)} /></label>}
+            {briefSource === 'ai' && <label className="text-sm">Rendering<select className={inputClass} value={aiRendering} onChange={e => setAiRendering(e.target.value as typeof aiRendering)}><option value="any">Rotate families</option><option value="flat-bold">Flat bold print</option><option value="fine-line">Fine-line engraving</option><option value="faux-material">Faux material</option><option value="painted-mural">Painted mural</option><option value="photographic">Photographic</option></select></label>}
+            {briefSource === 'ai' && <label className="text-sm">Repeat or mural<select className={inputClass} value={aiMode} onChange={e => setAiMode(e.target.value as typeof aiMode)}><option value="any">Writer decides</option><option value="repeat">Repeats only</option><option value="mural">Murals only</option></select></label>}
+            <label className="text-sm">Batch size<select className={inputClass} value={batchSize} onChange={e => setBatchSize(Number(e.target.value))}>{[5, 10, 15, 20, 25, 50].filter(n => briefSource !== 'ai' || n <= 20).map(n => <option key={n} value={n}>{n} designs</option>)}</select></label>
             <label className="text-sm">Repeat tile width (in)<input className={inputClass} type="number" min="1" max="2400" step="1" value={tileWidthIn} onChange={e => setTileWidthIn(Number(e.target.value))} /></label>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={includePublished} onChange={e => setIncludePublished(e.target.checked)} />Regenerate already published DesignIDs</label>
-            <div className="text-sm text-slate-600 self-end pb-2 lg:col-span-2">{matching.length} library prompts match; the queue takes the first {Math.min(batchSize, matching.length)} in catalog order.</div>
+            {briefSource !== 'ai' && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={includePublished} onChange={e => setIncludePublished(e.target.checked)} />Regenerate already published DesignIDs</label>}
+            {briefSource === 'ai' && <div className="self-end pb-1"><Button variant="outline" type="button" onClick={() => void writeBriefs()}><Zap className="mr-2 h-4 w-4" />Write {Math.min(batchSize, 20)} briefs</Button></div>}
+            <div className="text-sm text-slate-600 self-end pb-2 lg:col-span-2">{briefSource === 'ai' ? (aiBriefs.length ? `${aiBriefs.length} briefs written; build the queue to run them.` : 'No briefs written yet.') : `${matching.length} ${briefSource === 'presets' ? 'preset briefs' : 'library prompts'} match; the queue takes the first ${Math.min(batchSize, matching.length)}.`}</div>
           </fieldset>
+          {briefSource === 'ai' && aiBriefs.length > 0 && <ol className="mt-3 grid gap-2 md:grid-cols-2">{aiBriefs.map(b => <li key={b.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"><span className="font-semibold">{b.name}</span> <span className="text-slate-500">· {b.subcategory} · {b.mode} · {b.rendering}</span><p className="mt-1 text-slate-700">{b.prompt}</p></li>)}</ol>}
           {jobs.length > 1 && <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             {(() => { const d = batchDiversitySummary(jobs.map(j => j.entry)); const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]; const domainTop = top(d.domains), styleTop = top(d.styles), paletteTop = top(d.paletteFamilies);
               return <>Batch diversity — {Object.keys(d.domains).length} domain(s), {Object.keys(d.styles).length} style(s), {Object.keys(d.paletteFamilies).length} palette famil{Object.keys(d.paletteFamilies).length === 1 ? 'y' : 'ies'} across {d.count} jobs.
@@ -270,7 +437,7 @@ export default function AdminWallProBatch() {
             <p className="text-slate-500">{job.entry.industry} · {job.entry.room} · {job.entry.designType} · {job.entry.intensity}</p>
             <span className={'inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ' + (libraryEntryDomain(job.entry).designDomain === 'commercial' ? 'bg-sky-100 text-sky-800' : 'bg-fuchsia-100 text-fuchsia-800')}>{domainLabel(libraryEntryDomain(job.entry))}</span>
             {job.status === 'done' && <>
-              {job.seam && <p className={job.seam.method === 'verified' ? 'text-emerald-700' : 'text-amber-700'}>{job.seam.method === 'verified' ? `Seam verified as generated (${job.seam.before.ratio.toFixed(2)}×).` : `Seam ${job.seam.before.ratio.toFixed(1)}× its neighbours: publishes as mirror repeat.`}</p>}
+              {job.seam && <p className={job.seam.method === 'verified' ? 'text-emerald-700' : job.seam.method === 'blend' ? 'text-sky-700' : 'text-amber-700'}>{job.seam.method === 'verified' ? `Seam verified as generated (${job.seam.before.ratio.toFixed(2)}×).` : job.seam.method === 'blend' ? `Seam ${job.seam.before.ratio.toFixed(1)}× as generated, closed by blend to ${job.seam.after?.ratio.toFixed(2)}× — motifs stay upright; the closed tile is what publishes.` : `Seam ${job.seam.before.ratio.toFixed(1)}× and the blend could not close it: publishes as mirror repeat (alternate tiles flipped).`}</p>}
               <p className="text-slate-500">{job.widthPx}×{job.heightPx} px · {catalogEffectivePpi({ mode: job.mode, tile_width_in: job.tileWidthIn, width_px: job.widthPx, height_px: job.heightPx }).toFixed(0)} PPI at {job.mode === 'repeat' ? job.tileWidthIn + '″ tile' : '144″ wall'}{job.published ? ` · published v${job.published.master_version}` : ''}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Stars value={job.rating} onChange={v => patch(job.id, { rating: v })} />
@@ -304,6 +471,7 @@ export default function AdminWallProBatch() {
             <div className="flex flex-wrap items-center gap-2">
               <Stars value={row.rating} onChange={v => void guarded('Rating', async () => { await updateWallDesign(row.id, { rating: v }); await refreshCatalog(); })} />
               <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void guarded('Updating', async () => { await updateWallDesign(row.id, { is_active: !row.is_active }); await refreshCatalog(); })}>{row.is_active ? <><Eye className="mr-1 h-3 w-3" />Active</> : <><EyeOff className="mr-1 h-3 w-3" />Hidden</>}</Button>
+              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void openMockups(row)}><Layers className="mr-1 h-3 w-3" />In a room{row.mockups?.length ? ` (${row.mockups.length})` : ''}</Button>
               <Button size="sm" variant="ghost" onClick={() => downloadJson(row)}><FileJson className="mr-1 h-3 w-3" />Provenance</Button>
               <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove ${row.design_id} from the catalog? The master copy and generation record are retained as provenance.`)) void guarded('Removing', async () => { await deleteWallDesign(row); await refreshCatalog(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
             </div>
@@ -316,7 +484,51 @@ export default function AdminWallProBatch() {
         {batches.length === 0 ? <p className="mt-4 text-sm text-slate-600">Published designs appear here grouped by batch.</p>
         : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{batches.map(([id, rows]) => <div key={id} className="rounded-xl border border-slate-200 p-3 text-sm"><p className="font-mono text-xs">{id}</p><p className="mt-1 text-slate-600">{rows.length} designs · {rows.filter(r => r.is_active).length} active · {new Date(rows[0].created_at).toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">{[...new Set(rows.map(r => r.industry))].join(' · ')}</p></div>)}</div>}
       </section>}
+
+      {tab === 'scenes' && <section className={panelClass}>
+        <h2 className="font-semibold">Room scenes</h2>
+        <p className="mt-1 text-sm text-slate-600">A stock room photo with its feature wall marked once and its real size recorded. Every published design can then be shown in it at true pattern size — the number a customer needs before they buy.</p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            {!scenePhoto ? <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-sm font-medium hover:border-emerald-400"><Upload size={16} />Add a room photo<input type="file" accept="image/*,.heic,.heif" className="sr-only" disabled={!!busy} onChange={e => { void addScenePhoto(e.target.files); e.target.value = ''; }} /></label>
+            : <>
+              <WallPhotoEditor url={scenePhoto.url} alt="Room scene" aspect={scenePhoto.aspect} busy={!!busy} marking={null} corners={sceneCorners} masks={[]} draft={[]} showMasks={false} seams={[]} onEditing={() => {}} onPoint={() => {}} onRectangle={() => {}} onCorners={pts => { setSceneCorners(pts); setSceneCornerSource('marked'); }} onMasks={() => {}} />
+              <p className="mt-2 text-xs text-slate-600">{sceneCornerSource === 'detected' ? 'Wall corners detected — drag any handle to correct them.' : sceneCornerSource === 'marked' ? 'Corners marked by hand.' : 'Detection did not find the wall: drag the four handles to its corners.'}</p>
+            </>}
+          </div>
+          <fieldset disabled={!scenePhoto || running || !!busy} className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm sm:col-span-2">Scene name<input className={inputClass} value={sceneName} onChange={e => setSceneName(e.target.value)} maxLength={80} /></label>
+            <label className="text-sm">Room<select className={inputClass} value={sceneRoom} onChange={e => setSceneRoom(e.target.value)}>{['living_room', 'bedroom', 'nursery', 'kids_room', 'dining_room', 'kitchen', 'bathroom', 'powder_room', 'home_office', 'entryway', 'hallway', 'corporate_office', 'restaurant', 'retail', 'hotel', 'other'].map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></label>
+            <div />
+            <label className="text-sm">Wall width (in)<input className={inputClass} type="number" min="12" max="2400" value={sceneWall.width} onChange={e => setSceneWall(w => ({ ...w, width: Number(e.target.value) }))} /></label>
+            <label className="text-sm">Wall height (in)<input className={inputClass} type="number" min="12" max="2400" value={sceneWall.height} onChange={e => setSceneWall(w => ({ ...w, height: Number(e.target.value) }))} /></label>
+            <p className="text-xs text-slate-500 sm:col-span-2">Measure the wall inside the four corners. A typical feature wall is 14 × 9 ft (168 × 108 in). Every mockup's scale depends on this number.</p>
+            <div className="flex gap-2 sm:col-span-2"><Button disabled={!scenePhoto?.path} onClick={() => void saveScene()}><Upload className="mr-2 h-4 w-4" />Save scene</Button><Button variant="ghost" onClick={() => { setScenePhoto(null); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default'); }}>Discard</Button></div>
+          </fieldset>
+        </div>
+        {scenes.length > 0 && <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{scenes.map(s => <article key={s.id} className={'overflow-hidden rounded-2xl border border-slate-200 bg-white ' + (s.is_active ? '' : 'opacity-60')}>
+          <div className="aspect-[4/3] bg-slate-100">{sceneThumbs[s.image_path] && <img src={sceneThumbs[s.image_path]} alt={s.name} className="h-full w-full object-cover" loading="lazy" />}</div>
+          <div className="space-y-2 p-3 text-xs">
+            <p className="font-semibold">{s.name}</p>
+            <p className="text-slate-500">{(s.room || 'room').replace(/_/g, ' ')} · wall {Math.round(s.wall_width_in / 12)} × {Math.round(s.wall_height_in / 12)} ft</p>
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void guarded('Updating scene', async () => { await updateWallScene(s.id, { is_active: !s.is_active }); await refreshScenes(); })}>{s.is_active ? <><Eye className="mr-1 h-3 w-3" />Active</> : <><EyeOff className="mr-1 h-3 w-3" />Hidden</>}</Button>
+              <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove the scene "${s.name}"? Mockups already saved from it are kept.`)) void guarded('Removing scene', async () => { await deleteWallScene(s.id); await refreshScenes(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
+            </div>
+          </div>
+        </article>)}</div>}
+      </section>}
     </div>
+
+    {/* "In a room": the design's master on every active scene at true size. */}
+    {mockupRow && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setMockupRow(null); setMockups([]); }}>
+      <div className="max-h-full w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">{mockupRow.design_id} · in a room</p><h3 className="text-lg font-bold">{mockupRow.title}</h3></div><Button size="sm" variant="ghost" onClick={() => { setMockupRow(null); setMockups([]); }}><X className="h-4 w-4" /></Button></div>
+        {mockups.length === 0 && <p className="mt-4 flex items-center gap-2 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Imposing the master on each room at true size…</p>}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">{mockups.map(m => <figure key={m.scene.id}><img src={m.url} alt={m.scene.name} className="w-full rounded-lg border border-slate-200" /><figcaption className="mt-1 text-xs text-slate-600">{m.scene.name} — {m.caption}</figcaption></figure>)}</div>
+        {mockups.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-3"><Button disabled={!!busy} onClick={() => void saveMockups()}><Upload className="mr-2 h-4 w-4" />Save as listing images ({mockups.length})</Button><p className="text-xs text-slate-500">Saved mockups become the design's storefront image, caption burned in. Presentation only — never a print file.</p></div>}
+      </div>
+    </div>}
 
     {/* Detail drawer: the full WallDesignContract + advisory compliance
         receipt persona 1/2 actually produced for this job — never shown on

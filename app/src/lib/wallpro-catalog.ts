@@ -6,7 +6,7 @@
 //   GenerationID  the wallpro_generations row whose master was approved.
 //   SynthID       Google's pixel provenance; expected on every master, never a key.
 // Rules: docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md
-import type { SeamlessReceipt } from './wallpro-seamless';
+import { seamlessReceipt, type SeamlessReceipt, type SeamReport } from './wallpro-seamless';
 // The professional design-domain classifier is the SAME module the edge
 // function uses to pick Persona 2 (supabase/functions/generate-wall-design/
 // domain.ts) — one classifier, not a second copy that can drift. It is a
@@ -19,8 +19,8 @@ import { classifyWallDomain, type WallDomainClassification } from '../../../supa
  * truth, no risk of the derived fields drifting from industry/room/style as
  * the library is edited. Curators can still override per job/publish; see
  * `WallDesignDraft.domainOverride` below. */
-export function libraryEntryDomain(entry: Pick<WallPromptEntry, 'industry' | 'room' | 'style' | 'segment'>): WallDomainClassification {
-  return classifyWallDomain({ prompt: '', libraryIndustry: entry.industry, libraryRoom: entry.room, libraryStyle: entry.style });
+export function libraryEntryDomain(entry: Pick<WallPromptEntry, 'industry' | 'room' | 'style' | 'segment'> & { domain?: 'commercial' | 'residential' }): WallDomainClassification {
+  return classifyWallDomain({ prompt: '', libraryIndustry: entry.industry, libraryRoom: entry.room, libraryStyle: entry.style, overrideDomain: entry.domain ?? null });
 }
 
 /** The model the wall Edge handler pins. Locked against the handler by test. */
@@ -44,6 +44,14 @@ export const DEFAULT_TILE_WIDTH_IN = 24;
 export type WallPromptEntry = {
   id: string; segment: 'B2B' | 'B2C'; industry: string; room: string; title: string;
   designType: string; style: string; palette: string; intensity: WallIntensity; prompt: string; tags: string[];
+  /** How `prompt` reaches the consultant persona. `natural` (the RestylePro
+   * preset library and the AI brief writer) sends the customer-voice brief
+   * VERBATIM; `structured` (the legacy 500-row spec-sheet JSON, the default
+   * when absent) is rewritten by `batchCreativeBrief` first. */
+  brief?: 'natural' | 'structured';
+  /** Explicit domain for presets; the classifier's inference otherwise. */
+  domain?: 'commercial' | 'residential';
+  rendering?: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic';
 };
 
 /** Design types that must tile. Every other type, architectural surfaces
@@ -62,6 +70,8 @@ export type WallCatalogRow = {
   master_path: string; thumb_path: string | null; master_sha256: string; width_px: number; height_px: number; master_version: number;
   seam: SeamlessReceipt | null; approval_status: 'generated' | 'approved' | 'rejected' | 'revision';
   is_active: boolean; sort_order: number; rating: number | null; batch_id: string | null; created_by: string; created_at: string; updated_at: string;
+  /** Saved true-scale room mockups (20260914160000); the storefront shows the first. */
+  mockups: { scene_id: string; path: string; caption: string }[];
 };
 
 /** The published row's domain/space/style, derived at read time from its
@@ -286,6 +296,39 @@ export function batchCreativeBrief(entry: Pick<WallPromptEntry, 'prompt' | 'desi
     PHOTOREAL_TYPES.has(entry.designType) ? '' : FLAT_PRINT_CONTRACT,
     `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, print-made character, nothing generic or clip-art.`,
   ].filter(Boolean).join(' ');
+}
+
+/**
+ * What the batch sends the consultant persona for one entry (owner,
+ * 2026-09-14: "I don't understand why we didn't use persona engineering …
+ * natural language prompts required … that batch needs to pattern how RP's
+ * Vehicle Batch design app. Every single one was fantastic").
+ *
+ * RestylePro's batch (`src/data/prompt-presets.ts`, `wall-prompt-presets.ts`,
+ * `generate-batch-prompts`) fed its two personas one thing: a brief in a
+ * customer's own words — subject, named colours, technique, mood — and let the
+ * CSR and designer personas do the designing. A natural entry is therefore
+ * sent VERBATIM. The legacy 500-row library is a spec sheet, not a brief, so
+ * it still goes through `batchCreativeBrief`, which rewrites it into one.
+ */
+export function briefForEntry(entry: Pick<WallPromptEntry, 'prompt' | 'designType' | 'style' | 'palette' | 'intensity' | 'room' | 'industry' | 'segment' | 'brief'>): string {
+  return entry.brief === 'natural' ? entry.prompt.trim() : batchCreativeBrief(entry);
+}
+
+/**
+ * The batch seam ladder (owner, 2026-09-14: "Seamless", and the standing
+ * contract "seamless is measured and closed by code, never by re-asking the
+ * model"). A tile that measures seamless publishes as generated. One that
+ * does not is closed by BLEND first — the deterministic crossfaded outer
+ * frame keeps every motif upright — and by MIRROR only when the blend still
+ * does not measure clean. Mirror flips alternate tiles, which is invisible on
+ * abstract texture and plainly wrong on cranes, leaves or lettering; it used
+ * to be the only fallback.
+ */
+export function batchSeamDecision(before: SeamReport, blendedAfter: SeamReport | null): SeamlessReceipt {
+  if (before.seamless) return seamlessReceipt('auto', before, null, 'verified');
+  if (blendedAfter?.seamless) return seamlessReceipt('auto', before, blendedAfter, 'blend');
+  return seamlessReceipt('auto', before, null, 'mirror');
 }
 
 /** Effective print resolution of a catalog master at its default placement:
