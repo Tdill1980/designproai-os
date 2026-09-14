@@ -99,7 +99,7 @@ import { Header } from "@/components/Header";
 import { DeployVersionWatcher } from "@/components/DeployVersionWatcher";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthedRootRedirect } from "@/components/AuthedRootRedirect";
-import { isDesignProMarketingHost } from "@/lib/designpro-host-routing";
+import { isDesignProMarketingHost, isWallProPartnerHost } from "@/lib/designpro-host-routing";
 import { WaitlistPopup } from "@/components/WaitlistPopup";
 import { PaywallTokenModal } from "@/components/PaywallTokenModal";
 import { PackPaymentResume } from "@/components/PackPaymentResume";
@@ -205,6 +205,12 @@ const Loading = () => (
 // Authentication-based root routing belongs only to the OS host.
 const HostAwareRoot = () => {
   const hostname = typeof window === "undefined" ? "" : window.location.hostname;
+  // A partner host serves ONE thing at its root. Someone who clicked "Wall
+  // Wrap" on weprintwraps.com and landed on wallpro.weprintwraps.com is asking
+  // for the wall wrap page, not a DesignProAI dashboard or a login wall. Every
+  // other route still resolves normally on that host, so /printpro/wallpro is
+  // the designer and existing deep links keep working.
+  if (isWallProPartnerHost(hostname)) return <WallWrap />;
   return isDesignProMarketingHost(hostname) ? <Index /> : <AuthedRootRedirect />;
 };
 
