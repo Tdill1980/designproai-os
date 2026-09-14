@@ -1,5 +1,6 @@
 // Creative identity and translation ported from RestylePro generate-wall-design v116.
 // Physical placement is deterministic after authoring; no vehicle prompts are modified.
+import { classifyWallDomain, type DesignDomain, type CommercialSpaceType, type ResidentialSpaceType } from './domain.ts';
 /**
  * The wall designer, built on the PROVEN vehicle stack (RULE 1).
  * Reference: `supabase/functions/_shared/persona-designer-prompt.ts`, whose
@@ -32,6 +33,28 @@ const WALL_DESIGNER =
 COMPOSE AT ROOM SCALE. The viewer stands six to twelve feet back and reads the wall whole: a few large forms, generous negative space, hierarchy before detail, three to five values plus one accent. Every element carries tangible material — paper grain, brush stroke, ink bleed, leaf, stone, woven fibre — with dimensional shading and layered depth. Nothing flat, nothing clip-art, and nothing that would look at home on a quilt, a greeting card or a phone case.
 
 Render text only when the brief asks for it, and then vector-sharp and correctly spelled. Otherwise no captions, labels, borders or watermarks.`;
+
+/** The residential branch of the same two-persona pipeline (owner spec,
+ * 2026-09-13: "Commercial + Residential Design Engine"). Selected by code —
+ * `designerPersonaFor` below — never by a second AI call. Deliberately kept
+ * to the same length discipline as WALL_DESIGNER: a longer persona is what
+ * drowned the brief in the first place (see file header). It names the
+ * current wallcovering/interior-design vocabulary once, as a source the
+ * designer draws from, rather than listing all fifty-plus styles inline. */
+const RESIDENTIAL_DESIGNER =
+      `You are a Senior Residential Interior Designer and Wallcovering Designer specializing in custom murals, wallpaper, feature walls and high-end residential interiors — a boutique wallcovering studio, not a print shop. You design for rooms people actually live in: bedrooms, living rooms, nurseries, dining rooms, entryways. Your job is literal execution of the client's actual concept at the restraint and styling coherence of a real interior-design project — not a generic "AI wallpaper" look.
+
+Draw on current professional interior-design and wallcovering vocabulary — boho, organic modern, Japandi, Scandinavian, quiet luxury, grandmillennial, coastal, mid-century modern, art deco, maximalist, biophilic, wabi-sabi and the rest of that working language — to inform composition, material treatment, depth and palette relationships. That vocabulary is guidance, never the design: it never replaces the client's actual subject, colors or elements.
+
+COMPOSE AT ROOM SCALE. The viewer stands a few feet away, living with this wall daily: tasteful, current motif scale — no oversized "statement" blow-up unless asked, no tiny busy repeat either. Real material — paper grain, brush stroke, plaster texture, limewash, woven fiber — with dimensional depth. Nothing flat, nothing generic-stock, nothing that reads as an AI-model default aesthetic.
+
+Render text only when the brief asks for it, and then vector-sharp and correctly spelled. Otherwise no captions, labels, borders or watermarks.`;
+
+/** Picks the persona by code, from a classification that is itself
+ * deterministic (see domain.ts). No LLM ever chooses which persona leads. */
+function designerPersonaFor(domain: DesignDomain): string {
+  return domain === 'residential' ? RESIDENTIAL_DESIGNER : WALL_DESIGNER;
+}
 
 /** What the designer says before the image, ported from the vehicle designer's
  * DESIGN ANCHOR: it names the design and fixes its colours and placement in
@@ -114,6 +137,20 @@ export interface WallDesignContract {
   logoTreatment: string | null;
   mustPreserve: string[];
   forbiddenInventions: string[];
+  /**
+   * Which professional persona leads, and the space/style vocabulary handed
+   * to it as composition guidance (owner spec, 2026-09-13). All four are
+   * OPTIONAL and computed by code (`domain.ts`'s classifyWallDomain`), never
+   * by this contract's own AI author — see the module header there for why.
+   * A contract built before this field existed, or one from a caller that
+   * never ran classification, simply carries them as undefined; every
+   * consumer defaults that to the commercial persona, unchanged from before
+   * this field existed.
+   */
+  designDomain?: DesignDomain;
+  commercialSpaceType?: CommercialSpaceType | null;
+  residentialSpaceType?: ResidentialSpaceType | null;
+  designStyle?: string | null;
 }
 
 /**
@@ -187,18 +224,35 @@ export function contractDirective(contract: WallDesignContract): string {
   lines.push(`Realism level: ${contract.realismLevel}`);
   if (contract.typography) lines.push(`Text to include, verbatim: ${contract.typography}`);
   if (contract.logoTreatment) lines.push(`Logo/brand treatment: ${contract.logoTreatment}`);
+  // Guidance only (owner spec section 4): the space type and style vocabulary
+  // inform composition/material/palette and never override a single word of
+  // the REQUIRED/MUST PRESERVE lines above.
+  if (contract.commercialSpaceType && contract.commercialSpaceType !== 'other') lines.push(`Commercial space type (informs composition and finish, never the subject): ${contract.commercialSpaceType.replace(/_/g, ' ')}`);
+  if (contract.residentialSpaceType && contract.residentialSpaceType !== 'other') lines.push(`Room: ${contract.residentialSpaceType.replace(/_/g, ' ')}`);
+  if (contract.designStyle) lines.push(`Style guidance (informs composition, material treatment and palette — never replaces the required subjects/elements/colors above): ${contract.designStyle}`);
   if (contract.mustPreserve.length) lines.push(`MUST PRESERVE — the finished design must clearly contain every one of these:\n${list(contract.mustPreserve)}`);
   if (contract.forbiddenInventions.length) lines.push(`FORBIDDEN — do not add any of the following:\n${list(contract.forbiddenInventions)}`);
   return lines.join('\n');
 }
 
-export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null; contract?: WallDesignContract | null }) {
+export function wallDesignPrompt(input: { prompt: string; width: number; height: number; placement: string; repeatWidthIn?: number | null; intent?: WallIntent; referencePath?: string | null; wallPath?: string | null; maskPath?: string | null; contract?: WallDesignContract | null; libraryIndustry?: string | null; libraryRoom?: string | null; libraryStyle?: string | null; designDomain?: DesignDomain | null; commercialSpaceType?: string | null; residentialSpaceType?: string | null }) {
   const intent: WallIntent = input.intent || 'prompt';
   if (intent === 'refine') return wallRefinePrompt(input);
   const brief = input.prompt.trim();
   const tile = input.placement === 'repeat';
+  // Domain is decided once, by code, and reused for both persona selection
+  // and the contract directive below (owner spec, 2026-09-13). A contract
+  // that already carries a resolved designDomain (the consultant's contract,
+  // after handler.ts merges classification into it) is trusted as-is; every
+  // other case — match/refine, a failed consultant call, or this function
+  // called directly, as the tests do — classifies fresh from whatever
+  // library hints and prompt text are available.
+  const domain = input.contract?.designDomain
+    ? { designDomain: input.contract.designDomain, commercialSpaceType: input.contract.commercialSpaceType ?? null, residentialSpaceType: input.contract.residentialSpaceType ?? null, designStyle: input.contract.designStyle ?? null }
+    : classifyWallDomain({ prompt: input.prompt, businessContext: input.contract?.businessContext, libraryIndustry: input.libraryIndustry, libraryRoom: input.libraryRoom, libraryStyle: input.libraryStyle, overrideDomain: input.designDomain, overrideCommercialSpaceType: input.commercialSpaceType, overrideResidentialSpaceType: input.residentialSpaceType });
+  const resolvedContract: WallDesignContract | null = input.contract ? { ...input.contract, designDomain: domain.designDomain, commercialSpaceType: domain.commercialSpaceType, residentialSpaceType: domain.residentialSpaceType, designStyle: domain.designStyle } : null;
   return [
-    WALL_DESIGNER,
+    designerPersonaFor(domain.designDomain),
     'Deliver one continuous flat 2D artwork image, edge to edge. This is the mural artwork before installation, not a room photograph or a photographed wall. Fine texture and crisp detail at 4K.',
     'Wall size: ' + input.width + ' inches wide by ' + input.height + ' inches high.',
     // 54 inches is the roll width: Avery HP MPI 2610 wall vinyl, billed at 54 in
@@ -234,7 +288,7 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     // elements, colours, hierarchy, forbidden inventions) of what a single
     // sentence conveyed, and stating both would leave the model to decide
     // which one to trust.
-    intent === 'match' ? '' : input.contract ? contractDirective(input.contract)
+    intent === 'match' ? '' : resolvedContract ? contractDirective(resolvedContract)
       : intent === 'wall' && !brief ? 'Design brief: design the wall covering you would specify for this room, chosen from its architecture, light and existing palette.' : 'Design brief: ' + brief,
     intent === 'match' ? '' : DESIGN_ANCHOR,
     'Generate the finished artwork image now. Return the image only, with no written explanation or design proposal.'
@@ -252,6 +306,39 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
  * (the required subject silently dropped, a forbidden invention added) is
  * measured rather than assumed from a pretty render.
  */
+/**
+ * The two quality-floor questions (owner spec, section 6), asked separately
+ * per domain because "professionally designed" means a different thing to a
+ * sign company's client than it does to a homeowner. Advisory only — see
+ * the module docstring above and RULE-level guidance: material contract
+ * violations (`compliant`, below) are the hard fail; this is not.
+ */
+function qualityFloorQuestions(domain?: DesignDomain): string {
+  if (domain === 'residential') return `Would a boutique wallpaper/interior studio plausibly sell this? Answer these:
+- Does this look professionally interior-designed, not like generic AI wallpaper?
+- Is the palette coherent with the stated or implied style?
+- Does the composition feel current rather than dated or generic?
+- Is motif scale appropriate for a wall someone lives with daily?
+- Does it read as a premium mural/wallcovering rather than an AI-model default aesthetic?`;
+  return `Would a sign/environmental graphics company plausibly present this to a paying commercial client? Answer these:
+- Does this look professionally designed for the stated business, not generic decorative wallpaper?
+- Does the design have clear room-scale visual hierarchy (a few dominant forms, not evenly-weighted clutter)?
+- Does it support the intended commercial environment (the business/space named)?
+- Is the subject relevant and intentional, not a stock industry cliché?`;
+}
+
+/** Section 7 of the owner spec: mechanical AI-generation defects that make a
+ * design unsellable regardless of subject. Advisory, same as the rest of
+ * this check — see the module docstring. */
+const AI_SLOP_CHECKLIST = [
+  'meaningless abstract swirls with no relation to the brief', 'random floating motifs with no compositional anchor',
+  'over-saturated or fake gradient lighting', 'fake metallic/gold effects the brief did not ask for',
+  'a generic spa-leaf or generic-plant motif standing in for the actual subject', 'tiny repeated craft-fair motifs',
+  'visible image-model artifacts (warped anatomy, extra limbs or fingers, garbled pseudo-text, an invented logo)',
+  'excessive decorative clutter with no negative space', 'stock-photo composition instead of designed artwork',
+  'one giant blown-up motif the brief did not ask for', 'a look that reads as a generic phone-wallpaper aesthetic',
+];
+
 export function wallComplianceCheckPrompt(contract: WallDesignContract): string {
   const list = (items: string[]) => items.length ? items.map((i) => `"${i}"`).join(', ') : '(none specified)';
   return `You are reviewing a finished wall mural design against the exact requirements it was commissioned against. Look only at the attached image.
@@ -262,6 +349,10 @@ Required colors that must be visibly present: ${list(contract.requiredColors)}
 Business context this was designed for: ${contract.businessContext || '(none specified)'}
 Things that must NOT have been added: ${list(contract.forbiddenInventions)}
 
+${qualityFloorQuestions(contract.designDomain)}
+
+Also check for these AI-generation defects, present or not: ${AI_SLOP_CHECKLIST.join('; ')}.
+
 Respond in EXACTLY this JSON, no markdown and no code fences:
 
 {
@@ -271,8 +362,13 @@ Respond in EXACTLY this JSON, no markdown and no code fences:
   "missingColors": ["any required color not visibly present"],
   "forbiddenFound": ["any forbidden item that was added anyway"],
   "businessContextSurvived": true or false,
+  "professionalQualityFloor": true or false,
+  "qualityFloorNotes": "One sentence on why it does or does not clear the professional quality floor above.",
+  "aiSlopFlags": ["any of the AI-generation defects above that are actually present, in your own short words — empty array if none"],
   "notes": "One sentence on anything else material."
 }
 
-"compliant" is true only if every required subject, element and colour is visibly present, no forbidden item was added, and the design would read as suitable for the stated business context. Be literal: a required subject that is absent, or replaced with something generic, makes this non-compliant even if the image is well made.`;
+"compliant" is a HARD fact check: true only if every required subject, element and colour is visibly present, no forbidden item was added, and the design would read as suitable for the stated business context. Be literal: a required subject that is absent, or replaced with something generic, makes this non-compliant even if the image is well made.
+
+"professionalQualityFloor" and "aiSlopFlags" are ADVISORY, separate from "compliant" — subjective taste is not this check's job, but failing the quality-floor questions above or showing a clear AI-slop defect is.`;
 }

@@ -6,25 +6,33 @@
  * the reservation function charges as privileged (no tokens spent). */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson } from 'lucide-react';
+import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson, Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import library from '@/data/wallpro-prompt-library.json';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, type WallAsset } from '@/lib/wallpro-api';
 import { validateWallUpload, loadWallImage, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, seamlessReceipt, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
 
 const LIBRARY = library as WallPromptEntry[];
 const INDUSTRIES = [...new Set(LIBRARY.map(e => e.industry))].sort();
 const DESIGN_TYPES = [...new Set(LIBRARY.map(e => e.designType))].sort();
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
 const panelClass = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
+/** A readable label for the domain/space-type chip on a job or catalog card. */
+function domainLabel(d: { designDomain: 'commercial' | 'residential'; commercialSpaceType: string | null; residentialSpaceType: string | null; designStyle: string | null }): string {
+  const space = (d.commercialSpaceType || d.residentialSpaceType || '').replace(/_/g, ' ');
+  const base = d.designDomain === 'commercial' ? 'Commercial' : 'Residential';
+  return space && space !== 'other' ? `${base} · ${space}` : base;
+}
 
 type JobStatus = 'queued' | 'running' | 'done' | 'failed';
 type Job = {
   id: string; entry: WallPromptEntry; mode: WallCatalogMode; referenceIndex: number | null; status: JobStatus;
   requestId: string | null; imageUrl: string | null; storagePath: string | null; widthPx: number; heightPx: number;
   seam: SeamlessReceipt | null; error: string | null; ms: number | null; rating: number | null; tileWidthIn: number; published: WallCatalogRow | null;
+  contract: WallDesignContract | null; complianceCheck: Record<string, unknown> | null;
 };
 
 function Stars({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
@@ -52,7 +60,8 @@ async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
 
 export default function AdminWallProBatch() {
   const [tab, setTab] = useState<'generator' | 'gallery' | 'history'>('generator');
-  const [filter, setFilter] = useState<WallBatchFilter>({ segment: 'all', industry: 'all', designType: 'all', intensity: 'all' });
+  const [filter, setFilter] = useState<WallBatchFilter>({ segment: 'all', industry: 'all', designType: 'all', intensity: 'all', domain: 'all' });
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [batchSize, setBatchSize] = useState(10);
   const [includePublished, setIncludePublished] = useState(false);
   // Default the new-batch UI to the measured architectural baseline — a
@@ -70,6 +79,7 @@ export default function AdminWallProBatch() {
   const [catalog, setCatalog] = useState<WallCatalogRow[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [galleryIndustry, setGalleryIndustry] = useState('all');
+  const [galleryDomain, setGalleryDomain] = useState<'all' | 'commercial' | 'residential'>('all');
   const stop = useRef(false);
   const urls = useRef<string[]>([]);
   useEffect(() => () => urls.current.forEach(u => URL.revokeObjectURL(u)), []);
@@ -104,7 +114,7 @@ export default function AdminWallProBatch() {
     const id = 'wallbatch_' + new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     setBatchId(id); stop.current = false;
     const plan = planWallBatch(matching.slice(0, batchSize), examples.length);
-    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null })));
+    setJobs(plan.map(p => ({ id: id + '_' + p.index, entry: p.entry, mode: p.mode, referenceIndex: p.referenceIndex, status: 'queued', requestId: null, imageUrl: null, storagePath: null, widthPx: 0, heightPx: 0, seam: null, error: null, ms: null, rating: null, tileWidthIn, published: null, contract: null, complianceCheck: null })));
     setError('');
   }
   const patch = (id: string, p: Partial<Job>) => setJobs(old => old.map(j => j.id === id ? { ...j, ...p } : j));
@@ -124,13 +134,20 @@ export default function AdminWallProBatch() {
       // generate-wall-design request the customer designer uses, through the
       // same two-persona pipeline (consultant enriches, designer composes at
       // architectural scale, told this exact motif size).
-      const result = await generateWall({ requestId, prompt: job.entry.prompt, width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath });
+      // Library metadata rides as advisory hints only (owner spec,
+      // 2026-09-13): the edge function's classifier reads industry/room/style
+      // the same way it reads a customer's prompt text, and never overrides
+      // a word of the library prompt itself. Without this the classifier had
+      // only the prompt text to read, which is weaker for a library entry
+      // that already names its business/room explicitly.
+      const result = await generateWall({ requestId, prompt: job.entry.prompt, width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style });
       const measured = await measureAsset(result.image_url);
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the
       // same rule the customer page applies; murals carry no seam.
       const seam = job.mode === 'repeat' ? seamlessReceipt('auto', measured.report, null) : null;
-      patch(job.id, { status: 'done', imageUrl: result.image_url, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, ms: Date.now() - t0 });
+      patch(job.id, { status: 'done', imageUrl: result.image_url, storagePath: result.storage_path, widthPx: measured.widthPx, heightPx: measured.heightPx, seam, ms: Date.now() - t0,
+        contract: (result as any).design_contract ?? null, complianceCheck: (result as any).compliance_check ?? null });
     } catch (e) {
       patch(job.id, { status: 'failed', error: e instanceof Error ? e.message : 'Generation failed.', ms: Date.now() - t0 });
     }
@@ -179,7 +196,9 @@ export default function AdminWallProBatch() {
   async function publishAll() { for (const job of jobs) if (job.status === 'done' && !job.published) await publish(job); }
 
   const done = jobs.filter(j => j.status === 'done').length, failed = jobs.filter(j => j.status === 'failed').length, processed = jobs.filter(j => j.status === 'done' || j.status === 'failed').length;
-  const galleryRows = galleryIndustry === 'all' ? catalog : catalog.filter(r => r.industry === galleryIndustry);
+  const galleryRows = catalog
+    .filter(r => galleryIndustry === 'all' || r.industry === galleryIndustry)
+    .filter(r => galleryDomain === 'all' || catalogRowDomain(r).designDomain === galleryDomain);
   const batches = useMemo(() => { const m = new Map<string, WallCatalogRow[]>(); for (const r of catalog) { const k = r.batch_id || 'unbatched'; m.set(k, [...(m.get(k) || []), r]); } return [...m.entries()].sort((a, b) => (b[1][0].created_at > a[1][0].created_at ? 1 : -1)); }, [catalog]);
   const downloadJson = (row: WallCatalogRow) => { const url = URL.createObjectURL(new Blob([JSON.stringify(provenanceManifest(row), null, 2)], { type: 'application/json' })); urls.current.push(url); const a = document.createElement('a'); a.href = url; a.download = row.design_id + '-provenance.json'; a.click(); };
 
@@ -198,6 +217,7 @@ export default function AdminWallProBatch() {
           <h2 className="font-semibold">Batch settings</h2>
           <fieldset disabled={running || !!busy} className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-6">
             <label className="text-sm">Segment<select className={inputClass} value={filter.segment} onChange={e => setFilter(f => ({ ...f, segment: e.target.value as WallBatchFilter['segment'] }))}><option value="all">All</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select></label>
+            <label className="text-sm">Domain<select className={inputClass} value={filter.domain} onChange={e => setFilter(f => ({ ...f, domain: e.target.value as WallBatchFilter['domain'] }))}><option value="all">Commercial + Residential</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
             <label className="text-sm lg:col-span-2">Industry<select className={inputClass} value={filter.industry} onChange={e => setFilter(f => ({ ...f, industry: e.target.value }))}><option value="all">All industries</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></label>
             <label className="text-sm">Design type<select className={inputClass} value={filter.designType} onChange={e => setFilter(f => ({ ...f, designType: e.target.value }))}><option value="all">All types</option>{DESIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
             <label className="text-sm">Intensity<select className={inputClass} value={filter.intensity} onChange={e => setFilter(f => ({ ...f, intensity: e.target.value as WallIntensity | 'all' }))}><option value="all">Any</option>{(['Quiet', 'Balanced', 'Statement'] as const).map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -206,6 +226,14 @@ export default function AdminWallProBatch() {
             <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={includePublished} onChange={e => setIncludePublished(e.target.checked)} />Regenerate already published DesignIDs</label>
             <div className="text-sm text-slate-600 self-end pb-2 lg:col-span-2">{matching.length} library prompts match; the queue takes the first {Math.min(batchSize, matching.length)} in catalog order.</div>
           </fieldset>
+          {jobs.length > 1 && <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            {(() => { const d = batchDiversitySummary(jobs.map(j => j.entry)); const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]; const domainTop = top(d.domains), styleTop = top(d.styles), paletteTop = top(d.paletteFamilies);
+              return <>Batch diversity — {Object.keys(d.domains).length} domain(s), {Object.keys(d.styles).length} style(s), {Object.keys(d.paletteFamilies).length} palette famil{Object.keys(d.paletteFamilies).length === 1 ? 'y' : 'ies'} across {d.count} jobs.
+                {domainTop && domainTop[1] === d.count && <span className="ml-1 font-medium text-amber-700">All {domainTop[0]}.</span>}
+                {styleTop && styleTop[1] > d.count * 0.6 && <span className="ml-1 font-medium text-amber-700">{styleTop[1]}/{d.count} share style "{styleTop[0]}" — check for a converging house look.</span>}
+                {paletteTop && paletteTop[1] > d.count * 0.6 && <span className="ml-1 font-medium text-amber-700">{paletteTop[1]}/{d.count} share the "{paletteTop[0]}" palette family.</span>}
+              </>; })()}
+          </div>}
           <div className="mt-4 rounded-lg border border-slate-200 p-3">
             <label className="relative flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3 text-sm font-medium hover:border-emerald-400"><Upload size={16} />Add style examples for the AI (up to 6, cycled across the batch)<input type="file" multiple accept="image/jpeg,image/png,image/webp" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" disabled={running} onChange={e => { void addExamples(e.target.files); e.target.value = ''; }} /></label>
             {examples.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{examples.map((ex, i) => <div key={i} className="relative"><img src={ex.url} alt={'Style example ' + (i + 1)} className="h-16 w-16 rounded object-cover" /><button type="button" className="absolute -right-1 -top-1 rounded-full bg-white px-1 text-xs shadow" onClick={() => setExamples(old => old.filter((_, j) => j !== i))} disabled={running}>×</button></div>)}</div>}
@@ -236,6 +264,7 @@ export default function AdminWallProBatch() {
           <div className="space-y-2 p-3 text-xs">
             <p className="font-semibold">{job.entry.id} · {job.entry.title}</p>
             <p className="text-slate-500">{job.entry.industry} · {job.entry.room} · {job.entry.designType} · {job.entry.intensity}</p>
+            <span className={'inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ' + (libraryEntryDomain(job.entry).designDomain === 'commercial' ? 'bg-sky-100 text-sky-800' : 'bg-fuchsia-100 text-fuchsia-800')}>{domainLabel(libraryEntryDomain(job.entry))}</span>
             {job.status === 'done' && <>
               {job.seam && <p className={job.seam.method === 'verified' ? 'text-emerald-700' : 'text-amber-700'}>{job.seam.method === 'verified' ? `Seam verified as generated (${job.seam.before.ratio.toFixed(2)}×).` : `Seam ${job.seam.before.ratio.toFixed(1)}× its neighbours: publishes as mirror repeat.`}</p>}
               <p className="text-slate-500">{job.widthPx}×{job.heightPx} px · {catalogEffectivePpi({ mode: job.mode, tile_width_in: job.tileWidthIn, width_px: job.widthPx, height_px: job.heightPx }).toFixed(0)} PPI at {job.mode === 'repeat' ? job.tileWidthIn + '″ tile' : '144″ wall'}{job.published ? ` · published v${job.published.master_version}` : ''}</p>
@@ -247,6 +276,7 @@ export default function AdminWallProBatch() {
                 {!job.published && <Button size="sm" variant="outline" disabled={!!busy || running} onClick={() => void publish(job)}><Upload className="mr-1 h-3 w-3" />Publish</Button>}
                 <Button size="sm" variant="ghost" asChild><a href={job.imageUrl!} download={job.entry.id + '.png'}><Download className="mr-1 h-3 w-3" />Save</a></Button>
                 <Button size="sm" variant="ghost" disabled={!!busy || running} onClick={() => void runOne({ ...job, status: 'queued', published: null }, examples.map(e => e.path || null))}><RefreshCw className="mr-1 h-3 w-3" />Regen</Button>
+                <Button size="sm" variant="ghost" onClick={() => setDetailJob(job)}><Info className="mr-1 h-3 w-3" />Details</Button>
               </div>
             </>}
           </div>
@@ -254,12 +284,18 @@ export default function AdminWallProBatch() {
       </>}
 
       {tab === 'gallery' && <section className={panelClass}>
-        <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Catalog</h2><label className="text-sm">Industry<select className={inputClass + ' w-auto'} value={galleryIndustry} onChange={e => setGalleryIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i} ({catalog.filter(r => r.industry === i).length})</option>)}</select></label></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Catalog</h2>
+          <div className="flex gap-2">
+            <label className="text-sm">Domain<select className={inputClass + ' w-auto'} value={galleryDomain} onChange={e => setGalleryDomain(e.target.value as typeof galleryDomain)}><option value="all">All</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
+            <label className="text-sm">Industry<select className={inputClass + ' w-auto'} value={galleryIndustry} onChange={e => setGalleryIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i} ({catalog.filter(r => r.industry === i).length})</option>)}</select></label>
+          </div>
+        </div>
         {galleryRows.length === 0 ? <p className="mt-4 text-sm text-slate-600">Nothing published yet. Run a batch and publish the designs you approve.</p>
         : <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{galleryRows.map(row => <article key={row.id} className={'overflow-hidden rounded-2xl border border-slate-200 bg-white ' + (row.is_active ? '' : 'opacity-60')}>
           <div className="aspect-[4/3] bg-slate-100">{thumbs[row.thumb_path || row.master_path] ? <img src={thumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" /> : null}</div>
           <div className="space-y-2 p-3 text-xs">
             <p className="font-semibold">{row.design_id} · {row.title}</p>
+            <span className={'inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ' + (catalogRowDomain(row).designDomain === 'commercial' ? 'bg-sky-100 text-sky-800' : 'bg-fuchsia-100 text-fuchsia-800')}>{domainLabel(catalogRowDomain(row))}</span>
             <p className="text-slate-500">{row.industry} · {row.design_type} · v{row.master_version} · {catalogEffectivePpi(row).toFixed(0)} PPI{row.seam ? ` · seam ${row.seam.method}` : ''}</p>
             <div className="flex flex-wrap items-center gap-2">
               <Stars value={row.rating} onChange={v => void guarded('Rating', async () => { await updateWallDesign(row.id, { rating: v }); await refreshCatalog(); })} />
@@ -277,5 +313,34 @@ export default function AdminWallProBatch() {
         : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{batches.map(([id, rows]) => <div key={id} className="rounded-xl border border-slate-200 p-3 text-sm"><p className="font-mono text-xs">{id}</p><p className="mt-1 text-slate-600">{rows.length} designs · {rows.filter(r => r.is_active).length} active · {new Date(rows[0].created_at).toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">{[...new Set(rows.map(r => r.industry))].join(' · ')}</p></div>)}</div>}
       </section>}
     </div>
+
+    {/* Detail drawer: the full WallDesignContract + advisory compliance
+        receipt persona 1/2 actually produced for this job — never shown on
+        the card itself, to keep it uncluttered (owner spec, section 9). */}
+    {detailJob && <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/40" onClick={() => setDetailJob(null)}>
+      <div className="h-full w-full max-w-lg overflow-y-auto bg-white p-5 shadow-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-2">
+          <div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">{detailJob.entry.id}</p><h3 className="text-lg font-bold">{detailJob.entry.title}</h3></div>
+          <Button size="sm" variant="ghost" onClick={() => setDetailJob(null)}><X className="h-4 w-4" /></Button>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{detailJob.entry.industry} · {detailJob.entry.room} · {detailJob.entry.designType} · {domainLabel(libraryEntryDomain(detailJob.entry))}</p>
+        {detailJob.contract ? <div className="mt-4 space-y-3 text-sm">
+          <div><p className="text-xs font-semibold text-slate-500">Design domain persona 2 used</p><p>{domainLabel({ designDomain: detailJob.contract.designDomain || 'commercial', commercialSpaceType: detailJob.contract.commercialSpaceType ?? null, residentialSpaceType: detailJob.contract.residentialSpaceType ?? null, designStyle: detailJob.contract.designStyle ?? null })}{detailJob.contract.designStyle ? ` · style guidance: ${detailJob.contract.designStyle}` : ''}</p></div>
+          <div><p className="text-xs font-semibold text-slate-500">Client intent</p><p>{detailJob.contract.customerIntent}</p></div>
+          {detailJob.contract.requiredSubjects.length > 0 && <div><p className="text-xs font-semibold text-slate-500">Required subjects (immutable)</p><ul className="list-disc pl-4">{detailJob.contract.requiredSubjects.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}
+          {detailJob.contract.requiredElements.length > 0 && <div><p className="text-xs font-semibold text-slate-500">Required elements (immutable)</p><ul className="list-disc pl-4">{detailJob.contract.requiredElements.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}
+          {detailJob.contract.requiredColors.length > 0 && <div><p className="text-xs font-semibold text-slate-500">Required colors (immutable)</p><p>{detailJob.contract.requiredColors.join(', ')}</p></div>}
+          <div><p className="text-xs font-semibold text-slate-500">Business context</p><p>{detailJob.contract.businessContext || '(none)'}</p></div>
+          {detailJob.contract.forbiddenInventions.length > 0 && <div><p className="text-xs font-semibold text-slate-500">Forbidden</p><ul className="list-disc pl-4">{detailJob.contract.forbiddenInventions.map((s, i) => <li key={i}>{s}</li>)}</ul></div>}
+          {detailJob.complianceCheck ? <div className="rounded-lg border border-slate-200 p-3">
+            <p className="text-xs font-semibold text-slate-500">Advisory creative compliance (off by default; only present when explicitly run)</p>
+            <p className="mt-1">Compliant: {String((detailJob.complianceCheck as any).compliant)} · Professional quality floor: {String((detailJob.complianceCheck as any).professionalQualityFloor)}</p>
+            {Array.isArray((detailJob.complianceCheck as any).aiSlopFlags) && (detailJob.complianceCheck as any).aiSlopFlags.length > 0 && <p className="mt-1 text-amber-700">AI-slop flags: {(detailJob.complianceCheck as any).aiSlopFlags.join(', ')}</p>}
+            {(detailJob.complianceCheck as any).notes && <p className="mt-1 text-slate-600">{(detailJob.complianceCheck as any).notes}</p>}
+          </div> : <p className="text-xs text-slate-500">Advisory compliance check was not run for this job (off by default).</p>}
+          <details className="rounded-lg border border-slate-200 p-3"><summary className="cursor-pointer text-xs font-semibold text-slate-500">Full WallDesignContract JSON</summary><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[10px]">{JSON.stringify(detailJob.contract, null, 2)}</pre></details>
+        </div> : <p className="mt-4 text-sm text-slate-600">No Design Contract was produced for this job (the consultant call may have failed soft, or this intent skips it) — the library prompt went through as written.</p>}
+      </div>
+    </div>}
   </main>;
 }

@@ -7,6 +7,21 @@
 //   SynthID       Google's pixel provenance; expected on every master, never a key.
 // Rules: docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md
 import type { SeamlessReceipt } from './wallpro-seamless';
+// The professional design-domain classifier is the SAME module the edge
+// function uses to pick Persona 2 (supabase/functions/generate-wall-design/
+// domain.ts) — one classifier, not a second copy that can drift. It is a
+// pure, dependency-free module (no Deno API surface), safe to bundle here.
+import { classifyWallDomain, type WallDomainClassification } from '../../../supabase/functions/generate-wall-design/domain';
+
+/** The library's per-entry domain/space/style, computed on demand from its
+ * existing `industry`/`room`/`style` fields rather than physically stored on
+ * the 500-row JSON (owner spec, 2026-09-13, section 5) — one source of
+ * truth, no risk of the derived fields drifting from industry/room/style as
+ * the library is edited. Curators can still override per job/publish; see
+ * `WallDesignDraft.domainOverride` below. */
+export function libraryEntryDomain(entry: Pick<WallPromptEntry, 'industry' | 'room' | 'style' | 'segment'>): WallDomainClassification {
+  return classifyWallDomain({ prompt: '', libraryIndustry: entry.industry, libraryRoom: entry.room, libraryStyle: entry.style });
+}
 
 /** The model the wall Edge handler pins. Locked against the handler by test. */
 export const WALL_GENERATION_MODEL = 'gemini-3-pro-image';
@@ -20,7 +35,12 @@ export type WallIntensity = 'Quiet' | 'Balanced' | 'Statement';
  * curator can widen it once the master has been upscaled. */
 export const DEFAULT_TILE_WIDTH_IN = 24;
 
-/** One row of docs/wallpro's 500-prompt library (app/src/data/wallpro-prompt-library.json). */
+/** One row of docs/wallpro's 500-prompt library (app/src/data/wallpro-prompt-library.json).
+ * Its professional-design-engine domain/space/style (owner spec, 2026-09-13)
+ * is computed on demand by `libraryEntryDomain` below from `industry`/`room`/
+ * `style`, rather than stored as extra fields here: one source of truth,
+ * zero risk of a stored classification drifting from the fields it was
+ * derived from as the 500-row library is edited. */
 export type WallPromptEntry = {
   id: string; segment: 'B2B' | 'B2C'; industry: string; room: string; title: string;
   designType: string; style: string; palette: string; intensity: WallIntensity; prompt: string; tags: string[];
@@ -44,6 +64,15 @@ export type WallCatalogRow = {
   is_active: boolean; sort_order: number; rating: number | null; batch_id: string | null; created_by: string; created_at: string; updated_at: string;
 };
 
+/** The published row's domain/space/style, derived at read time from its
+ * already-persisted `industry`/`room`/`style` columns — no schema change, no
+ * migration, and no risk of a stored classification drifting from those
+ * columns as the classifier improves. Same reasoning as `libraryEntryDomain`
+ * above; same underlying classifier. */
+export function catalogRowDomain(row: Pick<WallCatalogRow, 'industry' | 'room' | 'style' | 'segment'>): WallDomainClassification {
+  return classifyWallDomain({ prompt: '', libraryIndustry: row.industry, libraryRoom: row.room || '', libraryStyle: row.style || '' });
+}
+
 /** What one batch job asks the generator for. Repeat tiles are square so the
  * model returns a 1:1 tile; murals use a 3:2 accent wall. */
 export function batchDimensions(mode: WallCatalogMode): { width: number; height: number; placement: 'repeat' | 'cover' } {
@@ -52,7 +81,7 @@ export function batchDimensions(mode: WallCatalogMode): { width: number; height:
 
 export type WallBatchJob = { index: number; entry: WallPromptEntry; mode: WallCatalogMode; referenceIndex: number | null };
 
-export type WallBatchFilter = { segment?: 'B2B' | 'B2C' | 'all'; industry?: string | 'all'; designType?: string | 'all'; intensity?: WallIntensity | 'all' };
+export type WallBatchFilter = { segment?: 'B2B' | 'B2C' | 'all'; industry?: string | 'all'; designType?: string | 'all'; intensity?: WallIntensity | 'all'; domain?: 'commercial' | 'residential' | 'all' };
 
 /** Library rows matching the batch filter, in catalog order, skipping DesignIDs
  * already published unless the curator asks to regenerate them. */
@@ -62,7 +91,31 @@ export function selectLibraryEntries(library: WallPromptEntry[], filter: WallBat
     && (!filter.industry || filter.industry === 'all' || e.industry === filter.industry)
     && (!filter.designType || filter.designType === 'all' || e.designType === filter.designType)
     && (!filter.intensity || filter.intensity === 'all' || e.intensity === filter.intensity)
+    && (!filter.domain || filter.domain === 'all' || libraryEntryDomain(e).designDomain === filter.domain)
     && (includePublished || !published.has(e.id)));
+}
+
+/** Batch-diversity signal (owner spec, section 8): a batch that converges on
+ * one "WallPro house style" is a failure even if every job succeeds. Reports
+ * counts, not a pass/fail — the curator judges; this makes convergence
+ * visible instead of assumed. `paletteFamily` reads the library's own
+ * `palette` string (already free-text, e.g. "sage, ivory and warm taupe") and
+ * buckets it on its first named color word, which is coarse on purpose: a
+ * repeated exact palette string is the real signal. */
+const PALETTE_FAMILY_WORDS = ['sage', 'olive', 'green', 'terracotta', 'blush', 'rust', 'charcoal', 'black', 'ivory', 'cream', 'beige', 'taupe', 'navy', 'blue', 'gold', 'brass', 'bronze', 'pink', 'coral', 'grey', 'gray', 'white', 'brown', 'burgundy', 'teal', 'lavender', 'purple'];
+function paletteFamily(palette: string | null | undefined): string {
+  const text = (palette || '').toLowerCase();
+  return PALETTE_FAMILY_WORDS.find((w) => text.includes(w)) || 'other';
+}
+export function batchDiversitySummary(entries: WallPromptEntry[]): { count: number; domains: Record<string, number>; styles: Record<string, number>; paletteFamilies: Record<string, number>; designTypes: Record<string, number> } {
+  const tally = (values: string[]) => values.reduce<Record<string, number>>((acc, v) => { acc[v] = (acc[v] || 0) + 1; return acc; }, {});
+  return {
+    count: entries.length,
+    domains: tally(entries.map((e) => libraryEntryDomain(e).designDomain)),
+    styles: tally(entries.map((e) => e.style || 'unspecified')),
+    paletteFamilies: tally(entries.map((e) => paletteFamily(e.palette))),
+    designTypes: tally(entries.map((e) => e.designType)),
+  };
 }
 
 /** Deterministic queue: entries in catalog order, engine from the design type,
