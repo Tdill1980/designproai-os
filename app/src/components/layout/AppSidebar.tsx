@@ -182,7 +182,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
           </SidebarTooltip>
           <SidebarTooltip
             title="WallPro Batch Generate"
-            description="Generate, curate and publish the WrapReady wall design library from the 500-prompt catalog"
+            description="Generate, curate and publish the WrapReady wall design library from natural-language brief presets, the AI brief writer or the legacy catalog"
           >
             <Link
               to="/admin/wallpro-batch"
