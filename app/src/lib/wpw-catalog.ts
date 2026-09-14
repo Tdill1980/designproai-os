@@ -146,7 +146,14 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
     wooProductId: 70093,
     name: "Wall Wrap Printing — Avery HP MPI 2610",
     price: 3.25,
-    unit: "linear_foot",
+    // PER SQUARE FOOT, not linear foot. This said "linear_foot" and was simply
+    // wrong -- measured against the live order history for product 70093:
+    // 3.00 sq ft -> $9.75, 14.25 -> $46.31, 11.63 -> $37.78, 38.25 -> $124.31,
+    // 18.00 -> $58.50. Every one is exactly $3.25 per SQUARE foot. (The lower
+    // $2.98/sq ft lines are customers already on a volume rate.)
+    // The wrong unit made WallPro's cart gate refuse a store that was in fact
+    // configured correctly all along.
+    unit: "sqft",
     kind: "specialty",
     permalink: `${P}wall-wrap-printed-vinyl/`,
     quotable: true,

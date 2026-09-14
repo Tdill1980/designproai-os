@@ -20,31 +20,26 @@ describe('the wall wrap SKU comes from the live-synced catalog', () => {
   });
 });
 
-describe('the cart is gated on the store agreeing with the page', () => {
-  // THE ASSERTION THAT MATTERS. The live Woo product is $3.25 per LINEAR FOOT;
-  // the launch price is $3.50 per SQUARE FOOT. Handing WooCommerce a
-  // square-footage quantity against a linear-foot price charges the wrong
-  // number for the wrong unit -- on a 142 x 96 wall the page quotes $331.35 and
-  // the cart would take $308.75. Quoted one number, charged another, and it
-  // LOOKS like it worked.
-  //
-  // This test documents the live store's real configuration. When the Woo
-  // product is changed to $3.50/sq ft and WPW_CATALOG is re-synced, this test
-  // fails and is updated to expect the cart path -- which is exactly the
-  // prompt to check the button now does what it says.
-  it('knows the store is still priced per linear foot', () => {
-    expect(WPW_WALL_WRAP_PRODUCT!.unit).toBe('linear_foot');
+describe('the cart, now that the store and the page agree', () => {
+  // The store was configured correctly ALL ALONG. The catalog said
+  // unit:"linear_foot" and that was simply wrong -- product 70093's order
+  // history realizes exactly $3.25 per SQUARE foot (18 sq ft -> $58.50,
+  // 38.25 -> $124.31, 14.25 -> $46.31). The wrong metadata was making this
+  // gate refuse a store that matched. Now they agree and the cart opens.
+  it('matches the live store: $3.25 per square foot', () => {
+    expect(WPW_WALL_WRAP_PRODUCT!.unit).toBe('sqft');
     expect(WPW_WALL_WRAP_PRODUCT!.price).toBe(3.25);
-    expect(WPW_WALL_FILM_RATE_PER_SQFT).toBe(3.5);
-    expect(storeMatchesLaunchPricing()).toBe(false);
+    expect(WPW_WALL_FILM_RATE_PER_SQFT).toBe(3.25);
+    expect(storeMatchesLaunchPricing()).toBe(true);
   });
 
-  it('refuses the one-click cart while the unit or rate disagree', () => {
+  it('opens a one-click cart now that the unit and rate agree', () => {
     const buy = wpwWallWrapBuy(94.67)!;
-    expect(buy.mode).toBe('product');
-    expect(buy.url).toBe(WPW_WALL_WRAP_URL);
-    // It must SAY what the button does.
-    expect(buy.note).toMatch(/95 sq ft/);
+    expect(buy.mode).toBe('cart');
+    expect(buy.url).toContain('add-to-cart=70093');
+    expect(buy.url).toContain('quantity=95');
+    // Nothing to caveat when the button does exactly what it says.
+    expect(buy.note).toBeNull();
   });
 });
 

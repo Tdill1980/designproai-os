@@ -24,7 +24,7 @@ describe('the launch price list', () => {
       'Design for My Wall': 19900,
       'File Prep': 4900,
     });
-    expect(WPW_WALL_FILM_RATE_PER_SQFT).toBe(3.5);
+    expect(WPW_WALL_FILM_RATE_PER_SQFT).toBe(3.25);
   });
 
   // The ladder is the product explaining itself: the catalog design already
@@ -92,8 +92,8 @@ describe('the film is priced at the WePrintWraps rate', () => {
 
   it('multiplies the rate by that footage exactly', () => {
     const film = quoteFor('ai').lines.find(l => l.label === 'Wall wrap film, printed')!;
-    expect(film.cents).toBe(Math.round(billing.wallSqFt * 3.5 * 100));
-    expect(film.detail).toMatch(/\$3\.50\/sq ft/);
+    expect(film.cents).toBe(Math.round(billing.wallSqFt * 3.25 * 100));
+    expect(film.detail).toMatch(/\$3\.25\/sq ft/);
   });
 
   it('takes a per-shop rate when one is given', () => {
@@ -125,7 +125,7 @@ describe('the three purchase paths', () => {
     const quote = wallQuote({ path: 'print-only', designMode: 'ai', billing })!;
     expect(quote.lines).toHaveLength(1);
     expect(quote.lines[0].label).toBe('Wall wrap film, printed');
-    expect(quote.totalCents).toBe(Math.round(billing.wallSqFt * 3.5 * 100));
+    expect(quote.totalCents).toBe(Math.round(billing.wallSqFt * 3.25 * 100));
   });
 
   // A design-only quote needs no wall measured yet; anything involving film
