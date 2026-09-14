@@ -196,6 +196,98 @@ export function provenanceManifest(row: WallCatalogRow) {
   };
 }
 
+/**
+ * The creative brief a batch job actually SENDS to the generator (owner,
+ * 2026-09-14: "You need to give better prompts. I need designs like you would
+ * see on Etsy").
+ *
+ * Measured on the 500-row library that day: only 28% of each prompt is
+ * design; the other 72% is production-pipeline text ("1-inch duplicated
+ * overlap", "150 effective PPI", "never AI-regenerate a panel") that an image
+ * model cannot act on, plus eight rotating seam-engineering sentences. The
+ * pipeline already enforces every one of those rules in code
+ * (wallDesignPrompt states flat/edge-to-edge/no seam marks; the runtime
+ * panelizes deterministically), so sending them to the model only dilutes
+ * the brief — the same "boilerplate outweighs the design" failure this
+ * codebase found in the persona text on 09-12, one layer down.
+ *
+ * What a boutique wallpaper listing actually carries, and what this builds:
+ * SUBJECT (the library's Concept clause, verbatim — the literal intent stays
+ * immutable) + MEDIUM/TECHNIQUE (by design type) + MOTIF SCALE (by intensity)
+ * + PALETTE and GROUND + MOOD (by style) + the room. The library JSON is not
+ * rewritten: `entry.prompt` stays the production-contract record on the
+ * published row; this is the model-facing brief derived from it.
+ */
+const BRIEF_BOILERPLATE_START = /(Create one continuous canonical master|Straight-on flat artwork only|Make it a mathematically seamless|Render it as a flat photorealistic|Generate a minimum 4K)/;
+// Owner reference set, 2026-09-14 (five best-seller listings): brushed
+// arches on beige, terrazzo, copper line-art leaves on navy, cranes and
+// pines on black, a woodblock wave. What every one of them shares — and what
+// none of the earlier "painterly / atmospheric" wording asked for — is FLAT
+// GRAPHIC PRINT: 2-4 solid colors, bold silhouettes on a solid ground, crisp
+// or dry-brush edges, block-print / screen-print / vector rendering. Depth
+// comes from layering and line weight, never from shading or photorealism.
+// Widened the same day by four more references (toile hummingbirds in one
+// ink on cream, a navy/gold hatched ogee lattice, chevron and herringbone
+// wood): flat print is EITHER bold silhouettes in 2-4 colors OR fine
+// engraved line work in 1-2 colors; photoreal faux material is its own
+// family and stays with the two photoreal design types below.
+const FLAT_PRINT_CONTRACT = 'Render as flat graphic print artwork — either bold silhouettes in two to four solid colors, or fine engraved / hatched line work in one or two inks (toile, lattice) — with strong contrast against a solid ground (dark grounds welcome), crisp or dry-brush edges, metallic-look line where it fits; depth only from layering and line weight — no gradients, no soft shading, no photorealism, no atmospheric haze.';
+const PHOTOREAL_TYPES = new Set(['Photographic Fine Art', 'Architectural Surface']);
+const BRIEF_MEDIUM: Record<string, string> = {
+  'Painterly Mural': 'hand-brushed strokes as flat graphic marks — dry-brush and gouache texture in solid colors, brush character rather than blended shading',
+  'Illustrative Mural': 'flat illustrated block-print / linocut style: confident line, solid color fills',
+  'Panoramic Mural': 'a scenic mural in flat illustrated chinoiserie / woodblock style — layered silhouettes, solid fills, a clear horizon',
+  'Feature Wall Art': 'one large flat-graphic abstract composition: bold cut-paper shapes, solid colors, screen-print feel',
+  'Seamless Repeat Pattern': 'a flat vector / screen-print wallpaper repeat: bold silhouettes in two to four solid colors',
+  'Graphic Geometry': 'a flat graphic geometric print with crisp edges, solid colors and a deliberate rhythm',
+  'Photographic Fine Art': 'fine-art photographic realism with editorial lighting, as if printed on matte paper',
+  'Architectural Surface': 'a flat, photorealistic faux-material texture — chevron or herringbone wood plank, tile with fine grout lines, marble, brick, plaster, stone or limewash — straight-on, with no perspective, corners or lighting hotspots',
+};
+const BRIEF_SCALE: Record<WallIntensity, string> = {
+  Quiet: 'a few very large, calm forms with generous breathing room between them',
+  Balanced: 'medium-to-large motifs with a clear hierarchy of one hero element and quieter support',
+  Statement: 'bold, oversized hero motifs at dramatic scale',
+};
+const BRIEF_MOOD: Record<string, string> = {
+  'Modern Organic': 'organic modern — soft curves, earthy calm, nothing hard-edged',
+  'Quiet Luxury': 'quiet luxury — restrained, tonal, expensive-feeling',
+  'Japandi': 'Japandi — warm minimalism, natural materials, negative space as a feature',
+  'Dark Luxe': 'moody and dramatic, deep saturated tones, luxurious',
+  'Contemporary Editorial': 'contemporary editorial — magazine-clean, confident, current',
+  'Architectural Minimalism': 'architectural minimalism — structure over decoration, exact and calm',
+  'Painterly Fine Art': 'painterly fine art — loose, expressive, gallery-worthy',
+  'Photorealistic Fine Art': 'photorealistic fine art — lush, tactile, high-end print',
+  'Material-Driven Luxury': 'material-driven luxury — the surface itself is the design: stone, brass, plaster, wood',
+  'Modern Geometric': 'modern geometric — clean, rhythmic, mid-century confidence',
+  'Moody Botanical': 'moody botanical — dark ground, rich foliage, romantic and dramatic',
+  'Panoramic Atmospheric': 'panoramic and atmospheric — a horizon, depth, soft light',
+  'Sculptural Neutral': 'sculptural neutral — bas-relief feel in warm neutrals',
+  'Warm Contemporary': 'warm contemporary — inviting, layered, current',
+  'Biophilic Contemporary': 'biophilic contemporary — living greenery, natural light, restorative',
+  'Art Deco Contemporary': 'contemporary art deco — geometric glamour, brass and velvet tones',
+  'Graphic Modern': 'graphic modern — bold shapes, flat color, poster-clean',
+};
+export function batchCreativeBrief(entry: Pick<WallPromptEntry, 'prompt' | 'designType' | 'style' | 'palette' | 'intensity' | 'room' | 'industry' | 'segment'>): string {
+  const head = entry.prompt.split(BRIEF_BOILERPLATE_START)[0];
+  const concept = (head.match(/Concept:\s*(.*?)\.\s*Visual language:/)?.[1] || head.replace(/^Create an? .*? market\.\s*/, '').split('.')[0]).trim();
+  const medium = BRIEF_MEDIUM[entry.designType] || 'a hand-made, original wallcovering design';
+  const scale = BRIEF_SCALE[entry.intensity] || BRIEF_SCALE.Balanced;
+  const mood = BRIEF_MOOD[entry.style] || entry.style;
+  const domain = libraryEntryDomain(entry).designDomain;
+  const setting = domain === 'residential' ? `for a ${entry.room.toLowerCase()} in a home` : `for the ${entry.room.toLowerCase()} of a ${entry.industry.replace(/ & /g, ' / ')} business`;
+  // The library lists four colors with no ground named; guessing one (the
+  // first entry was "cobalt accent" on WPB-0007) is a false instruction, so
+  // the brief gives the designer the rule instead of a guess.
+  return [
+    `${concept.charAt(0).toUpperCase() + concept.slice(1)} — ${medium}.`,
+    `Scale: ${scale}.`,
+    `Palette: ${entry.palette}; the quietest of these is the ground, the boldest the accent.`,
+    `Mood: ${mood}.`,
+    PHOTOREAL_TYPES.has(entry.designType) ? '' : FLAT_PRINT_CONTRACT,
+    `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, print-made character, nothing generic or clip-art.`,
+  ].filter(Boolean).join(' ');
+}
+
 /** Effective print resolution of a catalog master at its default placement:
  * tile width for repeats, a 144 in accent wall for murals. A 4K master is not
  * 150 PPI because a label says so; only pixels over inches count. */
