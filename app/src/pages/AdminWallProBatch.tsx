@@ -9,16 +9,20 @@ import { Helmet } from 'react-helmet-async';
 import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson, Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import library from '@/data/wallpro-prompt-library.json';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, type WallAsset } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, writeWallBriefs, type WallAsset, type WallGeneratedBrief, type WallBriefRequest } from '@/lib/wallpro-api';
+import { WALL_PRESETS, WALL_CATEGORIES, WALL_CATEGORY_LABELS, presetAsEntry, presetDomain, generatedBriefAsEntry, type WallCategory } from '@/data/wallpro-presets';
 import { validateWallUpload, prepareWallUpload, loadWallImage, canvasBlob, renderWallPreview } from '@/lib/wallpro-render';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { sceneUpsertRow, sceneLayoutFor, mockupCaption, DEFAULT_SCENE_WALL_IN, FULL_FRAME_CORNERS, type WallCatalogScene } from '@/lib/wallpro-scenes';
 import type { Point } from '@/lib/wallpro-geometry';
 import { measureSeam, blendSeamless, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, batchSeamDecision, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, briefForEntry, batchSeamDecision, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
 import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
 
 const LIBRARY = library as WallPromptEntry[];
+/** RestylePro's natural-language preset library, as batch entries. */
+const PRESET_ENTRIES = WALL_PRESETS.map(presetAsEntry);
+type BriefSource = 'presets' | 'ai' | 'library';
 const INDUSTRIES = [...new Set(LIBRARY.map(e => e.industry))].sort();
 const DESIGN_TYPES = [...new Set(LIBRARY.map(e => e.designType))].sort();
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
@@ -130,8 +134,35 @@ export default function AdminWallProBatch() {
   const urls = useRef<string[]>([]);
   useEffect(() => () => urls.current.forEach(u => URL.revokeObjectURL(u)), []);
 
+  // Where the batch's briefs come from (owner, 2026-09-14: "natural language
+  // prompts required … pattern how RP's Vehicle Batch design app"). Presets
+  // and AI-written briefs are customer-voice prose sent to the consultant
+  // verbatim; the legacy 500-row spec-sheet library is kept as a third
+  // source and still rewritten by batchCreativeBrief.
+  const [briefSource, setBriefSource] = useState<BriefSource>('presets');
+  const [presetCategory, setPresetCategory] = useState<WallCategory | 'all'>('all');
+  const [aiBriefs, setAiBriefs] = useState<WallGeneratedBrief[]>([]);
+  const [aiSpace, setAiSpace] = useState('');
+  const [aiRendering, setAiRendering] = useState<NonNullable<WallBriefRequest['rendering']>>('any');
+  const [aiMode, setAiMode] = useState<NonNullable<WallBriefRequest['mode']>>('any');
+
   const published = useMemo(() => new Set(catalog.map(r => r.design_id)), [catalog]);
-  const matching = useMemo(() => selectLibraryEntries(LIBRARY, filter, published, includePublished), [filter, published, includePublished]);
+  const matching = useMemo(() => {
+    if (briefSource === 'ai') return aiBriefs.map(generatedBriefAsEntry);
+    if (briefSource === 'presets') {
+      const pool = PRESET_ENTRIES.filter(e => presetCategory === 'all' || e.tags.includes(presetCategory));
+      return selectLibraryEntries(pool, { domain: filter.domain, designType: filter.designType }, published, includePublished);
+    }
+    return selectLibraryEntries(LIBRARY, filter, published, includePublished);
+  }, [briefSource, aiBriefs, presetCategory, filter, published, includePublished]);
+
+  async function writeBriefs() {
+    await guarded('Writing briefs', async () => {
+      const domain = filter.domain === 'residential' ? 'residential' : 'commercial';
+      const result = await writeWallBriefs({ domain, count: batchSize, space: aiSpace.trim() || null, rendering: aiRendering, mode: aiMode });
+      setAiBriefs(result.prompts);
+    });
+  }
 
   async function refreshCatalog() {
     const rows = await listWallCatalogAll();
@@ -193,11 +224,12 @@ export default function AdminWallProBatch() {
       // a word of the library prompt itself. Without this the classifier had
       // only the prompt text to read, which is weaker for a library entry
       // that already names its business/room explicitly.
-      // The model gets the listing-quality creative brief, never the raw
-      // library prompt: 72% of that text is production-pipeline instruction
-      // the pipeline already enforces in code (see batchCreativeBrief). The
-      // published row still records entry.prompt as the production contract.
-      const result = await generateWall({ requestId, prompt: batchCreativeBrief(job.entry), width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style });
+      // The consultant persona receives a customer-voice brief, the way
+      // RestylePro's batch fed its personas (owner, 2026-09-14): a preset or
+      // AI-written brief goes VERBATIM; only the legacy spec-sheet library is
+      // rewritten first (see briefForEntry). The published row records
+      // entry.prompt, which for a natural brief IS what the designer saw.
+      const result = await generateWall({ requestId, prompt: briefForEntry(job.entry), width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style, designDomain: job.entry.domain ?? undefined });
       const measured = await measureAsset(result.image_url);
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the
@@ -344,17 +376,27 @@ export default function AdminWallProBatch() {
       {tab === 'generator' && <>
         <section className={panelClass}>
           <h2 className="font-semibold">Batch settings</h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(['presets', 'ai', 'library'] as const).map(s => <Button key={s} size="sm" variant={briefSource === s ? 'default' : 'outline'} disabled={running || !!busy} onClick={() => { setBriefSource(s); if (s === 'ai') { if (filter.domain === 'all') setFilter(f => ({ ...f, domain: 'residential' })); if (batchSize > 20) setBatchSize(20); } }}>{s === 'presets' ? `Brief presets (${PRESET_ENTRIES.length})` : s === 'ai' ? 'AI brief writer' : `Legacy library (${LIBRARY.length})`}</Button>)}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Presets and AI-written briefs are customer-voice prose sent to the consultant persona word for word — the way RestylePro's batch ran. The legacy library is a spec sheet and is rewritten into a brief first.</p>
           <fieldset disabled={running || !!busy} className="mt-3 grid gap-3 md:grid-cols-3 lg:grid-cols-6">
-            <label className="text-sm">Segment<select className={inputClass} value={filter.segment} onChange={e => setFilter(f => ({ ...f, segment: e.target.value as WallBatchFilter['segment'] }))}><option value="all">All</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select></label>
-            <label className="text-sm">Domain<select className={inputClass} value={filter.domain} onChange={e => setFilter(f => ({ ...f, domain: e.target.value as WallBatchFilter['domain'] }))}><option value="all">Commercial + Residential</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
-            <label className="text-sm lg:col-span-2">Industry<select className={inputClass} value={filter.industry} onChange={e => setFilter(f => ({ ...f, industry: e.target.value }))}><option value="all">All industries</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-            <label className="text-sm">Design type<select className={inputClass} value={filter.designType} onChange={e => setFilter(f => ({ ...f, designType: e.target.value }))}><option value="all">All types</option>{DESIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
-            <label className="text-sm">Intensity<select className={inputClass} value={filter.intensity} onChange={e => setFilter(f => ({ ...f, intensity: e.target.value as WallIntensity | 'all' }))}><option value="all">Any</option>{(['Quiet', 'Balanced', 'Statement'] as const).map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-            <label className="text-sm">Batch size<select className={inputClass} value={batchSize} onChange={e => setBatchSize(Number(e.target.value))}>{[5, 10, 15, 20, 25, 50].map(n => <option key={n} value={n}>{n} designs</option>)}</select></label>
+            <label className="text-sm">Domain<select className={inputClass} value={filter.domain} onChange={e => setFilter(f => ({ ...f, domain: e.target.value as WallBatchFilter['domain'] }))}>{briefSource !== 'ai' && <option value="all">Commercial + Residential</option>}<option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
+            {briefSource === 'library' && <label className="text-sm">Segment<select className={inputClass} value={filter.segment} onChange={e => setFilter(f => ({ ...f, segment: e.target.value as WallBatchFilter['segment'] }))}><option value="all">All</option><option value="B2B">B2B</option><option value="B2C">B2C</option></select></label>}
+            {briefSource === 'library' && <label className="text-sm lg:col-span-2">Industry<select className={inputClass} value={filter.industry} onChange={e => setFilter(f => ({ ...f, industry: e.target.value }))}><option value="all">All industries</option>{INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}</select></label>}
+            {briefSource === 'presets' && <label className="text-sm lg:col-span-2">Space<select className={inputClass} value={presetCategory} onChange={e => setPresetCategory(e.target.value as WallCategory | 'all')}><option value="all">All spaces</option>{WALL_CATEGORIES.filter(c => filter.domain === 'all' || presetDomain(c) === filter.domain).map(c => <option key={c} value={c}>{WALL_CATEGORY_LABELS[c]}</option>)}</select></label>}
+            {briefSource !== 'ai' && <label className="text-sm">Design type<select className={inputClass} value={filter.designType} onChange={e => setFilter(f => ({ ...f, designType: e.target.value }))}><option value="all">All types</option>{DESIGN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>}
+            {briefSource === 'library' && <label className="text-sm">Intensity<select className={inputClass} value={filter.intensity} onChange={e => setFilter(f => ({ ...f, intensity: e.target.value as WallIntensity | 'all' }))}><option value="all">Any</option>{(['Quiet', 'Balanced', 'Statement'] as const).map(i => <option key={i} value={i}>{i}</option>)}</select></label>}
+            {briefSource === 'ai' && <label className="text-sm lg:col-span-2">Space (optional)<input className={inputClass} placeholder="e.g. nursery, restaurant, dental office" value={aiSpace} onChange={e => setAiSpace(e.target.value)} /></label>}
+            {briefSource === 'ai' && <label className="text-sm">Rendering<select className={inputClass} value={aiRendering} onChange={e => setAiRendering(e.target.value as typeof aiRendering)}><option value="any">Rotate families</option><option value="flat-bold">Flat bold print</option><option value="fine-line">Fine-line engraving</option><option value="faux-material">Faux material</option><option value="painted-mural">Painted mural</option><option value="photographic">Photographic</option></select></label>}
+            {briefSource === 'ai' && <label className="text-sm">Repeat or mural<select className={inputClass} value={aiMode} onChange={e => setAiMode(e.target.value as typeof aiMode)}><option value="any">Writer decides</option><option value="repeat">Repeats only</option><option value="mural">Murals only</option></select></label>}
+            <label className="text-sm">Batch size<select className={inputClass} value={batchSize} onChange={e => setBatchSize(Number(e.target.value))}>{[5, 10, 15, 20, 25, 50].filter(n => briefSource !== 'ai' || n <= 20).map(n => <option key={n} value={n}>{n} designs</option>)}</select></label>
             <label className="text-sm">Repeat tile width (in)<input className={inputClass} type="number" min="1" max="2400" step="1" value={tileWidthIn} onChange={e => setTileWidthIn(Number(e.target.value))} /></label>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={includePublished} onChange={e => setIncludePublished(e.target.checked)} />Regenerate already published DesignIDs</label>
-            <div className="text-sm text-slate-600 self-end pb-2 lg:col-span-2">{matching.length} library prompts match; the queue takes the first {Math.min(batchSize, matching.length)} in catalog order.</div>
+            {briefSource !== 'ai' && <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={includePublished} onChange={e => setIncludePublished(e.target.checked)} />Regenerate already published DesignIDs</label>}
+            {briefSource === 'ai' && <div className="self-end pb-1"><Button variant="outline" type="button" onClick={() => void writeBriefs()}><Zap className="mr-2 h-4 w-4" />Write {Math.min(batchSize, 20)} briefs</Button></div>}
+            <div className="text-sm text-slate-600 self-end pb-2 lg:col-span-2">{briefSource === 'ai' ? (aiBriefs.length ? `${aiBriefs.length} briefs written; build the queue to run them.` : 'No briefs written yet.') : `${matching.length} ${briefSource === 'presets' ? 'preset briefs' : 'library prompts'} match; the queue takes the first ${Math.min(batchSize, matching.length)}.`}</div>
           </fieldset>
+          {briefSource === 'ai' && aiBriefs.length > 0 && <ol className="mt-3 grid gap-2 md:grid-cols-2">{aiBriefs.map(b => <li key={b.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs"><span className="font-semibold">{b.name}</span> <span className="text-slate-500">· {b.subcategory} · {b.mode} · {b.rendering}</span><p className="mt-1 text-slate-700">{b.prompt}</p></li>)}</ol>}
           {jobs.length > 1 && <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             {(() => { const d = batchDiversitySummary(jobs.map(j => j.entry)); const top = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]; const domainTop = top(d.domains), styleTop = top(d.styles), paletteTop = top(d.paletteFamilies);
               return <>Batch diversity — {Object.keys(d.domains).length} domain(s), {Object.keys(d.styles).length} style(s), {Object.keys(d.paletteFamilies).length} palette famil{Object.keys(d.paletteFamilies).length === 1 ? 'y' : 'ies'} across {d.count} jobs.

@@ -195,6 +195,10 @@ verify_jwt = false
 # AI view on the wall: presentation picture from the room photo and the flat master; no token charged.
 verify_jwt = false
 
+[functions.generate-wall-batch-prompts]
+# Curator-only batch brief writer (RestylePro generate-batch-prompts, wall edition); the handler checks the caller and the curator role.
+verify_jwt = false
+
 # ── GraphicsPro (cut-contour graphics for walls, vehicles and glass) ──────────
 # Recovered from restylepro-os (RULE 1). Every handler resolves the caller from
 # the Authorization header itself; the gateway must not pre-reject stale JWTs.

@@ -96,6 +96,22 @@ export async function getWallProject(id: string) {
   return data;
 }
 
+/** The batch brief writer (RestylePro `generate-batch-prompts`, wall edition):
+ * fresh natural-language customer briefs for the curator's batch, written by
+ * the studio creative-director persona. Curator-only; no token charged. */
+export type WallBriefRequest = { domain: 'commercial' | 'residential'; count: number; space?: string | null; rendering?: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic' | 'any'; mode?: 'repeat' | 'mural' | 'any' };
+export type WallGeneratedBrief = { id: string; name: string; subcategory: string; prompt: string; tags: string[]; mode: 'repeat' | 'mural'; rendering: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic'; domain: 'commercial' | 'residential' };
+export async function writeWallBriefs(input: WallBriefRequest): Promise<{ prompts: WallGeneratedBrief[]; model: string; version: string }> {
+  const { data, error } = await supabase.functions.invoke('generate-wall-batch-prompts', { body: input });
+  if (error) {
+    const response = (error as any).context;
+    const body = await response?.clone?.().json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'The brief writer could not be reached.');
+  }
+  if (!data || !Array.isArray(data.prompts)) throw new Error(data?.error || 'The brief writer returned no briefs.');
+  return data;
+}
+
 /** Detect my wall: proposes the wall corners and the openings to protect from
  * the uploaded wall photo. Preview-only; costs no token. */
 export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
