@@ -281,7 +281,10 @@ export const WPW_CATALOG: WpwCatalogItem[] = [
     wooProductId: 234,
     sku: "CHWD",
     name: "Custom Vehicle Wrap Design",
-    price: 500,
+    // $975 on the live store, verified 2026-09-14 against the Store API. This
+    // row said 500 -- stale by $475 on WPW's flagship human design service,
+    // which is also the price WallPro's $79-$199 wall design sits beside.
+    price: 975,
     unit: "each",
     kind: "design",
     permalink: `${P}custom-wrap-design/`,
