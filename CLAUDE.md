@@ -30,6 +30,31 @@
 > install), and the output-class inspector refused a *"vintage Porsche Martini
 > race team"* brief because "the image contains a side profile of a race car" —
 > the artwork's subject, not a vehicle mockup.
+>
+> **RULING 2026-09-14 (owner: "Fix it omg … get designpro working end to end")
+> — RULE 0.15 RESTORED, INSPECTOR NARROWED. Both gate changes are deliberate
+> reversals; do not "restore" the 09-10 behaviour.**
+> 1. **A cut-out is a print defect, not a broken design.** A wheel-arch / glass
+>    / bed opening in an otherwise full-bleed panel is repaired by the
+>    deterministic `fillMasterCutouts` (pixel continuation, no AI), the repaired
+>    sheet is structurally RE-VALIDATED (`flat_atlas_repaired_master_invalid` if
+>    it does not yield six clean regions), re-classified on its own bytes, and
+>    then ACCEPTED — one image call, no ledger row. The 09-10 (82da00d) refusal
+>    of cut-outs in the loop and before the fill turned the fill into dead code;
+>    7 of the 13 refused sheets since 09-06 were cut-out-only. The silhouette
+>    case (artwork never reaching its own borders, `edgeHoleRatio`) is NOT a
+>    cut-out and still refuses; the field fail-over tests now use that fixture.
+>    Locked by `tests/atlas-authored-topology.test.mjs` ("repaired … on ONE
+>    image call") and `tests/atlas-authoring-recovery.test.mjs`.
+> 2. **The output-class inspector convicts pictures of vehicles, not livery.**
+>    Its prompt named "grille, headlight, door or window shapes" and "printed
+>    panel names (ROOF, REAR, DRIVER)" as vehicle_depiction, so it refused two
+>    Porsche Martini race-livery sheets for their own motifs and a six-panel
+>    sheet for having hood/side/rear panels. It now states that motifs and panel
+>    captions are `flat_atlas`; a whole vehicle in perspective/elevation with
+>    real wheels, a scene, reflections, or a vehicle-shaped island on a plain
+>    surround remain `vehicle_depiction`. Locked by
+>    `tests/atlas-output-class-gate.test.mjs`.
 
 **Supersedes the "one image request" half of the 2026-08-31 artifact-graph
 contract and the 2026-09-06 six-surface restoration wherever they conflict.

@@ -3242,10 +3242,21 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // Passenger look structurally "better" than the actual accepted design.
     // No semantic call or image rewrite occurs here.
 
-    // The restored six-surface contract forbids healing. A classified cutout
-    // therefore refuses this candidate inside the existing bounded loop.
-    // A first-attempt cutout previously skipped the unchanged fallback. Terminal
-    // cutout errors also discarded surface findings (3b9b3209, 2026-09-06).
+    // RULE 0.15 RESTORED (owner, Trish 2026-09-14: "Fix it ... get designpro
+    // working end to end"). A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN.
+    //
+    // A wheel arch, glass band or bed opening punched through an otherwise
+    // full-bleed panel is repaired below by `fillMasterCutouts` (deterministic
+    // pixel continuation, no AI) and the repaired sheet is structurally
+    // RE-VALIDATED before anything is accepted (owner boundary, 2026-08-31).
+    // That is the path this file was built around. On 2026-09-10 (82da00d) a
+    // cut-out was made a REFUSAL inside this loop and again before the fill,
+    // which turned the fill into dead code: seven of the thirteen sheets
+    // refused between 09-06 and 09-14 were cut-out-only, and delivered designs
+    // went 17 -> 4 -> 0 per week. The silhouette case (artwork that never
+    // reaches its own borders) is NOT a cut-out; it stays a blocking failure
+    // in atlas-master-qc (edgeHoleRatio) exactly as before, and the fill is
+    // never asked to smear a surround inward.
     masterCutoutSurfaces = cutoutSurfacesOf(deterministic);
     masterCutoutFindings = (deterministic.cutoutFindings || []).map((item) => String(item.finding));
 
@@ -3264,10 +3275,11 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // this refusal set.
     const stillBlocking = [...(deterministic.blockingFailures || [])];
     let refusalCode = "flat_atlas_master_deterministic_failed";
-    if (masterCutoutSurfaces.length) {
-      if (!stillBlocking.length) refusalCode = "flat_atlas_unrepaired_cutout";
-      stillBlocking.unshift(
-        `unrepaired cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
+    if (masterCutoutSurfaces.length && stillBlocking.length) {
+      // Cut-outs beside a real structural failure are recorded on the refusal
+      // for the ledger; alone, they are repaired after the loop, never refused.
+      stillBlocking.push(
+        `cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
       );
     }
     if (!stillBlocking.length) {
@@ -3441,9 +3453,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // views". Nothing changes on a clean master: `fillMasterCutouts` returns the
   // same buffer, `panelSourceHash` equals `masterHash`, and the projection and
   // view authorities are byte-identical to what they were before.
-  if (masterCutoutSurfaces.length) {
-    throw new FlatAtlasError("flat_atlas_unrepaired_cutout", "The authored master contains cutouts; restoration does not heal or reconstruct artwork");
-  }
+  // (2026-09-10 → 09-14 a throw here refused every holed sheet before the fill
+  // could run. Removed under RULE 0.15 restored; see the loop above. The fill
+  // result still faces the structural re-validation below, and a fill that
+  // cannot produce six valid regions still fails closed.)
   const repairStartedAt = Date.now();
   const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
   timings.repairMs += Date.now() - repairStartedAt;
@@ -3470,11 +3483,25 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // customer sees anything.
   if (cutoutFill.changed) {
     const repaired = await deterministicMasterChecks(surfaceSourceBytes, manifest);
-    if (repaired.blockingFailures.length) {
+    if (repaired.blockingFailures.length || repaired.cutoutFindings.length) {
       throw new FlatAtlasError(
         "flat_atlas_repaired_master_invalid",
         "The deterministic repair did not produce six valid printable regions: "
-        + repaired.blockingFailures.join("; "),
+        + [...repaired.blockingFailures, ...repaired.cutoutFindings.map((item) => item.finding)].join("; "),
+      );
+    }
+    // The repaired sheet is what gets accepted below, so the acceptance
+    // evidence must describe IT: the structural checks that passed, and the
+    // output-class verdict on its own bytes (the recovery checkpoint refuses a
+    // receipt whose candidate hash is not the accepted master's). The class
+    // question on the pre-repair sheet already passed; asking it again of a
+    // strictly more continuous sheet is the honest receipt, not a new gate.
+    masterDeterministic = repaired;
+    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
+    if (outputClassReceipt.blocking) {
+      throw new FlatAtlasError(
+        "flat_atlas_master_output_class_invalid",
+        `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "vehicle depicted"}`,
       );
     }
   }
