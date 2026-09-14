@@ -36,7 +36,7 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
   if (!WPW_PRINTED_FILMS.length) return null;
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Order printed film">
+    <section id="order-printed-film" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Order printed film">
       <h2 className="text-lg font-semibold">Just need film printed?</h2>
       <p className="mt-2 text-sm text-slate-600">
         If your artwork is already print-ready, skip the design and order the film.

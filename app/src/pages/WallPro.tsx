@@ -30,7 +30,7 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -100,6 +100,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // this server-side (request_wallpro_production); the button here is the
   // purchase path, not the security boundary.
   const [entitlements, setEntitlements] = useState<WallProEntitlement[]>([]);
+  /**
+   * Why the next generation is free — 'trial', 'commercialpro', 'privileged',
+   * or null when it is charged. Asked BEFORE anything is spent (owner,
+   * 2026-09-14: "We shpuld have a try free"), so the button can promise it
+   * rather than the customer discovering it at the point of failure. Fails
+   * soft: unknown means the page promises nothing, which is the safe way to be
+   * wrong about someone's money.
+   */
+  const [freeReason, setFreeReason] = useState<string | null>(null);
   const entitled = entitlements.length > 0;
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
@@ -865,6 +874,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     openWallAssets(paths).then(map => { if (active) setZoneArt(map); }).catch(() => { if (active) setZoneArt({}); });
     return () => { active = false; };
   }, [zones, projectId]);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!data?.user) { if (live) setFreeReason('trial'); return; }
+        const reason = await wallFreeReason(data.user.id);
+        if (live) setFreeReason(reason);
+      } catch { if (live) setFreeReason(null); }
+    })();
+    return () => { live = false; };
+    // Re-checked after a generation: the trial is spent by the first one.
+  }, [versions.length]);
+
   // Returning from Stripe: the webhook records the entitlement asynchronously,
   // so this re-checks a few times rather than trusting the redirect alone.
   useEffect(() => {
@@ -1081,6 +1104,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           or artwork exists the customer has their own before and after in the
           preview pane, and a stranger's gym is in the way. */}
       {!photo && !artwork && <WallProHeroProof proofs={theme.proofs} />}
+      {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
+          block is the only friction-free money on this page -- no sign-in, no
+          token, no design -- and on a wrap printer's site "I already have
+          artwork" is a large share of arrivals. It was sitting below two
+          thousand pixels of design tool, which asks exactly the wrong question
+          of that customer. One slim line puts it one click away without
+          competing with the designer for the fold. */}
+      {theme.showPrintOffer && !artwork && <a
+        href="#order-printed-film"
+        onClick={e => { e.preventDefault(); document.getElementById('order-printed-film')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+        className="mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-blue-400"
+      >
+        <span className="text-slate-700">
+          <strong className="font-semibold text-slate-900">Already have artwork?</strong> Skip the design and order printed film by the square foot.
+        </span>
+        <span className="shrink-0 font-semibold text-blue-700">Order film &rarr;</span>
+      </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
@@ -1089,6 +1129,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         {!history.projects.length && !history.generations.length && <p className="py-4 text-sm text-slate-500">Your saved projects will appear here.</p>}
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
+        {/* THE RAIL (owner's #4: "Why not have a left side bar on wallpro").
+            The 400px column already WAS a sidebar -- it just ended when the form
+            did, leaving two thousand pixels of empty gutter beside the rest of
+            the page. Sticking it is what makes this read as a tool rather than a
+            form followed by a document, and it keeps wall size, design path and
+            Generate reachable while the preview and the print files scroll.
+
+            Desktop only, and scrollable in its own right: on a phone the form
+            and the preview stack, and a sticky rail there would eat the screen.
+            `stickyTop` is the same measured header offset the header itself
+            uses, so the rail begins exactly below it instead of under it. */}
+        <div className="lg:sticky lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
+             style={{ top: stickyTop + 12, maxHeight: `calc(100vh - ${stickyTop + 24}px)` }}>
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
           <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
@@ -1141,7 +1194,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
               {intent !== 'match' && <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
               {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
-              <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
+              {freeReason === 'commercialpro'
+                ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
+                : freeReason === 'trial'
+                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. No account needed to try it — usually ready in 1–2 minutes.</p>
+                  : <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
               {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
@@ -1151,6 +1208,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
+        </div>
         <div className="min-w-0 space-y-5">
           {/* scroll-mt clears the sticky header: a finished design scrolls
               itself here, and without it the heading lands underneath. */}
