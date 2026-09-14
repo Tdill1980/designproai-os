@@ -98,7 +98,7 @@ export function BeforeAfter({ before, after, alt, name }: { before: string; afte
       </div>
 
       <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-slate-900/70 px-2.5 py-1 text-xs font-bold text-white">BEFORE</span>
-      <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-violet-600/85 px-2.5 py-1 text-xs font-bold text-white">AFTER</span>
+      <span className="pointer-events-none absolute right-2 top-2 rounded-full bg-blue-600/85 px-2.5 py-1 text-xs font-bold text-white">AFTER</span>
 
       {/* The handle. A real slider input would be simpler, but it cannot be
           dragged from anywhere on the picture, which is the gesture people

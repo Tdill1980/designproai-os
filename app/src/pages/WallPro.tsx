@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
+import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
@@ -15,7 +16,7 @@ import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zon
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
-import { wallBrand, type WallBrandKey } from '@/lib/wallpro-brand';
+import { wallBrand, WALL_GRADIENT, WALL_GRADIENT_TEXT, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
@@ -495,7 +496,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
         onChange={e => { void fileSelected(e.target.files?.[0], role); e.target.value = ''; }} />
       <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
-        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-medium hover:border-violet-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-sm font-medium hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
         <Upload size={18} />{label}
       </button>
     </div>
@@ -1031,9 +1032,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               what tells a first-time visitor what WallPro is, so it earns its
               line on a phone too. */}
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600 md:text-xs">{theme.eyebrow}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600 md:text-xs">{theme.eyebrow}</p>
             <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
-              {theme.wordmarkLead}<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">{theme.wordmarkAccent}</span>
+              {theme.wordmarkLead}<span className={`${WALL_GRADIENT_TEXT} bg-clip-text text-transparent`}>{theme.wordmarkAccent}</span>
             </h1>
             {/* The owner's own words for what this tool IS (2026-09-13:
                 "a persistent header that says WallPro custom wall wrap file
@@ -1052,6 +1053,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           </div>
         </div>
       </header>
+      {/* The proof band, and ONLY before they start. Its whole job is to answer
+          "what does this do?" for someone who has just landed; once a wall photo
+          or artwork exists the customer has their own before and after in the
+          preview pane, and a stranger's gym is in the way. */}
+      {!photo && !artwork && <WallProHeroProof proof={theme.proof} />}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
@@ -1078,16 +1084,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
               { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
               { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span>
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-violet-50 ring-1 ring-blue-300' : 'border-slate-200 hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span>
               {/* The price is on the choice, not buried in a checkout. Each entry
                   path is its own SKU (owner's launch list, 2026-09-13), so the
                   customer picks knowing what it costs. */}
-              <span className="shrink-0 text-sm font-bold text-violet-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
+              <span className="shrink-0 text-sm font-bold text-blue-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
             <p className="mb-4 text-[11px] text-slate-500">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-violet-500 ring-2 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}>
+                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-blue-500 ring-2 ring-blue-300' : 'border-slate-200 hover:border-blue-400')}>
                   <div className="aspect-[4/3] bg-slate-100">{catalogThumbs[row.thumb_path || row.master_path] && <img src={catalogThumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" />}</div>
                   <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p></div>
                 </button>)}</div>
@@ -1115,7 +1121,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
               {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
               {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
-              <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
+              <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
@@ -1213,7 +1219,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setAddingZone(false); setNewZoneLabel(''); }}>Cancel</Button>
                     </span>}
               </div>
-              {parentProjectId && <p className="mb-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-xs text-violet-900">
+              {parentProjectId && <p className="mb-2 rounded-lg border border-blue-200 bg-violet-50 p-2 text-xs text-blue-900">
                 Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
               </p>}
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
@@ -1267,7 +1273,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     : detectedMask || removeMask || exclusions.length
                       ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
                       : 'Nothing needed protecting on this wall.'}
-                  {' '}<button type="button" className="font-semibold text-violet-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done adjusting' : 'Adjust'}</button>
+                  {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done adjusting' : 'Adjust'}</button>
                 </p>
               </div>
               {showMaskTools && <>
@@ -1287,12 +1293,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </div>
               <p className="mt-2 text-xs text-slate-600">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
-              {marking && <p role="status" className="mt-3 text-sm text-violet-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
+              {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs text-slate-500">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs text-slate-500"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
             </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-slate-100 p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm text-slate-500">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
             </div>
-            {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
+            {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
           <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs text-slate-500">The wall photo download is a visual proof. Use Prepare print files below for full-size panel PDFs.</p></section>
           {artwork && <section className={panelClass} aria-label="Refine and approve">
@@ -1306,7 +1312,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {uploadControl('reference', reference ? 'Replace reference image' : 'Add a reference image (optional)')}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button className="bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={!!busy || !refinePrompt.trim()} onClick={() => void refine()}><Wand2 className="mr-2 h-4 w-4" />Refine this design</Button>
+              <Button className={`${WALL_GRADIENT} text-white`} disabled={!!busy || !refinePrompt.trim()} onClick={() => void refine()}><Wand2 className="mr-2 h-4 w-4" />Refine this design</Button>
               {currentVersion && currentVersion.status !== 'approved' && <Button variant="outline" disabled={!!busy} onClick={() => void approveCurrent()}>Approve V{currentVersion.version_no} for production</Button>}
               {currentVersion?.status === 'approved' && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">V{currentVersion.version_no} approved</span>}
               <span className="text-xs text-slate-500">1 design token per refinement.</span>
@@ -1327,11 +1333,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   <span className="text-xs text-slate-500">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-violet-500 bg-violet-50' : 'border-slate-200 hover:border-violet-400')}>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-blue-500 bg-violet-50' : 'border-slate-200 hover:border-blue-400')}>
                 <div className="aspect-[4/3] overflow-hidden rounded bg-slate-100">{versionThumbs[v.artwork_path] && <img src={versionThumbs[v.artwork_path]} alt={'Version ' + v.version_no} className="h-full w-full object-cover" loading="lazy" />}</div>
                 <p className="mt-1 font-semibold">V{v.version_no} · {v.kind}{v.status === 'approved' ? ' · approved' : ''}</p>
                 <p className="truncate text-slate-500">{v.prompt || v.note || (v.design_id ?? '')}</p>
-                {v.id !== currentVersionId && <p className="text-violet-700">Restore</p>}
+                {v.id !== currentVersionId && <p className="text-blue-700">Restore</p>}
               </button>)}</div></div>}
           </section>}
           {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
@@ -1393,7 +1399,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         generate"). The action follows them instead. `bottom-16` clears the
         app's own bottom nav. */}
     {!artwork && !busy && <div className="fixed inset-x-0 bottom-16 z-40 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-      <Button className="w-full bg-gradient-to-r from-sky-600 via-violet-600 to-fuchsia-600 text-white" disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
+      <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
       {generationBlocker && <p className="mt-1 text-center text-[11px] text-slate-600">{generationBlocker}</p>}
     </div>}
   </main>;

@@ -73,16 +73,16 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
   const whole = wholeWallFile(job);
 
   const stale = job && JSON.stringify(job.request) !== JSON.stringify(request);
-  return <section className="rounded-2xl border border-violet-200 bg-white p-5 shadow-sm" aria-label="Production panels">
+  return <section className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm" aria-label="Production panels">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="font-semibold"><Sparkles className="mr-2 inline h-4 w-4 text-violet-600" />Production panels{approved ? <> · <span className="rounded bg-slate-900 px-2 py-0.5 font-mono text-sm text-white">{wallDesignId(approved.id)}</span></> : ''} · {request.targetPpi} PPI · {fmt(request.panelWidthIn)}″ panels · {fmt(request.overlapIn)}″ overlap</h2>
+      <h2 className="font-semibold"><Sparkles className="mr-2 inline h-4 w-4 text-blue-600" />Production panels{approved ? <> · <span className="rounded bg-slate-900 px-2 py-0.5 font-mono text-sm text-white">{wallDesignId(approved.id)}</span></> : ''} · {request.targetPpi} PPI · {fmt(request.panelWidthIn)}″ panels · {fmt(request.overlapIn)}″ overlap</h2>
       {approved && <Button size="sm" disabled={busy || requesting || !!live} onClick={() => void start()}>{requesting ? 'Requesting…' : live ? 'Building…' : job ? 'Rebuild panels' : 'Build 150 PPI panels'}</Button>}
     </div>
     <p className="mt-1 text-sm text-slate-600">Built on the server from the approved version: each panel is rasterised from the master, enhanced through Topaz, and delivered at exactly {request.targetPpi} PPI for its inches. Print files never wait for the wall photo.{approved ? ` Your design team can download these under ${wallDesignId(approved.id)}.` : ''}</p>
     {!approved && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Approve a version to build its production panels.</p>}
     {error && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {job && <div className="mt-3 space-y-2 text-sm">
-      {live && <p role="status" className="flex items-center gap-2 text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{job.status === 'queued' ? 'Queued for the production runtime…' : `Building panel ${Math.min((job.progress.panelsDone || 0) + 1, job.progress.panelsTotal || 0)} of ${job.progress.panelsTotal || '?'}${job.progress.nativePpi ? ` · master is ${job.progress.nativePpi} PPI native, Topaz ${job.progress.topaz || ''} to ${request.targetPpi}` : ''}`}</p>}
+      {live && <p role="status" className="flex items-center gap-2 text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{job.status === 'queued' ? 'Queued for the production runtime…' : `Building panel ${Math.min((job.progress.panelsDone || 0) + 1, job.progress.panelsTotal || 0)} of ${job.progress.panelsTotal || '?'}${job.progress.nativePpi ? ` · master is ${job.progress.nativePpi} PPI native, Topaz ${job.progress.topaz || ''} to ${request.targetPpi}` : ''}`}</p>}
       {job.status === 'failed' && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">The build failed: {job.error || 'unknown error'}. Rebuild to try again.</p>}
       {/* GENIE UNIVERSAL PANELIZER, the shared surface (owner, 2026-09-13:
           "use the current DP Genie universal Panelizer progress as a template
@@ -108,7 +108,7 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
         : null; })()}
       {stale && !live && <p className="text-xs text-amber-800">These panels were built for a different wall size or placement. Rebuild for the current settings.</p>}
       {/* THE print file first: the whole wall as one PNG. Panels are the fallback for a RIP that cannot tile. */}
-      {job.status === 'ready' && whole && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-violet-400 bg-violet-50 px-4 py-3">
+      {job.status === 'ready' && whole && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-blue-400 bg-violet-50 px-4 py-3">
         <span><strong className="text-base">Print file · {wallDesignId(approved!.id)}</strong><br /><span className="text-slate-700">{whole.file} · {fmt(whole.widthIn)} × {fmt(whole.heightIn)} in with {fmt(request.bleedIn)}″ bleed · {whole.widthPx.toLocaleString()} × {whole.heightPx.toLocaleString()} px · {whole.ppi} PPI · {mb(whole.byteSize)}</span></span>
         {links[whole.path] ? <Button asChild size="lg"><a href={links[whole.path]} download={whole.file} rel="noopener"><Download className="mr-2 h-4 w-4" />Download print file</a></Button> : <span className="text-xs text-slate-500">preparing link…</span>}
       </div>}

@@ -119,7 +119,7 @@ export function WallPrintOutput({ artwork, name, projectId, layout, seamless, se
     </div>}
     <label className="mt-4 flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" disabled={busy || !ready} checked={approved === signature} onChange={e => setApproved(e.target.checked ? signature : '')} />I reviewed the wall dimensions, artwork placement, bleed and overlap. I will print at 100% / actual size.</label>
     <Button className="mt-4" disabled={busy || !ready || approved !== signature} onClick={() => void prepare()}><Printer className="mr-2 h-4 w-4" />Build print files</Button>
-    {progress && <p role="status" className="mt-3 text-sm text-violet-700">{progress}…</p>}
+    {progress && <p role="status" className="mt-3 text-sm text-blue-700">{progress}…</p>}
     {currentDownloads && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
       <p role="status" className="font-semibold text-emerald-900">Print pack ready — {currentDownloads.panels} full-size panel PDFs</p>
       <Button asChild className="mt-3"><a href={currentDownloads.url} download={currentDownloads.filename}><Download className="mr-2 h-4 w-4" />Download print ZIP</a></Button>
