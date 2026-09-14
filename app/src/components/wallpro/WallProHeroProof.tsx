@@ -90,7 +90,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     >
       <div
         ref={box}
-        className="relative h-36 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-44"
+        className="relative h-44 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-64"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -104,7 +104,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
           src={current.after}
           alt={current.alt}
           onError={() => fail(current.after)}
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover [object-position:50%_34%]"
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -116,7 +116,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className="absolute inset-y-0 left-0 h-full max-w-none object-cover"
+            className="absolute inset-y-0 left-0 h-full max-w-none object-cover [object-position:50%_34%]"
             style={{ width: box.current?.clientWidth ? `${box.current.clientWidth}px` : '100%' }}
             draggable={false}
           />

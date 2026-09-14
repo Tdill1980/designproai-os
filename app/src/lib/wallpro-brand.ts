@@ -136,19 +136,16 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // the specificity is the whole reason a before/after persuades.
     proofs: [
       {
-        before: '/wallpro/proof-gym-before.jpg',
-        after: '/wallpro/proof-gym-after.jpg',
-        alt: 'A gym training floor photographed with a bare grey wall, and again with a full-wall printed wrap installed',
-        headline: 'Same wall. Same camera.',
-        caption: 'A gym training floor, bare to finished. Drag to compare.',
+        before: '/wallpro/proof-spa-before.jpg',
+        after: '/wallpro/proof-spa-after.jpg',
+        alt: 'A home studio photographed with plain cream walls either side of the window, and again with a dark tropical anthurium mural covering both',
+        headline: 'One wall, one afternoon.',
+        caption: 'A home studio in a dark tropical print, designed and printed here. Drag to compare.',
       },
-      {
-        before: '/wallpro/proof-lobby-before.jpg',
-        after: '/wallpro/proof-lobby-after.jpg',
-        alt: 'A hotel lobby photographed with a blank white feature wall, and again with a full-wall pastoral landscape mural installed',
-        headline: 'One blank wall, one mural.',
-        caption: 'A lobby feature wall, printed floor to ceiling. Drag to compare.',
-      },
+      // PENDING: the gym floor and the lobby feature wall. Both were described
+      // but their files are not in the repository, and an entry pointing at a
+      // file that does not exist costs every visitor two failed requests. Add
+      // the block back with its photographs, not before.
     ],
   },
 };
