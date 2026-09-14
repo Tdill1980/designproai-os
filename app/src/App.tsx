@@ -67,6 +67,12 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+// The WePrintWraps x WallPro page. It REPLACES the WPW wall wrap product page
+// and is the target of both jumbo-menu entries (owner, 2026-09-14): "Wall Wrap"
+// in products, and "WallWrap Design" in the design area. One page, two doors --
+// buying the print and buying the design are the same decision arrived at from
+// different directions, so they belong on the same page.
+const WallWrap = lazyWithRetry(() => import("./pages/WallWrap"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
@@ -375,6 +381,13 @@ const App = () => {
           <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/printpro/wallpro" element={<WallPro />} />
+          {/* Both jumbo-menu entries land here. /wall-wrap is the canonical one
+              (it mirrors the WPW product slug the menu already points at);
+              /wallwrap-design is the Design-area entry, kept as its own URL so
+              the two menu items are separately measurable rather than one link
+              pretending to be two. */}
+          <Route path="/wall-wrap" element={<WallWrap />} />
+          <Route path="/wallwrap-design" element={<WallWrap />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

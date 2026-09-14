@@ -14,6 +14,7 @@ import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallQuote } from '@/lib/wallpro-pricing';
+import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -199,16 +200,14 @@ export default function WallPro() {
   // read off the element instead of hard-coded, and re-read on resize. The
   // selector excludes this header by id, or with the site header absent it
   // would measure itself and pin below its own height.
-  const [stickyTop, setStickyTop] = useState(0);
-  useEffect(() => {
-    const measure = () => {
-      const bar = document.querySelector('header.sticky:not(#wallpro-header)');
-      setStickyTop(bar instanceof HTMLElement ? Math.round(bar.getBoundingClientRect().height) : 0);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+  //
+  // The measurement lives in useStickyOffset now, shared with the WallWrap
+  // page, which reproduced this exact bug the first time it was written. The
+  // OTHER half of the fix is in index.css: `overflow-x: hidden` on html/body/
+  // main under 768px made those elements scroll containers, which disables
+  // descendant sticky entirely -- so this header was correctly offset and still
+  // scrolled away on a phone. It is `overflow-x: clip` there now.
+  const stickyTop = useStickyOffset('wallpro-header');
   // A comparison needs both halves: the untouched photo and a real composite.
   const canCompare = !!photo && !!artwork && wallLocated && !!preview;
   const billing = wallBilling(width, height, printSettings, WALLPRO_PRINT_WIDTH);
