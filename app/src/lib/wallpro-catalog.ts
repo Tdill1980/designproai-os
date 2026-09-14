@@ -226,7 +226,12 @@ const BRIEF_BOILERPLATE_START = /(Create one continuous canonical master|Straigh
 // GRAPHIC PRINT: 2-4 solid colors, bold silhouettes on a solid ground, crisp
 // or dry-brush edges, block-print / screen-print / vector rendering. Depth
 // comes from layering and line weight, never from shading or photorealism.
-const FLAT_PRINT_CONTRACT = 'Render as flat graphic print artwork: two to four solid colors, bold silhouettes with strong contrast against a solid ground (dark grounds welcome), crisp or dry-brush edges, metallic-look line where it fits; depth only from layering and line weight — no gradients, no soft shading, no photorealism, no atmospheric haze.';
+// Widened the same day by four more references (toile hummingbirds in one
+// ink on cream, a navy/gold hatched ogee lattice, chevron and herringbone
+// wood): flat print is EITHER bold silhouettes in 2-4 colors OR fine
+// engraved line work in 1-2 colors; photoreal faux material is its own
+// family and stays with the two photoreal design types below.
+const FLAT_PRINT_CONTRACT = 'Render as flat graphic print artwork — either bold silhouettes in two to four solid colors, or fine engraved / hatched line work in one or two inks (toile, lattice) — with strong contrast against a solid ground (dark grounds welcome), crisp or dry-brush edges, metallic-look line where it fits; depth only from layering and line weight — no gradients, no soft shading, no photorealism, no atmospheric haze.';
 const PHOTOREAL_TYPES = new Set(['Photographic Fine Art', 'Architectural Surface']);
 const BRIEF_MEDIUM: Record<string, string> = {
   'Painterly Mural': 'hand-brushed strokes as flat graphic marks — dry-brush and gouache texture in solid colors, brush character rather than blended shading',
@@ -236,7 +241,7 @@ const BRIEF_MEDIUM: Record<string, string> = {
   'Seamless Repeat Pattern': 'a flat vector / screen-print wallpaper repeat: bold silhouettes in two to four solid colors',
   'Graphic Geometry': 'a flat graphic geometric print with crisp edges, solid colors and a deliberate rhythm',
   'Photographic Fine Art': 'fine-art photographic realism with editorial lighting, as if printed on matte paper',
-  'Architectural Surface': 'a flat, photorealistic material texture — plaster, stone, wood or limewash — with no perspective, corners or lighting hotspots',
+  'Architectural Surface': 'a flat, photorealistic faux-material texture — chevron or herringbone wood plank, tile with fine grout lines, marble, brick, plaster, stone or limewash — straight-on, with no perspective, corners or lighting hotspots',
 };
 const BRIEF_SCALE: Record<WallIntensity, string> = {
   Quiet: 'a few very large, calm forms with generous breathing room between them',
