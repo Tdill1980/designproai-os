@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { loadWallImage } from '@/lib/wallpro-render';
 import { openWallAsset, type WallAsset } from '@/lib/wallpro-api';
 import { wallPrintPreflight, type WallPrintSettings } from '@/lib/wallpro-print-plan';
-import type { WallLayout } from '@/lib/wallpro-geometry';
+import { WALLPRO_PRINT_WIDTH, type WallLayout } from '@/lib/wallpro-geometry';
 import { measureSeam, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 
 type Props = {
@@ -90,8 +90,13 @@ export function WallPrintOutput({ artwork, name, projectId, layout, seamless, se
   }
 
   return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Wall print output">
-    <h2 className="flex items-center gap-2 text-lg font-semibold"><Printer size={20} />4. Prepare print files</h2>
-    <p className="mt-2 text-sm text-slate-600">Full-size PDF panels, a wall master and an installation sheet. Every panel stays within your 51″ printable width, including bleed and overlap.</p>
+    <h2 className="flex items-center gap-2 text-lg font-semibold"><Printer size={20} />3. Prepare print files</h2>
+    {/* The width is READ from the constant, never typed. This line said 51″ while
+        every other surface said 53″ -- a third number for the one measurement the
+        whole plan follows from, on the card that tells the customer what they
+        bought. WALLPRO_PRINT_WIDTH is the press width and the runtime's
+        DEFAULTS.panelWidthIn matches it; quoting it here keeps that true. */}
+    <p className="mt-2 text-sm text-slate-600">Full-size PDF panels, a wall master and an installation sheet. Every panel stays within the {WALLPRO_PRINT_WIDTH}″ print width, including bleed and overlap.</p>
     <fieldset disabled={busy} className="mt-4 grid gap-3 sm:grid-cols-3">
       <label className="text-sm">Perimeter bleed (inches)<input className={fieldClass} type="number" min="0" max="5" step="0.125" value={settings.bleed} onChange={e => onSettings({ ...settings, bleed: Number(e.target.value) })} /></label>
       <label className="text-sm">Panel overlap (inches)<input className={fieldClass} type="number" min="0" max="5" step="0.125" value={settings.overlap} onChange={e => onSettings({ ...settings, overlap: Number(e.target.value) })} /></label>
@@ -114,7 +119,7 @@ export function WallPrintOutput({ artwork, name, projectId, layout, seamless, se
     </div>}
     <label className="mt-4 flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" disabled={busy || !ready} checked={approved === signature} onChange={e => setApproved(e.target.checked ? signature : '')} />I reviewed the wall dimensions, artwork placement, bleed and overlap. I will print at 100% / actual size.</label>
     <Button className="mt-4" disabled={busy || !ready || approved !== signature} onClick={() => void prepare()}><Printer className="mr-2 h-4 w-4" />Build print files</Button>
-    {progress && <p role="status" className="mt-3 text-sm text-violet-700">{progress}…</p>}
+    {progress && <p role="status" className="mt-3 text-sm text-blue-700">{progress}…</p>}
     {currentDownloads && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
       <p role="status" className="font-semibold text-emerald-900">Print pack ready — {currentDownloads.panels} full-size panel PDFs</p>
       <Button asChild className="mt-3"><a href={currentDownloads.url} download={currentDownloads.filename}><Download className="mr-2 h-4 w-4" />Download print ZIP</a></Button>

@@ -42,7 +42,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-sky-50 via-violet-50 to-fuchsia-50 p-5 md:p-6">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
               Printed by WePrintWraps
             </p>
             <h2 className="mt-1 text-xl font-bold text-slate-900 md:text-2xl">Add the printed wrap</h2>
@@ -97,7 +97,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
         <h3 className="text-base font-bold text-slate-900">What happens after you approve it</h3>
         <ol className="mt-4 grid gap-5 md:grid-cols-3">
           <li>
-            <Layers className="h-5 w-5 text-violet-600" />
+            <Layers className="h-5 w-5 text-blue-600" />
             <p className="mt-2 text-sm font-semibold text-slate-900">Panelized to your wall</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-600">
               Split into {WALLPRO_PRINT_WIDTH}″ panels with a ½″ overlap at every seam, at 150 PPI on the real printed
