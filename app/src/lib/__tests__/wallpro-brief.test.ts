@@ -29,20 +29,25 @@ describe('WallPro batch creative brief', () => {
       expect(brief, e.id).toContain(e.palette);
       expect(brief.toLowerCase(), e.id).toContain(e.room.toLowerCase());
       expect(brief.length, e.id).toBeGreaterThan(250);
-      expect(brief.length, e.id).toBeLessThan(900);
+      expect(brief.length, e.id).toBeLessThan(1200);
     }
   });
   it('names a real medium/technique for all eight design types and a scale for all three intensities', () => {
     const types = new Set(LIB.map((e) => e.designType));
     expect(types.size).toBe(8);
     const expectedMediumWord: Record<string, RegExp> = {
-      'Painterly Mural': /gouache|watercolor/, 'Illustrative Mural': /ink line|screen-print/, 'Panoramic Mural': /scenic/,
-      'Feature Wall Art': /palette-knife|plaster/, 'Seamless Repeat Pattern': /block-print|screen-print/, 'Graphic Geometry': /geometric/,
+      'Painterly Mural': /dry-brush|gouache/, 'Illustrative Mural': /block-print|linocut/, 'Panoramic Mural': /chinoiserie|woodblock/,
+      'Feature Wall Art': /cut-paper|screen-print/, 'Seamless Repeat Pattern': /vector|screen-print/, 'Graphic Geometry': /geometric/,
       'Photographic Fine Art': /photographic/, 'Architectural Surface': /plaster|stone|limewash/,
     };
     for (const t of types) {
       const e = LIB.find((x) => x.designType === t)!;
-      expect(batchCreativeBrief(e), t).toMatch(expectedMediumWord[t]);
+      const brief = batchCreativeBrief(e);
+      expect(brief, t).toMatch(expectedMediumWord[t]);
+      // The owner's reference set (2026-09-14) is flat graphic print without
+      // exception; only the two explicitly photoreal types are exempt.
+      if (t === 'Photographic Fine Art' || t === 'Architectural Surface') expect(brief, t).not.toMatch(/flat graphic print artwork/);
+      else { expect(brief, t).toMatch(/flat graphic print artwork/); expect(brief, t).toMatch(/no gradients, no soft shading, no photorealism/); }
     }
     for (const i of ['Quiet', 'Balanced', 'Statement'] as const) {
       const e = LIB.find((x) => x.intensity === i)!;

@@ -219,13 +219,22 @@ export function provenanceManifest(row: WallCatalogRow) {
  * published row; this is the model-facing brief derived from it.
  */
 const BRIEF_BOILERPLATE_START = /(Create one continuous canonical master|Straight-on flat artwork only|Make it a mathematically seamless|Render it as a flat photorealistic|Generate a minimum 4K)/;
+// Owner reference set, 2026-09-14 (five best-seller listings): brushed
+// arches on beige, terrazzo, copper line-art leaves on navy, cranes and
+// pines on black, a woodblock wave. What every one of them shares — and what
+// none of the earlier "painterly / atmospheric" wording asked for — is FLAT
+// GRAPHIC PRINT: 2-4 solid colors, bold silhouettes on a solid ground, crisp
+// or dry-brush edges, block-print / screen-print / vector rendering. Depth
+// comes from layering and line weight, never from shading or photorealism.
+const FLAT_PRINT_CONTRACT = 'Render as flat graphic print artwork: two to four solid colors, bold silhouettes with strong contrast against a solid ground (dark grounds welcome), crisp or dry-brush edges, metallic-look line where it fits; depth only from layering and line weight — no gradients, no soft shading, no photorealism, no atmospheric haze.';
+const PHOTOREAL_TYPES = new Set(['Photographic Fine Art', 'Architectural Surface']);
 const BRIEF_MEDIUM: Record<string, string> = {
-  'Painterly Mural': 'hand-painted in gouache and watercolor washes with visible brushwork and soft bleeding edges',
-  'Illustrative Mural': 'hand-drawn illustration: confident ink line with flat screen-print color fills',
-  'Panoramic Mural': 'a large-scale painted scenic mural with layered atmospheric depth, in the tradition of hand-painted scenic wallpaper',
-  'Feature Wall Art': 'one gallery-scale abstract painting: palette-knife texture, pigment over plaster',
-  'Seamless Repeat Pattern': 'a hand-drawn repeating wallpaper pattern with block-print / screen-print character',
-  'Graphic Geometry': 'crisp flat-color geometric design with screen-printed edges and a deliberate rhythm',
+  'Painterly Mural': 'hand-brushed strokes as flat graphic marks — dry-brush and gouache texture in solid colors, brush character rather than blended shading',
+  'Illustrative Mural': 'flat illustrated block-print / linocut style: confident line, solid color fills',
+  'Panoramic Mural': 'a scenic mural in flat illustrated chinoiserie / woodblock style — layered silhouettes, solid fills, a clear horizon',
+  'Feature Wall Art': 'one large flat-graphic abstract composition: bold cut-paper shapes, solid colors, screen-print feel',
+  'Seamless Repeat Pattern': 'a flat vector / screen-print wallpaper repeat: bold silhouettes in two to four solid colors',
+  'Graphic Geometry': 'a flat graphic geometric print with crisp edges, solid colors and a deliberate rhythm',
   'Photographic Fine Art': 'fine-art photographic realism with editorial lighting, as if printed on matte paper',
   'Architectural Surface': 'a flat, photorealistic material texture — plaster, stone, wood or limewash — with no perspective, corners or lighting hotspots',
 };
@@ -269,8 +278,9 @@ export function batchCreativeBrief(entry: Pick<WallPromptEntry, 'prompt' | 'desi
     `Scale: ${scale}.`,
     `Palette: ${entry.palette}; the quietest of these is the ground, the boldest the accent.`,
     `Mood: ${mood}.`,
-    `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, hand-made character, nothing generic or clip-art.`,
-  ].join(' ');
+    PHOTOREAL_TYPES.has(entry.designType) ? '' : FLAT_PRINT_CONTRACT,
+    `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, print-made character, nothing generic or clip-art.`,
+  ].filter(Boolean).join(' ');
 }
 
 /** Effective print resolution of a catalog master at its default placement:
