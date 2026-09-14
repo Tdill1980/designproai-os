@@ -219,57 +219,54 @@ function runCutoutLoop(candidates) {
   return {done,requests,stored,paths,ledger,get inserted(){return inserted},get publications(){return publications}};
 }
 
-test('cutout-only first candidate uses the unchanged fallback and publishes only a clean master',async()=>{
+// RULE 0.15 RESTORED (owner, Trish 2026-09-14: "Fix it ... get designpro
+// working end to end"). A wheel-arch / glass / bed cut-out is a print defect,
+// not a broken design: the first candidate is repaired by the deterministic
+// fill, structurally re-validated, and ACCEPTED -- no second image call, no
+// refusal, no ledger row. Between 2026-09-10 and 09-14 the same candidate was
+// refused twice and the customer got nothing.
+test('cutout-only first candidate is repaired deterministically and accepted on ONE image call',async()=>{
   const {clean,hole}=await cutoutLoopFixtures();
   const run=runCutoutLoop([hole,clean]);
   const result=await run.done;
-  assert.equal(run.requests.length,2);
-  assert.deepEqual(creativeBody(run.requests[1]),creativeBody(run.requests[0]),'the fallback cannot rewrite the brief or prompt');
-  assert.deepEqual(run.requests.map((body)=>body.providerRequest.attemptKey),['master:1','master:2']);
+  assert.equal(run.requests.length,1,'a repairable cut-out must not spend the fallback');
+  assert.deepEqual(run.requests.map((body)=>body.providerRequest.attemptKey),['master:1']);
   assert.equal(run.publications,1);
-  assert.equal(result.metadata.masterAuthoringAttempts,2);
-  const actual=await sharp(run.stored.get(run.inserted.master_storage_path)).ensureAlpha().raw().toBuffer();
-  const expected=await sharp(clean).ensureAlpha().raw().toBuffer();
-  assert.equal(sha(actual),sha(expected),'accepted artwork must be the clean authored candidate, with no healing');
+  assert.equal(result.metadata.masterAuthoringAttempts,1);
+  assert.deepEqual(run.inserted.metadata.masterCutoutSurfaces,['hood'],'the sheet arrived holed, and the revision says so');
+  assert.equal(run.ledger.length,0,'an accepted candidate is not a refusal');
+  // The accepted master is the REPAIRED sheet: same dimensions as the authored
+  // one, the punched hood region no longer black, everything outside the
+  // hole byte-identical to what the model drew.
+  const accepted=run.stored.get(run.inserted.master_storage_path);
+  assert.ok(accepted,'the accepted master is stored');
+  const manifest=productManifest(surfaces,undefined,'truck');
+  const hood=manifest.zones.find(z=>z.surfaceKey==='hood');
+  const holeRect={left:hood.x+Math.round(hood.w*.4),top:hood.y+Math.round(hood.h*.4),width:Math.round(hood.w*.25),height:Math.round(hood.h*.25)};
+  const centre={left:holeRect.left+Math.round(holeRect.width/2)-2,top:holeRect.top+Math.round(holeRect.height/2)-2,width:4,height:4};
+  const before=await sharp(hole).extract(centre).raw().toBuffer();
+  const after=await sharp(accepted).extract(centre).raw().toBuffer();
+  assert.ok(before.every((v,i)=>i%4===3||v===0),'the fixture hole really is black');
+  assert.ok(after.some((v,i)=>i%4!==3&&v>32),'the accepted master has artwork where the hole was');
+  const untouched={left:hood.x+8,top:hood.y+8,width:16,height:16};
+  assert.equal(sha(await sharp(accepted).extract(untouched).raw().toBuffer()),sha(await sharp(hole).extract(untouched).raw().toBuffer()),'the fill never touches artwork outside the hole');
   assert.equal(run.inserted.metadata.callOnePanels.length,6);
 });
 
-test('two cutout candidates fail closed with retrievable paths and the measured surface finding (fail-over off)',async t=>{
-  // Owner-directed 2026-09-10: with DESIGNPRO_ATLAS_FIELD_FAILOVER unset a
-  // refused six-surface budget fails over once to the field contract instead
-  // (tests/atlas-authoring-recovery.test.mjs). This lock covers the explicit
-  // fail-closed configuration and the refusal evidence it must surface.
+test('with the field fail-over off, a holed candidate still never fails closed: it is repaired, not refused',async t=>{
   const previousFailover=process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER;
   process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER='off';
   t.after(()=>previousFailover===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER:process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER=previousFailover);
   const {hole}=await cutoutLoopFixtures();
   const run=runCutoutLoop([hole,hole]);
-  await assert.rejects(run.done,error=>{
-    assert.equal(error.code,'flat_atlas_unrepaired_cutout');
-    assert.equal(error.retryable,false,'the worker must not restart the provider budget');
-    assert.match(error.message,/hood/);
-    assert.match(error.message,/largestCutoutComponentRatio=/);
-    assert.ok(error.message.length<=1000,'the worker persists at most 1000 characters');
-    for(const path of run.paths) assert.ok(error.message.includes(path));
-    assert.ok(error.message.includes(sha(hole)),'retain the raw-byte identity, never a signed URL');
-    return true;
-  });
-  assert.equal(run.requests.length,2,'a cutout refusal must use exactly the existing two-attempt budget');
-  assert.deepEqual(creativeBody(run.requests[1]),creativeBody(run.requests[0]));
-  assert.equal(run.inserted,null,'refused artwork cannot become an atlas revision');
-  // Both refused candidates land in the ledger with the gate's own verdict and
-  // their exact raw identities, so a human can look at them.
-  assert.equal(run.ledger.length,2,'every refused candidate is recorded');
-  assert.deepEqual(run.ledger.map(row=>row.attempt),[1,2]);
-  assert.deepEqual(run.ledger.map(row=>row.storage_path),run.paths);
-  for(const row of run.ledger){
-    assert.equal(row.topology,'six-surface');
-    assert.equal(row.code,'flat_atlas_unrepaired_cutout');
-    assert.equal(row.sha256,sha(hole));
-    assert.match(row.reason,/hood largestCutoutComponentRatio=/);
-    assert.equal(row.request_id,'11111111-1111-4111-8111-111111111111');
-    assert.equal(row.owner_id,'33333333-3333-4333-8333-333333333333');
-  }
-  assert.equal(run.publications,0,'refused artwork cannot start proofs');
-  assert.equal([...run.stored.keys()].some(path=>path.includes('/master/')||path.includes('/panels/')),false);
+  const result=await run.done;
+  assert.equal(run.requests.length,1);
+  assert.equal(run.publications,1);
+  assert.equal(result.metadata.masterAuthoringAttempts,1);
+  assert.equal(run.ledger.length,0);
+  // The pre-fill refusal is gone; the post-fill structural re-validation is not.
+  const source=readFileSync(new URL('../runtime/flat-first-atlas.cjs',import.meta.url),'utf8');
+  assert.doesNotMatch(source,/restoration does not heal or reconstruct artwork"\)/);
+  assert.match(source,/flat_atlas_repaired_master_invalid/);
+  assert.match(source,/if \(masterCutoutSurfaces\.length && stillBlocking\.length\)/,'cut-outs only annotate a refusal that has a real structural cause');
 });

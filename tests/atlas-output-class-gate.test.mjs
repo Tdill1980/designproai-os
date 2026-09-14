@@ -79,14 +79,25 @@ test("the inspector question is a binary class check at temperature 0, never cre
   assert.match(prompt, /vehicle_depiction/);
   assert.doesNotMatch(prompt, /design|improve|redraw|create artwork/i);
   // 2026-09-10, New Aura (DID-664D054D): a master whose flanks were an Urus
-  // side profile on a plain grey surround, with ROOF / REAR painted as
-  // captions, was classed flat_atlas and printed as anatomy. The question now
-  // names that shape: vehicle-shaped artwork inside a rectangle, any-colour
-  // plain surround, and printed panel captions are all vehicle_depiction.
-  assert.match(prompt, /side-profile silhouette or outline/);
+  // side profile on a plain grey surround was classed flat_atlas and printed
+  // as anatomy. The question names that shape: a vehicle-shaped island with an
+  // any-colour plain surround is vehicle_depiction.
+  assert.match(prompt, /vehicle-shaped island/);
+  assert.match(prompt, /side profile, front or rear elevation/);
   assert.match(prompt, /plain single-colour surround \(grey, white, black or any colour\)/);
-  assert.match(prompt, /Printed panel names or captions inside the artwork \(for example ROOF, REAR, DRIVER\)/);
-  assert.match(prompt, /flat_atlas requires EVERY rectangle to be filled corner to corner/);
+  // 2026-09-14 (owner: "Fix it"): the same question refused two Porsche
+  // Martini race-livery sheets for "a side profile of a race car" and "a car's
+  // front grille and headlights, and a tire tread pattern" -- the ARTWORK's
+  // motifs, not a vehicle -- and on 09-06 refused a six-panel sheet because it
+  // held "hood, sides, and rear" panels. Motifs, panel captions and a cut-out
+  // inside continuous artwork are named as flat_atlas so the inspector convicts
+  // pictures of vehicles, not livery.
+  assert.match(prompt, /automotive MOTIFS drawn as graphics/);
+  assert.match(prompt, /grille or headlight graphics, tire-tread or carbon patterns/);
+  assert.match(prompt, /printed panel names or captions \(for example HOOD, ROOF, DRIVER, REAR\): that is the layout, not a vehicle/);
+  assert.match(prompt, /A small hole or dark patch inside otherwise continuous artwork \(a wheel arch or window cut out of a full panel\) is NOT this class/);
+  assert.match(prompt, /flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge/);
+  assert.doesNotMatch(prompt, /wheel-arch cut-outs or discs, bumper, grille, headlight, door or window shapes/);
   const source = readFileSync(new URL("../runtime/atlas-output-class.cjs", import.meta.url), "utf8");
   assert.match(source, /temperature: 0/);
   assert.doesNotMatch(source, /image/.source && /gemini-[a-z0-9.]*image/i);

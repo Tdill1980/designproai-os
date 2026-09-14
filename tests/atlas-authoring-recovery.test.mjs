@@ -55,6 +55,24 @@ function holedFixture() {
     return sharp(source).composite([{input:Buffer.from(`<svg width="4096" height="4096"><circle cx="${cx}" cy="${cy}" r="${r}" fill="#000000"/></svg>`)}]).png().toBuffer();
   })();
 }
+/**
+ * A STRUCTURALLY refused master: the driver flank's artwork is a vehicle-shaped
+ * island that never reaches its own borders (edgeHoleRatio 1.0 on a
+ * majority-artwork zone). RULE 0.15 restored (owner 2026-09-14) means a punched
+ * wheel well is repaired and accepted, so the fail-over tests below need a
+ * refusal the fill is forbidden to smear: the silhouette case.
+ */
+let silhouettePromise;
+function silhouetteFixture() {
+  return silhouettePromise ||= (async () => {
+    const {manifest,source}=await fixture();
+    const driver=manifest.zones.find(zone=>zone.surfaceKey==="driver");
+    const inset={x:Math.round(driver.w*0.1),y:Math.round(driver.h*0.1)};
+    const ring=`<svg width="4096" height="4096"><path fill-rule="evenodd" fill="#000000" d="M${driver.x} ${driver.y}h${driver.w}v${driver.h}h-${driver.w}z `
+      +`M${driver.x+inset.x} ${driver.y+inset.y}h${driver.w-2*inset.x}v${driver.h-2*inset.y}h-${driver.w-2*inset.x}z"/></svg>`;
+    return sharp(source).composite([{input:Buffer.from(ring)}]).png().toBuffer();
+  })();
+}
 /** A clean one-field source: the same synthetic artwork painted onto the field territories. */
 let fieldPromise;
 function fieldFixture() {
@@ -147,9 +165,9 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
   // drawing the vehicle into the sheet. The six-surface contract keeps its
   // bounded budget; when both candidates are refused the run does not die.
   finishFlag(t,"off");failoverFlag(t,undefined);
-  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const {source}=await fixture();const silhouette=await silhouetteFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
-  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
+  run.masterFor=async body=>body.fieldContract?fieldSource:silhouette;
   const result=await run.run();
   assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1","master:2","master:field:1"],
     "one candidate, one unchanged fallback, then exactly one field attempt");
@@ -171,7 +189,7 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
   const failover=result.metadata.authoringFailover;
   assert.equal(failover.contract,"designpro.atlas-authoring-failover.v1");
   assert.equal(failover.from,"rectangular-preview-v1");assert.equal(failover.to,FIELD_TOPOLOGY);
-  assert.equal(failover.code,"flat_atlas_unrepaired_cutout");assert.equal(failover.attempts,2);
+  assert.equal(failover.code,"flat_atlas_master_deterministic_failed");assert.equal(failover.attempts,2);
   assert.match(failover.reason,/driver/);
   assert.deepEqual(failover.rawCandidates.map(item=>item.storagePath),["atlas-call1/master:1.png","atlas-call1/master:2.png"]);
   assert.equal(result.callOnePanels.length,6);
@@ -195,9 +213,9 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
 
 test("a fail-over whose revision row never landed resumes from its field checkpoint, not from a new Call 1",async t=>{
   finishFlag(t,"off");failoverFlag(t,undefined);
-  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const {source}=await fixture();const silhouette=await silhouetteFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
-  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
+  run.masterFor=async body=>body.fieldContract?fieldSource:silhouette;
   run.insertFailure=true;
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
   assert.equal(run.masterCalls.length,3);
@@ -206,17 +224,17 @@ test("a fail-over whose revision row never landed resumes from its field checkpo
   const result=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
   assert.equal(run.masterCalls.length,3,"the six-surface pass recognises the field checkpoint and spends nothing");
   assert.equal(result.metadata.authoringTopology,"field");
-  assert.equal(result.metadata.authoringFailover.code,"flat_atlas_unrepaired_cutout");
+  assert.equal(result.metadata.authoringFailover.code,"flat_atlas_master_deterministic_failed");
   assert.equal(result.metadata.topology,FIELD_TOPOLOGY);
   assert.equal(result.callOnePanels.length,6);
 });
 
 test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off keeps the fail-closed refusal, and an accepted first candidate never fails over",async t=>{
   finishFlag(t,"off");failoverFlag(t,"off");
-  const {source}=await fixture();const holed=await holedFixture();const {fieldSource}=await fieldFixture();
+  const {source}=await fixture();const silhouette=await silhouetteFixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
-  run.masterFor=async body=>body.fieldContract?fieldSource:holed;
-  await assert.rejects(run.run(),error=>error.code==="flat_atlas_unrepaired_cutout"&&error.retryable===false);
+  run.masterFor=async body=>body.fieldContract?fieldSource:silhouette;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_master_deterministic_failed"&&error.retryable===false);
   assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1","master:2"]);
   assert.equal(run.publicMasters.length,0);
   // With the flag unset, a clean first candidate exits immediately on six surfaces.
