@@ -11,8 +11,9 @@
   WrapGuru and the instant quote, so it reads as one company: a division,
   not a different business.
 
-  EDIT: the rate ladder and the enrolled count are the only numbers that go
-  stale. Both are plain text below, marked with  <!-- RATE -->  comments.
+  EDIT: the rate ladder is the only thing here that goes stale, and it must
+  match restylepro-os supabase/functions/wpw-volume-coupons -- the four FLEET
+  coupons ARE the program. Marked below with  <!-- RATE -->  comments.
   ════════════════════════════════════════════════════════════════════════
 -->
 <div id="cpwall">
@@ -121,8 +122,16 @@
       <div class="cta">
         <a class="btn btn-1" href="/wall-wrap/">Design a wall</a>
         <a class="btn btn-2" href="#cp-rate">See trade rates</a>
-        <!-- RATE: enrolled count, refresh when the program grows -->
-        <span class="live">62 shops enrolled</span>
+        <!--
+          WAS: "62 shops enrolled". Removed, for two reasons and the first is
+          enough. Nothing enrols anyone -- the discount is per order, so an
+          enrolled count describes a programme that does not exist. And the 62
+          was not a count of members at all: it is the number of customers who
+          printed over 500 sq ft in the last twelve months, measured off the
+          order table for a different question entirely. A real number under a
+          label it does not belong to is still a false claim.
+        -->
+        <span class="live">Applied at checkout &middot; no application</span>
       </div>
     </section>
 
@@ -212,69 +221,110 @@
     <section id="cp-rate">
       <h2>Your rate</h2>
       <p class="lede">
-        Based on printed square footage over the last twelve months, across every
-        product. Applied automatically — nothing to claim, nothing to remember.
+        CommercialPro volume pricing is earned <strong>per order</strong>, on the
+        order's own value. There is no application, no annual minimum to reach
+        first, and no tier to lose — a shop that orders twice a year gets the same
+        rate as one that orders monthly, on the same size job.
       </p>
 
-      <!-- RATE: the ladder. Keep in sync with the pricing table. -->
+      <!--
+        THESE NUMBERS ARE THE LIVE COUPON LADDER, NOT A PROPOSAL.
+        Source of truth: restylepro-os supabase/functions/wpw-volume-coupons,
+        FLEET5 / FLEET10 / FLEET15 / FLEET20, all four self-serve and live.
+
+        The ladder is PUBLISHED in square feet but WooCommerce gates coupons on
+        CART DOLLARS, and that function sets each minimum at tier_sqft x $5.27 --
+        the printed wrap film rate the ladder was written against. That is
+        deliberate: deriving the minimum from the cheapest rate instead handed
+        FLEET20 to film orders at 1,542 sq ft when 2,500 was advertised.
+
+        The consequence for THIS page, which its own header states: a wall order
+        reaches the dollar minimum at MORE square footage than the headline
+        number. Wall vinyl is $3.25, so 5% arrives at $2,635 = 811 sq ft of wall,
+        not 500. Advertising "500 sq ft" here would be a coupon refused at
+        checkout on a fleet buyer -- exactly the broken promise that function
+        exists to prevent. So the ORDER VALUE is stated as the gate, because it
+        is the gate, and the wall footage is given as the helper.
+      -->
       <div class="ladder">
         <div class="tier">
           <div><span class="tname">Standard</span><span class="qual">Everyone &middot; weprintwraps.com</span></div>
           <span class="rate">$3.25</span><span class="pill">sold by sq ft</span>
         </div>
         <div class="tier">
-          <div><span class="tname">Trade</span><span class="qual">250+ sq ft / 12 months</span></div>
+          <div><span class="tname">5% &middot; orders over $2,635</span><span class="qual">about 811 sq ft of wall</span></div>
           <span class="rate">$3.09</span><span class="pill">sold by sq ft</span>
         </div>
         <div class="tier you">
-          <div><span class="tname">CommercialPro</span><span class="qual">500+ sq ft / 12 months &middot; auto-enrolled</span></div>
-          <span class="rate">$2.93</span><span class="pill">Most shops</span>
+          <div><span class="tname">10% &middot; orders over $5,270</span><span class="qual">about 1,622 sq ft of wall</span></div>
+          <span class="rate">$2.93</span><span class="pill">Most fleet jobs</span>
         </div>
         <div class="tier">
-          <div><span class="tname">CommercialPro Volume</span><span class="qual">1,000+ sq ft / 12 months</span></div>
+          <div><span class="tname">15% &middot; orders over $7,905</span><span class="qual">about 2,433 sq ft of wall</span></div>
           <span class="rate">$2.76</span><span class="pill">sold by sq ft</span>
+        </div>
+        <div class="tier">
+          <div><span class="tname">20% &middot; orders over $13,175</span><span class="qual">about 4,054 sq ft of wall</span></div>
+          <span class="rate">$2.60</span><span class="pill">sold by sq ft</span>
         </div>
       </div>
 
       <div class="ex">
-        <p class="rank">A 12&prime; &times; 8&prime; LOBBY WALL, ON YOUR INVOICE</p>
-        <div class="exrow"><span>Wall area</span><span class="v">96 sq ft</span></div>
-        <div class="exrow"><span>Standard &middot; $3.25/sq ft</span><span class="v">$336.00</span></div>
-        <div class="exrow"><span>Your rate &middot; $2.93/sq ft</span><span class="v">$281.28</span></div>
-        <div class="extot"><span class="l">You keep</span><span class="v">+$30.72</span></div>
+        <p class="rank">A SIX-LOCATION ROLLOUT, ON YOUR INVOICE</p>
+        <div class="exrow"><span>Six feature walls, 12&prime; &times; 24&prime;</span><span class="v">1,728 sq ft</span></div>
+        <div class="exrow"><span>Standard &middot; $3.25/sq ft</span><span class="v">$5,616.00</span></div>
+        <div class="exrow"><span>Clears $5,270 &middot; 10% off</span><span class="v">$5,054.40</span></div>
+        <div class="extot"><span class="l">You keep</span><span class="v">+$561.60</span></div>
         <p class="note">
-          A shop printing 1,200 sq ft a year keeps about $384 — and the design fee
-          you'd have paid a freelancer on every one of those jobs is gone entirely.
+          And six designs you did not have to commission. At a freelancer's going
+          rate that is the larger number on this page.
         </p>
       </div>
 
       <p class="note">
-        Rates shown for wall film. Vehicle, contour cut and perforated window carry
-        their own trade rate at the same qualifying volume. Your tier is
-        recalculated nightly and never drops without notice.
+        The discount is on the order total, so mixing products helps you reach it:
+        wall film, vehicle wrap, contour cut and perforated window all count toward
+        the same threshold. One discount per order — it does not stack with other
+        codes, and it does not apply to sale items.
       </p>
     </section>
 
-    <!-- ── auto-enrollment ──────────────────────────────── -->
+    <!-- ── how it applies (no enrolment; per order) ────── -->
     <section>
-      <h2>Already printing with us?<br>You may already be in.</h2>
+      <h2>No application.<br>The order qualifies itself.</h2>
       <p class="lede">
-        There's no application. If you've printed 500 square feet with us in the
-        last year, your rate is already live — and we tell you the day it happens.
+        You do not enrol, wait to be approved, or print a qualifying amount first.
+        Every order is measured on its own total at checkout — so the first job you
+        ever send us can land at the volume rate.
       </p>
 
+      <!--
+        WHAT THIS SECTION USED TO SAY, AND WHY IT IS GONE.
+        It described an annual auto-enrolment: "printed 500 sq ft in the last
+        year, your rate is already live", with a mocked-up notification email and
+        a tier recalculated nightly. No such system exists -- there is no
+        CommercialPro enrolment table anywhere in either repository, and the only
+        live mechanism is the four per-order FLEET coupons.
+
+        A page describing a tier the customer has been enrolled in, on a site
+        where nothing enrols anyone, is a promise the business would have to
+        answer for by hand on every phone call. Annual enrolment may well be the
+        better programme -- it rewards the loyal small-order shop this per-order
+        ladder does not reach -- but it has to be BUILT before it is advertised.
+      -->
       <div class="mail">
         <div class="mbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
         <div class="mbody">
-          <p class="subj">You now qualify for CommercialPro</p>
-          <p>You've printed <strong>1,240 sq ft</strong> with us over the last twelve months.</p>
-          <p class="rateline">Your rate is now $2.93/sq ft</p>
+          <p class="subj">Your order qualifies for 10% CommercialPro pricing</p>
+          <p>Six feature walls &middot; <strong>1,728 sq ft</strong> &middot; order total $5,616.00</p>
+          <p class="rateline">Your rate on this order is $2.93/sq ft</p>
           <p>
-            It's already applied to your account and every product — wall, vehicle,
-            window and cut vinyl. Nothing to claim, nothing to remember.
+            Applied at checkout, before you pay. Wall film, vehicle wrap, contour
+            cut and perforated window all count toward the same order total.
           </p>
           <p style="color:#6b7280;font-size:13px;margin-top:14px;margin-bottom:0">
-            Design on demand and live order tracking are in your account now too.
+            Design your walls on demand and take the print-ready files whether we
+            print them or you do.
           </p>
         </div>
       </div>
