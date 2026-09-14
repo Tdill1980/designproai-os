@@ -36,7 +36,7 @@ import {
 import { DEFAULT_WALL_PRINT, wallBilling } from '@/lib/wallpro-print-plan';
 import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { WALL_FILM } from '@/lib/quick-quote';
-import { wpwWallWrapBuy } from '@/lib/wpw-wall-product';
+import { WPW_WALL_WRAP_PRODUCT, storeMatchesLaunchPricing, wpwWallWrapBuy } from '@/lib/wpw-wall-product';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 
 /** The designer, with the entry path preselected from the card they clicked. */
@@ -243,6 +243,20 @@ export default function WallWrap() {
                 {/* Say what the button will actually do. A control that quietly
                     does something smaller than it looks is how trust is lost. */}
                 {buy.note && <p className="mt-2 text-[11px] text-slate-500">{buy.note}</p>}
+                {/* AND SAY WHY, where the reason is a store-configuration
+                    mismatch a person can fix. This is deliberately visible
+                    rather than a code comment: the WooCommerce product is still
+                    priced per LINEAR FOOT at $3.25 while this page prices per
+                    SQUARE FOOT at $3.50, so a one-click cart would charge a
+                    different number than the one quoted above. Fix the Woo
+                    product and re-sync the catalog and the button becomes a
+                    direct cart add with no code change. */}
+                {!storeMatchesLaunchPricing() && WPW_WALL_WRAP_PRODUCT && (
+                  <p className="mt-2 rounded-lg bg-amber-50 p-2 text-[11px] text-amber-900">
+                    Store listing is {formatMoney(Math.round((WPW_WALL_WRAP_PRODUCT.price ?? 0) * 100))}/{WPW_WALL_WRAP_PRODUCT.unit === 'linear_foot' ? 'linear ft' : WPW_WALL_WRAP_PRODUCT.unit}.
+                    The price above is the current {printRate}/sq ft rate — confirm on checkout.
+                  </p>
+                )}
               </div>
             ) : (
               <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">

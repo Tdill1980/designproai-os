@@ -1,44 +1,67 @@
 // BUYING THE WALL WRAP ON THE WALLPRO PAGE.
 //
 // Owner, 2026-09-14: "Buy wall wrap on the same page from x WePrintWraps.com."
-// The customer should not have to leave to a catalog, find the product and work
-// out their own square footage -- the page already knows the wall, so it should
-// be able to hand them a cart.
+// The page already knows the wall, so it should hand the customer a cart rather
+// than send them off to find the product and work out their own footage.
 //
-// The mechanism is WePrintWraps' own, not a new one. wpw-cart.ts documents it:
+// The mechanism is WePrintWraps' own, documented in wpw-cart.ts and already
+// used by the estimator's "Checkout on WePrintWraps" button:
 //
 //   https://weprintwraps.com/cart/?add-to-cart=<wooId>&quantity=<n>
 //
-// WooCommerce's stock add-to-cart query, already used by the estimator's
-// "Checkout on WePrintWraps" button. This file is that pattern applied to the
-// one wall SKU, with the quantity being square feet because that is the unit
-// the product is sold in.
+// THE PRODUCT ID IS NOT RE-TYPED HERE. It comes from WPW_CATALOG, which is the
+// file reconciled against the live WooCommerce Store API (WPW_CATALOG_SYNCED_AT)
+// and which already carried the wall SKU: id 70093, permalink
+// our-products/wall-wrap-printed-vinyl/. Importing it means a future re-sync
+// updates this automatically instead of leaving a stale number in a second
+// place.
 //
-// ⚠️ THE WOOCOMMERCE PRODUCT ID IS NOT KNOWN YET, AND IS NOT GUESSED.
+// ⚠️ THE UNIT IS THE WHOLE PROBLEM, AND IT IS WHY THIS FILE HAS A GUARD.
 //
-// The catalog row for wallpro-avery-2610 carries a wooProductUrl but no
-// wooProductId -- every other WPW SKU in quote-product-catalog.ts has one
-// (avery-1105 is 79, the contour cut is 108, custom wrap design is 234), this
-// one simply was never recorded. Inventing a number here would silently add
-// SOMEBODY ELSE'S PRODUCT to a customer's cart, which is worse than not having
-// the button: a wrong cart looks like it worked.
+// The live Woo product is priced PER LINEAR FOOT at $3.25. The owner's launch
+// pricing is PER SQUARE FOOT at $3.50 ("all printed wrap is priced by the sq ft
+// only"). Those disagree in both unit and rate, so a naive
+// `?add-to-cart=70093&quantity=<sqft>` would hand WooCommerce a square-footage
+// number against a linear-foot price: on a 142 x 96 wall the page quotes
+// $331.35 and the cart would charge $308.75, for the wrong quantity of the
+// wrong unit. A customer who is quoted one number and charged another is a
+// refund and a trust problem, and it would look like it worked.
 //
-// So until the id is supplied, `mode` is 'product' and the button goes to the
-// real product page with the square footage stated next to it. Fill in
-// WPW_WALL_WRAP_WOO_ID and it becomes a one-click cart add with no other
-// change -- that is the whole reason this is a function and not a URL in JSX.
+// So the cart path is GATED on the catalog agreeing with the page. The moment
+// the Woo product is changed to $3.50/sq ft and WPW_CATALOG is re-synced, the
+// button becomes a one-click cart add with no code change. Until then it opens
+// the product page and says so, which is honest and still useful.
+//
+// This is the same discipline as the gateway price test: two systems that both
+// name a price must be compared, never assumed to match.
+
+import { WPW_CATALOG } from './wpw-catalog';
+import { WPW_WALL_FILM_RATE_PER_SQFT } from './wallpro-pricing';
+
+/** The wall wrap SKU as the live-store-reconciled catalog records it. */
+export const WPW_WALL_WRAP_PRODUCT =
+  WPW_CATALOG.find(item => item.permalink.includes('wall-wrap-printed-vinyl')) ?? null;
+
+/** The WooCommerce product id, from the catalog rather than re-typed. */
+export const WPW_WALL_WRAP_WOO_ID: number | null =
+  WPW_WALL_WRAP_PRODUCT?.wooProductId ?? null;
+
+/** The live product page. */
+export const WPW_WALL_WRAP_URL =
+  WPW_WALL_WRAP_PRODUCT?.permalink ??
+  'https://weprintwraps.com/our-products/wall-wrap-printed-vinyl/';
 
 /**
- * The WooCommerce product id for the WePrintWraps wall wrap SKU.
+ * Whether the store is configured the way this page prices.
  *
- * null until confirmed against the live store. See the warning above: this must
- * be the real id or stay null. Do not guess it from a neighbouring product.
+ * Both halves must agree: the unit (square feet, not linear feet) AND the rate.
+ * Either one being off means a cart add charges something the customer was not
+ * shown.
  */
-export const WPW_WALL_WRAP_WOO_ID: number | null = null;
-
-/** The live product page, mirrored by the wallpro-avery-2610 catalog row. */
-export const WPW_WALL_WRAP_URL =
-  'https://weprintwraps.com/our-products/wall-wrap-printed-vinyl/';
+export function storeMatchesLaunchPricing(): boolean {
+  const p = WPW_WALL_WRAP_PRODUCT;
+  return !!p && p.unit === 'sqft' && p.price === WPW_WALL_FILM_RATE_PER_SQFT;
+}
 
 export type WpwWallWrapBuy = {
   /** 'cart' adds it directly; 'product' opens the product page instead. */
@@ -68,7 +91,7 @@ export function wpwWallWrapBuy(wallSqFt: number): WpwWallWrapBuy | null {
   if (!Number.isFinite(wallSqFt) || wallSqFt <= 0) return null;
   const sqFt = Math.ceil(wallSqFt);
 
-  if (WPW_WALL_WRAP_WOO_ID != null) {
+  if (WPW_WALL_WRAP_WOO_ID != null && storeMatchesLaunchPricing()) {
     return {
       mode: 'cart',
       url: `https://weprintwraps.com/cart/?add-to-cart=${WPW_WALL_WRAP_WOO_ID}&quantity=${sqFt}`,
