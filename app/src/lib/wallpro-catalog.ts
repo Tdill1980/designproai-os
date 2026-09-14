@@ -196,6 +196,83 @@ export function provenanceManifest(row: WallCatalogRow) {
   };
 }
 
+/**
+ * The creative brief a batch job actually SENDS to the generator (owner,
+ * 2026-09-14: "You need to give better prompts. I need designs like you would
+ * see on Etsy").
+ *
+ * Measured on the 500-row library that day: only 28% of each prompt is
+ * design; the other 72% is production-pipeline text ("1-inch duplicated
+ * overlap", "150 effective PPI", "never AI-regenerate a panel") that an image
+ * model cannot act on, plus eight rotating seam-engineering sentences. The
+ * pipeline already enforces every one of those rules in code
+ * (wallDesignPrompt states flat/edge-to-edge/no seam marks; the runtime
+ * panelizes deterministically), so sending them to the model only dilutes
+ * the brief — the same "boilerplate outweighs the design" failure this
+ * codebase found in the persona text on 09-12, one layer down.
+ *
+ * What a boutique wallpaper listing actually carries, and what this builds:
+ * SUBJECT (the library's Concept clause, verbatim — the literal intent stays
+ * immutable) + MEDIUM/TECHNIQUE (by design type) + MOTIF SCALE (by intensity)
+ * + PALETTE and GROUND + MOOD (by style) + the room. The library JSON is not
+ * rewritten: `entry.prompt` stays the production-contract record on the
+ * published row; this is the model-facing brief derived from it.
+ */
+const BRIEF_BOILERPLATE_START = /(Create one continuous canonical master|Straight-on flat artwork only|Make it a mathematically seamless|Render it as a flat photorealistic|Generate a minimum 4K)/;
+const BRIEF_MEDIUM: Record<string, string> = {
+  'Painterly Mural': 'hand-painted in gouache and watercolor washes with visible brushwork and soft bleeding edges',
+  'Illustrative Mural': 'hand-drawn illustration: confident ink line with flat screen-print color fills',
+  'Panoramic Mural': 'a large-scale painted scenic mural with layered atmospheric depth, in the tradition of hand-painted scenic wallpaper',
+  'Feature Wall Art': 'one gallery-scale abstract painting: palette-knife texture, pigment over plaster',
+  'Seamless Repeat Pattern': 'a hand-drawn repeating wallpaper pattern with block-print / screen-print character',
+  'Graphic Geometry': 'crisp flat-color geometric design with screen-printed edges and a deliberate rhythm',
+  'Photographic Fine Art': 'fine-art photographic realism with editorial lighting, as if printed on matte paper',
+  'Architectural Surface': 'a flat, photorealistic material texture — plaster, stone, wood or limewash — with no perspective, corners or lighting hotspots',
+};
+const BRIEF_SCALE: Record<WallIntensity, string> = {
+  Quiet: 'a few very large, calm forms with generous breathing room between them',
+  Balanced: 'medium-to-large motifs with a clear hierarchy of one hero element and quieter support',
+  Statement: 'bold, oversized hero motifs at dramatic scale',
+};
+const BRIEF_MOOD: Record<string, string> = {
+  'Modern Organic': 'organic modern — soft curves, earthy calm, nothing hard-edged',
+  'Quiet Luxury': 'quiet luxury — restrained, tonal, expensive-feeling',
+  'Japandi': 'Japandi — warm minimalism, natural materials, negative space as a feature',
+  'Dark Luxe': 'moody and dramatic, deep saturated tones, luxurious',
+  'Contemporary Editorial': 'contemporary editorial — magazine-clean, confident, current',
+  'Architectural Minimalism': 'architectural minimalism — structure over decoration, exact and calm',
+  'Painterly Fine Art': 'painterly fine art — loose, expressive, gallery-worthy',
+  'Photorealistic Fine Art': 'photorealistic fine art — lush, tactile, high-end print',
+  'Material-Driven Luxury': 'material-driven luxury — the surface itself is the design: stone, brass, plaster, wood',
+  'Modern Geometric': 'modern geometric — clean, rhythmic, mid-century confidence',
+  'Moody Botanical': 'moody botanical — dark ground, rich foliage, romantic and dramatic',
+  'Panoramic Atmospheric': 'panoramic and atmospheric — a horizon, depth, soft light',
+  'Sculptural Neutral': 'sculptural neutral — bas-relief feel in warm neutrals',
+  'Warm Contemporary': 'warm contemporary — inviting, layered, current',
+  'Biophilic Contemporary': 'biophilic contemporary — living greenery, natural light, restorative',
+  'Art Deco Contemporary': 'contemporary art deco — geometric glamour, brass and velvet tones',
+  'Graphic Modern': 'graphic modern — bold shapes, flat color, poster-clean',
+};
+export function batchCreativeBrief(entry: Pick<WallPromptEntry, 'prompt' | 'designType' | 'style' | 'palette' | 'intensity' | 'room' | 'industry' | 'segment'>): string {
+  const head = entry.prompt.split(BRIEF_BOILERPLATE_START)[0];
+  const concept = (head.match(/Concept:\s*(.*?)\.\s*Visual language:/)?.[1] || head.replace(/^Create an? .*? market\.\s*/, '').split('.')[0]).trim();
+  const medium = BRIEF_MEDIUM[entry.designType] || 'a hand-made, original wallcovering design';
+  const scale = BRIEF_SCALE[entry.intensity] || BRIEF_SCALE.Balanced;
+  const mood = BRIEF_MOOD[entry.style] || entry.style;
+  const domain = libraryEntryDomain(entry).designDomain;
+  const setting = domain === 'residential' ? `for a ${entry.room.toLowerCase()} in a home` : `for the ${entry.room.toLowerCase()} of a ${entry.industry.replace(/ & /g, ' / ')} business`;
+  // The library lists four colors with no ground named; guessing one (the
+  // first entry was "cobalt accent" on WPB-0007) is a false instruction, so
+  // the brief gives the designer the rule instead of a guess.
+  return [
+    `${concept.charAt(0).toUpperCase() + concept.slice(1)} — ${medium}.`,
+    `Scale: ${scale}.`,
+    `Palette: ${entry.palette}; the quietest of these is the ground, the boldest the accent.`,
+    `Mood: ${mood}.`,
+    `Designed ${setting}, to sell as a premium original wallpaper / mural listing: cohesive, hand-made character, nothing generic or clip-art.`,
+  ].join(' ');
+}
+
 /** Effective print resolution of a catalog master at its default placement:
  * tile width for repeats, a 144 in accent wall for murals. A 4K master is not
  * 150 PPI because a label says so; only pixels over inches count. */

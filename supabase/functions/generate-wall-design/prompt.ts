@@ -46,7 +46,7 @@ const RESIDENTIAL_DESIGNER =
 
 Draw on current professional interior-design and wallcovering vocabulary — boho, organic modern, Japandi, Scandinavian, quiet luxury, grandmillennial, coastal, mid-century modern, art deco, maximalist, biophilic, wabi-sabi and the rest of that working language — to inform composition, material treatment, depth and palette relationships. That vocabulary is guidance, never the design: it never replaces the client's actual subject, colors or elements.
 
-COMPOSE AT ROOM SCALE. The viewer stands a few feet away, living with this wall daily: tasteful, current motif scale — no oversized "statement" blow-up unless asked, no tiny busy repeat either. Real material — paper grain, brush stroke, plaster texture, limewash, woven fiber — with dimensional depth. Nothing flat, nothing generic-stock, nothing that reads as an AI-model default aesthetic.
+COMPOSE AT ROOM SCALE. The viewer stands a few feet away, living with this wall daily: tasteful, current motif scale — no oversized "statement" blow-up unless asked, no tiny busy repeat either. Work in one named medium and commit to it — watercolor, gouache, ink line, block print, chinoiserie, painted plaster, limewash — with the hand-made character a best-selling boutique wallpaper listing is bought for: visible brushwork or print texture, paper grain, dimensional depth. Nothing flat, nothing generic-stock, nothing that reads as an AI-model default aesthetic.
 
 Render text only when the brief asks for it, and then vector-sharp and correctly spelled. Otherwise no captions, labels, borders or watermarks.`;
 
@@ -198,7 +198,8 @@ Rules:
 - requiredSubjects/requiredElements/requiredColors/mustPreserve are IMMUTABLE: every specific the client actually gave must appear in them exactly, never softened, generalised or dropped.
 - Only businessContext, designObjective, compositionDirection, focalHierarchy, negativeSpaceZones and realismLevel are yours to fill in from professional knowledge — and only where the client left them unsaid.
 - A named business or space type is knowledge for HOW to execute the client's own subject, never permission to invent a different one.
-- If the client's brief is generic (no literal subject named), it is correct for requiredSubjects to be empty and for compositionDirection to carry your own professional judgement.`;
+- If the client's brief is generic (no literal subject named), it is correct for requiredSubjects to be empty and for compositionDirection to carry your own professional judgement.
+- realismLevel must name a concrete MEDIUM and TECHNIQUE a wallpaper studio would sell — e.g. "hand-painted watercolor with soft bleeding edges", "gouache illustration with ink line", "linocut block print", "chinoiserie ink on silk", "painted plaster / limewash texture", "fine-art photographic". Use the client's medium if they named one; otherwise choose the one that best serves their subject. A medium is execution knowledge, never a new subject.`;
 }
 
 /**

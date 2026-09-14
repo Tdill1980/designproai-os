@@ -12,7 +12,7 @@ import library from '@/data/wallpro-prompt-library.json';
 import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, type WallAsset } from '@/lib/wallpro-api';
 import { validateWallUpload, loadWallImage, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, seamlessReceipt, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
+import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
 import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
 
 const LIBRARY = library as WallPromptEntry[];
@@ -140,7 +140,11 @@ export default function AdminWallProBatch() {
       // a word of the library prompt itself. Without this the classifier had
       // only the prompt text to read, which is weaker for a library entry
       // that already names its business/room explicitly.
-      const result = await generateWall({ requestId, prompt: job.entry.prompt, width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style });
+      // The model gets the listing-quality creative brief, never the raw
+      // library prompt: 72% of that text is production-pipeline instruction
+      // the pipeline already enforces in code (see batchCreativeBrief). The
+      // published row still records entry.prompt as the production contract.
+      const result = await generateWall({ requestId, prompt: batchCreativeBrief(job.entry), width: dims.width, height: dims.height, placement: dims.placement, repeatWidthIn: job.mode === 'repeat' ? job.tileWidthIn : undefined, wallPath: null, referencePath, libraryIndustry: job.entry.industry, libraryRoom: job.entry.room, libraryStyle: job.entry.style });
       const measured = await measureAsset(result.image_url);
       // The seam gate runs here, on the generated pixels, before anyone rates
       // or publishes. Repeat tiles that do not join are marked mirror by the
