@@ -13,6 +13,8 @@ import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-m
 import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
+import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallQuote } from '@/lib/wallpro-pricing';
+import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -198,19 +200,22 @@ export default function WallPro() {
   // read off the element instead of hard-coded, and re-read on resize. The
   // selector excludes this header by id, or with the site header absent it
   // would measure itself and pin below its own height.
-  const [stickyTop, setStickyTop] = useState(0);
-  useEffect(() => {
-    const measure = () => {
-      const bar = document.querySelector('header.sticky:not(#wallpro-header)');
-      setStickyTop(bar instanceof HTMLElement ? Math.round(bar.getBoundingClientRect().height) : 0);
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+  //
+  // The measurement lives in useStickyOffset now, shared with the WallWrap
+  // page, which reproduced this exact bug the first time it was written. The
+  // OTHER half of the fix is in index.css: `overflow-x: hidden` on html/body/
+  // main under 768px made those elements scroll containers, which disables
+  // descendant sticky entirely -- so this header was correctly offset and still
+  // scrolled away on a phone. It is `overflow-x: clip` there now.
+  const stickyTop = useStickyOffset('wallpro-header');
   // A comparison needs both halves: the untouched photo and a real composite.
   const canCompare = !!photo && !!artwork && wallLocated && !!preview;
   const billing = wallBilling(width, height, printSettings, WALLPRO_PRINT_WIDTH);
+  /** THE PRICE OF THE PATH THEY TOOK. `designMode` IS the SKU (owner's launch
+   * list, 2026-09-13: Ready-to-Print $79, Describe $149, Match $149, Design for
+   * My Wall $199, File Prep $49, print $3.50/sq ft), so the quote follows the
+   * customer's own choice instead of a single hardcoded design fee. */
+  const quote = wallQuote({ path: 'design-and-print', designMode, billing });
   useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
   const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
@@ -1017,7 +1022,12 @@ export default function WallPro() {
             <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
               Wall<span className="bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Pro</span>
             </h1>
-            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Your wall. Your design. Sized to fit.</p>
+            {/* The owner's own words for what this tool IS (2026-09-13:
+                "a persistent header that says WallPro custom wall wrap file
+                output"). It names the deliverable -- a print file -- rather
+                than describing the feeling of using it, which is what the
+                trade buyer is actually here for. */}
+            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">Custom wall wrap file output</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
@@ -1055,7 +1065,12 @@ export default function WallPro() {
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
               { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
               { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span></button>)}</div>
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span>
+              {/* The price is on the choice, not buried in a checkout. Each entry
+                  path is its own SKU (owner's launch list, 2026-09-13), so the
+                  customer picks knowing what it costs. */}
+              <span className="shrink-0 text-sm font-bold text-violet-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
+            <p className="mb-4 text-[11px] text-slate-500">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -1300,16 +1315,29 @@ export default function WallPro() {
           {artwork && versions.length > 0 && (!approvedVersion || approvedVersion.id !== currentVersionId) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Print files are prepared from the approved version only. {approvedVersion ? `V${approvedVersion.version_no} is approved; restore it or approve the current version.` : 'Approve the current version when the design is right.'}</p>}
           <WallProductionPanels approved={approvedVersion} autoStart={productionKick} busy={!!busy}
             request={{ wallWidthIn: width, wallHeightIn: height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : undefined, mirror: !!layout.mirror, bleedIn: printSettings.bleed, overlapIn: printSettings.overlap, panelWidthIn: WALLPRO_PRINT_WIDTH, targetPpi: printSettings.minPpi, wholeWall: true }} />
-          {/* WHAT WPW ACTUALLY BILLS. The spec sheet bills per LINEAR FOOT and
-              bills every panel at the full 54-inch roll width regardless of
-              what is printed on it, so wall square footage is not the number:
-              a 142-inch wall bills 162 inches of roll width. Shown from the
-              same geometry the panels are planned with. */}
-          {billing && <p className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
-            <strong className="text-slate-900">WePrintWraps billing · {billing.linearFeet} linear ft</strong>{' '}
-            — {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long, each billed at the {billing.billedWidthIn}″ roll width whatever is printed on it
-            ({billing.billedSqFt} sq ft billed for a {billing.wallSqFt} sq ft wall). Avery HP MPI 2610 wall vinyl, matte/luster.
-          </p>}
+          {/* THE PRICE, FROM THE SAME GEOMETRY THAT PLANS THE PANELS.
+              Owner, 2026-09-13: "all printed wrap is priced by the sq ft only."
+              This used to lead with the BILLED roll footage — every panel at the
+              full 54" width whatever is printed on it — which on this wall reads
+              110.25 sq ft against a 94.67 sq ft wall. That overhead is the
+              shop's to absorb; quoting it is a price the customer cannot check
+              with a tape measure. The panel count and linear feet stay, as
+              production facts rather than as the billing basis.
+              The design line is the entry path they actually took, at its launch
+              price, so what they are paying for is named rather than implied. */}
+          {quote && <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600">
+            {quote.lines.map(line => <p key={line.label} className="flex items-baseline justify-between gap-3 border-b border-slate-100 py-1 last:border-0">
+              <span><strong className="text-slate-900">{line.label}</strong> — {line.detail}</span>
+              <span className="shrink-0 font-semibold text-slate-900">{formatMoney(line.cents)}</span>
+            </p>)}
+            <p className="mt-1 flex items-baseline justify-between gap-3 border-t border-slate-300 pt-1">
+              <span className="font-semibold text-slate-900">Total</span>
+              <span className="text-sm font-bold text-slate-900">{formatMoney(quote.totalCents)}</span>
+            </p>
+            {billing && <p className="mt-1 text-[11px] text-slate-500">
+              Printed as {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long on the {billing.billedWidthIn}″ roll ({billing.linearFeet} linear ft), Avery HP MPI 2610 wall vinyl, matte/luster. Half-inch overlap at every seam.
+            </p>}
+          </div>}
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
         </div>
       </div>

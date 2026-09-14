@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Download, Loader2, Sparkles, ShieldCheck } from 'lucide-react';
 import { deliveryMessage, deliveryState } from '@/lib/wallpro-panelpro';
 import { Button } from '@/components/ui/button';
+import { UniversalPanelizerProgress } from '@/components/production/UniversalPanelizerProgress';
+import { wallPanelizerRun } from '@/lib/wallpro-panelpro';
 import { latestWallProductionJob, getWallProductionJob, openWallAssets, requestWallProduction, wallDesignId, wallPanelFiles, wholeWallFile, type WallProductionJob, type WallProductionRequest, type WallVersion } from '@/lib/wallpro-api';
 
 type Props = {
@@ -24,6 +26,18 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
   const [error, setError] = useState('');
   const [requesting, setRequesting] = useState(false);
   const live = job && (job.status === 'queued' || job.status === 'running');
+  // The shared model needs the version record shape wallpro-panelpro builds its
+  // studio rows from; here we have exactly one version and one job, so the
+  // record is assembled directly rather than re-reading anything.
+  const panelizerRun = approved
+    ? wallPanelizerRun(
+        {
+          version: approved, designId: wallDesignId(approved.id), generation: null,
+          outcome: 'landed', reviews: [], release: 'unreviewed', job, artworkUrl: null,
+        },
+        approved.note || 'Your wall design',
+      )
+    : null;
 
   useEffect(() => {
     let active = true; setJob(null); setLinks({}); setError('');
@@ -70,6 +84,12 @@ export function WallProductionPanels({ approved, request, autoStart, busy }: Pro
     {job && <div className="mt-3 space-y-2 text-sm">
       {live && <p role="status" className="flex items-center gap-2 text-violet-700"><Loader2 className="h-4 w-4 animate-spin" />{job.status === 'queued' ? 'Queued for the production runtime…' : `Building panel ${Math.min((job.progress.panelsDone || 0) + 1, job.progress.panelsTotal || 0)} of ${job.progress.panelsTotal || '?'}${job.progress.nativePpi ? ` · master is ${job.progress.nativePpi} PPI native, Topaz ${job.progress.topaz || ''} to ${request.targetPpi}` : ''}`}</p>}
       {job.status === 'failed' && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">The build failed: {job.error || 'unknown error'}. Rebuild to try again.</p>}
+      {/* GENIE UNIVERSAL PANELIZER, the shared surface (owner, 2026-09-13:
+          "use the current DP Genie universal Panelizer progress as a template
+          and create for wallpro and graphicspro to use"). The rail carries the
+          24-hour human check as a step of its own, which is the part that
+          justifies the price against a $0 visualiser. */}
+      {panelizerRun && <UniversalPanelizerProgress run={panelizerRun} />}
       {/* GENIE WALL PANELIZER -- THE WINDOW, STATED AS THE SERVICE IT IS.
           `ready` means cut, not handed over: a person checks every panel
           against the wall measurements, the seams and the resolution before
