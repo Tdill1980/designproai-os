@@ -2970,3 +2970,80 @@ test("GENIE prep status reads the owner's newest row under RLS and never selects
   assert.match(selectUrl, /order=requested_at\.desc&limit=1/);
   assert.doesNotMatch(selectUrl, /[,=]geometry[,&]/, "the geometry blob is never selected");
 });
+
+test("refused Atlas candidates are listed with their verdicts and signed for the owner, never as storage paths", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000012";
+  const sheetPath = "atlas-call1/a96dea87-492b-49dd-b3d3-a51432358707.jpg";
+  const fieldPath = "atlas-call1/bd2dab9d-6c25-444c-949d-2bf35a6b80e5.jpg";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_refusal_paths")) {
+        assert.deepEqual(JSON.parse(init.body), { p_request_id: requestId });
+        return Response.json([
+          { id: "50000000-0000-4000-8000-000000000001", requestId, generationId: "90000000-0000-4000-8000-000000000012",
+            topology: "six-surface", attempt: 1, code: "flat_atlas_unrepaired_cutout",
+            reason: "unrepaired cutouts on rear", storagePath: sheetPath, sha256: "a".repeat(64),
+            byteSize: 8339320, contentType: "image/jpeg", model: "gemini-3-pro-image", createdAt: "2026-09-14T16:31:30Z" },
+          { id: "50000000-0000-4000-8000-000000000002", requestId, generationId: "90000000-0000-4000-8000-000000000012",
+            topology: "field", attempt: 1, code: "flat_atlas_master_output_class_invalid",
+            reason: "output class vehicle_depiction", storagePath: fieldPath, sha256: "b".repeat(64),
+            byteSize: 11331524, contentType: "image/jpeg", model: "gemini-3-pro-image", createdAt: "2026-09-14T16:33:14Z" },
+        ]);
+      }
+      if (value.includes(`/storage/v1/object/sign/wrap-files/${encodeURIComponent(sheetPath).replace(/%2F/g, "/")}`)
+        || value.includes(`/storage/v1/object/sign/wrap-files/${sheetPath}`)) {
+        return Response.json({ signedURL: "/object/sign/wrap-files/sheet?token=one" });
+      }
+      if (value.includes("/storage/v1/object/sign/")) {
+        return Response.json({ message: "not allowed" }, { status: 400 });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas-refusals`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const rows = await response.json();
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].topology, "six-surface");
+  assert.equal(rows[0].code, "flat_atlas_unrepaired_cutout");
+  assert.equal(rows[0].signedUrl, "https://dp-project.supabase.co/storage/v1/object/sign/wrap-files/sheet?token=one");
+  assert.equal(rows[0].expiresIn, 300);
+  // The field candidate could not be signed: still listed, verdict intact, no URL.
+  assert.equal(rows[1].topology, "field");
+  assert.equal(rows[1].reason, "output class vehicle_depiction");
+  assert.equal("signedUrl" in rows[1], false);
+  for (const row of rows) assert.equal("storagePath" in row, false);
+  assert.equal(calls.filter((item) => item.url.includes("/storage/v1/object/sign/")).length, 2);
+});
+
+test("refused Atlas candidates answer 404 for a request the caller does not own, before any signing", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000013";
+  const calls = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_refusal_paths")) return Response.json(null);
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas-refusals`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 404);
+  assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
+});

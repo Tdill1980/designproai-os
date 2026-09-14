@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StaticRouter } from "react-router-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DesignGenerationFailure } from "./DesignGenerationFailure";
 
 const generationId = "e9babe2d-043e-4ce4-9b7f-5e93b2739b09";
@@ -64,5 +65,34 @@ describe("DesignPro ATLAS failure UI", () => {
     const { html } = render({ isAtlas: false, errorCode: "generation_failed", error: "Design generation failed." });
     expect(html).toContain("Relaunch");
     expect(html).not.toContain("Start New ATLAS Run");
+  });
+});
+
+describe("DesignPro ATLAS failure UI — refused candidates", () => {
+  const requestId = "bbb665ad-53cb-4e6c-919f-9bd338c7dfd0";
+  const renderWithClient = (props: Partial<React.ComponentProps<typeof DesignGenerationFailure>>) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <StaticRouter location="/designpro/create">
+          <DesignGenerationFailure isAtlas generationId={generationId} error={null} errorCode={null} onStartNew={vi.fn()} {...props} />
+        </StaticRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("mounts the refused-candidate strip under the retry on a confirmed ATLAS refusal", () => {
+    const html = renderWithClient({ requestId, errorCode: "flat_atlas_master_output_class_invalid", error: "refused" });
+    expect(html).toContain("Start New ATLAS Run");
+    expect(html).toContain("Loading the refused candidates");
+  });
+
+  it("never fetches candidates for an unconfirmed provider outcome, a non-ATLAS failure, or a bad request id", () => {
+    expect(renderWithClient({ requestId, errorCode: "provider_outcome_unknown", error: "provider_outcome_unknown" }))
+      .not.toContain("refused candidates");
+    expect(renderWithClient({ requestId, isAtlas: false, errorCode: "generation_failed", error: "failed" }))
+      .not.toContain("refused candidates");
+    expect(renderWithClient({ requestId: "not-a-request", errorCode: "flat_atlas_unrepaired_cutout", error: "refused" }))
+      .not.toContain("refused candidates");
   });
 });
