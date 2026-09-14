@@ -126,7 +126,7 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // film". THREE things are for sale on this page and a visitor has to see
     // all three without scrolling -- most of all the last one, because the
     // customer who already has artwork was the one this page did not serve.
-    tagline: 'Custom instant wall wrap design · print-ready file output · buy printed film',
+    tagline: 'Custom Wall Wrap design, print files & printed wrap',
     showPrintOffer: true,
     // REAL JOBS ONLY. Each entry is a room WePrintWraps actually wrapped,
     // photographed twice from one camera position. Drop the two files at the

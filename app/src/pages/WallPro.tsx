@@ -1074,7 +1074,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <header
         id="wallpro-header"
         style={{ top: stickyTop }}
-        className="sticky z-30 -mx-4 bg-slate-50/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 md:-mx-8 md:px-8 md:py-4"
+        className="sticky z-30 -mx-4 bg-black px-4 py-3 text-white md:-mx-8 md:px-8 md:py-4"
       >
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           {/* A PROPER HEADER, on both breakpoints (owner, 2026-09-12: "there is
@@ -1091,13 +1091,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             <div className="flex items-center gap-2.5">
               {theme.logo
                 ? <img src={theme.logo} alt={theme.logoAlt} className="h-7 w-auto shrink-0 md:h-9" />
-                : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600 md:text-xs">{theme.eyebrow}</p>}
-              <span aria-hidden="true" className="text-lg font-light text-slate-400 md:text-xl">&times;</span>
+                : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
+              <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>
               {/* Two tone, not a gradient: against the partner's own mark the
                   wordmark has to read as a solid name at a glance. The gradient
                   stays where it belongs, on the actions. */}
               <h1 className="text-2xl font-bold leading-tight md:text-3xl">
-                <span className="text-slate-900">{theme.wordmarkLead}</span><span className="text-blue-600">{theme.wordmarkAccent}</span>
+                <span className="text-white">{theme.wordmarkLead}</span><span className="text-blue-400">{theme.wordmarkAccent}</span>
               </h1>
             </div>
             {/* The owner's own words for what this tool IS (2026-09-13:
@@ -1105,7 +1105,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 output"). It names the deliverable -- a print file -- rather
                 than describing the feeling of using it, which is what the
                 trade buyer is actually here for. */}
-            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">{theme.tagline}</p>
+            <p className="mt-0.5 text-xs text-white/70 md:text-sm">{theme.tagline}</p>
           </div>
           {/* The rail carries these on desktop, so the header would show them
               twice. The rail is hidden below lg (a pinned sidebar on a phone
@@ -1126,13 +1126,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             header's own padding so it reads as an edge of the bar rather than a
             line drawn inside it. Two pixels: enough to carry a gradient, not so
             much that it becomes a band of its own. */}
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-white" />
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-blue-700 via-sky-400 to-blue-700" />
       </header>
       {/* The proof band, and ONLY before they start. Its whole job is to answer
           "what does this do?" for someone who has just landed; once a wall photo
           or artwork exists the customer has their own before and after in the
           preview pane, and a stranger's gym is in the way. */}
-      {!photo && !artwork && <WallProHeroProof proofs={theme.proofs} />}
+      {/* ABOVE THE SCROLL (owner, 2026-09-14: "Above scroll custom wall wrap
+          design now or like on demand wall wrap design & file output"). The
+          headline says what this page DOES beside a room it actually did it to,
+          so the claim and its proof are one object. It clears the moment work
+          starts -- a customer with their own wall on screen does not need to be
+          told what the tool is. */}
+      {!photo && !artwork && theme.proofs.length > 0 && (
+        <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <div>
+            <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-slate-900 md:text-4xl">
+              On-demand wall wrap<br />design &amp; file output
+            </h2>
+            <p className="mt-3 max-w-[42ch] text-sm text-slate-600">
+              Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
+              in minutes, and take the print-ready files — whether we print them or you do.
+            </p>
+          </div>
+          <WallProHeroProof proofs={theme.proofs} />
+        </section>
+      )}
+      {!photo && !artwork && theme.proofs.length === 0 && <WallProHeroProof proofs={theme.proofs} />}
       {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
           block is the only friction-free money on this page -- no sign-in, no
           token, no design -- and on a wrap printer's site "I already have
@@ -1143,12 +1163,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       {theme.showPrintOffer && !artwork && <a
         href="#order-printed-film"
         onClick={e => { e.preventDefault(); document.getElementById('order-printed-film')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-        className="mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-blue-400"
+        className="mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl bg-[#ec4899] px-4 py-3 text-sm text-white shadow-sm transition hover:bg-[#db2777]"
       >
-        <span className="text-slate-700">
-          <strong className="font-semibold text-slate-900">Already have artwork?</strong> Skip the design and order printed film by the square foot.
+        <span className="text-white/90">
+          <strong className="font-semibold text-white">Already have artwork?</strong> Skip the design and order printed film by the square foot.
         </span>
-        <span className="shrink-0 font-semibold text-blue-700">Order film &rarr;</span>
+        <span className="shrink-0 font-semibold text-white">Order film &rarr;</span>
       </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
@@ -1169,6 +1189,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
+                2026-09-14: "on enter wall size should give price for printed
+                wrap from wpw film"). The wall's own square footage at the live
+                WePrintWraps rate -- the number a customer can check with a tape
+                measure -- so the cost of the thing they came for is answered in
+                step 1 rather than four thousand pixels later. It is the film
+                only; the design is priced on its own card, because they are
+                separate purchases with separate payees. */}
+            {dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-600">
+                Printed film, this wall
+                <span className="block text-[11px] text-slate-500">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
+              </span>
+              <span className="text-base font-bold tabular-nums text-slate-900">
+                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
+              </span>
+            </div>}
           </section>
           <section id="choose-design" className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
