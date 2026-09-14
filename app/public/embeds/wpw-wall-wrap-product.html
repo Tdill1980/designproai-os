@@ -28,12 +28,15 @@
   This body uses the Specs wording. The Overview sentence on the live page
   should be corrected to match -- it is the one that misleads.
 
-  ⚠️ PANEL WIDTH IS 53", NOT 54". The live Specs tab says "Printed at 53"
-  panel width" and "Panels are charged at full 53" width regardless of
-  trimmed size". WALLPRO_PRINT_WIDTH in the app is 54. That is a ONE INCH
-  difference on every panel of every print file and it has NOT been changed
-  here, because changing it moves panel counts, seam geometry and print
-  output. Owner decision required: is the press 53 or 54?
+  PANEL WIDTH IS 53" — CONFIRMED BY THE OWNER, 2026-09-14, and now the
+  width the app plans and the runtime cuts (WALLPRO_PRINT_WIDTH and
+  DEFAULTS.panelWidthIn, both 53). It was 54, which the press cannot image:
+  the owner's first end-to-end WallPro job came back half an inch short
+  because the file asked for more width than the machine has.
+
+  The BILLING width is a different number and stays as the shop states it:
+  "All panels billed at 54" width, regardless of actual printed width."
+  Billed 54, printed 53.
 
   Scoped under #wpwall — cannot affect the theme. No plugins, no jQuery,
   no JavaScript. Same WHITE UI standard, blue→magenta gradient and
