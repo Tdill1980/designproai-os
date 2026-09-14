@@ -9,8 +9,11 @@ import { Helmet } from 'react-helmet-async';
 import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson, Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import library from '@/data/wallpro-prompt-library.json';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, type WallAsset } from '@/lib/wallpro-api';
-import { validateWallUpload, loadWallImage, canvasBlob } from '@/lib/wallpro-render';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, type WallAsset } from '@/lib/wallpro-api';
+import { validateWallUpload, prepareWallUpload, loadWallImage, canvasBlob, renderWallPreview } from '@/lib/wallpro-render';
+import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
+import { sceneUpsertRow, sceneLayoutFor, mockupCaption, DEFAULT_SCENE_WALL_IN, FULL_FRAME_CORNERS, type WallCatalogScene } from '@/lib/wallpro-scenes';
+import type { Point } from '@/lib/wallpro-geometry';
 import { measureSeam, seamlessReceipt, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { batchDimensions, planWallBatch, selectLibraryEntries, catalogMasterPath, catalogThumbPath, designUpsertRow, provenanceManifest, catalogEffectivePpi, CATALOG_THUMB_PX, DEFAULT_TILE_WIDTH_IN, libraryEntryDomain, catalogRowDomain, batchDiversitySummary, batchCreativeBrief, type WallPromptEntry, type WallCatalogRow, type WallCatalogMode, type WallBatchFilter, type WallIntensity } from '@/lib/wallpro-catalog';
 import type { WallDesignContract } from '../../../supabase/functions/generate-wall-design/prompt';
@@ -50,6 +53,19 @@ async function measureAsset(url: string) {
   tile.width = 1; tile.height = 1;
   return { report, widthPx: image.naturalWidth, heightPx: image.naturalHeight, image };
 }
+/** The mockup as a listing image: the composite with its true-size caption
+ * burned into a bar along the bottom, so the number travels with the picture
+ * wherever it is posted. JPEG, since it is a photograph. */
+async function listingJpeg(composite: HTMLCanvasElement, caption: string): Promise<Blob> {
+  const bar = Math.max(28, Math.round(composite.height * 0.05));
+  const c = document.createElement('canvas'); c.width = composite.width; c.height = composite.height + bar;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(composite, 0, 0);
+  ctx.fillStyle = '#111827'; ctx.fillRect(0, composite.height, c.width, bar);
+  ctx.fillStyle = '#ffffff'; ctx.font = `${Math.round(bar * 0.5)}px system-ui, sans-serif`; ctx.textBaseline = 'middle';
+  ctx.fillText(caption, Math.round(bar * 0.4), composite.height + bar / 2);
+  return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('Mockup export failed.')), 'image/jpeg', 0.9));
+}
 async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
   const scale = Math.min(1, CATALOG_THUMB_PX / Math.max(image.naturalWidth, image.naturalHeight));
   const c = document.createElement('canvas');
@@ -59,7 +75,19 @@ async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
 }
 
 export default function AdminWallProBatch() {
-  const [tab, setTab] = useState<'generator' | 'gallery' | 'history'>('generator');
+  const [tab, setTab] = useState<'generator' | 'gallery' | 'history' | 'scenes'>('generator');
+  // Room scenes (stock photographs with the feature wall's corners and real
+  // inches recorded once) and the "In a room" mockup modal for a published design.
+  const [scenes, setScenes] = useState<WallCatalogScene[]>([]);
+  const [sceneThumbs, setSceneThumbs] = useState<Record<string, string>>({});
+  const [scenePhoto, setScenePhoto] = useState<WallAsset | null>(null);
+  const [sceneCorners, setSceneCorners] = useState<Point[]>(FULL_FRAME_CORNERS);
+  const [sceneCornerSource, setSceneCornerSource] = useState<'default' | 'detected' | 'marked'>('default');
+  const [sceneName, setSceneName] = useState('');
+  const [sceneRoom, setSceneRoom] = useState('living_room');
+  const [sceneWall, setSceneWall] = useState<{ width: number; height: number }>({ ...DEFAULT_SCENE_WALL_IN });
+  const [mockupRow, setMockupRow] = useState<WallCatalogRow | null>(null);
+  const [mockups, setMockups] = useState<{ scene: WallCatalogScene; canvas: HTMLCanvasElement; url: string; caption: string }[]>([]);
   const [filter, setFilter] = useState<WallBatchFilter>({ segment: 'all', industry: 'all', designType: 'all', intensity: 'all', domain: 'all' });
   const [detailJob, setDetailJob] = useState<Job | null>(null);
   const [batchSize, setBatchSize] = useState(10);
@@ -93,7 +121,14 @@ export default function AdminWallProBatch() {
     const paths = rows.map(r => r.thumb_path || r.master_path);
     setThumbs(await openWallAssets(paths).catch(() => ({})));
   }
-  useEffect(() => { refreshCatalog().catch(e => setError(e.message)); }, []);
+  async function refreshScenes() {
+    const rows = await listWallScenesAll();
+    setScenes(rows);
+    setSceneThumbs(await openWallAssets(rows.map(r => r.image_path)).catch(() => ({})));
+  }
+  // Scenes fail soft: a database without 20260914160000 yet must not take
+  // the generator down with it.
+  useEffect(() => { refreshCatalog().catch(e => setError(e.message)); refreshScenes().catch(() => {}); }, []);
 
   async function guarded(label: string, action: () => Promise<void>) {
     setBusy(label); setError('');
@@ -199,6 +234,65 @@ export default function AdminWallProBatch() {
   }
   async function publishAll() { for (const job of jobs) if (job.status === 'done' && !job.published) await publish(job); }
 
+  async function addScenePhoto(files: FileList | null) {
+    const file = files?.[0]; if (!file) return;
+    await guarded('Opening the room photo', async () => {
+      const prepared = await prepareWallUpload(file);
+      const v = await validateWallUpload(prepared);
+      urls.current.push(v.url);
+      setScenePhoto({ ...v, file: prepared }); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default');
+      if (!sceneName) setSceneName(file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').slice(0, 80));
+      // Detection reads the photo from storage; a miss leaves the curator marking by hand.
+      const user = await wallUser();
+      const path = await uploadWallAsset({ ...v, file: prepared }, user.id);
+      setScenePhoto(p => p ? { ...p, path } : p);
+      const detected = await detectWall(path).catch(() => null);
+      if (detected?.wall && detected.wall.length === 4) { setSceneCorners(detected.wall); setSceneCornerSource('detected'); }
+    });
+  }
+  async function saveScene() {
+    if (!scenePhoto?.path) return;
+    await guarded('Saving scene', async () => {
+      // A full-frame "wall" would paint the whole room (the same defect the
+      // customer page refuses to display, 2026-09-12).
+      if (sceneCornerSource === 'default') throw new Error('Mark the four corners of the feature wall first — a full-frame wall would paint the whole room.');
+      const user = await wallUser();
+      const ext = scenePhoto.file?.type === 'image/png' ? 'png' : scenePhoto.file?.type === 'image/webp' ? 'webp' : 'jpg';
+      const row = sceneUpsertRow({ name: sceneName, room: sceneRoom, imagePath: 'catalog/' + crypto.randomUUID() + '.' + ext, widthPx: scenePhoto.width || 0, heightPx: scenePhoto.height || 0, corners: sceneCorners, wallWidthIn: sceneWall.width, wallHeightIn: sceneWall.height, createdBy: user.id, sortOrder: scenes.length });
+      await publishWallScene(scenePhoto.path!, row);
+      setScenePhoto(null); setSceneName(''); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default');
+      await refreshScenes();
+    });
+  }
+  /** Imposes the design's own master on every active scene at TRUE size —
+   * the customer page's deterministic composite, no AI — one room at a time
+   * so the first appears while the rest render. */
+  async function openMockups(row: WallCatalogRow) {
+    const active = scenes.filter(s => s.is_active);
+    if (!active.length) { setError('Add at least one room scene on the Scenes tab first.'); return; }
+    setMockupRow(row); setMockups([]);
+    await guarded(`Rendering ${row.design_id} in ${active.length} room${active.length === 1 ? '' : 's'}`, async () => {
+      const art = await openWallAsset(row.master_path);
+      const out: typeof mockups = [];
+      for (const scene of active) {
+        const photo = sceneThumbs[scene.image_path] || await openWallAsset(scene.image_path);
+        const canvas = await renderWallPreview(photo, art, scene.corners, [], sceneLayoutFor(row, scene, DEFAULT_TILE_WIDTH_IN));
+        const url = URL.createObjectURL(await canvasBlob(canvas)); urls.current.push(url);
+        out.push({ scene, canvas, url, caption: mockupCaption(row, scene, DEFAULT_TILE_WIDTH_IN) });
+        setMockups([...out]);
+      }
+    });
+  }
+  async function saveMockups() {
+    if (!mockupRow || !mockups.length) return;
+    await guarded('Saving mockups for ' + mockupRow.design_id, async () => {
+      const blobs = await Promise.all(mockups.map(async m => ({ sceneId: m.scene.id, caption: m.caption, blob: await listingJpeg(m.canvas, m.caption) })));
+      await saveWallDesignMockups(mockupRow.id, blobs);
+      await refreshCatalog();
+      setMockupRow(null); setMockups([]);
+    });
+  }
+
   const done = jobs.filter(j => j.status === 'done').length, failed = jobs.filter(j => j.status === 'failed').length, processed = jobs.filter(j => j.status === 'done' || j.status === 'failed').length;
   const galleryRows = catalog
     .filter(r => galleryIndustry === 'all' || r.industry === galleryIndustry)
@@ -214,7 +308,7 @@ export default function AdminWallProBatch() {
         <div className="text-xs text-slate-500">{catalog.length} in catalog · {catalog.filter(r => r.is_active).length} active · {LIBRARY.length - published.size} library prompts unpublished</div>
       </header>
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
-      <div className="flex gap-2">{(['generator', 'gallery', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : `History (${batches.length})`}</Button>)}</div>
+      <div className="flex gap-2">{(['generator', 'gallery', 'scenes', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : t === 'scenes' ? `Room scenes (${scenes.length})` : `History (${batches.length})`}</Button>)}</div>
 
       {tab === 'generator' && <>
         <section className={panelClass}>
@@ -304,6 +398,7 @@ export default function AdminWallProBatch() {
             <div className="flex flex-wrap items-center gap-2">
               <Stars value={row.rating} onChange={v => void guarded('Rating', async () => { await updateWallDesign(row.id, { rating: v }); await refreshCatalog(); })} />
               <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void guarded('Updating', async () => { await updateWallDesign(row.id, { is_active: !row.is_active }); await refreshCatalog(); })}>{row.is_active ? <><Eye className="mr-1 h-3 w-3" />Active</> : <><EyeOff className="mr-1 h-3 w-3" />Hidden</>}</Button>
+              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void openMockups(row)}><Layers className="mr-1 h-3 w-3" />In a room{row.mockups?.length ? ` (${row.mockups.length})` : ''}</Button>
               <Button size="sm" variant="ghost" onClick={() => downloadJson(row)}><FileJson className="mr-1 h-3 w-3" />Provenance</Button>
               <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove ${row.design_id} from the catalog? The master copy and generation record are retained as provenance.`)) void guarded('Removing', async () => { await deleteWallDesign(row); await refreshCatalog(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
             </div>
@@ -316,7 +411,51 @@ export default function AdminWallProBatch() {
         {batches.length === 0 ? <p className="mt-4 text-sm text-slate-600">Published designs appear here grouped by batch.</p>
         : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{batches.map(([id, rows]) => <div key={id} className="rounded-xl border border-slate-200 p-3 text-sm"><p className="font-mono text-xs">{id}</p><p className="mt-1 text-slate-600">{rows.length} designs · {rows.filter(r => r.is_active).length} active · {new Date(rows[0].created_at).toLocaleString()}</p><p className="mt-1 text-xs text-slate-500">{[...new Set(rows.map(r => r.industry))].join(' · ')}</p></div>)}</div>}
       </section>}
+
+      {tab === 'scenes' && <section className={panelClass}>
+        <h2 className="font-semibold">Room scenes</h2>
+        <p className="mt-1 text-sm text-slate-600">A stock room photo with its feature wall marked once and its real size recorded. Every published design can then be shown in it at true pattern size — the number a customer needs before they buy.</p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            {!scenePhoto ? <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-sm font-medium hover:border-emerald-400"><Upload size={16} />Add a room photo<input type="file" accept="image/*,.heic,.heif" className="sr-only" disabled={!!busy} onChange={e => { void addScenePhoto(e.target.files); e.target.value = ''; }} /></label>
+            : <>
+              <WallPhotoEditor url={scenePhoto.url} alt="Room scene" aspect={scenePhoto.aspect} busy={!!busy} marking={null} corners={sceneCorners} masks={[]} draft={[]} showMasks={false} seams={[]} onEditing={() => {}} onPoint={() => {}} onRectangle={() => {}} onCorners={pts => { setSceneCorners(pts); setSceneCornerSource('marked'); }} onMasks={() => {}} />
+              <p className="mt-2 text-xs text-slate-600">{sceneCornerSource === 'detected' ? 'Wall corners detected — drag any handle to correct them.' : sceneCornerSource === 'marked' ? 'Corners marked by hand.' : 'Detection did not find the wall: drag the four handles to its corners.'}</p>
+            </>}
+          </div>
+          <fieldset disabled={!scenePhoto || running || !!busy} className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm sm:col-span-2">Scene name<input className={inputClass} value={sceneName} onChange={e => setSceneName(e.target.value)} maxLength={80} /></label>
+            <label className="text-sm">Room<select className={inputClass} value={sceneRoom} onChange={e => setSceneRoom(e.target.value)}>{['living_room', 'bedroom', 'nursery', 'kids_room', 'dining_room', 'kitchen', 'bathroom', 'powder_room', 'home_office', 'entryway', 'hallway', 'corporate_office', 'restaurant', 'retail', 'hotel', 'other'].map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></label>
+            <div />
+            <label className="text-sm">Wall width (in)<input className={inputClass} type="number" min="12" max="2400" value={sceneWall.width} onChange={e => setSceneWall(w => ({ ...w, width: Number(e.target.value) }))} /></label>
+            <label className="text-sm">Wall height (in)<input className={inputClass} type="number" min="12" max="2400" value={sceneWall.height} onChange={e => setSceneWall(w => ({ ...w, height: Number(e.target.value) }))} /></label>
+            <p className="text-xs text-slate-500 sm:col-span-2">Measure the wall inside the four corners. A typical feature wall is 14 × 9 ft (168 × 108 in). Every mockup's scale depends on this number.</p>
+            <div className="flex gap-2 sm:col-span-2"><Button disabled={!scenePhoto?.path} onClick={() => void saveScene()}><Upload className="mr-2 h-4 w-4" />Save scene</Button><Button variant="ghost" onClick={() => { setScenePhoto(null); setSceneCorners(FULL_FRAME_CORNERS); setSceneCornerSource('default'); }}>Discard</Button></div>
+          </fieldset>
+        </div>
+        {scenes.length > 0 && <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{scenes.map(s => <article key={s.id} className={'overflow-hidden rounded-2xl border border-slate-200 bg-white ' + (s.is_active ? '' : 'opacity-60')}>
+          <div className="aspect-[4/3] bg-slate-100">{sceneThumbs[s.image_path] && <img src={sceneThumbs[s.image_path]} alt={s.name} className="h-full w-full object-cover" loading="lazy" />}</div>
+          <div className="space-y-2 p-3 text-xs">
+            <p className="font-semibold">{s.name}</p>
+            <p className="text-slate-500">{(s.room || 'room').replace(/_/g, ' ')} · wall {Math.round(s.wall_width_in / 12)} × {Math.round(s.wall_height_in / 12)} ft</p>
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void guarded('Updating scene', async () => { await updateWallScene(s.id, { is_active: !s.is_active }); await refreshScenes(); })}>{s.is_active ? <><Eye className="mr-1 h-3 w-3" />Active</> : <><EyeOff className="mr-1 h-3 w-3" />Hidden</>}</Button>
+              <Button size="sm" variant="ghost" className="text-red-700" disabled={!!busy} onClick={() => { if (window.confirm(`Remove the scene "${s.name}"? Mockups already saved from it are kept.`)) void guarded('Removing scene', async () => { await deleteWallScene(s.id); await refreshScenes(); }); }}><Trash2 className="mr-1 h-3 w-3" />Remove</Button>
+            </div>
+          </div>
+        </article>)}</div>}
+      </section>}
     </div>
+
+    {/* "In a room": the design's master on every active scene at true size. */}
+    {mockupRow && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { setMockupRow(null); setMockups([]); }}>
+      <div className="max-h-full w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">{mockupRow.design_id} · in a room</p><h3 className="text-lg font-bold">{mockupRow.title}</h3></div><Button size="sm" variant="ghost" onClick={() => { setMockupRow(null); setMockups([]); }}><X className="h-4 w-4" /></Button></div>
+        {mockups.length === 0 && <p className="mt-4 flex items-center gap-2 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Imposing the master on each room at true size…</p>}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">{mockups.map(m => <figure key={m.scene.id}><img src={m.url} alt={m.scene.name} className="w-full rounded-lg border border-slate-200" /><figcaption className="mt-1 text-xs text-slate-600">{m.scene.name} — {m.caption}</figcaption></figure>)}</div>
+        {mockups.length > 0 && <div className="mt-4 flex flex-wrap items-center gap-3"><Button disabled={!!busy} onClick={() => void saveMockups()}><Upload className="mr-2 h-4 w-4" />Save as listing images ({mockups.length})</Button><p className="text-xs text-slate-500">Saved mockups become the design's storefront image, caption burned in. Presentation only — never a print file.</p></div>}
+      </div>
+    </div>}
 
     {/* Detail drawer: the full WallDesignContract + advisory compliance
         receipt persona 1/2 actually produced for this job — never shown on

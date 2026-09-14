@@ -62,6 +62,8 @@ export type WallCatalogRow = {
   master_path: string; thumb_path: string | null; master_sha256: string; width_px: number; height_px: number; master_version: number;
   seam: SeamlessReceipt | null; approval_status: 'generated' | 'approved' | 'rejected' | 'revision';
   is_active: boolean; sort_order: number; rating: number | null; batch_id: string | null; created_by: string; created_at: string; updated_at: string;
+  /** Saved true-scale room mockups (20260914160000); the storefront shows the first. */
+  mockups: { scene_id: string; path: string; caption: string }[];
 };
 
 /** The published row's domain/space/style, derived at read time from its
