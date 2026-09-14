@@ -16,7 +16,7 @@ import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zon
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
-import { wallBrand, WALL_GRADIENT, WALL_GRADIENT_TEXT, type WallBrandKey } from '@/lib/wallpro-brand';
+import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
@@ -1022,7 +1022,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <header
         id="wallpro-header"
         style={{ top: stickyTop }}
-        className="sticky z-30 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 md:-mx-8 md:px-8 md:py-4"
+        className="sticky z-30 -mx-4 bg-slate-50/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 md:-mx-8 md:px-8 md:py-4"
       >
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           {/* A PROPER HEADER, on both breakpoints (owner, 2026-09-12: "there is
@@ -1032,10 +1032,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               what tells a first-time visitor what WallPro is, so it earns its
               line on a phone too. */}
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600 md:text-xs">{theme.eyebrow}</p>
-            <h1 className="mt-0.5 text-2xl font-bold leading-tight md:text-3xl">
-              {theme.wordmarkLead}<span className={`${WALL_GRADIENT_TEXT} bg-clip-text text-transparent`}>{theme.wordmarkAccent}</span>
-            </h1>
+            {/* THE LOCKUP: partner mark × WallPro (owner, 2026-09-14). The "×"
+                is the collaboration mark, so it stays lighter and smaller than
+                either name it joins -- it is punctuation, not a third brand.
+                A brand with no logo falls back to its eyebrow text. */}
+            <div className="flex items-center gap-2.5">
+              {theme.logo
+                ? <img src={theme.logo} alt={theme.logoAlt} className="h-7 w-auto shrink-0 md:h-9" />
+                : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600 md:text-xs">{theme.eyebrow}</p>}
+              <span aria-hidden="true" className="text-lg font-light text-slate-400 md:text-xl">&times;</span>
+              {/* Two tone, not a gradient: against the partner's own mark the
+                  wordmark has to read as a solid name at a glance. The gradient
+                  stays where it belongs, on the actions. */}
+              <h1 className="text-2xl font-bold leading-tight md:text-3xl">
+                <span className="text-slate-900">{theme.wordmarkLead}</span><span className="text-blue-600">{theme.wordmarkAccent}</span>
+              </h1>
+            </div>
             {/* The owner's own words for what this tool IS (2026-09-13:
                 "a persistent header that says WallPro custom wall wrap file
                 output"). It names the deliverable -- a print file -- rather
@@ -1052,12 +1064,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </Button>
           </div>
         </div>
+        {/* THE RULE between the header and the page (owner, 2026-09-14: "Add a
+            border blue and white gradiant in between persistent header and
+            page"). It replaces the flat slate hairline, and it bleeds past the
+            header's own padding so it reads as an edge of the bar rather than a
+            line drawn inside it. Two pixels: enough to carry a gradient, not so
+            much that it becomes a band of its own. */}
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-white" />
       </header>
       {/* The proof band, and ONLY before they start. Its whole job is to answer
           "what does this do?" for someone who has just landed; once a wall photo
           or artwork exists the customer has their own before and after in the
           preview pane, and a stranger's gym is in the way. */}
-      {!photo && !artwork && <WallProHeroProof proof={theme.proof} />}
+      {!photo && !artwork && <WallProHeroProof proofs={theme.proofs} />}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>

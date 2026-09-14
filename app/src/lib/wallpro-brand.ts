@@ -20,7 +20,7 @@
 // the shape of that row, so the swap is a read, not a rewrite.
 
 /**
- * THE WALLPRO GRADIENT — one definition, four surfaces.
+ * THE WALLPRO GRADIENT — one definition, every action.
  *
  * Owner, 2026-09-14, looking at the built tool: "the gradient needs more blue."
  *
@@ -41,13 +41,20 @@
  */
 export const WALL_GRADIENT = 'bg-gradient-to-r from-blue-700 via-blue-500 to-fuchsia-600';
 
-/** The same sweep for text (the wordmark's accent half), one step lighter so it stays legible. */
-export const WALL_GRADIENT_TEXT = 'bg-gradient-to-r from-blue-600 via-blue-500 to-fuchsia-500';
-
 export type WallBrandKey = 'designpro' | 'weprintwraps';
 
 export type WallBrand = {
-  /** The small line above the wordmark — who is behind the tool. */
+  /**
+   * The partner's own logo, shown in the header corner ahead of "× WallPro".
+   *
+   * When a brand has one it REPLACES the eyebrow: a logo and the same company's
+   * name spelled out underneath it is the company saying who it is twice. Null
+   * falls back to the eyebrow text.
+   */
+  logo: string | null;
+  /** Alt text for that logo. Never "logo" — a screen reader already says so. */
+  logoAlt: string;
+  /** The small line above the wordmark — used only when there is no logo. */
   eyebrow: string;
   /** Split so the second half can carry the gradient. */
   wordmarkLead: string;
@@ -64,18 +71,21 @@ export type WallBrand = {
    */
   showPrintOffer: boolean;
   /**
-   * The before/after example in the narrow band under the header.
+   * The before/after examples in the narrow band under the header, cycled.
    *
    * Per brand, because the proof should look like the partner's own work — a
-   * WePrintWraps visitor should recognise a room WePrintWraps wrapped. `null`
-   * renders no band at all.
+   * WePrintWraps visitor should recognise a room WePrintWraps wrapped. An empty
+   * list renders no band at all.
    *
-   * Both files live under `app/public/` and ship with the build, so the band
-   * paints on first load with no request to Supabase and no signed URL. Use a
-   * WIDE room photograph: the band is a 16:4-ish strip and a tall image is
-   * cropped to its middle.
+   * ORDER MATTERS: the first entry is what a visitor sees on arrival and is the
+   * only one many will see, so put the most persuasive room first.
+   *
+   * Files live under `app/public/` and ship with the build, so the band paints
+   * on first load with no request to Supabase and no signed URL. Use WIDE room
+   * photographs: the band is a shallow strip and a tall image is cropped to its
+   * middle.
    */
-  proof: WallProof | null;
+  proofs: WallProof[];
 };
 
 /** One before/after pair: the same room photographed bare and wrapped. */
@@ -92,32 +102,54 @@ export type WallProof = {
 
 export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
   designpro: {
+    logo: null,
+    logoAlt: '',
     eyebrow: 'DesignProAI',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
     tagline: 'Custom wall wrap file output',
     showPrintOffer: false,
-    proof: null,
+    proofs: [],
   },
   weprintwraps: {
+    // The real mark off weprintwraps.com, vendored into public/ so the header
+    // paints from our own origin instead of hot-linking the WordPress uploads
+    // directory -- which would put a marketing-site URL on the critical path of
+    // the tool's own header.
+    logo: '/wpw-logo-mark.png',
+    logoAlt: 'WePrintWraps',
     eyebrow: 'WePrintWraps',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    // The owner's line, verbatim (2026-09-14): "WallPro Custom on Demand
-    // WallWrap Design and Output files delivered FAST".
-    tagline: 'Custom on-demand WallWrap design and output files delivered FAST',
+    // The owner's line, verbatim (2026-09-14): "Custom Wrap Design , Output
+    // Files , and Print on Demand". It names the three things sold, in the
+    // order they happen, which the previous line ("delivered FAST") did not.
+    tagline: 'Custom Wrap Design, Output Files, and Print on Demand',
     showPrintOffer: true,
-    // The owner's own gym job: the same camera position, bare grey wall and
-    // then the installed wrap. Drop the two files at these paths and the band
-    // lights up; until they exist WallProHeroProof renders nothing, so a
-    // missing file is a missing band and never a broken frame.
-    proof: {
-      before: '/wallpro/proof-gym-before.jpg',
-      after: '/wallpro/proof-gym-after.jpg',
-      alt: 'A gym training floor photographed with a bare grey wall, and again with a full-wall printed wrap installed',
-      headline: 'Same wall. Same camera.',
-      caption: 'Designed in WallPro, printed by WePrintWraps, installed in one afternoon. Drag to compare.',
-    },
+    // REAL JOBS ONLY. Each entry is a room WePrintWraps actually wrapped,
+    // photographed twice from one camera position. Drop the two files at the
+    // paths below and that entry joins the rotation; a pair whose files are
+    // missing is skipped, and if none load the band does not render at all.
+    //
+    // To add another: copy one block, give it the next number, and write a
+    // caption that describes THAT room. Do not reuse a caption across rooms --
+    // the specificity is the whole reason a before/after persuades.
+    proofs: [
+      {
+        before: '/wallpro/proof-gym-before.jpg',
+        after: '/wallpro/proof-gym-after.jpg',
+        alt: 'A gym training floor photographed with a bare grey wall, and again with a full-wall printed wrap installed',
+        headline: 'Same wall. Same camera.',
+        caption: 'A gym training floor, bare to finished. Drag to compare.',
+      },
+      {
+        before: '/wallpro/proof-lobby-before.jpg',
+        after: '/wallpro/proof-lobby-after.jpg',
+        alt: 'A hotel lobby photographed with a blank white feature wall, and again with a full-wall pastoral landscape mural installed',
+        headline: 'One blank wall, one mural.',
+        caption: 'A lobby feature wall, printed floor to ceiling. Drag to compare.',
+      },
+    ],
   },
 };
 
