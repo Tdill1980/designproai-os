@@ -96,6 +96,22 @@ export async function getWallProject(id: string) {
   return data;
 }
 
+/** The batch brief writer (RestylePro `generate-batch-prompts`, wall edition):
+ * fresh natural-language customer briefs for the curator's batch, written by
+ * the studio creative-director persona. Curator-only; no token charged. */
+export type WallBriefRequest = { domain: 'commercial' | 'residential'; count: number; space?: string | null; rendering?: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic' | 'any'; mode?: 'repeat' | 'mural' | 'any' };
+export type WallGeneratedBrief = { id: string; name: string; subcategory: string; prompt: string; tags: string[]; mode: 'repeat' | 'mural'; rendering: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic'; domain: 'commercial' | 'residential' };
+export async function writeWallBriefs(input: WallBriefRequest): Promise<{ prompts: WallGeneratedBrief[]; model: string; version: string }> {
+  const { data, error } = await supabase.functions.invoke('generate-wall-batch-prompts', { body: input });
+  if (error) {
+    const response = (error as any).context;
+    const body = await response?.clone?.().json().catch(() => null);
+    throw new Error(typeof body?.error === 'string' ? body.error : 'The brief writer could not be reached.');
+  }
+  if (!data || !Array.isArray(data.prompts)) throw new Error(data?.error || 'The brief writer returned no briefs.');
+  return data;
+}
+
 /** Detect my wall: proposes the wall corners and the openings to protect from
  * the uploaded wall photo. Preview-only; costs no token. */
 export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
@@ -155,11 +171,19 @@ export async function getWallGeneration(requestId: string) {
 /** Copies the curator's generated master into catalog/ so every customer can
  * open it, uploads the storefront thumbnail beside it, then upserts the design
  * row keyed by its permanent DesignID. */
-export async function publishWallDesign(sourcePath: string, thumb: Blob | null, row: ReturnType<typeof designUpsertRow>): Promise<WallCatalogRow> {
+export async function publishWallDesign(source: string | Blob, thumb: Blob | null, row: ReturnType<typeof designUpsertRow>): Promise<WallCatalogRow> {
   // Storage objects are immutable for users, so a failed publish leaves its
   // catalog copy behind; the row is the authority and it is only written last.
-  const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(sourcePath, row.master_path);
-  if (copyError) throw new Error('The master could not be copied into the catalog: ' + copyError.message);
+  // The source is the generated master's storage path, or — for a repeat the
+  // seam ladder closed by blend — the blended pixels themselves, since those
+  // are what is sold and what the row's hash names.
+  if (typeof source === 'string') {
+    const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(source, row.master_path);
+    if (copyError) throw new Error('The master could not be copied into the catalog: ' + copyError.message);
+  } else {
+    const { error: uploadError } = await supabase.storage.from(WALLPRO_BUCKET).upload(row.master_path, source, { contentType: source.type, upsert: false });
+    if (uploadError) throw new Error('The blended master could not be saved into the catalog: ' + uploadError.message);
+  }
   if (thumb && row.thumb_path) {
     const { error: thumbError } = await supabase.storage.from(WALLPRO_BUCKET).upload(row.thumb_path, thumb, { contentType: 'image/jpeg', upsert: false });
     if (thumbError) throw new Error('The thumbnail could not be saved: ' + thumbError.message);
@@ -494,4 +518,55 @@ export async function releaseWallProductionJob(jobId: string, note?: string): Pr
       : 'The panels could not be released: ' + code);
   }
   return data as WallProductionJob;
+}
+
+// ---------------------------------------------------------------------------
+// Room scenes + true-scale listing mockups (20260914160000). Scenes and
+// mockups are stored beside the masters as catalog/<uuid>.jpg — the name
+// shape the curator storage policy already admits — so no storage change.
+import type { WallCatalogScene, sceneUpsertRow } from './wallpro-scenes';
+
+/** Storefront read: active scenes only. Browsable without signing in. */
+export async function listWallScenes(): Promise<WallCatalogScene[]> {
+  const { data, error } = await db.from('wallpro_catalog_scenes').select('*').eq('is_active', true).order('sort_order', { ascending: true }).order('created_at', { ascending: true }).limit(50);
+  if (error) throw new Error('The room scenes could not be loaded: ' + error.message);
+  return (data || []) as WallCatalogScene[];
+}
+/** Curator read: every scene, hidden ones included. */
+export async function listWallScenesAll(): Promise<WallCatalogScene[]> {
+  await wallUser();
+  const { data, error } = await db.from('wallpro_catalog_scenes').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true }).limit(200);
+  if (error) throw new Error('The room scenes could not be loaded: ' + error.message);
+  return (data || []) as WallCatalogScene[];
+}
+/** Copies the curator's uploaded room photo into the catalog and records the scene. */
+export async function publishWallScene(sourcePath: string, row: ReturnType<typeof sceneUpsertRow>): Promise<WallCatalogScene> {
+  const { error: copyError } = await supabase.storage.from(WALLPRO_BUCKET).copy(sourcePath, row.image_path);
+  if (copyError) throw new Error('The scene photo could not be copied into the catalog: ' + copyError.message);
+  const { data, error } = await db.from('wallpro_catalog_scenes').insert(row).select('*').single();
+  if (error) throw new Error('The scene could not be saved: ' + error.message);
+  return data as WallCatalogScene;
+}
+export async function updateWallScene(id: string, patch: Partial<Pick<WallCatalogScene, 'is_active' | 'name' | 'room' | 'sort_order' | 'corners' | 'wall_width_in' | 'wall_height_in'>>) {
+  const { error } = await db.from('wallpro_catalog_scenes').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) throw new Error('The scene could not be updated: ' + error.message);
+}
+export async function deleteWallScene(id: string) {
+  const { error } = await db.from('wallpro_catalog_scenes').delete().eq('id', id);
+  if (error) throw new Error('The scene could not be removed: ' + error.message);
+}
+/** Uploads rendered mockup JPEGs beside the masters and records them on the
+ * design row. Storage objects are immutable, so every save is a fresh set of
+ * uuids; the row's list is the authority and is written last. */
+export async function saveWallDesignMockups(rowId: string, mockups: { sceneId: string; caption: string; blob: Blob }[]): Promise<WallCatalogRow['mockups']> {
+  const saved: WallCatalogRow['mockups'] = [];
+  for (const m of mockups) {
+    const path = 'catalog/' + crypto.randomUUID() + '.jpg';
+    const { error } = await supabase.storage.from(WALLPRO_BUCKET).upload(path, m.blob, { contentType: 'image/jpeg', upsert: false });
+    if (error) throw new Error('A mockup could not be saved: ' + error.message);
+    saved.push({ scene_id: m.sceneId, path, caption: m.caption });
+  }
+  const { error } = await db.from('wallpro_designs').update({ mockups: saved, updated_at: new Date().toISOString() }).eq('id', rowId);
+  if (error) throw new Error('The mockups could not be recorded on the design: ' + error.message);
+  return saved;
 }

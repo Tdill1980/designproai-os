@@ -932,6 +932,42 @@ function validatedCallOnePanels(value, ownerId, generationId, revisionSequence, 
  * with no stated owner falls back to the caller, which is the pre-existing
  * behaviour for every owner-read.
  */
+const ATLAS_REFUSAL_TOPOLOGIES = new Set(["six-surface", "field", "hero-driver"]);
+/** The refusal ledger as the browser may see it: verdict, identity, never a storage path. */
+function validatedAtlasRefusals(value, requestId) {
+  if (!Array.isArray(value) || value.length > 100) {
+    throw Object.assign(new Error("atlas_refusals_response_invalid"), { status: 502 });
+  }
+  return value.map((row) => {
+    const id = String(row?.id || "");
+    const rowRequestId = String(row?.requestId || "");
+    const topology = String(row?.topology || "");
+    const attempt = Number(row?.attempt);
+    const sha256 = String(row?.sha256 || "").toLowerCase();
+    const storagePath = String(row?.storagePath || "");
+    if (!UUID_PATTERN.test(id) || rowRequestId !== requestId
+      || !ATLAS_REFUSAL_TOPOLOGIES.has(topology)
+      || !Number.isInteger(attempt) || attempt < 1 || attempt > 12
+      || !SHA256_PATTERN.test(sha256)
+      || !storagePath || storagePath.includes("..") || !/^atlas-call1\/[A-Za-z0-9._-]+$/.test(storagePath)) {
+      throw Object.assign(new Error("atlas_refusals_response_invalid"), { status: 502 });
+    }
+    return {
+      id,
+      topology,
+      attempt,
+      code: String(row?.code || "").slice(0, 120),
+      reason: String(row?.reason || "").slice(0, 1000),
+      sha256,
+      byteSize: Number.isFinite(Number(row?.byteSize)) ? Number(row.byteSize) : null,
+      contentType: row?.contentType ? String(row.contentType) : null,
+      model: row?.model ? String(row.model) : null,
+      createdAt: row?.createdAt ? String(row.createdAt) : null,
+      storagePath,
+    };
+  });
+}
+
 function validatedFlatAtlasRevisions(value, requestId, userId) {
   if (value === null) return null;
   if (!Array.isArray(value) || value.length > 100) {
@@ -2559,6 +2595,27 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           };
         }));
         return json(res, 200, publicRevisions);
+      }
+
+      // THE REFUSED SHEETS. Every Call-1 candidate the master gates refused,
+      // signed for the owner so a failure is something a human can LOOK at,
+      // not just a code. Same fence as /atlas: the RPC answers NULL for a
+      // request that is not the caller's, the storage policy admits signing
+      // only the exact objects the ledger names, and no storage path leaves
+      // the gateway. A candidate that cannot be signed is still listed with
+      // its reason -- the verdict is the point, the pixels are the evidence.
+      const generationRefusalsMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/atlas-refusals$/);
+      if (req.method === "GET" && generationRefusalsMatch) {
+        const requestId = generationRefusalsMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_atlas_refusal_paths", { p_request_id: requestId });
+        if (located === null) return json(res, 404, { error: "generation_request_not_found" });
+        const refusals = validatedAtlasRefusals(located, requestId);
+        const publicRefusals = await Promise.all(refusals.map(async ({ storagePath, ...base }) => {
+          const signedUrl = await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null);
+          return { ...base, ...(signedUrl ? { signedUrl, expiresIn: 300 } : {}) };
+        }));
+        return json(res, 200, publicRefusals);
       }
 
       // "Generate this angle again" — the per-view regenerate and failed-shot

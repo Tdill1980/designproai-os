@@ -541,7 +541,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (!active) return;
       setCatalog(rows);
       if (rows.length && !params.get('project')) setDesignMode('library');
-      setCatalogThumbs(await openWallAssets(rows.map(r => r.thumb_path || r.master_path)).catch(() => ({})));
+      // A saved room mockup, when one exists, is the listing image: the
+      // pattern at its real size on a real wall, caption included.
+      setCatalogThumbs(await openWallAssets(rows.flatMap(r => [r.thumb_path || r.master_path, ...(r.mockups?.length ? [r.mockups[0].path] : [])])).catch(() => ({})));
     }).catch(() => { if (active) setCatalog([]); });
     return () => { active = false; };
   }, []);
@@ -1103,7 +1105,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
               { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
               { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-violet-50 ring-1 ring-blue-300' : 'border-slate-200 hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span>
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'border-slate-200 hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs text-slate-600">{option.hint}</span>
               {/* The price is on the choice, not buried in a checkout. Each entry
                   path is its own SKU (owner's launch list, 2026-09-13), so the
                   customer picks knowing what it costs. */}
@@ -1112,9 +1114,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
+                {/* Both sides of this merge kept: main added the room-mockup
+                    thumbnail and its caption; this branch moved the selection
+                    colour off violet with the rest of the page. */}
                 <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-blue-500 ring-2 ring-blue-300' : 'border-slate-200 hover:border-blue-400')}>
-                  <div className="aspect-[4/3] bg-slate-100">{catalogThumbs[row.thumb_path || row.master_path] && <img src={catalogThumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" />}</div>
-                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p></div>
+                  <div className="aspect-[4/3] bg-slate-100">{(() => { const src = (row.mockups?.[0] && catalogThumbs[row.mockups[0].path]) || catalogThumbs[row.thumb_path || row.master_path]; return src ? <img src={src} alt={row.title} className="h-full w-full object-cover" loading="lazy" /> : null; })()}</div>
+                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p>{row.mockups?.[0] && <p className="truncate text-[10px] text-emerald-700">{row.mockups[0].caption}</p>}</div>
                 </button>)}</div>
                 <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
               </>}
@@ -1238,7 +1243,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setAddingZone(false); setNewZoneLabel(''); }}>Cancel</Button>
                     </span>}
               </div>
-              {parentProjectId && <p className="mb-2 rounded-lg border border-blue-200 bg-violet-50 p-2 text-xs text-blue-900">
+              {parentProjectId && <p className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
                 Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
               </p>}
               {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">2 · {view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
@@ -1352,7 +1357,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   <span className="text-xs text-slate-500">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-blue-500 bg-violet-50' : 'border-slate-200 hover:border-blue-400')}>
+              <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-400')}>
                 <div className="aspect-[4/3] overflow-hidden rounded bg-slate-100">{versionThumbs[v.artwork_path] && <img src={versionThumbs[v.artwork_path]} alt={'Version ' + v.version_no} className="h-full w-full object-cover" loading="lazy" />}</div>
                 <p className="mt-1 font-semibold">V{v.version_no} · {v.kind}{v.status === 'approved' ? ' · approved' : ''}</p>
                 <p className="truncate text-slate-500">{v.prompt || v.note || (v.design_id ?? '')}</p>

@@ -2,6 +2,35 @@
 
 ## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
 
+> **STATUS 2026-09-14 — HERO-DRIVER IS OFF IN PRODUCTION (owner: "1st call should
+> be atlas proof … we got it to produce in under 45 seconds before").** Flag
+> dispatched back to `six-surface` on deploy run 1275 (`FLAGS_APPLIED`). The
+> cascade cannot pass on a real vehicle as built: a driver flank is ~3.6:1
+> (Porsche 178.4″×48.84″ → drift 1.55–1.59) and Gemini 3 Pro Image's widest
+> `aspectRatio` is 21:9, so `MAX_ASPECT_DRIFT_RATIO=1.12` refuses every driver
+> tile before content is even judged. Three real runs (09-13, 09-14 ×2), 0/3,
+> each burning ~94 s and two image calls in FRONT of the ~40 s six-surface
+> ATLAS call. Splitting the flank into tiles would fix the aspect but not the
+> model's die-cut prior (every refusal since 09-06 is the vehicle's shape drawn
+> into the sheet), so tiling is shelved, not planned. Do not re-enable the flag
+> without a probe run that passes on a real vehicle manifest.
+>
+> What was missing and is now built: **the refusal ledger.** 13 refused sheets
+> accumulated (09-06 → 09-14) in `wrap-files/atlas-call1/` that no human could
+> see while the gates that refused them were tuned blind. Every refused Call-1
+> candidate is now recorded in `designpro_atlas_refusals` (runtime
+> `recordAtlasRefusal`, best-effort), read by the owner through
+> `designpro_atlas_refusal_paths` → gateway
+> `GET /api/generation/requests/:id/atlas-refusals` (signs via storage policy
+> `designpro_owner_sign_atlas_refusals`), and shown on the failure screen
+> (`AtlasRefusedSheets`) with each gate's verdict verbatim. Judge the gates
+> from those pixels before touching a threshold. Two candidates to judge first:
+> the 09-06 "no healing" ruling refuses cutouts although a deterministic
+> ~100 ms `atlas-cutout-fill` exists (wheel-arch/glass regions are trimmed at
+> install), and the output-class inspector refused a *"vintage Porsche Martini
+> race team"* brief because "the image contains a side profile of a race car" —
+> the artwork's subject, not a vehicle mockup.
+
 **Supersedes the "one image request" half of the 2026-08-31 artifact-graph
 contract and the 2026-09-06 six-surface restoration wherever they conflict.
 The gates, the lineage, the assembly and everything after Call 1 are untouched.**
@@ -390,6 +419,47 @@ contracts; each names its lock.
   rows with no stored width) to the measured two-across architectural baseline,
   48 inches on the tile's own 96-inch square canvas — the curator can still
   type any width per batch or per job.
+- **The batch feeds the personas NATURAL-LANGUAGE briefs, the RestylePro
+  batch pattern (RULE 1; owner, 2026-09-14: "I don't understand why we didn't
+  use persona engineering … natural language prompts required … that batch
+  needs to pattern how RP's Vehicle Batch design app. Every single one was
+  fantastic. SEE ZERO AI SLOP. Designer Persona is Key!").** What made
+  RestylePro's batches work was measured in its code, not guessed:
+  `src/data/prompt-presets.ts` (128 vehicle briefs) and
+  `src/data/wall-prompt-presets.ts` (111 wall briefs) are each ONE customer
+  brief in plain prose — subject, named colours, technique, mood — and
+  `supabase/functions/generate-batch-prompts` is a Gemini-flash brief-writer
+  persona that writes fresh ones; the batch page then sends `preset.prompt`
+  to the same edge function a customer's words reach, and the two personas
+  design. The 500-row `wallpro-prompt-library.json` is the opposite object: a
+  spec sheet ("Concept: … Visual language: … Palette: … Visual intensity:
+  …") followed by production boilerplate, and `batchCreativeBrief` only
+  rewrote that sheet through lookup tables — a template, not a brief, which
+  is exactly the "average of the persona" failure the two-persona rule
+  describes. Ported: `app/src/data/wallpro-presets.ts` (the 111 RestylePro
+  wall presets verbatim, IDs re-keyed to the catalog's `WPB-` DesignID CHECK,
+  plus residential Etsy sets for the three rendering families the owner
+  supplied — flat bold print, fine-line engraving, photoreal faux material —
+  every repeat naming its motif size in inches); and
+  `supabase/functions/generate-wall-batch-prompts` (curator-only: JWT +
+  `user_roles` admin/tester, the catalog's own RLS predicate; never on the
+  customer path, so the "no extra LLM stage before the customer sees
+  anything" rule holds), whose persona is a wallpaper studio's creative
+  director writing 50–110-word client briefs with the ground colour named,
+  the technique, the repeat structure and inches, and a ban on marketing
+  adjectives, production words, mockups, text/logos and named artists;
+  `normalizeGeneratedBriefs` drops what breaks that and stamps
+  `WPB-AI-<stamp>-<nn>`. `WallPromptEntry.brief: 'natural'` is the contract:
+  `briefForEntry` sends such an entry to the consultant VERBATIM; only the
+  legacy structured library still goes through `batchCreativeBrief`. The
+  batch page's "Brief source" is presets (default) / AI brief writer /
+  legacy library; nothing after the request changed (same edge function,
+  same personas, same seam ladder, same publish row). Locked by
+  `wallpro-presets.test.ts` (every preset catalog-legal, spec-sheet-free,
+  under the 4K lock through the real prompt builder, publishable through
+  `designUpsertRow`) and `wallpro-brief-writer.test.ts` (persona text, the
+  normalizer, curator gate, provider failure paths). Acceptance is still the
+  owner's eye on a fresh batch.
 - **Production rules** (owner workbook, `docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md`):
   one canonical master, never AI-generate panels, duplicated overlap identical
   on both panels, seam QC, 150 effective PPI from real pixels.

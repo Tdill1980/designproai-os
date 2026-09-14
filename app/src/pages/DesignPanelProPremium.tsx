@@ -2320,6 +2320,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             error={generationError}
                             errorCode={generationErrorCode}
                             generationId={generationRequestState?.generationId || visualizationId || generationIdRef.current}
+                            requestId={generationRequestState?.requestId || null}
                             onStartNew={() => {
                               setRenderError(false);
                               clearGenerationError();
