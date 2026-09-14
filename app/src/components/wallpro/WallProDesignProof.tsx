@@ -279,7 +279,7 @@ export const WallProDesignProof = ({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", background: "#111", color: "#FFF", borderRadius: 6, marginBottom: 18 }}>
             <div>
               <div style={{ fontSize: 10, color: "#9CA3AF", fontWeight: 700, letterSpacing: "0.05em" }}>PRINT & SHIP</div>
-              <div style={{ fontSize: 12, color: "#D1D5DB", marginTop: 2 }}>{WALL_FILM.name} · ${WALL_FILM.pricePerLinearFoot}/ln ft wholesale</div>
+              <div style={{ fontSize: 12, color: "#D1D5DB", marginTop: 2 }}>{WALL_FILM.name} · ${WALL_FILM.pricePerSqFt}/sq ft</div>
             </div>
             <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'League Spartan', sans-serif" }}>${materialCost.toFixed(2)}</div>
           </div>

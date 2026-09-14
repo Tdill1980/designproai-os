@@ -541,11 +541,16 @@ export const PRINTPRO_PRODUCTS: QuoteProduct[] = [
 //
 // PRICED BY THE SQUARE FOOT, AT THE LAUNCH RATE. Owner, 2026-09-13: "all
 // printed wrap is priced by the sq ft only", at $3.50/sq ft. This entry read
-// $3.25 per LINEAR FOOT of 54" roll, which is neither the unit nor the number:
-// a linear foot of roll is 4.5 sq ft, so it was quoting about $0.72/sq ft --
-// the material cost, sold as if it were the price. WALL_FILM.pricePerLinearFoot
-// is left alone deliberately; it is the shop's own material-cost figure and
-// quick-quote's estimator still uses it as exactly that.
+// $3.25 per LINEAR FOOT of 54" roll, which is neither the unit nor the number.
+//
+// CORRECTED 2026-09-14: the note that used to sit here concluded $3.25/linear ft
+// was "the shop's own material-cost figure" -- about $0.72/sq ft -- and left the
+// field alone on that basis. That reasoning was built on the live product page's
+// own mislabel, which called a square-foot price a linear-foot one. Product
+// 70093's order history settles it: 154 sq ft billed $500.50, 18 billed $58.50,
+// 38.25 billed $124.31. $3.25 is the SELL price per SQUARE foot, not a cost.
+// WALL_FILM.pricePerSqFt now says so, and quick-quote multiplies it by the
+// wall's area instead of its linear feet.
 //
 // AND IT NOW LEADS SOMEWHERE. Owner, same message: "wpw already has a wall
 // product just wire it to the wallpro design page." Printing is only half the

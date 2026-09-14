@@ -19,6 +19,7 @@ import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
+import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -1422,6 +1423,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               twice -- and it does not require a design, a photo or an approved
               version, which is the whole point of it. */}
           {theme.showPrintOffer && <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />}
+          {/* The product-page half: the questions and the search terms the wall
+              product page answered. A page that REPLACES a product page has to
+              answer what it answered, or the questions arrive as phone calls and
+              the rankings go elsewhere. */}
+          {theme.showPrintOffer && <WallProProductDetail />}
         </div>
       </div>
     </div>

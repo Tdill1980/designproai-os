@@ -161,8 +161,18 @@ export const WALL_FILM = {
   thickness: "6.0 mil calendared vinyl",
   adhesive: "Permanent, clear adhesive",
   opacity: "100% opacity (blocks wall color bleed-through)",
-  panelWidthInches: 54,
-  pricePerLinearFoot: 3.25,
+  // 53, not 54: 54 is the ROLL width and the billing width, but the press
+  // images 53 -- the half inch that came off the owner's first end-to-end wall.
+  // WALLPRO_PRINT_WIDTH is the authority; this is the third copy of that number
+  // and it was the last one still wrong.
+  panelWidthInches: 53,
+  // PER SQUARE FOOT. The old name said linear foot and the value was the
+  // square-foot rate, so the estimate below multiplied the right number by the
+  // wrong unit: a 120 x 96 wall came out at 24 linear ft x $3.25 = $78.00 when
+  // the store charges 80 sq ft x $3.25 = $260.00, verified against product
+  // 70093's own order history. Under-quoting by 3.3x is worse than over: the
+  // job is won at a price that loses money on every square foot.
+  pricePerSqFt: 3.25,
   installType: "Dry install recommended",
   useCase: "Commercial interiors, offices, retail, gyms, lobbies, murals",
 } as const;
@@ -190,8 +200,10 @@ export function calculateWallWrapEstimate(
   const panelsNeeded = Math.ceil(widthInches / WALL_FILM.panelWidthInches);
   const linearFeetPerPanel = heightInches / 12;
   const totalLinearFeet = Math.round(panelsNeeded * linearFeetPerPanel * 100) / 100;
-  const materialCost = Math.round(totalLinearFeet * WALL_FILM.pricePerLinearFoot * 100) / 100;
   const totalSqFt = Math.round((heightInches * widthInches) / 144 * 100) / 100;
+  // Priced on the WALL'S OWN AREA -- the number a customer can check with a tape
+  // measure, and the number the store actually bills.
+  const materialCost = Math.round(totalSqFt * WALL_FILM.pricePerSqFt * 100) / 100;
 
   return {
     heightInches,

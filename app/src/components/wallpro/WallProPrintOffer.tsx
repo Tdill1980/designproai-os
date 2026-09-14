@@ -29,6 +29,12 @@ const SPECS: Array<[string, string]> = [
   ['Panel width', `${WALLPRO_PRINT_WIDTH}″, ½″ overlap at each seam`],
   ['Resolution', '150 PPI at printed size'],
   ['Install', WALL_FILM.installType],
+  // The three the live product page lists and this table did not. "Pricing
+  // unit" earns its row twice over: the store nav still prints "per linear
+  // foot" on this product, so the page it replaces has to state the truth.
+  ['Lamination', 'Not required or compatible'],
+  ['Pricing unit', 'Sold by the square foot'],
+  ['Use case', WALL_FILM.useCase],
 ];
 
 export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) {
@@ -132,7 +138,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
       </div>
 
       {/* ── The material. Long-tail search reads this too. ──────────────── */}
-      <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <details open className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
         <summary className="cursor-pointer text-base font-bold text-slate-900">The material</summary>
         <dl className="mt-4 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
           {SPECS.map(([label, value]) => (
