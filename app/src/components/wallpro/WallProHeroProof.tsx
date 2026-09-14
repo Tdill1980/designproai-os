@@ -82,7 +82,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     <section
       aria-label="Example wall wraps, before and after"
       aria-roledescription="carousel"
-      className="mx-auto mt-4 grid max-w-6xl gap-4 px-4 sm:grid-cols-[minmax(0,1fr)_16rem] sm:items-center"
+      className="mx-auto mt-4 max-w-6xl px-4"
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocusCapture={() => setHeld(true)}
@@ -90,7 +90,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     >
       <div
         ref={box}
-        className="relative h-44 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-64"
+        className="relative h-52 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-72"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -139,29 +139,36 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
           onChange={e => setReveal(clampReveal(Number(e.target.value)))}
           className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
         />
-      </div>
 
-      <div className="text-sm">
-        <p className="font-semibold text-slate-900">{current.headline}</p>
-        <p className="mt-1 text-slate-600">{current.caption}</p>
-
-        {usable.length > 1 && (
-          <div className="mt-3 flex gap-1.5" role="group" aria-label="Choose an example">
-            {usable.map((proof, i) => {
-              const active = i === index % usable.length;
-              return (
-                <button
-                  key={proof.after}
-                  type="button"
-                  aria-label={`Example ${i + 1} of ${usable.length}`}
-                  aria-current={active}
-                  onClick={() => { setIndex(i); setReveal(OPENING_REVEAL); }}
-                  className={`h-1.5 rounded-full transition-all ${active ? 'w-6 bg-blue-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'}`}
-                />
-              );
-            })}
+        {/* The caption sits ON the photograph, over a scrim, rather than in a
+            column beside it. A room photo beside a narrow text column gives the
+            photo perhaps half the width and the text a measure too short to
+            read comfortably -- both halves lose. Over the image the photo keeps
+            the full width and the words land where the eye already is. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-4 pb-3 pt-10">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white drop-shadow-sm sm:text-base">{current.headline}</p>
+            <p className="mt-0.5 truncate text-xs text-white/85 sm:text-sm">{current.caption}</p>
           </div>
-        )}
+
+          {usable.length > 1 && (
+            <div className="pointer-events-auto flex shrink-0 gap-1.5 pb-1" role="group" aria-label="Choose an example">
+              {usable.map((proof, i) => {
+                const active = i === index % usable.length;
+                return (
+                  <button
+                    key={proof.after}
+                    type="button"
+                    aria-label={`Example ${i + 1} of ${usable.length}`}
+                    aria-current={active}
+                    onClick={() => { setIndex(i); setReveal(OPENING_REVEAL); }}
+                    className={`h-1.5 rounded-full transition-all ${active ? 'w-6 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/80'}`}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
