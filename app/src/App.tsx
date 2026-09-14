@@ -67,12 +67,6 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
-// The WePrintWraps x WallPro page. It REPLACES the WPW wall wrap product page
-// and is the target of both jumbo-menu entries (owner, 2026-09-14): "Wall Wrap"
-// in products, and "WallWrap Design" in the design area. One page, two doors --
-// buying the print and buying the design are the same decision arrived at from
-// different directions, so they belong on the same page.
-const WallWrap = lazyWithRetry(() => import("./pages/WallWrap"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
@@ -210,7 +204,7 @@ const HostAwareRoot = () => {
   // for the wall wrap page, not a DesignProAI dashboard or a login wall. Every
   // other route still resolves normally on that host, so /printpro/wallpro is
   // the designer and existing deep links keep working.
-  if (isWallProPartnerHost(hostname)) return <WallWrap />;
+  if (isWallProPartnerHost(hostname)) return <WallPro brand="weprintwraps" />;
   return isDesignProMarketingHost(hostname) ? <Index /> : <AuthedRootRedirect />;
 };
 
@@ -228,6 +222,21 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
 // chrome (top nav, footer, helper docks). The shop's /approve/manage page is
 // staff-facing and keeps the normal chrome. Rendered inside BrowserRouter so
 // useLocation is available.
+/**
+ * A PARTNER'S PRODUCT PAGE IS NOT A DESIGNPROAI PAGE.
+ *
+ * The WePrintWraps wall wrap product page carries its own header and sells
+ * WePrintWraps' product. The DesignProAI marketing chrome on top of it -- a nav
+ * reading "Vehicle Wrap Design System" above a wall wrap, a Start Free button,
+ * the footer -- contradicts the page and breaks the brand continuity the whole
+ * subdomain exists to protect. So the partner routes render standalone, the
+ * same way the customer proof portal already does.
+ */
+const isWallProPartnerRoute = (pathname: string, hostname: string) =>
+  pathname === "/wall-wrap" ||
+  pathname === "/wallwrap-design" ||
+  (pathname === "/" && isWallProPartnerHost(hostname));
+
 const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
   // Full-screen ApprovedPro surfaces render their own app shell, so strip the
@@ -236,7 +245,8 @@ const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
   const isStandaloneApprovedPro =
     (pathname.startsWith("/approve/") && !pathname.startsWith("/approve/manage")) ||
     pathname === "/admin/approve-revisions";
-  if (isStandaloneApprovedPro) return null;
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname;
+  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname)) return null;
   return <>{children}</>;
 };
 
@@ -271,12 +281,17 @@ const App = () => {
             {/* Planet decor - floating on every page */}
             <img src="/sprocket/planet-purple.png" alt="" className="fixed top-20 right-[-40px] w-20 sm:w-28 opacity-15 pointer-events-none z-0 hidden md:block" style={{ animation: 'float 6s ease-in-out infinite' }} />
             <img src="/sprocket/planet-cyan.png" alt="" className="fixed bottom-32 left-[-20px] w-16 sm:w-24 opacity-10 pointer-events-none z-0 hidden md:block" style={{ animation: 'float 8s ease-in-out infinite 2s' }} />
-            {!inIframe && <Header />}
+            {/* The partner's product page carries its own header; the
+                DesignProAI nav on top of it contradicts the brand. Also
+                unmounts the Sprocket helper and the decorative planets there --
+                a chat bubble sitting over the price of a wall wrap is not what
+                "premium" reads like. */}
+            {!inIframe && <HideOnCustomerProof><Header /></HideOnCustomerProof>}
             {/* RestyleProQuestionsWidget removed: a second floating helper stacked
                 on top of SprocketHelper in the bottom-left corner, so the two
                 pills overlapped and its bubble covered the Vehicle Type field on
                 the generation form. SprocketHelper is the DesignProAI one. */}
-            {!inIframe && <SprocketHelper />}
+            {!inIframe && <HideOnCustomerProof><SprocketHelper /></HideOnCustomerProof>}
             {/* OwnerSprocketDock unmounted 2026-08-04 (Trish): its bottom-left
                 chip floated over page content. The component is kept in the
                 repo — re-add <OwnerSprocketDock /> here to bring it back. */}
@@ -387,13 +402,20 @@ const App = () => {
           <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/printpro/wallpro" element={<WallPro />} />
-          {/* Both jumbo-menu entries land here. /wall-wrap is the canonical one
-              (it mirrors the WPW product slug the menu already points at);
-              /wallwrap-design is the Design-area entry, kept as its own URL so
-              the two menu items are separately measurable rather than one link
-              pretending to be two. */}
-          <Route path="/wall-wrap" element={<WallWrap />} />
-          <Route path="/wallwrap-design" element={<WallWrap />} />
+          {/* THE PRODUCT PAGE. Owner, 2026-09-14: "No its THE Product Page ...
+              that they will purchase design and files and print from", and it
+              "should BE the tool". So both jumbo-menu entries render the REAL
+              designer wearing the WePrintWraps name -- photo upload, corner
+              pinning, the five entry paths, style reference, match upload,
+              before/after, print files -- with the design/files checkout and
+              the WooCommerce print purchase on the same page. It is the same
+              component as /printpro/wallpro, never a copy, so a fix can never
+              land on one and miss the other.
+              /wall-wrap mirrors the WPW product slug; /wallwrap-design is the
+              Design-area entry, its own URL so the two menu items stay
+              separately measurable rather than one link pretending to be two. */}
+          <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
+          <Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

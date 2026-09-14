@@ -1,0 +1,336 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  WALL WRAP — the retail product page body (WPW × WallPro)
+  ════════════════════════════════════════════════════════════════════════
+  GOES ON THE EXISTING WOOCOMMERCE PRODUCT, IN PLACE:
+      weprintwraps.com/our-products/wall-wrap-printed-vinyl/   (Woo id 70093)
+
+  ⚠️ NOT a publish_pillar target. That publisher posts to /wp/v2/pages and
+  will not touch a Woo product. Paste this into the product's long
+  description, or an Elementor HTML widget on the product template.
+
+  ⚠️ KEEP THE URL. This page already ranks for "wall wrap printing" and holds
+  the search equity. Rebuilding its CONTENT keeps that; a new URL or a
+  redirect to a subdomain hands it back. Do not delete and recreate the
+  product — that mints a new id and a new URL.
+
+  ⚠️ THE LIVE PAGE MISLABELS ITS OWN UNIT. It displays "$3.25 per linear
+  foot" but the cart charges $3.25 per SQUARE FOOT -- proven by the order
+  history for product 70093: a 54" x 48" wall is 18 sq ft and was charged
+  $58.50 (18 x $3.25). At $3.25 per LINEAR foot that same wall would be
+  4 ft x $3.25 = $13.00. A customer who reads the label and does the maths
+  expects a quarter of what they are charged, and finds out at checkout.
+  This copy states the unit correctly. The PRICE is unchanged -- $3.25 --
+  so nothing about what anyone pays moves.
+
+  ⚠️ THE TRADE RUNGS BELOW ($3.09 / $2.93 / $2.76) ARE A PLACEHOLDER, held
+  at the same relative steps as the earlier draft. They are a margin
+  decision, not a derived number. Confirm them before this goes live.
+
+  Scoped under #wpwall — cannot affect the theme. No plugins, no jQuery,
+  no JavaScript. Same WHITE UI standard, blue→magenta gradient and
+  Poppins/Inter as WrapGuru and the instant quote.
+
+  SEO structure: exactly one H1 carrying "wall wrap printing"; the primary
+  phrase repeats naturally in the first paragraph; the spec table carries
+  the long-tail terms buyers search by film name.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="wpwall">
+  <style>
+    #wpwall{
+      --blue:#3b82f6; --magenta:#ec4899;
+      --ink:#111827; --body:#4b5563; --mut:#6b7280; --line:#e5e7eb; --soft:#f9fafb;
+      --good:#047857; --goodbg:#ecfdf5;
+      --grad:linear-gradient(90deg,var(--blue),var(--magenta));
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:#fff; font-family:var(--fb); line-height:1.6; -webkit-font-smoothing:antialiased;
+    }
+    #wpwall *,#wpwall *::before,#wpwall *::after{box-sizing:border-box;}
+    #wpwall .wrap{max-width:1080px; margin:0 auto; padding:0 20px;}
+    #wpwall section{padding:52px 0; border-top:1px solid var(--line);}
+    #wpwall section:first-of-type{border-top:0; padding-top:44px;}
+    #wpwall h1{font-family:var(--fd); font-weight:800; letter-spacing:-.022em; line-height:1.04; margin:16px 0 0; font-size:clamp(32px,5.4vw,52px);}
+    #wpwall h1 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #wpwall h2{font-family:var(--fd); font-weight:800; letter-spacing:-.02em; line-height:1.08; margin:0; font-size:clamp(25px,3.8vw,36px);}
+    #wpwall h3{font-family:var(--fd); font-weight:700; font-size:19px; margin:0 0 7px; letter-spacing:-.01em;}
+    #wpwall p{margin:0;}
+    #wpwall .lede{color:var(--body); font-size:17px; max-width:62ch; margin-top:16px;}
+    #wpwall .lede strong{color:var(--ink); font-weight:600;}
+    #wpwall .note{color:var(--mut); font-size:13.5px; max-width:64ch; margin-top:14px;}
+    #wpwall .badge{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:12px; font-weight:700; color:var(--body);}
+    #wpwall .badge .d{width:8px;height:8px;border-radius:50%;background:var(--grad);}
+
+    #wpwall .cta{display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:26px;}
+    #wpwall .btn{display:inline-block; font-weight:700; font-size:15px; padding:14px 24px; border-radius:10px; text-decoration:none; border:1px solid transparent;}
+    #wpwall .btn-1{background:var(--grad); color:#fff;}
+    #wpwall .btn-2{border-color:var(--line); color:var(--body); background:#fff;}
+    #wpwall .free{font-size:13.5px; color:var(--mut);}
+
+    /* the five ways in */
+    #wpwall .ways{display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(232px,1fr)); margin-top:26px;}
+    #wpwall .way{border:1px solid var(--line); border-radius:14px; padding:20px; background:#fff; display:flex; flex-direction:column;}
+    #wpwall .way.pop{border-color:#c7d7fb; background:linear-gradient(170deg,#f5f8ff,#fff 60%);}
+    #wpwall .way .tag{font-size:10.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--blue); margin:0 0 8px;}
+    #wpwall .way p{color:var(--body); font-size:14px; flex:1;}
+    #wpwall .way .price{font-family:var(--fd); font-weight:800; font-size:24px; margin-top:14px; font-variant-numeric:tabular-nums;}
+
+    /* steps */
+    #wpwall .steps{display:grid; gap:18px; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); margin-top:26px;}
+    #wpwall .step .n{font-family:var(--fd); font-weight:800; font-size:13px; color:#fff; background:var(--grad); width:26px; height:26px; border-radius:999px; display:flex; align-items:center; justify-content:center; margin-bottom:11px;}
+    #wpwall .step p{color:var(--body); font-size:14.5px;}
+
+    /* price + volume path */
+    #wpwall .pricebox{margin-top:24px; border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+    #wpwall .priceline{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:14px; padding:22px; background:var(--soft);}
+    #wpwall .priceline .big{font-family:var(--fd); font-weight:800; font-size:clamp(28px,4.4vw,38px); font-variant-numeric:tabular-nums;}
+    #wpwall .priceline .u{color:var(--mut); font-size:15px; font-weight:500;}
+    #wpwall .rungs{padding:16px 22px; font-size:14px; color:var(--body); border-top:1px solid var(--line);}
+    #wpwall .rungs b{font-variant-numeric:tabular-nums;}
+    #wpwall .rungs a{color:var(--blue); font-weight:600;}
+
+    /* trust */
+    #wpwall .trust{display:flex; gap:12px; align-items:flex-start; background:var(--goodbg); border-radius:12px; padding:18px; margin-top:24px; font-size:14.5px; color:#065f46;}
+    #wpwall .trust strong{color:#064e3b;}
+
+    /* specs */
+    #wpwall .specs{display:grid; gap:0 36px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); margin-top:22px;}
+    #wpwall .spec{display:flex; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px solid var(--line); font-size:14.5px;}
+    #wpwall .spec dt{color:var(--mut); margin:0;}
+    #wpwall .spec dd{margin:0; font-weight:600; text-align:right;}
+
+    /* faq — real long-tail search surface */
+    #wpwall .faq{margin-top:22px;}
+    #wpwall .faq details{border-bottom:1px solid var(--line); padding:15px 0;}
+    #wpwall .faq summary{cursor:pointer; font-family:var(--fd); font-weight:600; font-size:16px; list-style:none;}
+    #wpwall .faq summary::-webkit-details-marker{display:none;}
+    #wpwall .faq summary::after{content:'+'; float:right; color:var(--mut); font-weight:400;}
+    #wpwall .faq details[open] summary::after{content:'–';}
+    #wpwall .faq p{color:var(--body); font-size:14.5px; margin-top:10px; max-width:64ch;}
+
+    #wpwall .quote{border-left:3px solid transparent; border-image:var(--grad) 1; padding-left:19px; margin-top:24px; font-family:var(--fd); font-weight:600; font-size:clamp(17px,2.3vw,22px); line-height:1.35; letter-spacing:-.01em; max-width:28ch;}
+  </style>
+
+  <div class="wrap">
+
+    <!-- ── hero: one H1, primary phrase in it and in the first paragraph ── -->
+    <section>
+      <span class="badge"><span class="d"></span> Designed with WallPro &middot; printed by WePrintWraps</span>
+      <h1>Custom Wall Wrap Printing<br><span class="g">designed on demand.</span></h1>
+      <p class="lede">
+        Custom wall wraps printed on Avery Dennison&reg; HP MPI 2610 wall film,
+        <strong>$3.25 a square foot</strong>. Design yours here in minutes and get
+        real print-ready files &mdash; or send artwork you already have.
+      </p>
+      <div class="cta">
+        <a class="btn btn-1" href="/wall-wrap/">Design my wall wrap</a>
+        <a class="btn btn-2" href="#wpw-specs">See the material</a>
+        <span class="free">No account needed to try it.</span>
+      </div>
+    </section>
+
+    <!-- ── the deliverable, stated first ────────────────────────────── -->
+    <section>
+      <h2>You're not buying a picture of a wall.</h2>
+      <p class="lede">
+        You're buying the <strong>production file</strong> &mdash; measured to your
+        wall, panelized to the roll, seam-matched, and checked by a person before
+        it reaches the press. Most design tools hand you a pretty image. This
+        hands you something a printer can actually run.
+      </p>
+      <p class="quote">Print with us, or take the files anywhere.</p>
+    </section>
+
+    <!-- ── five ways in, priced ─────────────────────────────────────── -->
+    <section>
+      <h2>Five ways to get your design</h2>
+      <p class="lede">
+        Every one includes print-ready panelized files, checked by our team before
+        release. Printing is separate and optional.
+      </p>
+      <div class="ways">
+        <div class="way">
+          <p class="tag">Ready to print</p>
+          <h3>Pick a design</h3>
+          <p>Choose from our library and we scale it to your wall.</p>
+          <p class="price">$79</p>
+        </div>
+        <div class="way pop">
+          <p class="tag">Most popular</p>
+          <h3>Describe a design</h3>
+          <p>Say what you want in a sentence. We design it at print resolution.</p>
+          <p class="price">$149</p>
+        </div>
+        <div class="way">
+          <p class="tag">Match it</p>
+          <h3>Match my design</h3>
+          <p>Send a design you love. We recreate it print-ready at the right scale.</p>
+          <p class="price">$149</p>
+        </div>
+        <div class="way">
+          <p class="tag">Designed for you</p>
+          <h3>Design for my wall</h3>
+          <p>Send a photo of the room. A designer reads the space and designs for it.</p>
+          <p class="price">$199</p>
+        </div>
+        <div class="way">
+          <p class="tag">Own artwork</p>
+          <h3>File prep</h3>
+          <p>Already have art? We scale, bleed and panelize it to the roll.</p>
+          <p class="price">$49</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── how it works ─────────────────────────────────────────────── -->
+    <section>
+      <h2>How it works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="n">1</div>
+          <h3>Measure your wall</h3>
+          <p>Width and height in inches is all we need to start. Add a photo of the room and you'll see the design on your own wall before you pay.</p>
+        </div>
+        <div class="step">
+          <div class="n">2</div>
+          <h3>Design it</h3>
+          <p>Describe it, match something, or upload your own. Adjust the pattern size and see it flat and on your wall at the same time.</p>
+        </div>
+        <div class="step">
+          <div class="n">3</div>
+          <h3>We panelize and check it</h3>
+          <p>Split into 54&Prime; panels with a &frac12;&Prime; seam overlap at 150&nbsp;PPI, then reviewed by a person &mdash; not a machine &mdash; before release.</p>
+        </div>
+        <div class="step">
+          <div class="n">4</div>
+          <h3>Print it, or take the files</h3>
+          <p>We print and ship it ready to hang, or you download the whole wall plus every panel as TIFF, PDF and PNG.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── price, with the next rung visible ────────────────────────── -->
+    <section>
+      <h2>What printing costs</h2>
+      <div class="pricebox">
+        <div class="priceline">
+          <div>
+            <span class="big">$3.25</span> <span class="u">per square foot</span>
+            <p class="note" style="margin-top:6px">
+              Priced on your wall's own area &mdash; the number you get with a tape
+              measure. A 12&prime; &times; 8&prime; wall is 96 sq ft, or $312.
+            </p>
+          </div>
+        </div>
+        <!-- RATE: the visible upgrade path. Never show a rate someone cannot
+             reach; always show the next rung from where they stand. -->
+        <div class="rungs">
+          Ordering more? <b>250+ sq ft</b> a year is <b>$3.09</b>,
+          <b>500+</b> is <b>$2.93</b> &mdash; applied automatically through
+          <a href="/commercialpro/wall-wraps/">CommercialPro</a>, our trade program
+          for shops and installers. Nothing to apply for.
+        </div>
+      </div>
+
+      <div class="trust">
+        <span aria-hidden="true">&#10003;</span>
+        <span>
+          <strong>Every wall wrap is reviewed by a person before it prints.</strong>
+          We check the seams, the scale and the resolution on the real panels &mdash;
+          not a preview of them. That review is why we can put a printed wall on
+          your wall and not a surprise.
+        </span>
+      </div>
+    </section>
+
+    <!-- ── specs: long-tail search lives here ───────────────────────── -->
+    <section id="wpw-specs">
+      <h2>The material</h2>
+      <p class="lede">
+        Avery Dennison&reg; HP MPI 2610 is a wall-specific film &mdash; it goes up
+        dry, blocks the wall colour underneath, and comes off cleanly.
+      </p>
+      <dl class="specs">
+        <div class="spec"><dt>Film</dt><dd>Avery Dennison&reg; HP MPI 2610</dd></div>
+        <div class="spec"><dt>Finish</dt><dd>Matte / luster</dd></div>
+        <div class="spec"><dt>Thickness</dt><dd>6.0 mil calendared vinyl</dd></div>
+        <div class="spec"><dt>Adhesive</dt><dd>Permanent, clear</dd></div>
+        <div class="spec"><dt>Opacity</dt><dd>100% &mdash; no bleed-through</dd></div>
+        <div class="spec"><dt>Panel width</dt><dd>54&Prime;, &frac12;&Prime; seam overlap</dd></div>
+        <div class="spec"><dt>Resolution</dt><dd>150 PPI at printed size</dd></div>
+        <div class="spec"><dt>Install</dt><dd>Dry install recommended</dd></div>
+        <div class="spec"><dt>Best for</dt><dd>Offices, retail, gyms, lobbies, restaurants, murals</dd></div>
+        <div class="spec"><dt>File formats</dt><dd>TIFF, PDF and PNG per panel, plus the whole wall</dd></div>
+      </dl>
+    </section>
+
+    <!-- ── FAQ: the questions people actually search ────────────────── -->
+    <section>
+      <h2>Questions</h2>
+      <div class="faq">
+        <details open>
+          <summary>How much does a wall wrap cost?</summary>
+          <p>
+            $3.25 per square foot for the printed wrap, priced on your wall's own
+            area. A 12&prime; &times; 8&prime; wall is 96 sq ft, so $312. Design is
+            separate, from $49 for file prep to $199 for a design created
+            specifically for your room.
+          </p>
+        </details>
+        <details>
+          <summary>Do I have to print with you?</summary>
+          <p>
+            No. Buy the design and the print-ready files are yours &mdash; the whole
+            wall plus every panel as TIFF, PDF and PNG. Take them to any printer.
+          </p>
+        </details>
+        <details>
+          <summary>What if I already have artwork?</summary>
+          <p>
+            Send it. File prep is $49 and covers scaling it to your wall, adding
+            bleed, and panelizing it to the 54&Prime; roll with a &frac12;&Prime;
+            overlap at every seam. If it's already print-ready at size, just order
+            the printing.
+          </p>
+        </details>
+        <details>
+          <summary>How long does it take?</summary>
+          <p>
+            The design is minutes. Production files are built straight after you
+            approve the design, then a member of our team checks the panels before
+            release &mdash; usually within 24 hours. You can watch each panel appear
+            as it's produced.
+          </p>
+        </details>
+        <details>
+          <summary>Will the seams show?</summary>
+          <p>
+            Panels are cut with a &frac12;&Prime; overlap and the artwork is
+            seam-matched by measurement, not by eye, so the pattern lines up across
+            the join. On a repeating design the repeat is verified in code before
+            the files are released.
+          </p>
+        </details>
+        <details>
+          <summary>Can I see it on my own wall first?</summary>
+          <p>
+            Yes. Upload a photo of the room, mark the four corners of the wall, and
+            the design is shown on it at true scale &mdash; before you pay for
+            anything.
+          </p>
+        </details>
+      </div>
+    </section>
+
+    <section style="border-top:1px solid var(--line)">
+      <h2>Ready when you are</h2>
+      <p class="lede">Measure the wall. We'll do the rest.</p>
+      <div class="cta">
+        <a class="btn btn-1" href="/wall-wrap/">Design my wall wrap</a>
+        <a class="btn btn-2" href="/commercialpro/wall-wraps/">I order in volume</a>
+      </div>
+    </section>
+
+  </div>
+</div>

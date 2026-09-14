@@ -46,7 +46,12 @@ import type { WallBilling } from './wallpro-print-plan';
  * multi-tenant spine), which is why every function below takes the rate as an
  * argument and only defaults to this.
  */
-export const WPW_WALL_FILM_RATE_PER_SQFT = 3.5;
+// THE LIVE RETAIL RATE, measured not assumed. Owner, 2026-09-14: the page
+// "must be same price as current retail page". Product 70093's order history
+// realizes exactly $3.25 per SQUARE foot, so that is the number every surface
+// quotes. Raising it to $3.50 is a pricing decision that must change the Woo
+// product first -- change both together or the page and the till disagree.
+export const WPW_WALL_FILM_RATE_PER_SQFT = 3.25;
 
 /**
  * The five ways in to a wall design — WallPro's own `designMode` values.

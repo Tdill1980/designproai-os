@@ -1,0 +1,318 @@
+<!--
+  ════════════════════════════════════════════════════════════════════════
+  COMMERCIALPRO × WALLPRO — the wall program for shops and installers
+  ════════════════════════════════════════════════════════════════════════
+  Paste into an Elementor "HTML" widget (or Gutenberg "Custom HTML" block),
+  or publish as a standalone page via seo-aeo-publish action:"publish_pillar"
+  at slug  commercialpro/wall-wraps  — DRAFT first (wrap-tv-world convention).
+
+  Scoped under #cpwall — cannot affect your theme. No plugins, no jQuery,
+  no JavaScript at all. Same WHITE UI standard and blue→magenta gradient as
+  WrapGuru and the instant quote, so it reads as one company: a division,
+  not a different business.
+
+  EDIT: the rate ladder and the enrolled count are the only numbers that go
+  stale. Both are plain text below, marked with  <!-- RATE -->  comments.
+  ════════════════════════════════════════════════════════════════════════
+-->
+<div id="cpwall">
+  <style>
+    #cpwall{
+      --blue:#3b82f6; --magenta:#ec4899;
+      --ink:#111827; --body:#4b5563; --mut:#6b7280; --line:#e5e7eb; --soft:#f9fafb;
+      --good:#047857; --goodbg:#ecfdf5; --warn:#92400e; --warnbg:#fffbeb;
+      --grad:linear-gradient(90deg,var(--blue),var(--magenta));
+      --fd:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      --fb:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      box-sizing:border-box; color:var(--ink); background:#fff; font-family:var(--fb); line-height:1.6; -webkit-font-smoothing:antialiased;
+    }
+    #cpwall *,#cpwall *::before,#cpwall *::after{box-sizing:border-box;}
+    #cpwall .wrap{max-width:1080px; margin:0 auto; padding:0 20px;}
+    #cpwall section{padding:56px 0; border-top:1px solid var(--line);}
+    #cpwall section:first-of-type{border-top:0;}
+    #cpwall h2{font-family:var(--fd); font-weight:800; letter-spacing:-.02em; line-height:1.08; margin:0; font-size:clamp(26px,4vw,40px);}
+    #cpwall p{margin:0;}
+    #cpwall .lede{color:var(--body); font-size:17px; max-width:62ch; margin-top:16px;}
+    #cpwall .lede strong{color:var(--ink); font-weight:600;}
+    #cpwall .note{color:var(--mut); font-size:13.5px; max-width:64ch; margin-top:15px;}
+
+    /* ── hero ─────────────────────────────────────────────── */
+    #cpwall .hero{padding:52px 0 44px;}
+    #cpwall .badge{display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:6px 13px; font-size:12px; font-weight:700; color:var(--body);}
+    #cpwall .badge .d{width:8px;height:8px;border-radius:50%;background:var(--grad);}
+    #cpwall h1{font-family:var(--fd); font-weight:800; letter-spacing:-.022em; line-height:1.02; margin:18px 0 0; font-size:clamp(34px,6vw,60px);}
+    #cpwall h1 .g{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #cpwall .tag{font-family:var(--fd); font-weight:600; font-size:clamp(17px,2.3vw,22px); margin-top:18px; letter-spacing:-.01em;}
+    #cpwall .cta{display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:28px;}
+    #cpwall .btn{display:inline-block; font-weight:700; font-size:15px; padding:14px 24px; border-radius:10px; text-decoration:none; border:1px solid transparent;}
+    #cpwall .btn-1{background:var(--grad); color:#fff;}
+    #cpwall .btn-2{border-color:var(--line); color:var(--body); background:#fff;}
+    #cpwall .live{font-size:13px; color:var(--good); font-weight:600;}
+
+    /* ── cards ────────────────────────────────────────────── */
+    #cpwall .cards{display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(248px,1fr)); margin-top:28px;}
+    #cpwall .card{border:1px solid var(--line); border-radius:14px; padding:24px; background:#fff;}
+    #cpwall .card.lead{border-color:#c7d7fb; background:linear-gradient(170deg,#f5f8ff,#fff 62%);}
+    #cpwall .rank{font-size:11px; font-weight:800; letter-spacing:.11em; color:var(--mut); margin:0;}
+    #cpwall .card h3{font-family:var(--fd); font-weight:700; font-size:20px; margin:10px 0 8px; letter-spacing:-.01em;}
+    #cpwall .card.lead h3{color:var(--blue);}
+    #cpwall .card p{color:var(--body); font-size:14.5px;}
+
+    /* ── space chips ──────────────────────────────────────── */
+    #cpwall .chips{display:flex; flex-wrap:wrap; gap:7px; margin-top:22px;}
+    #cpwall .chip{font-size:12.5px; font-weight:500; color:var(--body); border:1px solid var(--line); background:var(--soft); border-radius:999px; padding:6px 12px; white-space:nowrap;}
+    #cpwall .chip.more{color:var(--mut); border-style:dashed;}
+
+    /* ── rate ladder ──────────────────────────────────────── */
+    #cpwall .ladder{margin-top:26px; border:1px solid var(--line); border-radius:14px; overflow:hidden;}
+    #cpwall .tier{display:grid; grid-template-columns:1fr auto auto; gap:14px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line);}
+    #cpwall .tier:last-child{border-bottom:0;}
+    #cpwall .tier.you{background:linear-gradient(90deg,#f5f8ff,#fff);}
+    #cpwall .tname{font-family:var(--fd); font-weight:700; font-size:16.5px; display:block;}
+    #cpwall .qual{font-size:12.5px; color:var(--mut); display:block; margin-top:3px;}
+    #cpwall .rate{font-family:var(--fd); font-weight:800; font-size:20px; font-variant-numeric:tabular-nums;}
+    #cpwall .tier.you .rate{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+    #cpwall .pill{font-size:10.5px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; padding:5px 10px; border-radius:999px; border:1px solid var(--line); color:var(--mut); white-space:nowrap;}
+    #cpwall .tier.you .pill{border-color:#c7d7fb; color:var(--blue);}
+
+    /* ── worked example ───────────────────────────────────── */
+    #cpwall .ex{margin-top:26px; border:1px solid var(--line); border-radius:14px; padding:24px; background:var(--soft);}
+    #cpwall .exrow{display:flex; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px solid var(--line); font-size:14.5px;}
+    #cpwall .exrow:last-of-type{border-bottom:0;}
+    #cpwall .exrow .v{font-variant-numeric:tabular-nums; font-weight:600;}
+    #cpwall .extot{display:flex; justify-content:space-between; gap:16px; margin-top:13px; padding-top:14px; border-top:2px solid var(--ink); align-items:baseline;}
+    #cpwall .extot .l{font-family:var(--fd); font-weight:700;}
+    #cpwall .extot .v{font-family:var(--fd); font-weight:800; font-size:24px; color:var(--good); font-variant-numeric:tabular-nums;}
+
+    /* ── enrollment notice ────────────────────────────────── */
+    #cpwall .mail{margin-top:24px; border:1px solid var(--line); border-radius:14px; overflow:hidden; max-width:560px; background:#fff;}
+    #cpwall .mbar{display:flex; gap:7px; padding:13px 16px; border-bottom:1px solid var(--line); background:var(--soft);}
+    #cpwall .dot{width:9px;height:9px;border-radius:999px;background:var(--line);}
+    #cpwall .mbody{padding:22px;}
+    #cpwall .subj{font-family:var(--fd); font-weight:700; font-size:17.5px; margin:0 0 12px;}
+    #cpwall .mbody p{color:var(--body); font-size:14.5px; margin-bottom:10px;}
+    #cpwall .rateline{display:inline-block; font-weight:700; font-size:15px; color:var(--good); background:var(--goodbg); border-radius:8px; padding:8px 13px; margin:12px 0;}
+
+    /* ── is / isn't ───────────────────────────────────────── */
+    #cpwall .cols{display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(252px,1fr)); margin-top:26px;}
+    #cpwall .col{border:1px solid var(--line); border-radius:14px; padding:24px;}
+    #cpwall .col h4{font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin:0 0 14px;}
+    #cpwall .col.no h4{color:#b42318;}
+    #cpwall .col.yes h4{color:var(--good);}
+    #cpwall .col ul{margin:0; padding-left:18px;}
+    #cpwall .col li{margin-bottom:9px; font-size:14.5px; color:var(--body);}
+
+    #cpwall .quote{border-left:3px solid transparent; border-image:var(--grad) 1; padding-left:20px; margin-top:26px; font-family:var(--fd); font-weight:600; font-size:clamp(18px,2.5vw,24px); line-height:1.34; letter-spacing:-.01em; max-width:26ch;}
+    #cpwall footer{padding:30px 0 52px; border-top:1px solid var(--line); color:var(--mut); font-size:13px;}
+  </style>
+
+  <div class="wrap">
+
+    <!-- ── hero ─────────────────────────────────────────── -->
+    <section class="hero">
+      <span class="badge"><span class="d"></span> CommercialPro · Wall program</span>
+      <h1>Wall wraps at trade.<br><span class="g">Designed on demand.</span></h1>
+      <p class="tag">Volume has its own price.</p>
+      <p class="lede">
+        The wall program for shops and installers. Design a commercial space
+        while you're standing in it, get real print-ready files, and print at
+        your rate.
+      </p>
+      <div class="cta">
+        <a class="btn btn-1" href="/wall-wrap/">Design a wall</a>
+        <a class="btn btn-2" href="#cp-rate">See trade rates</a>
+        <!-- RATE: enrolled count, refresh when the program grows -->
+        <span class="live">62 shops enrolled</span>
+      </div>
+    </section>
+
+    <!-- ── the barrier ──────────────────────────────────── -->
+    <section>
+      <h2>You didn't skip wall wraps<br>because nobody wanted one.</h2>
+      <p class="lede">
+        You skipped them because of the design. No designer on staff, or one
+        already buried — either way a wall job meant finding someone, waiting on
+        concepts, and managing work you didn't want.
+      </p>
+      <p class="lede">
+        <strong>That's the part we removed.</strong> Measure the wall, say what
+        the space is, and get print-ready files — scaled, panelized to 54&Prime;
+        with a &frac12;&Prime; seam overlap, checked by a person before release.
+        Print with us, or take the files anywhere. Either way the job is yours.
+      </p>
+      <p class="quote">You wrapped their fleet.<br>Now do their lobby.</p>
+    </section>
+
+    <!-- ── what you get, ranked ─────────────────────────── -->
+    <section>
+      <h2>What you get</h2>
+      <div class="cards">
+        <div class="card lead">
+          <p class="rank">01 — THE LEVER</p>
+          <h3>Design on demand</h3>
+          <p>
+            A commercial designer that knows the difference between a medspa and
+            a dealership showroom. Describe the space, photograph the wall, or
+            send a design to match — files come back at print resolution.
+          </p>
+        </div>
+        <div class="card">
+          <p class="rank">02 — THE HABIT</p>
+          <h3>Order in seconds</h3>
+          <p>
+            Live order status, full history, one-click reorder. Your customers'
+            artwork stays on file, so the repeat job takes a minute instead of an
+            afternoon.
+          </p>
+        </div>
+        <div class="card">
+          <p class="rank">03 — THE RATE</p>
+          <h3>Trade pricing</h3>
+          <p>
+            Your rate applies automatically across every product — wall, vehicle,
+            window perf, cut vinyl. No codes, no per-order minimum, no expiry.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── the design engine, concretely ────────────────── -->
+    <section>
+      <h2>It designs for the space, not just the wall</h2>
+      <p class="lede">
+        The design engine classifies the space before it designs, then briefs for
+        how that kind of room is actually specified — palette, materials, motif
+        and scale. These are the spaces it knows:
+      </p>
+      <div class="chips">
+        <span class="chip">corporate office</span><span class="chip">coworking</span>
+        <span class="chip">restaurant</span><span class="chip">bar</span>
+        <span class="chip">caf&eacute;</span><span class="chip">retail</span>
+        <span class="chip">showroom</span><span class="chip">auto dealership</span>
+        <span class="chip">gym &amp; fitness</span><span class="chip">medspa</span>
+        <span class="chip">dental</span><span class="chip">medical</span>
+        <span class="chip">healthcare</span><span class="chip">salon</span>
+        <span class="chip">spa</span><span class="chip">hotel</span>
+        <span class="chip">hospitality</span><span class="chip">event space</span>
+        <span class="chip">law office</span><span class="chip">bank</span>
+        <span class="chip">financial</span><span class="chip">real estate</span>
+        <span class="chip">school</span><span class="chip">university</span>
+        <span class="chip">daycare</span><span class="chip">library</span>
+        <span class="chip">museum</span><span class="chip">worship</span>
+        <span class="chip">government</span><span class="chip">nonprofit</span>
+        <span class="chip">multifamily</span><span class="chip more">+ residential</span>
+      </div>
+      <p class="note">
+        Name the business and the brief is written for that kind of space — no
+        extra round trip, no guessing.
+      </p>
+    </section>
+
+    <!-- ── the rate ─────────────────────────────────────── -->
+    <section id="cp-rate">
+      <h2>Your rate</h2>
+      <p class="lede">
+        Based on printed square footage over the last twelve months, across every
+        product. Applied automatically — nothing to claim, nothing to remember.
+      </p>
+
+      <!-- RATE: the ladder. Keep in sync with the pricing table. -->
+      <div class="ladder">
+        <div class="tier">
+          <div><span class="tname">Standard</span><span class="qual">Everyone &middot; weprintwraps.com</span></div>
+          <span class="rate">$3.25</span><span class="pill">per sq ft</span>
+        </div>
+        <div class="tier">
+          <div><span class="tname">Trade</span><span class="qual">250+ sq ft / 12 months</span></div>
+          <span class="rate">$3.09</span><span class="pill">per sq ft</span>
+        </div>
+        <div class="tier you">
+          <div><span class="tname">CommercialPro</span><span class="qual">500+ sq ft / 12 months &middot; auto-enrolled</span></div>
+          <span class="rate">$2.93</span><span class="pill">Most shops</span>
+        </div>
+        <div class="tier">
+          <div><span class="tname">CommercialPro Volume</span><span class="qual">1,000+ sq ft / 12 months</span></div>
+          <span class="rate">$2.76</span><span class="pill">per sq ft</span>
+        </div>
+      </div>
+
+      <div class="ex">
+        <p class="rank">A 12&prime; &times; 8&prime; LOBBY WALL, ON YOUR INVOICE</p>
+        <div class="exrow"><span>Wall area</span><span class="v">96 sq ft</span></div>
+        <div class="exrow"><span>Standard &middot; $3.25/sq ft</span><span class="v">$336.00</span></div>
+        <div class="exrow"><span>Your rate &middot; $2.93/sq ft</span><span class="v">$281.28</span></div>
+        <div class="extot"><span class="l">You keep</span><span class="v">+$30.72</span></div>
+        <p class="note">
+          A shop printing 1,200 sq ft a year keeps about $384 — and the design fee
+          you'd have paid a freelancer on every one of those jobs is gone entirely.
+        </p>
+      </div>
+
+      <p class="note">
+        Rates shown for wall film. Vehicle, contour cut and perforated window carry
+        their own trade rate at the same qualifying volume. Your tier is
+        recalculated nightly and never drops without notice.
+      </p>
+    </section>
+
+    <!-- ── auto-enrollment ──────────────────────────────── -->
+    <section>
+      <h2>Already printing with us?<br>You may already be in.</h2>
+      <p class="lede">
+        There's no application. If you've printed 500 square feet with us in the
+        last year, your rate is already live — and we tell you the day it happens.
+      </p>
+
+      <div class="mail">
+        <div class="mbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <div class="mbody">
+          <p class="subj">You now qualify for CommercialPro</p>
+          <p>You've printed <strong>1,240 sq ft</strong> with us over the last twelve months.</p>
+          <p class="rateline">Your rate is now $2.93/sq ft</p>
+          <p>
+            It's already applied to your account and every product — wall, vehicle,
+            window and cut vinyl. Nothing to claim, nothing to remember.
+          </p>
+          <p style="color:#6b7280;font-size:13px;margin-top:14px;margin-bottom:0">
+            Design on demand and live order tracking are in your account now too.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── is / isn't ───────────────────────────────────── -->
+    <section>
+      <h2>What this is, and isn't</h2>
+      <div class="cols">
+        <div class="col no">
+          <h4>Not this</h4>
+          <ul>
+            <li>A discount code to remember</li>
+            <li>A minimum on every order</li>
+            <li>A promo that expires</li>
+            <li>A tier you lose without warning</li>
+            <li>A different company to deal with</li>
+          </ul>
+        </div>
+        <div class="col yes">
+          <h4>This</h4>
+          <ul>
+            <li>Your price, on what you already buy</li>
+            <li>Calculated from what you actually print</li>
+            <li>The design tools, included</li>
+            <li>Order status and reorder in one place</li>
+            <li>Same shop, same people, a different counter</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      CommercialPro is the trade division of WePrintWraps &mdash; same account,
+      same checkout, same team, with volume pricing and the design tools on top.
+      Wall film: Avery Dennison&reg; HP MPI 2610, matte/luster, 6.0&nbsp;mil,
+      54&Prime; panels with &frac12;&Prime; seam overlap, 150&nbsp;PPI at printed size.
+    </footer>
+
+  </div>
+</div>
