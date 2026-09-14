@@ -89,7 +89,7 @@ export function WallPrintOutput({ artwork, name, projectId, layout, seamless, se
     });
   }
 
-  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Wall print output">
+  return <section id="print-files" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Wall print output">
     <h2 className="flex items-center gap-2 text-lg font-semibold"><Printer size={20} />3. Prepare print files</h2>
     {/* The width is READ from the constant, never typed. This line said 51″ while
         every other surface said 53″ -- a third number for the one measurement the

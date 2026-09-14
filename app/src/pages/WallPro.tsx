@@ -20,6 +20,7 @@ import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
+import { WallProSidebar } from '@/components/wallpro/WallProSidebar';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -1032,7 +1033,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     });
   }
 
-  return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 md:px-8">
+  /**
+   * The rail's steps, read from the page's own state. Every `done` here is the
+   * same fact a button is gated on -- a rail that congratulated you on a step
+   * you had not finished would be worse than no rail.
+   */
+  const wallSteps = [
+    { id: 'upload-wall', label: 'Your wall', done: width > 0 && height > 0,
+      detail: width > 0 && height > 0 ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Width and height' },
+    { id: 'choose-design', label: 'Your design', done: !!artwork,
+      detail: artwork ? WALL_DESIGN_SKUS[designMode].label : 'Five ways in' },
+    { id: 'wall-preview', label: 'Preview', done: !!artwork,
+      detail: artwork ? (photo ? 'Flat and on your wall' : 'Flat master') : 'After you generate' },
+    { id: 'print-files', label: 'Print files', done: !!approvedVersion,
+      detail: approvedVersion ? `V${approvedVersion.version_no} approved` : `${WALLPRO_PRINT_WIDTH}" panels, 150 PPI` },
+    { id: 'order-printed-film', label: 'Buy film', done: false,
+      detail: billing ? `${billing.wallSqFt} sq ft - ${formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}` : 'Priced by the square foot' },
+  ];
+
+  return <div className="min-h-screen bg-slate-50 lg:flex lg:gap-2 lg:px-6">
+    {theme.showPrintOffer && <WallProSidebar
+      theme={theme} steps={wallSteps} top={stickyTop + 16} busy={!!busy} freeReason={freeReason}
+      onHistory={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}
+      onStartFresh={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}
+    />}
+    <main className="min-w-0 flex-1 px-4 py-8 text-slate-950 md:px-8">
     <Helmet><title>WallPro — Wall Design & Preview | DesignProAI</title></Helmet>
     <div className="mx-auto max-w-7xl space-y-5">
       {/* PERSISTENT HEADER, ON THE PHONE TOO (owner, 2026-09-12: "give wallpro
@@ -1082,8 +1107,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 trade buyer is actually here for. */}
             <p className="mt-0.5 text-xs text-slate-600 md:text-sm">{theme.tagline}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
+          {/* The rail carries these on desktop, so the header would show them
+              twice. The rail is hidden below lg (a pinned sidebar on a phone
+              eats the screen), so on a phone the header keeps them. Brands
+              without a rail keep them at every width. */}
+          <div className={`flex shrink-0 items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
+            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
               <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
             </Button>
             <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
@@ -1129,21 +1158,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         {!history.projects.length && !history.generations.length && <p className="py-4 text-sm text-slate-500">Your saved projects will appear here.</p>}
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
-        {/* THE RAIL (owner's #4: "Why not have a left side bar on wallpro").
-            The 400px column already WAS a sidebar -- it just ended when the form
-            did, leaving two thousand pixels of empty gutter beside the rest of
-            the page. Sticking it is what makes this read as a tool rather than a
-            form followed by a document, and it keeps wall size, design path and
-            Generate reachable while the preview and the print files scroll.
-
-            Desktop only, and scrollable in its own right: on a phone the form
-            and the preview stack, and a sticky rail there would eat the screen.
-            `stickyTop` is the same measured header offset the header itself
-            uses, so the rail begins exactly below it instead of under it. */}
-        <div className="lg:sticky lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
-             style={{ top: stickyTop + 12, maxHeight: `calc(100vh - ${stickyTop + 24}px)` }}>
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
+          <section id="upload-wall" className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
@@ -1154,7 +1170,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
+          <section id="choose-design" className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
               { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
@@ -1208,7 +1224,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs text-slate-500">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
           </section>
         </fieldset>
-        </div>
         <div className="min-w-0 space-y-5">
           {/* scroll-mt clears the sticky header: a finished design scrolls
               itself here, and without it the heading lands underneath. */}
@@ -1510,5 +1525,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
       {generationBlocker && <p className="mt-1 text-center text-[11px] text-slate-600">{generationBlocker}</p>}
     </div>}
-  </main>;
+  </main>
+  </div>;
 }
