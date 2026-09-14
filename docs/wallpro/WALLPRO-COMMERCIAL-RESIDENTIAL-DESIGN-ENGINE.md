@@ -166,3 +166,69 @@ file. **To run these for real**, open `/admin/wallpro-batch`, and either:
 - **The residential style matcher is a substring match**, not semantic — a brief that says "not boho, the opposite of boho" would still match "Boho." Low risk in practice (nobody writes design briefs that way) but worth knowing.
 - **The AI-slop/quality-floor check is off by default**, same as the compliance check it extends — so nothing in production is currently gated on it. Turning it on is a separate, deliberate decision with its own latency cost (see section 8), not something this task should flip silently.
 - **The 500-prompt library's existing `style` field only uses 17 distinct values** today (Modern Organic, Quiet Luxury, Japandi, etc.) — a small subset of the 50+-entry residential taxonomy. The taxonomy is fully wired for customer-typed and curator-typed styles; growing the library's own style variety is a content task (editing the XLSX / JSON), not a code task, and out of scope here.
+
+## 2026-09-14 — The batch now feeds the personas natural-language briefs (the RestylePro pattern)
+
+**Owner:** "I don't understand why we didn't use persona engineering — which
+means natural language prompts required — so that batch needs to pattern how
+RP's Vehicle Batch design app. Every single one was fantastic. SEE ZERO AI
+SLOP. Designer Persona is Key!"
+
+**What was measured in RestylePro (`Tdill1980/restylepro-os`):**
+
+| piece | what it is |
+|---|---|
+| `src/data/prompt-presets.ts` | 128 vehicle briefs, each one customer brief in plain prose: *"Napoli Fire Pizza - matte black base with a giant photograph of a hand-stretched pepperoni pizza … red and gold brushstroke accent from front fender to tailgate …"* |
+| `src/data/wall-prompt-presets.ts` | 111 wall briefs in the same voice: *"Moroccan zellige tile pattern — intricate geometric star and cross pattern in cobalt blue, white, and terracotta, handcrafted ceramic texture, artisan feel"* |
+| `supabase/functions/generate-batch-prompts` | a Gemini-flash brief-writer persona ("You are a commercial vehicle wrap designer for real businesses…") returning fresh JSON presets, 80–150 words each, trade-scoped |
+| `AdminWallProBatch.tsx` / `AdminDesignPanelBatch.tsx` | send `preset.prompt` to the same edge function a customer's own words reach |
+
+The personas did the designing. The brief was a client talking.
+
+**What the WallPro batch was sending instead:** the 500-row
+`wallpro-prompt-library.json` is a spec sheet — *"Create a panoramic mural for
+a leasing lobby in the Multifamily & Apartments market. Concept: warm
+travertine ribbons and oversized organic arches. Visual language: Modern
+Organic. Palette: ivory, limestone, warm taupe and soft charcoal. Visual
+intensity: Quiet."* — followed by ~800 characters of production boilerplate
+(4K master, 150 PPI, 54-inch media, 1-inch overlap). `batchCreativeBrief`
+(PR #402) rewrote that sheet through lookup tables (`BRIEF_MEDIUM`,
+`BRIEF_SCALE`, `BRIEF_MOOD`). Better than the sheet; still a template, not a
+brief. The owner is right that this is not persona engineering.
+
+**Ported (RULE 1):**
+
+- `app/src/data/wallpro-presets.ts` — the 111 RestylePro wall presets verbatim
+  (IDs re-keyed `wall-off-01` → `WPB-OFF-01` for the catalog's DesignID CHECK,
+  each classified repeat/mural and by rendering family), plus new residential
+  Etsy sets in the same voice for bedroom, nursery, living, dining, powder
+  room, entry, kitchen and home office — the three families the owner's
+  reference images showed (flat bold print in 2–4 solid colours; fine-line
+  engraving / toile / lattice in 1–2 inks; photoreal faux material: chevron
+  and herringbone wood, zellige, subway tile, marble, slats). Every repeat
+  names its hero motif's size in inches.
+- `supabase/functions/generate-wall-batch-prompts` — the brief writer, wall
+  edition. Curator-only (JWT + `user_roles` admin/tester, the catalog's own RLS
+  predicate), `gemini-2.5-flash`, JSON output, 60 s timeout. The persona is a
+  wallpaper studio's creative director writing 50–110-word client briefs:
+  ONE subject, ground colour and accent named, technique, repeat structure and
+  inches (or what fills a mural), room and feeling; never marketing
+  adjectives, production words, mockups, text/logos or named artists; every
+  brief in a set differs in subject, ground, technique and structure.
+  `normalizeGeneratedBriefs` drops anything that breaks that and stamps
+  `WPB-AI-<stamp>-<nn>`.
+- `WallPromptEntry.brief: 'natural'` + `briefForEntry` — a natural brief
+  reaches the consultant VERBATIM; only the legacy structured library is still
+  rewritten by `batchCreativeBrief`.
+- Batch page "Brief source": **Brief presets** (default) / **AI brief writer**
+  (domain, optional space, rendering family, repeat-or-mural, "Write N
+  briefs", the briefs listed for reading before the queue is built) /
+  **Legacy library**. Everything after the request is unchanged: same
+  `generate-wall-design`, same two personas, same seam ladder, same publish
+  row, same mockups.
+
+**Not verified here:** no image was generated in this session. The claim is
+that the batch now sends the personas what RestylePro sent them; whether the
+designs are "Etsy" is the owner's eye on a fresh batch. Deploy needs the new
+edge function dispatched (`deploy-edge-functions.yml`, functions
+`generate-wall-batch-prompts`) and the web bundle.

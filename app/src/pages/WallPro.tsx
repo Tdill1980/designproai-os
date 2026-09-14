@@ -527,7 +527,9 @@ export default function WallPro() {
       if (!active) return;
       setCatalog(rows);
       if (rows.length && !params.get('project')) setDesignMode('library');
-      setCatalogThumbs(await openWallAssets(rows.map(r => r.thumb_path || r.master_path)).catch(() => ({})));
+      // A saved room mockup, when one exists, is the listing image: the
+      // pattern at its real size on a real wall, caption included.
+      setCatalogThumbs(await openWallAssets(rows.flatMap(r => [r.thumb_path || r.master_path, ...(r.mockups?.length ? [r.mockups[0].path] : [])])).catch(() => ({})));
     }).catch(() => { if (active) setCatalog([]); });
     return () => { active = false; };
   }, []);
@@ -1075,8 +1077,8 @@ export default function WallPro() {
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
                 <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-violet-500 ring-2 ring-violet-300' : 'border-slate-200 hover:border-violet-400')}>
-                  <div className="aspect-[4/3] bg-slate-100">{catalogThumbs[row.thumb_path || row.master_path] && <img src={catalogThumbs[row.thumb_path || row.master_path]} alt={row.title} className="h-full w-full object-cover" loading="lazy" />}</div>
-                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p></div>
+                  <div className="aspect-[4/3] bg-slate-100">{(() => { const src = (row.mockups?.[0] && catalogThumbs[row.mockups[0].path]) || catalogThumbs[row.thumb_path || row.master_path]; return src ? <img src={src} alt={row.title} className="h-full w-full object-cover" loading="lazy" /> : null; })()}</div>
+                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-slate-500">{row.design_id} · {row.design_type}</p>{row.mockups?.[0] && <p className="truncate text-[10px] text-emerald-700">{row.mockups[0].caption}</p>}</div>
                 </button>)}</div>
                 <p className="text-xs text-slate-500">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
               </>}

@@ -419,6 +419,47 @@ contracts; each names its lock.
   rows with no stored width) to the measured two-across architectural baseline,
   48 inches on the tile's own 96-inch square canvas — the curator can still
   type any width per batch or per job.
+- **The batch feeds the personas NATURAL-LANGUAGE briefs, the RestylePro
+  batch pattern (RULE 1; owner, 2026-09-14: "I don't understand why we didn't
+  use persona engineering … natural language prompts required … that batch
+  needs to pattern how RP's Vehicle Batch design app. Every single one was
+  fantastic. SEE ZERO AI SLOP. Designer Persona is Key!").** What made
+  RestylePro's batches work was measured in its code, not guessed:
+  `src/data/prompt-presets.ts` (128 vehicle briefs) and
+  `src/data/wall-prompt-presets.ts` (111 wall briefs) are each ONE customer
+  brief in plain prose — subject, named colours, technique, mood — and
+  `supabase/functions/generate-batch-prompts` is a Gemini-flash brief-writer
+  persona that writes fresh ones; the batch page then sends `preset.prompt`
+  to the same edge function a customer's words reach, and the two personas
+  design. The 500-row `wallpro-prompt-library.json` is the opposite object: a
+  spec sheet ("Concept: … Visual language: … Palette: … Visual intensity:
+  …") followed by production boilerplate, and `batchCreativeBrief` only
+  rewrote that sheet through lookup tables — a template, not a brief, which
+  is exactly the "average of the persona" failure the two-persona rule
+  describes. Ported: `app/src/data/wallpro-presets.ts` (the 111 RestylePro
+  wall presets verbatim, IDs re-keyed to the catalog's `WPB-` DesignID CHECK,
+  plus residential Etsy sets for the three rendering families the owner
+  supplied — flat bold print, fine-line engraving, photoreal faux material —
+  every repeat naming its motif size in inches); and
+  `supabase/functions/generate-wall-batch-prompts` (curator-only: JWT +
+  `user_roles` admin/tester, the catalog's own RLS predicate; never on the
+  customer path, so the "no extra LLM stage before the customer sees
+  anything" rule holds), whose persona is a wallpaper studio's creative
+  director writing 50–110-word client briefs with the ground colour named,
+  the technique, the repeat structure and inches, and a ban on marketing
+  adjectives, production words, mockups, text/logos and named artists;
+  `normalizeGeneratedBriefs` drops what breaks that and stamps
+  `WPB-AI-<stamp>-<nn>`. `WallPromptEntry.brief: 'natural'` is the contract:
+  `briefForEntry` sends such an entry to the consultant VERBATIM; only the
+  legacy structured library still goes through `batchCreativeBrief`. The
+  batch page's "Brief source" is presets (default) / AI brief writer /
+  legacy library; nothing after the request changed (same edge function,
+  same personas, same seam ladder, same publish row). Locked by
+  `wallpro-presets.test.ts` (every preset catalog-legal, spec-sheet-free,
+  under the 4K lock through the real prompt builder, publishable through
+  `designUpsertRow`) and `wallpro-brief-writer.test.ts` (persona text, the
+  normalizer, curator gate, provider failure paths). Acceptance is still the
+  owner's eye on a fresh batch.
 - **Production rules** (owner workbook, `docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md`):
   one canonical master, never AI-generate panels, duplicated overlap identical
   on both panels, seam QC, 150 effective PPI from real pixels.
