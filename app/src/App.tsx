@@ -67,6 +67,13 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+// MY SHOPFLOW — the WePrintWraps account page, ported from restylepro-os
+// 2026-09-15. It replaces weprintwraps.com/my-account/ (see
+// wordpress/wpw-shopflow-account), so it is PUBLIC on purpose: its door is an
+// email proven with one order number, not a RestylePro session. Almost no WPW
+// customer has an account here — 8 of 809 distinct customer emails — so behind
+// a sign-in wall this page reaches nobody, which is the dead end it replaced.
+const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
@@ -426,6 +433,9 @@ const App = () => {
               Design-area entry, its own URL so the two menu items stay
               separately measurable rather than one link pretending to be two. */}
           <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
+          {/* PUBLIC on purpose — the access check lives in wpw-shopflow, not the
+              route. See the note on the import above. */}
+          <Route path="/shopflow" element={<ShopFlow />} />
           <Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />
           {/* The case study: one real wall, bare to installed. Its numbers and
               diagrams are computed by the tool's own libraries, so it cannot
