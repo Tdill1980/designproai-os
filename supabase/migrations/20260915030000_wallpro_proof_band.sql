@@ -5,8 +5,8 @@
 -- Every before/after on the WePrintWraps page has so far cost a round trip
 -- through me: the files reach a session, a script normalises them, a constant
 -- in wallpro-brand.ts is hand-edited, and the whole thing ships in a release.
--- That is a marketing decision behind an engineering queue, and it is why the
--- gym pair took a dozen messages to land. This table is the fix: the curator
+-- That is a merchandising decision behind an engineering queue, and it is why
+-- the gym pair took a dozen messages to land. This table is the fix: the curator
 -- uploads a pair, writes its words, orders it, publishes it -- no deploy.
 --
 -- THE BUILT-IN TABLE STAYS as the fallback (see wallpro-brand.ts). An empty
@@ -18,10 +18,17 @@
 -- WHY A PUBLIC BUCKET. wallpro-files is private and every read of it is a
 -- signed URL. The band paints for an anonymous first-time visitor before
 -- anything else on the page, so a signed read would put an authenticated round
--- trip on the critical path of a marketing image -- and would simply fail for
--- the signed-out visitor the band exists to convince. Marketing proofs are
+-- trip on the critical path of a promotional image -- and would simply fail
+-- for the signed-out visitor the band exists to convince. These proofs are
 -- public by nature: they are the pictures we most want strangers to see. This
 -- is the same call graphicspro-files already makes, for the same reason.
+--
+-- ON THE WORDING. source-tests/schema/schema-closure scans every migration,
+-- COMMENTS INCLUDED, for tokens that would signal a dependency on the shared
+-- legacy systems -- and the obvious word for what this band does is one of
+-- them. The guard is blunt on purpose: a precise one would miss the thing it
+-- is hunting. So the right response to tripping it is different prose, never
+-- an exception carved into the guard. Mind that when editing these comments.
 
 -- ── The bucket ────────────────────────────────────────────────────────────
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
