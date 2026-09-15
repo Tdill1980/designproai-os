@@ -314,7 +314,7 @@ test("the driver panel read is the primary band source and the sheet read is not
   assert.equal(result.letteringSource, "designpro.atlas-lettering-read.v1");
   assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL], "panel read, mirror, one verify read -- no sheet read");
   assert.deepEqual(result.letteringVerify, {
-    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null,
+    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null,
   });
 });
 
