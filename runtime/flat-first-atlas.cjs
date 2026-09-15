@@ -105,7 +105,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v24-livery-on-the-sheet";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v25-persona-designs-the-field";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -239,7 +239,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v24-livery-on-the-sheet";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v25-persona-designs-the-field";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
