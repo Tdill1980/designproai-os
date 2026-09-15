@@ -72,15 +72,15 @@ function outputClassPrompt(inspectionId) {
   return [
     "You are a print-production inspector. Classify this ONE image by OUTPUT CLASS only. Do not judge quality, style or branding.",
     "",
-    "CLASS flat_atlas — a flat panel-layout sheet: rectangular regions of flat 2D print artwork laid out side by side on one sheet, like printed vinyl panels or posters laid flat. The sheet is EXPECTED to hold several rectangles, one per vehicle surface, and may carry printed panel names or captions (for example HOOD, ROOF, DRIVER, REAR): that is the layout, not a vehicle. The artwork inside a rectangle may legitimately contain automotive MOTIFS drawn as graphics — racing livery stripes and numbers, a stylised car silhouette as a logo element, grille or headlight graphics, tire-tread or carbon patterns, sponsor lettering. Motifs are graphics; they do not make the image a vehicle.",
+    "CLASS flat_atlas — a flat panel-layout sheet: rectangular regions of flat 2D print artwork laid out side by side on one sheet, like printed vinyl panels or posters laid flat. The sheet is EXPECTED to hold several rectangles, one per vehicle surface, and may carry printed panel names or captions (for example HOOD, ROOF, DRIVER, REAR): that is the layout, not a vehicle. Inside a rectangle the artwork may legitimately contain automotive MOTIFS drawn as graphics — racing livery stripes and numbers, sponsor lettering, a small stylised car icon as a logo element, grille or headlight graphics, tire-tread or carbon patterns — but ONLY on a field of artwork that fills the rectangle edge to edge with no vehicle anatomy visible.",
     "",
-    "CLASS vehicle_depiction — the image IS a picture of a vehicle: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle camera views, a presentation board, or a studio scene containing a vehicle. Signs: a whole vehicle body seen in perspective or elevation with its real wheels and tires on the ground, reflections, a floor shadow, a horizon or backdrop, or several camera angles of the same vehicle.",
+    "CLASS vehicle_depiction — the image shows a vehicle rather than flat printed material. This includes: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle camera views, a presentation board, or a studio scene containing a vehicle. It ALSO includes any rectangle that shows a vehicle ELEVATION or VIEW — side profile, front or rear elevation, top view — recognisable by VEHICLE ANATOMY: wheels or tires, wheel arches, windows, windshield or other glass, headlights or taillights, mirrors, bumpers, a licence plate, a floor shadow or reflection, or the vehicle's body outline against a surround. That rectangle is a vehicle whatever the surround (white, grey, black, a studio floor or any colour), whether or not it is labelled, and even when it carries the livery: a race car drawn in the DRIVER rectangle is a vehicle, not a panel.",
     "",
     "ALSO vehicle_depiction: a rectangle whose artwork is a vehicle-shaped island — the artwork stops at a body outline (side profile, front or rear elevation) and a plain single-colour surround (grey, white, black or any colour) fills the rest of the rectangle. ALSO vehicle_depiction: a rectangle of otherwise continuous artwork that carries a dark or empty OPENING where a wheel, wheel arch, window, windshield or grille would sit — a disc, arch or pane of black, dark grey or blank inside the artwork. Printed vinyl has no openings; the installer cuts them. Small dark graphic details, shadows and lettering are artwork, not openings.",
     "",
-    "flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge, with no vehicle-shaped boundary between artwork and surround.",
+    "flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge, with no vehicle-shaped boundary between artwork and surround and no vehicle anatomy anywhere on the sheet. If ANY rectangle shows anatomy, answer vehicle_depiction and name that rectangle in the evidence.",
     "",
-    `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction","confidence":0..1,"evidence":"one short sentence naming what you see"}`,
+    `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction","confidence":0..1,"anatomyRectangles":0..12,"evidence":"one short sentence naming what you see"}`,
   ].join("\n");
 }
 
@@ -117,9 +117,11 @@ function parseVerdict(payload, inspectionId) {
     throw new AtlasOutputClassError("atlas_output_class_verdict_invalid", `Unknown outputClass ${cleanText(outputClass, 60)}`);
   }
   const confidence = Number(parsed?.confidence);
+  const anatomy = Number(parsed?.anatomyRectangles);
   return {
     outputClass,
     confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : null,
+    anatomyRectangles: Number.isInteger(anatomy) && anatomy >= 0 ? anatomy : null,
     evidence: cleanText(parsed?.evidence, 300),
   };
 }
@@ -170,6 +172,7 @@ async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, 
       disposition: verdict.outputClass,
       blocking: verdict.outputClass === "vehicle_depiction",
       confidence: verdict.confidence,
+      anatomyRectangles: verdict.anatomyRectangles,
       evidence: verdict.evidence,
       code: null,
       reason: null,
