@@ -152,7 +152,29 @@ const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
  * `DESIGNPRO_ATLAS_FIELD_FAILOVER=off` restores the fail-closed behaviour.
  * Nothing else disables it, because a misspelled flag must not cost a design.
  */
-const FIELD_FAILOVER_ATTEMPTS = 1;
+const FIELD_FAILOVER_ATTEMPTS = 2;
+// FIELD FIRST FOR CARS. (Owner 2026-09-15, after the Martini 911 failed at 4:37:
+// "This is taking so long.")
+//
+// Measured on the strict referee (#415): six-surface has produced a genuinely
+// flat sheet only for the F-250, its own teaching example. On a car it drew
+// the vehicle on every attempt today -- four refusals, two runs, both correct
+// -- and every car run spent ~2.5 minutes on those two refusals before the
+// one-field contract, which cannot draw a car, produced the sheet. So a first-
+// generation car-class request authors on the field contract directly, with
+// the same two-attempt budget six-surface has. Trucks and vans keep six-surface,
+// where it is proven. DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface
+// first for every class. Revision edits keep their parent's topology.
+const FIELD_FIRST_ATTEMPTS = 2;
+const SIX_SURFACE_FIRST_VEHICLE_CLASSES = Object.freeze(new Set([
+  "truck", "pickup", "pickup-truck", "van", "cargo-van", "cargo van", "box-truck", "box truck", "bus", "trailer",
+]));
+function fieldFirstReason(vehicle) {
+  if (String(process.env.DESIGNPRO_ATLAS_FIELD_FIRST || "").trim().toLowerCase() === "off") return null;
+  const type = String(vehicle?.type || vehicle?.vehicleClass || "").trim().toLowerCase();
+  if (!type || SIX_SURFACE_FIRST_VEHICLE_CLASSES.has(type)) return null;
+  return `vehicle-class:${type}`;
+}
 const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
@@ -2818,6 +2840,16 @@ async function generateOrReuseFlatAtlas(options) {
     && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
     return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
   }
+  if (options?.authoringTopology === undefined
+    && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
+    const reason = fieldFirstReason(options?.input?.vehicle);
+    if (reason) {
+      return generateOrReuseFlatAtlasResolved({
+        ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FIRST_ATTEMPTS,
+        fieldFirst: { contract: AUTHORING_FAILOVER_CONTRACT, reason, attempts: FIELD_FIRST_ATTEMPTS },
+      });
+    }
+  }
   return generateOrReuseFlatAtlasResolved(options);
 }
 
@@ -2832,6 +2864,8 @@ async function generateOrReuseFlatAtlasResolved(options) {
     authoringTopology = "six-surface",
     authoringFenceState = null,
     failoverFrom = null,
+    // Field-first routing receipt (see fieldFirstReason). null on every other path.
+    fieldFirst = null,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -3960,6 +3994,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       atlasDesignTeachingExampleIdentity: manifest.topology === FIELD_TOPOLOGY ? null : teachingProof.identity,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
       atlasFieldContract: manifest.topology === FIELD_TOPOLOGY ? ATLAS_FIELD_PROMPT_CONTRACT : null,
+      fieldFirst: fieldFirst || null,
       // Same rename, same value: this forensic field records the LAYOUT the six
       // panels were cut from, not the manifest identity.
       territoriesContract: manifest.territoriesContract || null,
@@ -4191,7 +4226,7 @@ module.exports = {
   atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
-    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
+    FIELD_FAILOVER_ATTEMPTS, FIELD_FIRST_ATTEMPTS, fieldFirstReason, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
     activeZoneMaskSvg,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.

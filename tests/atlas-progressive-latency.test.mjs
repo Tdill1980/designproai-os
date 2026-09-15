@@ -56,7 +56,8 @@ test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails 
     /if \(attempt === maxAuthoringAttempts\) \{\s*const refusal = new FlatAtlasError\([\s\S]*?if \(!failoverEnabled\) throw refusal;[\s\S]*?return failOverToField\(\{/,
     "exhausting the budget must surface the real refusal, never a silent retry",
   );
-  assert.match(atlas, /const FIELD_FAILOVER_ATTEMPTS = 1;/);
+  // 2026-09-15: two field attempts, so one car-shaped field does not end the run.
+  assert.match(atlas, /const FIELD_FAILOVER_ATTEMPTS = 2;/);
   assert.match(atlas, /maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS/);
   assert.match(atlas, /attemptKey: authoringTopology === "field" \? `master:field:\$\{attempt\}` : `master:\$\{attempt\}`/);
 });
