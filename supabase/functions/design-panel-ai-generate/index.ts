@@ -55,7 +55,7 @@ import {
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v24-livery-on-the-sheet";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -553,6 +553,8 @@ One wrap, unwrapped. The left and right flanks are the two sides of the SAME veh
 
 Every panel is opaque, unbroken and full-bleed to all four edges: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
 
+When the brief describes how the finished vehicle should look — a race livery, a heritage scheme, a named reference, a style the customer admires — this sheet carries the livery that produces that look: the colour blocking, stripes, graphics, numbers, badges and lettering, drawn as flat print artwork running edge to edge through every panel, exactly the way that livery looks on the printed vinyl before it is applied. The finished look on the vehicle itself belongs to the seven proof projections downstream; on this sheet there is only the printed livery, flat.
+
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }
 
@@ -660,6 +662,8 @@ function atlasFieldContract(
     "The square is one picture. These areas of it, written as fractions of the image measured from the top-left corner — left, top, right, bottom — must each carry a complete and finished passage of that picture:",
     "",
     ...rows,
+    "",
+    "Those fractions are a map for you to read; every mark on the printed vinyl is artwork.",
     "",
     "Every one of those areas has to read on its own as intentional, finished, commercially valuable artwork: real subject matter, real depth, real movement, worth what the customer paid. Not one of them may become empty backdrop, filler, or the quiet leftover of a composition that happens elsewhere.",
     "",
