@@ -95,7 +95,14 @@ test("the inspector question is a binary class check at temperature 0, never cre
   assert.match(prompt, /automotive MOTIFS drawn as graphics/);
   assert.match(prompt, /grille or headlight graphics, tire-tread or carbon patterns/);
   assert.match(prompt, /printed panel names or captions \(for example HOOD, ROOF, DRIVER, REAR\): that is the layout, not a vehicle/);
-  assert.match(prompt, /A small hole or dark patch inside otherwise continuous artwork \(a wheel arch or window cut out of a full panel\) is NOT this class/);
+  // 2026-09-15 (owner: "look at containers, fill that"): the accepted 911
+  // Turbo master shipped both flanks with a wheel-shaped void because the
+  // inspector had been told a hole inside continuous artwork was fine. It runs
+  // AFTER the deterministic fill now, so a void it still sees is one the fill
+  // missed, and that sheet must not become canonical.
+  assert.match(prompt, /a dark or empty OPENING where a wheel, wheel arch, window, windshield or grille would sit/);
+  assert.match(prompt, /Printed vinyl has no openings; the installer cuts them/);
+  assert.doesNotMatch(prompt, /is NOT this class; classify by the artwork around it/);
   assert.match(prompt, /flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge/);
   assert.doesNotMatch(prompt, /wheel-arch cut-outs or discs, bumper, grille, headlight, door or window shapes/);
   const source = readFileSync(new URL("../runtime/atlas-output-class.cjs", import.meta.url), "utf8");

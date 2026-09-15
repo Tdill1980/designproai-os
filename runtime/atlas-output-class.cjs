@@ -76,7 +76,7 @@ function outputClassPrompt(inspectionId) {
     "",
     "CLASS vehicle_depiction — the image IS a picture of a vehicle: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle camera views, a presentation board, or a studio scene containing a vehicle. Signs: a whole vehicle body seen in perspective or elevation with its real wheels and tires on the ground, reflections, a floor shadow, a horizon or backdrop, or several camera angles of the same vehicle.",
     "",
-    "ALSO vehicle_depiction: a rectangle whose artwork is a vehicle-shaped island — the artwork stops at a body outline (side profile, front or rear elevation) and a plain single-colour surround (grey, white, black or any colour) fills the rest of the rectangle. A small hole or dark patch inside otherwise continuous artwork (a wheel arch or window cut out of a full panel) is NOT this class; classify by the artwork around it.",
+    "ALSO vehicle_depiction: a rectangle whose artwork is a vehicle-shaped island — the artwork stops at a body outline (side profile, front or rear elevation) and a plain single-colour surround (grey, white, black or any colour) fills the rest of the rectangle. ALSO vehicle_depiction: a rectangle of otherwise continuous artwork that carries a dark or empty OPENING where a wheel, wheel arch, window, windshield or grille would sit — a disc, arch or pane of black, dark grey or blank inside the artwork. Printed vinyl has no openings; the installer cuts them. Small dark graphic details, shadows and lettering are artwork, not openings.",
     "",
     "flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge, with no vehicle-shaped boundary between artwork and surround.",
     "",
