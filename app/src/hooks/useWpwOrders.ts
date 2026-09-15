@@ -99,6 +99,10 @@ export interface MyOrdersResponse {
   fromCache?: boolean;
   orders: WpwOrder[];
   loyalty?: WpwLoyaltyPoints | null;
+  /** True when the customer is a current CommercialPro member. The sidebar
+   *  reads it; wpw-orders-read does not set it yet, so it is optional and
+   *  reads as false until the reader joins commercialpro_members. */
+  commercialpro?: boolean;
   /** Saved quotes for this customer, newest first. Empty rather than absent
    *  when the lookup fails — a quote list must never break an order load. */
   quotes?: WpwQuote[];
