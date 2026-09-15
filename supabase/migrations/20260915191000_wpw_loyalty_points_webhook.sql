@@ -9,7 +9,7 @@
 -- registers under wc/v3/wployalty/*, customer page at
 -- https://weprintwraps.com/loyalty-reward-page/). WPLoyalty's own public REST
 -- API only supports ADDING/REDUCING points (its PRO add-on) — there is no
--- endpoint to READ a balance, so RestylePro cannot poll it.
+-- endpoint to READ a balance, so this system cannot poll it.
 --
 -- WPLoyalty's free/core plugin DOES fire a documented WordPress action hook
 -- on every balance change, with the fresh balance as an argument:
@@ -29,7 +29,7 @@
 -- (20260820203000_wpw_woo_webhooks_and_reversals.sql) — same HMAC-over-raw-
 -- body scheme, same Vault-secret verifier pattern, different secret.
 --
--- Unlike the Woo order webhook (a native Woo REST topic RestylePro can
+-- Unlike the Woo order webhook (a native Woo REST topic we can
 -- self-register via the WooCommerce API), WPLoyalty's hook is plugin-internal
 -- — WooCommerce's webhook system has no visibility into it. There is no way
 -- to avoid installing the small WordPress plugin for this one. The secret
