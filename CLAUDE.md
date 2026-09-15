@@ -677,6 +677,44 @@ not have saved this run (a reversed authority is reversed on every render) and
 it is not changed here — raising it is one extra photographer call per drift
 verdict and is the owner's call.
 
+## 🎨 RULE 0.37 — THE PERSONA DESIGNS; THE FIELD CONTRACT ONLY SAYS WHAT THE OUTPUT IS (owner ruling, Trish 2026-09-15)
+
+Owner, verbatim: *"we never had to have a livery paragraph, we relied on the
+persona to know how to design based on prompt, we have done many Porsche
+Martini race team designs before we migrated."*
+
+**What was wrong.** After the migration the same A.C.E. persona and the same
+customer brief were followed by ~1,400 characters of field contract that
+DIRECTED the design: areas that "read on their own as intentional, finished,
+commercially valuable artwork", "not separate pictures", "gallery-grade …
+wow factor", "worth what the customer paid". Live 8eec8162 (911 Turbo,
+Martini brief) on that contract: a plain field, a filler hood. The persona
+that designed the Martini before the migration was being out-shouted by the
+paragraph after it.
+
+**What the field tail is now** (`atlasFieldContract`, prompt
+`atlas-artboard-designiq.20260915.v25-persona-designs-the-field`), and the
+test of anything added to it — *is this a physical fact about the output, or
+is it design direction?* Only the first kind belongs:
+
+1. The output: one continuous full-bleed composition on one square 4K image,
+   flat, for this exact vehicle. The persona never authored a flat sheet
+   before the migration (it authored an on-vehicle render), so this one line
+   is the only new fact it needs.
+2. The anonymous coordinate map (RULE 0.33 v25), because the cutter takes six
+   pieces out of the square and the model has to know where.
+3. One sentence keeping every letter, word and mark inside a single area,
+   clear of its edges — the "text cut on rear" defect (owner 2026-09-14) is a
+   print rule, not a design rule.
+
+Nothing else. No livery paragraph (that was proposed and refused the same
+day), no composition rules, no quality adjectives. Locked by
+`tests/atlas-clean-authoring-contract.test.mjs` ("ATLAS field branch sends
+the prompt and customer references only"): the emitted tail must not contain
+the removed direction, and must contain the map line and the lettering rule.
+The six-container contract (`atlasFlatMasterContract`) is untouched by this
+ruling; it is the failover, not the product path for cars.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
