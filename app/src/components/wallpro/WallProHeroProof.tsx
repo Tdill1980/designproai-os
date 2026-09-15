@@ -38,6 +38,31 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
   const [held, setHeld] = useState(false);
   const [broken, setBroken] = useState<string[]>([]);
   const box = useRef<HTMLDivElement | null>(null);
+  /**
+   * THE BAND'S OWN WIDTH, MEASURED — not read off the ref during render.
+   *
+   * Owner, 2026-09-15: "the one u have is stretched."
+   *
+   * The before half is pinned to the BAND's width so the two photographs stay
+   * in register as the handle moves; its parent is the clipped div, which is
+   * only `reveal`% wide. That pin used to read `box.current?.clientWidth`
+   * INSIDE the render, and a ref is null on the first paint — so it fell back
+   * to `width: 100%`, meaning 100% of the CLIPPED box, and the before image
+   * was squeezed into half the band. A ref read during render is a value that
+   * does not exist yet; measuring it into state is the only version that is
+   * correct on the first frame, and a ResizeObserver keeps it correct when the
+   * column reflows instead of waiting for an unrelated re-render.
+   */
+  const [bandWidth, setBandWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    setBandWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setBandWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // A pair is usable only if NEITHER photograph failed: half a comparison is
   // worse than none, because the missing half is the one making the argument.
@@ -90,7 +115,15 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     >
       <div
         ref={box}
-        className="relative h-52 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-72"
+        /* THE BAND MATCHES THE PHOTOGRAPHS (owner, 2026-09-15: "cropped too
+           short"). Every proof is normalised to 1600x1200 by
+           scripts/wallpro-proof-normalize.mjs, so a 4:3 band makes object-cover
+           a no-op: nothing is cropped and nothing is stretched. It was a fixed
+           height across a wide column, which is ~2:1 -- a third of each room
+           thrown away, top and bottom. On a phone it stays a fixed strip,
+           because there the band is full-width and 4:3 would push the tool off
+           the first screen, which is the one thing this band must never do. */
+        className="relative h-56 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-72 lg:h-auto lg:aspect-[4/3]"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -117,7 +150,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
             className="absolute inset-y-0 left-0 h-full max-w-none object-cover [object-position:50%_34%]"
-            style={{ width: box.current?.clientWidth ? `${box.current.clientWidth}px` : '100%' }}
+            style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
         </div>
