@@ -284,7 +284,7 @@ function JobTrackerSpine({ order }: { order?: WpwOrder | null }) {
   );
 }
 
-function ShopflowSidebar({ credits, locked, commercialPro }: { credits?: number | null; locked: boolean; commercialPro?: boolean }) {
+function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?: number | null; locked: boolean; commercialPro?: boolean; points?: number | null }) {
   /**
    * Each PRODUCT tab carries a picture of the product (owner, 2026-09-15:
    * "the image of the type of product next to each product tab — so PatternPro
@@ -343,7 +343,7 @@ function ShopflowSidebar({ credits, locked, commercialPro }: { credits?: number 
   const items = [
     { href: "#orders", label: "My ShopFlow order status", icon: Package },
     { href: "#orders", label: "All my orders", icon: Search, account: true },
-    { href: "https://weprintwraps.com/loyalty-reward-page/", label: "Club WPW points", icon: Gift, external: true, account: true },
+    { href: "#rewards", label: "Club WPW points", icon: Gift, account: true, badge: points },
     { href: "https://weprintwraps.com/commercialpro/", label: "CommercialPro", icon: Building2, external: true,
       thumb: "/assets/commercialpro/commercialpro-thumb.webp", star: commercialPro },
     { href: "/wallpro", label: "WallPro", icon: LayoutDashboard, badge: credits,
@@ -621,7 +621,8 @@ export default function ShopFlow() {
         <div className="mx-auto flex max-w-[1440px]">
           {/* One rail, and only for someone who is actually in. At the door
               there is nothing to navigate between. */}
-          {!atTheDoor && <ShopflowSidebar credits={wallPro.data?.remaining ?? null} locked={signedIn !== true} commercialPro={data?.commercialpro === true} />}
+          {!atTheDoor && <ShopflowSidebar credits={wallPro.data?.remaining ?? null} locked={signedIn !== true} commercialPro={data?.commercialpro === true}
+              points={data?.loyalty?.points_balance ?? null} />}
           <div className="min-w-0 flex-1 px-4 pb-16 sm:px-6 lg:px-10">
         {!embedded && <header className="border-b border-gray-200 py-7">
           <div>

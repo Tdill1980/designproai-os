@@ -240,3 +240,8 @@ verify_jwt = false
 
 [functions.wpw-orders-read]
 verify_jwt = false
+
+# The WPLoyalty push. verify_jwt = false because WordPress calls it with an HMAC
+# signature over the raw body, not a Supabase session — the plugin has no user.
+[functions.wpw-loyalty-webhook]
+verify_jwt = false
