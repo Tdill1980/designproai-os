@@ -79,6 +79,8 @@ const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
 const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
+// The before/after band, run by the curator instead of by a release.
+const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
 // took, designer QC and the release gate (owner, 2026-09-12).
 const WallPanelProStudio = lazyWithRetry(() => import("./pages/WallPanelProStudio"));
@@ -427,6 +429,7 @@ const App = () => {
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          <Route path="/admin/wallpro-proofs" element={<RequireAdmin><AdminWallProProofs /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,
               then one design with its version rail. */}
           <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />

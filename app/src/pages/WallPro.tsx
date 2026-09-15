@@ -18,6 +18,7 @@ import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuF
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
+import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -877,6 +878,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     openWallAssets(paths).then(map => { if (active) setZoneArt(map); }).catch(() => { if (active) setZoneArt({}); });
     return () => { active = false; };
   }, [zones, projectId]);
+  /**
+   * THE BAND'S PAIRS — curator rows first, the built-in list as the floor.
+   *
+   * Owner, 2026-09-15: "just create a container and i can place on admin side."
+   * /admin/wallpro-proofs writes those rows, so a before/after no longer needs
+   * a release. The built-in list in wallpro-brand.ts is NOT retired by that: an
+   * empty table, a missing migration or an unreachable database must never
+   * blank the band on the partner's own product page, and a marketing strip is
+   * the worst possible place to surface an outage. So rows win when they exist
+   * and the bundle answers when they do not.
+   */
+  const [curatedProofs, setCuratedProofs] = useState<typeof theme.proofs | null>(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const rows = await listWallProofs(brand);
+      if (!live || !rows.length) return;
+      setCuratedProofs(rows.map(r => ({
+        before: wallProofUrl(r.before_path),
+        after: wallProofUrl(r.after_path),
+        alt: r.alt, headline: r.headline, caption: r.caption,
+      })));
+    })();
+    return () => { live = false; };
+  }, [brand]);
+  const bandProofs = curatedProofs ?? theme.proofs;
+
   useEffect(() => {
     let live = true;
     (async () => {
@@ -1123,7 +1151,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           so the claim and its proof are one object. It clears the moment work
           starts -- a customer with their own wall on screen does not need to be
           told what the tool is. */}
-      {!photo && !artwork && theme.proofs.length > 0 && (
+      {!photo && !artwork && bandProofs.length > 0 && (
         <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
           <div>
             <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-slate-900 md:text-4xl">
@@ -1140,10 +1168,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
             </Link>
           </div>
-          <WallProHeroProof proofs={theme.proofs} />
+          <WallProHeroProof proofs={bandProofs} />
         </section>
       )}
-      {!photo && !artwork && theme.proofs.length === 0 && <WallProHeroProof proofs={theme.proofs} />}
+      {!photo && !artwork && bandProofs.length === 0 && <WallProHeroProof proofs={bandProofs} />}
       {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
           block is the only friction-free money on this page -- no sign-in, no
           token, no design -- and on a wrap printer's site "I already have
