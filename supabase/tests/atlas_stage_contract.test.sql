@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(43);
+select plan(44);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -728,6 +728,15 @@ select is(
     jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
     repeat('7',64),'[]'::jsonb
   ),true,'an A.T.L.A.S. entice pack verifies without a GENIE manifest'
+);
+
+-- 11. THE PRODUCTION RUN NAMES ITS GENERATION (20260915010000). The creator
+-- RPC copies generationId from the source entice run, so a job resolved by
+-- generation id can reach the paid run and everything it manufactured.
+select ok(
+  position($gen$'generationId',v_entice.results->>'generationId'$gen$ in pg_get_functiondef(
+    'public.create_designpro_production_workflow(uuid,text,jsonb)'::regprocedure))>0,
+  'create_designpro_production_workflow seeds results.generationId from the entice run'
 );
 
 select * from finish();
