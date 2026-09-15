@@ -97,6 +97,15 @@ jobs:
           node-version: 22
       - name: Prove the pinned Supabase CLI can execute
         run: npx --yes "supabase@${SUPABASE_CLI_VERSION}" --version
+      # A PULL-THROUGH MIRROR WAS TRIED HERE AND MEASURED NOT TO WORK
+      # (2026-09-15). mirror.gcr.io registered correctly -- `docker info`
+      # reported it -- and `supabase start` was still refused with
+      # `toomanyrequests`, so the mirror does not hold these images. The same
+      # run also proved waiting is not a strategy: it failed at 23:07, sixteen
+      # hours after the first failure at 06:59, with no recovery. Authenticated
+      # pulls are the remaining fix. Do not re-add a mirror expecting a
+      # different answer without new evidence.
+      #
       # THE SHADOW APPLY PULLS ITS POSTGRES/AUTH/STORAGE IMAGES FROM DOCKER HUB,
       # and until 2026-09-15 it pulled them ANONYMOUSLY -- which shares one small
       # quota across every GitHub runner on the same egress IP. On 2026-09-15 that
@@ -110,27 +119,6 @@ jobs:
       # stops a shared quota being the thing that decides whether a release can
       # be verified. `docker login` directly rather than a third-party action:
       # every action here is SHA-pinned, and this needs no new pin to review.
-      # NO-SECRET MITIGATION, TRIED FIRST. Google runs a public pull-through
-      # cache of Docker Hub at mirror.gcr.io: the daemon asks the mirror, the
-      # mirror already holds the layer, and the pull never touches Docker Hub's
-      # anonymous quota at all. It needs no account and no secret, which is what
-      # makes it the right first line -- a release gate that cannot verify a
-      # migration because a shared quota ran out is not a gate.
-      #
-      # It is a mitigation, not a guarantee: the mirror covers public Docker Hub
-      # images, and anything it does not hold still falls through to the origin.
-      # The authenticated path below is the durable fix and takes precedence
-      # whenever credentials exist. Failing to configure the mirror is NOT fatal
-      # -- an unmirrored pull is the status quo, not a regression.
-      - name: Route pulls through a public mirror to dodge the anonymous quota
-        continue-on-error: true
-        run: |
-          sudo mkdir -p /etc/docker
-          echo '{"registry-mirrors":["https://mirror.gcr.io"]}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-          for i in $(seq 1 10); do docker info >/dev/null 2>&1 && break; sleep 2; done
-          docker info 2>/dev/null | sed -n '/Registry Mirrors/,+2p'
-
       - name: Authenticate to Docker Hub when credentials exist
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
