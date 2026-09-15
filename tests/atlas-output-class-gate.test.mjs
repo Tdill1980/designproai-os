@@ -95,7 +95,25 @@ test("the inspector question is a binary class check at temperature 0, never cre
   assert.match(prompt, /automotive MOTIFS drawn as graphics/);
   assert.match(prompt, /grille or headlight graphics, tire-tread or carbon patterns/);
   assert.match(prompt, /printed panel names or captions \(for example HOOD, ROOF, DRIVER, REAR\): that is the layout, not a vehicle/);
-  assert.match(prompt, /A small hole or dark patch inside otherwise continuous artwork \(a wheel arch or window cut out of a full panel\) is NOT this class/);
+  // 2026-09-15 (owner: "look at containers, fill that"): the accepted 911
+  // Turbo master shipped both flanks with a wheel-shaped void because the
+  // inspector had been told a hole inside continuous artwork was fine. It runs
+  // AFTER the deterministic fill now, so a void it still sees is one the fill
+  // missed, and that sheet must not become canonical.
+  // 2026-09-15 (owner: "it failed horribly", "its not dark"): the accepted
+  // Martini 911 master (request 53276ee8) drew the CAR -- body, wheels, studio
+  // floor -- inside the DRIVER and PASSENGER rectangles, on a light surround the
+  // pixel gate cannot see. The motif allowance above had been read as licence
+  // for that. Anatomy decides: wheels, glass, lights, mirrors, bumpers, a body
+  // outline on any surround, labelled or not, livery or not, is a vehicle.
+  assert.match(prompt, /VEHICLE ANATOMY: wheels or tires, wheel arches, windows, windshield or other glass, headlights or taillights, mirrors, bumpers/);
+  assert.match(prompt, /whatever the surround \(white, grey, black, a studio floor or any colour\), whether or not it is labelled, and even when it carries the livery/);
+  assert.match(prompt, /a race car drawn in the DRIVER rectangle is a vehicle, not a panel/);
+  assert.match(prompt, /ONLY on a field of artwork that fills the rectangle edge to edge with no vehicle anatomy visible/);
+  assert.match(prompt, /If ANY rectangle shows anatomy, answer vehicle_depiction/);
+  assert.match(prompt, /a dark or empty OPENING where a wheel, wheel arch, window, windshield or grille would sit/);
+  assert.match(prompt, /Printed vinyl has no openings; the installer cuts them/);
+  assert.doesNotMatch(prompt, /is NOT this class; classify by the artwork around it/);
   assert.match(prompt, /flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge/);
   assert.doesNotMatch(prompt, /wheel-arch cut-outs or discs, bumper, grille, headlight, door or window shapes/);
   const source = readFileSync(new URL("../runtime/atlas-output-class.cjs", import.meta.url), "utf8");

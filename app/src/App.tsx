@@ -77,6 +77,10 @@ const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
+// PatternPro worn by a partner: the WePrintWraps pattern-wrap page (owner,
+// 2026-09-15: "all these need to be in os.designpro repo"). Same tool as the
+// DesignPro route, different words in the header — see lib/patternpro-brand.ts.
+const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
 // photo → mockup → cut graphics proof / CutContour PDF / production files).
@@ -247,6 +251,8 @@ const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   // chrome stacked on top of it either.
   pathname === "/wall-wrap/how-it-works" ||
   pathname === "/wallwrap-design" ||
+  // PatternPro's partner page carries the same WePrintWraps header.
+  pathname === "/pattern-wrap" ||
   (pathname === "/" && isWallProPartnerHost(hostname));
 
 const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
@@ -435,6 +441,12 @@ const App = () => {
               diagrams are computed by the tool's own libraries, so it cannot
               drift from the product the way a page of screenshots would. */}
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
+          {/* PATTERNPRO, the same way: one component, worn by a brand. /pattern-wrap
+              is the WePrintWraps page (white, blue gradient, WPW mark in the
+              lockup, a render on the right); /printpro/patternpro is the same
+              tool under the DesignProAI name. Owner, 2026-09-15. */}
+          <Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />
+          <Route path="/printpro/patternpro" element={<PatternWrap />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

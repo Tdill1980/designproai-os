@@ -1,0 +1,128 @@
+/*
+ * PatternWrap — PatternPro worn by a partner (WePrintWraps first).
+ *
+ * White surface, dark text, BLUE gradient accent (owner 2026-09-15: "white and
+ * gradient blue version for WPW"). Tokens are the CommercialPro page's:
+ * #2f7ff7 / #174a91 blues, #5ea3ff highlight — the same two stops as
+ * PATTERN_BLUE_GRADIENT in lib/patternpro-brand.ts.
+ *
+ * `.wpw-white` is a SKIN over the shared PatternPro tool (WBTYToolUI), which is
+ * authored for the dark suite. One tool, two surfaces — the skin re-colours its
+ * dark utility classes so the DesignPro route and /pattern-wrap can never drift
+ * in behaviour, only in dress. Nothing here changes layout.
+ */
+
+.wpw-blue-text {
+  background-image: linear-gradient(90deg, #2f7ff7, #174a91);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.wpw-blue-bar {
+  background-image: linear-gradient(90deg, #5ea3ff, #2f7ff7 40%, #174a91);
+}
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+.wpw-white { color: #111827; }
+
+.wpw-white .bg-zinc-900,
+.wpw-white .bg-zinc-800,
+.wpw-white .bg-zinc-700,
+.wpw-white .bg-black,
+.wpw-white .bg-card,
+.wpw-white .bg-background,
+.wpw-white .bg-popover {
+  background-color: #ffffff !important;
+}
+
+.wpw-white .bg-primary\/10 { background-color: #f2f7fd !important; }
+.wpw-white .bg-primary\/20 { background-color: #e6f0fb !important; }
+
+.wpw-white .bg-muted,
+.wpw-white .bg-zinc-100,
+.wpw-white .bg-secondary {
+  background-color: #f3f4f6 !important;
+}
+
+/* ── Hairlines ────────────────────────────────────────────────────────── */
+.wpw-white .border-zinc-600,
+.wpw-white .border-zinc-500,
+.wpw-white .border-zinc-400,
+.wpw-white .border-zinc-200,
+.wpw-white .border-border,
+.wpw-white .border-input {
+  border-color: #e5e7eb !important;
+}
+
+.wpw-white .border-primary\/20,
+.wpw-white .border-primary\/30 {
+  border-color: #cddcf0 !important;
+}
+
+/* ── Text ─────────────────────────────────────────────────────────────── */
+.wpw-white .text-white,
+.wpw-white .text-foreground,
+.wpw-white .text-card-foreground {
+  color: #111827 !important;
+}
+
+.wpw-white .text-muted-foreground,
+.wpw-white .text-zinc-500,
+.wpw-white .text-zinc-600,
+.wpw-white .text-white\/70,
+.wpw-white .text-white\/80 {
+  color: #4b5563 !important;
+}
+
+/* ── Controls ─────────────────────────────────────────────────────────── */
+.wpw-white input,
+.wpw-white select,
+.wpw-white textarea {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+
+.wpw-white input::placeholder,
+.wpw-white textarea::placeholder { color: #9ca3af; }
+
+.wpw-white [role="tablist"] { background-color: #f2f7fd !important; }
+.wpw-white [role="tab"] { color: #4b5563; }
+.wpw-white [role="tab"][data-state="active"] {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+.wpw-white .hover\:bg-accent:hover,
+.wpw-white .hover\:bg-muted\/50:hover {
+  background-color: #f2f7fd !important;
+  color: #111827 !important;
+}
+
+/* Brand gradient → blue. Filled gradients keep white text; clipped-text
+   gradients (wordmarks) just take the blue ramp. */
+.wpw-white .bg-gradient-to-r:not(.bg-clip-text),
+.wpw-white .bg-gradient-to-br:not(.bg-clip-text) {
+  background-image: linear-gradient(90deg, #2f7ff7, #174a91) !important;
+  color: #ffffff !important;
+}
+
+.wpw-white .bg-gradient-to-r:not(.bg-clip-text) .text-white,
+.wpw-white .bg-gradient-to-r:not(.bg-clip-text) span {
+  color: #ffffff !important;
+}
+
+.wpw-white .bg-clip-text {
+  background-image: linear-gradient(90deg, #2f7ff7, #174a91) !important;
+}
+
+.wpw-white .text-purple-300,
+.wpw-white .text-purple-400,
+.wpw-white .text-cyan-400,
+.wpw-white .text-blue-400 {
+  color: #2167ce !important;
+}
+
+.wpw-white .border-purple-500\/30 { border-color: #cddcf0 !important; }
+.wpw-white .bg-purple-500\/10 { background-color: #f2f7fd !important; }

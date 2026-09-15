@@ -6,8 +6,8 @@ import { briefForEntry } from '../wallpro-catalog';
 const owner = '11111111-1111-4111-8111-111111111111';
 const DESIGN_ID = /^WPB-[0-9A-Z][0-9A-Z-]{3,19}$/;
 const good = [
-  { name: 'Indigo Fern', subcategory: 'bedroom', prompt: 'Hand-cut block print of fern fronds in one deep indigo on an unbleached linen ground, tossed half-drop repeat with fronds about ten inches tall, calm and hand-made, bedroom wallpaper', tags: ['fern', 'indigo', 'block print'], mode: 'repeat', rendering: 'flat-bold' },
-  { name: 'Hummingbird Toile', subcategory: 'guest room', prompt: 'Toile of hummingbirds at honeysuckle in engraved hatched line, one sepia ink on warm cream, scattered straight repeat with each bird about five inches, quiet and classic', tags: ['toile', 'birds'], mode: 'repeat', rendering: 'fine-line' },
+  { name: 'Indigo Fern', subcategory: 'bedroom', style: 'Organic Modern', prompt: 'Hand-cut block print of fern fronds in one deep indigo on an unbleached linen ground, tossed half-drop repeat with fronds about ten inches tall, calm and hand-made, bedroom wallpaper', tags: ['fern', 'indigo', 'block print'], mode: 'repeat', rendering: 'flat-bold' },
+  { name: 'Hummingbird Toile', subcategory: 'guest room', style: 'Grandmillennial', prompt: 'Toile of hummingbirds at honeysuckle in engraved hatched line, one sepia ink on warm cream, scattered straight repeat with each bird about five inches, quiet and classic', tags: ['toile', 'birds'], mode: 'repeat', rendering: 'fine-line' },
   { name: 'Spec Sheet', subcategory: 'bedroom', prompt: 'Generate a 4K master with 150 PPI panels and a 1-inch overlap, stunning botanical wallpaper for a bedroom with a seamless tile', tags: [], mode: 'repeat', rendering: 'flat-bold' },
   { name: 'Too short', subcategory: 'bedroom', prompt: 'Blue flowers.', tags: [], mode: 'repeat', rendering: 'flat-bold' },
   { name: 'Marketing', subcategory: 'bedroom', prompt: 'A breathtaking mural of mountains at dawn in soft blues and rose, one continuous scene across the wall with the eye resting on the far peak', tags: [], mode: 'mural', rendering: 'painted-mural' },
@@ -53,6 +53,12 @@ describe('WallPro batch brief writer (RestylePro generate-batch-prompts, wall ed
     expect(p).toMatch(/different subject, a different ground colour, a different technique/);
     expect(p).toMatch(/nursery, kids' room, living room/);
     expect(p).toMatch(/Rotate the rendering families/);
+    // Marketplace signals as taxonomy input (owner, 2026-09-14): styles and palette families rotate across the set; the style never replaces the subject.
+    expect(p).toMatch(/Rotate the set across current interior styles — Boho, Contemporary Boho, Organic Modern, Japandi, Scandinavian, Soft Minimalism, Quiet Luxury/);
+    expect(p).toMatch(/Vintage Botanical/); expect(p).toMatch(/Wabi-Sabi/); expect(p).toMatch(/Nursery Editorial/);
+    expect(p).toMatch(/warm beige, taupe and ivory; sage, olive and deep green; terracotta, blush and earth tones/);
+    expect(p).toMatch(/it never replaces the subject/);
+    expect(p).toMatch(/"style": "the interior style named in the brief, or the business type"/);
     expect(p).toMatch(/Return ONLY a JSON array/);
     expect(p.length).toBeLessThan(4000);
   });
@@ -63,6 +69,10 @@ describe('WallPro batch brief writer (RestylePro generate-batch-prompts, wall ed
     expect(p).toMatch(/Every brief is a repeating wallpaper pattern/);
     const c = briefWriterPrompt(parseBriefRequest({ domain: 'commercial', count: 6 }));
     expect(c).toMatch(/working commercial interior designer specifies a feature wall/);
+    expect(c).toMatch(/Rotate the set across commercial disciplines — restaurant or bar dining room; corporate reception or culture wall; apartment leasing office or clubhouse; church or worship lobby/);
+    expect(c).toMatch(/environmental-graphics studio briefing a client: room-scale hierarchy, one focal point/);
+    expect(c).not.toMatch(/Rotate the set across current interior styles/);
+    expect(c.length).toBeLessThan(4000);
     expect(c).toMatch(/restaurant, cafe, bar, retail store, salon, spa/);
   });
   it('keeps only usable briefs: drops spec-sheet, too-short and marketing prose, stamps catalog-legal DesignIDs, caps at the count', () => {
@@ -71,7 +81,9 @@ describe('WallPro batch brief writer (RestylePro generate-batch-prompts, wall ed
     expect(out.map(b => b.name)).toEqual(['Indigo Fern', 'Hummingbird Toile', 'Walnut Herringbone']);
     for (const b of out) { expect(b.id).toMatch(DESIGN_ID); expect(b.domain).toBe('residential'); }
     expect(new Set(out.map(b => b.id)).size).toBe(3);
-    expect(out[0]).toMatchObject({ mode: 'repeat', rendering: 'flat-bold', subcategory: 'bedroom', tags: ['fern', 'indigo', 'block print'] });
+    expect(out[0]).toMatchObject({ mode: 'repeat', rendering: 'flat-bold', subcategory: 'bedroom', style: 'Organic Modern', tags: ['fern', 'indigo', 'block print'] });
+    // A brief the writer left unstyled falls back to its rendering family, so the diversity readout always has a word.
+    expect(out[2].style).toBe('faux-material');
     expect(normalizeGeneratedBriefs(good, { ...req, count: 2 })).toHaveLength(2);
     // A scoped request overrides whatever the writer said about mode/rendering.
     const scoped = normalizeGeneratedBriefs(good, { ...req, mode: 'mural', rendering: 'painted-mural' });
@@ -82,6 +94,7 @@ describe('WallPro batch brief writer (RestylePro generate-batch-prompts, wall ed
     const [b] = normalizeGeneratedBriefs(good, parseBriefRequest({ domain: 'residential', count: 1 }));
     const entry = generatedBriefAsEntry(b);
     expect(briefForEntry(entry)).toBe(b.prompt);
+    expect(entry.style).toBe('Organic Modern');
     expect(entry.id).toMatch(DESIGN_ID);
   });
   it('the handler requires a signed-in curator, calls the pinned flash model with JSON output, and returns the normalized briefs', async () => {
