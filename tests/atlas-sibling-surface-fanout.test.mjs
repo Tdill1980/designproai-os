@@ -222,7 +222,8 @@ test("8: Passenger review stays visible while own-panel lineage forbids a Driver
   // (deterministicMirror, passengerProducer, driverContentHash) are still
   // absent from every view this path writes.
   assert.match(atlasSource, /mirrorPassengerFromDriver/);
-  assert.match(atlasSource, /if \(!brandBands\.length\) return decline\("brand_bands_not_located"\)/);
+  assert.match(atlasSource, /declineOrMirror\("brand_bands_not_located"\)/);
+  assert.match(atlasSource, /lettersDeclared \? decline\(reason\) : null/);
   assert.doesNotMatch(atlasSource, /deterministicMirror|passengerProducer|driverContentHash/);
 });
 

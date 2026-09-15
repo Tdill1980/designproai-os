@@ -2657,22 +2657,35 @@ async function composePassengerFromDriver({
     return decline("flank_zones_not_twins");
   }
 
-  // Does this design carry lettering that MUST read forward? The brief's own
-  // structured strings answer it without looking at a pixel: a wrap with no
-  // company name, phone or website has no orientation-sensitive text to
-  // protect, so a bare mirror is safe and the band read is not required.
+  // EVERY DESIGN MAY CARRY LETTERING. (Owner 2026-09-15: "passenger is not
+  // flipped yet text reversed" on the Martini 911, request 3b023efb.)
+  //
+  // This used to read bands only when the brief carried a company name, phone
+  // or website, on the theory that a wrap without them has no orientation-
+  // sensitive text. A race livery has "21", "Porsche" and sponsor marks with
+  // none of those fields, so the flank was mirrored blind and the proof rendered
+  // the reversed lettering faithfully. The band read is a measurement of the
+  // driver pixels, so it runs for every design; the structured strings only
+  // decide how a failed read is handled.
   const brandStrings = [
     String(input?.companyName || input?.businessName || "").trim(),
     String(input?.phone || "").trim(),
     String(input?.website || "").trim(),
   ].filter(Boolean);
-  const lettersMatter = brandStrings.length > 0;
+  const lettersDeclared = brandStrings.length > 0;
+  // Fail towards today: a declared brand string that cannot be located keeps
+  // the authored flank (a reversed company name is the one outcome the owner
+  // ruled out); a brief-only design whose read is unavailable or finds nothing
+  // still mirrors, which is what every such run shipped before this change.
+  const declineOrMirror = (reason) => (lettersDeclared ? decline(reason) : null);
 
   let brandBands = [];
-  if (lettersMatter) {
-    if (!provider || typeof provider.generateRaw !== "function" || !Buffer.isBuffer(guideBytes)) {
-      return decline("brand_band_reader_unavailable");
-    }
+  let letteringRead = "located";
+  if (!provider || typeof provider.generateRaw !== "function" || !Buffer.isBuffer(guideBytes)) {
+    const declined = declineOrMirror("brand_band_reader_unavailable");
+    if (declined) return declined;
+    letteringRead = "reader_unavailable";
+  } else {
     let review = null;
     try {
       const readBands = createAtlasMasterValidator({ provider });
@@ -2682,13 +2695,21 @@ async function composePassengerFromDriver({
       // itself failed. An unavailable measurement is a reason to keep the
       // authored flank, never a reason to fail the run.
       logger(`passenger mirror: brand band read failed (${String(cause?.message || cause).slice(0, 160)})`);
-      return decline("brand_band_read_failed");
+      const declined = declineOrMirror("brand_band_read_failed");
+      if (declined) return declined;
+      letteringRead = "read_failed";
     }
-    brandBands = Array.isArray(review?.brandBands) ? review.brandBands : [];
-    // ZERO BANDS ON A DESIGN WITH LETTERING IS THE DANGEROUS CASE, and it is
-    // indistinguishable from "the reader could not see them". Mirroring here is
-    // what puts a reversed company name on a customer's vehicle.
-    if (!brandBands.length) return decline("brand_bands_not_located");
+    if (letteringRead === "located") {
+      brandBands = Array.isArray(review?.brandBands) ? review.brandBands : [];
+      // ZERO BANDS ON A DESIGN WITH DECLARED LETTERING IS THE DANGEROUS CASE, and
+      // it is indistinguishable from "the reader could not see them". Mirroring
+      // there is what puts a reversed company name on a customer's vehicle.
+      if (!brandBands.length) {
+        const declined = declineOrMirror("brand_bands_not_located");
+        if (declined) return declined;
+        letteringRead = "none_located";
+      }
+    }
   }
 
   try {
@@ -2698,6 +2719,7 @@ async function composePassengerFromDriver({
       bytes: mirrored.bytes,
       bandsApplied: Number(mirrored.bandsApplied || 0),
       brandStringCount: brandStrings.length,
+      letteringRead,
       reason: null,
     };
   } catch (cause) {
