@@ -170,7 +170,7 @@ function ShopflowOrderCard({ order, guest }: { order: WpwOrder; guest?: boolean 
               bought back in PatternPro. */}
           {order.source === "patternpro" && (
             <Link
-              to="/wbty"
+              to="/pattern-wrap"
               className="ml-auto inline-flex items-center rounded-xl border border-[#2a2a2a] px-3 py-1.5 text-xs font-bold text-white/70 transition-colors hover:border-[#D946EF]/40 hover:text-[#D946EF]"
             >
               <Repeat2 className="h-3.5 w-3.5 mr-1" /> Order more yards

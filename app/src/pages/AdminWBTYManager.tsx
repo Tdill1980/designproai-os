@@ -10,15 +10,11 @@ import { ChevronDown, Upload, Trash2, ArrowLeft, FileArchive, RefreshCw, Wand2 }
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { AdminSmartUploader } from "@/components/admin/AdminSmartUploader";
-import { STATIC_PATTERNS } from "@/data/patternpro-patterns";
+import { STATIC_PATTERNS, WPW_CATEGORIES } from "@/data/patternpro-patterns";
 
-const CATEGORIES = [
-  "Metal & Marble",
-  "Wicked & Wild",
-  "Camo & Carbon",
-  "Bape Camo",
-  "Modern & Trippy"
-];
+// The five WePrintWraps Wrap-By-The-Yard products. One source, shared with
+// the picker and the cart link, so a category here always has a product id.
+const CATEGORIES: string[] = [...WPW_CATEGORIES];
 
 const AdminWBTYManager = () => {
   const navigate = useNavigate();
