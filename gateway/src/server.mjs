@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { publicGenerationProgress } from "./generation-progress.mjs";
+import { generationIdOf, mergedStages, requestedProductionRun, requestedRun as requestedEnticeRun, sourceEnticeRunOf } from "./run-identity.mjs";
 
 const BUCKET = "wrap-files";
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
@@ -215,8 +216,8 @@ function assertSameOrigin(req, cfg) {
   if (!allowed.includes(origin)) throw Object.assign(new Error("origin_rejected"), { status: 403 });
 }
 
-function generationId(run) {
-  return String(run?.results?.generationId || run?.results?.generation_id || run?.input?.generationId || run?.input?.generation_id || run.id);
+function generationId(run, runs = []) {
+  return generationIdOf(run, runs);
 }
 
 function canonicalDesignId(value) {
@@ -599,7 +600,21 @@ async function businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrder
 }
 
 function requestedRun(runs, requestedGenerationId) {
-  return runs.find((run) => generationId(run) === requestedGenerationId || run.id === requestedGenerationId) || null;
+  return requestedEnticeRun(runs, requestedGenerationId);
+}
+
+/**
+ * The job page's state: a production run's own stages behind its source entice
+ * run's, so one status carries the whole chain from revision.freeze to
+ * wrapbox.deliver. A production run whose source cannot be found still answers
+ * with its own stages rather than failing the page.
+ */
+async function fullRunState(fetchImpl, token, cfg, run, runs) {
+  const own = await runState(fetchImpl, token, cfg, run);
+  const source = sourceEnticeRunOf(run, runs);
+  if (!source) return own;
+  const entice = await runState(fetchImpl, token, cfg, source);
+  return { run, stages: mergedStages(entice.stages, own.stages) };
 }
 
 function verifiedSourceEnticeRun(run, runs) {
@@ -3001,6 +3016,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const runs = await listRuns(fetchImpl, token, cfg);
         const states = await Promise.all(runs.map(async (run) => ({
           ...publicState(await runState(fetchImpl, token, cfg, run)),
+          generationId: generationIdOf(run, runs),
           ...await businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrderNumber: false }),
         })));
         return json(res, 200, states);
@@ -3399,9 +3415,13 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           let verifiedLineage = { atlasMasterHash: null, artifactId: null };
           if (approved) {
             const runs = await listRuns(fetchImpl, token, cfg);
-            const run = requestedRun(runs, generationIdValue);
+            const run = requestedProductionRun(runs, generationIdValue);
             if (!run) return json(res, 409, { error: "surface_qc_run_not_found" });
-            const rows = await artifactsForRun(fetchImpl, token, cfg, run.id);
+            // The Call 9 panel and any correction live on the entice run; the
+            // production run only adds to them. Read both halves.
+            const sourceRun = sourceEnticeRunOf(run, runs);
+            const rows = (await Promise.all((sourceRun ? [sourceRun, run] : [run])
+              .map((artifactRun) => artifactsForRun(fetchImpl, token, cfg, artifactRun.id)))).flat();
             const forSurface = rows.filter((row) => String(row.surface_key || "") === surfaceKey);
             const active = forSurface
               .filter((row) => row.artifact_kind === "corrected-panel")
@@ -3535,7 +3555,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       if (req.method === "GET" && artifactMatch) {
         const requestedArtifactId = decodeURIComponent(artifactMatch[1]);
         const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, requestedArtifactId);
+        const run = requestedProductionRun(runs, requestedArtifactId);
         if (!run) {
           // Manufacturing has not started, so there are no artifacts. For a
           // generation that exists this is an empty list, not a missing job --
@@ -3573,7 +3593,8 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       const match = url.pathname.match(/^\/api\/jobs\/([^/]+)(?:\/(resume|approvals\/(preflight|final)))?$/);
       if (match) {
         const requestedId = decodeURIComponent(match[1]);
-        const run = await resolveRun(fetchImpl, token, cfg, requestedId);
+        const runs = await listRuns(fetchImpl, token, cfg);
+        const run = requestedProductionRun(runs, requestedId);
         if (!run) {
           // No run yet: the design is still in Calls 1-7. Answer from the
           // generation request, which has existed since Create Design, so the
@@ -3588,7 +3609,8 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         }
         const production = run.workflow_type === "designpro.production_pack";
         if (req.method === "GET" && !match[2]) return json(res, 200, {
-          ...publicState(await runState(fetchImpl, token, cfg, run)),
+          ...publicState(await fullRunState(fetchImpl, token, cfg, run, runs)),
+          generationId: generationIdOf(run, runs),
           ...await businessIdentityForRun(fetchImpl, token, cfg, run, { requireOrderNumber: false }),
         });
         if (req.method === "POST" && match[2] === "resume") return json(res, 202, await rpc(fetchImpl, token, cfg, "resume_designpro_workflow", { p_run_id: run.id, p_actor: user.id, p_retry_failed: true }));
