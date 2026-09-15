@@ -81,6 +81,11 @@ const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"
 // 2026-09-15: "all these need to be in os.designpro repo"). Same tool as the
 // DesignPro route, different words in the header — see lib/patternpro-brand.ts.
 const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));
+// PatternPro's paid path (phase 2): Stripe sends the buyer back here, and the
+// design team runs the library and the order board from the two admin pages.
+const WBTYOrderSuccess = lazyWithRetry(() => import("./pages/WBTYOrderSuccess"));
+const AdminWBTYManager = lazyWithRetry(() => import("./pages/AdminWBTYManager"));
+const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
 // photo → mockup → cut graphics proof / CutContour PDF / production files).
@@ -447,8 +452,16 @@ const App = () => {
               tool under the DesignProAI name. Owner, 2026-09-15. */}
           <Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />
           <Route path="/printpro/patternpro" element={<PatternWrap />} />
+          {/* /wbty is PatternPro's old address (the suite's sidebar still says
+              it); the tool lives at /printpro/patternpro here. The order-success
+              page keeps the /wbty path because create-wbty-checkout's Stripe
+              success_url names it. */}
+          <Route path="/wbty" element={<Navigate to="/printpro/patternpro" replace />} />
+          <Route path="/wbty/order-success" element={<WBTYOrderSuccess />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          <Route path="/admin/wbty-manager" element={<RequireAdmin><AdminWBTYManager /></RequireAdmin>} />
+          <Route path="/admin/wbty-orders" element={<RequireAdmin><AdminWBTYOrders /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,
               then one design with its version rail. */}
           <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />

@@ -166,6 +166,14 @@ export default function WBTYOrderSuccess() {
             </div>
           </div>
 
+          {/* ShopFlow is the one tracker. The reference + email pre-fill its
+              guest door; the email still has to match the order. */}
+          <Button asChild className="mt-6 w-full bg-gradient-to-r from-[#3B82F6] to-[#D946EF] text-white hover:opacity-90">
+            <Link to={`/shopflow?job=PP-${orderRefShort}&email=${encodeURIComponent(order.customer_email || "")}`}>
+              <Truck className="w-4 h-4 mr-2" /> Track this order in ShopFlow
+            </Link>
+          </Button>
+
           {order.render_url && (
             <div className="mt-6">
               <p className="text-xs text-zinc-600 mb-2">Your design</p>

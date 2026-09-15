@@ -254,3 +254,15 @@ verify_jwt = false
 
 [functions.calculate-film-yards]
 verify_jwt = false
+
+# PatternPro paid path (phase 2, 2026-09-15). The checkout takes a guest
+# customer; the webhook is called by Stripe with its own signature; the email
+# sender is called by the webhook with the service role.
+[functions.create-wbty-checkout]
+verify_jwt = false
+
+[functions.wbty-stripe-webhook]
+verify_jwt = false
+
+[functions.send-wbty-order-email]
+verify_jwt = false

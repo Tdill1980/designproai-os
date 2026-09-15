@@ -363,6 +363,24 @@ export const AppTopBar = ({ onOpenSidebar }: AppTopBarProps) => {
                 asChild
                 className="text-white/80 focus:text-white focus:bg-white/10 cursor-pointer"
               >
+                <Link to="/admin/wbty-manager">
+                  <Box className="w-4 h-4 mr-2" />
+                  PatternPro Manager
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                asChild
+                className="text-white/80 focus:text-white focus:bg-white/10 cursor-pointer"
+              >
+                <Link to="/admin/wbty-orders">
+                  <Box className="w-4 h-4 mr-2" />
+                  PatternPro Orders
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                asChild
+                className="text-white/80 focus:text-white focus:bg-white/10 cursor-pointer"
+              >
               </DropdownMenuItem>
               <DropdownMenuItem
                 asChild
