@@ -113,6 +113,7 @@ gateway/package.json
 gateway/package-lock.json
 gateway/src/server.mjs
 gateway/src/generation-progress.mjs
+gateway/src/run-identity.mjs
 # Native Gemini transports shared by the runtime template service and Edge.
 # Preserve their repository-relative paths in both the archive and image.
 supabase/functions/_shared/gemini-image-interactions.mjs

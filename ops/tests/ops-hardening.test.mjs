@@ -55,6 +55,7 @@ test("one canonical policy includes every required runtime file and five deploy 
     "runtime/atlas-finishing-checkpoint.cjs",
     "runtime/atlas-finished-master.cjs",
     "gateway/src/generation-progress.mjs",
+    "gateway/src/run-identity.mjs",
     "supabase/functions/_shared/gemini-image-interactions.mjs",
     "supabase/functions/_shared/gemini-provider-cache.mjs",
     "supabase/functions/_shared/gemini-image-history.mjs",
