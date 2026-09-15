@@ -164,6 +164,32 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // the specificity is the whole reason a before/after persuades.
     proofs: [
       {
+        // THE GYM FLOOR — owner-directed, 2026-09-15: "you must use this
+        // before and after."
+        //
+        // PRE-WIRED AHEAD OF ITS FILES, deliberately, and this is the one
+        // entry in this table that is. The photographs exist but have not been
+        // reachable as files in any working session; wiring the entry now means
+        // dropping the two JPGs at these exact paths puts the pair in rotation
+        // with NO code change and no wait for a developer.
+        //
+        // It costs nothing while the files are absent: WallProHeroProof drops
+        // any pair whose halves fail to load, so the band simply shows the
+        // rooms it does have. The only price is two 404s per visitor, which is
+        // why the files should land before the next deploy rather than after.
+        //
+        // Run them through scripts/wallpro-proof-normalize.mjs first — the two
+        // frames arrived at different sizes, and the band needs one canvas or
+        // the room slides under the wipe:
+        //   node scripts/wallpro-proof-normalize.mjs \
+        //     --before <bare gym> --after <wrapped gym> --slug gym --bias bottom
+        before: '/wallpro/proof-gym-before.jpg',
+        after: '/wallpro/proof-gym-after.jpg',
+        alt: 'A gym training floor photographed with a plain grey wall behind the squat racks, and again with a full-wall athletic mural covering it',
+        headline: 'A training floor, transformed.',
+        caption: 'A gym wall in a full-height athletic mural, printed and installed. Drag to compare.',
+      },
+      {
         before: '/wallpro/proof-spa-before.jpg',
         after: '/wallpro/proof-spa-after.jpg',
         alt: 'A home studio photographed with plain cream walls either side of the window, and again with a dark tropical anthurium mural covering both',
@@ -188,10 +214,8 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
         headline: 'Same wall. Different room.',
         caption: 'The same studio in a warm timber slat — designed in WallPro, printed here. Drag to compare.',
       },
-      // PENDING: the gym floor and the hotel lobby feature wall. Both were
-      // described but their files are not in the repository, and an entry
-      // pointing at a file that does not exist costs every visitor two failed
-      // requests. Add the block back with its photographs, not before.
+      // PENDING: the hotel lobby feature wall. Described but its files are not
+      // in the repository either. Add the block with its photographs.
     ],
   },
 };

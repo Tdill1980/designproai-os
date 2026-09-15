@@ -115,15 +115,19 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     >
       <div
         ref={box}
-        /* THE BAND MATCHES THE PHOTOGRAPHS (owner, 2026-09-15: "cropped too
-           short"). Every proof is normalised to 1600x1200 by
-           scripts/wallpro-proof-normalize.mjs, so a 4:3 band makes object-cover
-           a no-op: nothing is cropped and nothing is stretched. It was a fixed
-           height across a wide column, which is ~2:1 -- a third of each room
-           thrown away, top and bottom. On a phone it stays a fixed strip,
-           because there the band is full-width and 4:3 would push the tool off
-           the first screen, which is the one thing this band must never do. */
-        className="relative h-56 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-72 lg:h-auto lg:aspect-[4/3]"
+        /* NOTHING IS CROPPED (owner, 2026-09-15: "cropped too short", then
+           "dont crop it"). The images are `contain`, not `cover`, so every
+           frame is shown WHOLE whatever its shape -- a wide install shot and a
+           4:3 room both fit, and neither loses its edges to a crop the band
+           chose. The ground is dark so the letterbox reads as a frame rather
+           than as a loading bug, and the band keeps a 4:3 box so a portrait
+           frame cannot make the strip absurdly tall.
+
+           This is the deliberate trade: `cover` fills the box and eats the
+           edges; `contain` keeps the photograph intact and pads instead. For a
+           before/after the photograph is the argument, so it wins. Both halves
+           use the same box and the same fit, so they stay in register. */
+        className="relative h-56 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-900 sm:h-72 lg:h-auto lg:aspect-[4/3]"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -137,7 +141,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
           src={current.after}
           alt={current.alt}
           onError={() => fail(current.after)}
-          className="absolute inset-0 h-full w-full object-cover [object-position:50%_34%]"
+          className="absolute inset-0 h-full w-full object-contain"
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -149,7 +153,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className="absolute inset-y-0 left-0 h-full max-w-none object-cover [object-position:50%_34%]"
+            className="absolute inset-y-0 left-0 h-full max-w-none object-contain"
             style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
