@@ -27,6 +27,28 @@ const { PGlite } = createRequire(ROOT + 'runtime/package.json')('@electric-sql/p
 const ORIGINAL = 'supabase/migrations/20260910070849_wallpro_private_projects.sql';
 const PATCH = 'supabase/migrations/20260914230000_wallpro_try_free_and_commercialpro.sql';
 
+/**
+ * THE CHECK COMES OUT OF THE REAL MIGRATION, NOT OUT OF THIS FILE.
+ *
+ * This fixture used to declare `charge_source text` with no constraint, and
+ * that is exactly why nine green tests still shipped a migration that failed
+ * on the first row it wrote: the function learned to emit 'commercialpro' and
+ * 'trial' while the real table's CHECK still admitted only three values. A
+ * hand-simplified fixture can prove a function's LOGIC and can never prove its
+ * compatibility with the schema it writes into — it will agree with whatever
+ * the function does, because the fixture was written from the function.
+ *
+ * So the constraint is READ from the migration that creates the table. If that
+ * file's CHECK changes and this migration stops matching it, the parse or the
+ * insert fails here rather than in production.
+ */
+function realChargeSourceCheck() {
+  const sql = readFileSync(ROOT + ORIGINAL, 'utf8');
+  const line = sql.match(/^\s*charge_source\s+text\s+(CHECK \(charge_source IN \([^)]*\)\)),?\s*$/m);
+  if (!line) throw new Error(`Could not find the charge_source CHECK in ${ORIGINAL}. If the column moved, point this at it — do not drop the constraint from the fixture.`);
+  return line[1];
+}
+
 /** The prerequisites the reservation touches, and nothing else. */
 const PREREQS = `
   CREATE SCHEMA IF NOT EXISTS auth;
@@ -36,7 +58,8 @@ const PREREQS = `
     status text, tier text, render_count int, created_at timestamptz DEFAULT now());
   CREATE TABLE public.user_tokens(user_id uuid PRIMARY KEY, balance int, total_used int, updated_at timestamptz);
   CREATE TABLE public.wallpro_generations(id uuid PRIMARY KEY, owner_id uuid, input_hash text, input jsonb,
-    charge_source text, subscription_id uuid, state text DEFAULT 'working', artwork_path text,
+    charge_source text CONSTRAINT wallpro_generations_charge_source_check ${realChargeSourceCheck()},
+    subscription_id uuid, state text DEFAULT 'working', artwork_path text,
     design_name text, error text, created_at timestamptz DEFAULT now(), completed_at timestamptz);
 `;
 

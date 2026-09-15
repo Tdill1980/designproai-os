@@ -71,6 +71,33 @@ CREATE POLICY commercialpro_members_read_own ON public.commercialpro_members
 REVOKE ALL ON TABLE public.commercialpro_members FROM PUBLIC, anon;
 GRANT SELECT ON TABLE public.commercialpro_members TO authenticated;
 
+-- ── WIDEN THE CHECK BEFORE THE FUNCTION CAN WRITE THE NEW VALUES ───────────
+--
+-- Caught by the release gate, not by me: wallpro_private_projects created
+--
+--   charge_source text CHECK (charge_source IN ('privileged','subscription','tokens'))
+--
+-- and the patch below teaches the function to write 'commercialpro' and
+-- 'trial'. Without this, EVERY first-time owner hits 23514 on their very first
+-- generation, because 'trial' is precisely the branch for "no non-failed
+-- generation yet". That is worse than the feature not working -- it is a hard
+-- failure on the busiest path in the product.
+--
+-- It runs BEFORE the patch on purpose: the constraint must already admit the
+-- values the function is about to start producing, or a deploy that lands
+-- half-applied is broken in exactly that window.
+--
+-- Widening a CHECK re-validates the existing rows. Every value already stored
+-- is one of the original three (or NULL), and all four remain legal, so this
+-- cannot reject live data. The constraint is dropped by name and re-added under
+-- the SAME name, so the table keeps one constraint rather than accumulating a
+-- second, and re-running the migration is a no-op.
+ALTER TABLE public.wallpro_generations
+  DROP CONSTRAINT IF EXISTS wallpro_generations_charge_source_check;
+ALTER TABLE public.wallpro_generations
+  ADD CONSTRAINT wallpro_generations_charge_source_check
+  CHECK (charge_source IN ('privileged','subscription','tokens','commercialpro','trial'));
+
 -- ── Patch the LIVE body of reserve_wallpro_generation ──────────────────────
 DO $patch$
 DECLARE src text; patched text; anchor text; addition text; hits integer;
