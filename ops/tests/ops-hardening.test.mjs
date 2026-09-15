@@ -20,7 +20,7 @@ test("one canonical policy includes every required runtime file and five deploy 
   // the WallPro 150 PPI production-panel worker, plus the hero-driver cascade
   // (RULE 0.35, runtime/atlas-hero-driver.cjs) and its durable node graph
   // (runtime/atlas-call1-graph.cjs).
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 82);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 83);
   for (const name of [
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",
@@ -46,6 +46,9 @@ test("one canonical policy includes every required runtime file and five deploy 
     // The Call-1 output-class gate (owner ruling 2026-09-01): a vehicle-
     // depiction candidate is refused before canonicalization or fan-out.
     "runtime/atlas-output-class.cjs",
+    // The passenger lettering read + verify (2026-09-15). flat-first-atlas
+    // requires it at module load; a release without it dies at require time.
+    "runtime/atlas-lettering-read.cjs",
     // Per-surface panel finishing (owner ruling 2026-09-08). flat-first-atlas
     // requires it at module load whether or not the flag is on, so a release
     // that omits it dies at require time rather than merely leaving the
