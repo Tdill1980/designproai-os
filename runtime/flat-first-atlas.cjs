@@ -2722,6 +2722,7 @@ async function composePassengerFromDriver({
   let brandBands = [];
   let letteringRead = "located";
   let letteringSource = null;
+  let letteringReadFailure = null;
   if (!readerAvailable) {
     const declined = declineOrMirror("brand_band_reader_unavailable");
     if (declined) return declined;
@@ -2738,11 +2739,13 @@ async function composePassengerFromDriver({
       brandBands = driverRead.bands;
       letteringSource = LETTERING_READ_CONTRACT;
     } else if (!Buffer.isBuffer(guideBytes)) {
+      letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
       const declined = declineOrMirror("brand_band_reader_unavailable");
       if (declined) return declined;
       letteringRead = "reader_unavailable";
     } else {
+      letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}); falling back to the sheet read`);
       let review = null;
       try {
@@ -2785,7 +2788,7 @@ async function composePassengerFromDriver({
   // exactly what every run before this change shipped.
   const letteringVerify = {
     contract: LETTERING_READ_CONTRACT, reads: 0, corrections: 0,
-    mirroredFound: [], status: readerAvailable ? "verified" : "unavailable", code: null,
+    mirroredFound: [], status: readerAvailable ? "verified" : "unavailable", code: null, reason: null,
   };
   try {
     let mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
@@ -2796,6 +2799,10 @@ async function composePassengerFromDriver({
         if (verify.status !== "read") {
           letteringVerify.status = "unavailable";
           letteringVerify.code = verify.code;
+          // The provider's message, kept on the receipt: the first live run
+          // recorded only a generic code and the cause had to be dug out of
+          // droplet logs.
+          letteringVerify.reason = String(verify.reason || "").slice(0, 300) || null;
           logger(`passenger mirror: lettering verify unavailable (${verify.code}: ${verify.reason})`);
           break;
         }
@@ -2831,6 +2838,7 @@ async function composePassengerFromDriver({
       brandStringCount: brandStrings.length,
       letteringRead,
       letteringSource,
+      letteringReadFailure,
       letteringVerify,
       reason: null,
     };
@@ -4127,6 +4135,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
             // which reader located the bands, and the verify loop's receipt.
             letteringRead: passengerMirror.letteringRead || null,
             letteringSource: passengerMirror.letteringSource || null,
+            letteringReadFailure: passengerMirror.letteringReadFailure || null,
             letteringVerify: passengerMirror.letteringVerify || null,
           }
         : null,

@@ -85,28 +85,41 @@ function letteringReadPrompt({ inspectionId, surface }) {
   ].join("\n");
 }
 
-function responseSchema(inspectionId) {
-  const fraction = { type: "NUMBER", minimum: 0, maximum: 1 };
+/**
+ * THE SCHEMA IS SHAPE ONLY. Every constraint lives in the parser.
+ *
+ * The first deployed version (2026-09-15, canary 871a8bf1) carried an
+ * inspectionId enum, an orientation enum, min/max on five numbers and
+ * maxItems on the band list, and Gemini refused it on every call:
+ *   400 "The specified schema produces a constraint that has too many
+ *   states for serving."
+ * The read silently fell back to the sheet read and the verify never ran --
+ * the exact defect this reader exists to fix. So the schema names only the
+ * fields and their types; `parseLetteringRead` binds the inspectionId,
+ * clamps every fraction, normalises the orientation and caps the count. A
+ * constraint the serving engine cannot compile is not a constraint.
+ */
+function responseSchema() {
+  const number = { type: "NUMBER" };
   return {
     type: "OBJECT",
     propertyOrdering: ["inspectionId", "bands", "confidence"],
     properties: {
-      inspectionId: { type: "STRING", enum: [inspectionId] },
+      inspectionId: { type: "STRING" },
       bands: {
         type: "ARRAY",
-        maxItems: MAX_BANDS,
         items: {
           type: "OBJECT",
           propertyOrdering: ["xPct", "yPct", "wPct", "hPct", "text", "orientation"],
           properties: {
-            xPct: fraction, yPct: fraction, wPct: fraction, hPct: fraction,
+            xPct: number, yPct: number, wPct: number, hPct: number,
             text: { type: "STRING" },
-            orientation: { type: "STRING", enum: [...ORIENTATIONS] },
+            orientation: { type: "STRING" },
           },
           required: ["xPct", "yPct", "wPct", "hPct", "text", "orientation"],
         },
       },
-      confidence: fraction,
+      confidence: number,
     },
     required: ["inspectionId", "bands", "confidence"],
   };
@@ -223,7 +236,7 @@ async function readPanelLettering({
           thinkingConfig: { thinkingBudget: 0 },
           maxOutputTokens: 4096,
           responseMimeType: "application/json",
-          responseSchema: responseSchema(inspectionId),
+          responseSchema: responseSchema(),
         },
       },
       signal,
@@ -298,5 +311,6 @@ module.exports = {
   parseLetteringRead,
   mirroredBandsToDriverSpace,
   mergeBands,
+  responseSchema,
   _test: { normalizeBand, intersectionOverUnion, boundedTransport, sha256 },
 };

@@ -19,7 +19,7 @@ const reader = require("../runtime/atlas-lettering-read.cjs");
 const {
   readPanelLettering, parseLetteringRead, letteringReadPrompt,
   mirroredBandsToDriverSpace, mergeBands, DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL,
-  LETTERING_READ_CONTRACT, MAX_BANDS, _test,
+  LETTERING_READ_CONTRACT, MAX_BANDS, responseSchema, _test,
 } = reader;
 
 const panel = () => sharp({ create: { width: 400, height: 200, channels: 3, background: "#1b6fa8" } }).png().toBuffer();
@@ -54,7 +54,7 @@ test("the read is bound to the panel bytes and returns cleaned, oriented bands",
   assert.equal(calls[0].model, "gemini-2.5-flash");
   assert.equal(calls[0].body.generationConfig.temperature, 0);
   assert.equal(calls[0].body.generationConfig.responseMimeType, "application/json");
-  assert.equal(calls[0].body.generationConfig.responseSchema.properties.inspectionId.enum[0], _test.sha256(bytes).slice(0, 16));
+  assert.equal(calls[0].body.generationConfig.responseSchema.properties.inspectionId.type, "STRING");
   assert.equal(calls[0].body.contents[0].parts[1].inlineData.mimeType, "image/jpeg");
   assert.equal(result.bands.length, 3);
   assert.deepEqual(result.bands[0], { xPct: 0.1, yPct: 0.2, wPct: 0.4, hPct: 0.15, text: "PORSCHE", orientation: "forward" });
@@ -140,4 +140,43 @@ test("mergeBands keeps existing bands and adds only lettering not already covere
   assert.equal(merged[1].xPct, 0.6);
   assert.ok(Math.abs(_test.intersectionOverUnion(existing[0], existing[0]) - 1) < 1e-9);
   assert.equal(_test.intersectionOverUnion(existing[0], { xPct: 0.9, yPct: 0.9, wPct: 0.05, hPct: 0.05 }), 0);
+});
+
+// LIVE 871a8bf1 (2026-09-15): the first schema carried enums, min/max and
+// maxItems, and Gemini refused every call with "The specified schema produces
+// a constraint that has too many states for serving". The reader fell back to
+// the sheet read and the verify never ran. The schema is shape only; every
+// constraint is the parser's.
+test("the response schema carries no constraint the serving engine has to compile", () => {
+  const schema = responseSchema();
+  const walk = (node, path = "schema") => {
+    assert.ok(!("enum" in node), `${path} must not carry enum`);
+    assert.ok(!("minimum" in node) && !("maximum" in node), `${path} must not carry minimum/maximum`);
+    assert.ok(!("maxItems" in node) && !("minItems" in node), `${path} must not carry maxItems/minItems`);
+    for (const [key, child] of Object.entries(node.properties || {})) walk(child, `${path}.${key}`);
+    if (node.items) walk(node.items, `${path}[]`);
+  };
+  walk(schema);
+  assert.deepEqual(Object.keys(schema.properties), ["inspectionId", "bands", "confidence"]);
+  assert.deepEqual(schema.properties.bands.items.required, ["xPct", "yPct", "wPct", "hPct", "text", "orientation"]);
+});
+
+test("the parser still enforces what the schema no longer does", () => {
+  const text = JSON.stringify({
+    inspectionId: "abcdef0123456789",
+    bands: [
+      { xPct: -0.2, yPct: 0.5, wPct: 0.9, hPct: 2, text: "x", orientation: "MIRRORED?" },
+    ],
+    confidence: 7,
+  });
+  const parsed = parseLetteringRead({ candidates: [{ content: { parts: [{ text }] } }] }, "abcdef0123456789");
+  assert.equal(parsed.bands.length, 1);
+  assert.equal(parsed.bands[0].xPct, 0, "clamped");
+  assert.ok(Math.abs(parsed.bands[0].hPct - 0.5) < 1e-9, "height clamped to the panel");
+  assert.equal(parsed.bands[0].orientation, "unknown", "unknown orientation strings normalise");
+  assert.equal(parsed.confidence, 1);
+  assert.throws(
+    () => parseLetteringRead({ candidates: [{ content: { parts: [{ text: text.replace("abcdef0123456789", "0000000000000000") }] } }] }, "abcdef0123456789"),
+    /atlas_lettering_inspection_mismatch|different bytes/,
+  );
 });
