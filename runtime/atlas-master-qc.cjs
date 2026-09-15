@@ -127,6 +127,118 @@ const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
 const MAX_ZONE_EDGE_HOLE_RATIO = 0.35;
 const MIN_CUTOUT_COMPONENT_RATIO = 0.0025;
 const CUTOUT_ALPHA_MAX = 128;
+// A VOID IS ONE SHAPE, NOT THE SPECKS IT DECODES INTO. (Owner 2026-09-15:
+// "look at containers, fill that" / "massive nothing to edge on panels".)
+//
+// The flat-black rule above needs every channel <= 24. The wheel void on the
+// accepted 911 Turbo master (request 53276ee8) was dark navy with a glow and
+// JPEG noise: under that rule it decoded into 1,748 specks whose largest was
+// 1.5% of the side (line: 2%) and whose total was 4.9% (line: 5%). Nothing
+// convicted, nothing filled, both flanks shipped with a wheel-shaped hole.
+//
+// This second reading measures the same zone on VOID_BLOCK-pixel cells with a
+// near-black tolerance: a cell is void when three quarters of its pixels are
+// transparent or have every channel <= NEAR_BLACK_CHANNEL_MAX, and cells label
+// into blobs. A blob is convicted by SHAPE, not only by size: it must cover more
+// than MAX_ZONE_CUTOUT_COMPONENT_RATIO of the zone AND fill most of its own
+// bounding box AND not be a stripe -- a wheel arch or a window is a compact
+// opening, while lettering, outlines and shadow bands are thin. The
+// bright-majority guard still applies at conviction, so a black wrap stays legal.
+const NEAR_BLACK_CHANNEL_MAX = 40;
+const VOID_BLOCK = 4;
+const VOID_BLOCK_MIN_FRACTION = 0.75;
+const MIN_VOID_BLOB_BBOX_FILL = 0.55;
+const VOID_BLOB_ASPECT_MIN = 0.3;
+const VOID_BLOB_ASPECT_MAX = 3.5;
+const MAX_VOID_BLOBS_REPORTED = 4;
+
+function nearBlackAt(data, width, height, channels, px, py) {
+  if (px < 0 || py < 0 || px >= width || py >= height) return true;
+  const offset = (py * width + px) * channels;
+  if (channels > 3 && data[offset + channels - 1] < CUTOUT_ALPHA_MAX) return true;
+  const red = data[offset];
+  const green = data[offset + 1] ?? red;
+  const blue = data[offset + 2] ?? red;
+  return Math.max(red, green, blue) <= NEAR_BLACK_CHANNEL_MAX;
+}
+
+/**
+ * Near-black void blobs of one zone raster, on the block grid.
+ *
+ * Shared by the gate (which convicts) and the fill (which closes exactly what
+ * the gate convicted), so a shape cannot be a void to one and artwork to the
+ * other. Blobs come back largest first; `convicted` is the shape verdict only
+ * -- the caller applies the bright-majority guard.
+ */
+function detectVoidBlobs({ data, width, height, channels }) {
+  const cols = Math.ceil(width / VOID_BLOCK);
+  const rows = Math.ceil(height / VOID_BLOCK);
+  const grid = new Uint8Array(cols * rows);
+  for (let cy = 0; cy < rows; cy += 1) {
+    for (let cx = 0; cx < cols; cx += 1) {
+      let dark = 0;
+      let total = 0;
+      for (let py = cy * VOID_BLOCK; py < Math.min(height, (cy + 1) * VOID_BLOCK); py += 1) {
+        for (let px = cx * VOID_BLOCK; px < Math.min(width, (cx + 1) * VOID_BLOCK); px += 1) {
+          total += 1;
+          if (nearBlackAt(data, width, height, channels, px, py)) dark += 1;
+        }
+      }
+      if (total && dark >= total * VOID_BLOCK_MIN_FRACTION) grid[cy * cols + cx] = 1;
+    }
+  }
+  const seen = new Uint8Array(cols * rows);
+  const stack = new Int32Array(cols * rows);
+  const blobs = [];
+  for (let start = 0; start < cols * rows; start += 1) {
+    if (!grid[start] || seen[start]) continue;
+    const cells = [];
+    let minX = cols, maxX = -1, minY = rows, maxY = -1;
+    let top = 0;
+    stack[top] = start; top += 1; seen[start] = 1;
+    while (top > 0) {
+      top -= 1;
+      const index = stack[top];
+      cells.push(index);
+      const x = index % cols;
+      const y = (index - x) / cols;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      const visit = (n) => { if (grid[n] && !seen[n]) { seen[n] = 1; stack[top] = n; top += 1; } };
+      if (x > 0) visit(index - 1);
+      if (x + 1 < cols) visit(index + 1);
+      if (y > 0) visit(index - cols);
+      if (y + 1 < rows) visit(index + cols);
+    }
+    const bboxW = maxX - minX + 1;
+    const bboxH = maxY - minY + 1;
+    const ratio = cells.length / (cols * rows);
+    const bboxFill = cells.length / (bboxW * bboxH);
+    const aspect = bboxW / bboxH;
+    blobs.push({
+      cells,
+      ratio,
+      bboxFill,
+      aspect,
+      touchesEdge: minX === 0 || minY === 0 || maxX === cols - 1 || maxY === rows - 1,
+      convicted: ratio > MAX_ZONE_CUTOUT_COMPONENT_RATIO
+        && bboxFill >= MIN_VOID_BLOB_BBOX_FILL
+        && aspect >= VOID_BLOB_ASPECT_MIN && aspect <= VOID_BLOB_ASPECT_MAX,
+    });
+  }
+  blobs.sort((left, right) => right.ratio - left.ratio);
+  return { cols, rows, block: VOID_BLOCK, blobs };
+}
+
+function voidBlobSummary(blob) {
+  return {
+    ratio: Number(blob.ratio.toFixed(5)),
+    bboxFill: Number(blob.bboxFill.toFixed(3)),
+    aspect: Number(blob.aspect.toFixed(3)),
+    touchesEdge: blob.touchesEdge,
+    convicted: blob.convicted,
+  };
+}
 // A generated vehicle/template sometimes survives as opaque white anatomy, so
 // it is invisible to both the alpha and near-black cut-out masks above. The
 // 2026-08-31 production master carried the same unmistakable frame on four
@@ -485,8 +597,11 @@ async function zonePixelMetrics(masterBytes, manifest) {
       if (size > largestComponent) largestComponent = size;
       if (size >= componentFloor) concentratedFlatBlack += size;
     }
+    const voids = detectVoidBlobs({ data, width: info.width, height: info.height, channels: info.channels });
     metrics.push({
       surfaceKey: String(zone.surfaceKey),
+      largestVoidBlobRatio: voids.blobs.length ? voids.blobs[0].ratio : 0,
+      voidBlobs: voids.blobs.slice(0, MAX_VOID_BLOBS_REPORTED).map(voidBlobSummary),
       opaqueRatio: opaque / pixelCount,
       edgeOpaqueRatio: edgePixels ? edgeOpaque / edgePixels : 0,
       edgeHoleRatio: edgeRing ? edgeHole / edgeRing : 0,
@@ -750,6 +865,17 @@ async function deterministicMasterChecks(masterBytes, manifest) {
           + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
           + `(wheel/glass/bed shapes cut out of the panel)`,
         );
+      } else {
+        const voidBlob = (zone.voidBlobs || []).find((blob) => blob.convicted);
+        if (voidBlob) {
+          cutout(zone.surfaceKey,
+            `${zone.surfaceKey} voidBlobRatio=${voidBlob.ratio.toFixed(5)} `
+            + `(flatBlackRatio=${zone.flatBlackRatio.toFixed(5)} bboxFill=${voidBlob.bboxFill.toFixed(3)} `
+            + `aspect=${voidBlob.aspect.toFixed(3)}${voidBlob.touchesEdge ? " at the zone edge" : ""}) `
+            + `inside a zone that is ${(zone.nonBlackFraction * 100).toFixed(1)}% artwork `
+            + "-- one near-black wheel/glass shape cut out of the panel",
+          );
+        }
       }
     }
   }
@@ -1181,8 +1307,16 @@ module.exports = {
   CUTOUT_ALPHA_MAX,
   FLAT_BLACK_CHANNEL_MAX,
   MIN_CUTOUT_COMPONENT_RATIO,
+  NEAR_BLACK_CHANNEL_MAX,
+  VOID_BLOCK,
+  detectVoidBlobs,
+  nearBlackAt,
   paintedCheckerboardSignature,
   _test: {
+    MIN_VOID_BLOB_BBOX_FILL,
+    VOID_BLOB_ASPECT_MIN,
+    VOID_BLOB_ASPECT_MAX,
+    VOID_BLOCK_MIN_FRACTION,
     DEFAULT_CONFIDENCE_THRESHOLD,
     MIN_CHECKERBOARD_ALTERNATION,
     MIN_CHECKERBOARD_MINORITY_SHARE,

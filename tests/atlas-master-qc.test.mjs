@@ -665,3 +665,74 @@ test("a legitimate black wrap still passes the border-hole rule", async () => {
   assert.equal(edgeFailures.length, 0,
     `a black wrap must not be convicted as a silhouette: ${JSON.stringify(edgeFailures)}`);
 });
+
+/**
+ * A VOID IS ONE SHAPE, NOT THE SPECKS IT DECODES INTO. (Owner 2026-09-15.)
+ *
+ * The accepted 911 Turbo master (request 53276ee8) carried a dark navy wheel
+ * void on both flanks. Under the flat-black rule it decoded into 1,748 specks
+ * whose largest was 1.5% of the side and whose total was 4.9% -- under both
+ * lines -- so nothing convicted and nothing filled. The block-level near-black
+ * reading sees the disc as one compact shape; lettering, stripes and rings of
+ * the same ink are not compact and stay artwork.
+ */
+function noisyNavyDisc({ cx, cy, r, width = 400, height = 200 }) {
+  // Deterministic "noise": channel values 4..38, never all <= 24 together.
+  const raw = Buffer.alloc(width * height * 3);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const o = (y * width + x) * 3;
+      const inside = (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+      if (inside) {
+        const n = (x * 7 + y * 13) % 35;
+        raw[o] = 4 + (n % 11); raw[o + 1] = 6 + ((n * 3) % 13); raw[o + 2] = 10 + n;
+      } else {
+        raw[o] = 240; raw[o + 1] = 216; raw[o + 2] = 232;
+      }
+    }
+  }
+  return { raw, width, height };
+}
+
+async function voidZoneFixture(shape) {
+  const { raw, width, height } = shape;
+  const layers = [];
+  for (let index = 0; index < 40; index += 1) {
+    layers.push({
+      input: await sharp({ create: { width: 12, height: 12, channels: 3, background: index % 2 ? "#a8d8f0" : "#f7c8a0" } }).png().toBuffer(),
+      left: (index * 37) % (width - 12),
+      top: (index * 53) % (height - 12),
+      blend: "over",
+    });
+  }
+  return sharp(raw, { raw: { width, height, channels: 3 } }).composite(layers).png().toBuffer();
+}
+
+test("a dark navy, noisy wheel void that is not flat black is still convicted as one cut-out", async () => {
+  const bytes = await voidZoneFixture(noisyNavyDisc({ cx: 90, cy: 200, r: 70 }));
+  const result = await deterministicMasterChecks(bytes, cutoutManifest);
+  assert.equal(result.accepted, false);
+  assert.deepEqual(result.blockingFailures, [], "a void is a print defect, not a broken design");
+  assert.ok(result.cutoutFindings.some((item) => item.surfaceKey === "driver" && /voidBlobRatio/.test(item.finding)),
+    `expected a void-blob finding, got ${JSON.stringify(result.cutoutFindings)}`);
+  const driver = result.zones.find((zone) => zone.surfaceKey === "driver");
+  assert.ok(driver.largestCutoutComponentRatio < 0.02, "the flat-black reading alone still misses it (that is the bug this pins)");
+  assert.ok(driver.largestVoidBlobRatio > 0.02, "the block reading sees the whole disc");
+});
+
+test("a near-black stripe or ring of the same ink is lettering-shaped and stays artwork", async () => {
+  const stripe = noisyNavyDisc({ cx: -1000, cy: -1000, r: 1 });
+  for (let y = 90; y < 104; y += 1) for (let x = 20; x < 380; x += 1) {
+    const o = (y * 400 + x) * 3; stripe.raw[o] = 8; stripe.raw[o + 1] = 10; stripe.raw[o + 2] = 20;
+  }
+  const striped = await deterministicMasterChecks(await voidZoneFixture(stripe), cutoutManifest);
+  assert.ok(!striped.cutoutFindings.some((item) => /voidBlobRatio/.test(item.finding)), "a 14px stripe is not a void");
+
+  const ring = noisyNavyDisc({ cx: -1000, cy: -1000, r: 1 });
+  for (let y = 0; y < 200; y += 1) for (let x = 0; x < 400; x += 1) {
+    const d = (x - 200) ** 2 + (y - 100) ** 2;
+    if (d <= 60 * 60 && d >= 44 * 44) { const o = (y * 400 + x) * 3; ring.raw[o] = 8; ring.raw[o + 1] = 10; ring.raw[o + 2] = 20; }
+  }
+  const ringed = await deterministicMasterChecks(await voidZoneFixture(ring), cutoutManifest);
+  assert.ok(!ringed.cutoutFindings.some((item) => /voidBlobRatio/.test(item.finding)), "a letter-O ring is not a void");
+});
