@@ -17,6 +17,7 @@ import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings 
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
+import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -1084,30 +1085,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               reads, rather than the one cramped row this was. The tagline is
               what tells a first-time visitor what WallPro is, so it earns its
               line on a phone too. */}
-          <div className="min-w-0">
-            {/* THE LOCKUP: partner mark × WallPro (owner, 2026-09-14). The "×"
-                is the collaboration mark, so it stays lighter and smaller than
-                either name it joins -- it is punctuation, not a third brand.
-                A brand with no logo falls back to its eyebrow text. */}
-            <div className="flex items-center gap-2.5">
-              {theme.logo
-                ? <img src={theme.logo} alt={theme.logoAlt} className="h-7 w-auto shrink-0 md:h-9" />
-                : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
-              <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>
-              {/* Two tone, not a gradient: against the partner's own mark the
-                  wordmark has to read as a solid name at a glance. The gradient
-                  stays where it belongs, on the actions. */}
-              <h1 className="text-2xl font-bold leading-tight md:text-3xl">
-                <span className="text-white">{theme.wordmarkLead}</span><span className="text-blue-400">{theme.wordmarkAccent}</span>
-              </h1>
-            </div>
-            {/* The owner's own words for what this tool IS (2026-09-13:
-                "a persistent header that says WallPro custom wall wrap file
-                output"). It names the deliverable -- a print file -- rather
-                than describing the feeling of using it, which is what the
-                trade buyer is actually here for. */}
-            <p className="mt-0.5 text-xs text-white/70 md:text-sm">{theme.tagline}</p>
-          </div>
+          {/* The lockup lives in WallProLockup so the case study wears the
+              identical brand identity instead of a second copy of it. */}
+          <WallProLockup theme={theme} />
           {/* The rail carries these on desktop, so the header would show them
               twice. The rail is hidden below lg (a pinned sidebar on a phone
               eats the screen), so on a phone the header keeps them. Brands
@@ -1127,7 +1107,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             header's own padding so it reads as an edge of the bar rather than a
             line drawn inside it. Two pixels: enough to carry a gradient, not so
             much that it becomes a band of its own. */}
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-blue-700 via-sky-400 to-blue-700" />
+        <WallProHeaderRule />
       </header>
       {/* The proof band, and ONLY before they start. Its whole job is to answer
           "what does this do?" for someone who has just landed; once a wall photo
@@ -1149,6 +1129,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
               in minutes, and take the print-ready files — whether we print them or you do.
             </p>
+            {/* The one question the tool cannot answer about itself: what
+                actually happens after the button. The case study answers it on
+                a real wall, so the link belongs beside the claim it backs. */}
+            <Link to="/wall-wrap/how-it-works" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+              See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
+            </Link>
           </div>
           <WallProHeroProof proofs={theme.proofs} />
         </section>
