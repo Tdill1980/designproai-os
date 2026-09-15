@@ -51,6 +51,9 @@ select policies_are(
         'wallpro_file_read','wallpro_file_upload',
         'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read',
         'graphicspro_files_public_read','graphicspro_files_owner_upload',
+        -- PatternPro's public render bucket (20260915090000): anyone may read a
+        -- pattern proof; only the service role writes them.
+        'patternpro_files_public_read',
         -- RESTRICTIVE, not permissive: it grants nothing and only withholds a
         -- WallPro production file until a human has released that job
         -- (20260912240000). It appears here because the allowlist covers every

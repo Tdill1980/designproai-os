@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionLimits } from "./useSubscriptionLimits";
 import { saveProofUrlToViz } from "@/lib/save-proof-url";
 import { withTimeout, VIEW_RENDER_TIMEOUT_MS } from "@/lib/invokeWithTimeout";
-import { STATIC_PATTERNS } from "@/data/patternpro-patterns";
+import { STATIC_PATTERNS, wbtyProductIdForCategory } from "@/data/patternpro-patterns";
 import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
 import { getRenderFunctionForType } from "@/components/tools/legacyRenderFunctions";
 
@@ -47,6 +47,17 @@ export const useWBTYLogic = () => {
   const [isGeneratingAdditional, setIsGeneratingAdditional] = useState(false);
   const [calculatedSquareFeet, setCalculatedSquareFeet] = useState<number | null>(null);
   const [isCalculatingSquareFeet, setIsCalculatingSquareFeet] = useState(false);
+  // Full-wrap estimate for the vehicle on screen: sq ft of wrap surface and
+  // the linear yards of 60" film it takes. Feeds "Yards Needed" so the buyer
+  // never sees the old hardcoded 2 yards for a full-size truck.
+  const [fullWrapEstimate, setFullWrapEstimate] = useState<{
+    vehicle: string; yards: number; squareFeet: number; category: string | null;
+  } | null>(null);
+  // Per-view progress for the batch after the hero, so the page can say
+  // "3 of 7" instead of a bare "Generating Views..." that invites a re-click.
+  const [viewProgress, setViewProgress] = useState<{ done: number; total: number; inFlight: string[] }>({
+    done: 0, total: 7, inFlight: [],
+  });
   const [uploadMode, setUploadMode] = useState<'curated' | 'custom'>('curated');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [designAnchorText, setDesignAnchorText] = useState<string | null>(null);
@@ -94,18 +105,6 @@ export const useWBTYLogic = () => {
 
   const pricePerYard = 95.50;
   const totalPrice = yardsNeeded * pricePerYard;
-
-  // Product ID mapping based on pattern families
-  const getProductId = (category: string) => {
-    const productIdMap: Record<string, string> = {
-      "Camo & Carbon": "1726",
-      "Metal & Marble": "39698",
-      "Wicked & Wild": "4181",
-      "Bape Camo": "42809",
-      "Modern & Trippy": "52489",
-    };
-    return productIdMap[category] || "42809";
-  };
 
   const incrementGeneration = () => {
     const newCount = generationCount + 1;
@@ -203,31 +202,13 @@ export const useWBTYLogic = () => {
         }
         if (heroData?.designName) setDesignName(heroData.designName);
 
-        // Flip the freshly-created color_visualizations row to mode_type='wbty'
-        // so this render appears as PatternPro in Gallery / MyRenders / RevisionStudio
-        // instead of being labeled as DesignPro.
-        try {
-          const { data: vizRecord } = await supabase
-            .from('color_visualizations')
-            .select('id')
-            .eq('customer_email', userEmail || '')
-            .eq('mode_type', 'designpanelpro')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (vizRecord) {
-            await supabase
-              .from('color_visualizations')
-              .update({
-                mode_type: 'wbty',
-                render_urls: { side: heroData.renderUrl },
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', vizRecord.id);
-            console.log(`[PatternPro] Flipped record ${vizRecord.id} to mode_type=wbty`);
-          }
-        } catch (flipErr) {
-          console.error('[PatternPro] Could not flip mode_type:', flipErr);
+        // generate-pattern-render inserts the color_visualizations row itself
+        // (mode_type 'wbty', render_urls.side) and returns its id. The old
+        // "find the latest designpanelpro row for this email and flip it"
+        // relabeled whatever DesignPro render the user made last — and did
+        // nothing at all while the function's insert was failing.
+        if (!heroData.renderId) {
+          console.warn('[PatternPro] Hero render returned no renderId — the row was not saved; views will not reach RevisionStudio/My Renders');
         }
 
         incrementGeneration();
@@ -330,8 +311,16 @@ export const useWBTYLogic = () => {
     return { type: viewType, url: null };
   };
 
-  // Parallel batch execution matching DesignPro (2 at a time)
-  const generateAdditionalViews = async (vehicleYear: string, vehicleMake: string, vehicleModel: string) => {
+  /** The six views rendered after the driver-side hero, in batch order. */
+  const ADDITIONAL_VIEW_TYPES = ['passenger-side', 'hood_detail', 'front', 'rear', 'close-up', 'roof'] as const;
+
+  // Parallel batch execution — 3 at a time (two batches). It was 2-at-a-time
+  // over three batches with a 3 s stagger: ~2.5 minutes for a truck, with no
+  // progress shown, which is exactly how the owner came to re-click Generate
+  // mid-batch and have the finished batch discarded as stale (live 2026-09-15).
+  // Views now land on screen as each batch completes, and `only` lets the
+  // page re-render just the views that are missing.
+  const generateAdditionalViews = async (vehicleYear: string, vehicleMake: string, vehicleModel: string, only?: string[]) => {
     if (!selectedProduct || !generatedImageUrl) {
       toast({ title: "Generate hero view first", description: "Please generate the main view before additional views", variant: "destructive" });
       return false;
@@ -355,16 +344,19 @@ export const useWBTYLogic = () => {
 
       const userEmail = await getUserEmail();
 
-      // Same view batches as DesignPro — parallel 2-at-a-time
-      const viewBatches: string[][] = [
-        ['passenger-side', 'hood_detail'],  // Batch 1
-        ['front', 'rear'],                  // Batch 2
-        ['close-up', 'roof'],               // Batch 3
-      ];
+      const wanted = (only && only.length > 0
+        ? ADDITIONAL_VIEW_TYPES.filter((v) => only.includes(v))
+        : [...ADDITIONAL_VIEW_TYPES]) as string[];
+      const viewBatches: string[][] = [];
+      for (let i = 0; i < wanted.length; i += 3) viewBatches.push(wanted.slice(i, i + 3));
 
       const allResults: Array<{ type: string; url: string | null }> = [];
       // Driver side already rendered as hero
       allResults.push({ type: 'side', url: heroUrl });
+      // Views already on screen that this call is not re-rendering count as done.
+      const kept = Object.entries(additionalViews || {}).filter(([k, v]) => !!v && k !== 'side' && !wanted.includes(k));
+      for (const [type, url] of kept) allResults.push({ type, url });
+      setViewProgress({ done: 1 + kept.length, total: 7, inFlight: [] });
 
       for (let batchIdx = 0; batchIdx < viewBatches.length; batchIdx++) {
         // Bail early if the user kicked off a new render — no point burning
@@ -381,6 +373,7 @@ export const useWBTYLogic = () => {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
         console.log(`[PatternPro] Batch ${batchIdx + 1}/${viewBatches.length}: [${batch.join(', ')}]`);
+        setViewProgress((p) => ({ ...p, inFlight: batch }));
 
         const batchResults = await Promise.allSettled(
           batch.map(viewType => renderSingleView(
@@ -398,6 +391,15 @@ export const useWBTYLogic = () => {
             console.error(`[PatternPro] View "${viewType}" unexpected rejection:`, settled.reason);
             allResults.push({ type: viewType, url: null });
           }
+        }
+
+        // Show what has landed so far. Still session-guarded: a batch for a
+        // pattern the user has moved past must not paint over the new one.
+        if (session === renderSessionRef.current) {
+          const landed: Record<string, string> = {};
+          for (const r of allResults) if (r.url) landed[r.type] = r.url;
+          setAdditionalViews((prev) => ({ ...(prev || {}), ...landed }));
+          setViewProgress({ done: Object.keys(landed).length, total: 7, inFlight: [] });
         }
       }
 
@@ -423,15 +425,12 @@ export const useWBTYLogic = () => {
       // Save all 7 view URLs to the color_visualizations record so this render
       // appears in RevisionStudio, Gallery, and MyRenders with all views. Also
       // flip mode_type to 'wbty' so the pages filter/label it as PatternPro.
-      if (successCount > 0) {
+      if (successCount > 0 && capturedVizId) {
         try {
           const { data: vizRecord } = await supabase
             .from('color_visualizations')
             .select('id, render_urls')
-            .eq('customer_email', userEmail || '')
-            .eq('mode_type', 'designpanelpro')
-            .order('created_at', { ascending: false })
-            .limit(1)
+            .eq('id', capturedVizId)
             .maybeSingle();
 
           if (vizRecord) {
@@ -443,11 +442,11 @@ export const useWBTYLogic = () => {
                 mode_type: 'wbty',
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', vizRecord.id);
+              .eq('id', capturedVizId);
             if (updateError) {
-              console.error('[PatternPro] Failed to save render_urls + flip mode_type:', updateError.message);
+              console.error('[PatternPro] Failed to save render_urls:', updateError.message);
             } else {
-              console.log(`[PatternPro] Saved ${Object.keys(mergedUrls).length} view URLs to color_visualizations ${vizRecord.id} and set mode_type=wbty`);
+              console.log(`[PatternPro] Saved ${Object.keys(mergedUrls).length} view URLs to color_visualizations ${capturedVizId}`);
             }
           }
         } catch (dbErr) {
@@ -516,9 +515,19 @@ export const useWBTYLogic = () => {
     }
   };
 
-  const calculateSquareFeet = async (vehicleYear: string, vehicleMake: string, vehicleModel: string) => {
+  const calculateSquareFeet = async (
+    vehicleYear: string,
+    vehicleMake: string,
+    vehicleModel: string,
+    opts: { silent?: boolean } = {},
+  ) => {
     if (!vehicleYear || !vehicleMake || !vehicleModel) {
-      toast({ title: "Vehicle required", description: "Please enter year, make, and model", variant: "destructive" });
+      if (!opts.silent) toast({ title: "Vehicle required", description: "Please enter year, make, and model", variant: "destructive" });
+      return;
+    }
+    const vehicleKey = `${vehicleYear} ${vehicleMake} ${vehicleModel}`.trim();
+    if (fullWrapEstimate?.vehicle === vehicleKey && !opts.silent) {
+      setYardsNeeded(fullWrapEstimate.yards);
       return;
     }
 
@@ -530,26 +539,37 @@ export const useWBTYLogic = () => {
 
       if (error) throw error;
 
-      if (data?.squareFeet) {
-        setCalculatedSquareFeet(data.squareFeet);
-        toast({
-          title: "Square Footage Calculated",
-          description: `~${data.squareFeet} sq ft needed for ${vehicleYear} ${vehicleMake} ${vehicleModel}`
-        });
+      const yards = Math.max(1, Math.ceil(Number(data?.yards) || 0));
+      const squareFeet = Math.round(Number(data?.squareFeet) || 0);
+      if (yards > 0 && squareFeet > 0) {
+        setCalculatedSquareFeet(squareFeet);
+        setFullWrapEstimate({ vehicle: vehicleKey, yards, squareFeet, category: data?.category ?? null });
+        // The estimate IS the default quantity. The buyer can still nudge it.
+        setYardsNeeded(yards);
+        if (!opts.silent) {
+          toast({
+            title: "Full wrap estimate",
+            description: `${vehicleKey}: ~${squareFeet} sq ft → ${yards} yards of 60″ film`,
+          });
+        }
       }
     } catch (error: any) {
       console.error("Square footage calculation error:", error);
-      toast({
-        title: "Calculation failed",
-        description: error.message || "Please try again",
-        variant: "destructive"
-      });
+      if (!opts.silent) {
+        toast({
+          title: "Calculation failed",
+          description: error.message || "Please try again",
+          variant: "destructive"
+        });
+      }
     } finally {
       setIsCalculatingSquareFeet(false);
     }
   };
 
-  const productId = selectedProduct ? getProductId(selectedProduct.category) : "42809";
+  // WooCommerce product for the cart link — null until a pattern with a
+  // connected category is selected (see wbtyProductIdForCategory).
+  const productId = wbtyProductIdForCategory(selectedProduct?.category);
   const remainingGenerations = Math.max(0, FREE_LIMIT - generationCount);
 
   // Save design job to database for PrintPro integration
@@ -628,6 +648,8 @@ export const useWBTYLogic = () => {
     calculatedSquareFeet,
     calculateSquareFeet,
     isCalculatingSquareFeet,
+    fullWrapEstimate,
+    viewProgress,
     uploadMode,
     setUploadMode,
     showUpgradeModal,

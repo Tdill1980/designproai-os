@@ -18,7 +18,14 @@
  */
 import type { WallBrand } from '@/lib/wallpro-brand';
 
-export function WallProLockup({ theme, compact = false }: { theme: WallBrand; compact?: boolean }) {
+/**
+ * Only the identity fields. PatternPro's partner page (/pattern-wrap) wears the
+ * same lockup with its own brand table (patternpro-brand.ts), which has no
+ * proofs or print offer, so the prop is the identity, not the whole WallBrand.
+ */
+export type LockupBrand = Pick<WallBrand, 'logo' | 'logoAlt' | 'eyebrow' | 'wordmarkLead' | 'wordmarkAccent' | 'tagline'>;
+
+export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; compact?: boolean }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2.5">

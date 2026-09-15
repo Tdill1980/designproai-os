@@ -294,47 +294,18 @@ export const WPW_WOOCOMMERCE_IDS: Record<string, number> = {
   "Modern & Trippy": 52489,
 };
 
-/** Pricing engine copy-paste map */
-export const WBTY_PRODUCT_IDS = {
-  camo_carbon: 1726,
-  metal_marble: 39698,
-  wicked_wild: 4181,
-  bape_camo: 42809,
-  modern_trippy: 52489,
-};
-
-/** Full swatch name list per internal category key */
-export const WBTY_SWATCH_MAP: Record<string, string[]> = {
-  camo_carbon: [
-    "Sand Camo","Black Camo","Digital Gray Camo","Broken Gray Camo","Broken Red Camo",
-    "Red Camo","Orange Camo","Hex Camo","Vintage Camo","Modern Camo","Grunge Camo",
-    "Digi Lime Camo","Digi Camo","Unicorn Camo",
-    "Gray Carbon","White Carbon","Black Carbon 1","Black Carbon 2","Red Carbon",
-    "Blue Carbon","Gold Carbon 1","Gold Carbon 2",
-    "Riveted Tank","Doomsday Rust","Antique Patina","Rat Rod",
-  ],
-  metal_marble: [
-    "Gray Marble","Azul Marble","Smokey Marble","Classic Marble","Solar Flare Marble",
-    "Reverse Marble","Venetian Marble","Egyptian Marble","Ocean Marble","Ghost Marble",
-    "Crackle Marble","Rose Marble","Grecian Marble",
-    "Brushed Iron","Gold Foil","Silver Foil","Rose Gold Foil","Battle Worn",
-    "Aged Armor","Diamond Plate",
-  ],
-  wicked_wild: [
-    "Lifes A Trip","Transformer","Picasasso","Abstract","Starry Night",
-    "Nebula Galaxy","Purple Nebula Galaxy","Dark Nebula Galaxy",
-    "Rick & Morty Galaxy","Faux Triangle Holographic","Enter The Dragon","Electric Blue",
-    "Topography Heat Map","Topography Map","Hypnotic","Block Chain","The Matrix",
-    "Faux Holographic","Torn Camo","Color of Money 1","Color of Money 2",
-    "Chameleon Camo Red","Chameleon Camo Tan","Chameleon Camo Blue",
-    "Jagged Livery Blue","Extreme Livery Yellow","Extreme Livery Lime","Extreme Livery Red",
-  ],
-  bape_camo: [
-    "Red Bape Camo","Blue Bape Camo","Purple Bape Camo","Pink Bape Camo","Grey Bape Camo",
-    "Army Bape Camo","Bubble Gum Bape Camo","Psychedelic Bape Camo",
-  ],
-  modern_trippy: [
-    "Modern Wave","Liquified Rainbow","Chromatic Splash","Psychedelic Drip",
-    "Digital Graffiti","Glitch Blast","Abstract Pulse","Neon Warp","Melting Lines",
-  ],
-};
+/**
+ * The ONE place a PatternPro category resolves to its WePrintWraps WooCommerce
+ * product. Every cart link goes through this. Returns null for a category the
+ * store does not have, so a mislabeled row surfaces as "not connected" instead
+ * of silently landing in the wrong product (the old fallback sent unknown
+ * categories to Bape Camo, 42809).
+ *
+ * Verified against the live product pages 2026-09-15: all 118 active
+ * wbty_products rows carry one of these five categories, and every pattern
+ * name appears on the page its category maps to.
+ */
+export const wbtyProductIdForCategory = (category?: string | null): number | null =>
+  category && Object.prototype.hasOwnProperty.call(WPW_WOOCOMMERCE_IDS, category)
+    ? WPW_WOOCOMMERCE_IDS[category]
+    : null;
