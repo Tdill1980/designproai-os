@@ -1158,8 +1158,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               On-demand wall wrap<br />design &amp; file output
             </h2>
             <p className="mt-3 max-w-[42ch] text-sm text-slate-600">
-              Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
-              in minutes, and take the print-ready files — whether we print them or you do.
+              {/* The partner's name belongs on the partner's page. On DesignProAI
+                  the same sentence would promise a printer this page does not
+                  sell -- and the whole point of the brand table is that one
+                  component can say the true thing on either domain. */}
+              {theme.showPrintOffer
+                ? <>Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
+                    in minutes, and take the print-ready files — whether we print them or you do.</>
+                : <>Measure the wall, design it in minutes, and take the print-ready files —
+                    production panels at 150 PPI, ready for any printer.</>}
             </p>
             {/* The one question the tool cannot answer about itself: what
                 actually happens after the button. The case study answers it on
@@ -1223,7 +1230,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 step 1 rather than four thousand pixels later. It is the film
                 only; the design is priced on its own card, because they are
                 separate purchases with separate payees. */}
-            {dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            {/* GATED ON showPrintOffer, like every other print element (owner,
+                2026-09-15: the DesignProAI page should not carry the partner's
+                marks). This block quoted a WePrintWraps film rate and named
+                their material on the DesignProAI-branded page, while the bar,
+                the order section and the spec were all correctly hidden there
+                -- so one partner's pricing leaked onto a page that hides
+                everything else about them. The condition was simply missing. */}
+            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="text-xs text-slate-600">
                 Printed film, this wall
                 <span className="block text-[11px] text-slate-500">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>

@@ -126,6 +126,88 @@ export type WallProof = {
   caption: string;
 };
 
+
+/**
+ * THE BEFORE/AFTER PAIRS — ONE LIST, BOTH BRANDS.
+ *
+ * Owner, 2026-09-15: the DesignProAI page "should just be the branded WallPro
+ * header that has the tagline. With the before and after photos, of course."
+ *
+ * The band used to belong to the partner brand alone, on the reasoning that a
+ * WePrintWraps visitor should recognise WePrintWraps' own work. That reasoning
+ * holds for WHOSE logo is on the header; it does not hold for whether the
+ * product gets to show what it makes. A tool whose whole promise is "your wall,
+ * transformed" opening on an empty preview pane is the same unanswered question
+ * on either domain.
+ *
+ * So the pairs are shared and the CAPTIONS are brand-neutral -- "designed in
+ * WallPro" rather than "printed here", because one list cannot claim a specific
+ * printer. Who prints it is the header's job and the print offer's job, both of
+ * which stay per-brand.
+ *
+ * ORDER MATTERS: the first entry is what a visitor sees on arrival and is the
+ * only one many will see, so the most persuasive room leads.
+ *
+ * Files live under `app/public/` and ship with the build, so the band paints on
+ * first load with no request to Supabase and no signed URL. Curator rows from
+ * /admin/wallpro-proofs override this list when they exist; this is the floor.
+ */
+const WALL_PROOFS: WallProof[] = [
+      {
+        // THE GYM FLOOR — owner-directed, 2026-09-15: "you must use this
+        // before and after."
+        //
+        // PRE-WIRED AHEAD OF ITS FILES, deliberately, and this is the one
+        // entry in this table that is. The photographs exist but have not been
+        // reachable as files in any working session; wiring the entry now means
+        // dropping the two JPGs at these exact paths puts the pair in rotation
+        // with NO code change and no wait for a developer.
+        //
+        // It costs nothing while the files are absent: WallProHeroProof drops
+        // any pair whose halves fail to load, so the band simply shows the
+        // rooms it does have. The only price is two 404s per visitor, which is
+        // why the files should land before the next deploy rather than after.
+        //
+        // Run them through scripts/wallpro-proof-normalize.mjs first — the two
+        // frames arrived at different sizes, and the band needs one canvas or
+        // the room slides under the wipe:
+        //   node scripts/wallpro-proof-normalize.mjs \
+        //     --before <bare gym> --after <wrapped gym> --slug gym --bias bottom
+        before: '/wallpro/proof-gym-before.jpg',
+        after: '/wallpro/proof-gym-after.jpg',
+        alt: 'A gym training floor photographed with a plain grey wall behind the squat racks, and again with a full-wall athletic mural covering it',
+        headline: 'A training floor, transformed.',
+        caption: 'A gym wall in a full-height athletic mural, designed in WallPro. Drag to compare.',
+      },
+      {
+        before: '/wallpro/proof-spa-before.jpg',
+        after: '/wallpro/proof-spa-after.jpg',
+        alt: 'A home studio photographed with plain cream walls either side of the window, and again with a dark tropical anthurium mural covering both',
+        headline: 'One wall, one afternoon.',
+        caption: 'A home studio in a dark tropical print, designed in WallPro. Drag to compare.',
+      },
+      {
+        // THE SAME BARE WALL as the entry above, deliberately. One room shown
+        // two ways is the argument this tool actually makes -- the wall did not
+        // change, the design did -- and it is a stronger second slide than a
+        // different room would be, because the visitor has already learned this
+        // room from slide one and can read the change instantly.
+        //
+        // The frame was REGISTERED onto that bare photograph rather than eyed
+        // in: scripts/wallpro-proof-normalize.mjs --align-to, best 0.782 at
+        // 108% scale. WallPro's renders come back framed a few percent wider
+        // than the photograph they were made from, and a few percent is enough
+        // for the sofa to slide under the wipe and read as two rooms.
+        before: '/wallpro/proof-studio-slat-before.jpg',
+        after: '/wallpro/proof-studio-slat-after.jpg',
+        alt: 'The same home studio with plain cream walls, and again with a warm vertical timber-slat wrap running wall to wall behind the window',
+        headline: 'Same wall. Different room.',
+        caption: 'The same studio in a warm timber slat, designed in WallPro. Drag to compare.',
+      },
+      // PENDING: the hotel lobby feature wall. Described but its files are not
+      // in the repository either. Add the block with its photographs.
+];
+
 export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
   designpro: {
     logo: null,
@@ -133,9 +215,12 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     eyebrow: 'DesignProAI',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    tagline: 'Custom wall wrap file output',
+    tagline: 'Custom wall wrap design, print files & production panels',
+    // The print offer stays OFF here: on DesignProAI the customer came for the
+    // design tool and printing is a partner's business. The PROOF is not a
+    // print offer -- it is what the tool makes.
     showPrintOffer: false,
-    proofs: [],
+    proofs: WALL_PROOFS,
   },
   weprintwraps: {
     // The real mark off weprintwraps.com, vendored into public/ so the header
@@ -162,61 +247,7 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // To add another: copy one block, give it the next number, and write a
     // caption that describes THAT room. Do not reuse a caption across rooms --
     // the specificity is the whole reason a before/after persuades.
-    proofs: [
-      {
-        // THE GYM FLOOR — owner-directed, 2026-09-15: "you must use this
-        // before and after."
-        //
-        // PRE-WIRED AHEAD OF ITS FILES, deliberately, and this is the one
-        // entry in this table that is. The photographs exist but have not been
-        // reachable as files in any working session; wiring the entry now means
-        // dropping the two JPGs at these exact paths puts the pair in rotation
-        // with NO code change and no wait for a developer.
-        //
-        // It costs nothing while the files are absent: WallProHeroProof drops
-        // any pair whose halves fail to load, so the band simply shows the
-        // rooms it does have. The only price is two 404s per visitor, which is
-        // why the files should land before the next deploy rather than after.
-        //
-        // Run them through scripts/wallpro-proof-normalize.mjs first — the two
-        // frames arrived at different sizes, and the band needs one canvas or
-        // the room slides under the wipe:
-        //   node scripts/wallpro-proof-normalize.mjs \
-        //     --before <bare gym> --after <wrapped gym> --slug gym --bias bottom
-        before: '/wallpro/proof-gym-before.jpg',
-        after: '/wallpro/proof-gym-after.jpg',
-        alt: 'A gym training floor photographed with a plain grey wall behind the squat racks, and again with a full-wall athletic mural covering it',
-        headline: 'A training floor, transformed.',
-        caption: 'A gym wall in a full-height athletic mural, printed and installed. Drag to compare.',
-      },
-      {
-        before: '/wallpro/proof-spa-before.jpg',
-        after: '/wallpro/proof-spa-after.jpg',
-        alt: 'A home studio photographed with plain cream walls either side of the window, and again with a dark tropical anthurium mural covering both',
-        headline: 'One wall, one afternoon.',
-        caption: 'A home studio in a dark tropical print, designed and printed here. Drag to compare.',
-      },
-      {
-        // THE SAME BARE WALL as the entry above, deliberately. One room shown
-        // two ways is the argument this tool actually makes -- the wall did not
-        // change, the design did -- and it is a stronger second slide than a
-        // different room would be, because the visitor has already learned this
-        // room from slide one and can read the change instantly.
-        //
-        // The frame was REGISTERED onto that bare photograph rather than eyed
-        // in: scripts/wallpro-proof-normalize.mjs --align-to, best 0.782 at
-        // 108% scale. WallPro's renders come back framed a few percent wider
-        // than the photograph they were made from, and a few percent is enough
-        // for the sofa to slide under the wipe and read as two rooms.
-        before: '/wallpro/proof-studio-slat-before.jpg',
-        after: '/wallpro/proof-studio-slat-after.jpg',
-        alt: 'The same home studio with plain cream walls, and again with a warm vertical timber-slat wrap running wall to wall behind the window',
-        headline: 'Same wall. Different room.',
-        caption: 'The same studio in a warm timber slat — designed in WallPro, printed here. Drag to compare.',
-      },
-      // PENDING: the hotel lobby feature wall. Described but its files are not
-      // in the repository either. Add the block with its photographs.
-    ],
+    proofs: WALL_PROOFS,
   },
 };
 
