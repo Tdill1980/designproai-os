@@ -122,20 +122,47 @@ async function mirrorMae(bytes) {
   return masterQc._test.passengerMirrorMae(bytes, manifest);
 }
 
-test("a design with no brand strings mirrors, and never calls the provider", async () => {
+// 2026-09-15 (owner: "passenger is not flipped yet text reversed"): a race
+// livery carries "21", "Porsche" and sponsor marks with no company name, phone
+// or website, so the old "no brand strings, no band read" rule mirrored it
+// blind and the proof rendered the lettering reversed. Every design gets the
+// read now; the structured strings only decide what a failed read does.
+test("a design with no brand strings still reads its lettering and re-drops it forward", async () => {
   let calls = 0;
+  const bands = [{ xPct: 0.25, yPct: 0.66, wPct: 0.46, hPct: 0.2 }];
+  const masterBytes = await master();
+  const guide = await guideBytes();
   const result = await composePassengerFromDriver({
-    masterBytes: await master(),
-    manifest,
-    guideBytes: await guideBytes(),
-    input: NO_BRAND,
-    provider: providerReturning([], { onCall: () => { calls += 1; } }),
+    masterBytes, manifest, guideBytes: guide, input: NO_BRAND,
+    provider: providerReturning(bands, { masterHash: sha(masterBytes), guideHash: sha(guide), onCall: () => { calls += 1; } }),
   });
 
   assert.equal(result.composed, true, result.reason || "");
-  assert.equal(calls, 0, "a design with no lettering must not spend a band read");
+  assert.equal(calls, 1, "the band read runs for every design");
+  assert.equal(result.bandsApplied, 1, "located lettering is re-dropped un-flipped");
+  assert.equal(result.brandStringCount, 0);
+  assert.equal(result.letteringRead, "located");
+  assert.ok((await mirrorMae(result.bytes)) < 0.26);
+});
+
+test("a design with no brand strings and no lettering located still mirrors", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: NO_BRAND, provider: providerReturning([]),
+  });
+  assert.equal(result.composed, true, result.reason || "");
   assert.equal(result.bandsApplied, 0);
+  assert.equal(result.letteringRead, "none_located");
   assert.ok(Buffer.isBuffer(result.bytes) && result.bytes.length > 0);
+});
+
+test("a design with no brand strings mirrors even when the reader is unavailable", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: NO_BRAND, provider: null,
+  });
+  assert.equal(result.composed, true, result.reason || "");
+  assert.equal(result.letteringRead, "reader_unavailable");
 });
 
 test("the composed flank is actually Driver mirrored, measured by the gate's own comparison", async () => {
