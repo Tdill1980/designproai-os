@@ -36,6 +36,9 @@ const {
   CUTOUT_ALPHA_MAX,
   FLAT_BLACK_CHANNEL_MAX,
   MIN_CUTOUT_COMPONENT_RATIO,
+  VOID_BLOCK,
+  detectVoidBlobs,
+  nearBlackAt,
 } = require("./atlas-master-qc.cjs");
 
 const FILL_CONTRACT = "designpro.atlas-cutout-fill.v1";
@@ -120,7 +123,35 @@ function convictedHoleMask({ data, width, height, channels }) {
       convictedSeeds.push(members);
     }
   }
-  if (!convictedComponents) return { mask: null, pixels: 0, components: 0 };
+  // THE NEAR-BLACK VOID BLOBS THE GATE CONVICTS BY SHAPE. Every pixel of a
+  // convicted blob's cells is masked, and within one cell of its border any
+  // near-black pixel is masked too, so the shape's soft rim closes with it
+  // while a dark outline running away across the panel is left alone.
+  const voids = detectVoidBlobs({ data, width, height, channels });
+  const voidMask = new Uint8Array(pixelCount);
+  let voidComponents = 0;
+  for (const blob of voids.blobs) {
+    if (!blob.convicted) continue;
+    voidComponents += 1;
+    const core = new Uint8Array(voids.cols * voids.rows);
+    for (const cell of blob.cells) core[cell] = 1;
+    for (const cell of blob.cells) {
+      const cx = cell % voids.cols;
+      const cy = (cell - cx) / voids.cols;
+      for (let ny = cy - 1; ny <= cy + 1; ny += 1) {
+        for (let nx = cx - 1; nx <= cx + 1; nx += 1) {
+          if (nx < 0 || ny < 0 || nx >= voids.cols || ny >= voids.rows) continue;
+          const isCore = core[ny * voids.cols + nx] === 1;
+          for (let py = ny * VOID_BLOCK; py < Math.min(height, (ny + 1) * VOID_BLOCK); py += 1) {
+            for (let px = nx * VOID_BLOCK; px < Math.min(width, (nx + 1) * VOID_BLOCK); px += 1) {
+              if (isCore || nearBlackAt(data, width, height, channels, px, py)) voidMask[py * width + px] = 1;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (!convictedComponents && !voidComponents) return { mask: null, pixels: 0, components: 0 };
 
   // Flood each convicted interior outward across touching hole pixels so the
   // shape's rim is filled too.
@@ -149,7 +180,24 @@ function convictedHoleMask({ data, width, height, channels }) {
     if (y > 0) push(current - width);
     if (y + 1 < height) push(current + width);
   }
-  return { mask, pixels: filledPixels, components: convictedComponents };
+  // A pure-black shape is seen by both readings; count it once.
+  let newVoidComponents = 0;
+  for (const blob of voids.blobs) {
+    if (!blob.convicted) continue;
+    let overlaps = false;
+    for (const cell of blob.cells) {
+      const cx = cell % voids.cols;
+      const cy = (cell - cx) / voids.cols;
+      const px = Math.min(width - 1, cx * VOID_BLOCK);
+      const py = Math.min(height - 1, cy * VOID_BLOCK);
+      if (mask[py * width + px]) { overlaps = true; break; }
+    }
+    if (!overlaps) newVoidComponents += 1;
+  }
+  for (let index = 0; index < pixelCount; index += 1) {
+    if (voidMask[index] && !mask[index]) { mask[index] = 1; filledPixels += 1; }
+  }
+  return { mask, pixels: filledPixels, components: convictedComponents + newVoidComponents };
 }
 
 /**
