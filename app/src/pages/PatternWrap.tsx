@@ -105,12 +105,14 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
               className="w-full rounded-2xl border border-gray-200 shadow-xl"
               loading="eager"
             />
-            {/* The swatch the render was made from, square, over the truck's
-                corner: this pattern, that vehicle. */}
+            {/* The swatch CARD the render was made from, over the truck's corner:
+                this pattern, that vehicle. Its own proportions, because the
+                pattern's name is printed along the card's bottom edge and a
+                square crop cut it off. */}
             <img
               src={theme.hero.swatch}
               alt={theme.hero.swatchAlt}
-              className="absolute -bottom-6 -left-4 hidden aspect-square w-[30%] rounded-xl border-4 border-white object-cover shadow-2xl sm:block"
+              className="absolute -bottom-6 -left-4 hidden w-[40%] rounded-xl border-4 border-white shadow-2xl sm:block"
               loading="lazy"
             />
           </div>

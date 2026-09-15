@@ -66,7 +66,10 @@ test("white surface, blue gradient accent, the WPW mark in the lockup, wordmark 
   // The small square is the SWATCH the render was made from, not a second render.
   assert.ok(PAGE.includes("src={theme.hero.swatch}"));
   assert.ok(BRAND.includes("render/image/public/wrap-files/pattern-swatches-wpw"));
-  assert.ok(BRAND.includes("${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=600&height=600&resize=cover"));
+  assert.ok(BRAND.includes("${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=800&quality=80"));
+  // The card carries the pattern name on its bottom edge: never square-crop it.
+  assert.ok(!BRAND.includes("resize=cover"));
+  assert.ok(!PAGE.includes("aspect-square"));
   assert.ok(BRAND.includes("logo: '/wpw-logo-mark.png'"));
   assert.ok(existsSync(resolve(root, "app/public/wpw-logo-mark.png")));
   assert.ok(BRAND.includes("storage/v1/render/image/public/wrap-files/renders/anonymous/patternpro"));

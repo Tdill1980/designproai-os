@@ -69,7 +69,10 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     tagline: 'Pattern wraps by the yard · designed in PatternPro, printed by WePrintWraps',
     hero: {
       main: `${RENDER_BASE}/1789445607140_Ford_Raptor_side.jpg?width=1400&height=788&resize=contain&quality=78`,
-      swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=600&height=600&resize=cover&quality=80`,
+      // The swatch card is 1500×929 with the pattern NAME printed along its bottom
+      // edge; it ships at its own proportions (owner: "you cropped the swatch name
+      // out"), never squared off.
+      swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=800&quality=80`,
       alt: 'Chameleon Camo Tan pattern rendered on a 2022 Ford Raptor in PatternPro',
       swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
     },
