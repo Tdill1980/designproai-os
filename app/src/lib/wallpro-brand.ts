@@ -208,7 +208,7 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
         // 108% scale. WallPro's renders come back framed a few percent wider
         // than the photograph they were made from, and a few percent is enough
         // for the sofa to slide under the wipe and read as two rooms.
-        before: '/wallpro/proof-spa-before.jpg',
+        before: '/wallpro/proof-studio-slat-before.jpg',
         after: '/wallpro/proof-studio-slat-after.jpg',
         alt: 'The same home studio with plain cream walls, and again with a warm vertical timber-slat wrap running wall to wall behind the window',
         headline: 'Same wall. Different room.',

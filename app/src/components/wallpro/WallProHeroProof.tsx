@@ -121,13 +121,16 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
            4:3 room both fit, and neither loses its edges to a crop the band
            chose. The ground is dark so the letterbox reads as a frame rather
            than as a loading bug, and the band keeps a 4:3 box so a portrait
-           frame cannot make the strip absurdly tall.
+           frame cannot make the strip absurdly tall. The box is 1400x709
+           because that is the ONE canvas every proof is normalised to, so on
+           desktop `contain` shows each frame edge to edge with no letterbox at
+           all -- the band and the photographs are the same shape.
 
            This is the deliberate trade: `cover` fills the box and eats the
            edges; `contain` keeps the photograph intact and pads instead. For a
            before/after the photograph is the argument, so it wins. Both halves
            use the same box and the same fit, so they stay in register. */
-        className="relative h-56 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-900 sm:h-72 lg:h-auto lg:aspect-[4/3]"
+        className="relative h-52 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/709]"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
