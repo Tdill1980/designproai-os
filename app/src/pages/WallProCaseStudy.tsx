@@ -60,7 +60,25 @@ const BRIEF = 'dark tropical anthurium and bird of paradise, moody, wall to wall
 /** The roll WePrintWraps bills at, per the Avery HP MPI 2610 spec sheet. */
 const ROLL_IN = 54;
 
-/** The mask quad, as fractions of the photograph — the back wall in that shot. */
+/**
+ * STEP TWO'S FIGURE — a real capture when one exists, a drawn stand-in until.
+ *
+ * Owner, 2026-09-15, looking at the drawn version: "that mask is off i will go
+ * generate a real one in wallpro for the example."
+ *
+ * She is right, and the reason matters: the quad below is a HAND-PLACED
+ * approximation of where the wall is in that photograph. It is not what
+ * WallPro's own corner detection produced, and on a page whose entire claim is
+ * "every number here is the product's own answer" a drawn approximation is the
+ * one element contradicting the premise.
+ *
+ * So it is a one-file swap. Drop the real capture at the path below and this
+ * figure shows the screenshot instead; leave it absent and the drawn stand-in
+ * renders. No other change, and no broken frame in between.
+ */
+const MASK_CAPTURE: string | null = null; // e.g. '/wallpro/case-studio-mask.jpg'
+
+/** The stand-in quad, as fractions of the photograph — approximate, see above. */
 const MASK = [
   { x: 0.155, y: 0.045 }, { x: 0.862, y: 0.028 },
   { x: 0.879, y: 0.868 }, { x: 0.138, y: 0.885 },
@@ -190,6 +208,9 @@ export default function WallProCaseStudy() {
             lead="A room photo is optional — it changes nothing about the print files — but it is how you see the design in your own room before paying for it. Four corners tell WallPro where the wall is; the mask is the region it will paint, and everything outside it stays your room."
             figure={
               <Figure caption={<><strong className="font-semibold">The mask.</strong> Four corners, dragged into place. Windows and furniture get marked the same way.</>}>
+                {MASK_CAPTURE ? (
+                  <img src={MASK_CAPTURE} alt="WallPro with the wall photo loaded and the four corners marked on the wall" className="aspect-[4/3] w-full object-cover" />
+                ) : (
                 <div className="relative">
                   <img src="/wallpro/proof-spa-before.jpg" alt="The bare studio wall with a translucent mask drawn over the wall area" className="aspect-[4/3] w-full object-cover" />
                   {/* THE GLASS MASK. The quad is clipped on the PARENT and the
@@ -216,6 +237,7 @@ export default function WallProCaseStudy() {
                       style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%` }} />
                   ))}
                 </div>
+                )}
               </Figure>
             }
           >
