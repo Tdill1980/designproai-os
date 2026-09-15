@@ -195,11 +195,26 @@ async function main() {
     // own height -- so a pair that was in register stays in register. Trimming
     // one half by pixels, or trimming the sides, is how a before/after starts
     // sliding under the wipe.
+    // --trim is the symmetric shorthand; --trim-top / --trim-bottom override it
+    // per edge. ASYMMETRY IS THE USEFUL CASE: a marketing frame often carries a
+    // caption baked into its top corner, and taking 12% off the top clears it
+    // while 2% off the bottom keeps the floor -- where a symmetric cut deep
+    // enough to lose the caption throws away a quarter of the picture and the
+    // room starts to look squashed.
+    //
+    // Register survives because what must match is the treatment of the two
+    // HALVES, not the top against the bottom: both images get the identical
+    // fractions, so their content still lines up under the wipe.
     const trimPct = Number(opts.trim ?? 0);
-    if (!Number.isFinite(trimPct) || trimPct < 0 || trimPct > 30) throw new Error('--trim must be a percentage between 0 and 30.');
-    if (trimPct > 0) {
-      const dy = Math.round((meta.height * trimPct) / 100);
-      pipeline = pipeline.extract({ left: 0, top: dy, width: meta.width, height: meta.height - dy * 2 });
+    const topPct = Number(opts['trim-top'] ?? trimPct);
+    const bottomPct = Number(opts['trim-bottom'] ?? trimPct);
+    for (const [name, v] of [['--trim/--trim-top', topPct], ['--trim/--trim-bottom', bottomPct]]) {
+      if (!Number.isFinite(v) || v < 0 || v > 30) throw new Error(`${name} must be a percentage between 0 and 30.`);
+    }
+    if (topPct + bottomPct > 0) {
+      const top = Math.round((meta.height * topPct) / 100);
+      const bottom = Math.round((meta.height * bottomPct) / 100);
+      pipeline = pipeline.extract({ left: 0, top, width: meta.width, height: meta.height - top - bottom });
     }
     if (alignment) {
       // The search worked on a GRID_W-wide grid of the candidate scaled to
