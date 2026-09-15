@@ -30,6 +30,13 @@ const RENDER_FN = stripComments(read("supabase/functions/generate-pattern-render
 const CONFIG = read("supabase/config.toml");
 const MIGRATION = "supabase/migrations/20260915090000_patternpro_wbty_products.sql";
 
+test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone to os.designpro'", () => {
+  const nav = read("app/src/lib/dashboard-nav.ts");
+  assert.ok(nav.includes('key: "patternpro",'));
+  assert.ok(nav.includes('route: "/printpro/patternpro",'));
+  assert.ok(read("app/src/components/dashboard/ToolWordmark.tsx").includes('patternpro:       { base: "Pattern",    suffix: "Pro" },'));
+});
+
 test("/pattern-wrap and /printpro/patternpro are routed to the ONE PatternWrap page", () => {
   assert.ok(APP.includes('const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));'));
   assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />'));
