@@ -4,19 +4,20 @@
 -- Owner, 2026-09-15, on the WePrintWraps-facing PatternPro page: "all these
 -- need to be in os.designpro repo". PatternPro (Wrap-By-The-Yard: pick one of
 -- the 118 real WePrintWraps patterns, see it on the vehicle, get the yards a
--- full wrap takes) ran only on RestylePro. This project had the app code (a
--- fork) but none of its data: no wbty_products, no wbty_carousel, no bucket
+-- full wrap takes) ran only on the suite it was born in. This project had the
+-- app code (a fork) but none of its data: no wbty_products, no wbty_carousel, no bucket
 -- for the renders. /pattern-wrap therefore needs three things:
 --
---   1. wbty_products / wbty_carousel, the same shape as RestylePro's, readable
+--   1. wbty_products / wbty_carousel, the shape the tool already reads, readable
 --      by anyone (a WePrintWraps visitor is anonymous) for ACTIVE rows only,
 --      and managed by admins.
 --   2. patternpro-files, a PUBLIC bucket for the on-vehicle renders. On this
 --      project wrap-files is PRIVATE (production packs, provider-private
---      atlases), so the RestylePro function's public URL into it would 400 and
+--      atlases), so the ported function's public URL into it would 400 and
 --      every render would be a broken image. Same shape as graphicspro-files.
 --   3. The 118 active patterns, seeded. The swatch images stay where they are
---      (RestylePro's public wrap-files/pattern-swatches-wpw/…): they are the
+--      (the WePrintWraps swatch library, a public bucket on the source
+--      project, wrap-files/pattern-swatches-wpw/…): they are the
 --      one copy WePrintWraps curated, they are public, and copying 118 files
 --      across projects buys nothing but a second place for them to drift.
 --      media_url is DERIVED from name + category by the same rule the source
