@@ -229,3 +229,12 @@ verify_jwt = false
 # Cron/staff caller, not a user: the handler requires the WPW_SYNC_SECRET
 # header and rejects anything else, so there is no JWT to verify.
 verify_jwt = false
+
+# ── PatternPro (Wrap-By-The-Yard) ─────────────────────────────────────────
+# Ported from RestylePro 2026-09-15 for the WePrintWraps-facing /pattern-wrap
+# page. Both gate inside the handler (tokenGate / vehicle validation).
+[functions.generate-pattern-render]
+verify_jwt = false
+
+[functions.calculate-film-yards]
+verify_jwt = false

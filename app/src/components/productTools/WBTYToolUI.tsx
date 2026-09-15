@@ -63,6 +63,7 @@ import { nextOrderNumber } from "@/lib/bulk-prompt-generator";
 import { useIsWpwTenant } from "@/hooks/useIsWpwTenant";
 import { findProductById } from "@/lib/quote-product-catalog";
 import { DesignProductsCompareCard } from "@/components/quote/DesignProductsCompareCard";
+import { isWpwCartUrl } from "@/lib/wpw-catalog";
 
 export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | null }) => {
   const { toast } = useToast();
@@ -74,6 +75,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
     totalRemaining, incrementGeneration: incrementFreemium, unlockBonus 
   } = useFreemiumLimits();
   const {
+    products, fullWrapEstimate, viewProgress,
     selectedProduct, setSelectedProduct, yardsNeeded, setYardsNeeded,
     totalPrice, productId, hasReachedLimit, remainingGenerations,
     incrementGeneration, showFallback, setShowFallback, pricePerYard,
@@ -342,10 +344,20 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
   const handleEstimatorCheckoutOnWpw = useCallback(
     (_state: EstimatorState, cartUrl: string) => {
       window.open(cartUrl, "_blank", "noopener,noreferrer");
-      toast({
-        title: "WPW cart opened",
-        description: "Pre-loaded with the WPW print products from this estimate.",
-      });
+      // Per-sq-ft film opens its PRODUCT PAGE, not a loaded cart — Woo will
+      // not accept it without dimensions and lamination. Say which one it is.
+      toast(
+        isWpwCartUrl(cartUrl)
+          ? {
+              title: "WPW cart opened",
+              description: "Pre-loaded with the WPW print products from this estimate.",
+            }
+          : {
+              title: "WPW product page opened",
+              description:
+                "Enter the size/quantity from this estimate and pick your lamination to add it to the cart.",
+            },
+      );
     },
     [toast],
   );
@@ -358,8 +370,8 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
     if (preloadRender.vehicle_make) setMake(preloadRender.vehicle_make);
     if (preloadRender.vehicle_model) setModel(preloadRender.vehicle_model);
     if (preloadRender.finish_type) {
-      const f = preloadRender.finish_type.charAt(0).toUpperCase() + preloadRender.finish_type.slice(1).toLowerCase();
-      if (f === "Gloss" || f === "Satin" || f === "Matte") setSelectedFinish(f);
+      const f = preloadRender.finish_type.toLowerCase();
+      if (f === "gloss" || f === "satin" || f === "matte") setSelectedFinish(f);
     }
     toast({ title: "Vehicle loaded", description: "Preloaded from render history — select a pattern and generate" });
   }, [preloadRender]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -444,6 +456,23 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
       if (mvp.detectedVehicleInfo.year && !year) setYear(mvp.detectedVehicleInfo.year);
     }
   }, [mvp.detectedVehicleInfo]);
+
+  // FULL-WRAP ESTIMATE: as soon as year + make + model are in, ask for the
+  // vehicle's wrap square footage and the yards of 60" film it takes, and
+  // put THAT in "Yards Needed". The buyer saw "2 yards" for a 2022 Raptor
+  // full wrap because 2 was a hardcoded default and the calculator had no
+  // button (live 2026-09-15). Debounced so typing a model does not fire a
+  // call per keystroke; silent so an estimate hiccup never toasts an error.
+  useEffect(() => {
+    if (!year || !make || !model) return;
+    const key = `${year} ${make} ${model}`.trim();
+    if (fullWrapEstimate?.vehicle === key) return;
+    const t = setTimeout(() => { calculateSquareFeet(year, make, model, { silent: true }); }, 900);
+    return () => clearTimeout(t);
+  }, [year, make, model]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ADDITIONAL_VIEW_KEYS = ['passenger-side', 'hood_detail', 'front', 'rear', 'close-up', 'roof'];
+  const missingViews = ADDITIONAL_VIEW_KEYS.filter((k) => !(additionalViews as Record<string, string> | null)?.[k]);
 
   // LOCKED PIPELINE: Auto-fire all views → 2D proof → artboard when hero render completes.
   // Resetting on isGenerating lets a re-Generate fire a fresh batch — without
@@ -590,7 +619,9 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
       return;
     }
     
-    await generateAdditionalViews(year, make, model);
+    // Only the views that are missing — a partial batch (a timeout, a refused
+    // view) is finished, not thrown away and started over.
+    await generateAdditionalViews(year, make, model, missingViews.length ? missingViews : undefined);
     setShowAdditionalViews(true);
   };
 
@@ -623,6 +654,14 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
   const handleAddToCart = () => {
     if (!selectedProduct) {
       toast({ title: "No pattern selected", description: "Please select a pattern first", variant: "destructive" });
+      return;
+    }
+    if (!productId) {
+      toast({
+        title: "Pattern not connected to a product",
+        description: `"${selectedProduct.name}" is filed under "${selectedProduct.category || "no category"}", which is not one of the five WePrintWraps Wrap-By-The-Yard products. Fix the category in PatternPro Manager.`,
+        variant: "destructive",
+      });
       return;
     }
     window.open(`https://weprintwraps.com/cart/?add-to-cart=${productId}&quantity=${yardsNeeded}`, '_blank');
@@ -804,7 +843,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                 {/* Pattern Selection */}
                 <Tabs value={uploadMode} onValueChange={(v) => setUploadMode(v as 'curated' | 'custom')}>
                   <TabsList className="grid w-full grid-cols-2 mb-4">
-                    <TabsTrigger value="curated">Curated Library (92 Patterns)</TabsTrigger>
+                    <TabsTrigger value="curated">Curated Library ({products.length} Patterns)</TabsTrigger>
                     <TabsTrigger value="custom">Upload Custom</TabsTrigger>
                   </TabsList>
                   <TabsContent value="curated">
@@ -899,6 +938,42 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                 {/* Quantity */}
                 <Card className="p-4 bg-zinc-800 border-zinc-600">
                   <h4 className="text-sm font-semibold mb-3">Yards Needed</h4>
+                  {year && make && model && (
+                    <div className="mb-3 rounded-lg border border-purple-500/30 bg-purple-500/10 p-3 text-xs" data-testid="full-wrap-estimate">
+                      {isCalculatingSquareFeet && !fullWrapEstimate ? (
+                        <p className="text-muted-foreground">Estimating a full wrap of your {year} {make} {model}…</p>
+                      ) : fullWrapEstimate ? (
+                        <>
+                          <p className="font-semibold text-white">
+                            Full wrap of your {fullWrapEstimate.vehicle}: ~{fullWrapEstimate.squareFeet} sq ft
+                          </p>
+                          <p className="text-muted-foreground mt-0.5">
+                            ≈ <span className="font-semibold text-white">{fullWrapEstimate.yards} yards</span> of 60″ film, waste included
+                            {fullWrapEstimate.category ? ` · ${fullWrapEstimate.category}` : ""}
+                          </p>
+                          {yardsNeeded !== fullWrapEstimate.yards && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 h-8 w-full text-xs"
+                              onClick={() => setYardsNeeded(fullWrapEstimate.yards)}
+                            >
+                              Use {fullWrapEstimate.yards} yards for a full wrap
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-purple-300 underline-offset-2 hover:underline"
+                          onClick={() => calculateSquareFeet(year, make, model)}
+                        >
+                          Estimate yards for a full wrap of this vehicle
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center gap-3">
                     <Button variant="outline" size="icon" onClick={() => setYardsNeeded(Math.max(1, yardsNeeded - 1))} className="h-11 w-11">-</Button>
                     <div className="flex-1 text-center">
@@ -914,7 +989,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Product ID:</span>
-                      <span className="font-semibold">{productId}</span>
+                      <span className={productId ? "font-semibold" : "font-semibold text-destructive"}>{productId ?? "Not connected"}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Price per Yard:</span>
@@ -1014,10 +1089,12 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                   onClick={handleGenerate}
                   className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
                   size="lg"
-                  disabled={!selectedProduct || !year || !make || !model || (isGenerating || mvpIsGenerating)}
+                  disabled={!selectedProduct || !year || !make || !model || (isGenerating || mvpIsGenerating) || isGeneratingAdditional}
                 >
                 {(isGenerating || mvpIsGenerating)
                   ? mvpIsGenerating ? "Visualizing on My Vehicle..." : "Generating..."
+                  : isGeneratingAdditional
+                    ? `Generating views ${viewProgress.done} of ${viewProgress.total}…`
                   : mvp.isMyVehicleMode && mvp.hasPhotos
                     ? "Visualize on My Vehicle"
                     : "Generate 3D Proof"}
@@ -1151,7 +1228,13 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                   className="w-full"
                   disabled={!generatedImageUrl || isGenerating || isGeneratingAdditional || is360Generating}
                 >
-                  {isGeneratingAdditional ? "Generating Views..." : "Generate All Views (Side, Rear, Top, Close-Up)"}
+                  {isGeneratingAdditional
+                    ? `Generating views ${viewProgress.done} of ${viewProgress.total}${viewProgress.inFlight.length ? ` (${viewProgress.inFlight.join(", ")})` : ""}…`
+                    : missingViews.length === 0
+                      ? "Regenerate All 7 Views"
+                      : missingViews.length === ADDITIONAL_VIEW_KEYS.length
+                        ? "Generate All Views (Passenger, Hood, Front, Rear, Close-Up, Roof)"
+                        : `Generate ${missingViews.length} Missing View${missingViews.length === 1 ? "" : "s"}`}
                 </Button>
 
                 {/* 360° Loading State - hidden */}

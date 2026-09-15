@@ -450,3 +450,12 @@ export function buildWpwCartUrl(
   const ids = valid.map((i) => i.wooProductId).join(",");
   return `${WPW_CART_ORIGIN}?add-to-cart=${ids}`;
 }
+
+/**
+ * Is this URL a loaded Woo cart, or a product page the customer still has to
+ * configure? UI copy must not promise a loaded cart when it is handing over a
+ * configurator page. (PatternPro's Add-to-Cart toast reads this.)
+ */
+export function isWpwCartUrl(url: string | null | undefined): boolean {
+  return typeof url === "string" && url.includes("/cart/?add-to-cart=");
+}
