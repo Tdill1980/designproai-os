@@ -72,13 +72,13 @@ function outputClassPrompt(inspectionId) {
   return [
     "You are a print-production inspector. Classify this ONE image by OUTPUT CLASS only. Do not judge quality, style or branding.",
     "",
-    "CLASS flat_atlas — a flat panel-layout sheet: rectangular regions of flat 2D print artwork laid out side by side on one sheet, like printed vinyl panels or posters laid flat. Pure graphics fill each rectangle. No vehicle body is depicted anywhere.",
+    "CLASS flat_atlas — a flat panel-layout sheet: rectangular regions of flat 2D print artwork laid out side by side on one sheet, like printed vinyl panels or posters laid flat. The sheet is EXPECTED to hold several rectangles, one per vehicle surface, and may carry printed panel names or captions (for example HOOD, ROOF, DRIVER, REAR): that is the layout, not a vehicle. The artwork inside a rectangle may legitimately contain automotive MOTIFS drawn as graphics — racing livery stripes and numbers, a stylised car silhouette as a logo element, grille or headlight graphics, tire-tread or carbon patterns, sponsor lettering. Motifs are graphics; they do not make the image a vehicle.",
     "",
-    "CLASS vehicle_depiction — the image shows a vehicle in any form: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle views, a presentation board, or a studio scene containing a vehicle. Wheels, tires, glass, mirrors, lights, body contours, shadows on a floor, or multiple camera views of a vehicle all place the image in this class.",
+    "CLASS vehicle_depiction — the image IS a picture of a vehicle: an installed or wrapped vehicle, a 3D render, a photograph, a mockup, a montage of vehicle camera views, a presentation board, or a studio scene containing a vehicle. Signs: a whole vehicle body seen in perspective or elevation with its real wheels and tires on the ground, reflections, a floor shadow, a horizon or backdrop, or several camera angles of the same vehicle.",
     "",
-    "ALSO vehicle_depiction, even when the sheet is otherwise flat: any rectangle whose artwork is shaped like a vehicle rather than filling the rectangle — a side-profile silhouette or outline, wheel-arch cut-outs or discs, bumper, grille, headlight, door or window shapes, or artwork that stops at a vehicle-shaped edge with a plain single-colour surround (grey, white, black or any colour) filling the rest of the rectangle. Printed panel names or captions inside the artwork (for example ROOF, REAR, DRIVER) also place the image in this class.",
+    "ALSO vehicle_depiction: a rectangle whose artwork is a vehicle-shaped island — the artwork stops at a body outline (side profile, front or rear elevation) and a plain single-colour surround (grey, white, black or any colour) fills the rest of the rectangle. A small hole or dark patch inside otherwise continuous artwork (a wheel arch or window cut out of a full panel) is NOT this class; classify by the artwork around it.",
     "",
-    "flat_atlas requires EVERY rectangle to be filled corner to corner with continuous artwork and no vehicle-shaped boundary anywhere.",
+    "flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge, with no vehicle-shaped boundary between artwork and surround.",
     "",
     `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction","confidence":0..1,"evidence":"one short sentence naming what you see"}`,
   ].join("\n");

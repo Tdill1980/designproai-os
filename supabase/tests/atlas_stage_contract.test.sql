@@ -17,7 +17,7 @@
 -- carried across the seam from the accepted A.T.L.A.S. revision's metadata.
 
 begin;
-select plan(37);
+select plan(44);
 
 select has_function(
   'designpro_private','workflow_run_is_atlas',
@@ -559,6 +559,105 @@ select ok(
   'output.verify, wrapbox.deliver and pack.activate still face their own contracts'
 );
 
+-- 10. CALL 11 WRITES ITS RECEIPT (20260914230000).
+--
+-- panels.delogo completed fourteen times in production without ever writing a
+-- 'call11.qc-panels' receipt row, because no migration set v_kind for it. The
+-- standalone claimant's source.verify reads exactly that receipt, so every
+-- production pack since 09-10 died on receipt_missing. Exercised, not asserted:
+-- the branch refuses a duplicate set that does not bind to Call 9, refuses an
+-- authoritative claim, refuses a hash with no ledgered artifact, and the honest
+-- completion leaves the receipt source.verify reads.
+create or replace function pg_temp.qc_hashes()
+returns jsonb language sql as $qch$
+  select jsonb_build_object(
+    'driver',repeat('a1',32),'passenger',repeat('b2',32),'hood',repeat('c3',32),
+    'roof',repeat('d4',32),'front',repeat('e5',32),'rear',repeat('f6',32));
+$qch$;
+create or replace function pg_temp.qc_receipt(p_overrides jsonb default '{}'::jsonb)
+returns jsonb language sql as $qcr$
+  select jsonb_build_object(
+    'verified',true,'receiptKind','call11.qc-panels','call',11,
+    'role','panelpro-qc-duplicate','authoritative',false,
+    'sides',jsonb_build_array('driver','passenger','hood','roof','front','rear'),
+    'qcPanelHashes',pg_temp.qc_hashes(),
+    'sourcePanelHashes',(select jsonb_object_agg(c->>'surfaceKey',c->>'contentHash')
+                         from atlas_panels, lateral jsonb_array_elements(panels) c),
+    'brandedSetPreserved',true,
+    'removalContract','designpro.call11-delogo-duplicate.v1'
+  ) || p_overrides;
+$qcr$;
+create or replace function pg_temp.qc_artifacts(p_run uuid)
+returns jsonb language sql as $qca$
+  select jsonb_agg(jsonb_build_object(
+    'kind','qc-panel','surfaceKey',q.key,
+    'storagePath','designpro/'||r.tenant_key||'/'||r.id::text||'/qc-panels/'||q.key||'.png',
+    'contentHash',q.value,'byteSize',1024,
+    'metadata',jsonb_build_object('call',11,'role','panelpro-qc-duplicate','authoritative',false)
+  ))
+  from public.designpro_workflow_runs r, jsonb_each_text(pg_temp.qc_hashes()) q
+  where r.id=p_run;
+$qca$;
+
+create temporary table delogo_leases on commit drop as
+select pg_temp.lease((select atlas_run from runs),'panels.delogo',
+  '6b000000-0000-4000-8000-000000000001') as atlas_delogo;
+
+select ok(
+  position($c11$v_kind:='call11.qc-panels';$c11$ in pg_get_functiondef(
+    'public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure))>0,
+  'panels.delogo completes as receipt kind call11.qc-panels'
+);
+
+select throws_ok($t10a$
+  select public.complete_designpro_stage(
+    (select atlas_delogo from delogo_leases),
+    '6b000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select atlas_run from runs)),
+    pg_temp.qc_receipt(jsonb_build_object('sourcePanelHashes',
+      jsonb_set(pg_temp.qc_receipt()->'sourcePanelHashes','{rear}',to_jsonb(repeat('0',64))))),
+    repeat('6',64),pg_temp.qc_artifacts((select atlas_run from runs)))
+$t10a$,'call11_qc_panel_receipt_invalid',
+  'a duplicate set that does not bind to the Call 9 receipt is refused');
+
+select throws_ok($t10b$
+  select public.complete_designpro_stage(
+    (select atlas_delogo from delogo_leases),
+    '6b000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select atlas_run from runs)),
+    pg_temp.qc_receipt('{"authoritative":true}'::jsonb),
+    repeat('6',64),pg_temp.qc_artifacts((select atlas_run from runs)))
+$t10b$,'call11_qc_panel_receipt_invalid',
+  'a QC duplicate set claiming authority is refused');
+
+select throws_ok($t10c$
+  select public.complete_designpro_stage(
+    (select atlas_delogo from delogo_leases),
+    '6b000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select atlas_run from runs)),
+    pg_temp.qc_receipt(),repeat('6',64),
+    (select jsonb_agg(a) from jsonb_array_elements(
+       pg_temp.qc_artifacts((select atlas_run from runs))) a
+     where a->>'surfaceKey'<>'hood'))
+$t10c$,'call11_qc_panel_receipt_invalid',
+  'a QC hash with no ledgered qc-panel artifact is refused');
+
+select is(
+  public.complete_designpro_stage(
+    (select atlas_delogo from delogo_leases),
+    '6b000000-0000-4000-8000-000000000001',
+    pg_temp.identity_for((select atlas_run from runs)),
+    pg_temp.qc_receipt(),repeat('6',64),
+    pg_temp.qc_artifacts((select atlas_run from runs))
+  ),true,'six QC duplicates bound to the Call 9 panels complete Call 11'
+);
+select is(
+  (select receipt_hash from public.designpro_stage_receipts
+   where run_id=(select atlas_run from runs) and receipt_kind='call11.qc-panels'),
+  repeat('6',64),
+  'the call11.qc-panels receipt source.verify reads now exists'
+);
+
 -- 9. THE FREE PACK IS VERIFIED AGAINST THE GEOMETRY IT WAS BUILT FROM.
 --
 -- pack.verify demanded a bound GENIE dimension manifest. RULE 0.19 puts
@@ -629,6 +728,15 @@ select is(
     jsonb_build_object('verified',true,'receiptKind','entice.pack-verify'),
     repeat('7',64),'[]'::jsonb
   ),true,'an A.T.L.A.S. entice pack verifies without a GENIE manifest'
+);
+
+-- 11. THE PRODUCTION RUN NAMES ITS GENERATION (20260915010000). The creator
+-- RPC copies generationId from the source entice run, so a job resolved by
+-- generation id can reach the paid run and everything it manufactured.
+select ok(
+  position($gen$'generationId',v_entice.results->>'generationId'$gen$ in pg_get_functiondef(
+    'public.create_designpro_production_workflow(uuid,text,jsonb)'::regprocedure))>0,
+  'create_designpro_production_workflow seeds results.generationId from the entice run'
 );
 
 select * from finish();
