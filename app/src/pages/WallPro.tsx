@@ -16,8 +16,12 @@ import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zon
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
-import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
+import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
+import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
+import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
+import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
+import { WallProSidebar } from '@/components/wallpro/WallProSidebar';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -28,13 +32,14 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
 const cornerNames = ['top left', 'top right', 'bottom right', 'bottom left'];
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
-const panelClass = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
+/** Read, never retyped — WALL_CARD is the one definition (see wallpro-brand). */
+const panelClass = WALL_CARD;
 type History = Awaited<ReturnType<typeof wallHistory>>;
 
 /** The project a reload reopens when the URL has lost its ?project=. */
@@ -98,6 +103,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // this server-side (request_wallpro_production); the button here is the
   // purchase path, not the security boundary.
   const [entitlements, setEntitlements] = useState<WallProEntitlement[]>([]);
+  /**
+   * Why the next generation is free — 'trial', 'commercialpro', 'privileged',
+   * or null when it is charged. Asked BEFORE anything is spent (owner,
+   * 2026-09-14: "We shpuld have a try free"), so the button can promise it
+   * rather than the customer discovering it at the point of failure. Fails
+   * soft: unknown means the page promises nothing, which is the safe way to be
+   * wrong about someone's money.
+   */
+  const [freeReason, setFreeReason] = useState<string | null>(null);
   const entitled = entitlements.length > 0;
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
@@ -863,6 +877,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     openWallAssets(paths).then(map => { if (active) setZoneArt(map); }).catch(() => { if (active) setZoneArt({}); });
     return () => { active = false; };
   }, [zones, projectId]);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        // Signed out is its OWN state, not 'trial'. The freebie is still
+        // waiting for them, but it now costs an account to claim — so the page
+        // must not promise "no account needed" and then ask for one at the
+        // button, which is the worst possible order to learn it in.
+        if (!data?.user) { if (live) setFreeReason('signed-out'); return; }
+        const reason = await wallFreeReason(data.user.id);
+        if (live) setFreeReason(reason);
+      } catch { if (live) setFreeReason(null); }
+    })();
+    return () => { live = false; };
+    // Re-checked after a generation: the trial is spent by the first one.
+  }, [versions.length]);
+
   // Returning from Stripe: the webhook records the entitlement asynchronously,
   // so this re-checks a few times rather than trusting the redirect alone.
   useEffect(() => {
@@ -1007,7 +1039,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     });
   }
 
-  return <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-950 md:px-8">
+  /**
+   * The rail's steps, read from the page's own state. Every `done` here is the
+   * same fact a button is gated on -- a rail that congratulated you on a step
+   * you had not finished would be worse than no rail.
+   */
+  const wallSteps = [
+    { id: 'upload-wall', label: 'Your wall', done: width > 0 && height > 0,
+      detail: width > 0 && height > 0 ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Width and height' },
+    { id: 'choose-design', label: 'Your design', done: !!artwork,
+      detail: artwork ? WALL_DESIGN_SKUS[designMode].label : 'Five ways in' },
+    { id: 'wall-preview', label: 'Preview', done: !!artwork,
+      detail: artwork ? (photo ? 'Flat and on your wall' : 'Flat master') : 'After you generate' },
+    { id: 'print-files', label: 'Print files', done: !!approvedVersion,
+      detail: approvedVersion ? `V${approvedVersion.version_no} approved` : `${WALLPRO_PRINT_WIDTH}" panels, 150 PPI` },
+    { id: 'order-printed-film', label: 'Buy film', done: false,
+      detail: billing ? `${billing.wallSqFt} sq ft - ${formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}` : 'Priced by the square foot' },
+  ];
+
+  return <div className={`min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
+    {theme.showPrintOffer && <WallProSidebar
+      theme={theme} steps={wallSteps} top={stickyTop + 16} busy={!!busy} freeReason={freeReason}
+      onHistory={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}
+      onStartFresh={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}
+    />}
+    <main className="min-w-0 flex-1 px-4 py-8 text-slate-950 md:px-8">
     <Helmet><title>WallPro — Wall Design & Preview | DesignProAI</title></Helmet>
     <div className="mx-auto max-w-7xl space-y-5">
       {/* PERSISTENT HEADER, ON THE PHONE TOO (owner, 2026-09-12: "give wallpro
@@ -1024,7 +1080,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <header
         id="wallpro-header"
         style={{ top: stickyTop }}
-        className="sticky z-30 -mx-4 bg-slate-50/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-slate-50/80 md:-mx-8 md:px-8 md:py-4"
+        className="sticky z-30 -mx-4 bg-black px-4 py-3 text-white md:-mx-8 md:px-8 md:py-4"
       >
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           {/* A PROPER HEADER, on both breakpoints (owner, 2026-09-12: "there is
@@ -1033,32 +1089,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               reads, rather than the one cramped row this was. The tagline is
               what tells a first-time visitor what WallPro is, so it earns its
               line on a phone too. */}
-          <div className="min-w-0">
-            {/* THE LOCKUP: partner mark × WallPro (owner, 2026-09-14). The "×"
-                is the collaboration mark, so it stays lighter and smaller than
-                either name it joins -- it is punctuation, not a third brand.
-                A brand with no logo falls back to its eyebrow text. */}
-            <div className="flex items-center gap-2.5">
-              {theme.logo
-                ? <img src={theme.logo} alt={theme.logoAlt} className="h-7 w-auto shrink-0 md:h-9" />
-                : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600 md:text-xs">{theme.eyebrow}</p>}
-              <span aria-hidden="true" className="text-lg font-light text-slate-400 md:text-xl">&times;</span>
-              {/* Two tone, not a gradient: against the partner's own mark the
-                  wordmark has to read as a solid name at a glance. The gradient
-                  stays where it belongs, on the actions. */}
-              <h1 className="text-2xl font-bold leading-tight md:text-3xl">
-                <span className="text-slate-900">{theme.wordmarkLead}</span><span className="text-blue-600">{theme.wordmarkAccent}</span>
-              </h1>
-            </div>
-            {/* The owner's own words for what this tool IS (2026-09-13:
-                "a persistent header that says WallPro custom wall wrap file
-                output"). It names the deliverable -- a print file -- rather
-                than describing the feeling of using it, which is what the
-                trade buyer is actually here for. */}
-            <p className="mt-0.5 text-xs text-slate-600 md:text-sm">{theme.tagline}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign('/printpro/wallpro'); }}>
+          {/* The lockup lives in WallProLockup so the case study wears the
+              identical brand identity instead of a second copy of it. */}
+          <WallProLockup theme={theme} />
+          {/* The rail carries these on desktop, so the header would show them
+              twice. The rail is hidden below lg (a pinned sidebar on a phone
+              eats the screen), so on a phone the header keeps them. Brands
+              without a rail keep them at every width. */}
+          <div className={`flex shrink-0 items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
+            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
               <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
             </Button>
             <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
@@ -1072,13 +1111,63 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             header's own padding so it reads as an edge of the bar rather than a
             line drawn inside it. Two pixels: enough to carry a gradient, not so
             much that it becomes a band of its own. */}
-        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-gradient-to-r from-blue-600 via-blue-400 to-white" />
+        <WallProHeaderRule />
       </header>
       {/* The proof band, and ONLY before they start. Its whole job is to answer
           "what does this do?" for someone who has just landed; once a wall photo
           or artwork exists the customer has their own before and after in the
           preview pane, and a stranger's gym is in the way. */}
-      {!photo && !artwork && <WallProHeroProof proofs={theme.proofs} />}
+      {/* ABOVE THE SCROLL (owner, 2026-09-14: "Above scroll custom wall wrap
+          design now or like on demand wall wrap design & file output"). The
+          headline says what this page DOES beside a room it actually did it to,
+          so the claim and its proof are one object. It clears the moment work
+          starts -- a customer with their own wall on screen does not need to be
+          told what the tool is. */}
+      {!photo && !artwork && theme.proofs.length > 0 && (
+        <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <div>
+            <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-slate-900 md:text-4xl">
+              On-demand wall wrap<br />design &amp; file output
+            </h2>
+            <p className="mt-3 max-w-[42ch] text-sm text-slate-600">
+              Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
+              in minutes, and take the print-ready files — whether we print them or you do.
+            </p>
+            {/* The one question the tool cannot answer about itself: what
+                actually happens after the button. The case study answers it on
+                a real wall, so the link belongs beside the claim it backs. */}
+            <Link to="/wall-wrap/how-it-works" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+              See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
+            </Link>
+          </div>
+          <WallProHeroProof proofs={theme.proofs} />
+        </section>
+      )}
+      {!photo && !artwork && theme.proofs.length === 0 && <WallProHeroProof proofs={theme.proofs} />}
+      {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
+          block is the only friction-free money on this page -- no sign-in, no
+          token, no design -- and on a wrap printer's site "I already have
+          artwork" is a large share of arrivals. It was sitting below two
+          thousand pixels of design tool, which asks exactly the wrong question
+          of that customer. One slim line puts it one click away without
+          competing with the designer for the fold. */}
+      {theme.showPrintOffer && !artwork && <a
+        href="#order-printed-film"
+        onClick={e => { e.preventDefault(); document.getElementById('order-printed-film')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+        /* Owner, 2026-09-15: "the order a printed wrap you have your own art
+           should be a blue magenta gradiant white text". It was flat #ec4899,
+           which is the tail of the page's own gradient wearing none of its
+           head -- so the one bar selling the SECOND product read as a foreign
+           object rather than the page's other primary action. It carries
+           WALL_GRADIENT now, the same sweep as the Generate buttons, and
+           brightens on hover instead of jumping to a different pink. */
+        className={`mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl ${WALL_GRADIENT} px-4 py-3 text-sm text-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_28px_-12px_rgba(37,99,235,0.45)] transition hover:brightness-110`}
+      >
+        <span className="text-white/90">
+          <strong className="font-semibold text-white">Already have artwork?</strong> Skip the design and order printed film by the square foot.
+        </span>
+        <span className="shrink-0 font-semibold text-white">Order film &rarr;</span>
+      </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
@@ -1088,7 +1177,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
+          <section id="upload-wall" className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
@@ -1098,8 +1187,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
+                2026-09-14: "on enter wall size should give price for printed
+                wrap from wpw film"). The wall's own square footage at the live
+                WePrintWraps rate -- the number a customer can check with a tape
+                measure -- so the cost of the thing they came for is answered in
+                step 1 rather than four thousand pixels later. It is the film
+                only; the design is priced on its own card, because they are
+                separate purchases with separate payees. */}
+            {dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-xs text-slate-600">
+                Printed film, this wall
+                <span className="block text-[11px] text-slate-500">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
+              </span>
+              <span className="text-base font-bold tabular-nums text-slate-900">
+                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
+              </span>
+            </div>}
           </section>
-          <section className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
+          <section id="choose-design" className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
               { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
@@ -1139,7 +1245,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
               {intent !== 'match' && <p className="text-xs text-slate-500">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
               {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
-              <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>
+              {freeReason === 'commercialpro'
+                ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
+                : freeReason === 'trial'
+                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
+                  : freeReason === 'signed-out'
+                    ? <p className="text-xs font-semibold text-emerald-700">
+                        Your first design is free — <Link to="/signup" state={{ from: '/wall-wrap' }} className="underline">create a free account</Link> to claim it.
+                        Pricing film needs no account.
+                      </p>
+                    : <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
               {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
@@ -1413,9 +1528,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               already typed. Design + files are the Stripe checkout above.
               Not shown on the DesignProAI route: that customer came for the
               tool, and the printing is a partner's business. */}
-          {theme.showPrintOffer && <WallProPrintOffer billing={billing} />}
         </div>
       </div>
+
+      {/* ── BELOW THE TOOL: FULL WIDTH ──────────────────────────────────────
+          These three used to sit INSIDE the right-hand column of the
+          [400px | rest] grid, which meant that once the form ended the page ran
+          on for another two thousand pixels with a 400px column of nothing
+          beside it (owner, 2026-09-14: "It needs to look like a real tool
+          page"). The designer is a two-column workspace; what you buy after it
+          is not, and it should use the whole page.
+
+          Order is the customer's: what your design costs to print, then film on
+          its own for the buyer who needs no design, then the questions. */}
+      {theme.showPrintOffer && <div className="mt-5 space-y-5">
+        <WallProPrintOffer billing={billing} />
+        {/* THE THIRD THING THIS PAGE SELLS (owner, 2026-09-14: "buttons so they
+            can directly buy printed wrap film if they don't need a new
+            design"). It takes the wall's own square footage, so a customer who
+            measured in step 1 sees a real price without entering anything
+            twice -- and needs no design, photo or approved version. */}
+        <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />
+        {/* The product-page half: the questions and the search terms the wall
+            product page answered. A page that REPLACES a product page has to
+            answer what it answered, or the questions arrive as phone calls and
+            the rankings go elsewhere. */}
+        <WallProProductDetail />
+      </div>}
     </div>
     {/* On a phone the form and the wall photo stack, so marking corners puts
         Generate a full screen away and the customer scrolls up and down to
@@ -1426,5 +1565,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
       {generationBlocker && <p className="mt-1 text-center text-[11px] text-slate-600">{generationBlocker}</p>}
     </div>}
-  </main>;
+  </main>
+  </div>;
 }

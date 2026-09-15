@@ -67,6 +67,8 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+// The WallPro case study: one real wall, bare to installed.
+const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
@@ -234,6 +236,9 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
  */
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   pathname === "/wall-wrap" ||
+  // The case study wears the same partner header and must not get DesignProAI
+  // chrome stacked on top of it either.
+  pathname === "/wall-wrap/how-it-works" ||
   pathname === "/wallwrap-design" ||
   (pathname === "/" && isWallProPartnerHost(hostname));
 
@@ -416,6 +421,10 @@ const App = () => {
               separately measurable rather than one link pretending to be two. */}
           <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
           <Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />
+          {/* The case study: one real wall, bare to installed. Its numbers and
+              diagrams are computed by the tool's own libraries, so it cannot
+              drift from the product the way a page of screenshots would. */}
+          <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

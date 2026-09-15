@@ -19,6 +19,7 @@ import { WPW_WALL_WRAP_PRODUCT, storeMatchesLaunchPricing, wpwWallWrapBuy } from
 import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { WALL_FILM } from '@/lib/quick-quote';
 import type { WallBilling } from '@/lib/wallpro-print-plan';
+import { WALL_CARD } from '@/lib/wallpro-brand';
 
 const SPECS: Array<[string, string]> = [
   ['Film', WALL_FILM.name],
@@ -29,6 +30,12 @@ const SPECS: Array<[string, string]> = [
   ['Panel width', `${WALLPRO_PRINT_WIDTH}″, ½″ overlap at each seam`],
   ['Resolution', '150 PPI at printed size'],
   ['Install', WALL_FILM.installType],
+  // The three the live product page lists and this table did not. "Pricing
+  // unit" earns its row twice over: the store nav still prints "per linear
+  // foot" on this product, so the page it replaces has to state the truth.
+  ['Lamination', 'Not required or compatible'],
+  ['Pricing unit', 'Sold by the square foot'],
+  ['Use case', WALL_FILM.useCase],
 ];
 
 export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) {
@@ -39,7 +46,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
   return (
     <section className="mt-8 space-y-6">
       {/* ── The printing, priced on the wall they already measured ──────── */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className={`overflow-hidden ${WALL_CARD} p-0`}>
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-sky-50 via-violet-50 to-fuchsia-50 p-5 md:p-6">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-700">
@@ -93,7 +100,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
       </div>
 
       {/* ── What happens after approval. Claims, never disclaimers. ─────── */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <div className={`${WALL_CARD} md:p-6`}>
         <h3 className="text-base font-bold text-slate-900">What happens after you approve it</h3>
         <ol className="mt-4 grid gap-5 md:grid-cols-3">
           <li>
@@ -132,7 +139,7 @@ export function WallProPrintOffer({ billing }: { billing: WallBilling | null }) 
       </div>
 
       {/* ── The material. Long-tail search reads this too. ──────────────── */}
-      <details className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <details open className={`${WALL_CARD} md:p-6`}>
         <summary className="cursor-pointer text-base font-bold text-slate-900">The material</summary>
         <dl className="mt-4 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
           {SPECS.map(([label, value]) => (

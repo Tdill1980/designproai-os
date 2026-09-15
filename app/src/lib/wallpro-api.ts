@@ -8,10 +8,50 @@ export const WALLPRO_BUCKET = 'wallpro-files';
 export type WallAsset = { url: string; path?: string; file?: File; aspect: number; width?: number; height?: number };
 const db = supabase as any;
 
+/**
+ * The owner of this wall session — a REAL account, not an anonymous one.
+ *
+ * Owner, 2026-09-14: "We shpuld have a try free", then 2026-09-15, choosing
+ * how to hold the line on it: "2" — anonymous preview, sign in to generate.
+ *
+ * WHY THE ANONYMOUS SESSION CAME OUT. The free design is granted by
+ * reserve_wallpro_generation's 'trial' source, which is one per IDENTITY. An
+ * anonymous sign-in mints a brand-new identity on demand, so "one freebie per
+ * person" was really "one freebie per browser session" — a private window, or
+ * clearing site data, and the same person takes another. That is not a leak
+ * worth policing after the fact; it is the giveaway having no floor at all.
+ *
+ * WHAT THE CUSTOMER STILL GETS WITHOUT AN ACCOUNT. Everything up to the
+ * generation: the wall size, the film price, the print-width plan, an uploaded
+ * design shown on their own wall photo, and the whole printed-film order path,
+ * which needs no account at all. The account is asked for at the one moment
+ * something is actually being SPENT, which is also the moment a customer is
+ * most willing to give it — and it is what turns a freebie into a lead instead
+ * of a cost.
+ *
+ * A SIDE EFFECT WORTH KNOWING: anonymous sign-ins can now stay OFF in the
+ * Supabase project, which is how they are already configured. This path no
+ * longer depends on a setting nobody has flipped.
+ */
 export async function wallUser() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) throw new Error('Sign in to generate or save a wall design. You can preview uploaded artwork before signing in.');
-  return data.user;
+  const { data } = await supabase.auth.getUser();
+  if (data?.user) return data.user;
+  throw new Error('Create a free account to generate your design — your first one is on us. You can price the film and preview your own artwork without signing in.');
+}
+
+/**
+ * Why this customer's next generation costs nothing — 'trial', 'commercialpro',
+ * 'privileged', or null when it will be charged.
+ *
+ * Asked BEFORE anything is spent, so the page can promise "your first design is
+ * free" truthfully instead of discovering it at the point of failure. Fails
+ * soft: an unreachable database returns null and the page simply makes no
+ * promise, which is the safe direction to be wrong.
+ */
+export async function wallFreeReason(owner: string): Promise<string | null> {
+  const { data, error } = await db.rpc('wallpro_free_generation_reason', { p_owner: owner });
+  if (error) return null;
+  return (data as string | null) ?? null;
 }
 export async function uploadWallAsset(asset: WallAsset, owner: string): Promise<string> {
   if (asset.path) return asset.path;

@@ -41,6 +41,32 @@
  */
 export const WALL_GRADIENT = 'bg-gradient-to-r from-blue-700 via-blue-500 to-fuchsia-600';
 
+/**
+ * THE CARD SHELL — one definition, every panel.
+ *
+ * Owner, 2026-09-15: "make the cards stand out better perhaps."
+ *
+ * The cards were `border-slate-200 bg-white shadow-sm` on a `bg-slate-50`
+ * page. White on near-white is about two percent of luminance between the card
+ * and the ground, and `shadow-sm` is a one-pixel hairline, so the panels did
+ * not read as objects sitting ON a page — they read as faint boxes drawn on
+ * it, and the step structure of the tool went with them.
+ *
+ * Two changes, and the FIRST is the one doing the work: the page ground drops
+ * to slate-100 so there is something for a white card to sit on. Chasing this
+ * with shadow alone is the common mistake — a heavier shadow under a card that
+ * is the same colour as its background just looks smudged.
+ *
+ * Then the card gets a real lift: a close contact shadow plus a wide soft one,
+ * which is how a physical card casts, and `ring-slate-900/5` to keep the edge
+ * crisp at the top where a downward shadow gives none.
+ */
+export const WALL_CARD =
+  'rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_28px_-12px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/5';
+
+/** The page ground the cards sit on. Must stay darker than the card. */
+export const WALL_PAGE_GROUND = 'bg-slate-100';
+
 export type WallBrandKey = 'designpro' | 'weprintwraps';
 
 export type WallBrand = {
@@ -121,10 +147,12 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     eyebrow: 'WePrintWraps',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    // The owner's line, verbatim (2026-09-14): "Custom Wrap Design , Output
-    // Files , and Print on Demand". It names the three things sold, in the
-    // order they happen, which the previous line ("delivered FAST") did not.
-    tagline: 'Custom Wrap Design, Output Files, and Print on Demand',
+    // The owner, 2026-09-14, on what the header has to make obvious: "Clear
+    // persistent header custom instant wall wrap design and file output buy
+    // film". THREE things are for sale on this page and a visitor has to see
+    // all three without scrolling -- most of all the last one, because the
+    // customer who already has artwork was the one this page did not serve.
+    tagline: 'Custom Wall Wrap design, print files & printed wrap',
     showPrintOffer: true,
     // REAL JOBS ONLY. Each entry is a room WePrintWraps actually wrapped,
     // photographed twice from one camera position. Drop the two files at the
@@ -142,10 +170,28 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
         headline: 'One wall, one afternoon.',
         caption: 'A home studio in a dark tropical print, designed and printed here. Drag to compare.',
       },
-      // PENDING: the gym floor and the lobby feature wall. Both were described
-      // but their files are not in the repository, and an entry pointing at a
-      // file that does not exist costs every visitor two failed requests. Add
-      // the block back with its photographs, not before.
+      {
+        // THE SAME BARE WALL as the entry above, deliberately. One room shown
+        // two ways is the argument this tool actually makes -- the wall did not
+        // change, the design did -- and it is a stronger second slide than a
+        // different room would be, because the visitor has already learned this
+        // room from slide one and can read the change instantly.
+        //
+        // The frame was REGISTERED onto that bare photograph rather than eyed
+        // in: scripts/wallpro-proof-normalize.mjs --align-to, best 0.782 at
+        // 108% scale. WallPro's renders come back framed a few percent wider
+        // than the photograph they were made from, and a few percent is enough
+        // for the sofa to slide under the wipe and read as two rooms.
+        before: '/wallpro/proof-spa-before.jpg',
+        after: '/wallpro/proof-studio-slat-after.jpg',
+        alt: 'The same home studio with plain cream walls, and again with a warm vertical timber-slat wrap running wall to wall behind the window',
+        headline: 'Same wall. Different room.',
+        caption: 'The same studio in a warm timber slat — designed in WallPro, printed here. Drag to compare.',
+      },
+      // PENDING: the gym floor and the hotel lobby feature wall. Both were
+      // described but their files are not in the repository, and an entry
+      // pointing at a file that does not exist costs every visitor two failed
+      // requests. Add the block back with its photographs, not before.
     ],
   },
 };
