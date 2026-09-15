@@ -58,8 +58,15 @@ test("white surface, blue gradient accent, the WPW mark in the lockup, wordmark 
   assert.ok(PAGE.includes("import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';"));
   assert.ok(PAGE.includes("<WallProLockup theme={theme} />"));
   assert.ok(PAGE.includes('className="sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4"'));
-  assert.ok(PAGE.includes('Designed in <span className="wpw-blue-text">PatternPro</span>.'));
+  // Owner, 2026-09-15: "should say pick a pattern and see it on any vehicle".
+  assert.ok(PAGE.includes("Pick a pattern."));
+  assert.ok(PAGE.includes('See it on <span className="wpw-blue-text">any vehicle</span>.'));
+  assert.ok(!PAGE.includes("Designed in <span"));
   assert.ok(PAGE.includes("src={theme.hero.main}"));
+  // The small square is the SWATCH the render was made from, not a second render.
+  assert.ok(PAGE.includes("src={theme.hero.swatch}"));
+  assert.ok(BRAND.includes("render/image/public/wrap-files/pattern-swatches-wpw"));
+  assert.ok(BRAND.includes("${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=600&height=600&resize=cover"));
   assert.ok(BRAND.includes("logo: '/wpw-logo-mark.png'"));
   assert.ok(existsSync(resolve(root, "app/public/wpw-logo-mark.png")));
   assert.ok(BRAND.includes("storage/v1/render/image/public/wrap-files/renders/anonymous/patternpro"));

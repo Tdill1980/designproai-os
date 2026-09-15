@@ -17,8 +17,8 @@ import { WPW_PRODUCT_URLS } from '@/data/patternpro-patterns';
 export type PatternBrandKey = 'designpro' | 'weprintwraps';
 
 export type PatternBrand = LockupBrand & {
-  /** The hero image beside the headline — a real PatternPro render. */
-  hero: { main: string; inset: string; alt: string; insetAlt: string } | null;
+  /** The hero beside the headline: a real PatternPro render, and the swatch it was made from. */
+  hero: { main: string; swatch: string; alt: string; swatchAlt: string } | null;
   /**
    * Where "Already know your pattern?" sends a buyer who needs no proof: the
    * partner's product page per collection, keyed by the collection name. Null
@@ -35,13 +35,18 @@ export type PatternBrand = LockupBrand & {
 export const PATTERN_BLUE_GRADIENT = 'linear-gradient(90deg, #2f7ff7, #174a91)';
 
 /**
- * The owner's own PatternPro renders (Chameleon Camo Tan on a 2022 Raptor),
- * served through the storage image transform so a 9 MB render never ships to a
- * phone. They live on the RestylePro project, where they were rendered; the
- * URL is public and the file is not going anywhere.
+ * The hero pair: the owner's own PatternPro render (Chameleon Camo Tan on a
+ * 2022 Raptor) and, in the small square over it, THE SWATCH of that same
+ * pattern (owner, 2026-09-15: "the little square pic is swatch pattern"). The
+ * pair is the whole pitch in one glance — this swatch, that truck. Both are
+ * served through the storage image transform so a 9 MB render never ships to
+ * a phone. They live on the RestylePro project, where the swatch library and
+ * the renders are; the URLs are public and the files are not going anywhere.
  */
 const RENDER_BASE =
   'https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/render/image/public/wrap-files/renders/anonymous/patternpro';
+const SWATCH_BASE =
+  'https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/render/image/public/wrap-files/pattern-swatches-wpw';
 
 export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
   designpro: {
@@ -64,9 +69,9 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     tagline: 'Pattern wraps by the yard · designed in PatternPro, printed by WePrintWraps',
     hero: {
       main: `${RENDER_BASE}/1789445607140_Ford_Raptor_side.jpg?width=1400&height=788&resize=contain&quality=78`,
-      inset: `${RENDER_BASE}/1789445641549_Ford_Raptor_hood_detail.jpg?width=800&height=450&resize=contain&quality=78`,
+      swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=600&height=600&resize=cover&quality=80`,
       alt: 'Chameleon Camo Tan pattern rendered on a 2022 Ford Raptor in PatternPro',
-      insetAlt: 'Hood detail of the same pattern',
+      swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
     },
     // The five WooCommerce product pages, one per collection — the same
     // table the cart link resolves through.

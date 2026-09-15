@@ -36,7 +36,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
         <title>{partner ? `${theme.logoAlt} x PatternPro™ — Pattern wraps by the yard` : 'PatternPro™ — Pattern wraps by the yard | DesignProAI'}</title>
         <meta
           name="description"
-          content="Pick one of 118 real WePrintWraps patterns, see it on the vehicle in 3D, get the yards for a full wrap, and order the printed film by the yard."
+          content="Pick a pattern and see it on any vehicle. 118 real WePrintWraps patterns, a 3D proof on any year, make and model, the yards for a full wrap, and the printed film ordered by the yard."
         />
       </Helmet>
 
@@ -75,15 +75,19 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-700">
             {partner ? `${theme.logoAlt} x PatternPro` : 'PatternPro'} · printed wraps by the yard
           </p>
+          {/* THE HEADLINE IS THE PRODUCT (owner, 2026-09-15: "should say pick a
+              pattern and see it on any vehicle"). Not who designed or printed it —
+              what the visitor gets to do, in one line. */}
           <h1 className="mt-3 font-poppins text-4xl font-extrabold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl">
-            Designed in <span className="wpw-blue-text">PatternPro</span>.
+            Pick a pattern.
             <br />
-            {partner ? `Printed by ${theme.logoAlt}.` : 'Printed by the yard.'}
+            See it on <span className="wpw-blue-text">any vehicle</span>.
           </h1>
           <p className="mt-4 max-w-xl text-base text-gray-600 sm:text-lg">
-            Pick one of 118 real WePrintWraps patterns, see it on the customer's vehicle in
-            3D, get the yards a full wrap takes, and order the printed film. $95.50 a yard
-            on a 60″ roll, printed and laminated by WePrintWraps.
+            Choose one of 118 real WePrintWraps patterns, enter any year, make and model,
+            and see it wrapped in 3D. PatternPro tells you the yards a full wrap takes, and
+            you order the printed film right here. $95.50 a yard on a 60″ roll, printed and
+            laminated by WePrintWraps.
           </p>
           <ul className="mt-5 flex flex-wrap gap-2 text-xs font-semibold">
             {['118 patterns', '5 collections', '60″ Avery film', 'Yards calculated for you', 'Ships from WePrintWraps'].map((chip) => (
@@ -101,10 +105,12 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
               className="w-full rounded-2xl border border-gray-200 shadow-xl"
               loading="eager"
             />
+            {/* The swatch the render was made from, square, over the truck's
+                corner: this pattern, that vehicle. */}
             <img
-              src={theme.hero.inset}
-              alt={theme.hero.insetAlt}
-              className="absolute -bottom-6 -left-4 hidden w-[42%] rounded-xl border-4 border-white shadow-2xl sm:block"
+              src={theme.hero.swatch}
+              alt={theme.hero.swatchAlt}
+              className="absolute -bottom-6 -left-4 hidden aspect-square w-[30%] rounded-xl border-4 border-white object-cover shadow-2xl sm:block"
               loading="lazy"
             />
           </div>
