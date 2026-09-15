@@ -96,9 +96,11 @@ export function WallProSidebar({
 
         {/* The promise, where it is visible for the whole session rather than
             only beside a button two screens down. */}
-        {(freeReason === 'trial' || freeReason === 'commercialpro') && (
+        {(freeReason === 'trial' || freeReason === 'signed-out' || freeReason === 'commercialpro') && (
           <p className="mx-2 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-800">
-            {freeReason === 'commercialpro' ? 'Design included with CommercialPro' : 'Your first design is free'}
+            {freeReason === 'commercialpro' ? 'Design included with CommercialPro'
+              : freeReason === 'signed-out' ? 'Your first design is free — account required'
+              : 'Your first design is free'}
           </p>
         )}
 

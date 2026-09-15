@@ -882,7 +882,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     (async () => {
       try {
         const { data } = await supabase.auth.getUser();
-        if (!data?.user) { if (live) setFreeReason('trial'); return; }
+        // Signed out is its OWN state, not 'trial'. The freebie is still
+        // waiting for them, but it now costs an account to claim — so the page
+        // must not promise "no account needed" and then ask for one at the
+        // button, which is the worst possible order to learn it in.
+        if (!data?.user) { if (live) setFreeReason('signed-out'); return; }
         const reason = await wallFreeReason(data.user.id);
         if (live) setFreeReason(reason);
       } catch { if (live) setFreeReason(null); }
@@ -1244,8 +1248,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {freeReason === 'commercialpro'
                 ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
                 : freeReason === 'trial'
-                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. No account needed to try it — usually ready in 1–2 minutes.</p>
-                  : <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
+                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
+                  : freeReason === 'signed-out'
+                    ? <p className="text-xs font-semibold text-emerald-700">
+                        Your first design is free — <Link to="/signup" state={{ from: '/wall-wrap' }} className="underline">create a free account</Link> to claim it.
+                        Pricing film needs no account.
+                      </p>
+                    : <p className="text-xs text-slate-500">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
               {/* The reason generation is blocked, and any failure, sit beside the button
                   the customer is looking at. The page-top alert alone is off screen here. */}
               {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}

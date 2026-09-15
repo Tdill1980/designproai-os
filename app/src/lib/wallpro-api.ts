@@ -9,43 +9,34 @@ export type WallAsset = { url: string; path?: string; file?: File; aspect: numbe
 const db = supabase as any;
 
 /**
- * The owner of this wall session — signing in anonymously rather than refusing.
+ * The owner of this wall session — a REAL account, not an anonymous one.
  *
- * Owner, 2026-09-14: "We shpuld have a try free", on WallPro's debut on
- * weprintwraps.com. This function used to THROW at a customer who had not
- * signed in, which on the WePrintWraps wall wrap product page meant the first
- * click of Generate hit a signup wall for DesignProAI — a company they did not
- * come to — before they had seen a pixel of their own room.
+ * Owner, 2026-09-14: "We shpuld have a try free", then 2026-09-15, choosing
+ * how to hold the line on it: "2" — anonymous preview, sign in to generate.
  *
- * WHY ANONYMOUS AND NOT A PUBLIC ENDPOINT. An anonymous Supabase session is a
- * REAL auth user with a real id, so every downstream contract holds unchanged:
- * storage paths keyed by owner, row-level security, the generation reservation,
- * versions, entitlements. A public generate endpoint would have meant rewriting
- * all of it. And the upgrade is lossless — `updateUser({ email })` later keeps
- * the same user id, so a customer who signs up at the unlock keeps every design
- * they made before they had an account.
+ * WHY THE ANONYMOUS SESSION CAME OUT. The free design is granted by
+ * reserve_wallpro_generation's 'trial' source, which is one per IDENTITY. An
+ * anonymous sign-in mints a brand-new identity on demand, so "one freebie per
+ * person" was really "one freebie per browser session" — a private window, or
+ * clearing site data, and the same person takes another. That is not a leak
+ * worth policing after the fact; it is the giveaway having no floor at all.
  *
- * WHAT IS STILL PAID. Nothing here gives away the product: the free generation
- * is granted by reserve_wallpro_generation's 'trial' source, one per identity,
- * and the print-ready files remain gated on wallpro_purchase_entitlements.
+ * WHAT THE CUSTOMER STILL GETS WITHOUT AN ACCOUNT. Everything up to the
+ * generation: the wall size, the film price, the print-width plan, an uploaded
+ * design shown on their own wall photo, and the whole printed-film order path,
+ * which needs no account at all. The account is asked for at the one moment
+ * something is actually being SPENT, which is also the moment a customer is
+ * most willing to give it — and it is what turns a freebie into a lead instead
+ * of a cost.
  *
- * ⚠️ ANONYMOUS SIGN-INS ARE A PROJECT SETTING, AND ON 2026-09-14 THEY WERE OFF:
- * the live project answers `anonymous_provider_disabled` (422). Enable it at
- * Authentication → Sign In / Providers → Anonymous sign-ins. Until then this
- * falls back to the old message, so the page degrades to "sign in first" rather
- * than failing in a way nobody can read.
+ * A SIDE EFFECT WORTH KNOWING: anonymous sign-ins can now stay OFF in the
+ * Supabase project, which is how they are already configured. This path no
+ * longer depends on a setting nobody has flipped.
  */
 export async function wallUser() {
   const { data } = await supabase.auth.getUser();
   if (data?.user) return data.user;
-
-  const anon = await supabase.auth.signInAnonymously().catch(() => null);
-  if (anon?.data?.user) return anon.data.user;
-
-  // Same sentence either way: whether anonymous sign-in is switched off or the
-  // request simply failed is our problem, not something to explain to a
-  // customer standing in front of a wall.
-  throw new Error('Sign in to generate or save a wall design. You can preview uploaded artwork before signing in.');
+  throw new Error('Create a free account to generate your design — your first one is on us. You can price the film and preview your own artwork without signing in.');
 }
 
 /**
