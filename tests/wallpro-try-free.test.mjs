@@ -25,7 +25,7 @@ const ROOT = new URL('../', import.meta.url).pathname;
 const { PGlite } = createRequire(ROOT + 'runtime/package.json')('@electric-sql/pglite');
 
 const ORIGINAL = 'supabase/migrations/20260910070849_wallpro_private_projects.sql';
-const PATCH = 'supabase/migrations/20260914230000_wallpro_try_free_and_commercialpro.sql';
+const PATCH = 'supabase/migrations/20260915020000_wallpro_try_free_and_commercialpro.sql';
 
 /**
  * THE CHECK COMES OUT OF THE REAL MIGRATION, NOT OUT OF THIS FILE.
