@@ -126,3 +126,39 @@ test("the fill is reproducible: the same sheet fills to the same bytes", async (
   const second = await fillMasterCutouts(bytes, manifest, ["driver"]);
   assert.equal(Buffer.compare(first.bytes, second.bytes), 0);
 });
+
+/** The near-black void the gate convicts by shape is closed by the same fill. */
+test("a dark navy, noisy wheel void is closed completely and the repaired sheet passes", async () => {
+  const width = 800, height = 200;
+  const raw = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const o = (y * width + x) * 4;
+      const inside = x < 400 && (x - 90) ** 2 + (y - 200) ** 2 <= 70 * 70;
+      if (inside) {
+        const n = (x * 7 + y * 13) % 35;
+        raw[o] = 4 + (n % 11); raw[o + 1] = 6 + ((n * 3) % 13); raw[o + 2] = 10 + n;
+      } else {
+        raw[o] = 200 + ((x * 3) % 40); raw[o + 1] = 150 + ((y * 5) % 60); raw[o + 2] = 90 + ((x + y) % 80);
+      }
+      raw[o + 3] = 255;
+    }
+  }
+  const bytes = await sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  const before = await deterministicMasterChecks(bytes, manifest);
+  assert.deepEqual(before.cutoutFindings.map((item) => item.surfaceKey), ["driver"]);
+  assert.match(before.cutoutFindings[0].finding, /voidBlobRatio/);
+
+  const result = await fillMasterCutouts(bytes, manifest, ["driver"]);
+  assert.equal(result.changed, true);
+  assert.equal(result.filled[0].components, 1, "one void is one shape");
+  assert.equal(result.filled[0].unresolvedPixels, 0);
+  assert.ok(result.filled[0].zoneFraction > 0.03, "the whole disc is what gets closed");
+
+  const after = await deterministicMasterChecks(result.bytes, manifest);
+  assert.deepEqual(after.cutoutFindings, [], "no void survives the fill");
+  assert.equal(after.accepted, true);
+  const passenger = await zoneRaw(result.bytes, 400);
+  const passengerBefore = await zoneRaw(bytes, 400);
+  assert.ok(passenger.equals(passengerBefore), "the untouched flank is byte-identical");
+});
