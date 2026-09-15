@@ -24,7 +24,7 @@ import { useState } from 'react';
 import { ShoppingCart, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WPW_PRINTED_FILMS, filmOrder, money } from '@/lib/wpw-printed-films';
-import { WALL_GRADIENT } from '@/lib/wallpro-brand';
+import { WALL_GRADIENT, WALL_CARD } from '@/lib/wallpro-brand';
 
 export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
   const [override, setOverride] = useState('');
@@ -36,7 +36,7 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
   if (!WPW_PRINTED_FILMS.length) return null;
 
   return (
-    <section id="order-printed-film" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="Order printed film">
+    <section id="order-printed-film" className={WALL_CARD} aria-label="Order printed film">
       <h2 className="text-lg font-semibold">Just need film printed?</h2>
       <p className="mt-2 text-sm text-slate-600">
         If your artwork is already print-ready, skip the design and order the film.

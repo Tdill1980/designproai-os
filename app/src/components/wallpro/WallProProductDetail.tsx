@@ -24,6 +24,7 @@
  */
 import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { WPW_WALL_FILM_RATE_PER_SQFT, WALL_DESIGN_SKUS, formatMoney } from '@/lib/wallpro-pricing';
+import { WALL_CARD } from '@/lib/wallpro-brand';
 
 const rate = `$${WPW_WALL_FILM_RATE_PER_SQFT.toFixed(2)}`;
 const filePrep = formatMoney(WALL_DESIGN_SKUS.upload.cents);
@@ -65,7 +66,7 @@ const ALSO_CALLED = [
 
 export function WallProProductDetail() {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:p-6" aria-label="Wall wrap questions and terms">
+    <section className={`${WALL_CARD} md:p-6`} aria-label="Wall wrap questions and terms">
       <h2 className="text-lg font-semibold">Questions</h2>
       <div className="mt-3">
         {QUESTIONS.map(([q, a], i) => (

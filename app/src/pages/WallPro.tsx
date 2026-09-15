@@ -16,7 +16,7 @@ import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zon
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
-import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
+import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -37,7 +37,8 @@ import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
 const cornerNames = ['top left', 'top right', 'bottom right', 'bottom left'];
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
-const panelClass = 'rounded-2xl border border-slate-200 bg-white p-5 shadow-sm';
+/** Read, never retyped — WALL_CARD is the one definition (see wallpro-brand). */
+const panelClass = WALL_CARD;
 type History = Awaited<ReturnType<typeof wallHistory>>;
 
 /** The project a reload reopens when the URL has lost its ?project=. */
@@ -1051,7 +1052,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       detail: billing ? `${billing.wallSqFt} sq ft - ${formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}` : 'Priced by the square foot' },
   ];
 
-  return <div className="min-h-screen bg-slate-50 lg:flex lg:gap-2 lg:px-6">
+  return <div className={`min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
     {theme.showPrintOffer && <WallProSidebar
       theme={theme} steps={wallSteps} top={stickyTop + 16} busy={!!busy} freeReason={freeReason}
       onHistory={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}
@@ -1163,7 +1164,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       {theme.showPrintOffer && !artwork && <a
         href="#order-printed-film"
         onClick={e => { e.preventDefault(); document.getElementById('order-printed-film')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-        className="mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl bg-[#ec4899] px-4 py-3 text-sm text-white shadow-sm transition hover:bg-[#db2777]"
+        /* Owner, 2026-09-15: "the order a printed wrap you have your own art
+           should be a blue magenta gradiant white text". It was flat #ec4899,
+           which is the tail of the page's own gradient wearing none of its
+           head -- so the one bar selling the SECOND product read as a foreign
+           object rather than the page's other primary action. It carries
+           WALL_GRADIENT now, the same sweep as the Generate buttons, and
+           brightens on hover instead of jumping to a different pink. */
+        className={`mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl ${WALL_GRADIENT} px-4 py-3 text-sm text-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_28px_-12px_rgba(37,99,235,0.45)] transition hover:brightness-110`}
       >
         <span className="text-white/90">
           <strong className="font-semibold text-white">Already have artwork?</strong> Skip the design and order printed film by the square foot.
