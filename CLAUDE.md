@@ -630,6 +630,53 @@ Implementation corrections measured against the source document's proposed diff:
 
 This header is implementation context, not a live acceptance or deployment receipt.
 
+## 🔁 RULE 0.36 — PASSENGER LETTERING IS READ ON THE PANEL AND VERIFIED ON THE COMPOSED FLANK (2026-09-15, live 8eec8162)
+
+**What broke.** Owner run `8eec8162` (911 Turbo, "Porsche martini race team"):
+the passenger flank is composed in code as the driver flank mirrored with each
+lettering band re-dropped forward (`atlas-passenger-mirror.cjs`). The bands
+came from the **whole-sheet** master-QC read — the 4096² sheet squeezed to one
+1800px JPEG, a flank a third of that — and it located **one** band on a livery
+carrying "PORSCHE", "21" and sponsor marks. Everything else flipped backwards.
+The proof inspector was right (*"'PORSCHE' in the authority crop is
+mirrored"*), the passenger proof was refused, and with six views the
+production handoff never fired: the run sat at `outputs_ready` with no
+entice workflow, which the UI shows as a stalled count.
+
+**What runs now** (`runtime/atlas-lettering-read.cjs`, wired in
+`composePassengerFromDriver`):
+
+1. **The read is of the DRIVER PANEL, not the sheet.** `extractFlankPanel`
+   crops the driver flank into its reading orientation and
+   `readPanelLettering` (Flash, temp 0, schema-bound, inspectionId = panel
+   sha256 prefix) names EVERY band — words, race numbers, sponsor marks — with
+   its `orientation`. The whole-sheet read remains ONLY as the fallback when
+   the panel read is unavailable, so the worst case is exactly the old path.
+2. **The composed flank is READ BACK.** After the mirror, the passenger panel
+   is cropped and read; every band reported `mirrored` is mapped to driver
+   space (`x' = 1 − x − w`), merged into the bands, re-dropped forward from
+   the ORIGINAL master, and the panel is read again. Bounded by
+   `PASSENGER_VERIFY_READS = 3` (≤ 2 corrections).
+3. **A still-reversed flank DECLINES** (`reversed_lettering_unresolved`) and
+   the authored passenger is kept — an unknown flank over a known-reversed
+   one, which is the outcome the owner ruled out. A verify that cannot run
+   keeps the composition (today's behaviour). Nothing here throws into an
+   accepted Call 1.
+
+The receipt is on the revision: `metadata.passengerComposed.{letteringRead,
+letteringSource, letteringVerify}` — `letteringVerify.mirroredFound` is the
+per-read count, so "was PORSCHE ever seen reversed" is a query. Locked by
+`tests/atlas-lettering-read.test.mjs` and
+`tests/atlas-passenger-composition-executes.test.mjs` (pixel-asserted: the
+corrected band on the passenger flank IS the driver slice, un-flipped).
+
+**Still open, deliberately:** the proof-side continuity gate promises "one
+proof-only re-render" on a drift verdict, but the A.T.L.A.S. proof provider
+runs `maxProviderAttempts: 1`, so the slot dies on the first verdict. It would
+not have saved this run (a reversed authority is reversed on every render) and
+it is not changed here — raising it is one extra photographer call per drift
+verdict and is the owner's call.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,
