@@ -105,8 +105,11 @@ test("Passenger is composed from Driver only after acceptance, never inside the 
   // bands could not be located must keep its authored passenger -- mirroring it
   // is what puts a reversed company name on a customer's vehicle (canaries
   // 6c1bfae6, cad013e1).
-  assert.match(source, /if \(!brandBands\.length\) return decline\("brand_bands_not_located"\)/);
-  assert.match(source, /const lettersMatter = brandStrings\.length > 0/);
+  // 2026-09-15: the read runs for EVERY design (a race livery has lettering and
+  // no company name); only the failure handling depends on declared strings.
+  assert.match(source, /const declined = declineOrMirror\("brand_bands_not_located"\);\s*\n\s*if \(declined\) return declined;/);
+  assert.match(source, /const lettersDeclared = brandStrings\.length > 0/);
+  assert.match(source, /const declineOrMirror = \(reason\) => \(lettersDeclared \? decline\(reason\) : null\)/);
   // Every failure path declines rather than throwing: the worst case of this
   // change is the behaviour of every run before it.
   for (const declineReason of [
@@ -115,7 +118,7 @@ test("Passenger is composed from Driver only after acceptance, never inside the 
     "brand_band_read_failed",
     "brand_bands_not_located",
   ]) {
-    assert.match(source, new RegExp(`decline\\("${declineReason}"\\)`), `${declineReason} must decline, not throw`);
+    assert.match(source, new RegExp(`decline(?:OrMirror)?\\("${declineReason}"\\)`), `${declineReason} must decline, not throw`);
   }
 
   // THE BAND READ MAY NEVER REFUSE A MASTER. The 2026-09-01 ruling stands: a
