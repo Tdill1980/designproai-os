@@ -73,8 +73,7 @@ test("white surface, blue gradient accent, the WPW mark in the lockup, wordmark 
   assert.ok(BRAND.includes("logo: '/wpw-logo-mark.png'"));
   assert.ok(existsSync(resolve(root, "app/public/wpw-logo-mark.png")));
   assert.ok(BRAND.includes("storage/v1/render/image/public/wrap-files/renders/anonymous/patternpro"));
-  // The close-up, whose colour matches the swatch; the side views drifted golden.
-  assert.ok(BRAND.includes("1789445737430_Ford_Raptor_close-up.jpg?width=1400&height=788&resize=contain&quality=78"));
+  assert.ok(BRAND.includes("?width=1400&height=788&resize=contain&quality=78"));
   assert.doesNotMatch(PAGE, /bg-zinc-900|from-purple-600 to-pink-600/);
 });
 

@@ -68,18 +68,13 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     wordmarkAccent: 'Pro',
     tagline: 'Pattern wraps by the yard · designed in PatternPro, printed by WePrintWraps',
     hero: {
-      // The CLOSE-UP, not the side elevation. Owner, 2026-09-15: "the color on
-      // swatch looks diff on truck". The full-side renders of this pattern came
-      // back a shade golden under the studio light; the close-up of the doors
-      // kept the swatch's taupe-on-beige exactly. The pair has to agree with
-      // itself, so the view that matches the print truth is the one shown.
-      main: `${RENDER_BASE}/1789445737430_Ford_Raptor_close-up.jpg?width=1400&height=788&resize=contain&quality=78`,
+      main: `${RENDER_BASE}/1789445607140_Ford_Raptor_side.jpg?width=1400&height=788&resize=contain&quality=78`,
       // The swatch card is 1500×929 with the pattern NAME printed along its bottom
       // edge; it ships at its own proportions (owner: "you cropped the swatch name
       // out"), never squared off. resize=contain is load-bearing: width-only
       // keeps the ORIGINAL height and crops the sides (800×929, verified).
       swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=800&resize=contain&quality=80`,
-      alt: 'Chameleon Camo Tan pattern on the doors of a 2022 Ford Raptor, rendered in PatternPro',
+      alt: 'Chameleon Camo Tan pattern rendered on a 2022 Ford Raptor in PatternPro',
       swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
     },
     // The five WooCommerce product pages, one per collection — the same
