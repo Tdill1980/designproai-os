@@ -20,7 +20,7 @@ export type BriefDomain = 'commercial' | 'residential';
 export type BriefMode = 'repeat' | 'mural';
 export type BriefRendering = 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic';
 export type BriefRequest = { domain: BriefDomain; count: number; space: string | null; rendering: BriefRendering | 'any'; mode: BriefMode | 'any' };
-export type GeneratedWallBrief = { id: string; name: string; subcategory: string; prompt: string; tags: string[]; mode: BriefMode; rendering: BriefRendering; domain: BriefDomain };
+export type GeneratedWallBrief = { id: string; name: string; subcategory: string; style: string; prompt: string; tags: string[]; mode: BriefMode; rendering: BriefRendering; domain: BriefDomain };
 
 const RENDERINGS: BriefRendering[] = ['flat-bold', 'fine-line', 'faux-material', 'painted-mural', 'photographic'];
 const RESIDENTIAL_SPACES = 'bedroom, nursery, kids\' room, living room, dining room, kitchen, powder room, bathroom, entryway, hallway, home office, media room';
@@ -33,6 +33,18 @@ const RENDERING_SCOPE: Record<BriefRendering, string> = {
   'painted-mural': 'a painted mural — gouache, watercolor, oil or chinoiserie hand-painting, one scene across the wall',
   'photographic': 'fine-art photographic realism, one continuous image across the wall',
 };
+
+/** Marketplace signals (owner, 2026-09-14: "use the marketplace research as
+ * taxonomy input, not prompt copying"). Current residential wall-mural
+ * listings sell under these styles and palette families; the writer rotates
+ * a set across them so a batch does not converge on one "luxury botanical AI
+ * wallpaper", and generates ORIGINAL designs under each. A subset of the
+ * `RESIDENTIAL_STYLE_TAXONOMY` in generate-wall-design/domain.ts. */
+export const RESIDENTIAL_STYLE_SIGNALS = ['Boho', 'Contemporary Boho', 'Organic Modern', 'Japandi', 'Scandinavian', 'Soft Minimalism', 'Quiet Luxury', 'Modern Luxe', 'Contemporary Classic', 'Transitional', 'Grandmillennial', 'Modern Coastal', 'Modern Mediterranean', 'Mid-Century Modern', 'Modern Art Deco', 'Moody Maximalist', 'Vintage Botanical', 'Modern Chinoiserie', 'Cottagecore', 'Dark Academia', 'Modern Rustic', 'Desert Modern', 'Modern Tropical', 'Biophilic', 'Wabi-Sabi', 'Warm Minimalist', 'Nursery Editorial', 'Whimsical', 'Feminine Luxe', 'Masculine Modern', 'Abstract Organic', 'Geometric Modern'] as const;
+export const PALETTE_FAMILY_SIGNALS = ['warm beige, taupe and ivory', 'sage, olive and deep green', 'terracotta, blush and earth tones', 'a charcoal or black ground with one accent', 'indigo or navy with cream', 'dusty pastels on oat'] as const;
+/** The commercial disciplines an environmental-graphics studio actually
+ * bids: the set rotates across them and each brief names the wall it hangs on. */
+export const COMMERCIAL_DISCIPLINE_SIGNALS = ['restaurant or bar dining room', 'corporate reception or culture wall', 'apartment leasing office or clubhouse', 'church or worship lobby and kids ministry', 'med-spa or wellness treatment corridor', 'retail boutique feature wall', 'gym or fitness training floor', 'dental or medical waiting room', 'hotel corridor or lobby', 'school or daycare hallway'] as const;
 
 export function parseBriefRequest(body: any): BriefRequest {
   if (!body || typeof body !== 'object') throw new Error('Send a JSON body.');
@@ -57,9 +69,18 @@ export function briefWriterPrompt(req: BriefRequest): string {
     ? 'Rotate the rendering families across the set: flat bold print (two to four solid colours), fine-line engraving (one or two inks), photoreal faux material, and — only when the space calls for one scene — a painted mural.'
     : `Every brief is ${RENDERING_SCOPE[req.rendering]}.`;
   const modeLine = req.mode === 'repeat' ? 'Every brief is a repeating wallpaper pattern.' : req.mode === 'mural' ? 'Every brief is one continuous mural.' : 'Most briefs are repeating wallpaper patterns; a mural only where one scene genuinely suits the space.';
+  // Marketplace signals as taxonomy: the writer rotates the set across the
+  // styles and palettes the market is buying, and each brief names its own
+  // style — then designs something original under it. The style is guidance
+  // for restraint, palette relationships and spacing; it never replaces the
+  // subject (the same rule the design contract enforces downstream).
+  const disciplineLine = req.domain === 'residential'
+    ? `Rotate the set across current interior styles — ${RESIDENTIAL_STYLE_SIGNALS.join(', ')} — naming ONE style per brief, and across these palette families — ${PALETTE_FAMILY_SIGNALS.join('; ')} — so no two briefs share one. Write with the restraint of an interior designer specifying a wallcovering for a real room: coherent palette, current not dated, motif scale that reads on a wall. The style informs composition, materials and spacing; it never replaces the subject.`
+    : `Rotate the set across commercial disciplines — ${COMMERCIAL_DISCIPLINE_SIGNALS.join('; ')} — naming the business type and the exact wall it hangs on in each brief, and write like an environmental-graphics studio briefing a client: room-scale hierarchy, one focal point, a mood that fits that business, no decorative filler, no generic wallpaper look, no spa leaves for every wellness space.`;
   return `You are the creative director of a wallpaper and mural studio whose patterns sell on Etsy and to interior designers. You write the briefs our designers work from — the way a well-read client talks to a designer, never like a spec sheet.
 
 Write exactly ${req.count} briefs for ${scope}.
+${disciplineLine}
 
 Each brief is 50 to 110 words of plain prose and names:
 - ONE clear subject, described concretely (which flowers, which animals, which shapes);
@@ -76,7 +97,7 @@ Never use marketing adjectives (stunning, vibrant, breathtaking, elevate, timele
 Diversity is the job: every brief has a different subject, a different ground colour, a different technique and a different repeat structure from every other brief in the set. No two briefs share a palette family.
 
 Return ONLY a JSON array, no prose and no code fences:
-[{ "name": "two to four word title", "subcategory": "the space it is for", "prompt": "the brief", "tags": ["three to five lowercase tags"], "mode": "repeat" or "mural", "rendering": "flat-bold" | "fine-line" | "faux-material" | "painted-mural" | "photographic" }]`;
+[{ "name": "two to four word title", "subcategory": "the space it is for", "style": "the interior style named in the brief, or the business type", "prompt": "the brief", "tags": ["three to five lowercase tags"], "mode": "repeat" or "mural", "rendering": "flat-bold" | "fine-line" | "faux-material" | "painted-mural" | "photographic" }]`;
 }
 
 // "comic panel wall" is a subject; print panels, seams, bleed and overlap are pipeline words.
@@ -106,6 +127,7 @@ export function normalizeGeneratedBriefs(raw: unknown, req: BriefRequest, now = 
       id,
       name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 80) : `Brief ${n}`,
       subcategory: typeof item.subcategory === 'string' && item.subcategory.trim() ? item.subcategory.trim().slice(0, 60) : (req.space || (req.domain === 'residential' ? 'Home' : 'Business')),
+      style: typeof item.style === 'string' && item.style.trim() ? item.style.trim().slice(0, 60) : rendering,
       prompt,
       tags: Array.isArray(item.tags) ? item.tags.filter((t: unknown) => typeof t === 'string' && t.trim()).map((t: string) => t.trim().toLowerCase().slice(0, 30)).slice(0, 8) : [],
       mode, rendering, domain: req.domain,

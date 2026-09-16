@@ -99,6 +99,28 @@ function bandRect(band, width, height) {
 }
 
 /**
+ * One flank in PANEL space — the orientation a person reads it in, which is
+ * the space every lettering band is expressed in. The driver panel is what the
+ * mirror lifts bands from; the passenger panel, read back after composition,
+ * is what the lettering verify inspects. Both go through this one transform so
+ * a band measured on either panel lands on the same pixels.
+ */
+async function extractFlankPanel(masterBytes, manifest, surfaceKey) {
+  if (!Buffer.isBuffer(masterBytes) || !masterBytes.length) {
+    throw new AtlasMirrorError("atlas_mirror_master_required", "The master bytes are required");
+  }
+  const zone = findZone(manifest, surfaceKey);
+  const rotation = zoneRotation(zone);
+  const bytes = await sharp(masterBytes, { limitInputPixels: false })
+    .extract({ left: Number(zone.x), top: Number(zone.y), width: Number(zone.w), height: Number(zone.h) })
+    .rotate(rotation)
+    .png(PNG_OPTIONS)
+    .toBuffer();
+  const meta = await sharp(bytes).metadata();
+  return { bytes, widthPx: Number(meta.width), heightPx: Number(meta.height), rotation, surfaceKey };
+}
+
+/**
  * Compose the passenger flank from the driver flank.
  *
  * @param {Buffer} masterBytes  the authored A.T.L.A.S. master — never mutated
@@ -132,14 +154,10 @@ async function mirrorPassengerFromDriver({ masterBytes, manifest, brandBands = [
 
   // Driver in PANEL space — the orientation a person reads the flank in, and
   // the space the supplied bands are expressed in.
-  const driverPanel = await sharp(masterBytes, { limitInputPixels: false })
-    .extract(region)
-    .rotate(rotation)
-    .png(PNG_OPTIONS)
-    .toBuffer();
-  const panelMeta = await sharp(driverPanel).metadata();
-  const panelWidth = Number(panelMeta.width);
-  const panelHeight = Number(panelMeta.height);
+  const driverFlank = await extractFlankPanel(masterBytes, manifest, "driver");
+  const driverPanel = driverFlank.bytes;
+  const panelWidth = driverFlank.widthPx;
+  const panelHeight = driverFlank.heightPx;
 
   // THE FLOP IS ITS OWN PASS. sharp does not apply operations in call order —
   // chaining `.flop()` with a resize or rotate runs it in pipeline order, not
@@ -227,5 +245,6 @@ module.exports = {
   AtlasMirrorError,
   MIRROR_CONTRACT: "designpro.atlas-passenger-mirror.v1",
   mirrorPassengerFromDriver,
+  extractFlankPanel,
   _test: { bandRect, zoneRotation },
 };

@@ -355,7 +355,7 @@ export function presetAsEntry(p: WallPromptPreset): WallPromptEntry {
 }
 
 /** A brief the AI brief writer returned, as the same job/row shape. */
-export function generatedBriefAsEntry(b: { id: string; name: string; subcategory: string; prompt: string; tags: string[]; mode: WallPresetMode; rendering: WallPresetRendering; domain: 'commercial' | 'residential' }): WallPromptEntry {
+export function generatedBriefAsEntry(b: { id: string; name: string; subcategory: string; style?: string; prompt: string; tags: string[]; mode: WallPresetMode; rendering: WallPresetRendering; domain: 'commercial' | 'residential' }): WallPromptEntry {
   return {
     id: b.id,
     segment: b.domain === 'residential' ? 'B2C' : 'B2B',
@@ -363,7 +363,9 @@ export function generatedBriefAsEntry(b: { id: string; name: string; subcategory
     room: b.subcategory,
     title: b.name,
     designType: b.mode === 'repeat' ? 'Seamless Repeat Pattern' : presetMuralType(b.rendering),
-    style: b.rendering,
+    // The style the writer named (an interior style or the business type) is
+    // what the diversity readout and the storefront filters read.
+    style: b.style?.trim() || b.rendering,
     palette: '',
     intensity: 'Balanced',
     prompt: b.prompt,

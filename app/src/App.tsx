@@ -67,9 +67,25 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+// MY SHOPFLOW — the WePrintWraps account page, ported from restylepro-os
+// 2026-09-15. It replaces weprintwraps.com/my-account/ (see
+// wordpress/wpw-shopflow-account), so it is PUBLIC on purpose: its door is an
+// email proven with one order number, not a RestylePro session. Almost no WPW
+// customer has an account here — 8 of 809 distinct customer emails — so behind
+// a sign-in wall this page reaches nobody, which is the dead end it replaced.
+const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
+// PatternPro worn by a partner: the WePrintWraps pattern-wrap page (owner,
+// 2026-09-15: "all these need to be in os.designpro repo"). Same tool as the
+// DesignPro route, different words in the header — see lib/patternpro-brand.ts.
+const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));
+// PatternPro's paid path (phase 2): Stripe sends the buyer back here, and the
+// design team runs the library and the order board from the two admin pages.
+const WBTYOrderSuccess = lazyWithRetry(() => import("./pages/WBTYOrderSuccess"));
+const AdminWBTYManager = lazyWithRetry(() => import("./pages/AdminWBTYManager"));
+const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 // GraphicsPro — cut-contour graphics on a wall, a vehicle or a storefront.
 // The V1 tool is the product (surface → Konva ZoneMasker on the customer's
 // photo → mockup → cut graphics proof / CutContour PDF / production files).
@@ -263,7 +279,26 @@ const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   // chrome stacked on top of it either.
   pathname === "/wall-wrap/how-it-works" ||
   pathname === "/wallwrap-design" ||
+  // PatternPro's partner page carries the same WePrintWraps header.
+  pathname === "/pattern-wrap" ||
   (pathname === "/" && isWallProPartnerHost(hostname));
+
+/**
+ * THE WEPRINTWRAPS PATTERNPRO PAGE BELONGS TO THE WEPRINTWRAPS HOST.
+ *
+ * Owner, 2026-09-16, seeing the WPW-branded page on os.designproai.com: "why
+ * is the PatternPro with headers on the os.designproai". /pattern-wrap wears
+ * the WePrintWraps mark, so it renders only where a WePrintWraps customer
+ * arrives — the partner host. On any DesignProAI host the same address hands
+ * off to the DesignProAI-branded tool at /printpro/patternpro, the one the OS
+ * sidebar links. One component either way; only the brand and the host differ.
+ */
+const PartnerPatternWrap = () => {
+  const hostname = typeof window === "undefined" ? "" : window.location.hostname;
+  return isWallProPartnerHost(hostname)
+    ? <PatternWrap brand="weprintwraps" />
+    : <Navigate to="/printpro/patternpro" replace />;
+};
 
 const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
@@ -443,14 +478,31 @@ const App = () => {
               Design-area entry, its own URL so the two menu items stay
               separately measurable rather than one link pretending to be two. */}
           <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
+          {/* PUBLIC on purpose — the access check lives in wpw-shopflow, not the
+              route. See the note on the import above. */}
+          <Route path="/shopflow" element={<ShopFlow />} />
           <Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />
           {/* The case study: one real wall, bare to installed. Its numbers and
               diagrams are computed by the tool's own libraries, so it cannot
               drift from the product the way a page of screenshots would. */}
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
+          {/* PATTERNPRO, the same way: one component, worn by a brand. /pattern-wrap
+              is the WePrintWraps page (white, blue gradient, WPW mark in the
+              lockup, a render on the right); /printpro/patternpro is the same
+              tool under the DesignProAI name. Owner, 2026-09-15. */}
+          <Route path="/pattern-wrap" element={<PartnerPatternWrap />} />
+          <Route path="/printpro/patternpro" element={<PatternWrap />} />
+          {/* /wbty is PatternPro's old address (the suite's sidebar still says
+              it); the tool lives at /printpro/patternpro here. The order-success
+              page keeps the /wbty path because create-wbty-checkout's Stripe
+              success_url names it. */}
+          <Route path="/wbty" element={<Navigate to="/printpro/patternpro" replace />} />
+          <Route path="/wbty/order-success" element={<WBTYOrderSuccess />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
           <Route path="/admin/wallpro-proofs" element={<RequireAdmin><AdminWallProProofs /></RequireAdmin>} />
+          <Route path="/admin/wbty-manager" element={<RequireAdmin><AdminWBTYManager /></RequireAdmin>} />
+          <Route path="/admin/wbty-orders" element={<RequireAdmin><AdminWBTYOrders /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,
               then one design with its version rail. */}
           <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />

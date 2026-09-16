@@ -140,7 +140,7 @@ export async function getWallProject(id: string) {
  * fresh natural-language customer briefs for the curator's batch, written by
  * the studio creative-director persona. Curator-only; no token charged. */
 export type WallBriefRequest = { domain: 'commercial' | 'residential'; count: number; space?: string | null; rendering?: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic' | 'any'; mode?: 'repeat' | 'mural' | 'any' };
-export type WallGeneratedBrief = { id: string; name: string; subcategory: string; prompt: string; tags: string[]; mode: 'repeat' | 'mural'; rendering: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic'; domain: 'commercial' | 'residential' };
+export type WallGeneratedBrief = { id: string; name: string; subcategory: string; style: string; prompt: string; tags: string[]; mode: 'repeat' | 'mural'; rendering: 'flat-bold' | 'fine-line' | 'faux-material' | 'painted-mural' | 'photographic'; domain: 'commercial' | 'residential' };
 export async function writeWallBriefs(input: WallBriefRequest): Promise<{ prompts: WallGeneratedBrief[]; model: string; version: string }> {
   const { data, error } = await supabase.functions.invoke('generate-wall-batch-prompts', { body: input });
   if (error) {

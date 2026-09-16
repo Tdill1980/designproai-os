@@ -182,7 +182,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
           </SidebarTooltip>
           <SidebarTooltip
             title="WallPro Batch Generate"
-            description="Generate, curate and publish the WrapReady wall design library from the 500-prompt catalog"
+            description="Generate, curate and publish the WrapReady wall design library from natural-language brief presets, the AI brief writer or the legacy catalog"
           >
             <Link
               to="/admin/wallpro-batch"
@@ -196,6 +196,42 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
             >
               <Layers className="w-4 h-4 shrink-0" />
               <span className="truncate">WallPro Batch Generate</span>
+            </Link>
+          </SidebarTooltip>
+          <SidebarTooltip
+            title="PatternPro Manager"
+            description="The 118-pattern Wrap-By-The-Yard library behind /pattern-wrap: names, swatches, collections, pricing, active flags"
+          >
+            <Link
+              to="/admin/wbty-manager"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wbty-manager")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span className="truncate">PatternPro Manager</span>
+            </Link>
+          </SidebarTooltip>
+          <SidebarTooltip
+            title="PatternPro Orders"
+            description="Every Stripe-paid PatternPro order: status, tracking, the print order to WePrintWraps"
+          >
+            <Link
+              to="/admin/wbty-orders"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wbty-orders")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Shield className="w-4 h-4 shrink-0" />
+              <span className="truncate">PatternPro Orders</span>
             </Link>
           </SidebarTooltip>
         </div>

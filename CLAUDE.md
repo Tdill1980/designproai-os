@@ -630,6 +630,91 @@ Implementation corrections measured against the source document's proposed diff:
 
 This header is implementation context, not a live acceptance or deployment receipt.
 
+## 🔁 RULE 0.36 — PASSENGER LETTERING IS READ ON THE PANEL AND VERIFIED ON THE COMPOSED FLANK (2026-09-15, live 8eec8162)
+
+**What broke.** Owner run `8eec8162` (911 Turbo, "Porsche martini race team"):
+the passenger flank is composed in code as the driver flank mirrored with each
+lettering band re-dropped forward (`atlas-passenger-mirror.cjs`). The bands
+came from the **whole-sheet** master-QC read — the 4096² sheet squeezed to one
+1800px JPEG, a flank a third of that — and it located **one** band on a livery
+carrying "PORSCHE", "21" and sponsor marks. Everything else flipped backwards.
+The proof inspector was right (*"'PORSCHE' in the authority crop is
+mirrored"*), the passenger proof was refused, and with six views the
+production handoff never fired: the run sat at `outputs_ready` with no
+entice workflow, which the UI shows as a stalled count.
+
+**What runs now** (`runtime/atlas-lettering-read.cjs`, wired in
+`composePassengerFromDriver`):
+
+1. **The read is of the DRIVER PANEL, not the sheet.** `extractFlankPanel`
+   crops the driver flank into its reading orientation and
+   `readPanelLettering` (Flash, temp 0, schema-bound, inspectionId = panel
+   sha256 prefix) names EVERY band — words, race numbers, sponsor marks — with
+   its `orientation`. The whole-sheet read remains ONLY as the fallback when
+   the panel read is unavailable, so the worst case is exactly the old path.
+2. **The composed flank is READ BACK.** After the mirror, the passenger panel
+   is cropped and read; every band reported `mirrored` is mapped to driver
+   space (`x' = 1 − x − w`), merged into the bands, re-dropped forward from
+   the ORIGINAL master, and the panel is read again. Bounded by
+   `PASSENGER_VERIFY_READS = 3` (≤ 2 corrections).
+3. **A still-reversed flank DECLINES** (`reversed_lettering_unresolved`) and
+   the authored passenger is kept — an unknown flank over a known-reversed
+   one, which is the outcome the owner ruled out. A verify that cannot run
+   keeps the composition (today's behaviour). Nothing here throws into an
+   accepted Call 1.
+
+The receipt is on the revision: `metadata.passengerComposed.{letteringRead,
+letteringSource, letteringVerify}` — `letteringVerify.mirroredFound` is the
+per-read count, so "was PORSCHE ever seen reversed" is a query. Locked by
+`tests/atlas-lettering-read.test.mjs` and
+`tests/atlas-passenger-composition-executes.test.mjs` (pixel-asserted: the
+corrected band on the passenger flank IS the driver slice, un-flipped).
+
+**Still open, deliberately:** the proof-side continuity gate promises "one
+proof-only re-render" on a drift verdict, but the A.T.L.A.S. proof provider
+runs `maxProviderAttempts: 1`, so the slot dies on the first verdict. It would
+not have saved this run (a reversed authority is reversed on every render) and
+it is not changed here — raising it is one extra photographer call per drift
+verdict and is the owner's call.
+
+## 🎨 RULE 0.37 — THE PERSONA DESIGNS; THE FIELD CONTRACT ONLY SAYS WHAT THE OUTPUT IS (owner ruling, Trish 2026-09-15)
+
+Owner, verbatim: *"we never had to have a livery paragraph, we relied on the
+persona to know how to design based on prompt, we have done many Porsche
+Martini race team designs before we migrated."*
+
+**What was wrong.** After the migration the same A.C.E. persona and the same
+customer brief were followed by ~1,400 characters of field contract that
+DIRECTED the design: areas that "read on their own as intentional, finished,
+commercially valuable artwork", "not separate pictures", "gallery-grade …
+wow factor", "worth what the customer paid". Live 8eec8162 (911 Turbo,
+Martini brief) on that contract: a plain field, a filler hood. The persona
+that designed the Martini before the migration was being out-shouted by the
+paragraph after it.
+
+**What the field tail is now** (`atlasFieldContract`, prompt
+`atlas-artboard-designiq.20260915.v25-persona-designs-the-field`), and the
+test of anything added to it — *is this a physical fact about the output, or
+is it design direction?* Only the first kind belongs:
+
+1. The output: one continuous full-bleed composition on one square 4K image,
+   flat, for this exact vehicle. The persona never authored a flat sheet
+   before the migration (it authored an on-vehicle render), so this one line
+   is the only new fact it needs.
+2. The anonymous coordinate map (RULE 0.33 v25), because the cutter takes six
+   pieces out of the square and the model has to know where.
+3. One sentence keeping every letter, word and mark inside a single area,
+   clear of its edges — the "text cut on rear" defect (owner 2026-09-14) is a
+   print rule, not a design rule.
+
+Nothing else. No livery paragraph (that was proposed and refused the same
+day), no composition rules, no quality adjectives. Locked by
+`tests/atlas-clean-authoring-contract.test.mjs` ("ATLAS field branch sends
+the prompt and customer references only"): the emitted tail must not contain
+the removed direction, and must contain the map line and the lettering rule.
+The six-container contract (`atlasFlatMasterContract`) is untouched by this
+ruling; it is the failover, not the product path for cars.
+
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
 **Supersedes the authoring half of v19, v23, RULE 0.30's conditioning clause,

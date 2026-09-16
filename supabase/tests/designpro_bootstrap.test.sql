@@ -57,6 +57,9 @@ select policies_are(
         -- exists to convince -- which is why the read policy carries no owner
         -- predicate. Writes stay admin/tester.
         'wallpro_proofs_public_read','wallpro_proofs_curator_write',
+        -- PatternPro's public render bucket (20260915090000): anyone may read a
+        -- pattern proof; only the service role writes them.
+        'patternpro_files_public_read',
         -- RESTRICTIVE, not permissive: it grants nothing and only withholds a
         -- WallPro production file until a human has released that job
         -- (20260912240000). It appears here because the allowlist covers every

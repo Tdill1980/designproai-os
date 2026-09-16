@@ -40,7 +40,10 @@ const {
 // validator above is imported for ONE reason -- its `driverBrandBands`
 // measurement -- and its verdict is never consulted; see
 // `composePassengerFromDriver`.
-const { MIRROR_CONTRACT, mirrorPassengerFromDriver } = require("./atlas-passenger-mirror.cjs");
+const { MIRROR_CONTRACT, mirrorPassengerFromDriver, extractFlankPanel } = require("./atlas-passenger-mirror.cjs");
+const {
+  LETTERING_READ_CONTRACT, readPanelLettering, mirroredBandsToDriverSpace, mergeBands,
+} = require("./atlas-lettering-read.cjs");
 const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 // ONE-FIELD RESTORED (owner ruling, Trish 2026-09-07). The six-surface
@@ -102,7 +105,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260901.v23-orthographic-restored";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v25-persona-designs-the-field";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -152,7 +155,37 @@ const DEFAULT_MASTER_AUTHORING_ATTEMPTS = 2;
  * `DESIGNPRO_ATLAS_FIELD_FAILOVER=off` restores the fail-closed behaviour.
  * Nothing else disables it, because a misspelled flag must not cost a design.
  */
-const FIELD_FAILOVER_ATTEMPTS = 1;
+const FIELD_FAILOVER_ATTEMPTS = 2;
+/**
+ * The composed passenger flank is read back this many times at most
+ * (2026-09-15). One read is the common case: no mirrored lettering, done. Each
+ * further read follows a correction that re-dropped the mirrored bands the
+ * previous read named, so the loop makes at most PASSENGER_VERIFY_READS - 1
+ * corrections before a still-reversed flank is declined.
+ */
+const PASSENGER_VERIFY_READS = 3;
+// FIELD FIRST FOR CARS. (Owner 2026-09-15, after the Martini 911 failed at 4:37:
+// "This is taking so long.")
+//
+// Measured on the strict referee (#415): six-surface has produced a genuinely
+// flat sheet only for the F-250, its own teaching example. On a car it drew
+// the vehicle on every attempt today -- four refusals, two runs, both correct
+// -- and every car run spent ~2.5 minutes on those two refusals before the
+// one-field contract, which cannot draw a car, produced the sheet. So a first-
+// generation car-class request authors on the field contract directly, with
+// the same two-attempt budget six-surface has. Trucks and vans keep six-surface,
+// where it is proven. DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface
+// first for every class. Revision edits keep their parent's topology.
+const FIELD_FIRST_ATTEMPTS = 2;
+const SIX_SURFACE_FIRST_VEHICLE_CLASSES = Object.freeze(new Set([
+  "truck", "pickup", "pickup-truck", "van", "cargo-van", "cargo van", "box-truck", "box truck", "bus", "trailer",
+]));
+function fieldFirstReason(vehicle) {
+  if (String(process.env.DESIGNPRO_ATLAS_FIELD_FIRST || "").trim().toLowerCase() === "off") return null;
+  const type = String(vehicle?.type || vehicle?.vehicleClass || "").trim().toLowerCase();
+  if (!type || SIX_SURFACE_FIRST_VEHICLE_CLASSES.has(type)) return null;
+  return `vehicle-class:${type}`;
+}
 const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
 function resolveMaxAuthoringAttempts(explicit) {
   const raw = explicit ?? process.env.DESIGNPRO_ATLAS_MAX_AUTHORING_ATTEMPTS;
@@ -206,7 +239,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v25-persona-designs-the-field";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -2657,47 +2690,156 @@ async function composePassengerFromDriver({
     return decline("flank_zones_not_twins");
   }
 
-  // Does this design carry lettering that MUST read forward? The brief's own
-  // structured strings answer it without looking at a pixel: a wrap with no
-  // company name, phone or website has no orientation-sensitive text to
-  // protect, so a bare mirror is safe and the band read is not required.
+  // EVERY DESIGN MAY CARRY LETTERING. (Owner 2026-09-15: "passenger is not
+  // flipped yet text reversed" on the Martini 911, request 3b023efb.)
+  //
+  // This used to read bands only when the brief carried a company name, phone
+  // or website, on the theory that a wrap without them has no orientation-
+  // sensitive text. A race livery has "21", "Porsche" and sponsor marks with
+  // none of those fields, so the flank was mirrored blind and the proof rendered
+  // the reversed lettering faithfully. The band read is a measurement of the
+  // driver pixels, so it runs for every design; the structured strings only
+  // decide how a failed read is handled.
   const brandStrings = [
     String(input?.companyName || input?.businessName || "").trim(),
     String(input?.phone || "").trim(),
     String(input?.website || "").trim(),
   ].filter(Boolean);
-  const lettersMatter = brandStrings.length > 0;
+  const lettersDeclared = brandStrings.length > 0;
+  // Fail towards today: a declared brand string that cannot be located keeps
+  // the authored flank (a reversed company name is the one outcome the owner
+  // ruled out); a brief-only design whose read is unavailable or finds nothing
+  // still mirrors, which is what every such run shipped before this change.
+  const declineOrMirror = (reason) => (lettersDeclared ? decline(reason) : null);
 
+  // THE READ IS OF THE DRIVER PANEL, NOT THE SHEET. (Live 8eec8162, 2026-09-15:
+  // the whole-sheet read located ONE band on a Martini livery, "PORSCHE" and
+  // every sponsor mark flipped backwards, and the passenger proof was refused.)
+  // The flank is cropped out and read on its own at panel resolution; the
+  // whole-sheet master-QC read remains only as the fallback when that reader
+  // is unavailable, so the worst case of this change is exactly today.
+  const readerAvailable = Boolean(provider && typeof provider.generateRaw === "function");
   let brandBands = [];
-  if (lettersMatter) {
-    if (!provider || typeof provider.generateRaw !== "function" || !Buffer.isBuffer(guideBytes)) {
-      return decline("brand_band_reader_unavailable");
-    }
-    let review = null;
+  let letteringRead = "located";
+  let letteringSource = null;
+  let letteringReadFailure = null;
+  if (!readerAvailable) {
+    const declined = declineOrMirror("brand_band_reader_unavailable");
+    if (declined) return declined;
+    letteringRead = "reader_unavailable";
+  } else {
+    let driverRead = null;
     try {
-      const readBands = createAtlasMasterValidator({ provider });
-      review = await readBands({ masterBytes, guideBytes, manifest, input });
+      const driverFlank = await extractFlankPanel(masterBytes, manifest, "driver");
+      driverRead = await readPanelLettering({ provider, panelBytes: driverFlank.bytes, surface: "driver" });
     } catch (cause) {
-      // The validator catches its own errors, so reaching here means the seam
-      // itself failed. An unavailable measurement is a reason to keep the
-      // authored flank, never a reason to fail the run.
-      logger(`passenger mirror: brand band read failed (${String(cause?.message || cause).slice(0, 160)})`);
-      return decline("brand_band_read_failed");
+      driverRead = { status: "unavailable", bands: [], code: String(cause?.code || "atlas_lettering_reader_failed"), reason: String(cause?.message || cause).slice(0, 160) };
     }
-    brandBands = Array.isArray(review?.brandBands) ? review.brandBands : [];
-    // ZERO BANDS ON A DESIGN WITH LETTERING IS THE DANGEROUS CASE, and it is
-    // indistinguishable from "the reader could not see them". Mirroring here is
-    // what puts a reversed company name on a customer's vehicle.
-    if (!brandBands.length) return decline("brand_bands_not_located");
+    if (driverRead.status === "read") {
+      brandBands = driverRead.bands;
+      letteringSource = LETTERING_READ_CONTRACT;
+    } else if (!Buffer.isBuffer(guideBytes)) {
+      letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
+      logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
+      const declined = declineOrMirror("brand_band_reader_unavailable");
+      if (declined) return declined;
+      letteringRead = "reader_unavailable";
+    } else {
+      letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
+      logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}); falling back to the sheet read`);
+      let review = null;
+      try {
+        const readBands = createAtlasMasterValidator({ provider });
+        review = await readBands({ masterBytes, guideBytes, manifest, input });
+      } catch (cause) {
+        // The validator catches its own errors, so reaching here means the seam
+        // itself failed. An unavailable measurement is a reason to keep the
+        // authored flank, never a reason to fail the run.
+        logger(`passenger mirror: brand band read failed (${String(cause?.message || cause).slice(0, 160)})`);
+        const declined = declineOrMirror("brand_band_read_failed");
+        if (declined) return declined;
+        letteringRead = "read_failed";
+      }
+      if (letteringRead === "located") {
+        brandBands = Array.isArray(review?.brandBands) ? review.brandBands : [];
+        letteringSource = "master-qc-sheet-read";
+      }
+    }
+    if (letteringRead === "located") {
+      // ZERO BANDS ON A DESIGN WITH DECLARED LETTERING IS THE DANGEROUS CASE, and
+      // it is indistinguishable from "the reader could not see them". Mirroring
+      // there is what puts a reversed company name on a customer's vehicle.
+      if (!brandBands.length) {
+        const declined = declineOrMirror("brand_bands_not_located");
+        if (declined) return declined;
+        letteringRead = "none_located";
+      }
+    }
   }
 
+  // VERIFY ON THE COMPOSED PANEL, THEN CORRECT. Whatever the read found, the
+  // composed passenger flank is read back and every band that reads MIRRORED
+  // is mapped to driver space, re-dropped forward, and the flank is read
+  // again. Bounded: PASSENGER_VERIFY_READS reads, so at most one fewer
+  // corrections. A mirrored band still standing after the last read is a
+  // positive finding of reversed lettering, and the composition declines --
+  // the authored flank is unknown, a known-reversed one is the outcome the
+  // owner ruled out. A verify that cannot run keeps the composition, which is
+  // exactly what every run before this change shipped.
+  const letteringVerify = {
+    contract: LETTERING_READ_CONTRACT, reads: 0, corrections: 0,
+    mirroredFound: [], status: readerAvailable ? "verified" : "unavailable", code: null, reason: null,
+  };
   try {
-    const mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
+    let mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
+    if (readerAvailable) {
+      for (let read = 1; read <= PASSENGER_VERIFY_READS; read += 1) {
+        const composedFlank = await extractFlankPanel(mirrored.bytes, manifest, "passenger");
+        const verify = await readPanelLettering({ provider, panelBytes: composedFlank.bytes, surface: "passenger" });
+        if (verify.status !== "read") {
+          letteringVerify.status = "unavailable";
+          letteringVerify.code = verify.code;
+          // The provider's message, kept on the receipt: the first live run
+          // recorded only a generic code and the cause had to be dug out of
+          // droplet logs.
+          letteringVerify.reason = String(verify.reason || "").slice(0, 300) || null;
+          logger(`passenger mirror: lettering verify unavailable (${verify.code}: ${verify.reason})`);
+          break;
+        }
+        letteringVerify.reads = read;
+        const reversed = mirroredBandsToDriverSpace(verify.bands);
+        letteringVerify.mirroredFound.push(reversed.length);
+        if (!reversed.length) break;
+        if (read === PASSENGER_VERIFY_READS) {
+          letteringVerify.status = "unresolved";
+          break;
+        }
+        const merged = mergeBands(brandBands, reversed);
+        if (merged.length === brandBands.length) {
+          // The reader keeps naming lettering the mirror has already re-dropped:
+          // another pass with the same bands cannot change the pixels.
+          letteringVerify.status = "unresolved";
+          break;
+        }
+        brandBands = merged;
+        letteringVerify.corrections += 1;
+        if (letteringRead === "none_located") letteringRead = "located";
+        mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
+      }
+    }
+    if (letteringVerify.status === "unresolved") {
+      logger(`passenger mirror: reversed lettering still present after ${letteringVerify.reads} reads; keeping the authored flank`);
+      return { ...decline("reversed_lettering_unresolved"), letteringRead, letteringVerify };
+    }
     return {
       composed: true,
       bytes: mirrored.bytes,
       bandsApplied: Number(mirrored.bandsApplied || 0),
       brandStringCount: brandStrings.length,
+      letteringRead,
+      letteringSource,
+      letteringReadFailure,
+      letteringVerify,
       reason: null,
     };
   } catch (cause) {
@@ -2796,6 +2938,16 @@ async function generateOrReuseFlatAtlas(options) {
     && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
     return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
   }
+  if (options?.authoringTopology === undefined
+    && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
+    const reason = fieldFirstReason(options?.input?.vehicle);
+    if (reason) {
+      return generateOrReuseFlatAtlasResolved({
+        ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FIRST_ATTEMPTS,
+        fieldFirst: { contract: AUTHORING_FAILOVER_CONTRACT, reason, attempts: FIELD_FIRST_ATTEMPTS },
+      });
+    }
+  }
   return generateOrReuseFlatAtlasResolved(options);
 }
 
@@ -2810,6 +2962,8 @@ async function generateOrReuseFlatAtlasResolved(options) {
     authoringTopology = "six-surface",
     authoringFenceState = null,
     failoverFrom = null,
+    // Field-first routing receipt (see fieldFirstReason). null on every other path.
+    fieldFirst = null,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -3938,6 +4092,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       atlasDesignTeachingExampleIdentity: manifest.topology === FIELD_TOPOLOGY ? null : teachingProof.identity,
       atlasDesignTeachingExampleSetHash: currentExampleSetHash,
       atlasFieldContract: manifest.topology === FIELD_TOPOLOGY ? ATLAS_FIELD_PROMPT_CONTRACT : null,
+      fieldFirst: fieldFirst || null,
       // Same rename, same value: this forensic field records the LAYOUT the six
       // panels were cut from, not the manifest identity.
       territoriesContract: manifest.territoriesContract || null,
@@ -3976,6 +4131,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
             bandsApplied: passengerMirror.bandsApplied,
             brandStringCount: passengerMirror.brandStringCount,
             preMirrorMasterHash,
+            // How the lettering was found and proven forward (2026-09-15):
+            // which reader located the bands, and the verify loop's receipt.
+            letteringRead: passengerMirror.letteringRead || null,
+            letteringSource: passengerMirror.letteringSource || null,
+            letteringReadFailure: passengerMirror.letteringReadFailure || null,
+            letteringVerify: passengerMirror.letteringVerify || null,
           }
         : null,
       passengerMirrorTelemetry: {
@@ -4169,7 +4330,7 @@ module.exports = {
   atlasPanelForProofView,
   viewAuthorityFor,
   _test: {
-    FIELD_FAILOVER_ATTEMPTS, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
+    FIELD_FAILOVER_ATTEMPTS, FIELD_FIRST_ATTEMPTS, fieldFirstReason, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
     activeZoneMaskSvg,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.

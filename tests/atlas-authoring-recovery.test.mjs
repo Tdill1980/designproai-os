@@ -185,7 +185,8 @@ test("a refused six-surface budget fails over ONCE to the one-field contract ins
   assert.equal(result.metadata.atlasFieldContract,"designpro.atlas-field-prompt.v2");
   assert.equal(result.metadata.atlasDesignTeachingExampleApplied,false);
   assert.equal(result.metadata.masterAuthoringAttempts,1);
-  assert.equal(result.metadata.maxAuthoringAttemptsAllowed,1);
+  // 2026-09-15: the field budget is two, so one car-shaped field does not end the run.
+  assert.equal(result.metadata.maxAuthoringAttemptsAllowed,2);
   const failover=result.metadata.authoringFailover;
   assert.equal(failover.contract,"designpro.atlas-authoring-failover.v1");
   assert.equal(failover.from,"rectangular-preview-v1");assert.equal(failover.to,FIELD_TOPOLOGY);
@@ -619,4 +620,42 @@ test("recoverable artifact reads and explicit provider rejections retain the ori
     await assert.rejects(finishPanel(panel,{store:{async putImmutableBytes(){}},callEdge:async()=>{calls++;throw failure;}}),error=>error===failure);
     assert.equal(calls,1,"a typed technical failure cannot authorize the second finishing candidate");
   }
+});
+
+// FIELD FIRST FOR CARS. (Owner 2026-09-15: "This is taking so long.") On the
+// strict referee six-surface has only ever produced a flat sheet for the
+// F-250; on a car it drew the vehicle on every attempt, and every car run paid
+// ~2.5 minutes for those two refusals before the field produced the sheet.
+test("a car-class vehicle authors on the one-field contract first and never spends a six-surface try",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?fieldSource:source;
+  const car={...input,vehicle:{year:"2022",make:"Porsche",model:"911 Turbo",type:"car"}};
+  const result=await run.run({input:car});
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),["master:field:1"],"no six-surface attempt is spent on a car");
+  assert.equal(run.masterCalls[0].fieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(result.metadata.authoringTopology,"field");
+  assert.equal(result.metadata.authoringFailover,null,"field first is routing, not a fail-over");
+  assert.equal(result.metadata.fieldFirst?.reason,"vehicle-class:car");
+  assert.equal(result.metadata.maxAuthoringAttemptsAllowed,2);
+});
+
+test("trucks keep six-surface first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restores it for every class",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  assert.equal(atlas._test.fieldFirstReason({type:"truck"}),null);
+  assert.equal(atlas._test.fieldFirstReason({type:"van"}),null);
+  assert.equal(atlas._test.fieldFirstReason({type:"car"}),"vehicle-class:car");
+  assert.equal(atlas._test.fieldFirstReason({type:"suv"}),"vehicle-class:suv");
+  assert.equal(atlas._test.fieldFirstReason({type:""}),null,"an unknown class is not routed by guess");
+  const previous=process.env.DESIGNPRO_ATLAS_FIELD_FIRST;
+  process.env.DESIGNPRO_ATLAS_FIELD_FIRST="off";
+  t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FIRST:process.env.DESIGNPRO_ATLAS_FIELD_FIRST=previous);
+  assert.equal(atlas._test.fieldFirstReason({type:"car"}),null);
+  const {source}=await fixture();
+  const clean=harness(source);
+  const result=await clean.run({input:{...input,vehicle:{year:"2022",make:"Porsche",model:"911 Turbo",type:"car"}}});
+  assert.deepEqual(clean.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1"]);
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.fieldFirst,null);
 });

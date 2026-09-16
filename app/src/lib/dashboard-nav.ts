@@ -29,6 +29,7 @@ import {
   Scissors,
   LayoutDashboard,
   CreditCard,
+  Grid3x3,
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
@@ -59,6 +60,15 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     pillar: "design",
     tier: "starter",
     description: "Upload a wall, create or upload artwork, and preview it at measured scale",
+  },
+  {
+    key: "patternpro",
+    label: "PatternPro",
+    route: "/printpro/patternpro",
+    icon: Grid3x3,
+    pillar: "design",
+    tier: "starter",
+    description: "Pick one of 118 WePrintWraps patterns, see it on any vehicle in 3D, get the yards a full wrap takes, order the film",
   },
   {
     key: "graphicspro",

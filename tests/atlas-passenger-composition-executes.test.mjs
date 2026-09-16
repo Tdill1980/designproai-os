@@ -26,6 +26,8 @@ const sharp = runtimeRequire("sharp");
 const { _test } = require("../runtime/flat-first-atlas.cjs");
 const { composePassengerFromDriver } = _test;
 const masterQc = require("../runtime/atlas-master-qc.cjs");
+const { extractFlankPanel } = require("../runtime/atlas-passenger-mirror.cjs");
+const { DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL } = require("../runtime/atlas-lettering-read.cjs");
 
 const ZONE = { w: 240, h: 120 };
 const CANVAS = { widthPx: 1040, heightPx: 320 };
@@ -92,10 +94,35 @@ const guideBytes = () => sharp({
  * mismatch` and returns no bands. That is the real binding working; the harness
  * has to respect it rather than route around it.
  */
-function providerReturning(bands, { masterHash, guideHash, onCall = () => {} } = {}) {
+/**
+ * Since 2026-09-15 the composition asks THREE questions of the seam, each by
+ * label: the driver-panel lettering read, the whole-sheet master-QC read (the
+ * fallback when the panel read is unavailable), and the passenger verify read.
+ * `lettering` answers the first and third; when it is absent those two get a
+ * non-answer, the composition falls back to the sheet read, and every test
+ * written against the sheet read keeps its meaning.
+ */
+const LETTERING_ANSWER = (body, bands) => {
+  const inspectionId = body.contents[0].parts.find((p) => typeof p.text === "string").text.match(/"inspectionId":"([0-9a-f]{16})"/)[1];
+  return { payload: { candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ inspectionId, bands, confidence: 1 }) }] } }] } };
+};
+
+function providerReturning(bands, { masterHash, guideHash, onCall = () => {}, lettering = null } = {}) {
+  let passengerReads = 0;
   return {
-    generateRaw: async ({ body }) => {
-      onCall(body);
+    generateRaw: async ({ body, label }) => {
+      onCall(body, label);
+      if (label === DRIVER_READ_LABEL) {
+        if (!lettering) return { payload: { candidates: [{ content: { parts: [{ text: "not a lettering answer" }] } }] } };
+        return LETTERING_ANSWER(body, lettering.driver || []);
+      }
+      if (label === PASSENGER_VERIFY_LABEL) {
+        if (!lettering) return { payload: { candidates: [{ content: { parts: [{ text: "not a lettering answer" }] } }] } };
+        const reads = lettering.passenger || [];
+        const answerBands = reads[Math.min(passengerReads, reads.length - 1)] || [];
+        passengerReads += 1;
+        return LETTERING_ANSWER(body, answerBands);
+      }
       const review = {
         contract: masterQc.MASTER_QC_CONTRACT,
         masterSha256: masterHash,
@@ -122,20 +149,53 @@ async function mirrorMae(bytes) {
   return masterQc._test.passengerMirrorMae(bytes, manifest);
 }
 
-test("a design with no brand strings mirrors, and never calls the provider", async () => {
+// 2026-09-15 (owner: "passenger is not flipped yet text reversed"): a race
+// livery carries "21", "Porsche" and sponsor marks with no company name, phone
+// or website, so the old "no brand strings, no band read" rule mirrored it
+// blind and the proof rendered the lettering reversed. Every design gets the
+// read now; the structured strings only decide what a failed read does.
+test("a design with no brand strings still reads its lettering and re-drops it forward", async () => {
   let calls = 0;
+  let panelReads = 0;
+  const bands = [{ xPct: 0.25, yPct: 0.66, wPct: 0.46, hPct: 0.2 }];
+  const masterBytes = await master();
+  const guide = await guideBytes();
   const result = await composePassengerFromDriver({
-    masterBytes: await master(),
-    manifest,
-    guideBytes: await guideBytes(),
-    input: NO_BRAND,
-    provider: providerReturning([], { onCall: () => { calls += 1; } }),
+    masterBytes, manifest, guideBytes: guide, input: NO_BRAND,
+    provider: providerReturning(bands, { masterHash: sha(masterBytes), guideHash: sha(guide), onCall: (_body, label) => {
+      if (label === DRIVER_READ_LABEL || label === PASSENGER_VERIFY_LABEL) panelReads += 1; else calls += 1;
+    } }),
   });
 
   assert.equal(result.composed, true, result.reason || "");
-  assert.equal(calls, 0, "a design with no lettering must not spend a band read");
+  assert.equal(calls, 1, "the sheet read runs for every design when the panel read is unavailable");
+  assert.equal(panelReads, 2, "the driver panel read is attempted first and the composed flank is read back");
+  assert.equal(result.letteringSource, "master-qc-sheet-read");
+  assert.equal(result.letteringVerify.status, "unavailable", "a verify that cannot run keeps the composition");
+  assert.equal(result.bandsApplied, 1, "located lettering is re-dropped un-flipped");
+  assert.equal(result.brandStringCount, 0);
+  assert.equal(result.letteringRead, "located");
+  assert.ok((await mirrorMae(result.bytes)) < 0.26);
+});
+
+test("a design with no brand strings and no lettering located still mirrors", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: NO_BRAND, provider: providerReturning([]),
+  });
+  assert.equal(result.composed, true, result.reason || "");
   assert.equal(result.bandsApplied, 0);
+  assert.equal(result.letteringRead, "none_located");
   assert.ok(Buffer.isBuffer(result.bytes) && result.bytes.length > 0);
+});
+
+test("a design with no brand strings mirrors even when the reader is unavailable", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: NO_BRAND, provider: null,
+  });
+  assert.equal(result.composed, true, result.reason || "");
+  assert.equal(result.letteringRead, "reader_unavailable");
 });
 
 test("the composed flank is actually Driver mirrored, measured by the gate's own comparison", async () => {
@@ -224,6 +284,127 @@ test("a reader that throws declines rather than failing an accepted run", async 
     ["brand_band_read_failed", "brand_bands_not_located"].includes(result.reason),
     `unexpected reason ${result.reason}`,
   );
+});
+
+// ── THE PANEL READ AND THE VERIFY LOOP (2026-09-15, live 8eec8162) ────────────
+//
+// The whole-sheet read located ONE band on a Martini livery and "PORSCHE"
+// shipped mirrored on the composed flank. The driver panel is now read on its
+// own, and the composed passenger panel is read back: every band it names as
+// mirrored is mapped to driver space, re-dropped forward, and read again.
+
+const WORD_BAND = { xPct: 0.25, yPct: 0.66, wPct: 0.46, hPct: 0.2 };
+const NUMBER_BAND = { xPct: 0.7, yPct: 0.1, wPct: 0.2, hPct: 0.2 };
+/** The same band as seen on the passenger panel (the driver panel flopped). */
+const onPassenger = (band, orientation) => ({ ...band, xPct: 1 - band.xPct - band.wPct, text: "x", orientation });
+const forward = (band) => ({ ...band, text: "x", orientation: "forward" });
+
+test("the driver panel read is the primary band source and the sheet read is not called", async () => {
+  const labels = [];
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      onCall: (_body, label) => labels.push(label),
+      lettering: { driver: [forward(WORD_BAND), forward(NUMBER_BAND)], passenger: [[]] },
+    }),
+  });
+  assert.equal(result.composed, true, result.reason || "");
+  assert.equal(result.bandsApplied, 2, "every band the panel read located is re-dropped forward");
+  assert.equal(result.letteringRead, "located");
+  assert.equal(result.letteringSource, "designpro.atlas-lettering-read.v1");
+  assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL], "panel read, mirror, one verify read -- no sheet read");
+  assert.deepEqual(result.letteringVerify, {
+    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null,
+  });
+});
+
+test("a band the driver read missed is caught mirrored on the composed flank and corrected", async () => {
+  const before = await master();
+  const labels = [];
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      onCall: (_body, label) => labels.push(label),
+      // The driver read finds nothing; the first read-back of the composed
+      // flank names the word band as mirrored; the second finds it forward.
+      lettering: { driver: [], passenger: [[onPassenger(WORD_BAND, "mirrored")], []] },
+    }),
+  });
+  assert.equal(result.composed, true, result.reason || "");
+  assert.equal(result.bandsApplied, 1, "the mirrored band was mapped back to the driver and re-dropped");
+  assert.equal(result.letteringRead, "located", "a correction is a located band");
+  assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL, PASSENGER_VERIFY_LABEL]);
+  assert.equal(result.letteringVerify.reads, 2);
+  assert.equal(result.letteringVerify.corrections, 1);
+  assert.deepEqual(result.letteringVerify.mirroredFound, [1, 0]);
+  assert.equal(result.letteringVerify.status, "verified");
+
+  // THE PIXELS: the corrected band on the passenger panel is the driver's own
+  // slice, un-flipped, at the mirrored position -- not a flop of it.
+  const driver = await extractFlankPanel(before, manifest, "driver");
+  const passenger = await extractFlankPanel(result.bytes, manifest, "passenger");
+  const rect = { left: Math.round(WORD_BAND.xPct * ZONE.w), top: Math.round(WORD_BAND.yPct * ZONE.h), width: Math.round(WORD_BAND.wPct * ZONE.w), height: Math.round(WORD_BAND.hPct * ZONE.h) };
+  const driverSlice = await sharp(driver.bytes).extract(rect).raw().toBuffer();
+  const passengerSlice = await sharp(passenger.bytes).extract({ ...rect, left: ZONE.w - rect.left - rect.width }).raw().toBuffer();
+  assert.deepEqual(passengerSlice, driverSlice, "the band reads forward on the passenger flank");
+  // And the rest of the flank is still the mirror.
+  assert.ok((await mirrorMae(result.bytes)) < 0.26);
+});
+
+test("lettering still mirrored after the last read-back declines instead of shipping reversed type", async () => {
+  const before = await master();
+  const labels = [];
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      onCall: (_body, label) => labels.push(label),
+      // Every read-back names a NEW mirrored band, so the loop spends its whole
+      // budget correcting and the final read still reports reversed lettering.
+      lettering: { driver: [], passenger: [
+        [onPassenger(WORD_BAND, "mirrored")],
+        [onPassenger(NUMBER_BAND, "mirrored")],
+        [onPassenger({ xPct: 0.05, yPct: 0.05, wPct: 0.1, hPct: 0.1 }, "mirrored")],
+      ] },
+    }),
+  });
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "reversed_lettering_unresolved");
+  assert.equal(result.bytes, undefined, "a decline returns no bytes to promote");
+  assert.equal(result.letteringVerify.status, "unresolved");
+  assert.equal(result.letteringVerify.reads, 3, "three reads, two corrections, then stop");
+  assert.equal(result.letteringVerify.corrections, 2);
+  assert.equal(labels.filter((l) => l === PASSENGER_VERIFY_LABEL).length, 3);
+  assert.ok((await mirrorMae(before)) > 0.05, "the authored flank is untouched");
+});
+
+test("a read-back that keeps naming an already re-dropped band stops rather than looping", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      lettering: { driver: [forward(WORD_BAND)], passenger: [[onPassenger(WORD_BAND, "mirrored")]] },
+    }),
+  });
+  // The band is already forward by construction; the reader disagreeing with
+  // the pixels cannot be fixed by re-dropping the same band again.
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "reversed_lettering_unresolved");
+  assert.equal(result.letteringVerify.reads, 1);
+  assert.equal(result.letteringVerify.corrections, 0);
+});
+
+test("a lettered design with a working panel read composes without the sheet read", async () => {
+  const labels = [];
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: WITH_BRAND,
+    provider: providerReturning([], {
+      onCall: (_body, label) => labels.push(label),
+      lettering: { driver: [forward(WORD_BAND)], passenger: [[]] },
+    }),
+  });
+  assert.equal(result.composed, true, result.reason || "");
+  assert.equal(result.bandsApplied, 1);
+  assert.equal(result.brandStringCount, 2);
+  assert.ok(!labels.includes("A.T.L.A.S. flattened-master semantic QC"));
 });
 
 test("flanks the manifest did not build as twins are never composed across", async () => {

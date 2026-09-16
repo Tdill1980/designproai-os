@@ -698,7 +698,7 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <CardTitle className="text-xl">WallPro Batch Generate</CardTitle>
-                    <CardDescription>Wall wrap designs — 100 prompts across 10 categories</CardDescription>
+                    <CardDescription>Wall wrap designs — brief presets, AI brief writer, room mockups, WrapReady publish</CardDescription>
                   </div>
                 </div>
               </CardHeader>

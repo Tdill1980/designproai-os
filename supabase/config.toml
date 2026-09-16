@@ -229,3 +229,40 @@ verify_jwt = false
 # Cron/staff caller, not a user: the handler requires the WPW_SYNC_SECRET
 # header and rejects anything else, so there is no JWT to verify.
 verify_jwt = false
+
+# MY SHOPFLOW — the WePrintWraps account page (ported 2026-09-15). Both must be
+# verify_jwt = false: wpw-shopflow's whole purpose is the door for a customer who
+# has NO account here, and wpw-orders-read is called within the JWT refresh
+# window, where the gateway would reject a slightly stale token before the
+# function's own auth check ever runs.
+[functions.wpw-shopflow]
+verify_jwt = false
+
+[functions.wpw-orders-read]
+verify_jwt = false
+
+# The WPLoyalty push. verify_jwt = false because WordPress calls it with an HMAC
+# signature over the raw body, not a Supabase session — the plugin has no user.
+[functions.wpw-loyalty-webhook]
+verify_jwt = false
+
+# ── PatternPro (Wrap-By-The-Yard) ─────────────────────────────────────────
+# For the WePrintWraps-facing /pattern-wrap page. Both gate inside the handler
+# (tokenGate / vehicle validation).
+[functions.generate-pattern-render]
+verify_jwt = false
+
+[functions.calculate-film-yards]
+verify_jwt = false
+
+# PatternPro paid path (phase 2, 2026-09-15). The checkout takes a guest
+# customer; the webhook is called by Stripe with its own signature; the email
+# sender is called by the webhook with the service role.
+[functions.create-wbty-checkout]
+verify_jwt = false
+
+[functions.wbty-stripe-webhook]
+verify_jwt = false
+
+[functions.send-wbty-order-email]
+verify_jwt = false

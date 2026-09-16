@@ -224,7 +224,12 @@ test("no page the operator can open advertises a RestylePro product", () => {
   // and /graphics-pro-wall with its edge functions and schema in this
   // repository (tests/graphicspro-end-to-end.test.mjs), so naming it is no
   // longer an advert for something the operator cannot open.
-  const products = /Restyle\s?Pro\s?AI|RestyleLibrary|ColorPro|PatternPro|ApprovePro™|LogoPro/;
+  //
+  // PatternPro left it on 2026-09-15 for the same reason: /pattern-wrap and
+  // /printpro/patternpro are routed, its two render functions and the paid
+  // path are deployed from here, and wbty_products / wbty_orders are in this
+  // schema (tests/pattern-wrap-page.test.mjs, tests/patternpro-buy-path.test.mjs).
+  const products = /Restyle\s?Pro\s?AI|RestyleLibrary|ColorPro|ApprovePro™|LogoPro/;
   for (const path of [
     "app/src/pages/Index.tsx",
     "app/src/pages/RestyleDashboardContent.tsx",

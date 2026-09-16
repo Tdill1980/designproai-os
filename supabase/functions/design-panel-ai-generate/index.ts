@@ -55,7 +55,7 @@ import {
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260901.v23-orthographic-restored";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v25-persona-designs-the-field";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -553,6 +553,8 @@ One wrap, unwrapped. The left and right flanks are the two sides of the SAME veh
 
 Every panel is opaque, unbroken and full-bleed to all four edges: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
 
+When the brief describes how the finished vehicle should look — a race livery, a heritage scheme, a named reference, a style the customer admires — this sheet carries the livery that produces that look: the colour blocking, stripes, graphics, numbers, badges and lettering, drawn as flat print artwork running edge to edge through every panel, exactly the way that livery looks on the printed vinyl before it is applied. The finished look on the vehicle itself belongs to the seven proof projections downstream; on this sheet there is only the printed livery, flat.
+
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }
 
@@ -653,6 +655,15 @@ function atlasFieldContract(
   const lettering = hasBrandName
     ? "Lettering reads left to right throughout, and the company name appears whole and legible."
     : "Lettering reads left to right throughout, and any wording the brief calls for appears whole and legible.";
+  // v25 — THE PERSONA DESIGNS; THE CONTRACT ONLY SAYS WHAT THE OUTPUT IS.
+  // (Owner, Trish 2026-09-15: "we never had to have a livery paragraph, we
+  // relied on the persona to know how to design based on prompt".) The
+  // design direction that used to follow here -- areas that "read on their
+  // own", "not separate pictures", "gallery-grade ... wow factor" -- was
+  // instruction competing with the designer above it, and the field it
+  // produced was plain. What remains is physical: the flat output, the
+  // coordinate map the cutter needs, and lettering kept inside an area so
+  // the cut never runs through a word.
   return [
     "OUTPUT — ONE CONTINUOUS FULL-BLEED COMPOSITION on one square 4K image.",
     `Paint the entire square, edge to edge on all four sides, as one uninterrupted field of printed vinyl artwork for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — ground colour, texture and motion running continuously across the whole image, straight-on and flat.`,
@@ -661,13 +672,9 @@ function atlasFieldContract(
     "",
     ...rows,
     "",
-    "Every one of those areas has to read on its own as intentional, finished, commercially valuable artwork: real subject matter, real depth, real movement, worth what the customer paid. Not one of them may become empty backdrop, filler, or the quiet leftover of a composition that happens elsewhere.",
+    "Those fractions are a map for you to read.",
     "",
-    "They are not separate pictures. The ground, palette, texture, lighting and motion run continuously through the whole square and straight across every join between them, so they read as passages of one design and the joins are invisible.",
-    "",
-    `Nothing that has to be read or recognised may run from one of those areas into another: every letter, word, mark and focal subject sits wholly inside a single area and well clear of its four edges. ${lettering}`,
-    "",
-    "Gallery-grade custom artwork with real depth, movement and a wow factor, drawn flat for printing.",
+    `Every letter, word and mark sits wholly inside a single one of those areas and clear of its four edges. ${lettering}`,
   ].join("\n");
 }
 
