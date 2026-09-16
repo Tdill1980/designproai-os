@@ -670,6 +670,42 @@ per-read count, so "was PORSCHE ever seen reversed" is a query. Locked by
 `tests/atlas-passenger-composition-executes.test.mjs` (pixel-asserted: the
 corrected band on the passenger flank IS the driver slice, un-flipped).
 
+### THE OPPOSITE FAILURE: A FALSE-POSITIVE BAND IS A DESTRUCTIVE PASTE (2026-09-16, live 9789762d)
+
+One day after 8eec8162, the same machinery broke the other way. DID-9789762D
+(the second Martini 911, v25 field topology): the driver flank carried **no
+lettering at all** — pure stripe sweeps — and the reader boxed it anyway.
+Receipts on revision `77787c8c`: `bandsApplied: 7` with `brandStringCount: 0`,
+verify `mirroredFound [3,3,0]`, two corrections, status `"verified"`. Every
+false positive was a raw un-flipped rectangle of stripes composited over the
+mirrored flank, so the customer's passenger panel showed a hard-edged patch of
+unmirrored artwork inside mirrored artwork. **A re-drop is only a correction
+when the band is text; on anything else it is a seam.**
+
+The defenses are the RestylePro locate strictness (RULE 1 — the exact
+functions RULE 0.25 already names: `locateBrandingElements` /
+`collapseContainedBrandingElements`, the honest-no-op pattern), ported into
+`runtime/atlas-lettering-read.cjs`:
+
+1. the prompt carries RestylePro's proven exclusion — *"Background artwork
+   (patterns, gradients, scenery, flames, stripes, racing stripes, geometric
+   shapes) is NOT lettering — never box it"*;
+2. the parser drops any band whose `text` has fewer than
+   `MIN_BAND_TEXT_CHARS` readable characters, and any band shaped like
+   artwork rather than a word block (`MAX_BAND_*` caps, PR #433's half of
+   this same fix, merged the same hour) — no reading direction, nothing to
+   re-drop;
+3. contained bands collapse into their enclosing band (one mark, one paste),
+   and the survivors are bounded to a plausible total share of the panel
+   (`MAX_TOTAL_BAND_AREA_FRACTION`);
+4. `mergeBands` refuses an incoming band already ≥85% covered by a known one,
+   so the verify loop cannot paste inside an already-corrected region.
+
+Do not "simplify" any of these away, and do not disable the mirror to fix a
+paste defect — the mirror itself is deterministic and correct; the reader's
+evidence is what has to be strict. Locked by the 9789762d cases in
+`tests/atlas-lettering-read.test.mjs`.
+
 **Still open, deliberately:** the proof-side continuity gate promises "one
 proof-only re-render" on a drift verdict, but the A.T.L.A.S. proof provider
 runs `maxProviderAttempts: 1`, so the slot dies on the first verdict. It would

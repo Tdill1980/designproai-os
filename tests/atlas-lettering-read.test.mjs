@@ -22,6 +22,16 @@ const {
   LETTERING_READ_CONTRACT, MAX_BANDS, responseSchema, _test,
 } = reader;
 
+// LIVE 9789762d (2026-09-16, DID-9789762D, the second Martini 911): the flank
+// carried NO lettering — pure stripe sweeps — and the reader boxed it SEVEN
+// times (`bandsApplied: 7`, `brandStringCount: 0`); every false positive was
+// pasted as a raw un-flipped rectangle of stripes over the mirrored flank.
+// The RestylePro locate strictness (RULE 1: `locateBrandingElements` /
+// `collapseContainedBrandingElements`, the honest-no-op pattern) is ported
+// here and locked below: the stripes exclusion in the prompt, the readable-
+// text and word-block shape requirements, containment collapse, and the
+// total-area bound.
+
 const panel = () => sharp({ create: { width: 400, height: 200, channels: 3, background: "#1b6fa8" } }).png().toBuffer();
 const answer = (object) => ({ payload: { candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(object) }] } }] } });
 const inspectionIdFromBody = (body) => body.contents[0].parts.find((p) => typeof p.text === "string").text.match(/"inspectionId":"([0-9a-f]{16})"/)[1];
@@ -105,6 +115,62 @@ test("the prompt asks for every band with its orientation and binds the inspecti
   assert.match(prompt, /"mirrored" when the letters are horizontally reversed/);
   assert.match(prompt, /"inspectionId":"abcdef0123456789"/);
   assert.match(prompt, /Do not judge quality/);
+});
+
+test("the prompt carries RestylePro's background-artwork exclusion — stripes are never boxed", () => {
+  // The proven BRANDING_LOCATE_PROMPT line (restylepro-os worker/index.js).
+  // Removing it is how 9789762d's stripes became seven lettering bands.
+  const prompt = letteringReadPrompt({ inspectionId: "abcdef0123456789", surface: "driver" });
+  assert.match(prompt, /Background artwork \(patterns, gradients, scenery, flames, stripes, racing stripes, geometric shapes\) is NOT lettering — never box it/);
+});
+
+test("a band whose text carries no letter or digit is dropped by the parser", () => {
+  for (const text of ["", "   ", "?!", "———", "///"]) {
+    assert.equal(
+      _test.normalizeBand({ xPct: 0.1, yPct: 0.1, wPct: 0.2, hPct: 0.1, text, orientation: "mirrored" }),
+      null,
+      `text ${JSON.stringify(text)} has no reading direction and must not become a paste`,
+    );
+  }
+  assert.ok(_test.normalizeBand({ xPct: 0.1, yPct: 0.1, wPct: 0.2, hPct: 0.1, text: "21", orientation: "mirrored" }));
+});
+
+test("a band contained in another collapses into it — one mark, one re-drop", () => {
+  const outer = { xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.3, text: "MARTINI RACING", orientation: "forward" };
+  const inner = { xPct: 0.2, yPct: 0.15, wPct: 0.1, hPct: 0.1, text: "RACING", orientation: "forward" };
+  const separate = { xPct: 0.7, yPct: 0.7, wPct: 0.2, hPct: 0.1, text: "21", orientation: "forward" };
+  const collapsed = _test.collapseContainedBands([inner, outer, separate]);
+  assert.equal(collapsed.length, 2);
+  assert.ok(collapsed.some((band) => band.text === "MARTINI RACING"));
+  assert.ok(collapsed.some((band) => band.text === "21"));
+  assert.ok(!collapsed.some((band) => band.text === "RACING"), "the contained band merged into its enclosing one");
+});
+
+test("collapse runs before the total-area bound, so nested boxes never spend the band budget", () => {
+  // 9789762d's storm shape: overlapping/nested boxes over the same artwork.
+  // The contained duplicates collapse first; the survivors are then bounded
+  // to a plausible total share of the panel.
+  const nest = (i) => [
+    { xPct: 0.05 * i, yPct: 0.1, wPct: 0.3, hPct: 0.3, text: `M${i}`, orientation: "mirrored" },
+    { xPct: 0.05 * i + 0.05, yPct: 0.15, wPct: 0.1, hPct: 0.1, text: `m${i}`, orientation: "mirrored" },
+  ];
+  const text = JSON.stringify({ inspectionId: "abcdef0123456789", bands: [...nest(0), ...nest(4), ...nest(8)], confidence: 1 });
+  const parsed = parseLetteringRead({ candidates: [{ content: { parts: [{ text }] } }] }, "abcdef0123456789");
+  // Three enclosing bands survive collapse (0.09 area each); the bound keeps
+  // them all (0.27 <= cap) and none of the contained duplicates.
+  assert.equal(parsed.bands.length, 3);
+  assert.ok(parsed.bands.every((band) => /^M\d$/.test(band.text)));
+});
+
+test("mergeBands never re-adds a band already covered by a known one", () => {
+  const existing = [{ xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.3 }];
+  const merged = mergeBands(existing, [
+    // Small band inside the existing one: IoU is tiny, coverage is total.
+    { xPct: 0.2, yPct: 0.15, wPct: 0.05, hPct: 0.05 },
+    { xPct: 0.7, yPct: 0.7, wPct: 0.2, hPct: 0.1 },
+  ]);
+  assert.equal(merged.length, 2);
+  assert.equal(merged[1].xPct, 0.7);
 });
 
 test("parseLetteringRead caps the band count and strips code fences", () => {
