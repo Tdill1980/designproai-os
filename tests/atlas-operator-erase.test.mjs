@@ -160,3 +160,75 @@ test("the endpoint records through the correction lineage and nothing else", () 
   assert.match(handler, /panel_erase_reason_required/,
     "the designer's reason is required before the work is done, not after");
 });
+
+// THE FILL CUTOVER. `fillMasterCutouts` is deterministic BY CONTRACT: the
+// repaired sheet is rebuilt on every resume rather than stored, and
+// `flat_atlas_surface_source_mismatch` refuses a rebuild whose hash drifted.
+// So improving the algorithm in place would refuse the entire back catalogue on
+// resume -- and the refusal would read as corruption, not as a migration.
+// Versioning it is what makes the improvement shippable.
+test("a revision rebuilds under the fill contract it recorded, not the current one", async () => {
+  const fill = require("../runtime/atlas-cutout-fill.cjs");
+  const { FILL_CONTRACT, FILL_CONTRACT_V1, FILL_CONTRACT_V2, fillMasterCutouts } = fill;
+
+  assert.equal(FILL_CONTRACT, FILL_CONTRACT_V2, "new authoring uses the current fill");
+  assert.notEqual(FILL_CONTRACT_V1, FILL_CONTRACT_V2, "the two contracts must be distinguishable");
+
+  // A master with a punched opening inside one zone.
+  const size = 512;
+  const channels = 4;
+  const raw = Buffer.alloc(size * size * channels);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * channels;
+      raw[offset] = 60 + ((x * 120) / size) | 0;
+      raw[offset + 1] = 90 + ((y * 90) / size) | 0;
+      raw[offset + 2] = 150;
+      raw[offset + 3] = 255;
+      if ((x + y) % 29 < 3) { raw[offset] = 230; raw[offset + 1] = 140; raw[offset + 2] = 70; }
+    }
+  }
+  for (let y = 200; y < 300; y += 1) {
+    for (let x = 200; x < 300; x += 1) {
+      const offset = (y * size + x) * channels;
+      raw[offset] = 4; raw[offset + 1] = 4; raw[offset + 2] = 6;
+    }
+  }
+  const masterBytes = await sharp(raw, { raw: { width: size, height: size, channels } }).png().toBuffer();
+  const manifest = { zones: [{ surfaceKey: "driver", x: 0, y: 0, w: size, h: size }] };
+
+  const current = await fillMasterCutouts(masterBytes, manifest, ["driver"]);
+  const legacy = await fillMasterCutouts(masterBytes, manifest, ["driver"], { contract: FILL_CONTRACT_V1 });
+  const pinnedCurrent = await fillMasterCutouts(masterBytes, manifest, ["driver"], { contract: FILL_CONTRACT_V2 });
+
+  assert.equal(current.contract, FILL_CONTRACT_V2, "the default is the current contract");
+  assert.equal(legacy.contract, FILL_CONTRACT_V1, "an explicit v1 must report v1");
+  assert.ok(current.changed && legacy.changed, "both must repair the fixture");
+
+  // The whole point: the two algorithms produce DIFFERENT bytes. If they did
+  // not, versioning would be pointless -- and if a resume read the wrong one,
+  // this is the difference that would refuse the revision.
+  assert.notEqual(current.bytes.toString("base64"), legacy.bytes.toString("base64"),
+    "v1 and v2 must differ, or there is nothing to migrate");
+
+  // And each is reproducible under its own contract, which is what the resume
+  // path's hash comparison actually depends on.
+  assert.equal(pinnedCurrent.bytes.toString("base64"), current.bytes.toString("base64"),
+    "v2 must be reproducible");
+  const legacyAgain = await fillMasterCutouts(masterBytes, manifest, ["driver"], { contract: FILL_CONTRACT_V1 });
+  assert.equal(legacyAgain.bytes.toString("base64"), legacy.bytes.toString("base64"),
+    "v1 must stay reproducible for every revision already recorded under it");
+
+  // An unknown contract is refused rather than silently treated as current.
+  await assert.rejects(
+    () => fillMasterCutouts(masterBytes, manifest, ["driver"], { contract: "designpro.atlas-cutout-fill.v9" }),
+    (error) => error.code === "atlas_cutout_fill_contract_unknown");
+});
+
+test("the resume path reads the recorded contract and defaults to v1", () => {
+  const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(source, /contract:\s*row\.metadata\?\.panelSourceFillContract\s*\|\|\s*FILL_CONTRACT_V1/,
+    "a resumed revision must rebuild under what it recorded, falling back to v1 for rows that predate versioning");
+  assert.match(source, /panelSourceFillContract:\s*cutoutFill\.contract/,
+    "authoring must record which fill produced the surface source, or resume has nothing to read");
+});

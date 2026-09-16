@@ -41,7 +41,17 @@ const {
   nearBlackAt,
 } = require("./atlas-master-qc.cjs");
 
-const FILL_CONTRACT = "designpro.atlas-cutout-fill.v1";
+// TWO FILL CONTRACTS, AND A REVISION REBUILDS UNDER THE ONE IT WAS AUTHORED
+// WITH. `fillMasterCutouts` is deterministic BY CONTRACT: the repaired sheet is
+// recomputed on every resume rather than stored, and
+// `flat_atlas_surface_source_mismatch` refuses a rebuild whose hash no longer
+// matches the recorded `panelSourceHash`. So changing the algorithm in place
+// would refuse every revision authored before the change -- the whole back
+// catalogue, on resume, with no way back. Versioning it instead keeps each
+// revision reproducible under its own rules forever.
+const FILL_CONTRACT_V1 = "designpro.atlas-cutout-fill.v1";              // diffusion: the blob
+const FILL_CONTRACT_V2 = "designpro.atlas-cutout-fill.v2-clone";       // clone + contour dilation
+const FILL_CONTRACT = FILL_CONTRACT_V2;                                 // what NEW authoring uses
 // A wheel arch closes in roughly its own radius. The cap only stops a
 // pathological mask (a zone that is mostly hole) from spinning; the loop
 // already exits as soon as nothing is left to fill.
@@ -1108,14 +1118,23 @@ function fillHole(data, width, height, channels, rawMask) {
  * within them only the pixels the gate convicted, so a zone the detector was
  * happy with comes back identical.
  */
-async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = []) {
+async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = [], options = {}) {
+  // A resumed revision passes the contract it recorded; new authoring takes the
+  // current one. An unknown contract is refused rather than silently treated as
+  // current, because silently rebuilding under the wrong rules is exactly the
+  // failure this versioning exists to prevent.
+  const contract = String(options.contract || FILL_CONTRACT);
+  if (contract !== FILL_CONTRACT_V1 && contract !== FILL_CONTRACT_V2) {
+    throw new AtlasCutoutFillError("atlas_cutout_fill_contract_unknown", `Unknown fill contract ${contract}`);
+  }
+  const applyFill = contract === FILL_CONTRACT_V1 ? diffuseInto : fillHole;
   if (!Buffer.isBuffer(masterBytes) || !masterBytes.length) {
     throw new AtlasCutoutFillError("atlas_cutout_fill_master_invalid", "The master bytes are required");
   }
   const wanted = new Set((surfaceKeys || []).map(String));
   const zones = (manifest?.zones || []).filter((zone) => wanted.has(String(zone.surfaceKey)));
   if (!zones.length) {
-    return { bytes: masterBytes, contract: FILL_CONTRACT, filled: [], changed: false };
+    return { bytes: masterBytes, contract, filled: [], changed: false };
   }
 
   const composites = [];
@@ -1150,7 +1169,7 @@ async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = []) {
     // smooth gradient, then upsample and refine. Until that is built and judged
     // on these same pixels, the shipped fill stays the diffusion -- honest
     // about being a blob rather than dishonest about being artwork.
-    const unresolved = diffuseInto(data, info.width, info.height, info.channels, mask);
+    const unresolved = applyFill(data, info.width, info.height, info.channels, mask);
     composites.push({
       input: await sharp(data, {
         raw: { width: info.width, height: info.height, channels: info.channels },
@@ -1170,13 +1189,13 @@ async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = []) {
   }
 
   if (!composites.length) {
-    return { bytes: masterBytes, contract: FILL_CONTRACT, filled: [], changed: false };
+    return { bytes: masterBytes, contract, filled: [], changed: false };
   }
   const bytes = await sharp(masterBytes, { limitInputPixels: false })
     .composite(composites)
     .png()
     .toBuffer();
-  return { bytes, contract: FILL_CONTRACT, filled, changed: true };
+  return { bytes, contract, filled, changed: true };
 }
 
 /**
@@ -1334,6 +1353,8 @@ module.exports = {
   AtlasCutoutFillError,
   ERASE_CONTRACT,
   FILL_CONTRACT,
+  FILL_CONTRACT_V1,
+  FILL_CONTRACT_V2,
   LIFT_ALPHA_CEILING,
   LIFT_ALPHA_FLOOR,
   MAX_ERASE_FRACTION,
