@@ -1,0 +1,258 @@
+name: Probe A.T.L.A.S. hero-first Call 1
+# A CONTROLLED RUN, NOT A PRODUCT RUN — RULE 0.37.
+#
+# Call-1 prompt experimentation is finished. Eight controlled ablations on the
+# six-surface request every measured NULL, ending with Test 8 (run
+# 33597621527): the teaching proof PRESENT vs ABSENT, three interleaved draws
+# each, A and B both 0/6 full-bleed panes. That harness states its own stopping
+# rule — "if arm B is also 0/6, Call-1 prompt/reference experimentation is
+# finished and the question becomes architectural, not conditioning."
+#
+# This probe runs the architectural alternative CLAUDE.md RULE 0.37 names:
+# RestylePro asks the persona for a PHOTOGRAPH OF THE CAR and derives the flat
+# sheet from the approved view; the OS asks for the flat sheet first. Three
+# nodes, and all three already exist in this repository:
+#
+#   NODE 1  design-panel-ai-generate, DEFAULT vehicle-render mode, viewType
+#           'side' — the same creative assembly with atlasFlatMaster FALSE, so
+#           the tail is the locked camera angle + commercial scene + studio
+#           instead of the flat-sheet contract. A 16:9 photograph is an ask the
+#           model answers; a 3.6:1 flat strip is one it physically cannot emit
+#           (widest aspectRatio is 21:9), which is why the hero-driver cascade
+#           refuses every driver tile on aspect drift before judging artwork.
+#   NODE 2  the gate — reports, never silently passes.
+#   NODE 3  generate-2d-proof in its service-only SURFACE-MASTER mode
+#           (surfaceSide + surfaceViewUrl, artboardOnly, branded, never
+#           persisted): one vehicle view in, one flat full-bleed surface master
+#           out at the flank's own physical proportion.
+#
+# It writes ONE harness row to designpro_generation_requests (leased →
+# cancelled, error.code designiq_ab_harness_lease) because the edge authorizes
+# every image request against a leased request. No revision, generation, view
+# or artifact row. No gate, threshold, prompt version or deployed routing is
+# changed. Two image requests, two pictures back as a run artifact.
+#
+# The owner looks at them BEFORE anything about Call 1 is rewired.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Protected action — makes live provider calls against the production project"
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - RUN_HERO_FIRST_PROBE
+      owner_id:
+        description: "Owner UUID for the harness request row (an operator account)"
+        required: true
+        type: string
+      phone:
+        description: "Exact phone string the design must carry (never invented)"
+        required: false
+        type: string
+        default: "555-0142"
+      website:
+        description: "Exact website string the design must carry (never invented)"
+        required: false
+        type: string
+        default: "FlamingoPools.com"
+      brief:
+        description: "The customer brief (the persona brain gets this verbatim)"
+        required: true
+        type: string
+        default: "Tropical pool-service wrap for Flamingo Pools: sunset sky over turquoise pool water, palm silhouettes, a single hero flamingo, company name large and legible, contact bar along the bottom."
+      company:
+        required: false
+        type: string
+        default: "Flamingo Pools"
+      industry:
+        required: false
+        type: string
+        default: "swimming pool service and installation"
+      colors:
+        required: false
+        type: string
+        default: "turquoise, sunset coral, hot pink"
+      vehicle_year:
+        required: true
+        type: string
+        default: "2022"
+      vehicle_make:
+        required: true
+        type: string
+        default: Ford
+      vehicle_model:
+        required: true
+        type: string
+        default: "F250 Crew Cab"
+      vehicle_type:
+        required: true
+        type: string
+        default: truck
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-hero-first-probe
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RUN_HERO_FIRST_PROBE'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Prove protected live-provider intent
+        run: |
+          set +x
+          test "${{ inputs.confirmation }}" = "RUN_HERO_FIRST_PROBE"
+          test -n "$SSH_PRIVATE_KEY"
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$1"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 35 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 36 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run the probe inside the live runtime image
+        id: run
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          P_OWNER: ${{ inputs.owner_id }}
+          P_PHONE: ${{ inputs.phone }}
+          P_WEBSITE: ${{ inputs.website }}
+          P_BRIEF: ${{ inputs.brief }}
+          P_COMPANY: ${{ inputs.company }}
+          P_INDUSTRY: ${{ inputs.industry }}
+          P_COLORS: ${{ inputs.colors }}
+          P_YEAR: ${{ inputs.vehicle_year }}
+          P_MAKE: ${{ inputs.vehicle_make }}
+          P_MODEL: ${{ inputs.vehicle_model }}
+          P_TYPE: ${{ inputs.vehicle_type }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+
+          # The runtime modules run against the DEPLOYED image's dependencies,
+          # so what the probe exercises is what production would run.
+          tar -cz --exclude runtime/node_modules \
+            scripts/atlas-hero-first-probe.mjs runtime > "$RUNNER_TEMP/probe-payload.tgz"
+          payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            'f=$(mktemp /tmp/designpro-probe-payload.XXXXXX) && cat > "$f" && echo "$f"' \
+            < "$RUNNER_TEMP/probe-payload.tgz")
+          test -n "$payload_file"
+
+          set +e
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "P_OWNER='$P_OWNER' P_TEXT_B64='$(printf '%s\n%s\n%s\n%s\n%s\n%s' "$P_BRIEF" "$P_COMPANY" "$P_INDUSTRY" "$P_COLORS" "$P_PHONE" "$P_WEBSITE" | base64 -w0)' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_TYPE='$P_TYPE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
+          set -Eeuo pipefail
+          env_file=/opt/designproai-os/shared/runtime.env
+          test -f "$env_file" || { echo "runtime.env missing"; exit 41; }
+
+          image=$(docker ps \
+            --filter label=com.docker.compose.project=designproai-os \
+            --format '{{.Image}}' | grep '^designproai-runtime:' | head -n1)
+          if [ -z "$image" ]; then echo "no running designproai-runtime container"; exit 42; fi
+          echo "runtime image: $image"
+
+          test -f "$P_PAYLOAD_FILE" || { echo "payload missing on host"; exit 43; }
+          work=$(mktemp -d /tmp/designpro-probe.XXXXXX)
+          out="$work/probe-evidence"
+          mkdir -p "$out"
+          cleanup() { rm -rf "$work" "$P_PAYLOAD_FILE"; }
+          trap cleanup EXIT
+
+          tar -C "$work" -xzf "$P_PAYLOAD_FILE"
+          ln -sfn /app/node_modules "$work/runtime/node_modules"
+          chmod -R 0777 "$work" "$out"
+
+          # Free text (brief, company, industry, colours) travels base64-encoded
+          # so apostrophes and quotes in a brief cannot break the remote shell.
+          mapfile -t p_text < <(printf '%s' "$P_TEXT_B64" | base64 -d)
+          set +e
+          docker run --rm \
+            --env-file "$env_file" \
+            -v "$work:/work" -w /work \
+            --entrypoint node "$image" \
+            scripts/atlas-hero-first-probe.mjs \
+              --out /work/probe-evidence \
+              --owner "$P_OWNER" --brief "${p_text[0]}" \
+              --company "${p_text[1]}" --industry "${p_text[2]}" --colors "${p_text[3]}" \
+              --phone "${p_text[4]}" --website "${p_text[5]}" \
+              --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" --type "$P_TYPE"
+          status=$?
+          set -e
+
+          echo "---PROBE-EVIDENCE-TAR---"
+          tar -C "$out" -cz . | base64 -w0
+          exit $status
+          REMOTE
+          ssh_status=$?
+          set -e
+
+          mkdir -p probe-evidence
+          if grep -q -- '---PROBE-EVIDENCE-TAR---' "$RUNNER_TEMP/probe.log"; then
+            sed -n '1,/---PROBE-EVIDENCE-TAR---/p' "$RUNNER_TEMP/probe.log" | sed '$d' > probe-evidence/probe-run.log
+            sed -n '/---PROBE-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/probe.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C probe-evidence -xz
+          else
+            cp "$RUNNER_TEMP/probe.log" probe-evidence/probe-run.log
+          fi
+          cat probe-evidence/probe-run.log
+          exit "$ssh_status"
+
+      - name: Summarise the verdict
+        if: always()
+        shell: bash
+        run: |
+          if [ -f probe-evidence/hero-first-evidence.json ]; then
+            { echo '## Hero-first Call-1 probe'; echo '```json';
+              cat probe-evidence/hero-first-evidence.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the probe evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: atlas-hero-first-probe-${{ github.run_id }}
+          path: probe-evidence
+          if-no-files-found: warn
+          retention-days: 90
