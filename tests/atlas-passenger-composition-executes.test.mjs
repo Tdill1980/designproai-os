@@ -26,7 +26,7 @@ const sharp = runtimeRequire("sharp");
 const { _test } = require("../runtime/flat-first-atlas.cjs");
 const { composePassengerFromDriver } = _test;
 const masterQc = require("../runtime/atlas-master-qc.cjs");
-const { extractFlankPanel } = require("../runtime/atlas-passenger-mirror.cjs");
+const { extractFlankPanel, BAND_PAD_FRACTION } = require("../runtime/atlas-passenger-mirror.cjs");
 const { DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL } = require("../runtime/atlas-lettering-read.cjs");
 
 const ZONE = { w: 240, h: 120 };
@@ -343,7 +343,15 @@ test("a band the driver read missed is caught mirrored on the composed flank and
   // slice, un-flipped, at the mirrored position -- not a flop of it.
   const driver = await extractFlankPanel(before, manifest, "driver");
   const passenger = await extractFlankPanel(result.bytes, manifest, "passenger");
-  const rect = { left: Math.round(WORD_BAND.xPct * ZONE.w), top: Math.round(WORD_BAND.yPct * ZONE.h), width: Math.round(WORD_BAND.wPct * ZONE.w), height: Math.round(WORD_BAND.hPct * ZONE.h) };
+  // The lifted slice is the band grown by BAND_PAD_FRACTION on every side.
+  const padX = Math.round(BAND_PAD_FRACTION * ZONE.w);
+  const padY = Math.round(BAND_PAD_FRACTION * ZONE.h);
+  const rect = {
+    left: Math.round(WORD_BAND.xPct * ZONE.w) - padX,
+    top: Math.round(WORD_BAND.yPct * ZONE.h) - padY,
+    width: Math.round(WORD_BAND.wPct * ZONE.w) + 2 * padX,
+    height: Math.round(WORD_BAND.hPct * ZONE.h) + 2 * padY,
+  };
   const driverSlice = await sharp(driver.bytes).extract(rect).raw().toBuffer();
   const passengerSlice = await sharp(passenger.bytes).extract({ ...rect, left: ZONE.w - rect.left - rect.width }).raw().toBuffer();
   assert.deepEqual(passengerSlice, driverSlice, "the band reads forward on the passenger flank");

@@ -807,7 +807,7 @@ async function runAtlasProofStages({
     // invalid proof transport (missing or corrupt pixels, stale/hash-mismatched
     // authority), which must never be persisted merely because the
     // presentation reviewer is non-blocking.
-    maxRegenerations: ATLAS_PROOF_ATTEMPTS,
+    maxRegenerations: Math.max(Number(provider.maxProviderAttempts) || 1, ATLAS_PROOF_ATTEMPTS),
   });
   return proofs;
 }
