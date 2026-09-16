@@ -105,7 +105,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v25-persona-designs-the-field";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v26-map-is-read-not-drawn";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -245,7 +245,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v25-persona-designs-the-field";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v26-map-is-read-not-drawn";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -2729,6 +2729,12 @@ async function composePassengerFromDriver({
   let letteringRead = "located";
   let letteringSource = null;
   let letteringReadFailure = null;
+  let letteringBands = [];
+  const bandReceipt = (band) => ({
+    text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
+    x: Number(Number(band?.xPct).toFixed(3)), y: Number(Number(band?.yPct).toFixed(3)),
+    w: Number(Number(band?.wPct).toFixed(3)), h: Number(Number(band?.hPct).toFixed(3)),
+  });
   if (!readerAvailable) {
     const declined = declineOrMirror("brand_band_reader_unavailable");
     if (declined) return declined;
@@ -2744,6 +2750,7 @@ async function composePassengerFromDriver({
     if (driverRead.status === "read") {
       brandBands = driverRead.bands;
       letteringSource = LETTERING_READ_CONTRACT;
+      letteringBands = driverRead.bands.map(bandReceipt);
     } else if (!Buffer.isBuffer(guideBytes)) {
       letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
@@ -2815,6 +2822,7 @@ async function composePassengerFromDriver({
         letteringVerify.reads = read;
         const reversed = mirroredBandsToDriverSpace(verify.bands);
         letteringVerify.mirroredFound.push(reversed.length);
+        letteringVerify.mirroredBands = [...(letteringVerify.mirroredBands || []), ...reversed.map(bandReceipt)];
         if (!reversed.length) break;
         if (read === PASSENGER_VERIFY_READS) {
           letteringVerify.status = "unresolved";
@@ -2845,6 +2853,7 @@ async function composePassengerFromDriver({
       letteringRead,
       letteringSource,
       letteringReadFailure,
+      letteringBands,
       letteringVerify,
       reason: null,
     };
@@ -4142,6 +4151,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
             letteringRead: passengerMirror.letteringRead || null,
             letteringSource: passengerMirror.letteringSource || null,
             letteringReadFailure: passengerMirror.letteringReadFailure || null,
+            letteringBands: passengerMirror.letteringBands || [],
             letteringVerify: passengerMirror.letteringVerify || null,
           }
         : null,

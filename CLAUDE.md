@@ -677,43 +677,35 @@ not have saved this run (a reversed authority is reversed on every render) and
 it is not changed here — raising it is one extra photographer call per drift
 verdict and is the owner's call.
 
-## 🎨 RULE 0.37 — THE PERSONA DESIGNS; THE FIELD CONTRACT ONLY SAYS WHAT THE OUTPUT IS (owner ruling, Trish 2026-09-15)
+## 🎨 RULE 0.37 — THE SEPTEMBER 4 FIELD TEXT IS THE PRODUCT; JUDGE CHANGES SIDE BY SIDE (corrected 2026-09-16)
 
-Owner, verbatim: *"we never had to have a livery paragraph, we relied on the
-persona to know how to design based on prompt, we have done many Porsche
-Martini race team designs before we migrated."*
+**What happened.** On 2026-09-15 the owner said *"we never had to have a
+livery paragraph, we relied on the persona"*, and the field tail was stripped
+to physical facts only (v25). The next live run, the owner's own Martini 911
+(`220d569f`), painted the map's coordinate digits onto both flanks, drew black
+blocks, went silver instead of white, and pushed every mark off the flanks.
+The lettering reader then took the painted digits for lettering and patched
+the passenger flank. Worse on every axis than the run before it.
 
-**What was wrong.** After the migration the same A.C.E. persona and the same
-customer brief were followed by ~1,400 characters of field contract that
-DIRECTED the design: areas that "read on their own as intentional, finished,
-commercially valuable artwork", "not separate pictures", "gallery-grade …
-wow factor", "worth what the customer paid". Live 8eec8162 (911 Turbo,
-Martini brief) on that contract: a plain field, a filler hood. The persona
-that designed the Martini before the migration was being out-shouted by the
-paragraph after it.
+**The evidence that decides it.** The Arctic Air Prius sheet of 2026-09-04
+(DID-63E6629A: six areas filled edge to edge, company name on both flanks) and
+the Precision master of 2026-09-08 (1564c66d) were both produced by the field
+tail exactly as it read on September 4. That wording is restored verbatim as
+v26 (`atlas-artboard-designiq.20260915.v26-map-is-read-not-drawn`); the only
+addition is the second half of the map line, which says the map is never
+drawn. Locked by `tests/atlas-clean-authoring-contract.test.mjs`.
 
-**What the field tail is now** (`atlasFieldContract`, prompt
-`atlas-artboard-designiq.20260915.v25-persona-designs-the-field`), and the
-test of anything added to it — *is this a physical fact about the output, or
-is it design direction?* Only the first kind belongs:
+**The rule.** The field tail is not argued about. A change to it is accepted
+only with a side-by-side against those two sheets on the same briefs. "The
+persona doesn't need it" was argued, shipped, and refuted by the next run.
 
-1. The output: one continuous full-bleed composition on one square 4K image,
-   flat, for this exact vehicle. The persona never authored a flat sheet
-   before the migration (it authored an on-vehicle render), so this one line
-   is the only new fact it needs.
-2. The anonymous coordinate map (RULE 0.33 v25), because the cutter takes six
-   pieces out of the square and the model has to know where.
-3. One sentence keeping every letter, word and mark inside a single area,
-   clear of its edges — the "text cut on rear" defect (owner 2026-09-14) is a
-   print rule, not a design rule.
-
-Nothing else. No livery paragraph (that was proposed and refused the same
-day), no composition rules, no quality adjectives. Locked by
-`tests/atlas-clean-authoring-contract.test.mjs` ("ATLAS field branch sends
-the prompt and customer references only"): the emitted tail must not contain
-the removed direction, and must contain the map line and the lettering rule.
-The six-container contract (`atlasFlatMasterContract`) is untouched by this
-ruling; it is the failover, not the product path for cars.
+**What this does not fix.** The Martini brief on the field (`8eec8162`, v24,
+this same wording plus a livery paragraph) was still judged plain by the
+owner against her August 5 RestylePro Martini. RestylePro asks the same
+persona for a photo of the car (`mode: 'restyle'`, `viewType: 'side'`) and
+derives the flat proof from the approved views; the OS asks it for the flat
+sheet first (`mode: "atlas-artboard"`). That order is the remaining quality
+gap, and it is a build (hero first, sheet derived), not a prompt edit.
 
 ## 🟢 RULE 0.33 — ONE-FIELD CALL 1 IS THE PRODUCT (owner ruling, Trish 2026-09-02 — "UNFREEZE GET ME A WORKING OS")
 
