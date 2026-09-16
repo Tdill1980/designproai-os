@@ -75,6 +75,7 @@ const { invokeAtlasAuthoring, providerFailureDetails, providerFailureSummary } =
 // DESIGNPRO_ATLAS_TOPOLOGY=hero-driver; six-surface (+ one-field fail-over)
 // stays the default and is the fall-over when the hero pass is refused.
 const {
+  HERO_RENDER_CONTRACT,
   HERO_DRIVER_TOPOLOGY, HERO_DRIVER_CONTRACT, HERO_DRIVER_PROMPT_VERSION,
   authorHeroDriverMaster, heroDriverEnabled,
 } = require("./atlas-hero-driver.cjs");
@@ -2343,11 +2344,93 @@ async function callAtlasAuthorEdge(body, { ownerId, fetchImpl = fetch, signal, t
   if (Number(payload.imageRequestCount) !== 1) {
     throw new FlatAtlasError("flat_atlas_author_edge_call_count_invalid", `The edge reported ${payload.imageRequestCount} image requests; the contract is exactly 1`);
   }
+  if (body.heroReference && String(payload.heroReferenceHash || "") !== String(body.heroReference.contentHash)) {
+    throw new FlatAtlasError("flat_atlas_author_edge_hero_reference_missing", "The driver surface was authored without the staged hero render");
+  }
   if (body.providerRequest && (payload.providerCacheContract !== "designpro.gemini-provider-cache.v1"
     || !HASH_RE.test(String(payload.providerRequestKey || "")))) {
     throw new FlatAtlasError("flat_atlas_provider_cache_receipt_missing", "The authoring response lacks its durable request receipt", true);
   }
   return payload;
+}
+
+/**
+ * HERO FIRST — the render RestylePro starts from. design-panel-ai-generate in
+ * its ordinary restyle/commercial mode, viewType side: a photograph of this
+ * vehicle wearing the design, the same request the OS's own standard provider
+ * already makes (designpanel-edge-provider.cjs). The internal caller gets the
+ * storage path back; the bytes are downloaded, hashed, and staged at 1280px as
+ * an atlas-call1-inputs reference so the driver surface call can attach them.
+ */
+async function callAtlasHeroRenderEdge(body, { ownerId, fetchImpl = fetch, signal } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_hero_render_transport_missing", "SUPABASE_URL / service key are required", true);
+  }
+  const response = await fetchImpl(`${supabaseUrl}/functions/v1/design-panel-ai-generate`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey,
+      "content-type": "application/json", "x-designpro-owner-id": String(ownerId || ""),
+    },
+    body: JSON.stringify(body),
+    signal: signal || AbortSignal.timeout(160_000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.success !== true || !payload?.storagePath) {
+    throw new FlatAtlasError(
+      "flat_atlas_hero_render_failed",
+      `design-panel-ai-generate hero render failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}`,
+      response.status >= 500 || [404, 409, 429].includes(response.status),
+    );
+  }
+  return payload;
+}
+
+const HERO_REFERENCE_LONG_EDGE_PX = 1280;
+async function renderAtlasHero({ input, ownerId, supabase, store, logger = () => {}, callHeroEdge = callAtlasHeroRenderEdge } = {}) {
+  const vehicle = input?.vehicle || {};
+  const body = {
+    mode: String(input?.mode || "") === "restyle" ? "restyle" : (String(input?.mode || "") === "commercial" || input?.companyName ? "commercial" : "restyle"),
+    prompt: String(input?.brief || input?.prompt || "").trim(),
+    finish: input?.finish || "Gloss",
+    companyName: input?.companyName || input?.businessName || undefined,
+    mascot: input?.mascot || undefined,
+    bulletPoints: Array.isArray(input?.bulletPoints) ? input.bulletPoints : [],
+    industryType: input?.industryType || input?.industry || undefined,
+    phone: input?.phone || undefined,
+    website: input?.website || undefined,
+    brandColors: input?.brandColors || (Array.isArray(input?.colors) ? input.colors.join(", ") : undefined),
+    fontStyle: input?.fontStyle || undefined,
+    qrEnabled: input?.qrEnabled === true,
+    vehicleYear: vehicle.year, vehicleMake: vehicle.make, vehicleModel: vehicle.model,
+    viewType: "side",
+    forceNew: true,
+  };
+  const startedAt = Date.now();
+  const payload = await callHeroEdge(body, { ownerId });
+  const storagePath = String(payload.storagePath || "");
+  if (!storagePath.startsWith(`renders/${ownerId}/DesignPanelPro/ai-generated/`) || storagePath.includes("..")) {
+    throw new FlatAtlasError("flat_atlas_hero_render_identity_invalid", "The hero render landed outside the owner's render prefix");
+  }
+  const { data, error } = await supabase.storage.from("wrap-files").download(storagePath);
+  if (error || !data) throw new FlatAtlasError("flat_atlas_hero_render_download_failed", error?.message || "hero render bytes are unavailable", true);
+  const bytes = Buffer.from(await data.arrayBuffer());
+  const reference = await sharp(bytes, { limitInputPixels: false })
+    .resize({ width: HERO_REFERENCE_LONG_EDGE_PX, height: HERO_REFERENCE_LONG_EDGE_PX, fit: "inside", withoutEnlargement: true })
+    .flatten({ background: "#ffffff" }).png().toBuffer();
+  const contentHash = sha256(reference);
+  const referencePath = `atlas-call1-inputs/${contentHash}.png`;
+  await store.putImmutableBytes({ storagePath: referencePath, bytes: reference, contentType: "image/png" });
+  logger(`atlas hero first: rendered ${storagePath} (${bytes.length} bytes) in ${Date.now() - startedAt} ms; reference ${referencePath}`);
+  return {
+    contract: HERO_RENDER_CONTRACT,
+    storagePath, contentType: String(payload.contentType || "image/png"), sha256: sha256(bytes), byteSize: bytes.length,
+    designAnchorText: String(payload.designAnchorText || "").trim().slice(0, 1200),
+    heroReference: { storagePath: referencePath, contentHash },
+    durationMs: Date.now() - startedAt,
+  };
 }
 
 /**
@@ -3344,8 +3427,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // The sheet then faces the SAME gates below as a six-surface master.
       let hero;
       try {
+        // HERO FIRST: the on-car render the persona is good at, staged as the
+        // driver surface's design reference. One image request before the
+        // cascade; the cascade itself is unchanged.
+        const heroRender = await (options.renderHero || renderAtlasHero)({ input: authoringInput, ownerId, supabase, store, logger });
         const heroArgs = {
-          manifest, input: authoringInput, store, logger,
+          manifest, input: { ...authoringInput, heroReference: heroRender.heroReference }, store, logger,
           creativeContext: [String(input?.companyName || "").trim(), String(input?.industryType || "").trim(), String(input?.brandColors || "").trim()].filter(Boolean).join(" · ").slice(0, 600),
           providerRequest: { requestId, generationId, claimToken, ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
           callEdge: createAtlasAuthorTransport({ supabase, callAuthorEdge, ownerId }),
@@ -3379,6 +3466,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
           attempts: Number(cause.details?.attempts || 0), rawCandidates: [],
         }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
       }
+      hero.provenance.heroRender = {
+        contract: heroRender.contract, storagePath: heroRender.storagePath, sha256: heroRender.sha256,
+        byteSize: heroRender.byteSize, durationMs: heroRender.durationMs, reference: heroRender.heroReference,
+        designAnchorText: heroRender.designAnchorText,
+      };
+      hero.provenance.imageRequestCount = Number(hero.provenance.imageRequestCount || 0) + 1;
       generated = { bytes: hero.bytes, model: hero.model, provenance: hero.provenance, heroDriver: hero.provenance };
       timings.heroCascadeMs = (timings.heroCascadeMs || 0) + Number(hero.timings?.heroCascadeMs || 0);
     } else {
@@ -4351,6 +4444,8 @@ module.exports = {
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.
     composePassengerFromDriver,
+    renderAtlasHero,
+    callAtlasHeroRenderEdge,
     resolveMaxAuthoringAttempts,
     atlasRevisionIdentity,
     // Exported so the GENIE resolver's authority can be validated by its real

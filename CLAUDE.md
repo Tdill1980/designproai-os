@@ -2,6 +2,28 @@
 
 ## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
 
+> **STATUS 2026-09-16 — HERO FIRST IS BUILT INTO THE CASCADE; FLAG STILL OFF
+> UNTIL THE OWNER SEES A PROBE SHEET.** Owner: *"before migration to
+> os.designpro this is the exact same system, should be the same design
+> quality."* The parity diff is one line: RestylePro calls
+> `design-panel-ai-generate` with `mode: 'restyle'`/`'commercial'` +
+> `viewType: 'side'` (a photograph of the car wearing the wrap) and derives
+> every flat from that approved design; the OS asked the same persona for the
+> flat sheet first. The cascade now opens with that render (`renderAtlasHero`
+> in flat-first-atlas.cjs, staged at 1280px as an `atlas-call1-inputs`
+> reference), the driver surface call attaches it (`heroReference`, edge
+> `attach()` door, `exact_reference` intent) and DERIVES the flank with
+> RestylePro's flatten instruction (`atlasHeroDerivationContract`, prompt
+> `atlas-author-hero-driver.20260916.v2`); hood, front, rear and roof continue
+> from the derived driver exactly as before. The drift gate that killed every
+> driver tile is corrected: a return is judged against the menu shape that
+> was requested (`nearestAuthorAspect`) and the gap to the zone is closed by a
+> centred **cover crop**, the way RestylePro's proof tiles close it, never a
+> stretch. Receipt: `metadata.heroDriverAuthoring.heroRender`. Locked by
+> `tests/atlas-hero-first.test.mjs`. Turn on with `atlas_topology=hero-driver`
+> only after `atlas-hero-driver-probe.yml` on the 911 Martini brief produces a
+> sheet the owner accepts side by side with her August 5 RestylePro Martini.
+>
 > **STATUS 2026-09-14 — HERO-DRIVER IS OFF IN PRODUCTION (owner: "1st call should
 > be atlas proof … we got it to produce in under 45 seconds before").** Flag
 > dispatched back to `six-surface` on deploy run 1275 (`FLAGS_APPLIED`). The
