@@ -163,21 +163,21 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
             </Link>
           </SidebarTooltip>
           <SidebarTooltip
-            title="WallPro Production"
-            description="Print-ready 150 PPI wall panels for any customer, filed by DesignID"
+            title="WallPanelProStudio"
+            description="Every wall design by DesignID: version rail, designer QC checklist, the release gate that decides whether a customer may download, and the print files"
           >
             <Link
-              to="/admin/wallpro-production"
+              to="/wallpanelprostudio"
               onClick={onNavigate}
               className={cn(
                 "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
-                isActive("/admin/wallpro-production")
+                isActive("/wallpanelprostudio")
                   ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
                   : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
               )}
             >
               <Shield className="w-4 h-4 shrink-0" />
-              <span className="truncate">WallPro Production</span>
+              <span className="truncate">WallPanelProStudio</span>
             </Link>
           </SidebarTooltip>
           <SidebarTooltip
@@ -361,7 +361,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               {tool.key === "wallpro" && isAdmin && (
                 <SidebarTooltip
                   title="WallPanelProStudio"
-                  description="Every wall design by DesignID with its version history, print files, designer QC and the release gate — plus the designs that took while the customer timed out"
+                  description="Every wall design by DesignID: version rail, the designer QC checklist, and the RELEASE GATE — until a human ticks every check and releases, the customer cannot download the print file, because the database refuses the read"
                 >
                   <Link
                     to="/wallpanelprostudio"
@@ -378,26 +378,10 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
-              {tool.key === "wallpro" && isAdmin && (
-                <SidebarTooltip
-                  title="WallPro QC / Production"
-                  description="Approved versions, 150 PPI panels and print files for any customer, filed by DesignID"
-                >
-                  <Link
-                    to="/admin/wallpro-production"
-                    onClick={onNavigate}
-                    className={cn(
-                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
-                      isActive("/admin/wallpro-production")
-                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
-                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
-                    )}
-                  >
-                    <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">QC / Production</span>
-                  </Link>
-                </SidebarTooltip>
-              )}
+              {/* The QC / Production sub-link was a SECOND door to the same
+                  board once /admin/wallpro-production was retired into it, so
+                  it is gone rather than left pointing at its neighbour. The one
+                  above IS the QC gate; its tooltip says so. */}
               {/* THE PARTNER TENANT, REACHABLE BEFORE ITS OWN DOMAIN EXISTS
                   (owner, 2026-09-16: "The WPW is in nav right so I can show
                   WPW before it gets the WPW page ... I need to film a demo

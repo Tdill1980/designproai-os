@@ -314,3 +314,40 @@ describe('the human validation window', () => {
     expect(message.detail).toMatch(/checked by a person/i);
   });
 });
+
+describe('the order number a customer is given when they pay', () => {
+  // The number is MINTED BY THE DATABASE (wallpro_next_order_number, ported
+  // from CreatorMarket's cm_next_order_number) and arrives on the row. These
+  // assert the board renders what it is given and never derives its own — a
+  // client that computes a server-owned identity is a second source of truth.
+  it('renders the stored order_number, not a derivation of the row id', () => {
+    const v = version();
+    const record = build({
+      entitlements: [{ id: 'aaaaaaaa-1111-4111-8111-111111111111', version_id: v.id, product_type: 'wallpro_custom_file', amount_cents: 14900, paid_at: at('2026-09-13T10:00:00Z'), order_number: 'WPO-001042' }],
+    }).designs[0].versions[0];
+    expect(record.orders[0].orderNumber).toBe('WPO-001042');
+    // The uuid would have produced WPO-AAAAAAAA under the derivation this
+    // replaced; seeing that string here means the client started deriving again.
+    expect(record.orders[0].orderNumber).not.toContain('AAAAAAAA');
+  });
+
+  it('attaches every purchase to its own version, oldest payment first', () => {
+    const v = version();
+    const record = build({
+      entitlements: [
+        { id: 'bbbbbbbb-2222-4222-8222-222222222222', version_id: v.id, product_type: 'wallpro_custom_file', amount_cents: 14900, paid_at: at('2026-09-13T10:00:00Z'), order_number: 'WPO-001002' },
+        { id: 'aaaaaaaa-1111-4111-8111-111111111111', version_id: v.id, product_type: 'wallpro_catalog_file', amount_cents: 7900, paid_at: at('2026-09-12T19:30:00Z'), order_number: 'WPO-001001' },
+      ],
+    }).designs[0].versions[0];
+    expect(record.orders.map(o => o.orderNumber)).toEqual(['WPO-001001', 'WPO-001002']);
+    expect(record.orders[0].amountCents).toBe(7900);
+  });
+
+  // An unpaid design must not invent one, and the board must not break for the
+  // callers and fixtures that pass no entitlements at all.
+  it('is empty until the customer pays', () => {
+    expect(build().designs[0].versions[0].orders).toEqual([]);
+    expect(build({ entitlements: [] }).designs[0].versions[0].orders).toEqual([]);
+  });
+});
+

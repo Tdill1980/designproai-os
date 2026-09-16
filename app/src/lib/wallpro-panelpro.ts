@@ -39,8 +39,25 @@ import type {
  * vehicle studio uses. Re-exported here so the studio has one import. */
 export const wallDesignIdOf = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
+
 /** The print target every wall panel is enhanced to (runtime/wallpro-production.cjs). */
 export const WALL_TARGET_PPI = 150;
+
+/** One paid purchase, as the board shows it. */
+export type WallStudioOrder = {
+  orderNumber: string;
+  productType: string;
+  amountCents: number;
+  paidAt: string;
+};
+
+/** The entitlement row shape this module needs — kept local so the builder
+ *  stays a pure function of plain rows and testable without the API layer. */
+export type WallProEntitlementRow = {
+  id: string; version_id: string; product_type: string; amount_cents: number; paid_at: string;
+  /** Minted by the database (wallpro_next_order_number), never by a client. */
+  order_number: string;
+};
 
 export type WallStudioVersionRecord = {
   version: WallVersion;
@@ -53,6 +70,9 @@ export type WallStudioVersionRecord = {
   release: WallReleaseState;
   /** The newest production build for this exact version. */
   job: WallProductionJob | null;
+  /** Every paid purchase against this version, oldest first. Empty until the
+   *  customer pays, which is the honest state for an unpaid design. */
+  orders: WallStudioOrder[];
   artworkUrl: string | null;
 };
 
@@ -95,6 +115,10 @@ export function buildWallPanelProStudio(input: {
   generations: WallGenerationRow[];
   reviews: WallQcReview[];
   jobs: WallProductionJob[];
+  /** Paid purchases behind these versions. Optional so every existing caller
+   *  and fixture keeps compiling; an absent list simply means no order
+   *  numbers, which is exactly true for an unpaid design. */
+  entitlements?: WallProEntitlementRow[];
   urls: Record<string, string>;
   now?: number;
 }): WallPanelProStudio {
@@ -112,6 +136,15 @@ export function buildWallPanelProStudio(input: {
     if (!held || new Date(job.created_at).getTime() > new Date(held.created_at).getTime()) {
       jobByVersion.set(job.version_id, job);
     }
+  }
+
+  // Oldest payment first, so the order number a customer was given for a
+  // version reads the same way every time the board is opened.
+  const ordersByVersion = new Map<string, WallStudioOrder[]>();
+  for (const row of [...(input.entitlements || [])].sort((a, b) => a.paid_at.localeCompare(b.paid_at))) {
+    const list = ordersByVersion.get(row.version_id) || [];
+    list.push({ orderNumber: row.order_number, productType: row.product_type, amountCents: row.amount_cents, paidAt: row.paid_at });
+    ordersByVersion.set(row.version_id, list);
   }
 
   const byProject = new Map<string, WallVersion[]>();
@@ -137,6 +170,7 @@ export function buildWallPanelProStudio(input: {
         reviews,
         release: releaseState(reviews),
         job: jobByVersion.get(version.id) || null,
+        orders: ordersByVersion.get(version.id) || [],
         artworkUrl: input.urls[version.artwork_path] || null,
       };
     });
