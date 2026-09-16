@@ -44,7 +44,7 @@ const { MIRROR_CONTRACT, mirrorPassengerFromDriver, extractFlankPanel } = requir
 const {
   LETTERING_READ_CONTRACT, readPanelLettering, mirroredBandsToDriverSpace, mergeBands,
 } = require("./atlas-lettering-read.cjs");
-const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
+const { FILL_CONTRACT, fillMasterCutouts, FILL_CONTRACT_V1 } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 // ONE-FIELD RESTORED (owner ruling, Trish 2026-09-07). The six-surface
 // authoring path is measurably not producing an acceptable master: canary
@@ -2537,9 +2537,17 @@ async function loadLatestAtlasRevision(supabase, requestId) {
   // The repaired sheet is recomputed, never stored: `fillMasterCutouts` is
   // deterministic, so a resumed run rebuilds exactly the bytes the first pass
   // cut and conditioned from, and the recorded `panelSourceHash` proves it.
+  // REBUILD UNDER THE CONTRACT THIS REVISION WAS AUTHORED WITH, not the current
+  // one. A revision with no recorded contract predates versioning and is
+  // therefore v1 by definition -- which is every revision authored before the
+  // clone fill shipped. Reading the current contract here instead would refuse
+  // the entire back catalogue on resume with
+  // `flat_atlas_surface_source_mismatch`, and the refusal would look like
+  // corruption rather than like a migration.
   const surfaceFill = await fillMasterCutouts(
     masterBytes, manifest,
     Array.isArray(row.metadata?.masterCutoutSurfaces) ? row.metadata.masterCutoutSurfaces : [],
+    { contract: row.metadata?.panelSourceFillContract || FILL_CONTRACT_V1 },
   );
   const surfaceSourceBytes = surfaceFill.bytes;
   const surfaceSourceHash = surfaceFill.changed ? sha256(surfaceSourceBytes) : row.master_content_hash;
@@ -4354,6 +4362,14 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // master. It is kept as its own field because the panel bytes must stay
       // traceable to their source by name, not by an assumed equality.
       panelSourceHash,
+      // WHICH FILL PRODUCED IT. `fillMasterCutouts` is deterministic by
+      // contract and its result is REBUILT on every resume rather than stored,
+      // so the rebuild has to know which algorithm to run. Recording it here is
+      // what lets the fill improve without refusing the back catalogue:
+      // `flat_atlas_surface_source_mismatch` then means the bytes really did
+      // drift, instead of meaning the algorithm moved on underneath them. A
+      // revision with no value predates versioning and is v1 by definition.
+      panelSourceFillContract: cutoutFill.contract,
       // PROVENANCE ONLY -- the pre-repair sheet Gemini returned, kept so a
       // forensic reader can see what arrived, and null when nothing was
       // repaired. It is deliberately NOT called a master: it is not canonical,

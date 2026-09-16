@@ -962,27 +962,52 @@ imageRequestCount === 2` reverted a three-candidate run to the 60-second
 first-attempt budget); it now scales by candidates spent, which reproduces the
 existing 60/120 and 90/180 thresholds exactly at n=1 and n=2. No threshold moved.
 
-### THE STICKY A.T.L.A.S. FLAGS DID NOT STICK, AND NOTHING SAID SO (2026-09-16)
+### THE STICKY A.T.L.A.S. FLAGS DID NOT STICK: `unchanged` WAS SENT AS A WORD (2026-09-16, located)
 
 `atlas_field_first` was deployed `off` on `031d8989` — the refusal ledger proves
 it, six-surface ran first — and the very next deploy, dispatched `unchanged`,
 produced a master whose single `atlasEdgeProvenance` entry carries
 `fieldContract: designpro.atlas-field-prompt.v2` and no teaching proof. Field ran
-FIRST. The value did not survive, and the deploy-input plumbing, the SSH
-passthrough and the sticky sed in `configure-env.sh` all read correct on
-inspection, so the mechanism is not yet located.
+FIRST. The plumbing, the SSH passthrough and the sticky sed in
+`configure-env.sh` all read correct on inspection, and all three were.
 
-What is fixed is that it can never again be invisible: `configure-env.sh` now
-prints **the resolved value of all four A.T.L.A.S. routing flags** on the deploy
-log (routing selectors, never a secret — the block sits after every secret is
-consumed). And `ops/tests/deploy-workflow.test.mjs` now EXECUTES each sticky sed
-against a fixture written in the writer's own format, because a pattern that
-stops matching reverts a flag to its default silently — the default being exactly
-what "no value" already means.
+**The cause is one GitHub Actions expression, and it is printed on the deploy's
+own log.** Run `35061242506` (2026-09-16 05:52Z, de581246) says, in plain text:
 
-**Until the cause is found, set the flag explicitly on every deploy rather than
-relying on `unchanged`.** And read the flag line in the deploy log before
-judging a run's topology.
+```
+ATLAS_FIELD_FIRST: unchanged
+```
+
+The workflow passed the flags as
+`inputs.atlas_field_first == 'unchanged' && '' || inputs.atlas_field_first`,
+which reads as *"unchanged means send nothing"* and does the opposite. **An empty
+string is FALSY in a GitHub Actions expression**, and both operators return an
+OPERAND rather than a boolean: `&&` yields its left when that is falsy, so the
+true branch evaluates to `''`; `||` then sees a falsy left and falls through to
+`inputs.atlas_field_first` — exporting the literal word `unchanged`.
+`configure-env.sh` reads any non-empty value as a real instruction from this
+deploy, **skips its sticky read of the live `runtime.env`**, and resolves the
+flag to its DEFAULT. All four flags at once: field-first→`on`,
+topology→`six-surface`, call1-graph→`on`, panel-finish→`off`.
+
+It is invisible by construction, because a reset flag looks exactly like a flag
+nobody set.
+
+The form is now `!= 'unchanged' && <value> || ''` — the true branch carries the
+value, the false branch carries the empty string, and falsiness works for it
+instead of against it. **Never write `cond && '' || value` in a workflow.**
+
+Locked by `ops/tests/deploy-workflow.test.mjs`, which evaluates the workflow's
+OWN expression text through a small model of Actions truthiness and asserts
+`unchanged → ''` for each flag, plus that the shipped shape still evaluates to
+the literal word (verified to fail against the pre-fix workflow).
+
+Two things from the same hour stay, because a located cause does not make a
+silent flag acceptable: `configure-env.sh` prints **the resolved value of all
+four A.T.L.A.S. routing flags** on the deploy log (routing selectors, never a
+secret — the block sits after every secret is consumed), and the same test file
+EXECUTES each sticky sed against a fixture written in the writer's own format.
+**Read the flag line in the deploy log before judging a run's topology.**
 
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 

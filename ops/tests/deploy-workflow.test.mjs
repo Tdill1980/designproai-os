@@ -712,3 +712,106 @@ test("every sticky A.T.L.A.S. flag reads back the value the writer wrote", () =>
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// AN EMPTY STRING IS FALSY IN A GITHUB ACTIONS EXPRESSION, SO THE OBVIOUS
+// TERNARY IS BACKWARDS.
+//
+// `inputs.x == 'unchanged' && '' || inputs.x` reads as "unchanged means send
+// nothing". It does not. `&&` returns its LEFT operand when that operand is
+// falsy and its right otherwise, so the true branch yields '', and `|| ` then
+// sees a falsy left and falls through to `inputs.x` -- exporting the literal
+// word `unchanged`. configure-env.sh reads any non-empty value as a real
+// instruction from this deploy, skips its sticky read of the live runtime.env,
+// and resolves the flag to its DEFAULT.
+//
+// That is what reset `atlas_field_first=off` (deployed on 031d8989) back to
+// `on` at the very next deploy: run 35061242506, 2026-09-16 05:52Z, whose log
+// prints `ATLAS_FIELD_FIRST: unchanged`. It applied to all four flags at once,
+// and it is invisible, because a reset flag looks exactly like a flag nobody
+// set. The evaluator below is the real thing: it models the truthiness rule
+// and the value-returning operators, and runs the workflow's own text.
+const evaluateActionsExpression = (source, inputs) => {
+  const tokens = source.match(/'[^']*'|[A-Za-z_][A-Za-z0-9_.]*|&&|\|\||==|!=|\(|\)/g) ?? [];
+  let at = 0;
+  const falsy = (value) => value === false || value === "" || value === 0 || value === null;
+  const primary = () => {
+    const token = tokens[at++];
+    if (token === "(") {
+      const value = or();
+      assert.equal(tokens[at++], ")", "unbalanced parentheses in the expression");
+      return value;
+    }
+    if (token?.startsWith("'")) return token.slice(1, -1);
+    if (token === "true") return true;
+    if (token === "false") return false;
+    if (token?.startsWith("inputs.")) {
+      const key = token.slice("inputs.".length);
+      assert.ok(key in inputs, `the expression reads inputs.${key}, which the workflow must declare`);
+      return inputs[key];
+    }
+    throw new Error(`unsupported token in a deploy expression: ${token}`);
+  };
+  const comparison = () => {
+    let left = primary();
+    while (tokens[at] === "==" || tokens[at] === "!=") {
+      const op = tokens[at++];
+      const right = primary();
+      left = op === "==" ? left === right : left !== right;
+    }
+    return left;
+  };
+  const and = () => {
+    let left = comparison();
+    while (tokens[at] === "&&") {
+      at += 1;
+      const right = comparison();
+      left = falsy(left) ? left : right;
+    }
+    return left;
+  };
+  const or = () => {
+    let left = and();
+    while (tokens[at] === "||") {
+      at += 1;
+      const right = and();
+      left = falsy(left) ? right : left;
+    }
+    return left;
+  };
+  const value = or();
+  assert.equal(at, tokens.length, "the expression was not fully consumed");
+  return value;
+};
+
+test('a deploy that says "unchanged" must send the droplet NOTHING for that flag', () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/deploy-production.yml", import.meta.url), "utf8");
+  const flags = [
+    ["ATLAS_PANEL_FINISH", "atlas_panel_finish", ["on", "off"]],
+    ["ATLAS_TOPOLOGY", "atlas_topology", ["hero-driver", "six-surface"]],
+    ["ATLAS_FIELD_FIRST", "atlas_field_first", ["on", "off"]],
+    ["ATLAS_CALL1_GRAPH", "atlas_call1_graph", ["on", "off"]],
+  ];
+  for (const [envName, inputName, choices] of flags) {
+    const line = new RegExp(`^\\s*${envName}: \\$\\{\\{(.+?)\\}\\}\\s*$`, "m").exec(workflow);
+    assert.ok(line, `${envName} must be passed to the droplet from a workflow expression`);
+    const expression = line[1].trim();
+
+    // "unchanged" is the WHOLE point: it must resolve to the empty string, or
+    // configure-env.sh stops carrying the droplet's own value forward.
+    assert.equal(evaluateActionsExpression(expression, { [inputName]: "unchanged" }), "",
+      `${envName} must be EMPTY when the deploy says "unchanged", or the flag silently resets`);
+
+    // And an explicit instruction must reach the droplet verbatim.
+    for (const choice of choices) {
+      assert.equal(evaluateActionsExpression(expression, { [inputName]: choice }), choice,
+        `${envName} must pass "${choice}" through unchanged`);
+    }
+  }
+
+  // The evaluator is only worth anything if it convicts the shape that shipped.
+  assert.equal(
+    evaluateActionsExpression("inputs.atlas_field_first == 'unchanged' && '' || inputs.atlas_field_first",
+      { atlas_field_first: "unchanged" }),
+    "unchanged",
+    "the pre-fix expression must still evaluate to the literal word, or this test proves nothing");
+});
