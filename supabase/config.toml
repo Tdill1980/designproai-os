@@ -266,3 +266,10 @@ verify_jwt = false
 
 [functions.send-wbty-order-email]
 verify_jwt = false
+
+# RecreatePro INTAKE only — photo in, design brief text out. Produces no pixels,
+# views or panels, so it is not a second producer. Its three siblings
+# (designpro-recreate-3d, recreatepro-flat-panels, recreatepro-build-print-files)
+# are deliberately NOT ported — see the header of recreatepro-analyze/index.ts.
+[functions.recreatepro-analyze]
+verify_jwt = false
