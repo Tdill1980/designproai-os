@@ -283,23 +283,6 @@ const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   pathname === "/pattern-wrap" ||
   (pathname === "/" && isWallProPartnerHost(hostname));
 
-/**
- * THE WEPRINTWRAPS PATTERNPRO PAGE BELONGS TO THE WEPRINTWRAPS HOST.
- *
- * Owner, 2026-09-16, seeing the WPW-branded page on os.designproai.com: "why
- * is the PatternPro with headers on the os.designproai". /pattern-wrap wears
- * the WePrintWraps mark, so it renders only where a WePrintWraps customer
- * arrives — the partner host. On any DesignProAI host the same address hands
- * off to the DesignProAI-branded tool at /printpro/patternpro, the one the OS
- * sidebar links. One component either way; only the brand and the host differ.
- */
-const PartnerPatternWrap = () => {
-  const hostname = typeof window === "undefined" ? "" : window.location.hostname;
-  return isWallProPartnerHost(hostname)
-    ? <PatternWrap brand="weprintwraps" />
-    : <Navigate to="/printpro/patternpro" replace />;
-};
-
 const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
   const { pathname } = useLocation();
   // Full-screen ApprovedPro surfaces render their own app shell, so strip the
@@ -498,7 +481,15 @@ const App = () => {
               is the WePrintWraps page (white, blue gradient, WPW mark in the
               lockup, a render on the right); /printpro/patternpro is the same
               tool under the DesignProAI name. Owner, 2026-09-15. */}
-          <Route path="/pattern-wrap" element={<PartnerPatternWrap />} />
+          {/* TWO PATTERNPRO PAGES ON THIS HOST, ON PURPOSE (owner, 2026-09-16: "I
+              should have a WPW PatternPro page and a stand alone PatternPro page
+              both on the os.designpro — WPW is a tenant and I need to sell
+              DesignPro to other shops"). /pattern-wrap is the WePrintWraps
+              TENANT page, on every host this app serves, exactly like
+              /wall-wrap; /printpro/patternpro is the standalone DesignProAI
+              page the OS sidebar links. Same component, one brand switch —
+              the next tenant is one entry in PATTERN_BRANDS and one route. */}
+          <Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />
           <Route path="/printpro/patternpro" element={<PatternWrap />} />
           {/* /wbty is PatternPro's old address (the suite's sidebar still says
               it); the tool lives at /printpro/patternpro here. The order-success

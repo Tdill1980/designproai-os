@@ -47,14 +47,11 @@ test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone
 
 test("/pattern-wrap and /printpro/patternpro are routed to the ONE PatternWrap page", () => {
   assert.ok(APP.includes('const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));'));
-  // The WPW-branded page renders only on the WePrintWraps host; on a
-  // DesignProAI host the address hands off to the DesignProAI-branded tool
-  // (owner, 2026-09-16: "why is the PatternPro with headers on the os.designproai").
-  assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PartnerPatternWrap />} />'));
-  const partner = APP.slice(APP.indexOf("const PartnerPatternWrap"), APP.indexOf("const HideOnCustomerProof"));
-  assert.ok(partner.includes("isWallProPartnerHost(hostname)"));
-  assert.ok(partner.includes('<PatternWrap brand="weprintwraps" />'));
-  assert.ok(partner.includes('<Navigate to="/printpro/patternpro" replace />'));
+  // BOTH pages on every host (owner, 2026-09-16: "I should have a WPW
+  // PatternPro page and a stand alone PatternPro page both on the
+  // os.designpro — WPW is a tenant"). No host redirect on /pattern-wrap.
+  assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />'));
+  assert.ok(!APP.includes("PartnerPatternWrap"), "the tenant page must not redirect off the DesignProAI host");
   assert.ok(APP.includes('<Route path="/printpro/patternpro" element={<PatternWrap />} />'));
 });
 
