@@ -516,3 +516,33 @@ test("a loose two-line read is cut to the lettering and re-dropped as one lockup
   // And the rest of the flank is still the mirror.
   assert.ok((await mirrorMae(result.bytes)) < 0.26);
 });
+
+// LETTERING THE READER SAW BUT COULD NOT BOUND IS NEVER "NONE" (live
+// cc382c3c, 2026-09-16: "PRECISION" at 0.59 x 0.32 of the panel was dropped
+// on the old area cap, the read said no lettering, the passenger shipped
+// reversed, and the verify read -- same cap -- called it verified).
+test("a wordmark the reader boxes beyond the caps declines the composition rather than reading as no lettering", async () => {
+  const before = await master();
+  const guide = await guideBytes();
+  const whole = { xPct: 0.0, yPct: 0.1, wPct: 0.98, hPct: 0.5, text: "PRECISION", orientation: "forward" };
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: guide, input: WITH_BRAND,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: [whole], passenger: [[]] } }),
+  });
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "brand_bands_oversized");
+});
+
+test("a reversed wordmark on the composed flank that cannot be bounded is a positive finding, never verified", async () => {
+  const before = await master();
+  const guide = await guideBytes();
+  const reversedWhole = { xPct: 0.0, yPct: 0.1, wPct: 0.98, hPct: 0.5, text: "NOISICERP", orientation: "mirrored" };
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: guide, input: WITH_BRAND,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: [forward(WORD_BAND)], passenger: [[reversedWhole]] } }),
+  });
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "reversed_lettering_unresolved");
+  assert.equal(result.letteringVerify.status, "unresolved");
+  assert.equal(result.letteringVerify.code, "reversed_lettering_oversized");
+});

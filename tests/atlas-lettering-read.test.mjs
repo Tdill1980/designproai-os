@@ -53,8 +53,9 @@ test("the read is bound to the panel bytes and returns cleaned, oriented bands",
           // Live 220d569f: stripes and painted coordinates are not lettering.
           { xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.2, text: "", orientation: "forward" },
           { xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.2, text: "~", orientation: "forward" },
-          { xPct: 0.0, yPct: 0.0, wPct: 0.7, hPct: 0.3, text: "PORSCHE", orientation: "forward" },
-          { xPct: 0.0, yPct: 0.0, wPct: 0.5, hPct: 0.5, text: "PORSCHE", orientation: "forward" },
+          // Beyond the caps: wider than the panel allows, and the whole panel.
+          { xPct: 0.0, yPct: 0.0, wPct: 0.95, hPct: 0.3, text: "PORSCHE", orientation: "forward" },
+          { xPct: 0.0, yPct: 0.0, wPct: 0.8, hPct: 0.7, text: "PORSCHE", orientation: "forward" },
         ],
         confidence: 0.93,
       });
@@ -72,6 +73,9 @@ test("the read is bound to the panel bytes and returns cleaned, oriented bands",
   assert.equal(calls[0].body.generationConfig.responseSchema.properties.inspectionId.type, "STRING");
   assert.equal(calls[0].body.contents[0].parts[1].inlineData.mimeType, "image/jpeg");
   assert.equal(result.bands.length, 3);
+  // Seen but unbounded lettering is reported, never silently dropped.
+  assert.equal(result.oversized.length, 2);
+  assert.equal(result.oversized[0].text, "PORSCHE");
   assert.deepEqual(result.bands[0], { xPct: 0.1, yPct: 0.2, wPct: 0.4, hPct: 0.15, text: "PORSCHE", orientation: "forward" });
   assert.equal(result.bands[1].orientation, "mirrored");
   assert.equal(result.bands[2].orientation, "unknown");
