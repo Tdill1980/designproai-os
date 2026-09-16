@@ -20,13 +20,21 @@ const runId = flag("--run");
 // exactly the state a Calls 1-7 failure has to be diagnosed from, and it was
 // diagnosed from hashes and QC verdicts because the artwork was unreachable.
 const generationId = flag("--generation");
+// REFUSAL mode. A Call 1 that is refused twice on every topology leaves NO
+// revision row, so neither --run nor --generation can reach anything: the only
+// durable evidence is designpro_atlas_refusals plus the raw candidate bytes it
+// points at. CLAUDE.md's own ruling on the refusal ledger is "judge the gates
+// from those pixels before touching a threshold", and until now there was no
+// way to get them off the private bucket.
+const refusalRequestId = flag("--refusals");
 const outDir = flag("--out") || "/out";
-if (!runId && !generationId) {
-  console.error("--run <uuid> or --generation <uuid> is required");
+const selectors = [runId, generationId, refusalRequestId].filter(Boolean);
+if (selectors.length === 0) {
+  console.error("--run <uuid>, --generation <uuid> or --refusals <requestId> is required");
   process.exit(2);
 }
-if (runId && generationId) {
-  console.error("pass --run or --generation, never both");
+if (selectors.length > 1) {
+  console.error("pass exactly one of --run, --generation, --refusals");
   process.exit(2);
 }
 
@@ -86,6 +94,56 @@ async function writePreviews(files) {
       console.error(`preview failed for ${entry.file}: ${entry.previewError}`);
     }
   }
+}
+
+if (refusalRequestId) {
+  const { data: refusals, error: refusalError } = await supabase
+    .from("designpro_atlas_refusals")
+    .select("id,request_id,generation_id,topology,attempt,code,reason,storage_path,sha256,byte_size,content_type,model,created_at")
+    .eq("request_id", refusalRequestId)
+    .order("created_at", { ascending: true });
+  if (refusalError) { console.error(`refusal query failed: ${refusalError.message}`); process.exit(3); }
+  if (!refusals?.length) { console.error(`no refused candidates recorded for request ${refusalRequestId}`); process.exit(4); }
+
+  mkdirSync(outDir, { recursive: true });
+  const files = [];
+  for (const [index, row] of refusals.entries()) {
+    // The verdict is the point, so it goes to the log verbatim -- a caller that
+    // can only read the log still learns which gate refused and why.
+    console.error(`REFUSED #${index + 1} ${row.topology} attempt ${row.attempt} ${row.code}: ${row.reason}`);
+    await fetchVerified(row.storage_path, row.sha256,
+      `refused-${String(index + 1).padStart(2, "0")}__${row.topology}-attempt${row.attempt}.png`, {
+        role: "refused-call1-candidate",
+        topology: row.topology, attempt: row.attempt, code: row.code, reason: row.reason,
+        model: row.model, recordedBytes: row.byte_size, refusedAt: row.created_at,
+      }, files);
+  }
+  await writePreviews(files);
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify({
+    requestId: refusalRequestId,
+    generationId: refusals[0]?.generation_id ?? null,
+    refusedCandidates: refusals.length,
+    verdicts: refusals.map((row) => ({
+      topology: row.topology, attempt: row.attempt, code: row.code,
+      reason: row.reason, model: row.model, refusedAt: row.created_at,
+    })),
+    files,
+  }, null, 2));
+
+  // Every refused sheet on the log, small. Which gate refused is a string; WHY
+  // it refused is only ever visible in the pixels.
+  const { default: sharp } = await import("sharp");
+  for (const entry of files.filter((f) => f.hashMatches)) {
+    const thumb = await sharp(readFileSync(`${outDir}/${entry.file}`))
+      .resize({ width: 640, height: 640, fit: "inside" })
+      .jpeg({ quality: 55, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+    console.error(`ATLAS_REFUSED_PREVIEW_JPEG_BASE64_BEGIN ${entry.file} ${thumb.length}`);
+    console.error(thumb.toString("base64"));
+    console.error("ATLAS_REFUSED_PREVIEW_JPEG_BASE64_END");
+  }
+  console.error(`exported ${files.filter((f) => f.file).length} refused candidates`);
+  process.exit(0);
 }
 
 if (generationId) {
