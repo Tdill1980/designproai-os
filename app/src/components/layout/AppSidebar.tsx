@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -444,6 +444,41 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
+              {/* GRAPHICSPRO'S THREE SURFACES ARE ONE TOOL (owner, 2026-09-16:
+                  "wire the entire set"). /graphics-pro-wall and
+                  /graphics-pro-window are the SAME tool with the surface
+                  pre-selected -- they were reachable only by typing the URL,
+                  so two thirds of the product was invisible in the nav. The
+                  FAQ is public where the three tool routes are not, because
+                  gating a price list behind a sign-in asks somebody to create
+                  an account to find out what something costs. */}
+              {tool.key === "graphicspro" && ([
+                { to: "/graphics-pro-wall", label: "Walls", icon: Layers,
+                  title: "GraphicsPro — walls",
+                  description: "The same tool with the wall surface pre-selected: indoor or outdoor, photoreal mockups on any wall texture" },
+                { to: "/graphics-pro-window", label: "Windows", icon: Frame,
+                  title: "GraphicsPro — windows and storefronts",
+                  description: "Day, night and headlight previews. An interior-mount kit is cut in REVERSE so it reads from the street" },
+                { to: "/graphics-pro/faq", label: "Prices & FAQ", icon: HelpCircle,
+                  title: "GraphicsPro — prices & FAQ",
+                  description: "What cut vinyl costs per square foot, the three files your plotter receives, and the production pipeline end to end" },
+              ] as const).map(link => (
+                <SidebarTooltip key={link.to} title={link.title} description={link.description}>
+                  <Link
+                    to={link.to}
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive(link.to)
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <link.icon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{link.label}</span>
+                  </Link>
+                </SidebarTooltip>
+              ))}
               {/* THE PROOF BAND'S CURATOR IS IN THE ADMIN BLOCK, NOT HERE.
                   Two sessions closed this gap the same night, and the other
                   one carried an owner instruction this one did not: "Add this

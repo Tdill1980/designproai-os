@@ -96,6 +96,8 @@ const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
+// The GraphicsPro FAQ: the cut-vinyl rates, the plotter files, the pipeline.
+const GraphicsProFaq = lazyWithRetry(() => import("./pages/GraphicsProFaq"));
 // The before/after band, run by the curator instead of by a release.
 const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
@@ -546,6 +548,10 @@ const App = () => {
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
           <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />
+          {/* PUBLIC, unlike the three tool routes. It is the page that
+              answers "what does this cost" -- gating that behind a sign-in
+              asks somebody to create an account to read a price list. */}
+          <Route path="/graphics-pro/faq" element={<GraphicsProFaq />} />
           <Route path="/graphicspro" element={<Navigate to="/graphics-pro" replace />} />
           {/* CUSTOMER-FACING NAME ALIASES (os-brand.ts, Trish 2026-09-16). The vehicle
               tool is VehiclePro and the cut tool is CutPro in every customer-facing

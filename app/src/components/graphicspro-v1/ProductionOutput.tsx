@@ -1,29 +1,45 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  ArrowLeft,
-  Download,
-  CheckCircle2,
-  Loader2,
-  FileText,
-  Image,
-  Scissors,
-  DollarSign,
-  Package,
-  AlertCircle,
-} from "lucide-react";
+// The stage icons left with the bespoke tracker: the shared panelizer draws
+// its own rail. Only what the rest of this file still uses is imported.
+import { ArrowLeft, Download, Scissors, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { UniversalPanelizerProgress } from "@/components/production/UniversalPanelizerProgress";
+import { graphicsPanelizerRun, type GraphicsProJobStatus } from "@/lib/graphicspro-panelizer";
 
-const STAGES = [
-  { key: "upscale", label: "Upscaling print file", icon: <Image className="w-4 h-4" /> },
-  { key: "cut_paths", label: "Silhouette cut line (CutContour)", icon: <Scissors className="w-4 h-4" /> },
-  { key: "cut_files", label: "Bleed & nesting — cut files pack", icon: <FileText className="w-4 h-4" /> },
-  { key: "production_pdf", label: "CutContour PDF", icon: <FileText className="w-4 h-4" /> },
-  { key: "pricing", label: "Pricing", icon: <DollarSign className="w-4 h-4" /> },
-  { key: "packaging", label: "Packaging", icon: <Package className="w-4 h-4" /> },
-  { key: "complete", label: "Complete", icon: <CheckCircle2 className="w-4 h-4" /> },
-] as const;
+/**
+ * THE GENIE UNIVERSAL PANELIZER, FINALLY ON SCREEN (owner, 2026-09-13: "use the
+ * current DP Genie universal Panelizer progress as a template and create for
+ * wallpro and graphicspro to use").
+ *
+ * graphicsPanelizerRun has existed and been unit-tested since that instruction
+ * and was rendered by NOTHING -- WallPro wired its half, GraphicsPro never did.
+ * What stood here instead was a second, product-local progress tracker: seven
+ * hard-coded stage labels with their own icons and their own idea of done.
+ *
+ * Two trackers for one pipeline is the duplication the shared model exists to
+ * prevent, and it had already drifted: this one had no concept of a FILE
+ * existing, so it went green on "Complete" whether or not the plotter files
+ * were actually produced. The shared model's rule is the one that matters --
+ * a piece glows when its file exists, never when a step merely ran.
+ *
+ * NOTHING IS LOST IN THE SWAP. The seven stage labels were finer-grained than
+ * the four-step rail, so they survive as live sub-stage detail inside the cut
+ * step (CUT_STAGE_DETAIL in graphicspro-panelizer.ts). The percentage bar, the
+ * stall watchdog and the failure card are untouched below.
+ */
+function panelizerFiles(job: JobData | null) {
+  if (!job) return [];
+  // The plotter's three files, mapped from the columns the pipeline writes.
+  // A piece glows only when its URL is really there, so a partial run shows
+  // exactly which of the three landed.
+  return [
+    { format: "pdf", path: job.cut_path_pdf_url },
+    { format: "svg", path: job.cut_path_svg_url || job.vector_svg_url },
+    { format: "zip", path: job.cut_files_zip_url },
+  ].filter(f => !!f.path);
+}
 
 interface ProductionOutputProps {
   jobId: string;
@@ -94,9 +110,18 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
     return () => clearInterval(interval);
   }, [jobId, polling]);
 
-  const currentStageIndex = job?.stage
-    ? STAGES.findIndex((s) => s.key === job.stage)
-    : -1;
+  const panelizerRun = graphicsPanelizerRun(
+    job
+      ? {
+          id: jobId,
+          status: job.status as GraphicsProJobStatus,
+          mode: "production",
+          stage: job.stage,
+          progress: job.progress,
+          files: panelizerFiles(job),
+        }
+      : null,
+  );
 
   const isComplete = job?.status === "complete";
   const isFailed = job?.status === "failed";
@@ -113,47 +138,15 @@ export function ProductionOutput({ jobId, onBack, onStartOver }: ProductionOutpu
 
   return (
     <div className="space-y-6">
-      {/* Progress Tracker */}
-      <Card className="p-6 bg-rp-surface border-border/30">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Production Pipeline</h3>
+      {/* THE GENIE UNIVERSAL PANELIZER — the same surface WallPro renders, the
+          same one the vehicle side established. See the note at the top of this
+          file for what it replaced and why nothing was lost. */}
+      <Card className="p-6 bg-white text-slate-900 border-border/30">
+        <UniversalPanelizerProgress run={panelizerRun} />
 
-        <div className="space-y-3">
-          {STAGES.map((stage, i) => {
-            const isActive = currentStageIndex === i && !isComplete && !isFailed;
-            const isDone = isComplete || currentStageIndex > i;
-
-            return (
-              <div key={stage.key} className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                  isDone
-                    ? "bg-green-500/20 text-green-600"
-                    : isActive
-                      ? "bg-gradient-to-r from-blue-600 via-purple-600 to-fuchsia-600 text-white"
-                      : "bg-secondary/20 text-muted-foreground/40"
-                }`}>
-                  {isDone ? (
-                    <CheckCircle2 className="w-4 h-4" />
-                  ) : isActive ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    stage.icon
-                  )}
-                </div>
-                <span className={`text-sm font-medium ${
-                  isDone ? "text-green-600" : isActive ? "text-blue-500" : "text-muted-foreground/40"
-                }`}>
-                  {stage.label}
-                </span>
-                {isActive && (
-                  <span className="text-xs text-muted-foreground ml-auto">{job?.progress || 0}%</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Progress bar */}
-        <div className="mt-4 h-2 bg-secondary/20 rounded-full overflow-hidden">
+        {/* The pipeline's own percentage, kept: the rail says WHICH step, this
+            says how far into it, and on a multi-minute cut run both matter. */}
+        <div className="mt-4 h-2 bg-slate-200 rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
               isFailed ? "bg-red-500" : isComplete ? "bg-green-500" : "bg-blue-500"
