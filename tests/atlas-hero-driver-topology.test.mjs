@@ -66,6 +66,17 @@ test("every AI surface replays the driver exchange; roof replays every earlier m
   assert.match(edgeSrc, /priorTurns\.push\(await replayImageTurn\(turn, downloadHistoryImage\)\)/);
 });
 
+/** Pin the hero-first switch for one test and restore it after. */
+function heroFirst(t, value) {
+  const previous = process.env.DESIGNPRO_ATLAS_HERO_FIRST;
+  if (value === undefined) delete process.env.DESIGNPRO_ATLAS_HERO_FIRST;
+  else process.env.DESIGNPRO_ATLAS_HERO_FIRST = value;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DESIGNPRO_ATLAS_HERO_FIRST;
+    else process.env.DESIGNPRO_ATLAS_HERO_FIRST = previous;
+  });
+}
+
 test("the driver is the ONLY from-scratch request, through the real persona brain, and passenger is never authored", () => {
   const author = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasAuthor("), edgeSrc.indexOf("async function handleAtlasArtboard("));
   assert.ok(author.length > 0, "the atlas-author handler must sit above the artboard handler");
@@ -73,7 +84,25 @@ test("the driver is the ONLY from-scratch request, through the real persona brai
   assert.match(author, /\["driver", "hood", "roof", "front", "rear"\]\.includes\(surfaceKey\)/);
   assert.ok(!/\["driver", "passenger"/.test(author), "passenger must not be an authorable surface");
   assert.match(author, /buildDesignIQPrompt\(\{/);
-  assert.match(author, /atlasFlatMaster: true,\s*\n\s*atlasPanels: \[\],\s*\n\s*atlasHeroSurface:/);
+  // HERO-FIRST (2026-09-16) makes the driver TWO stages, and this lock's intent
+  // is unchanged by it: ONE from-scratch request through the real persona brain.
+  // Stage 1 asks that persona for the vehicle view (atlasFlatMaster FALSE, so
+  // the tail is the locked camera angle + studio); stage 2 FLATTENS that
+  // approved view rather than drawing anything new. Everything above the swap
+  // -- persona, brief, logo architecture, contact lock, finish, references --
+  // is byte-identical on both stages, which is what "through the real persona
+  // brain" means and what the probe's raw-provider flatten did NOT have.
+  assert.match(author, /atlasFlatMaster: !heroFlatten,\s*\n\s*atlasPanels: \[\],\s*\n\s*atlasHeroSurface: heroFlatten \? undefined :/);
+  assert.match(author, /const heroFlatten = first && String\(body\.heroViewStoragePath \|\| ""\)\.trim\(\)\.length > 0;/);
+  // The flatten is the PORTED renderFlatTile wording, tiered, and it copies the
+  // customer's own strings rather than guessing lettering.
+  assert.match(author, /atlasHeroFlattenPrompt\(/);
+  assert.match(author, /atlasHeroTextLock\(body\)/);
+  assert.match(edgeSrc, /function atlasHeroFlattenPrompt\(/);
+  assert.match(edgeSrc, /OUTPUT ONLY THE ARTWORK CANVAS/);
+  // Stage 1 asks for the photographic 16:9, never the flank ratio the model
+  // cannot emit -- the whole reason the single-call driver measured 0\/3.
+  assert.match(author, /const aspectRatio = heroView \? "16:9" : atlasAuthorAspect\(/);
   assert.match(author, /atlas_author_hero_takes_no_neighbours/);
   assert.match(author, /atlas_author_hero_takes_no_history/);
   // No creative text in the runtime and no raw Gemini endpoint (RULE 0.26).
@@ -171,7 +200,11 @@ test("the edge's author mode is internal-only, one image request, and the capabi
   assert.match(runtimeSrc, /mode: "atlas-author", signal: probeSignal/);
 });
 
-test("the cascade runs end to end on synthetic sheets: five image requests, passenger a flop, one assembled sheet, exact exchanges carried", async () => {
+test("the cascade runs end to end on synthetic sheets: five image requests, passenger a flop, one assembled sheet, exact exchanges carried", async (t) => {
+  // This pins the SINGLE-CALL driver, which hero-first replaces but does not
+  // delete: it is what DESIGNPRO_ATLAS_HERO_FIRST=off runs, and it must keep
+  // working byte for byte. Not one assertion below is relaxed.
+  heroFirst(t, "off");
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const calls = [];
   const staged = new Map();
@@ -230,7 +263,8 @@ test("the cascade runs end to end on synthetic sheets: five image requests, pass
   }
 });
 
-test("a refused surface refuses the whole hero pass (no honest-gap sheet is ever assembled)", async () => {
+test("a refused surface refuses the whole hero pass (no honest-gap sheet is ever assembled)", async (t) => {
+  heroFirst(t, "off");
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const store = { async putImmutableBytes() {} };
   const paint = async (w, h, tint) => sharp({ create: { width: w, height: h, channels: 3, background: tint } }).png().toBuffer();
@@ -254,4 +288,99 @@ test("the ruling is recorded where the next session will read it", () => {
   assert.match(claudeMd, /DO NOT USE VERTEX or IMAGEN/);
   // Finishing's own cascade order is untouched: the hero cascade is its own graph.
   assert.deepEqual(authoring.PANEL_CASCADE_ORDER, ["driver", "passenger", "hood", "roof", "front", "rear"]);
+});
+
+// HERO-FIRST: THE DRIVER IS TWO STAGES, AND THE SECOND ONE FLATTENS THE FIRST.
+//
+// The single-call driver it replaces asks for the flank at its own ~3.6:1
+// ratio, which this model cannot emit (21:9 is its widest), so `evaluateAuthored`
+// refused every driver tile on aspect drift before any artwork was judged --
+// 0/3 on real vehicles. Hero-first asks for a 16:9 photograph of the vehicle
+// and then flattens THAT, which is an ask the model answers and which composes
+// against real geometry.
+//
+// What must stay true, and is asserted here: exactly ONE extra image request,
+// the flatten is shown the approved view by path AND hash, the continuations
+// are unchanged (they still see the finished FLANK), and passenger is still a
+// code flop.
+test("hero-first runs the driver as vehicle view then flatten, and changes nothing after it", async (t) => {
+  heroFirst(t, undefined);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const store = { async putImmutableBytes() {} };
+  const paint = async (w, h, tint) => sharp({ create: { width: w, height: h, channels: 3, background: tint } }).png().toBuffer();
+  const callEdge = async (body) => {
+    calls.push(body);
+    const vehicleView = body.surfaceKey === "driver" && !body.heroViewStoragePath;
+    const tint = { driver: "#2255aa", hood: "#3366bb", front: "#4477cc", rear: "#5588dd", roof: "#6699ee" }[body.surfaceKey];
+    // Stage 1 answers at 16:9 -- deliberately NOT the flank's shape, which is
+    // the whole point: the model cannot return the flank's ratio.
+    const bytes = vehicleView
+      ? await paint(1920, 1080, tint)
+      : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, tint);
+    const contentHash = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+    const path = vehicleView ? "atlas-author/driver-view.png" : `atlas-author/${body.surfaceKey}.png`;
+    return {
+      bytes, imageRequestCount: 1, providerCacheHit: false, providerRequestKey: "a".repeat(64),
+      heroStage: body.surfaceKey === "driver" ? (vehicleView ? "vehicle-view" : "flatten") : null,
+      panelStoragePath: path, panelSha256: contentHash, panelByteSize: bytes.length,
+      userTurn: { role: "user", parts: [{ text: `exact ${body.surfaceKey} instructions` }] },
+      modelTurn: { role: "model", parts: [{ imageRef: { storagePath: path, contentHash }, thoughtSignature: `sig-${body.surfaceKey}` }] },
+      historyImageBytes: bytes.length, thoughtSignatureCount: 1,
+      priorSignaturesReplayed: (body.priorTurns || []).flatMap((turn) => turn.parts).filter((part) => part.thoughtSignature).length,
+    };
+  };
+  const result = await hero.authorHeroDriverMaster({
+    manifest, input: { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } },
+    store, callEdge,
+  });
+
+  // Six requests, not five: the one extra is the vehicle view.
+  assert.equal(calls.length, 6);
+  assert.equal(result.imageRequestCount, 6);
+  const [view, flatten] = calls;
+  assert.equal(view.surfaceKey, "driver");
+  assert.equal(view.heroViewStoragePath, undefined, "stage 1 is from scratch and is shown no view");
+  assert.equal(flatten.surfaceKey, "driver");
+  assert.equal(flatten.heroViewStoragePath, "atlas-author/driver-view.png",
+    "stage 2 must be shown the approved view, by path");
+  assert.match(String(flatten.heroViewContentHash || ""), /^[0-9a-f]{64}$/,
+    "and by hash -- a flatten of unverified bytes is a second producer");
+  assert.equal(flatten.heroFlattenTier, 0, "first flatten asks the complete instruction");
+
+  // Everything after the driver is untouched: the continuations still see the
+  // finished FLANK, never the vehicle view.
+  const after = calls.slice(2).map((call) => call.surfaceKey);
+  assert.deepEqual(after.slice(0, 3).sort(), ["front", "hood", "rear"]);
+  assert.equal(after[3], "roof");
+  for (const call of calls.slice(2)) {
+    assert.equal(call.heroViewStoragePath, undefined, "no continuation is shown the vehicle view");
+  }
+  // Passenger is still code, never a request.
+  assert.ok(!calls.some((call) => call.surfaceKey === "passenger"));
+  const passenger = result.surfaces.find((surface) => surface.surfaceKey === "passenger");
+  assert.equal(passenger.method, "hero_driver_passenger_flop");
+  assert.equal(passenger.imageRequestCount, 0);
+  // The driver's own receipt names which path drew it.
+  assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "driver").method, "hero_first_flattened");
+});
+
+// A stage-1 return that is not the vehicle view is refused rather than flattened.
+// The receipt is the only thing that distinguishes a view from a panel, so a
+// missing or wrong `heroStage` must never be cut as artwork.
+test("hero-first refuses a stage-1 return that does not identify itself as the vehicle view", async (t) => {
+  heroFirst(t, undefined);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const store = { async putImmutableBytes() {} };
+  const callEdge = async () => ({
+    bytes: await sharp({ create: { width: 1920, height: 1080, channels: 3, background: "#2255aa" } }).png().toBuffer(),
+    imageRequestCount: 1, heroStage: null, panelStoragePath: "atlas-author/x.png", panelSha256: "b".repeat(64),
+  });
+  await assert.rejects(
+    hero.authorHeroDriverMaster({
+      manifest, input: { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } },
+      store, callEdge,
+    }),
+    (error) => error.code === "flat_atlas_hero_driver_refused" && /hero_view_stage_mismatch/.test(String(error.reason || error.message)),
+  );
 });

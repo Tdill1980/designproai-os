@@ -55,7 +55,7 @@ const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-driver.20260911.v1";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260916.v2";
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -178,9 +178,74 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
  * exact exchange (user turn + signed model turn) for later replay, or throws
  * HeroDriverRefusal after the bounded attempts.
  */
+/**
+ * HERO-FIRST STAGE 1 — the driver-side VEHICLE view.
+ *
+ * Asks `atlas-author` for a 16:9 photograph of the vehicle wearing the design,
+ * through the SAME persona assembly the flat ask uses (only `atlasFlatMaster`
+ * differs on the edge). The returned view is not a panel and is never cut as
+ * one: it is stage 2's design reference, and the edge's receipt says so
+ * (`heroStage: "vehicle-view"`).
+ *
+ * This is what removes the aspect refusal rather than relaxing it. A ~3.6:1
+ * flat strip is an ask this model cannot answer -- 21:9 is its widest -- so
+ * `evaluateAuthored` refused every driver tile on drift before judging any
+ * artwork, 0/3 on real vehicles. A 16:9 photograph is an ask it answers, and
+ * composing against real vehicle geometry is where hierarchy comes from.
+ */
+/**
+ * HERO-FIRST is ON by default within the hero cascade, and off by one word.
+ *
+ * The single-call driver it replaces is measured 0/3 on real vehicles: it asks
+ * for a flat strip at the flank's own ratio, which this model cannot emit, so
+ * the aspect gate refuses it before any artwork is judged. Defaulting ON is
+ * therefore not optimism -- the path it replaces cannot pass. The switch exists
+ * because a live surprise must be one deploy input away, exactly like
+ * `DESIGNPRO_ATLAS_FIELD_FIRST`.
+ */
+function heroFirstEnabled() {
+  return String(process.env.DESIGNPRO_ATLAS_HERO_FIRST || "").trim().toLowerCase() !== "off";
+}
+
+async function authorHeroVehicleView({
+  zone, heroRequest, creativeContext, callEdge, providerRequest, logger = () => {},
+}) {
+  const { pixelWidth, pixelHeight } = zonePixelSize(zone);
+  const candidate = await callEdge({
+    mode: "atlas-author",
+    surfaceKey: "driver",
+    surfaceLabel: SURFACE_LABELS.driver,
+    first: true,
+    targetWidthPx: pixelWidth,
+    targetHeightPx: pixelHeight,
+    widthInches: Number(zone.printWidthIn || zone.trimWidthIn),
+    heightInches: Number(zone.printHeightIn || zone.trimHeightIn),
+    neighbours: [],
+    priorTurns: [],
+    creativeContext,
+    ...(heroRequest || {}),
+    ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: "author:driver-view:1" } } : {}),
+  }, { attempt: 1 });
+  if (String(candidate?.heroStage || "") !== "vehicle-view") {
+    throw new HeroDriverRefusal("driver", `hero_view_stage_mismatch:${String(candidate?.heroStage || "none").slice(0, 40)}`);
+  }
+  if (!candidate?.bytes?.length) throw new HeroDriverRefusal("driver", "hero_view_empty");
+  logger(`hero-first driver: vehicle view ${candidate.panelSha256?.slice(0, 12) || "?"} (${candidate.aspectRatio || "?"})`);
+  return Object.freeze({
+    storagePath: candidate.panelStoragePath,
+    contentHash: candidate.panelSha256,
+    bytes: candidate.bytes,
+    imageRequestCount: Number(candidate?.imageRequestCount || 0),
+    providerCacheHit: candidate?.providerCacheHit === true,
+    exchange: candidate?.userTurn?.role === "user" && candidate?.modelTurn?.role === "model"
+      ? { surfaceKey: "driver", imageBytes: Number(candidate?.historyImageBytes || 0), turns: [candidate.userTurn, candidate.modelTurn] }
+      : null,
+  });
+}
+
 async function authorSurface({
   surfaceKey, zone, first, neighbours, priorExchanges, heroRequest, creativeContext,
-  store, callEdge, providerRequest, logger = () => {},
+  store, callEdge, providerRequest, logger = () => {}, heroView = null,
 }) {
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const staged = await Promise.all(neighbours.map(async (n) => ({
@@ -189,8 +254,11 @@ async function authorSurface({
   })));
   const chain = trimAuthoringHistory(Array.isArray(priorExchanges) ? priorExchanges : []);
   let lastReason = "not_attempted";
-  let imageRequestCount = 0;
-  let providerCacheHits = 0;
+  // The vehicle view's request was SPENT, so it is counted here. Leaving it out
+  // under-reports every receipt and every bound that counts image requests --
+  // including the canary's "at most two candidates on one contract".
+  let imageRequestCount = Number(heroView?.imageRequestCount || 0);
+  let providerCacheHits = heroView?.providerCacheHit === true ? 1 : 0;
   for (let attempt = 1; attempt <= AUTHOR_ATTEMPTS; attempt += 1) {
     // Attempt 2 drops the replayed chain: both the designed smaller request
     // and the fallback for a provider that rejects a replayed signature.
@@ -211,6 +279,16 @@ async function authorSurface({
         priorTurns: sendChain,
         creativeContext,
         ...(first ? heroRequest : {}),
+        // STAGE 2. With an approved vehicle view the driver request becomes a
+        // FLATTEN of it rather than a draw-from-scratch, and the edge switches
+        // to the tiered renderFlatTile wording. Attempt 2 raises the tier: the
+        // same instruction compressed, so a refusal on length still returns
+        // artwork instead of nothing.
+        ...(first && heroView ? {
+          heroViewStoragePath: heroView.storagePath,
+          heroViewContentHash: heroView.contentHash,
+          heroFlattenTier: attempt - 1,
+        } : {}),
         ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: `author:${surfaceKey}:${attempt}` } } : {}),
       }, { attempt });
       imageRequestCount += Number(candidate?.imageRequestCount || 0);
@@ -232,7 +310,7 @@ async function authorSurface({
       logger(`hero-driver ${surfaceKey}: accepted on attempt ${attempt} (${verdict.deliveredWidthPx}x${verdict.deliveredHeightPx} -> ${pixelWidth}x${pixelHeight}, holes ${(verdict.holeRatio * 100).toFixed(3)}%)`);
       return Object.freeze({
         surfaceKey, bytes: verdict.bytes, contentHash: sha256(verdict.bytes), pixelWidth, pixelHeight,
-        method: first ? "hero_driver_authored" : "hero_driver_continuation", deterministic: false,
+        method: first ? (heroView ? "hero_first_flattened" : "hero_driver_authored") : "hero_driver_continuation", deterministic: false,
         attempts: attempt, imageRequestCount, providerCacheHits,
         priorTurnsApplied: sendChain.length,
         signaturesReplayed: Number(candidate?.priorSignaturesReplayed || 0),
@@ -293,9 +371,19 @@ async function authorHeroDriverMaster({
       }
       const neighbours = (AUTHOR_NEIGHBOURS[surfaceKey] || []).map((key) => authored.get(key)).filter(Boolean);
       const priorExchanges = (AUTHOR_HISTORY[surfaceKey] || []).map((key) => exchanges.get(key)).filter(Boolean);
+      // HERO-FIRST: the driver is TWO calls -- the vehicle view, then its
+      // flatten. Everything after the driver is unchanged, because what the
+      // continuations are shown and replay is the finished driver FLANK either
+      // way. `DESIGNPRO_ATLAS_HERO_FIRST=off` runs the single-call driver.
+      let heroView = null;
+      if (surfaceKey === "driver" && heroFirstEnabled()) {
+        heroView = await authorHeroVehicleView({
+          zone: zoneOf("driver"), heroRequest, creativeContext, callEdge, providerRequest, logger,
+        });
+      }
       return authorSurface({
         surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver", neighbours, priorExchanges,
-        heroRequest, creativeContext, store, callEdge, providerRequest, logger,
+        heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
       });
     }));
     for (const result of results) {
@@ -394,10 +482,12 @@ module.exports = {
   // The node graph (atlas-call1-graph.cjs) runs the SAME primitives, one per
   // node: nothing creative lives outside these three and the assembler.
   authorSurface,
+  authorHeroVehicleView,
+  heroFirstEnabled,
   composePassengerPlaceholder,
   assembleHeroMaster,
   zonePixelSize,
   heroDriverEnabled,
   heroRequestBody,
-  _test: { authorSurface, evaluateAuthored, composePassengerPlaceholder, zonePixelSize, trimAuthoringHistory },
+  _test: { authorSurface, authorHeroVehicleView, heroFirstEnabled, evaluateAuthored, composePassengerPlaceholder, zonePixelSize, trimAuthoringHistory },
 };
