@@ -2730,6 +2730,7 @@ async function composePassengerFromDriver({
   let letteringSource = null;
   let letteringReadFailure = null;
   let letteringBands = [];
+  let letteringOversized = [];
   const bandReceipt = (band) => ({
     text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
     x: Number(Number(band?.xPct).toFixed(3)), y: Number(Number(band?.yPct).toFixed(3)),
@@ -2751,6 +2752,10 @@ async function composePassengerFromDriver({
       brandBands = driverRead.bands;
       letteringSource = LETTERING_READ_CONTRACT;
       letteringBands = driverRead.bands.map(bandReceipt);
+      letteringOversized = (driverRead.oversized || []).map((band) => ({
+        text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
+        w: Number(Number(band?.wPct).toFixed(3)), h: Number(Number(band?.hPct).toFixed(3)),
+      }));
     } else if (!Buffer.isBuffer(guideBytes)) {
       letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
@@ -2783,9 +2788,18 @@ async function composePassengerFromDriver({
       // it is indistinguishable from "the reader could not see them". Mirroring
       // there is what puts a reversed company name on a customer's vehicle.
       if (!brandBands.length) {
-        const declined = declineOrMirror("brand_bands_not_located");
-        if (declined) return declined;
-        letteringRead = "none_located";
+        // Lettering the reader SAW but could not bound (over the size caps) is
+        // the same dangerous case with a positive finding attached: live
+        // cc382c3c shipped "PRECISION" reversed this way.
+        if (letteringOversized.length) {
+          const declined = declineOrMirror("brand_bands_oversized");
+          if (declined) return declined;
+          letteringRead = "oversized_unbounded";
+        } else {
+          const declined = declineOrMirror("brand_bands_not_located");
+          if (declined) return declined;
+          letteringRead = "none_located";
+        }
       }
     }
   }
@@ -2820,10 +2834,57 @@ async function composePassengerFromDriver({
           break;
         }
         letteringVerify.reads = read;
+        const reversedOversized = (verify.oversized || []).filter((band) => band?.orientation === "mirrored");
+        if (reversedOversized.length) {
+          // A reversed wordmark the reader could not bound cannot be corrected
+          // (no rect to re-drop) and cannot be called verified: it is a
+          // positive finding of reversed lettering.
+          letteringVerify.status = "unresolved";
+          letteringVerify.code = "reversed_lettering_oversized";
+          letteringVerify.reason = `reversed lettering too large to bound: ${reversedOversized.map((band) => String(band.text || "").slice(0, 24)).join(", ")}`.slice(0, 300);
+          break;
+        }
         const reversed = mirroredBandsToDriverSpace(verify.bands);
         letteringVerify.mirroredFound.push(reversed.length);
         letteringVerify.mirroredBands = [...(letteringVerify.mirroredBands || []), ...reversed.map(bandReceipt)];
-        if (!reversed.length) break;
+        // A VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING.
+        //
+        // Live cc382c3c (2026-09-16, Precision on a 911 Turbo): the driver read
+        // missed "PRECISION" on the pre-#440 caps, the mirror applied no bands,
+        // the passenger verify read returned no bands from that same blind
+        // reader, and `mirroredFound: [0]` was written down as status
+        // "verified" while the flank shipped with the company name reversed.
+        // The brief carried the company only in its prose, so `lettersDeclared`
+        // was false and the read-stage decline never fired either.
+        //
+        // Zero MIRRORED bands is evidence only when the read resolved lettering
+        // at all -- a band of any orientation, or an oversized finding.
+        letteringVerify.sawLettering = verify.bands.length > 0 || (verify.oversized || []).length > 0;
+        if (!reversed.length) {
+          if (!letteringVerify.sawLettering) {
+            if (brandBands.length) {
+              // The reader located lettering on the driver panel and the mirror
+              // re-dropped it, so the composed flank must show it; a read that
+              // now resolves nothing has contradicted itself about a panel it
+              // could see a moment ago. That is NOT a positive finding of
+              // reversal, and RULE 0.36 declines only on one -- declining here
+              // would throw away a composition that is probably correct. The
+              // status simply stops claiming what it did not establish.
+              letteringVerify.status = "unproven";
+              letteringVerify.code = "verify_read_saw_no_lettering";
+              letteringVerify.reason = `${brandBands.length} band(s) were re-dropped but the verify read resolved no lettering at all`;
+            } else {
+              // Both reads resolved nothing, which is concordant and is what a
+              // genuinely text-free flank looks like (the 9789762d Martini
+              // stripes). The mirror stands -- declining here would destroy the
+              // correct composition RULE 0.36 exists to protect -- but it is
+              // recorded honestly so PanelPro's human QC sees an unproven side
+              // instead of a certified one.
+              letteringVerify.status = "no_lettering_seen";
+            }
+          }
+          break;
+        }
         if (read === PASSENGER_VERIFY_READS) {
           letteringVerify.status = "unresolved";
           break;
@@ -2854,6 +2915,7 @@ async function composePassengerFromDriver({
       letteringSource,
       letteringReadFailure,
       letteringBands,
+      letteringOversized,
       letteringVerify,
       reason: null,
     };

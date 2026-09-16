@@ -71,6 +71,19 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: "Pick one of 118 WePrintWraps patterns, see it on any vehicle in 3D, get the yards a full wrap takes, order the film",
   },
   {
+    // The TENANT page beside the standalone one (owner, 2026-09-16: "I should
+    // see both on navigation left side, so I can show WPW and also sell").
+    // It opens the page as a WePrintWraps customer sees it — their mark, no
+    // DesignProAI chrome — which is the demo of what a tenant gets.
+    key: "patternpro_wpw",
+    label: "WPW × PatternPro",
+    route: "/pattern-wrap",
+    icon: Grid3x3,
+    pillar: "design",
+    tier: "starter",
+    description: "PatternPro as the WePrintWraps tenant ships it — the white-label page a shop's own customers use",
+  },
+  {
     key: "graphicspro",
     label: "GraphicsPro",
     route: "/graphics-pro",

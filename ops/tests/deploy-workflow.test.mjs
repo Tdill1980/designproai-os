@@ -630,7 +630,7 @@ test("a flag dispatch of the release already running rewrites the environment an
   const end = remote.indexOf('"$control/backup.sh"');
   assert.ok(start > 0 && end > start);
   const accepted = remote.slice(start, end);
-  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\} \]\]; then/);
+  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\} \]\]; then/);
   const flagged = accepted.slice(accepted.indexOf("if [[ -n"), accepted.indexOf("FLAGS_APPLIED"));
   assert.match(flagged, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY[\s\S]*systemctl restart designproai-os\.service[\s\S]*acceptance\.sh" "\$EXACT_SHA"/,
     "env writer, then restart, then acceptance -- in that order");
