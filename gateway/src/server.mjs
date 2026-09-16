@@ -3642,12 +3642,41 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           // No run yet: the design is still in Calls 1-7. Answer from the
           // generation request, which has existed since Create Design, so the
           // board can be opened on the generationId immediately and fill in as
-          // the atlas, its panels and the proofs arrive. Only the plain GET --
-          // resume and the human gates genuinely need a run to act on.
+          // the atlas, its panels and the proofs arrive. Only the human gates
+          // genuinely need a run that already exists to act on.
           const request = req.method === "GET" && !match[2]
             ? await generationRequestByGenerationId(fetchImpl, token, cfg, requestedId)
             : null;
           if (request) return json(res, 200, preHandoffState(request));
+          if (req.method === "POST" && match[2] === "resume") {
+            // REGISTER THE JOB, THEN RESUME IT. (live, 2026-09-16)
+            //
+            // The 2D Proof button exists precisely for the state where no
+            // workflow row has been created yet -- and this branch answered
+            // `job_not_found`, which the page reported as "the server did not
+            // accept this revision". The design was fine; the durable job had
+            // simply never been registered, because the handoff fires from
+            // master acceptance and nothing else could ever create it.
+            //
+            // The handoff RPC is idempotent and already owns this exact
+            // transition (it is what `/generation/requests/:id/handoff` calls),
+            // so registering here is the same act by the same door, not a
+            // second creator. A generation that genuinely is not ready answers
+            // with the gate's own reason instead of "not found".
+            const target = await generationRequestByGenerationId(fetchImpl, token, cfg, requestedId);
+            if (!target?.id) return json(res, 404, { error: "job_not_found" });
+            const gate = validatedFlatFirstGate(await rpc(fetchImpl, token, cfg, "designpro_flat_first_handoff_gate", { p_request_id: target.id }));
+            if (gate === null) return json(res, 404, { error: "job_not_found" });
+            if (gate.flatFirst && !gate.productionEligible) return json(res, 409, { error: "flat_first_production_gate_required" });
+            const handoff = await rpc(fetchImpl, token, cfg, "handoff_designpro_generation_to_production", { p_request_id: target.id });
+            const registeredRunId = String(handoff?.workflowRunId || "");
+            if (!UUID_PATTERN.test(registeredRunId)) return json(res, 409, { error: "generation_not_ready_for_production" });
+            return json(res, 202, {
+              ...await rpc(fetchImpl, token, cfg, "resume_designpro_workflow", { p_run_id: registeredRunId, p_actor: user.id, p_retry_failed: true }),
+              runId: registeredRunId,
+              registered: handoff?.alreadyHandedOff !== true,
+            });
+          }
           return json(res, 404, { error: "job_not_found" });
         }
         const production = run.workflow_type === "designpro.production_pack";

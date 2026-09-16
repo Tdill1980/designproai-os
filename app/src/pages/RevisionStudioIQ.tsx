@@ -1231,9 +1231,18 @@ function StoredOrGenerated2DProof({
       // Force the status poll to pick the new/again-running run up immediately.
       queryClient.invalidateQueries({ queryKey: ["revstudio-entice-proof-status", resolvedVizId] });
     } catch (error: any) {
-      toast.error(
-        `The server did not accept this revision: ${error?.message || error}`,
-      );
+      // Name the two server answers that are states, not rejections. "job not
+      // found" used to be printed for a design that plainly exists, because the
+      // durable job had simply never been registered; the gateway registers it
+      // now, and these are the only honest refusals left.
+      const code = String(error?.message || error);
+      if (code === "flat_first_production_gate_required" || code === "generation_not_ready_for_production") {
+        toast.error(
+          "The A.T.L.A.S. master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
+        );
+        return;
+      }
+      toast.error(`The server did not accept this revision: ${code}`);
     }
   }, [render?.id, resolvedVizId, queryClient, enticeWorkflowStatus?.workflowRun]);
 

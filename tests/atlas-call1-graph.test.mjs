@@ -40,20 +40,32 @@ const SURFACES = [["driver", 153, 56], ["passenger", 153, 56], ["hood", 71.5, 56
 const INPUT = { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } };
 const paint = async (w, h, tint) => sharp({ create: { width: w, height: h, channels: 3, background: tint } }).png().toBuffer();
 
-/** The same synthetic edge the in-process cascade test uses: the model returns at the requested shape. */
+/**
+ * The same synthetic edge the in-process cascade test uses: the model returns
+ * at the requested shape. HERO-FIRST: a `first` request carrying no hero-view
+ * reference is NODE 1 and answers 16:9 with `heroStage: "vehicle-view"`; the
+ * same surface asked again WITH that reference is NODE 3, the flatten, and
+ * answers at the flank's own shape.
+ */
 function syntheticEdge(calls, { refuse = null } = {}) {
   return async (body) => {
     calls.push(body);
     const tint = { driver: "#2255aa", hood: "#3366bb", front: "#4477cc", rear: "#5588dd", roof: "#6699ee" }[body.surfaceKey];
-    const bytes = body.surfaceKey === refuse
-      ? await paint(400, 400, tint)
-      : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, tint);
+    const vehicleView = body.first === true && !body.heroViewStoragePath;
+    const bytes = vehicleView
+      ? await paint(1920, 1080, tint)
+      : body.surfaceKey === refuse
+        ? await paint(400, 400, tint)
+        : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, tint);
     const contentHash = sha(bytes);
+    const name = vehicleView ? "driver-view" : body.surfaceKey;
     return {
       bytes, imageRequestCount: 1, providerCacheHit: false, providerRequestKey: "a".repeat(64),
-      panelStoragePath: `atlas-author/${body.surfaceKey}.png`, panelSha256: contentHash, panelBytes: bytes.length,
-      userTurn: { role: "user", parts: [{ text: `exact ${body.surfaceKey} instructions` }] },
-      modelTurn: { role: "model", parts: [{ imageRef: { storagePath: `atlas-author/${body.surfaceKey}.png`, contentHash }, thoughtSignature: `sig-${body.surfaceKey}` }] },
+      heroStage: body.first === true ? (vehicleView ? "vehicle-view" : "flatten") : null,
+      aspectRatio: vehicleView ? "16:9" : "21:9",
+      panelStoragePath: `atlas-author/${name}.png`, panelSha256: contentHash, panelBytes: bytes.length,
+      userTurn: { role: "user", parts: [{ text: `exact ${name} instructions` }] },
+      modelTurn: { role: "model", parts: [{ imageRef: { storagePath: `atlas-author/${name}.png`, contentHash }, thoughtSignature: `sig-${name}` }] },
       historyImageBytes: bytes.length, thoughtSignatureCount: 1,
       priorSignaturesReplayed: (body.priorTurns || []).flatMap((t) => t.parts).filter((p) => p.thoughtSignature).length,
     };
@@ -75,7 +87,11 @@ const finish = async (db, node, state, output = { ok: true }) => (await db.query
 test("1. the compiled graph is the owner's cascade as edges: nothing but a dependency orders it", () => {
   const nodes = graph.compileHeroDriverGraph();
   const deps = Object.fromEntries(nodes.map((n) => [n.key, n.dependsOn]));
-  assert.deepEqual(deps["surface.driver"], []);
+  // HERO-FIRST IS A DAG, NOT A CALL THAT HAPPENS TO MAKE TWO REQUESTS. Node 1
+  // (the 3D vehicle render) and node 3 (the 2D flattener) are separate rows
+  // with an edge between them, so a failed flatten retries alone.
+  assert.deepEqual(deps[graph.DRIVER_VIEW_NODE], []);
+  assert.deepEqual(deps["surface.driver"], [graph.DRIVER_VIEW_NODE]);
   assert.deepEqual(deps["surface.passenger"], ["surface.driver"]);
   for (const key of ["hood", "front", "rear"]) assert.deepEqual(deps[`surface.${key}`], ["surface.driver", "surface.passenger"], `${key} waits for driver + passenger only`);
   assert.deepEqual(deps["surface.roof"], ["surface.driver", "surface.passenger", "surface.hood", "surface.front", "surface.rear"]);
@@ -89,7 +105,15 @@ test("1. the compiled graph is the owner's cascade as edges: nothing but a depen
     waves.push(ready.map((n) => n.key.replace(/^surface\./, "")).sort());
     for (const n of ready) n.state = "completed";
   }
-  assert.deepEqual(waves, [["driver"], ["passenger"], ["front", "hood", "rear"], ["roof"], ["master.assemble"]]);
+  assert.deepEqual(waves, [["driver.view"], ["driver"], ["passenger"], ["front", "hood", "rear"], ["roof"], ["master.assemble"]]);
+
+  // THE KILL SWITCH IS THE GRAPH'S SHAPE, decided once when the run is created
+  // and then stored — so a flag flipped mid-run cannot change what a claimed
+  // node does. With hero-first off the graph is byte-for-byte the old one.
+  const single = graph.compileHeroDriverGraph({ heroFirst: false });
+  assert.equal(single.length, 7);
+  assert.ok(!single.some((n) => n.key === graph.DRIVER_VIEW_NODE));
+  assert.deepEqual(single.find((n) => n.key === "surface.driver").dependsOn, []);
   assert.throws(() => graph.validateGraph([{ key: "a", dependsOn: ["b"] }, { key: "b", dependsOn: ["a"] }]), { code: "designpro_atlas_call1_dependency_cycle" });
 });
 
@@ -98,14 +122,22 @@ test("2+3. the database claims ready nodes in parallel, only for a leased reques
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const created = await createRun(db, manifest);
   assert.equal(created.created, true);
-  assert.equal(created.nodes.length, 7);
+  assert.equal(created.nodes.length, 8);
   const again = await createRun(db, manifest);
   assert.equal(again.created, false, "the same request + definition resumes its run");
   assert.equal(again.run.id, created.run.id);
 
+  // NODE 1 first, alone: the flattener is not claimable until the render lands.
   let c = await claim(db, "w1");
-  assert.equal(c.node.node_key, "surface.driver");
+  assert.equal(c.node.node_key, graph.DRIVER_VIEW_NODE);
   assert.equal(c.claimToken, CLAIM, "the claim carries the generation's current lease token");
+  assert.equal(await claim(db, "w2"), null, "nothing else is ready while the vehicle view runs");
+  await finish(db, c.node, "completed", { view: { storagePath: "v", contentHash: "1".repeat(64), byteSize: 1 } });
+
+  c = await claim(db, "w1");
+  assert.equal(c.node.node_key, "surface.driver");
+  assert.equal(c.dependencies[0].nodeKey, graph.DRIVER_VIEW_NODE);
+  assert.equal(c.dependencies[0].output.view.contentHash, "1".repeat(64), "node 3 is handed node 1's identity, never its bytes");
   assert.equal(await claim(db, "w2"), null, "nothing else is ready while driver runs");
   // A retryable failure re-arms the node with a backoff, attempt kept.
   await finish(db, c.node, "pending", { errorCode: "transport", retryable: true });
@@ -154,7 +186,7 @@ test("2+3. the database claims ready nodes in parallel, only for a leased reques
   await finish(db, c.node, "completed", { sheet: { storagePath: "o", contentHash: "f".repeat(64), byteSize: 1 } });
   c = await claim(db, "w2");
   assert.equal(c.node.node_key, "master.assemble");
-  assert.equal(c.dependencies.length, 6);
+  assert.equal(c.dependencies.length, 7);
   const done = await finish(db, c.node, "completed", { master: { storagePath: "m", contentHash: "9".repeat(64), byteSize: 7 } });
   assert.equal(done.state, "completed");
   assert.equal(done.master_content_hash, "9".repeat(64));
@@ -189,30 +221,42 @@ test("4. end to end across two node workers: five image requests, passenger a fl
   try {
     const result = await owner.author({ manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
       creativeContext: "Test Co · trade", providerRequest: { requestId: REQUEST, generationId: GENERATION, claimToken: CLAIM }, logger, pollMs: 20, timeoutMs: 60_000 });
-    assert.equal(calls.length, 5, "driver, hood, front, rear, roof — exactly as in-process");
+    assert.equal(calls.length, 6, "driver view, driver flatten, hood, front, rear, roof — exactly as in-process");
+    // NODE 1 -> NODE 3. Two DISTINCT node rows, two distinct requests, and the
+    // handoff between them is the stored render's identity, never its bytes.
     assert.equal(calls[0].surfaceKey, "driver");
     assert.equal(calls[0].first, true);
-    assert.deepEqual(calls.slice(1, 4).map((c) => c.surfaceKey).sort(), ["front", "hood", "rear"]);
-    assert.equal(calls[4].surfaceKey, "roof");
-    for (const call of calls.slice(1)) {
-      assert.equal(call.priorTurns[1].parts[0].thoughtSignature, "sig-driver", `${call.surfaceKey} replays the driver's signature`);
+    assert.equal(calls[0].heroViewStoragePath, undefined, "node 1 draws from scratch");
+    assert.equal(calls[0].providerRequest.attemptKey, "author:driver-view:1");
+    assert.equal(calls[1].surfaceKey, "driver");
+    assert.equal(calls[1].first, true);
+    assert.equal(calls[1].heroViewStoragePath, "atlas-author/driver-view.png", "node 3 consumes node 1 by storage path");
+    assert.match(calls[1].heroViewContentHash, /^[0-9a-f]{64}$/, "…and by content hash — an immutable reference");
+    assert.equal(calls[1].heroFlattenTier, 0);
+    assert.deepEqual(calls.slice(2, 5).map((c) => c.surfaceKey).sort(), ["front", "hood", "rear"]);
+    assert.equal(calls[5].surfaceKey, "roof");
+    for (const call of calls.slice(2)) {
+      assert.equal(call.priorTurns[1].parts[0].thoughtSignature, "sig-driver", `${call.surfaceKey} replays the driver FLANK's signature, not the vehicle view's`);
       assert.equal(call.providerRequest.claimToken, CLAIM, "the edge is authorised with the generation's lease token");
       assert.match(call.providerRequest.attemptKey, /^author:[a-z]+:\d$/);
     }
-    assert.deepEqual(calls[4].neighbours.map((n) => n.surfaceKey), ["driver", "passenger", "hood", "front", "rear"]);
+    for (const call of calls) assert.equal(call.providerRequest.claimToken, CLAIM);
+    assert.deepEqual(calls[5].neighbours.map((n) => n.surfaceKey), ["driver", "passenger", "hood", "front", "rear"]);
     const meta = await sharp(result.bytes).metadata();
     assert.equal(meta.width, 4096); assert.equal(meta.height, 4096);
     assert.equal(sha(result.bytes), result.contentHash);
-    assert.equal(result.imageRequestCount, 5);
+    assert.equal(result.imageRequestCount, 6, "node 1's request is SPENT and is counted");
     assert.equal(result.model, "gemini-3-pro-image");
     assert.equal(result.promptVersion, hero.HERO_DRIVER_PROMPT_VERSION);
     assert.equal(result.provenance.contract, hero.HERO_DRIVER_CONTRACT);
     assert.equal(result.provenance.execution, "graph");
     assert.equal(result.provenance.graph.contract, graph.GRAPH_CONTRACT);
-    assert.equal(result.provenance.graph.nodes.length, 7);
+    assert.equal(result.provenance.graph.nodes.length, 8, "6 surfaces + the driver vehicle view + the assemble node");
+    assert.ok(result.provenance.graph.nodes.some((n) => n.nodeKey === graph.DRIVER_VIEW_NODE), "the ledger records who drew node 1");
     const passenger = result.surfaces.find((s) => s.surfaceKey === "passenger");
     assert.equal(passenger.method, "hero_driver_passenger_flop"); assert.equal(passenger.deterministic, true);
     assert.equal(result.surfaces.filter((s) => s.deterministic === false).length, 5);
+    assert.equal(result.surfaces.find((s) => s.surfaceKey === "driver").method, "hero_first_flattened");
     const owners = new Set(result.provenance.graph.nodes.map((n) => n.leaseOwner));
     assert.ok(owners.has("runtime-1-call1-graph") && owners.has("runtime-2-call1-graph"), `both workers held leases: ${[...owners].join(", ")}`);
     // Every surface and the master are immutable, content-addressed artifacts of the run.
@@ -232,6 +276,38 @@ test("4. end to end across two node workers: five image requests, passenger a fl
     assert.deepEqual(other.health().running, []);
   } finally {
     other.stop(); owner.stop();
+  }
+});
+
+test("5a. a refused FLATTEN never re-bills the vehicle view: node 1 completes once and node 3 fails alone", async () => {
+  const db = await createAtlasCall1Database();
+  const adapter = createAtlasCall1Adapter(db);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  // `refuse: "driver"` only reaches the FLATTEN — the vehicle view answers at
+  // its own 16:9 shape and is never judged against the flank's aspect.
+  const worker = graph.createAtlasCall1NodeWorker({ supabase: adapter.supabase, workerId: "solo", callEdge: syntheticEdge(calls, { refuse: "driver" }), concurrency: 3, pollMs: 10_000, heartbeatMs: 200 });
+  try {
+    await assert.rejects(
+      worker.author({ manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER, providerRequest: { requestId: REQUEST, generationId: GENERATION }, pollMs: 20, timeoutMs: 60_000 }),
+      (error) => error instanceof hero.HeroDriverRefusal && error.surfaceKey === "driver",
+    );
+    // THIS IS WHAT THE SPLIT BUYS. One vehicle-view request, the flatten's own
+    // bounded two — in a single node the refusal would have spent the render
+    // again on every attempt.
+    assert.equal(calls.filter((c) => !c.heroViewStoragePath).length, 1, "node 1 ran exactly once");
+    assert.equal(calls.filter((c) => c.heroViewStoragePath).length, hero.AUTHOR_ATTEMPTS, "node 3 spent its own budget and no more");
+    const rows = (await db.query("SELECT node_key,state,error_code FROM public.designpro_atlas_call1_nodes WHERE node_key IN ($1,'surface.driver') ORDER BY node_key", [graph.DRIVER_VIEW_NODE])).rows;
+    assert.deepEqual(rows.map((r) => [r.node_key, r.state]), [["surface.driver", "failed"], [graph.DRIVER_VIEW_NODE, "completed"]]);
+    // Node 1's output stayed a reference. No pixels were written into the row.
+    const view = (await db.query("SELECT output FROM public.designpro_atlas_call1_nodes WHERE node_key=$1", [graph.DRIVER_VIEW_NODE])).rows[0].output;
+    assert.equal(view.stage, "vehicle-view");
+    assert.match(view.view.storagePath, /driver-view\.png$/);
+    assert.match(view.view.contentHash, /^[0-9a-f]{64}$/);
+    assert.ok(view.view.byteSize > 0);
+    assert.ok(!JSON.stringify(view).includes("base64"), "the handoff is an identity, never a blob");
+  } finally {
+    worker.stop();
   }
 });
 
