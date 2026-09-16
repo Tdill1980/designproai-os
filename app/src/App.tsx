@@ -94,7 +94,6 @@ const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
-const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
 // The before/after band, run by the curator instead of by a release.
 const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
@@ -507,7 +506,21 @@ const App = () => {
           <Route path="/wbty" element={<Navigate to="/printpro/patternpro" replace />} />
           <Route path="/wbty/order-success" element={<WBTYOrderSuccess />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
-          <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          {/* ONE WALL QC SURFACE (owner, 2026-09-16: "The QC page should be part
+              of wallpanelpro admin that's the entire point ... Yes I need qc
+              gate"). /admin/wallpro-production was a read-only download board
+              with NO release control in it -- measured: zero QC or release
+              references in the whole file -- while WallPanelProStudio carries
+              the real gate: the per-check list, canRelease refusing until every
+              applicable check is ticked, Release for print, Hold, and a review
+              history where a later verdict supersedes without erasing.
+              Two boards meant the team could be looking at print files on a
+              page that cannot release them, which is how a job sits "ready"
+              with nobody realising a human still has to sign it.
+              REDIRECTED, NOT DELETED: the path is in the team's hands and in
+              the sidebar, and a dead bookmark on a production tool is its own
+              small outage. The page file is retired with the route. */}
+          <Route path="/admin/wallpro-production" element={<Navigate to="/wallpanelprostudio" replace />} />
           <Route path="/admin/wallpro-proofs" element={<RequireAdmin><AdminWallProProofs /></RequireAdmin>} />
           <Route path="/admin/wbty-manager" element={<RequireAdmin><AdminWBTYManager /></RequireAdmin>} />
           <Route path="/admin/wbty-orders" element={<RequireAdmin><AdminWBTYOrders /></RequireAdmin>} />
