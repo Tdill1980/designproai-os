@@ -66,18 +66,36 @@ const fmtTimer = (s: number) => {
 type MarketDesign = { id: string; title: string | null; price: number | null; thumbnail_url: string | null; render_urls: string[] | null };
 const marketImg = (d: MarketDesign) => d?.thumbnail_url || d?.render_urls?.[0] || "";
 
+/**
+ * THE DESIGN IS SHOWN THE MOMENT IT EXISTS. (Owner, Trish 2026-09-16: "Show
+ * the driver panel as early as it's ready.")
+ *
+ * Measured on the owner's own Martini run (request 220d569f): the flat sheet
+ * was accepted and the six panels cut at 1:45, the seven photographer proofs
+ * landed at 2:25. For those forty seconds the customer's design already
+ * existed on the server and the screen showed a spinner. `designPreview` is
+ * the driver panel from that accepted sheet -- the print artwork itself, not
+ * the master sheet (which stays a production instrument on the PanelPro
+ * board) -- shown here while the photographer works, and replaced by the
+ * driver proof the instant it lands. It is a read of what the server already
+ * produced; nothing here starts or changes a render.
+ */
+export type DesignPreview = { url: string; vehicleLabel?: string | null };
+
 export function DesignPipelineProgress({
   stage,
   elapsed,
   requestState,
   isAtlas = false,
   atlasReady = false,
+  designPreview = null,
 }: {
   stage: PipelineStage | null;
   elapsed: number;
   requestState?: GenerationRequestState | null;
   isAtlas?: boolean;
   atlasReady?: boolean;
+  designPreview?: DesignPreview | null;
 }) {
   // Default to "rendering" if the pipeline is active but no explicit stage was set
   // (defensive — the customer always sees a live step, never a bare spinner).
@@ -144,15 +162,20 @@ export function DesignPipelineProgress({
             ? "Proof views complete"
             : "Creating your design";
   const atlasProofStatus = `${Math.min(shotsComplete, 7)} of 7 proof views ready`;
+  const previewUrl = isAtlas && designPreview?.url ? designPreview.url : null;
   const headline = isAtlas
-    ? atlasReady
-      ? "Creating all seven vehicle views"
-      : "Creating your precision design"
+    ? previewUrl
+      ? "Your design is in"
+      : atlasReady
+        ? "Creating all seven vehicle views"
+        : "Creating your precision design"
     : "Creating your custom wrap design";
   const subMsg = isAtlas
-    ? atlasReady
-      ? atlasProofStatus
-      : "Your design will appear here first"
+    ? previewUrl
+      ? `Photographing it on your ${designPreview?.vehicleLabel?.trim() || "vehicle"} · ${atlasProofStatus}`
+      : atlasReady
+        ? atlasProofStatus
+        : "Your design will appear here first"
     : legacySubMsg;
   const activeLabel = isAtlas
     ? atlasReady
@@ -170,15 +193,34 @@ export function DesignPipelineProgress({
 
   return (
     <div className="w-full max-w-md mx-auto px-6 py-8 flex flex-col items-center gap-6">
+      {/* THE DRIVER PANEL, THE MOMENT IT EXISTS. Shown above everything else
+          from the second the server accepts the flat sheet until the driver
+          proof replaces this whole surface. */}
+      {previewUrl && (
+        <figure
+          data-testid="design-preview"
+          className="w-full rounded-xl overflow-hidden ring-1 ring-cyan-400/40 bg-white/5 shadow-[0_0_24px_rgba(34,211,238,0.25)] animate-in fade-in duration-700"
+        >
+          <img
+            src={previewUrl}
+            alt="Your accepted driver-side print panel"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            className="block w-full h-auto max-h-[38vh] object-contain bg-black/40"
+          />
+          <figcaption className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-cyan-300/90 bg-black/50">
+            Driver side · print panel · accepted
+          </figcaption>
+        </figure>
+      )}
       <div className="flex flex-col items-center gap-2 text-center">
         {/* A.C.E. — the branded astronaut, front and center while he designs. */}
-        <div className="relative h-28 w-28 sm:h-32 sm:w-32 flex items-center justify-center">
+        <div className={cn("relative flex items-center justify-center", previewUrl ? "h-16 w-16" : "h-28 w-28 sm:h-32 sm:w-32")}>
           <span className="absolute inset-0 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
           <img
             src={ACE_IMG}
             alt="A.C.E."
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            className="h-24 w-24 sm:h-28 sm:w-28 object-contain drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]"
+            className={cn("object-contain drop-shadow-[0_0_18px_rgba(34,211,238,0.35)]", previewUrl ? "h-14 w-14" : "h-24 w-24 sm:h-28 sm:w-28")}
           />
         </div>
         <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/80">
@@ -216,7 +258,7 @@ export function DesignPipelineProgress({
 
       {/* Creator Market — real one-off wrap designs, browsable while A.C.E. works.
           Links open in a NEW TAB so browsing never abandons the in-progress render. */}
-      {curDesign && (
+      {curDesign && !previewUrl && (
         <div className="w-full flex flex-col items-center">
           {/* CreatorMarket wordmark logo */}
           <p className="text-lg font-bold tracking-tight text-white">
