@@ -198,6 +198,29 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               <span className="truncate">WallPro Batch Generate</span>
             </Link>
           </SidebarTooltip>
+          {/* The proof band's curator, which had no entry anywhere and so could
+              only be reached by typing its URL (owner, 2026-09-16: "Add this to
+              navigation under admin"). Beside the batch generator: both are
+              WallPro curation, one making the designs and this one choosing the
+              before/after rooms the landing band shows. */}
+          <SidebarTooltip
+            title="WallPro Before &amp; After"
+            description="The before/after rooms in the band at the top of WallPro. Publishing any row here replaces the three that ship with the build, so publish every room you want shown"
+          >
+            <Link
+              to="/admin/wallpro-proofs"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wallpro-proofs")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span className="truncate">WallPro Before &amp; After</span>
+            </Link>
+          </SidebarTooltip>
           <SidebarTooltip
             title="PatternPro Manager"
             description="The 118-pattern Wrap-By-The-Yard library behind /pattern-wrap: names, swatches, collections, pricing, active flags"
