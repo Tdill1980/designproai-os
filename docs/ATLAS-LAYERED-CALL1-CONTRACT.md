@@ -50,10 +50,43 @@ Both carry `surfaceKey`, `sourceMasterHash` and the `panel` hash they decompose
 came from. Neither may ever enter Topaz, `output.build`, the ZIP or WrapBox as
 production artwork — same prohibition Call 11's `qc-panel` already carries.
 
-**Composition guarantee.** `panel-base` ⊕ `panel-mark`[] must reproduce `panel`.
-With the derivation in §4 this holds **by construction** rather than by
-tolerance, and a build that cannot reproduce it fails closed as
-`flat_atlas_layer_composite_mismatch`.
+**Composition reproduction is NOT the gate. (Corrected 2026-09-16.)**
+An earlier draft of this contract called `base ⊕ marks = panel` a guarantee that
+holds "by construction". It does hold -- and it proves nothing, because
+`clean + (branded − clean) = branded` is algebra. It reproduces the panel even
+when both layers are garbage. Do not rely on it.
+
+**The real gate is REGISTRATION, and it is the largest risk in this design.**
+The thought signature preserves reasoning and intent; it does NOT guarantee
+pixel alignment. `panel-base` is a fresh render of the whole canvas, so a
+two-pixel global shift or a small tonal difference is entirely possible even
+with the signature replayed correctly. Subtraction does not degrade gracefully
+under that -- it fails catastrophically and silently:
+
+```
+drifted base  →  branded − base ≠ 0 EVERYWHERE, not only where the marks were
+              →  the "mark plate" is a ghost of the entire wrap at low alpha
+```
+
+which looks plausible at thumbnail size and is wrong at full size. That is the
+same shape of defect as the `verified` receipt over a reversed passenger, and it
+must be measured rather than assumed.
+
+So before any subtraction, the base is checked against the master **outside the
+regions that differ**:
+
+| check | meaning |
+|---|---|
+| `alignmentOffsetPx` | best global shift between base and master, measured on artwork away from the marks. Must be **0**. |
+| `residualOutsideMarks` | mean per-channel difference over the panel once mark-shaped difference components are excluded. Must be under a tolerance measured on real sheets, not guessed. |
+| `markAreaFraction` | share of the panel the difference occupies. A clean plate that differs over most of the panel did not remove type — it re-designed. |
+
+A base failing any of these is refused as `flat_atlas_layer_base_drifted`, the
+node retries within its bounded budget, and the surface keeps its flattened
+`panel` with no layers rather than publishing layers that are quietly wrong.
+**Layers are optional; a wrong layer is not an acceptable substitute for no
+layer.** This is the same disposition the finishing path already takes: a defect
+that exists only in an optional derivative must never destroy the design.
 
 ---
 
