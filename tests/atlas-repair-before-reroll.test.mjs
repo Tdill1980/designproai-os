@@ -52,7 +52,16 @@ test("the release gate is deterministic plus the one owner-ruled output-class re
   // Every other subjective semantic judgement remains advisory and still
   // cannot refuse Call 1. Generation 470cb0e9 is why: a photoreal vehicle
   // mockup passed every deterministic gate and fanned out as van pictures.
-  assert.match(loop, /const stillBlocking = \[\.\.\.\(deterministic\.blockingFailures \|\| \[\]\)\];/);
+  // `stillBlocking` is declared before the branch that skips normalization for a
+  // candidate that returned no image at all (2026-09-16). What must stay true is
+  // unchanged: when a candidate DID draw, the blocking set is seeded from the
+  // deterministic checks and from nothing else.
+  assert.match(loop, /let stillBlocking;/);
+  assert.match(loop, /\n\s*stillBlocking = \[\.\.\.\(deterministic\.blockingFailures \|\| \[\]\)\];/);
+  // A no-image candidate is refused and re-rolled, never accepted and never
+  // thrown out of the loop: a run whose model answered with text still reaches
+  // its second candidate and then the contract change.
+  assert.match(loop, /flat_atlas_master_no_image/);
   assert.match(loop, /deterministicMasterChecks\(masterBytes, manifest\)/);
   assert.match(loop, /if \(!stillBlocking\.length\) \{\s*break;\s*\}/);
   assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes \}\)/);
