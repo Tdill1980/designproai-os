@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -639,4 +639,76 @@ test("a flag dispatch of the release already running rewrites the environment an
   // The empty-flag path is untouched: acceptance, drain stdin, no-op.
   const noop = accepted.slice(accepted.indexOf("FLAGS_APPLIED"));
   assert.match(noop, /acceptance\.sh" "\$EXACT_SHA"\n\s*cat >\/dev\/null\n\s*echo "ALREADY_COMPLETE/);
+});
+
+// THE STICKY A.T.L.A.S. FLAGS MUST STATE THEMSELVES ON THE DEPLOY LOG.
+//
+// All four are sticky: absent from the deploy, configure-env.sh carries the
+// droplet's current value forward. Nothing printed what that resolution
+// produced, so when canary 8c525565 authored on the FIELD contract after a
+// deploy meant to carry `off` forward, "the flag reset" and "it was set wrong"
+// could not be told apart from any log. A routing selector is not a secret and
+// belongs in the record.
+test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret beside them", () => {
+  const configure = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
+  const banner = configure.slice(configure.indexOf("A.T.L.A.S. flags resolved for this release"));
+  assert.ok(banner, "the deploy must state which routing the release will run");
+  for (const flag of ["DESIGNPRO_ATLAS_TOPOLOGY", "DESIGNPRO_ATLAS_FIELD_FIRST",
+    "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_PANEL_FINISH"]) {
+    assert.ok(banner.includes(flag), `${flag} decides routing and must be stated`);
+  }
+  // Scope the secret check to the printf statement itself, not the rest of the
+  // file: `service_key` and friends legitimately appear later in the cleanup.
+  const end = banner.indexOf('echo "DesignProAI dark environment');
+  assert.ok(end > 0, "the banner must sit immediately before the closing notice");
+  const printed = banner.slice(0, end);
+  for (const secret of ["service_key", "google_key", "topaz_key", "stripe_secret",
+    "stripe_webhook", "worker_secret", "SERVICE_ROLE", "API_KEY"]) {
+    assert.ok(!printed.includes(secret), `${secret} must never reach the deploy log`);
+  }
+});
+
+// The sticky read is a sed expression per flag. If one of those patterns stops
+// matching the file the writer itself produces, the flag silently reverts to
+// its default on the next deploy -- which is invisible, because the default is
+// what "no value" already means. So the patterns are executed against a fixture
+// written in exactly the writer's own format.
+test("every sticky A.T.L.A.S. flag reads back the value the writer wrote", () => {
+  const configure = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
+  const fixture = [
+    "SUPABASE_URL=https://example.supabase.co",
+    "DESIGNPRO_ATLAS_PANEL_FINISH=on",
+    "DESIGNPRO_ATLAS_TOPOLOGY=six-surface",
+    "DESIGNPRO_ATLAS_CALL1_GRAPH=on",
+    "DESIGNPRO_ATLAS_FIELD_FIRST=off",
+    "DESIGNPRO_TOPAZ_ENABLED=true",
+    "",
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "designpro-env-"));
+  const envFile = join(dir, "runtime.env");
+  writeFileSync(envFile, fixture);
+  try {
+    for (const [flag, expected] of [
+      ["DESIGNPRO_ATLAS_PANEL_FINISH", "on"],
+      ["DESIGNPRO_ATLAS_TOPOLOGY", "six-surface"],
+      ["DESIGNPRO_ATLAS_CALL1_GRAPH", "on"],
+      ["DESIGNPRO_ATLAS_FIELD_FIRST", "off"],
+    ]) {
+      // The exact expression the script uses, lifted from the script.
+      const pattern = new RegExp(`sed -n 's/\\^${flag}=//p'`);
+      assert.match(configure, pattern, `${flag} must be read back with the writer's own key`);
+      const read = execFileSync("sed", ["-n", `s/^${flag}=//p`, envFile], { encoding: "utf8" })
+        .split("\n")[0];
+      assert.equal(read, expected,
+        `${flag} must survive a deploy that does not mention it, or the routing silently changes`);
+    }
+    // And the writer must emit every one of them, or there is nothing to read.
+    for (const flag of ["DESIGNPRO_ATLAS_PANEL_FINISH", "DESIGNPRO_ATLAS_TOPOLOGY",
+      "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_FIELD_FIRST"]) {
+      assert.match(configure, new RegExp(`printf '${flag}=%s\\\\n'`),
+        `${flag} must be written in the format the sticky read expects`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
