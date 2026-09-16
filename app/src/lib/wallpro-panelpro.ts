@@ -39,12 +39,6 @@ import type {
  * vehicle studio uses. Re-exported here so the studio has one import. */
 export const wallDesignIdOf = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
-/** The order number a paid entitlement is filed under, same form and same
- *  reasoning as the DesignID above. Kept local for the same reason that one is:
- *  this module builds the board from plain rows and imports nothing from the
- *  API layer. It must stay identical to wallOrderNumber in wallpro-api.ts —
- *  two renderings of one payment that disagreed would be worse than none. */
-export const wallOrderNumberOf = (entitlementId: string) => 'WPO-' + entitlementId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
 /** The print target every wall panel is enhanced to (runtime/wallpro-production.cjs). */
 export const WALL_TARGET_PPI = 150;
@@ -61,6 +55,8 @@ export type WallStudioOrder = {
  *  stays a pure function of plain rows and testable without the API layer. */
 export type WallProEntitlementRow = {
   id: string; version_id: string; product_type: string; amount_cents: number; paid_at: string;
+  /** Minted by the database (wallpro_next_order_number), never by a client. */
+  order_number: string;
 };
 
 export type WallStudioVersionRecord = {
@@ -147,7 +143,7 @@ export function buildWallPanelProStudio(input: {
   const ordersByVersion = new Map<string, WallStudioOrder[]>();
   for (const row of [...(input.entitlements || [])].sort((a, b) => a.paid_at.localeCompare(b.paid_at))) {
     const list = ordersByVersion.get(row.version_id) || [];
-    list.push({ orderNumber: wallOrderNumberOf(row.id), productType: row.product_type, amountCents: row.amount_cents, paidAt: row.paid_at });
+    list.push({ orderNumber: row.order_number, productType: row.product_type, amountCents: row.amount_cents, paidAt: row.paid_at });
     ordersByVersion.set(row.version_id, list);
   }
 

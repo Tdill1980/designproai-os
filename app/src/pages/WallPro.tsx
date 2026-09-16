@@ -34,7 +34,7 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, wallOrderNumber, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -118,7 +118,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   /** Every order number for this version, oldest purchase first — the same
    *  rendering and the same order the QC board shows, so a customer reading
    *  one out and a team member searching for it always match. */
-  const orderNumbers = [...entitlements].sort((a, b) => a.paid_at.localeCompare(b.paid_at)).map(e => wallOrderNumber(e.id));
+  const orderNumbers = [...entitlements].sort((a, b) => a.paid_at.localeCompare(b.paid_at)).map(e => e.order_number);
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
   const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
@@ -948,7 +948,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         // session id. The oldest entitlement is this version's first purchase,
         // which is the one the order is filed under.
         const first = [...rows].sort((a, b) => a.paid_at.localeCompare(b.paid_at))[0];
-        setNotice(`Purchase confirmed — your order number is ${wallOrderNumber(first.id)}. Your print-ready wall file can now be produced.`);
+        setNotice(`Purchase confirmed — your order number is ${first.order_number}. Your print-ready wall file can now be produced.`);
         return;
       }
       attempts += 1;

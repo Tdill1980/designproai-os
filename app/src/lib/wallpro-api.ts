@@ -343,12 +343,12 @@ export async function requestWallProduction(versionId: string, request: WallProd
 /* ── WallPro purchases: SKU-based, gateway-issued Stripe checkout ────────── */
 
 export type WallProSku = 'wallpro_catalog_file' | 'wallpro_custom_file' | 'wallpro_room_design_file' | 'wallpro_file_prep';
-export type WallProEntitlement = { id: string; version_id: string; product_type: WallProSku; amount_cents: number; paid_at: string };
+export type WallProEntitlement = { id: string; version_id: string; product_type: WallProSku; amount_cents: number; paid_at: string; order_number: string };
 
 /** Whether this exact version has a paid entitlement (any SKU). RLS scopes the
  * read to the caller's own rows, so no explicit owner filter is needed. */
 export async function wallProEntitlements(versionId: string): Promise<WallProEntitlement[]> {
-  const { data, error } = await db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at').eq('version_id', versionId);
+  const { data, error } = await db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at,order_number').eq('version_id', versionId);
   if (error) throw new Error('Entitlements could not be read: ' + error.message);
   return (data || []) as WallProEntitlement[];
 }
@@ -384,36 +384,23 @@ export async function latestWallProductionJob(versionId: string): Promise<WallPr
 export const wallDesignId = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
 /**
- * THE ORDER NUMBER A CUSTOMER GETS WHEN THEY PAY (owner, 2026-09-16: "once
- * they pay they must get an order number").
+ * THE ORDER NUMBER IS A STORED COLUMN, MINTED BY THE DATABASE.
  *
- * Until now a paid WallPro purchase left the customer with a sentence —
- * "Purchase confirmed" — and nothing to quote. The row recorded Stripe's
- * checkout_session_id and payment_intent_id, which are the processor's
- * identifiers, not ours: too long to read out, meaningless to the design team,
- * and wrong to print on anything a customer sees.
+ * Owner, 2026-09-16: "once they pay they must get an order number", then
+ * "Check RestyleProAI they must not have ported the payment gate".
  *
- * DERIVED, NOT MINTED, exactly as wallDesignId above is. The entitlement row
- * already has a stable unique id, so the order number is a rendering of an
- * identity that exists rather than new state that has to be allocated,
- * migrated, backfilled and kept unique. That matters three ways: it cannot
- * collide, it cannot fail at the moment of payment (the worst possible moment
- * to depend on a second write), and EVERY PURCHASE ALREADY MADE has one the
- * instant this ships -- no migration, nothing to reconcile.
+ * A first attempt derived this from the entitlement uuid and claimed in its own
+ * comment that no RestylePro counterpart existed. That was wrong: CreatorMarket
+ * has minted WPO-style order numbers since 20260819120000, from a sequence with
+ * a unique column default. The claim came from searching this repository rather
+ * than the reference RULE 1 names — which is the inversion that rule exists to
+ * prevent, and the owner caught it.
  *
- * NO RESTYLEPRO COUNTERPART EXISTS, and RULE 1 asks that be said plainly. The
- * vehicle side's `orderNumber` is a WePrintWraps shop number that arrives on
- * the revision snapshot and is only VALIDATED here (the regex lives in
- * 20260806180200); nothing in this repository has ever minted one. A WallPro
- * self-serve Stripe purchase has no external order to carry, so this is new by
- * necessity, and it follows the house form rather than inventing a second one.
- *
- * The honest limit: it is not sequential, so it does not answer "how many
- * orders have we taken" — that is what counting rows is for. It answers the
- * question an order number is actually for: the customer says WPO-3F8A21C4 and
- * the team finds that exact payment, for that exact version, in one search.
+ * So there is no helper here any more. `order_number` arrives on the row,
+ * guaranteed unique by the database and sequential in payment order, and the UI
+ * renders what it is given. A client that computes an identity the server owns
+ * is a second source of truth waiting to disagree.
  */
-export const wallOrderNumber = (entitlementId: string) => 'WPO-' + entitlementId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
 export type WallTeamJob = WallProductionJob & { project_name: string; version_no: number | null; artwork_path: string | null };
 /** Every customer's production jobs, newest first, with the project name and
@@ -516,7 +503,7 @@ export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProSt
     // SOFT for the same reason the signing below does: a board that shows
     // nothing is worse than a board missing one column.
     versionIds.length
-      ? db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at').in('version_id', versionIds)
+      ? db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at,order_number').in('version_id', versionIds)
           .then(r => (r.error ? { data: [], error: null } : r))
       : Promise.resolve({ data: [], error: null }),
     // Signing is best effort so one unreadable object never empties the board.

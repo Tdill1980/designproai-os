@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-103), [
+  assert.deepEqual(names.slice(-104), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -314,6 +314,10 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260915191000_wpw_loyalty_points_webhook.sql",
     // PatternPro's paid path: the Stripe-paid orders table ShopFlow reads.
     "20260915230000_patternpro_wbty_orders.sql",
+    // A paid WallPro design gets a real, sequential order number -- the
+    // CreatorMarket sequence pattern recovered from restylepro-os rather than
+    // the uuid derivation a first attempt invented.
+    "20260916010000_wallpro_order_numbers.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
