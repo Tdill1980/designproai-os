@@ -1434,6 +1434,49 @@ function stripePromotionCode(session) {
   return null;
 }
 
+/**
+ * READ THE PROMOTION CODE A WEBHOOK ACTUALLY CARRIES.
+ *
+ * `stripePromotionCode` above reads the shapes an EXPANDED session has. A
+ * `checkout.session.completed` delivery is not expanded: Stripe sends
+ * `discounts[0].promotion_code` as an ID STRING (`promo_1Abc...`), so `.code`
+ * is undefined, every candidate misses, and the code comes back null.
+ *
+ * That is not cosmetic. The runtime refuses a zero-amount purchase with no
+ * code (`purchase_amount_invalid`) and refuses ANY discount with no code
+ * (`purchase_discount_invalid`), both deliberately -- a webhook that lost its
+ * total must not mint a free entitlement. So with the code unreadable, every
+ * discounted order fails to record: a 100%-off demo code AND the 10%-off
+ * affiliate codes already in circulation.
+ *
+ * One retrieve closes it. The ID is the thing Stripe did send, so it is asked
+ * what its human-facing code is. A failure here throws rather than recording a
+ * discount with no attribution -- Stripe retries the delivery, which is the
+ * outcome that keeps the money and the entitlement in agreement.
+ */
+async function stripeRetrieve(fetchImpl, cfg, path) {
+  const response = await fetchImpl(`https://api.stripe.com/v1/${path}`, {
+    method: "GET",
+    headers: { authorization: `Bearer ${cfg.stripeSecretKey}` },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(payload?.error?.message || `stripe_${response.status}`), { status: 502 });
+  }
+  return payload;
+}
+
+async function resolveStripePromotionCode(fetchImpl, cfg, session) {
+  const direct = stripePromotionCode(session);
+  if (direct) return direct;
+  const raw = session?.discounts?.[0]?.promotion_code;
+  const id = typeof raw === "string" ? raw.trim() : "";
+  if (!/^promo_[A-Za-z0-9]+$/.test(id)) return null;
+  const promotion = await stripeRetrieve(fetchImpl, cfg, `promotion_codes/${encodeURIComponent(id)}`);
+  const code = typeof promotion?.code === "string" ? promotion.code.trim() : "";
+  return code || null;
+}
+
 function verifiedStripeEvent(rawBody, signatureHeader, secret, nowSeconds) {
   const parts = String(signatureHeader || "").split(",").map((piece) => piece.trim());
   const timestamp = parts.find((piece) => piece.startsWith("t="))?.slice(2) || "";
@@ -2383,7 +2426,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
         }
         const discountCents = Number(object.total_details?.amount_discount || 0);
-        const promotionCode = stripePromotionCode(object);
+        const promotionCode = await resolveStripePromotionCode(fetchImpl, cfg, object);
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
           checkoutSessionId: String(object.id || ""),
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
