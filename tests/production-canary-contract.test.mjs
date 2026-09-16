@@ -252,3 +252,35 @@ test("canonical markdown records the explicit diagnostic-canary exception withou
   assert.match(atlasGraph, /early latency acceptance gate, before Call 8/);
   assert.match(atlasGraph, /final acceptance still requires live[\s\S]{0,80}one customer-style production lineage/i);
 });
+
+// THE RUN SUCCEEDED; THE COURIER FAILED.
+//
+// The canary's evidence travels home as one base64 line on the remote step's
+// stdout. A finished production run is ~5 GB -- six Topaz masters at 130-343 MB
+// each, eighteen print outputs, the pack ZIP -- and pushing that through a
+// single line is what produced "canary failed: data is too long" on a run whose
+// artifacts all existed.
+//
+// The repair caps what is EXPORTED, never what is VERIFIED. Every artifact is
+// still hashed from its real stored bytes, and every acceptance check keys on
+// `hashVerified`, so nothing here makes the canary easier to pass.
+test("the canary caps its export without weakening a single acceptance check", () => {
+  assert.match(canary, /MAX_EXPORT_FILE_BYTES\s*=\s*48 \* 1024 \* 1024/);
+  assert.match(canary, /MAX_EXPORT_TOTAL_BYTES\s*=\s*512 \* 1024 \* 1024/);
+  // Bytes are hashed by STREAMING from the storage client's stream builder, not
+  // from a Blob. Run 35134087621 wrote all 46 image artifacts and then threw
+  // "data is too long" on the 4.91 GB pack, because `.download()` materialises
+  // a Blob. The runtime hashes this same object the same streaming way.
+  assert.match(canary, /function storageDownload\(client, storagePath\)/);
+  assert.match(canary, /builder\?\.asStream === "function" \? builder\.asStream\(\) : builder/);
+  assert.match(canary, /async function digestStorageBody\(data, keep\)/);
+  assert.doesNotMatch(canary, /await blob\.arrayBuffer\(\)/,
+    "the pack must never be materialised whole to be verified");
+  // An omitted file says so, by name and reason, instead of going missing.
+  assert.match(canary, /notExportedReason/);
+  // The acceptance predicate still reads verified hashes, not exported files.
+  assert.match(canary, /verifiedCount\("production", "output"\) === 18/);
+  assert.match(canary, /verifiedCount\("production", "upscaled-panel"\) === 6/);
+  assert.doesNotMatch(canary, /\.filter\(\(item\) => item\.exported === true\)/,
+    "an acceptance count may never be computed from what happened to fit in the tarball");
+});

@@ -490,6 +490,57 @@ async function waitForProduction(operator, operatorId, runId, designId) {
   throw new Error("production workflow did not complete within 60 minutes");
 }
 
+// THE EVIDENCE TRAVELS BACK OVER ONE SSH STDOUT LINE.
+//
+// The remote step tars the output directory, base64s it to a single line and
+// the runner decodes that line. A finished production run is ~5 GB -- six
+// Topaz masters at 130-343 MB each, eighteen print outputs, and the pack ZIP
+// -- and pushing that through one base64 line is what produced
+// "canary failed: data is too long". The run had succeeded; only the courier
+// failed.
+//
+// So EVERY artifact is still hash-verified from its real stored bytes -- that
+// is the acceptance evidence and it is not weakened -- and only what a human
+// can actually open is written into the returned tarball. The master, the six
+// panels, the seven proofs and the Call 8 sheet are all well under the cap; a
+// 343 MB print TIFF is not something anyone judges in a CI artifact, and it
+// is recorded by hash instead.
+const MAX_EXPORT_FILE_BYTES = 48 * 1024 * 1024;
+const MAX_EXPORT_TOTAL_BYTES = 512 * 1024 * 1024;
+let exportedBytes = 0;
+
+// THE PACK IS NEVER MATERIALISED WHOLE. `.download()` returns a Blob, and a
+// 4.91 GB Blob is what threw "data is too long" on run 35134087621 -- AFTER all
+// 46 image artifacts had been written and the whole production chain had
+// completed through zip.build. The runtime already solves this exact problem
+// the exact same way (`verifyStoredArtifact` in runtime/zip-spool.cjs streams
+// the same object to hash it, in production, on this same pack), so the canary
+// uses the storage client's stream builder rather than its Blob.
+function storageDownload(client, storagePath) {
+  const builder = client.download(storagePath);
+  return typeof builder?.asStream === "function" ? builder.asStream() : builder;
+}
+
+function storageBodyChunks(data) {
+  if (Buffer.isBuffer(data) || data instanceof Uint8Array) return [data];
+  if (data && typeof data[Symbol.asyncIterator] === "function") return data;
+  if (data && typeof data.stream === "function") return data.stream();
+  throw new Error("storage download did not return a readable byte stream");
+}
+
+async function digestStorageBody(data, keep) {
+  const hash = createHash("sha256");
+  const chunks = keep ? [] : null;
+  let byteSize = 0;
+  for await (const chunk of storageBodyChunks(data)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    hash.update(buffer);
+    byteSize += buffer.length;
+    if (chunks) chunks.push(buffer);
+  }
+  return { contentHash: hash.digest("hex"), byteSize, bytes: chunks ? Buffer.concat(chunks) : null };
+}
+
 async function collectArtifacts(runId, label) {
   const { data, error } = await service
     .from("designpro_artifacts")
@@ -501,7 +552,7 @@ async function collectArtifacts(runId, label) {
   const rows = data || [];
   for (let index = 0; index < rows.length; index += 1) {
     const artifact = rows[index];
-    const { data: blob, error: downloadError } = await service.storage.from(BUCKET).download(artifact.storage_path);
+    const { data: blob, error: downloadError } = await storageDownload(service.storage.from(BUCKET), artifact.storage_path);
     if (downloadError || !blob) {
       evidence.outputs.push({
         run: label,
@@ -516,19 +567,27 @@ async function collectArtifacts(runId, label) {
       });
       continue;
     }
-    const bytes = Buffer.from(await blob.arrayBuffer());
-    const observedHash = sha256(bytes);
+    const declared = Number(artifact.byte_size) || 0;
+    const exportable = declared > 0 && declared <= MAX_EXPORT_FILE_BYTES && exportedBytes + declared <= MAX_EXPORT_TOTAL_BYTES;
+    const { contentHash: observedHash, byteSize, bytes } = await digestStorageBody(blob, exportable);
     const base = artifact.storage_path.split("/").pop() || `${artifact.artifact_kind}-${index}`;
     const safeSurface = artifact.surface_key ? `-${artifact.surface_key}` : "";
-    const file = `${label}-${artifact.artifact_kind}${safeSurface}-${index}-${base}`;
-    writeFileSync(`${OUT}/${file}`, bytes);
+    const file = bytes ? `${label}-${artifact.artifact_kind}${safeSurface}-${index}-${base}` : null;
+    if (bytes) {
+      writeFileSync(`${OUT}/${file}`, bytes);
+      exportedBytes += bytes.length;
+    }
     evidence.outputs.push({
       run: label,
       artifactKind: artifact.artifact_kind,
       surfaceKey: artifact.surface_key,
       file,
+      exported: Boolean(bytes),
+      notExportedReason: bytes ? null
+        : declared > MAX_EXPORT_FILE_BYTES ? `print-resolution artifact, ${declared} bytes, over the ${MAX_EXPORT_FILE_BYTES}-byte per-file export cap`
+        : `run export budget of ${MAX_EXPORT_TOTAL_BYTES} bytes is spent`,
       storagePath: artifact.storage_path,
-      byteSize: bytes.length,
+      byteSize,
       contentHash: artifact.content_hash,
       observedHash,
       hashVerified: observedHash === artifact.content_hash,

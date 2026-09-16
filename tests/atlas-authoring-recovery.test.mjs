@@ -744,3 +744,56 @@ test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off fails a spent field-first budget closed
   assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
     ["master:field:1","master:field:2"],"no six-surface contract is spent when the switch is off");
 });
+
+// THE MODEL ANSWERING WITH TEXT KILLED A LIVE CUSTOMER RUN (6e78ed9e, 2026-09-16).
+//
+// `atlas_artboard_no_image` -- Gemini returned a candidate with no image part --
+// escaped the candidate loop entirely, because `callEdge` was not caught. One
+// image request was spent, the second candidate never was, the RULE 0.38
+// contract change never ran, and the customer got a failure screen reading "no
+// candidate reached the acceptance gates", which is not what happened: nothing
+// was drawn, so nothing was judged.
+//
+// RestylePro's golden config names this case exactly: NO_IMAGE "is NOT a
+// content safety refusal. Retry with reduced prompt (NOT instant 422)."
+test("a candidate that returns no image is re-rolled, then changes contract — never a dead run",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  const noImage=()=>Object.assign(
+    new Error("design-panel-ai-generate atlas-artboard failed (HTTP 500): atlas_artboard_no_image"),
+    {code:"flat_atlas_edge_call_failed",retryable:false},
+  );
+  run.masterFor=async body=>{ if(!body.fieldContract) throw noImage(); return fieldSource; };
+  const result=await run.run();
+  // Both six-surface candidates are spent on the empty answers, then the field
+  // contract -- whose request carries no teaching proof and no guide, and is
+  // therefore the cheaper ask for a model that just declined to draw.
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:1","master:2","master:field:1"]);
+  assert.equal(result.metadata.authoringTopology,"field");
+  const failover=result.metadata.authoringFailover;
+  assert.equal(failover.code,"flat_atlas_master_no_image");
+  assert.equal(failover.attempts,2);
+  assert.match(failover.reason,/returned no image/);
+  // A candidate that never drew has no bytes, so it contributes no raw
+  // candidate path -- the ledger must not invent one.
+  assert.deepEqual(failover.rawCandidates,[]);
+  // And the run still delivers: six panels and seven proof authorities.
+  assert.equal(result.callOnePanels.length,6);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+});
+
+// DELIBERATELY NARROW. A broken function, an expired lease or any `provider_*`
+// transport failure still throws: re-rolling those spends the bounded budget
+// against a wall and hides the real fault.
+test("a transport failure that is not a no-image outcome still fails closed",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();
+  const run=harness(source);
+  run.masterFor=async()=>{throw Object.assign(
+    new Error("design-panel-ai-generate atlas-artboard failed (HTTP 401): missing service authorization"),
+    {code:"flat_atlas_edge_call_failed",retryable:false});};
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_edge_call_failed");
+  assert.equal(run.masterCalls.length,1,"a genuine transport fault must not burn the second candidate");
+});
