@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-102), [
+  assert.deepEqual(names.slice(-103), [
     "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
@@ -302,6 +302,9 @@ test("ordered migration chain retains existing production boundaries and appends
     // two files sharing one stamp is a primary-key collision at apply time, not
     // a cosmetic clash.
     "20260915020000_wallpro_try_free_and_commercialpro.sql",
+    // The proof band becomes curator-managed: a before/after stops
+    // needing a script, a hand-edited constant and a release.
+    "20260915030000_wallpro_proof_band.sql",
     // PatternPro on DesignProAI: the pattern library tables, their seed, and the
     // public render bucket behind the WePrintWraps /pattern-wrap page.
     "20260915090000_patternpro_wbty_products.sql",

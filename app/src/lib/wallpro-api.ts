@@ -610,3 +610,94 @@ export async function saveWallDesignMockups(rowId: string, mockups: { sceneId: s
   if (error) throw new Error('The mockups could not be recorded on the design: ' + error.message);
   return saved;
 }
+
+/**
+ * THE PROOF BAND'S ROWS — curator-managed, so a before/after no longer needs a
+ * developer, a script and a release (owner, 2026-09-15: "just create a
+ * container and i can place on admin side").
+ *
+ * Images live in the PUBLIC `wallpro-proofs` bucket, not in wallpro-files:
+ * the band paints for an anonymous first-time visitor before anything else on
+ * the page, so a signed read would put an authenticated round trip on the
+ * critical path of a marketing image — and would simply fail for the
+ * signed-out visitor the band exists to convince.
+ */
+export const WALLPRO_PROOF_BUCKET = 'wallpro-proofs';
+
+export type WallProofRow = {
+  id: string;
+  brand: string;
+  before_path: string;
+  after_path: string;
+  headline: string;
+  caption: string;
+  alt: string;
+  position: number;
+  published: boolean;
+};
+
+/** A stored path as the browser should request it. Public bucket: no signing. */
+export function wallProofUrl(path: string): string {
+  return supabase.storage.from(WALLPRO_PROOF_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * The published band for a brand, in curator order.
+ *
+ * FAILS SOFT, DELIBERATELY. An unreachable database, a missing migration or a
+ * signed-out read must never blank the band on the partner's product page, so
+ * this returns [] and the caller falls back to the list that ships in the
+ * bundle. A marketing band is exactly the wrong place to surface an outage.
+ */
+export async function listWallProofs(brand: string): Promise<WallProofRow[]> {
+  const { data, error } = await db.from('wallpro_proofs')
+    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('brand', brand).eq('published', true).order('position', { ascending: true });
+  if (error) return [];
+  return (data as WallProofRow[]) ?? [];
+}
+
+/** Every row including drafts — the curator's own view. */
+export async function listWallProofsForCurator(brand: string): Promise<WallProofRow[]> {
+  const { data, error } = await db.from('wallpro_proofs')
+    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('brand', brand).order('position', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as WallProofRow[]) ?? [];
+}
+
+/** Upload one already-normalized half. Content-addressed so a re-upload of the
+ *  same pixels cannot pile up duplicates in the bucket. */
+export async function uploadWallProofImage(blob: Blob, half: 'before' | 'after'): Promise<string> {
+  const hash = await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+  const path = `${half}/${hash}.jpg`;
+  const { error } = await supabase.storage.from(WALLPRO_PROOF_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+export async function saveWallProof(row: Partial<WallProofRow> & { id?: string }): Promise<WallProofRow> {
+  const payload = { ...row, updated_at: new Date().toISOString() };
+  const query = row.id
+    ? db.from('wallpro_proofs').update(payload).eq('id', row.id)
+    : db.from('wallpro_proofs').insert(payload);
+  const { data, error } = await query.select().single();
+  if (error) throw new Error(error.message);
+  return data as WallProofRow;
+}
+
+export async function deleteWallProof(id: string): Promise<void> {
+  const { error } = await db.from('wallpro_proofs').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** Write the whole order at once: reordering one row renumbers its neighbours,
+ *  and doing that as N independent writes leaves a visible half-order if one
+ *  fails. */
+export async function reorderWallProofs(rows: { id: string; position: number }[]): Promise<void> {
+  for (const { id, position } of rows) {
+    const { error } = await db.from('wallpro_proofs').update({ position }).eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+}

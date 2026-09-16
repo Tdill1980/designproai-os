@@ -18,6 +18,8 @@ import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuF
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
+import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
+import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -877,6 +879,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     openWallAssets(paths).then(map => { if (active) setZoneArt(map); }).catch(() => { if (active) setZoneArt({}); });
     return () => { active = false; };
   }, [zones, projectId]);
+  /**
+   * THE BAND'S PAIRS — curator rows first, the built-in list as the floor.
+   *
+   * Owner, 2026-09-15: "just create a container and i can place on admin side."
+   * /admin/wallpro-proofs writes those rows, so a before/after no longer needs
+   * a release. The built-in list in wallpro-brand.ts is NOT retired by that: an
+   * empty table, a missing migration or an unreachable database must never
+   * blank the band on the partner's own product page, and a marketing strip is
+   * the worst possible place to surface an outage. So rows win when they exist
+   * and the bundle answers when they do not.
+   */
+  const [curatedProofs, setCuratedProofs] = useState<typeof theme.proofs | null>(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const rows = await listWallProofs(brand);
+      if (!live || !rows.length) return;
+      setCuratedProofs(rows.map(r => ({
+        before: wallProofUrl(r.before_path),
+        after: wallProofUrl(r.after_path),
+        alt: r.alt, headline: r.headline, caption: r.caption,
+      })));
+    })();
+    return () => { live = false; };
+  }, [brand]);
+  const bandProofs = curatedProofs ?? theme.proofs;
+
   useEffect(() => {
     let live = true;
     (async () => {
@@ -1096,13 +1125,26 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               twice. The rail is hidden below lg (a pinned sidebar on a phone
               eats the screen), so on a phone the header keeps them. Brands
               without a rail keep them at every width. */}
-          <div className={`flex shrink-0 items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
-              <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
-            </Button>
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
-              <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
-            </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className={`flex items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
+              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
+                <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
+              </Button>
+              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
+                <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
+              </Button>
+            </span>
+            {/* THE ACCOUNT CONTROL, ON THE DESIGNPROAI TOOL PAGE ONLY.
+                Removing the marketing <Header> from this route took the only
+                user menu an app route had with it: the sidebar carries a plan
+                pill and the tool list, no identity and no sign-out. This is the
+                far-right slot of the one bar the tool owns -- the standard SaaS
+                shape -- and it is what "persistent header" was actually asking
+                for, since the bar itself already sticks at top: 0.
+                NOT on the partner page: a WePrintWraps visitor has no
+                DesignProAI account, and offering them one is our brand on
+                somebody else's storefront. */}
+            {!theme.showPrintOffer && <ToolAccountMenu />}
           </div>
         </div>
         {/* THE RULE between the header and the page (owner, 2026-09-14: "Add a
@@ -1123,15 +1165,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           so the claim and its proof are one object. It clears the moment work
           starts -- a customer with their own wall on screen does not need to be
           told what the tool is. */}
-      {!photo && !artwork && theme.proofs.length > 0 && (
+      {!photo && !artwork && bandProofs.length > 0 && (
         <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
           <div>
             <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-slate-900 md:text-4xl">
               On-demand wall wrap<br />design &amp; file output
             </h2>
             <p className="mt-3 max-w-[42ch] text-sm text-slate-600">
-              Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
-              in minutes, and take the print-ready files — whether we print them or you do.
+              {/* The partner's name belongs on the partner's page. On DesignProAI
+                  the same sentence would promise a printer this page does not
+                  sell -- and the whole point of the brand table is that one
+                  component can say the true thing on either domain. */}
+              {theme.showPrintOffer
+                ? <>Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
+                    in minutes, and take the print-ready files — whether we print them or you do.</>
+                : <>Measure the wall, design it in minutes, and take the print-ready files —
+                    production panels at 150 PPI, ready for any printer.</>}
             </p>
             {/* The one question the tool cannot answer about itself: what
                 actually happens after the button. The case study answers it on
@@ -1140,10 +1189,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
             </Link>
           </div>
-          <WallProHeroProof proofs={theme.proofs} />
+          <WallProHeroProof proofs={bandProofs} />
         </section>
       )}
-      {!photo && !artwork && theme.proofs.length === 0 && <WallProHeroProof proofs={theme.proofs} />}
+      {!photo && !artwork && bandProofs.length === 0 && <WallProHeroProof proofs={bandProofs} />}
       {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
           block is the only friction-free money on this page -- no sign-in, no
           token, no design -- and on a wrap printer's site "I already have
@@ -1195,7 +1244,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 step 1 rather than four thousand pixels later. It is the film
                 only; the design is priced on its own card, because they are
                 separate purchases with separate payees. */}
-            {dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            {/* GATED ON showPrintOffer, like every other print element (owner,
+                2026-09-15: the DesignProAI page should not carry the partner's
+                marks). This block quoted a WePrintWraps film rate and named
+                their material on the DesignProAI-branded page, while the bar,
+                the order section and the spec were all correctly hidden there
+                -- so one partner's pricing leaked onto a page that hides
+                everything else about them. The condition was simply missing. */}
+            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <span className="text-xs text-slate-600">
                 Printed film, this wall
                 <span className="block text-[11px] text-slate-500">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>

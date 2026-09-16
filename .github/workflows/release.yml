@@ -97,6 +97,40 @@ jobs:
           node-version: 22
       - name: Prove the pinned Supabase CLI can execute
         run: npx --yes "supabase@${SUPABASE_CLI_VERSION}" --version
+      # A PULL-THROUGH MIRROR WAS TRIED HERE AND MEASURED NOT TO WORK
+      # (2026-09-15). mirror.gcr.io registered correctly -- `docker info`
+      # reported it -- and `supabase start` was still refused with
+      # `toomanyrequests`, so the mirror does not hold these images. The same
+      # run also proved waiting is not a strategy: it failed at 23:07, sixteen
+      # hours after the first failure at 06:59, with no recovery. Authenticated
+      # pulls are the remaining fix. Do not re-add a mirror expecting a
+      # different answer without new evidence.
+      #
+      # THE SHADOW APPLY PULLS ITS POSTGRES/AUTH/STORAGE IMAGES FROM DOCKER HUB,
+      # and until 2026-09-15 it pulled them ANONYMOUSLY -- which shares one small
+      # quota across every GitHub runner on the same egress IP. On 2026-09-15 that
+      # quota ran out and the job failed three times in an hour with
+      # `toomanyrequests: Rate exceeded`, before a single line of SQL ran. The
+      # migration under test was fine; there was simply no database to apply it to.
+      #
+      # An authenticated pull has its own, far larger allowance. This step is a
+      # NO-OP until DOCKERHUB_USERNAME and DOCKERHUB_TOKEN exist, so it changes
+      # nothing for a fork or for a repository that never adds them -- it just
+      # stops a shared quota being the thing that decides whether a release can
+      # be verified. `docker login` directly rather than a third-party action:
+      # every action here is SHA-pinned, and this needs no new pin to review.
+      - name: Authenticate to Docker Hub when credentials exist
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            echo "Docker Hub: authenticated pulls."
+          else
+            echo "Docker Hub: no credentials configured, pulls stay anonymous and share the runner-pool quota."
+          fi
+
       - name: Fresh Supabase Auth, Storage, PostgREST, migrations and pgTAP
         run: bash scripts/test-supabase-shadow.sh
 

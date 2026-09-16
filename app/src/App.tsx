@@ -95,6 +95,8 @@ const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
 const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
+// The before/after band, run by the curator instead of by a release.
+const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
 // took, designer QC and the release gate (owner, 2026-09-12).
 const WallPanelProStudio = lazyWithRetry(() => import("./pages/WallPanelProStudio"));
@@ -250,6 +252,27 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
  * subdomain exists to protect. So the partner routes render standalone, the
  * same way the customer proof portal already does.
  */
+/**
+ * A TOOL PAGE IS NOT A WEBSITE (owner, 2026-09-16: "SHOULD LOOK LIKE A TOOL
+ * PAGE IN A SAAS NOT A WEBSITE").
+ *
+ * On /printpro/wallpro the app shell already supplies the SaaS chrome -- a
+ * branded left sidebar with the plan, the tool list and the account links --
+ * and the marketing <Header> renders ON TOP of it: a second brand lockup, a
+ * second navigation, Home/Design/Output/Profit dropdowns above a page that has
+ * all of that in the rail. Two navigations for one product is what makes it
+ * read as a website with an app bolted inside.
+ *
+ * SCOPED TO WALLPRO ON PURPOSE. Header.tsx says in as many words that it is
+ * "now persistent on every route (marketing + app)" -- a deliberate decision
+ * someone made, and other app pages may lean on it for navigation. Reversing
+ * that across twenty-odd routes is a product decision, not a fix, so this
+ * removes the duplication where it was reported and nowhere else. Extending it
+ * is one more entry in this predicate once that call is made.
+ */
+const isWallProToolRoute = (pathname: string) =>
+  pathname === "/printpro/wallpro" || pathname.startsWith("/printpro/wallpro/");
+
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   pathname === "/wall-wrap" ||
   // The case study wears the same partner header and must not get DesignProAI
@@ -286,7 +309,7 @@ const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
     (pathname.startsWith("/approve/") && !pathname.startsWith("/approve/manage")) ||
     pathname === "/admin/approve-revisions";
   const hostname = typeof window === "undefined" ? "" : window.location.hostname;
-  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname)) return null;
+  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname) || isWallProToolRoute(pathname)) return null;
   return <>{children}</>;
 };
 
@@ -477,6 +500,7 @@ const App = () => {
           <Route path="/wbty/order-success" element={<WBTYOrderSuccess />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
           <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          <Route path="/admin/wallpro-proofs" element={<RequireAdmin><AdminWallProProofs /></RequireAdmin>} />
           <Route path="/admin/wbty-manager" element={<RequireAdmin><AdminWBTYManager /></RequireAdmin>} />
           <Route path="/admin/wbty-orders" element={<RequireAdmin><AdminWBTYOrders /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

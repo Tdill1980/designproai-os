@@ -169,14 +169,53 @@ async function main() {
     // mush on the first thing a visitor sees is worse than no band at all.
     if (!meta.width || !meta.height) throw new Error(`The ${half} image is not a readable picture.`);
     if (meta.width < width * 0.6 || meta.height < height * 0.6) {
-      throw new Error(
-        `The ${half} image is ${meta.width}x${meta.height}, too small for a ${width}x${height} band -- that is a thumbnail, not the original. `
-        + 'Send the full-size photograph (an emailed or pasted copy is often downscaled; the file off the camera or phone is not).',
-      );
+      // --allow-upscale is for the case where the small copy is the ONLY copy
+      // and a soft slide beats no slide. It is a flag rather than a relaxed
+      // threshold so the softness is a decision somebody made on purpose, and
+      // it says the factor out loud instead of hiding it in a silent resize.
+      if (!('allow-upscale' in opts)) {
+        throw new Error(
+          `The ${half} image is ${meta.width}x${meta.height}, too small for a ${width}x${height} band -- that is a thumbnail, not the original. `
+          + 'Send the full-size photograph (an emailed or pasted copy is often downscaled; the file off the camera or phone is not). '
+          + 'If this really is the only copy, re-run with --allow-upscale true and accept a soft frame.',
+        );
+      }
+      console.warn(`  UPSCALING the ${half}: ${meta.width}x${meta.height} -> ${width}x${height}, ${(width / meta.width).toFixed(1)}x. It will look soft beside a sharp partner. Replace it with the original when you have it.`);
     }
     // .rotate() honours the EXIF orientation before cropping, or a phone photo
     // crops sideways.
     let pipeline = input.rotate();
+    // --trim <percent> takes that percentage off the TOP and the BOTTOM, before
+    // anything else (owner, 2026-09-15: "trim top and bottom"). A room shot
+    // carries ceiling above and floor below that say nothing about the wall,
+    // and cutting them makes the WALL bigger in a band of fixed width, which
+    // is the whole point of the band.
+    //
+    // Vertical only, and identical on both halves in fractions of each image's
+    // own height -- so a pair that was in register stays in register. Trimming
+    // one half by pixels, or trimming the sides, is how a before/after starts
+    // sliding under the wipe.
+    // --trim is the symmetric shorthand; --trim-top / --trim-bottom override it
+    // per edge. ASYMMETRY IS THE USEFUL CASE: a marketing frame often carries a
+    // caption baked into its top corner, and taking 12% off the top clears it
+    // while 2% off the bottom keeps the floor -- where a symmetric cut deep
+    // enough to lose the caption throws away a quarter of the picture and the
+    // room starts to look squashed.
+    //
+    // Register survives because what must match is the treatment of the two
+    // HALVES, not the top against the bottom: both images get the identical
+    // fractions, so their content still lines up under the wipe.
+    const trimPct = Number(opts.trim ?? 0);
+    const topPct = Number(opts['trim-top'] ?? trimPct);
+    const bottomPct = Number(opts['trim-bottom'] ?? trimPct);
+    for (const [name, v] of [['--trim/--trim-top', topPct], ['--trim/--trim-bottom', bottomPct]]) {
+      if (!Number.isFinite(v) || v < 0 || v > 30) throw new Error(`${name} must be a percentage between 0 and 30.`);
+    }
+    if (topPct + bottomPct > 0) {
+      const top = Math.round((meta.height * topPct) / 100);
+      const bottom = Math.round((meta.height * bottomPct) / 100);
+      pipeline = pipeline.extract({ left: 0, top, width: meta.width, height: meta.height - top - bottom });
+    }
     if (alignment) {
       // The search worked on a GRID_W-wide grid of the candidate scaled to
       // `gridW`; map that window back to the source's own pixels.

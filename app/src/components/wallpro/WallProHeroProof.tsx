@@ -38,6 +38,31 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
   const [held, setHeld] = useState(false);
   const [broken, setBroken] = useState<string[]>([]);
   const box = useRef<HTMLDivElement | null>(null);
+  /**
+   * THE BAND'S OWN WIDTH, MEASURED — not read off the ref during render.
+   *
+   * Owner, 2026-09-15: "the one u have is stretched."
+   *
+   * The before half is pinned to the BAND's width so the two photographs stay
+   * in register as the handle moves; its parent is the clipped div, which is
+   * only `reveal`% wide. That pin used to read `box.current?.clientWidth`
+   * INSIDE the render, and a ref is null on the first paint — so it fell back
+   * to `width: 100%`, meaning 100% of the CLIPPED box, and the before image
+   * was squeezed into half the band. A ref read during render is a value that
+   * does not exist yet; measuring it into state is the only version that is
+   * correct on the first frame, and a ResizeObserver keeps it correct when the
+   * column reflows instead of waiting for an unrelated re-render.
+   */
+  const [bandWidth, setBandWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    setBandWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => setBandWidth(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // A pair is usable only if NEITHER photograph failed: half a comparison is
   // worse than none, because the missing half is the one making the argument.
@@ -90,7 +115,22 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     >
       <div
         ref={box}
-        className="relative h-52 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-100 sm:h-72"
+        /* NOTHING IS CROPPED (owner, 2026-09-15: "cropped too short", then
+           "dont crop it"). The images are `contain`, not `cover`, so every
+           frame is shown WHOLE whatever its shape -- a wide install shot and a
+           4:3 room both fit, and neither loses its edges to a crop the band
+           chose. The ground is dark so the letterbox reads as a frame rather
+           than as a loading bug, and the band keeps a 4:3 box so a portrait
+           frame cannot make the strip absurdly tall. The box is 1400x803
+           because that is the ONE canvas every proof is normalised to, so on
+           desktop `contain` shows each frame edge to edge with no letterbox at
+           all -- the band and the photographs are the same shape.
+
+           This is the deliberate trade: `cover` fills the box and eats the
+           edges; `contain` keeps the photograph intact and pads instead. For a
+           before/after the photograph is the argument, so it wins. Both halves
+           use the same box and the same fit, so they stay in register. */
+        className="relative h-52 w-full select-none overflow-hidden rounded-xl border border-slate-200 bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]"
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -104,7 +144,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
           src={current.after}
           alt={current.alt}
           onError={() => fail(current.after)}
-          className="absolute inset-0 h-full w-full object-cover [object-position:50%_34%]"
+          className="absolute inset-0 h-full w-full object-contain"
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -116,8 +156,8 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className="absolute inset-y-0 left-0 h-full max-w-none object-cover [object-position:50%_34%]"
-            style={{ width: box.current?.clientWidth ? `${box.current.clientWidth}px` : '100%' }}
+            className="absolute inset-y-0 left-0 h-full max-w-none object-contain"
+            style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
         </div>
