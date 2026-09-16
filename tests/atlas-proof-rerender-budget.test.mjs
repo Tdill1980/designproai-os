@@ -17,7 +17,7 @@ test("an A.T.L.A.S. proof slot can spend the one re-render the continuity gate b
   assert.match(worker, /const ATLAS_PROOF_ATTEMPTS = 2;/);
   const stage = worker.slice(worker.indexOf("async function runAtlasProofStages"), worker.indexOf("function combineAtlasProofRuns"));
   assert.match(stage, /maxProviderAttempts: Math\.max\(Number\(provider\.maxProviderAttempts\) \|\| 1, ATLAS_PROOF_ATTEMPTS\)/);
-  assert.match(stage, /maxRegenerations: ATLAS_PROOF_ATTEMPTS/);
+  assert.match(stage, /maxRegenerations: Math\.max\(Number\(provider\.maxProviderAttempts\) \|\| 1, ATLAS_PROOF_ATTEMPTS\)/);
   // The validator, not the engine, makes the second drift verdict terminal.
   assert.match(qc, /const MAX_CONTINUITY_ATTEMPTS = 2;/);
   assert.match(qc, /terminal: continuityFailures >= MAX_CONTINUITY_ATTEMPTS/);

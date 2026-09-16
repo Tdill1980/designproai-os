@@ -30,6 +30,37 @@
  * rearrangement of driver pixels performed by atlas-passenger-mirror.cjs.
  * Every failure of the reader is a receipt (`status: "unavailable"`), never a
  * throw, so an unreachable inspector can never fail an accepted Call 1.
+ *
+ * WHY THE READER IS STRICT ABOUT WHAT COUNTS AS A BAND (live run 9789762d,
+ * DID-9789762D, 2026-09-16, the second "Porsche Martini" 911).
+ *
+ * The opposite failure of 8eec8162: a flank carrying NO lettering at all —
+ * pure Martini stripe sweeps — came back with bands anyway, and every false
+ * positive became a raw un-flipped rectangle of stripes pasted over the
+ * mirrored flank. Receipts on revision 77787c8c: `bandsApplied: 7` with
+ * `brandStringCount: 0`, the verify loop reporting mirroredFound [3,3,0] and
+ * pasting two more corrections, status "verified". The customer saw a
+ * passenger panel with a hard-edged patch of unmirrored stripes in the middle
+ * of mirrored artwork. A re-drop is destructive when the band is not text.
+ *
+ * The defenses are the proven RestylePro ones (RULE 1; worker/index.js
+ * `locateBrandingElements` / `collapseContainedBrandingElements` — the
+ * dilation/clamp/honest-no-op pattern named in RULE 0.25):
+ *
+ *   1. The prompt carries RestylePro's exclusion: background artwork —
+ *      patterns, gradients, scenery, flames, stripes — is not lettering and
+ *      is never boxed.
+ *   2. The parser drops a band whose `text` carries fewer than
+ *      MIN_BAND_TEXT_CHARS readable characters, and any band shaped like
+ *      artwork rather than a word block (the MAX_BAND_* caps): no reading
+ *      direction means nothing to re-drop, and re-dropping it can only cut a
+ *      seam.
+ *   3. Contained bands collapse into their enclosing band, so one mark never
+ *      becomes several overlapping pastes, and `mergeBands` refuses an
+ *      incoming band already covered by a known one, so the verify loop
+ *      cannot paste inside an already-corrected region.
+ *   4. The kept bands are bounded to a plausible total share of the panel
+ *      (MAX_TOTAL_BAND_AREA_FRACTION).
  */
 
 const { createHash } = require("node:crypto");
@@ -41,6 +72,20 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_TRANSPORT_DIMENSION = 1800;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_BANDS = 24;
+/**
+ * A BAND IS LETTERING ONLY IF IT READS AS LETTERING. Live 220d569f
+ * (2026-09-16): the model had painted the coordinate map onto the sheet and
+ * the reader returned seven "bands" for the digits and the stripes around
+ * them, each a big rectangle, and the mirror pasted seven un-flipped patches
+ * onto the passenger flank. A band with no readable letters or digits is not
+ * lettering, and a band wider or taller than a real word block on a flank is
+ * not a word: both are dropped before any pixel moves.
+ */
+const MIN_BAND_TEXT_CHARS = 2;
+const MAX_BAND_AREA_FRACTION = 0.18;
+const MAX_BAND_WIDTH_FRACTION = 0.6;
+const MAX_BAND_HEIGHT_FRACTION = 0.6;
+const MAX_TOTAL_BAND_AREA_FRACTION = 0.4;
 const ORIENTATIONS = Object.freeze(["forward", "mirrored", "vertical", "unknown"]);
 const SURFACES = Object.freeze(["driver", "passenger"]);
 /** Two bands describing the same lettering overlap at least this much. */
@@ -73,7 +118,7 @@ function letteringReadPrompt({ inspectionId, surface }) {
   return [
     `You are a print-production inspector reading ONE flat vinyl print panel: the ${surface} flank of a vehicle wrap, shown in its installed reading orientation. Do not judge quality, style or branding.`,
     "",
-    "List EVERY band of lettering on the panel: words, wordmarks, company names, numerals and race numbers, phone numbers, URLs, taglines, sponsor marks, badges and logos that contain letters or digits — anything that has a reading direction. Decorative marks with no letters or digits are not bands.",
+    "List EVERY band of lettering on the panel: words, wordmarks, company names, numerals and race numbers, phone numbers, URLs, taglines, sponsor marks, badges and logos that contain letters or digits — anything that has a reading direction. Background artwork (patterns, gradients, scenery, flames, stripes, racing stripes, geometric shapes) is NOT lettering — never box it. Decorative marks with no letters or digits are not bands; omit them entirely.",
     "",
     "For each band report its bounding rectangle as fractions of THIS image, 0 to 1, origin at the top-left corner: xPct and yPct are the left and top edges, wPct and hPct the width and height. Pad every rectangle by about 2% of the image on each side so the whole outline of every glyph, including outlines, shadows and the logo shape it sits in, is inside it. Words that sit together on one line form one band; separate lines and separate marks are separate bands.",
     "",
@@ -142,7 +187,12 @@ async function boundedTransport(bytes) {
   throw new AtlasLetteringReadError("atlas_lettering_transport_too_large", "The panel cannot fit the read budget");
 }
 
-/** One band, cleaned: finite fractions, positive area, clamped to the panel. */
+/**
+ * One band, cleaned: finite fractions, positive area, clamped to the panel —
+ * and reading as lettering. A band with no readable characters has no reading
+ * direction, so the mirror has nothing to re-drop; acting on one is what
+ * pasted seven rectangles of stripes into 9789762d's passenger flank.
+ */
 function normalizeBand(raw) {
   if (!raw || typeof raw !== "object") return null;
   const x = Number(raw.xPct);
@@ -156,11 +206,53 @@ function normalizeBand(raw) {
   const height = Math.min(Math.max(0, h), 1 - top);
   if (width <= 0 || height <= 0) return null;
   const orientation = ORIENTATIONS.includes(raw.orientation) ? raw.orientation : "unknown";
+  const text = cleanText(raw.text, 80);
+  // Readable characters only: the fraction "0.3633" the model painted on the
+  // sheet reads as digits, so it is refused on shape below; stripes and
+  // graphics with no letters at all are refused here.
+  if ((text.match(/[A-Za-z0-9]/g) || []).length < MIN_BAND_TEXT_CHARS) return null;
+  if (width > MAX_BAND_WIDTH_FRACTION || height > MAX_BAND_HEIGHT_FRACTION || width * height > MAX_BAND_AREA_FRACTION) return null;
   return {
     xPct: left, yPct: top, wPct: width, hPct: height,
-    text: cleanText(raw.text, 80),
+    text,
     orientation,
   };
+}
+
+/** Bands in reading order until their combined area exceeds the cap. */
+function boundTotalArea(bands) {
+  let area = 0;
+  const kept = [];
+  for (const band of bands) {
+    if (area + band.wPct * band.hPct > MAX_TOTAL_BAND_AREA_FRACTION) break;
+    area += band.wPct * band.hPct;
+    kept.push(band);
+  }
+  return kept;
+}
+
+/**
+ * A band fully inside another describes the same mark twice — RestylePro's
+ * `collapseContainedBrandingElements`, in fraction space. The enclosing band
+ * survives (largest first); the contained one merges into it, keeping the
+ * enclosing band's own text and orientation. One mark, one re-drop, one seam.
+ */
+function collapseContainedBands(bands) {
+  const area = (b) => b.wPct * b.hPct;
+  const contains = (outer, inner) =>
+    outer.xPct <= inner.xPct + 1e-9 &&
+    outer.yPct <= inner.yPct + 1e-9 &&
+    outer.xPct + outer.wPct >= inner.xPct + inner.wPct - 1e-9 &&
+    outer.yPct + outer.hPct >= inner.yPct + inner.hPct - 1e-9;
+  const ordered = bands
+    .map((band, sourceIndex) => ({ band, sourceIndex }))
+    .sort((a, b) => area(b.band) - area(a.band) || a.sourceIndex - b.sourceIndex);
+  const kept = [];
+  for (const entry of ordered) {
+    if (kept.some((candidate) => contains(candidate.band, entry.band))) continue;
+    kept.push(entry);
+  }
+  return kept.sort((a, b) => a.sourceIndex - b.sourceIndex).map((entry) => entry.band);
 }
 
 function parseLetteringRead(payload, inspectionId) {
@@ -178,7 +270,7 @@ function parseLetteringRead(payload, inspectionId) {
   if (!Array.isArray(parsed?.bands)) {
     throw new AtlasLetteringReadError("atlas_lettering_bands_invalid", "Reader returned no bands array");
   }
-  const bands = parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean);
+  const bands = boundTotalArea(collapseContainedBands(parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean)));
   const confidence = Number(parsed?.confidence);
   return {
     bands,
@@ -291,9 +383,22 @@ function intersectionOverUnion(a, b) {
 /** Existing bands plus the incoming ones that describe lettering not already covered. */
 function mergeBands(existing, incoming) {
   const merged = [...(Array.isArray(existing) ? existing : [])];
+  // A small band inside a big one has a low IoU but is still the same mark;
+  // re-dropping it would paste a second rectangle inside an already-corrected
+  // region. Covered means most of the incoming band's own area overlaps a
+  // known band.
+  const coverage = (known, band) => {
+    const left = Math.max(known.xPct, band.xPct);
+    const top = Math.max(known.yPct, band.yPct);
+    const right = Math.min(known.xPct + known.wPct, band.xPct + band.wPct);
+    const bottom = Math.min(known.yPct + known.hPct, band.yPct + band.hPct);
+    const overlap = Math.max(0, right - left) * Math.max(0, bottom - top);
+    const own = band.wPct * band.hPct;
+    return own > 0 ? overlap / own : 0;
+  };
   for (const band of Array.isArray(incoming) ? incoming : []) {
     if (!band) continue;
-    if (merged.some((known) => intersectionOverUnion(known, band) >= DUPLICATE_IOU)) continue;
+    if (merged.some((known) => intersectionOverUnion(known, band) >= DUPLICATE_IOU || coverage(known, band) >= 0.85)) continue;
     merged.push(band);
   }
   return merged;
@@ -312,5 +417,6 @@ module.exports = {
   mirroredBandsToDriverSpace,
   mergeBands,
   responseSchema,
-  _test: { normalizeBand, intersectionOverUnion, boundedTransport, sha256 },
+  MIN_BAND_TEXT_CHARS, MAX_BAND_AREA_FRACTION, MAX_TOTAL_BAND_AREA_FRACTION,
+  _test: { normalizeBand, collapseContainedBands, intersectionOverUnion, boundedTransport, sha256, boundTotalArea },
 };
