@@ -348,7 +348,14 @@ const { data: rows, error } = await supabase
   .from("designpro_artifacts")
   .select("artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata")
   .eq("run_id", runId)
-  .in("artifact_kind", ["panel", "flat-proof"]);
+  // THE PRINT FILES THE CUSTOMER ACTUALLY BUYS WERE NOT EXPORTABLE.
+  //
+  // `panel` is the Call-1 cut at design density. What the Production Pack ships
+  // is `upscaled-panel` (Call 12, Topaz, panel inches x 150) and `output` (six
+  // sides x three formats). Canary 8c525565 completed enhance.upscale and then
+  // died at output.build, so six 150-PPI panel masters existed on the run with
+  // no way to look at one.
+  .in("artifact_kind", ["panel", "flat-proof", "upscaled-panel", "output"]);
 if (error) { console.error(`artifact query failed: ${error.message}`); process.exit(3); }
 
 // The six panels, plus the customer-facing Call 8 sheet. The six
@@ -357,6 +364,8 @@ if (error) { console.error(`artifact query failed: ${error.message}`); process.e
 // checked against the files rather than taken on trust.
 const wanted = rows.filter((r) =>
   r.artifact_kind === "panel" ||
+  r.artifact_kind === "upscaled-panel" ||
+  r.artifact_kind === "output" ||
   r.metadata?.role === "customer-2d-production-proof" ||
   r.metadata?.role === "canonical-production-surface");
 
@@ -372,11 +381,17 @@ for (const row of wanted.sort((a, b) => `${a.artifact_kind}/${a.surface_key}`.lo
   const bytes = Buffer.from(await data.arrayBuffer());
   const observed = createHash("sha256").update(bytes).digest("hex");
   const role = row.metadata?.role === "customer-2d-production-proof" ? "proof"
-    : row.artifact_kind === "panel" ? "panel" : "surface";
-  const name = `${role}__${row.surface_key || "sheet"}.png`;
+    : row.artifact_kind === "panel" ? "panel"
+    : row.artifact_kind === "upscaled-panel" ? "print-panel"
+    : row.artifact_kind === "output" ? "output" : "surface";
+  // An output's own extension matters -- a TIFF written as .png is unopenable.
+  const extension = String(row.storage_path || "").match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || "png";
+  const name = `${role}__${row.surface_key || "sheet"}${role === "output" ? `.${extension}` : ".png"}`;
   writeFileSync(`${outDir}/${name}`, bytes);
   manifest.push({
     file: name, kind: row.artifact_kind, role: row.metadata?.role, surfaceKey: row.surface_key,
+    effectivePpi: row.metadata?.effectivePpi ?? row.metadata?.ppi ?? null,
+    enhancedBy: row.metadata?.enhancedBy ?? row.metadata?.upscaler ?? null,
     storagePath: row.storage_path, recordedHash: row.content_hash, observedHash: observed,
     hashMatches: observed === String(row.content_hash).toLowerCase(),
     recordedBytes: row.byte_size, observedBytes: bytes.length,
