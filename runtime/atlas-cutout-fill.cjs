@@ -823,6 +823,7 @@ const CLONE_RIM_PX = 12;
 const CLONE_STEP_DIVISOR = 8;   // candidate grid step = holeSize / this
 const BRIGHT_CHANNEL_MIN = 200; // a lettering-bright pixel
 const BRIGHT_EXCESS_PENALTY = 90000; // charged per unit of excess bright fraction
+const BRIGHT_EXCESS_REJECT = 0.02;   // above this a candidate is refused outright
 
 function cloneOverHole(data, width, height, channels, mask, smooth) {
   // Bounding box of the convicted hole.
@@ -936,6 +937,15 @@ function cloneOverHole(data, width, height, channels, mask, smooth) {
       }
       const sourceBrightFraction = sourceCount ? sourceBright / sourceCount : 0;
       const brightExcess = Math.max(0, sourceBrightFraction - rimBrightFraction);
+      // A HARD REJECT, NOT A PENALTY. Charging the excess was enough for a
+      // wheel arch and demonstrably not enough for a text box: over a region
+      // that size the best rim match IS another part of the same lockup, so a
+      // soft cost gets outbid by a good edge fit and the wordmark is cloned
+      // back in. Measured erasing "911 TURBO / CYBERSPACE EDITION" from the
+      // September 1 driver flank -- the erase returned the wordmark, in a
+      // different place. Any candidate carrying materially more bright content
+      // than its neighbourhood is now refused outright, whatever its edges do.
+      if (brightExcess > BRIGHT_EXCESS_REJECT) continue;
       const score = (total / compared) + brightExcess * BRIGHT_EXCESS_PENALTY;
       const distance = dx * dx + dy * dy;
       if (bestScore < 0 || score < bestScore || (score === bestScore && distance < bestDistance)) {
@@ -1169,11 +1179,167 @@ async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = []) {
   return { bytes, contract: FILL_CONTRACT, filled, changed: true };
 }
 
+/**
+ * OPERATOR ERASE: THE SAME FILL, POINTED AT A REGION A HUMAN CHOSE.
+ * (owner, for Carley on the vector template: "sometimes the panel text needs
+ * moving a bit ... she may need to pop off text if that occurs")
+ *
+ * `cloneOverHole` does not care WHY a region is masked. A wheel arch the model
+ * punched and a text block a designer selected are the same problem: a region
+ * of the panel that must come to carry this panel's own surrounding artwork.
+ * So the print-defect fill and the studio eraser are one implementation, and
+ * the eraser inherits everything the fill already proves -- one cloned source
+ * so no internal seams, a rim-matched colour shift, a feathered boundary, the
+ * bright-excess penalty that stops a wordmark being cloned in, and the contour
+ * dilation that stops a ghost of the erased element's own edge surviving.
+ *
+ * Regions arrive NORMALISED, so the studio can describe a selection without
+ * knowing the panel's pixel size -- a 150 PPI production panel and the preview
+ * the designer clicked on describe the same rectangle.
+ *
+ * THIS IS A CORRECTION, NOT A REDESIGN, and the guard says so: a request that
+ * masks more than MAX_ERASE_FRACTION of the panel is refused. Popping a text
+ * block off a flank is a correction. Erasing a third of the artwork is a new
+ * design, and RULE 0.22's distinction -- forbid generation, never forbid
+ * correction -- is what this keeps on the right side of.
+ *
+ * The caller stores the result through the EXISTING correction lineage
+ * (`record_designpro_corrected_panel`), so the branded Call-1 panel is never
+ * touched, both artifacts survive for audit, and the reason the designer gave
+ * is required. No new artifact kind, no change to the frozen seam.
+ */
+const ERASE_CONTRACT = "designpro.atlas-operator-erase.v1";
+const MAX_ERASE_FRACTION = 0.25;
+const LIFT_ALPHA_FLOOR = 10;    // below this the fill agreed: nothing was there
+const LIFT_ALPHA_CEILING = 90;  // at or above this the element was opaque
+
+async function erasePanelRegions(panelBytes, regions) {
+  if (!Buffer.isBuffer(panelBytes) || !panelBytes.length) {
+    throw new AtlasCutoutFillError("atlas_erase_panel_invalid", "The panel bytes are required");
+  }
+  const list = Array.isArray(regions) ? regions : [];
+  if (!list.length) {
+    throw new AtlasCutoutFillError("atlas_erase_regions_required", "At least one region is required");
+  }
+  const { data, info } = await sharp(panelBytes, { limitInputPixels: false })
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  const mask = new Uint8Array(info.width * info.height);
+  let masked = 0;
+  const applied = [];
+  for (const region of list) {
+    const x = Number(region?.x);
+    const y = Number(region?.y);
+    const w = Number(region?.w);
+    const h = Number(region?.h);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0
+      || x < 0 || y < 0 || x + w > 1.0000001 || y + h > 1.0000001) {
+      throw new AtlasCutoutFillError("atlas_erase_region_invalid",
+        "Every region must be normalised to [0,1] and lie inside the panel");
+    }
+    const left = Math.max(0, Math.round(x * info.width));
+    const top = Math.max(0, Math.round(y * info.height));
+    const right = Math.min(info.width - 1, Math.round((x + w) * info.width) - 1);
+    const bottom = Math.min(info.height - 1, Math.round((y + h) * info.height) - 1);
+    for (let py = top; py <= bottom; py += 1) {
+      for (let px = left; px <= right; px += 1) {
+        const index = py * info.width + px;
+        if (!mask[index]) { mask[index] = 1; masked += 1; }
+      }
+    }
+    applied.push({ left, top, width: right - left + 1, height: bottom - top + 1 });
+  }
+  if (!masked) {
+    throw new AtlasCutoutFillError("atlas_erase_regions_empty", "The regions cover no pixels");
+  }
+  const fraction = masked / (info.width * info.height);
+  if (fraction > MAX_ERASE_FRACTION) {
+    throw new AtlasCutoutFillError("atlas_erase_region_too_large",
+      `A correction may cover at most ${Math.round(MAX_ERASE_FRACTION * 100)}% of the panel; this covers ${(fraction * 100).toFixed(1)}%`);
+  }
+
+  // The branded pixels, before anything is filled. This is the half that
+  // carries the lettering, and it is kept so the type can be lifted rather
+  // than destroyed.
+  const branded = Uint8Array.prototype.slice.call(data);
+
+  const unresolvedPixels = fillHole(data, info.width, info.height, info.channels, mask);
+  const bytes = await sharp(data, {
+    raw: { width: info.width, height: info.height, channels: info.channels },
+  }).png().toBuffer();
+
+  // LIFT THE TYPE, DO NOT DESTROY IT. (owner: "must have the ability to magic
+  // layer off text but keep fonts")
+  //
+  // Popping text off a panel is only half an operation. The other half is that
+  // the lettering has to SURVIVE, as its own object, with its real letterforms
+  // -- so it can go back a few inches over, or onto the vector template, or
+  // into the Logo Pack. Re-rendering it would mean guessing the typeface,
+  // weight, tracking, bevel and glow the designer actually drew, and guessing
+  // wrong is worse than not offering it.
+  //
+  // So it is not re-rendered: it is SUBTRACTED. RestylePro's own roadmap states
+  // the method -- "derive the clean variant FROM the branded one so overlays
+  // become pixel subtraction (branded - clean)" -- and both halves already
+  // exist here by the time this runs. Where the fill changed a pixel, that
+  // pixel was the element; where it left one alone, that was background. The
+  // slice therefore keeps the ORIGINAL branded colour and takes its alpha from
+  // how far the fill moved that pixel, so every anti-aliased edge, every glow
+  // and every bevel of the real type is carried at real opacity. No model, no
+  // font matching, no vectorisation: the designer gets back exactly the pixels
+  // that were on the panel.
+  const slice = Buffer.alloc(info.width * info.height * 4);
+  let liftedPixels = 0;
+  for (let index = 0; index < mask.length; index += 1) {
+    const target = index * 4;
+    if (!mask[index]) continue;
+    const offset = index * info.channels;
+    let distance = 0;
+    for (let c = 0; c < 3 && c < info.channels; c += 1) {
+      distance = Math.max(distance, Math.abs(branded[offset + c] - data[offset + c]));
+    }
+    // Below the floor the fill agreed with the panel, so there was nothing
+    // there to lift; above the ceiling the element is fully opaque. Between
+    // them the alpha ramps, which is what preserves an anti-aliased edge.
+    if (distance <= LIFT_ALPHA_FLOOR) continue;
+    const alpha = distance >= LIFT_ALPHA_CEILING
+      ? 255
+      : Math.round(((distance - LIFT_ALPHA_FLOOR) / (LIFT_ALPHA_CEILING - LIFT_ALPHA_FLOOR)) * 255);
+    slice[target] = branded[offset];
+    slice[target + 1] = branded[offset + 1] ?? branded[offset];
+    slice[target + 2] = branded[offset + 2] ?? branded[offset];
+    slice[target + 3] = alpha;
+    liftedPixels += 1;
+  }
+  const liftedBytes = liftedPixels
+    ? await sharp(slice, { raw: { width: info.width, height: info.height, channels: 4 } })
+      .png().toBuffer()
+    : null;
+
+  return {
+    bytes,
+    liftedBytes,
+    liftedPixels,
+    contract: ERASE_CONTRACT,
+    widthPx: info.width,
+    heightPx: info.height,
+    regions: applied,
+    maskedPixels: masked,
+    panelFraction: Number(fraction.toFixed(6)),
+    unresolvedPixels,
+  };
+}
+
 module.exports = {
   AtlasCutoutFillError,
+  ERASE_CONTRACT,
   FILL_CONTRACT,
+  LIFT_ALPHA_CEILING,
+  LIFT_ALPHA_FLOOR,
+  MAX_ERASE_FRACTION,
   MAX_FILL_PASSES,
+  erasePanelRegions,
   fillMasterCutouts,
-  _test: { convictedHoleMask, diffuseInto, inpaintInto, inpaintPyramid, downsampleMasked, upsampleEstimate, cloneOverHole, fillHole, PATCH_RADIUS, RING_OFFSETS, VOTE_PASSES, MIN_LEVEL_EDGE, MAX_LEVELS, FEATHER_PX, BRIGHT_CHANNEL_MIN,
+  _test: { convictedHoleMask, diffuseInto, inpaintInto, inpaintPyramid, downsampleMasked, upsampleEstimate, cloneOverHole, fillHole, PATCH_RADIUS, RING_OFFSETS, VOTE_PASSES, MIN_LEVEL_EDGE, MAX_LEVELS, FEATHER_PX, BRIGHT_CHANNEL_MIN, BRIGHT_EXCESS_REJECT,
     dilateMask, CONTOUR_MIN_PX, CONTOUR_MAX_PX },
 };
