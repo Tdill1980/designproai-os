@@ -398,34 +398,15 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
-              {/* THE PROOF BAND'S CURATOR (owner, 2026-09-16: "missing ...
-                  admin page for WallPro"). The page and its route shipped with
-                  the band; the sidebar entry did not, so the only way in was
-                  to type the URL -- which is the same as not having built it.
-                  Third of the three because it is the one touched least: the
-                  studio answers "did that design take", production holds the
-                  print files, and this one changes what a stranger sees on the
-                  way in. */}
-              {tool.key === "wallpro" && isAdmin && (
-                <SidebarTooltip
-                  title="WallPro before/after band"
-                  description="Upload, trim, order and publish the before/after pairs shown in the WallPro hero band — no deploy needed"
-                >
-                  <Link
-                    to="/admin/wallpro-proofs"
-                    onClick={onNavigate}
-                    className={cn(
-                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
-                      isActive("/admin/wallpro-proofs")
-                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
-                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
-                    )}
-                  >
-                    <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Before/after band</span>
-                  </Link>
-                </SidebarTooltip>
-              )}
+              {/* THE PROOF BAND'S CURATOR IS IN THE ADMIN BLOCK, NOT HERE.
+                  Two sessions closed this gap the same night, and the other
+                  one carried an owner instruction this one did not: "Add this
+                  to navigation under admin" (2026-09-16). It also reads right
+                  -- the two links above are boards the design team lives in
+                  all day and reaches from the tool, while the band curator is
+                  merchandising, touched rarely, and belongs beside the batch
+                  generator it sits with now. A second entry here would have
+                  been the same page twice in one sidebar. */}
               </Fragment>
             );
           })}
