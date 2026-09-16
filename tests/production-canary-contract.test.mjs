@@ -65,9 +65,23 @@ test("the canary records display latency and defers its hard SLO gate until the 
   assert.match(canary, /const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90/);
   assert.match(canary, /const ATLAS_FALLBACK_SLO_SECONDS = 120/);
   assert.match(canary, /const DRIVER_FALLBACK_SLO_SECONDS = 180/);
-  assert.match(canary, /!\[1, 2\]\.includes\(imageRequestCount\)/);
-  assert.match(canary, /usedFallback \? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS/);
-  assert.match(canary, /usedFallback \? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS/);
+  // 2026-09-16: the Call-1 budget is per CONTRACT, not per run. `[1, 2]` was
+  // written when six-surface was the only contract; a run that recovers exactly
+  // as designed now spends up to two candidates on each of two contracts, and
+  // the old total would have failed such a run -- discarding its master, its six
+  // panels and every stage after them to convict a fail-over that worked. Both
+  // halves of the real bound are still asserted, where they actually live.
+  assert.match(canary, /const maxImageRequests = failedOver \? 4 : 2;/);
+  assert.match(canary, /imageRequestCount < 1 \|\| imageRequestCount > maxImageRequests/);
+  assert.match(canary, /Number\(atlasRow\.metadata\?\.masterAuthoringAttempts\) > 2/,
+    "more than two candidates on ONE contract is still a budget that was never bounded");
+  // The per-candidate allowance IS the step between the two constants above, so
+  // n=1 and n=2 reproduce them exactly and a slow candidate is still convicted
+  // at every n.
+  assert.match(canary, /const ATLAS_SLO_SECONDS_PER_CANDIDATE = ATLAS_FALLBACK_SLO_SECONDS - ATLAS_FIRST_ATTEMPT_SLO_SECONDS;/);
+  assert.match(canary, /const DRIVER_SLO_SECONDS_PER_CANDIDATE = DRIVER_FALLBACK_SLO_SECONDS - DRIVER_FIRST_ATTEMPT_SLO_SECONDS;/);
+  assert.match(canary, /ATLAS_FIRST_ATTEMPT_SLO_SECONDS \+ extraCandidates \* ATLAS_SLO_SECONDS_PER_CANDIDATE/);
+  assert.match(canary, /DRIVER_FIRST_ATTEMPT_SLO_SECONDS \+ extraCandidates \* DRIVER_SLO_SECONDS_PER_CANDIDATE/);
   assert.match(canary, /source_view_type,consumer_role,content_hash,byte_size,content_type,created_at/);
   assert.match(canary, /callOneTimings/);
   assert.match(canary, /atlasEdgeProvenance/);
