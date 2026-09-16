@@ -48,11 +48,20 @@
  *           persisted). One vehicle view in, one flat full-bleed surface
  *           master out, at the surface's own physical proportion.
  *
- * WHAT IT WRITES TO PRODUCTION: one HARNESS row in
- * designpro_generation_requests (state leased -> cancelled, error.code
- * designiq_ab_harness_lease) because the edge authorizes every image request
- * against a leased request. No revision, no generation, no view, no artifact
- * row, no canonical master. Exactly the shape the other probes carry.
+ * WHAT IT WRITES TO PRODUCTION: NOTHING. No row of any kind.
+ *
+ * The other probes insert a leased harness row because the edge authorizes
+ * every image request against one -- but `authorizeAtlasProviderRequest` is
+ * called only by the atlas-artboard, atlas-author and atlas-panel branches,
+ * and neither call here is one of those. Node 1 is the DEFAULT vehicle-render
+ * branch and Node 3 is generate-2d-proof's surface-master branch, so the probe
+ * needs no lease and takes none. (The first attempt did insert one and was
+ * refused by a trigger the service role cannot execute --
+ * `permission denied for function calls_1_7_asset_paths_bound`. Removing the
+ * row was the right answer rather than widening a grant to satisfy a harness.)
+ *
+ * Returned images land in the private bucket under the edge's own
+ * content-addressed paths, exactly as any render does.
  *
  * WHAT IT DOES NOT DO: change a gate, a threshold, a prompt version, or any
  * deployed routing. It spends two image calls and hands back two pictures.
@@ -60,7 +69,7 @@
 
 import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 const require = createRequire(path.join(process.cwd(), "runtime/"));
@@ -69,7 +78,6 @@ const { createClient } = require("@supabase/supabase-js");
 const atlas = require("../runtime/flat-first-atlas.cjs");
 
 const BUCKET = "wrap-files";
-const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 const arg = (name, fallback = null) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
@@ -161,29 +169,10 @@ async function main() {
   const driver = surfaces.find((s) => s.surfaceKey === "driver");
   if (!driver) throw new Error("a driver surface is required");
 
+  // No harness row: see the header. Identities are local labels only.
   const requestId = randomUUID();
-  const generationId = randomUUID();
-  const claimToken = randomUUID();
-  const inputHash = sha256(JSON.stringify(input));
-  const { error: leaseError } = await supabase.from("designpro_generation_requests").insert({
-    id: requestId, generation_id: generationId, owner_id: ownerId, tenant_key: `user_${ownerId}`,
-    idempotency_key: `hero-first-probe:${generationId}:${inputHash}`,
-    state: "leased", request_input: input, input_hash: inputHash,
-    engine_contract: { contractVersion: "designpro.calls-1-7-engine.v2", harness: "hero-first-probe" },
-    engine_contract_hash: sha256("hero-first-probe"),
-    attempt: 1, available_at: new Date().toISOString(),
-    lease_owner: "hero-first-probe", lease_token: claimToken,
-    lease_expires_at: new Date(Date.now() + 45 * 60_000).toISOString(),
-    error: { code: "designiq_ab_harness_lease", note: "hero-first probe (RULE 0.37); harness-only row, never a customer generation" },
-  });
-  if (leaseError) throw new Error(`harness lease insert failed: ${leaseError.message}`);
-  const release = async () => {
-    await supabase.from("designpro_generation_requests")
-      .update({ state: "cancelled", lease_owner: null, lease_token: null, lease_expires_at: null })
-      .eq("id", requestId);
-  };
 
-  const evidence = { contract: "designpro.hero-first-probe.v1", requestId, generationId, input, nodes: {} };
+  const evidence = { contract: "designpro.hero-first-probe.v2-no-db-write", probeId: requestId, input, nodes: {} };
   const startedAt = Date.now();
   try {
     // ── NODE 1 — the vehicle view. The ask the model answers well. ──────────
@@ -267,8 +256,6 @@ async function main() {
     evidence.error = String(cause?.message || cause).slice(0, 600);
     evidence.totalMs = Date.now() - startedAt;
     log(`FAILED: ${evidence.error}`);
-  } finally {
-    await release().catch(() => {});
   }
   writeFileSync(path.join(outDir, "hero-first-evidence.json"), JSON.stringify(evidence, null, 2));
   log(`wrote ${outDir}/`);
