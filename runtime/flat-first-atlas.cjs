@@ -3565,9 +3565,18 @@ async function generateOrReuseFlatAtlasResolved(options) {
     if (!stillBlocking.length) {
       outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
       if (outputClassReceipt.blocking) {
-        refusalCode = "flat_atlas_master_output_class_invalid";
+        // The refusal CODE names which defect, so the ledger and its digest can
+        // tell "the model drew a truck" from "the model drew the layout map".
+        // Both refuse; they need different fixes, and a single code hid that.
+        const drewTheMap = outputClassReceipt.disposition === "map_drawn";
+        refusalCode = drewTheMap
+          ? "flat_atlas_master_map_drawn"
+          : "flat_atlas_master_output_class_invalid";
         stillBlocking.push(
-          `output class ${outputClassReceipt.disposition} (confidence ${outputClassReceipt.confidence ?? "n/a"}): ${outputClassReceipt.evidence || "vehicle depicted"} -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image`,
+          `output class ${outputClassReceipt.disposition} (confidence ${outputClassReceipt.confidence ?? "n/a"}): ${outputClassReceipt.evidence || (drewTheMap ? "layout map printed into the artwork" : "vehicle depicted")}`
+          + (drewTheMap
+            ? " -- the panel fractions are a map to read; a printed coordinate is ink on the customer's vinyl"
+            : " -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image"),
         );
       }
     }
@@ -3794,8 +3803,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
     outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
     if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
-        "flat_atlas_master_output_class_invalid",
-        `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "vehicle depicted"}`,
+        outputClassReceipt.disposition === "map_drawn"
+          ? "flat_atlas_master_map_drawn"
+          : "flat_atlas_master_output_class_invalid",
+        `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "refused by the output-class gate"}`,
       );
     }
   }

@@ -929,12 +929,42 @@ judging a run's topology.
 
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
-- **The field topology still paints layout marks into the artwork after v26** —
-  3 of 3 recent 911 runs (`455b1723`, `7c7bd633`, `cc382c3c`). Prompt wording
-  does not stop it. The remedy identified but NOT in the repo: a blocking
-  `map_drawn` verdict in the output-class inspector, so such a sheet re-authors
-  and fails over to six-surface. The branch carrying it was never pushed and is
-  lost; rebuild it rather than re-deriving the diagnosis.
+- **The field topology paints its own layout map into the artwork, and the
+  `map_drawn` gate now refuses it (2026-09-16).** Four runs in a row —
+  `455b1723`, `7c7bd633`, `cc382c3c` and `8c525565` — printed the panel
+  fractions onto the flanks, and 8c525565's went through Topaz onto 150-PPI
+  print panels: `0.9114 0.3` and `884 0.0000` printed on the customer's driver
+  side.
+
+  **The cause is in the request, not the model.** `atlasFieldContract`
+  (`design-panel-ai-generate/index.ts`) emits the six rectangles as bare
+  four-decimal rows and then says *"None of the map is drawn: the vinyl carries
+  no numbers, outlines or frames of any kind."* A negative instruction standing
+  next to the very thing it forbids is the prompt shape this file warns about
+  in three other places, and it has now failed 4/4. **The rows are load-bearing**
+  — they exist because the lower band alone discarded 27.81% of what was painted
+  and the cut stopped matching the composition — so they are not simply deleted,
+  and RULE 0.37 forbids arguing with that tail without a side-by-side.
+
+  So the gate is the remedy that ships: `map_drawn` is a third blocking verdict
+  in `runtime/atlas-output-class.cjs`, refusing under its own code
+  `flat_atlas_master_map_drawn` so the ledger and its digest can tell "drew a
+  truck" from "drew the map". It re-rolls within the bounded budget and then
+  changes contract under RULE 0.38, so the customer still gets a design.
+
+  **It is deliberately narrow, because a commercial wrap is EXPECTED to carry a
+  phone number.** The verdict convicts a decimal fraction of the sheet dropped
+  onto the picture — a leading zero and a point, small, plain, at a rectangle's
+  edge, belonging to no part of the artwork — plus registration crosses, corner
+  ticks and drawn frames. A telephone number, address, web address, year, price
+  or race number set in the artwork's own typeface is `flat_atlas`. The
+  discriminator is the FORM of the numerals, never their presence. Locked by
+  `tests/atlas-output-class-gate.test.mjs`, which pins that guard by name.
+
+  **The gate catches it; it does not prevent it.** The prevention is hero-first
+  (RULE 0.37): a per-surface authoring pass needs no coordinate table at all,
+  so there is no map to draw. Until that is built, expect field runs to spend
+  refusals here.
 - **The auto dark deploy only runs when the merge commit message contains the
   literal `[dark-deploy]`.** Every other merge must be dispatched with
   `exact_sha`. A green gate is not a deploy.

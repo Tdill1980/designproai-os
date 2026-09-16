@@ -155,3 +155,72 @@ test("the absolute output class is acceptance logic, never Call-1 authoring cond
   assert.equal(sceneMatches.length, 2, "commercial and restyle scenes both state the flat output class");
   assert.doesNotMatch(edge, /Your output is the same kind of object as this teaching proof/);
 });
+
+// ── map_drawn: THE LAYOUT MAP IS NOT ARTWORK (2026-09-16) ───────────────────
+//
+// The FIELD contract hands the designer its six panel rectangles as bare
+// four-decimal fractions and then says "None of the map is drawn: the vinyl
+// carries no numbers" -- a negative instruction standing next to the very thing
+// it forbids. Four runs in a row printed those digits onto the flanks
+// (455b1723, 7c7bd633, cc382c3c, 8c525565), and 8c525565's went through Topaz
+// onto 150-PPI print panels: `0.9114 0.3` and `884 0.0000` printed on the
+// customer's driver side. Wording did not stop it; only refusing the sheet does.
+
+test("the inspector convicts a printed layout map, and names it apart from a drawn vehicle", () => {
+  const prompt = outputClassPrompt("abc123");
+  assert.match(prompt, /CLASS map_drawn/);
+  assert.match(prompt, /"flat_atlas"\|"vehicle_depiction"\|"map_drawn"/);
+  // It must describe the SHAPE of the defect -- a decimal fraction of the sheet
+  // dropped onto the picture -- not "numbers", or it convicts every phone number.
+  assert.match(prompt, /0\.9114/);
+  assert.match(prompt, /leading zero and a point/);
+  assert.ok(prompt.includes("belonging to no part of the artwork"));
+});
+
+test("a commercial wrap carries a phone number, and that is artwork", () => {
+  const prompt = outputClassPrompt("abc123");
+  const guard = prompt.slice(prompt.indexOf("NOT map_drawn"));
+  for (const legitimate of ["telephone number", "street address", "web address",
+    "year", "race number", "price"]) {
+    assert.ok(guard.includes(legitimate), `${legitimate} must be named as artwork, never as the map`);
+  }
+  assert.ok(guard.includes("EXPECTED to carry a phone number"),
+    "the one that would hurt most must be stated in as many words");
+  assert.ok(guard.includes("not by whether numerals are present"),
+    "the discriminator must be the form of the numerals, never their existence");
+});
+
+test("map_drawn blocks, flat_atlas does not, and an outage still fails open", async () => {
+  const bytes = await candidatePng();
+  const verdicts = [];
+  const provider = {
+    generateRaw: async ({ body }) => {
+      const id = String(body.contents[0].parts[1].text.match(/"inspectionId":"([0-9a-f]+)"/)[1]);
+      const next = verdicts.shift();
+      if (next instanceof Error) throw next;
+      return { payload: { candidates: [{ content: { parts: [{ text: JSON.stringify({ ...next, inspectionId: id }) }] } }] } };
+    },
+  };
+
+  verdicts.push({ outputClass: "map_drawn", confidence: 1, anatomyRectangles: 0, evidence: "0.9114 printed on the flank" });
+  const drawn = await classifyAtlasCandidate({ provider, bytes });
+  assert.equal(drawn.disposition, "map_drawn");
+  assert.equal(drawn.blocking, true, "a printed coordinate is ink on the customer's vinyl");
+
+  verdicts.push({ outputClass: "flat_atlas", confidence: 1, anatomyRectangles: 0, evidence: "continuous artwork" });
+  const clean = await classifyAtlasCandidate({ provider, bytes });
+  assert.equal(clean.blocking, false);
+
+  verdicts.push(new Error("upstream unavailable"));
+  const outage = await classifyAtlasCandidate({ provider, bytes });
+  assert.equal(outage.disposition, "unavailable");
+  assert.equal(outage.blocking, false, "an inspector outage must never brick authoring (RULE 0.30)");
+});
+
+test("the runtime refuses a drawn map under its OWN code, so the ledger can tell the two apart", () => {
+  const runtimeSrc = runtime;
+  assert.match(runtimeSrc, /refusalCode = drewTheMap\s*\n\s*\? "flat_atlas_master_map_drawn"/);
+  assert.match(runtimeSrc, /disposition === "map_drawn"\s*\n\s*\? "flat_atlas_master_map_drawn"/,
+    "the repaired-sheet re-classification names it too");
+  assert.ok(runtimeSrc.includes("a printed coordinate is ink on the customer's vinyl"));
+});
