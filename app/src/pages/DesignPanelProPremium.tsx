@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
+import { ToolHeader } from "@/components/layout/ToolHeader";
+import { FolderOpen, ListChecks } from "lucide-react";
+import { Link as ToolHeaderLink } from "react-router-dom";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
 import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
@@ -1928,6 +1931,43 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
           content="VehiclePro, the vehicle graphics design environment inside DesignProAI: create professional vehicle graphics from a prompt, visualize and refine the design, then generate files prepared for production."
         />
       </Helmet>
+      {/* THE ONE STICKY BAR VEHICLEPRO OWNS (Trish 2026-09-16: "dark ui
+          persistent header that shows both DP logo and the page logo").
+          Same pattern WallPro already shipped — AppSidebar carries product
+          navigation and the DesignProAI mark; this bar carries VehiclePro's
+          own name, its own primary actions and the account control. The
+          marketing <Header> is suppressed on this route (see
+          isSelfHeaderedToolRoute in App.tsx) so the two never stack. Hidden
+          when embedded inline on the DesignProAI home, which has its own hero. */}
+      {!embedded && (
+        <ToolHeader
+          id="vehiclepro-header"
+          theme={{
+            logo: null,
+            logoAlt: "",
+            eyebrow: "",
+            wordmarkLead: OS_TOOLS.vehiclepro.wordmark.base,
+            wordmarkAccent: OS_TOOLS.vehiclepro.wordmark.suffix,
+            tagline: OS_TOOLS.vehiclepro.tagline,
+          }}
+          actions={
+            <span className="flex shrink-0 items-center gap-2">
+              <ToolHeaderLink
+                to="/designpro/jobs"
+                className="hidden items-center gap-1.5 rounded-md border border-white/25 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 sm:flex md:text-sm"
+              >
+                <ListChecks className="h-4 w-4" />Production jobs
+              </ToolHeaderLink>
+              <ToolHeaderLink
+                to="/gallery"
+                className="hidden items-center gap-1.5 rounded-md border border-white/25 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 sm:flex md:text-sm"
+              >
+                <FolderOpen className="h-4 w-4" />Gallery
+              </ToolHeaderLink>
+            </span>
+          }
+        />
+      )}
       <main className="flex-1">
         {/* Hero Banner — white, matches the DesignProAI™ banner: gradient wordmark
             + tagline on the left, a crisp design render on the right.

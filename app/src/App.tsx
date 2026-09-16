@@ -115,7 +115,7 @@ import { DeployVersionWatcher } from "@/components/DeployVersionWatcher";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthedRootRedirect } from "@/components/AuthedRootRedirect";
 import { isDesignProMarketingHost, isWallProPartnerHost } from "@/lib/designpro-host-routing";
-import { OS_TOOL_ALIASES } from "@/lib/os-brand";
+import { OS_TOOL_ALIASES, activeOsTool } from "@/lib/os-brand";
 import { WaitlistPopup } from "@/components/WaitlistPopup";
 import { PaywallTokenModal } from "@/components/PaywallTokenModal";
 import { PackPaymentResume } from "@/components/PackPaymentResume";
@@ -272,7 +272,19 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
  * removes the duplication where it was reported and nowhere else. Extending it
  * is one more entry in this predicate once that call is made.
  */
-const isWallProToolRoute = (pathname: string) =>
+/**
+ * SCOPED TO WALLPRO NO LONGER. The comment this predicate carried on
+ * 2026-09-16 named the extension explicitly: "Extending it is one more entry
+ * in this predicate once that call is made." VehiclePro and CutPro were
+ * shown carrying the exact double-navigation WallPro's fix removed — the
+ * marketing <Header> (Home/Design/Output/Profit) stacked on top of the same
+ * AppSidebar rail — so they join it here. Each now owns its own sticky
+ * ToolHeader (see ToolHeader.tsx), reusing os-brand.ts's own route list so
+ * this predicate and the sidebar's active-tool detection can never disagree
+ * about which routes are "inside a tool".
+ */
+const isSelfHeaderedToolRoute = (pathname: string) =>
+  Boolean(activeOsTool(pathname)) ||
   pathname === "/printpro/wallpro" || pathname.startsWith("/printpro/wallpro/");
 
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
@@ -295,7 +307,7 @@ const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
     (pathname.startsWith("/approve/") && !pathname.startsWith("/approve/manage")) ||
     pathname === "/admin/approve-revisions";
   const hostname = typeof window === "undefined" ? "" : window.location.hostname;
-  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname) || isWallProToolRoute(pathname)) return null;
+  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname) || isSelfHeaderedToolRoute(pathname)) return null;
   return <>{children}</>;
 };
 
@@ -476,7 +488,7 @@ const App = () => {
               version"). /wall-wrap/how-it-works is the partner's, with their
               mark, their film price and their order button; the DesignProAI one
               lives beside the tool it belongs to and carries none of that. The
-              /printpro/wallpro/ prefix also puts it under isWallProToolRoute,
+              /printpro/wallpro/ prefix also puts it under isSelfHeaderedToolRoute,
               so it wears the app shell rather than the marketing nav. */}
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy brand="weprintwraps" />} />
           <Route path="/printpro/wallpro/how-it-works" element={<WallProCaseStudy />} />

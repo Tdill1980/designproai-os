@@ -7,6 +7,7 @@ import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
 import { NAV_GROUPS } from "@/lib/dashboard-nav";
 import { ToolWordmark } from "@/components/dashboard/ToolWordmark";
+import { OS_BRAND } from "@/lib/os-brand";
 import { supabase } from "@/integrations/supabase/client";
 import { isAllowlistedAdmin } from "@/lib/admin-allowlist";
 import {
@@ -502,6 +503,21 @@ export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = 
         style={{ top: headerHeight }}
         aria-label="Dashboard navigation"
       >
+        {/* THE DP MARK, ALWAYS VISIBLE (Trish 2026-09-16: "dark ui persistent
+            header that shows both DP logo and the page logo"). Every tool now
+            owns its own sticky bar (ToolHeader) instead of the marketing
+            <Header>, so the sidebar became the one place left un-branded —
+            straight to the plan pill, no DesignProAI identity at all. Small
+            and quiet on purpose: this names the OS once; the tool's own
+            ToolHeader names the tool. Neither one repeats the other. */}
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-2 border-b border-[#48484a] px-3 py-3 shrink-0"
+          aria-label={`${OS_BRAND.name} home`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-fuchsia-500 text-[10px] font-black text-white">D</span>
+          <span className="text-sm font-bold tracking-tight text-white">{OS_BRAND.name}</span>
+        </Link>
         <SidebarBody />
       </aside>
 

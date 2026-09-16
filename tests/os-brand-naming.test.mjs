@@ -108,10 +108,11 @@ test("no customer-facing surface still names the vehicle tool DesignPro or the c
   // The cut tool's page and the vehicle tool's page keep ONE logic key each
   // (FAQ set selection, MyVehiclePro tool source) and otherwise wear the new name.
   const cutPage = stripComments(read("app/src/pages/GraphicsProV1.tsx"));
-  assert.match(cutPage, /\{OS_TOOLS\.cutpro\.name\}/);
+  assert.match(cutPage, /wordmarkLead: OS_TOOLS\.cutpro\.wordmark\.base/, "CutPro's page wires its shared ToolHeader to the CutPro brand");
   assert.doesNotMatch(cutPage, /<span className="text-white">GraphicsPro<\/span>/);
   const vehiclePage = stripComments(read("app/src/pages/DesignPanelProPremium.tsx"));
   assert.match(vehiclePage, /\{OS_TOOLS\.vehiclepro\.wordmark\.base\}/);
+  assert.match(vehiclePage, /wordmarkLead: OS_TOOLS\.vehiclepro\.wordmark\.base/, "VehiclePro's page wires its shared ToolHeader to the VehiclePro brand");
   assert.doesNotMatch(vehiclePage, /Vehicle Wrap Design System/);
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Scissors } from "lucide-react";
 import { OS_TOOLS } from "@/lib/os-brand";
+import { ToolHeader } from "@/components/layout/ToolHeader";
 import { FAQ } from "@/components/FAQ";
 import { RenderLimitUpsell } from "@/components/RenderLimitUpsell";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,40 +45,26 @@ const GraphicsProV1 = () => {
         <link rel="canonical" href="https://designproai.com/graphics-pro" />
       </Helmet>
 
+      {/* THE ONE STICKY BAR CUTPRO OWNS — same pattern as WallPro and
+          VehiclePro (Trish 2026-09-16). Replaces the old full-width gradient
+          bar, which was CutPro's own third, unrelated header treatment and
+          the concrete cause of "each page looks diff". The "with ZoneMasker™"
+          sub-brand and the vehicles/walls/windows line move into the actions
+          slot and the description below, so nothing said here is lost. */}
+      <ToolHeader
+        id="cutpro-header"
+        theme={{
+          logo: null,
+          logoAlt: "",
+          eyebrow: "",
+          wordmarkLead: OS_TOOLS.cutpro.wordmark.base,
+          wordmarkAccent: OS_TOOLS.cutpro.wordmark.suffix,
+          tagline: OS_TOOLS.cutpro.tagline,
+        }}
+      />
       <main className="flex-1">
-        {/* Header — persistent (sticky) bright blue→magenta brand gradient bar
-            with a big square logo + wordmark + clear subtitle. Sticks to the
-            top of the content area while the tool scrolls beneath it. */}
-        <div className="sticky top-0 z-40 bg-gradient-to-r from-[#3b82f6] to-[#ec4899] shadow-md">
-          <div className="container mx-auto px-4 py-5 flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0 shadow-sm">
-                <Scissors className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold leading-tight flex items-baseline gap-2 flex-wrap">
-                  <span className="flex items-baseline">
-                    {/* CutPro is the customer-facing name (os-brand.ts, Trish
-                        2026-09-16). Routes, hooks, buckets and the graphicspro-v1
-                        components keep their GraphicsPro identifiers. */}
-                    <span className="text-white">{OS_TOOLS.cutpro.name}</span>
-                    <sup className="text-white/80 text-sm ml-0.5">™</sup>
-                  </span>
-                  <span className="text-white/80 font-normal text-sm sm:text-base">with</span>
-                  <span className="inline-flex items-baseline px-2 py-0.5 rounded-md bg-white text-sm sm:text-base font-semibold">
-                    <span className="bg-gradient-to-r from-[#3b82f6] to-[#ec4899] bg-clip-text text-transparent">ZoneMasker</span>
-                    <sup className="text-[#ec4899] text-[9px] sm:text-[10px] ml-0.5 font-semibold">™</sup>
-                  </span>
-                </h1>
-                <p className="text-sm sm:text-base text-white mt-2 font-medium">
-                  {OS_TOOLS.cutpro.tagline}
-                </p>
-                <p className="text-xs sm:text-sm text-white/85 mt-0.5">
-                  {OS_TOOLS.cutpro.description} Vehicles, walls and windows; upload your image or design from a prompt.
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className="border-b border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-600 sm:text-sm">
+          with <span className="font-semibold text-[#ec4899]">ZoneMasker™</span> — {OS_TOOLS.cutpro.description} Vehicles, walls and windows; upload your image or design from a prompt.
         </div>
 
         {/* Tool */}
