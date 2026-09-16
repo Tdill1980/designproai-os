@@ -26,7 +26,7 @@ const sharp = runtimeRequire("sharp");
 const { _test } = require("../runtime/flat-first-atlas.cjs");
 const { composePassengerFromDriver } = _test;
 const masterQc = require("../runtime/atlas-master-qc.cjs");
-const { extractFlankPanel, BAND_PAD_FRACTION } = require("../runtime/atlas-passenger-mirror.cjs");
+const { extractFlankPanel } = require("../runtime/atlas-passenger-mirror.cjs");
 const { DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL } = require("../runtime/atlas-lettering-read.cjs");
 
 const ZONE = { w: 240, h: 120 };
@@ -343,15 +343,10 @@ test("a band the driver read missed is caught mirrored on the composed flank and
   // slice, un-flipped, at the mirrored position -- not a flop of it.
   const driver = await extractFlankPanel(before, manifest, "driver");
   const passenger = await extractFlankPanel(result.bytes, manifest, "passenger");
-  // The lifted slice is the band grown by BAND_PAD_FRACTION on every side.
-  const padX = Math.round(BAND_PAD_FRACTION * ZONE.w);
-  const padY = Math.round(BAND_PAD_FRACTION * ZONE.h);
-  const rect = {
-    left: Math.round(WORD_BAND.xPct * ZONE.w) - padX,
-    top: Math.round(WORD_BAND.yPct * ZONE.h) - padY,
-    width: Math.round(WORD_BAND.wPct * ZONE.w) + 2 * padX,
-    height: Math.round(WORD_BAND.hPct * ZONE.h) + 2 * padY,
-  };
+  // The reader's box is padded, then the flood key tightens the cut back to
+  // the word's own extent, so the word itself is copied pixel for pixel; only
+  // the 2px margin ring around it is feathered.
+  const rect = { left: Math.round(WORD_BAND.xPct * ZONE.w), top: Math.round(WORD_BAND.yPct * ZONE.h), width: Math.round(WORD_BAND.wPct * ZONE.w), height: Math.round(WORD_BAND.hPct * ZONE.h) };
   const driverSlice = await sharp(driver.bytes).extract(rect).raw().toBuffer();
   const passengerSlice = await sharp(passenger.bytes).extract({ ...rect, left: ZONE.w - rect.left - rect.width }).raw().toBuffer();
   assert.deepEqual(passengerSlice, driverSlice, "the band reads forward on the passenger flank");
@@ -438,4 +433,86 @@ test("a missing flank zone declines rather than throwing", async () => {
     assert.equal(result.composed, false, missing);
     assert.equal(result.reason, "flank_zones_not_twins", missing);
   }
+});
+
+
+// THE READER'S BOX IS A HINT; THE PIXELS DECIDE THE CUT (live 7c7bd633,
+// 2026-09-16). Flash boxed "Climate Solutions" out to x=0.93 where the word
+// ended at 0.76, so the opaque slab cut on that box landed 0.17 of the panel
+// to the left of the reversed word it was meant to cover, and the two lines
+// of the lockup, boxed separately, slid apart and overlapped. Two things must
+// hold on a loose two-line read: every white lettering pixel on the composed
+// passenger flank is the exact mirror image of the driver's (the lockup lands
+// where the flop put its reverse, nothing doubled, nothing left reversed), and
+// the two lines keep their relative alignment because they moved as one lockup.
+async function whiteMask(bytes) {
+  const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const mask = new Uint8Array(info.width * info.height);
+  for (let i = 0; i < mask.length; i += 1) {
+    mask[i] = data[i * 4] > 235 && data[i * 4 + 1] > 235 && data[i * 4 + 2] > 235 ? 1 : 0;
+  }
+  return { mask, width: info.width, height: info.height };
+}
+
+test("a loose two-line read is cut to the lettering and re-dropped as one lockup, exactly over its reverse", async () => {
+  // Two-line lockup: a long line and a shorter one left-aligned under it.
+  const lines = [
+    { x: 0.25, y: 0.40, w: 0.46, h: 0.14 },
+    { x: 0.25, y: 0.58, w: 0.30, h: 0.14 },
+  ];
+  const lockupPanel = (w, h, fill) => sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+       <rect width="100%" height="100%" fill="#1b6fa8"/>
+       <polygon points="0,0 ${Math.round(w * 0.38)},0 ${Math.round(w * 0.08)},${h}" fill="#f2c14e"/>
+       ${lines.map((l) => `<rect x="${Math.round(l.x * w)}" y="${Math.round(l.y * h)}" width="${Math.round(l.w * w)}" height="${Math.round(l.h * h)}" fill="${fill}"/>`).join("")}
+     </svg>`,
+  )).png().toBuffer();
+  const composites = await Promise.all(manifest.zones.map(async (zone) => ({
+    input: await lockupPanel(zone.w, zone.h, zone.surfaceKey === "passenger" ? "#111111" : "#ffffff"),
+    left: zone.x, top: zone.y,
+  })));
+  const before = await sharp({ create: { width: CANVAS.widthPx, height: CANVAS.heightPx, channels: 3, background: "#ffffff" } })
+    .composite(composites).png().toBuffer();
+  const guide = await guideBytes();
+  // Loose boxes, the way Flash returns them: the top line's box overshoots to
+  // the right by 0.11 of the panel (the reader caps a band at 0.6 wide), the bottom line box is too tall.
+  const loose = [
+    { xPct: 0.22, yPct: 0.37, wPct: 0.60, hPct: 0.19, text: "PRECISION", orientation: "forward" },
+    { xPct: 0.23, yPct: 0.55, wPct: 0.36, hPct: 0.24, text: "CLIMATE", orientation: "forward" },
+  ];
+  const result = await composePassengerFromDriver({
+    input: { companyName: "Precision Climate" }, masterBytes: before, manifest, guideBytes: guide,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: loose, passenger: [[]] } }),
+    logger: () => {},
+  });
+  assert.equal(result.bandsApplied, 2, "both loose bands were located and applied");
+
+  const driver = await whiteMask((await extractFlankPanel(before, manifest, "driver")).bytes);
+  const passenger = await whiteMask((await extractFlankPanel(result.bytes, manifest, "passenger")).bytes);
+  assert.equal(driver.width, passenger.width);
+  // The lockup's own bounding box on the driver, from the pixels.
+  let bl = driver.width; let br = -1; let driverWhite = 0; let passengerWhite = 0;
+  for (let y = 0; y < driver.height; y += 1) {
+    for (let x = 0; x < driver.width; x += 1) {
+      if (driver.mask[y * driver.width + x]) { driverWhite += 1; if (x < bl) bl = x; if (x > br) br = x; }
+      passengerWhite += passenger.mask[y * passenger.width + x];
+    }
+  }
+  // The whole lockup is TRANSLATED to where the flop put its reverse; inside
+  // it, the two lines keep the alignment they were authored with.
+  const shift = (passenger.width - 1 - br) - bl;
+  let mismatched = 0;
+  for (let y = 0; y < driver.height; y += 1) {
+    for (let x = 0; x < driver.width; x += 1) {
+      const d = driver.mask[y * driver.width + x];
+      const px = x + shift;
+      const p = px >= 0 && px < passenger.width ? passenger.mask[y * passenger.width + px] : 0;
+      if (d !== p) mismatched += 1;
+    }
+  }
+  assert.ok(driverWhite > 0);
+  assert.equal(passengerWhite, driverWhite, "no lettering pixel is doubled, lost or left reversed");
+  assert.equal(mismatched, 0, "the lockup sits exactly where the flop put its reverse, both lines aligned as authored");
+  // And the rest of the flank is still the mirror.
+  assert.ok((await mirrorMae(result.bytes)) < 0.26);
 });

@@ -485,7 +485,15 @@ const App = () => {
           {/* The case study: one real wall, bare to installed. Its numbers and
               diagrams are computed by the tool's own libraries, so it cannot
               drift from the product the way a page of screenshots would. */}
-          <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
+          {/* TWO VERSIONS, ONE COMPONENT (owner, 2026-09-16: "I need it to be a
+              wallpro page on os.designpro — the WPW version is another
+              version"). /wall-wrap/how-it-works is the partner's, with their
+              mark, their film price and their order button; the DesignProAI one
+              lives beside the tool it belongs to and carries none of that. The
+              /printpro/wallpro/ prefix also puts it under isWallProToolRoute,
+              so it wears the app shell rather than the marketing nav. */}
+          <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy brand="weprintwraps" />} />
+          <Route path="/printpro/wallpro/how-it-works" element={<WallProCaseStudy />} />
           {/* PATTERNPRO, the same way: one component, worn by a brand. /pattern-wrap
               is the WePrintWraps page (white, blue gradient, WPW mark in the
               lockup, a render on the right); /printpro/patternpro is the same

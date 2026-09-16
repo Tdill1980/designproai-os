@@ -107,7 +107,24 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
     <section
       aria-label="Example wall wraps, before and after"
       aria-roledescription="carousel"
-      className="mx-auto mt-4 max-w-6xl px-4"
+      /* `w-full` IS LOAD-BEARING, and its absence is what emptied the band
+         (owner, 2026-09-16, on the live DesignProAI page: "This is missing
+         images").
+         `mx-auto` sets both inline margins to auto. On a normal block that
+         centres a max-width box, which is what this was written for. But this
+         section is now a GRID ITEM -- the hero places the copy and the band in
+         one grid -- and a grid item with auto inline margins does NOT stretch
+         to its track: the auto margins absorb the free space and the box falls
+         back to shrink-to-fit. Every photograph inside is absolutely
+         positioned, so the box has no intrinsic width to shrink to, and it
+         collapsed to its own horizontal padding: 34px measured on a 430px
+         phone, a bare sliver that reads as a thin line and looks exactly like
+         missing images. The photographs were loading the whole time.
+         `w-full` gives it a definite 100% width, so there is no free space for
+         the auto margins to eat. Behaviour off the grid is unchanged, because
+         `max-w-6xl` still caps it and `mx-auto` still centres it once the
+         viewport is wider than that cap. */
+      className="mx-auto mt-4 w-full max-w-6xl px-4"
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocusCapture={() => setHeld(true)}
