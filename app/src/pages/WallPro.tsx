@@ -18,6 +18,7 @@ import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuF
 import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
+import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
 import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
@@ -1124,13 +1125,26 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               twice. The rail is hidden below lg (a pinned sidebar on a phone
               eats the screen), so on a phone the header keeps them. Brands
               without a rail keep them at every width. */}
-          <div className={`flex shrink-0 items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
-              <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
-            </Button>
-            <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
-              <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
-            </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className={`flex items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
+              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
+                <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
+              </Button>
+              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
+                <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
+              </Button>
+            </span>
+            {/* THE ACCOUNT CONTROL, ON THE DESIGNPROAI TOOL PAGE ONLY.
+                Removing the marketing <Header> from this route took the only
+                user menu an app route had with it: the sidebar carries a plan
+                pill and the tool list, no identity and no sign-out. This is the
+                far-right slot of the one bar the tool owns -- the standard SaaS
+                shape -- and it is what "persistent header" was actually asking
+                for, since the bar itself already sticks at top: 0.
+                NOT on the partner page: a WePrintWraps visitor has no
+                DesignProAI account, and offering them one is our brand on
+                somebody else's storefront. */}
+            {!theme.showPrintOffer && <ToolAccountMenu />}
           </div>
         </div>
         {/* THE RULE between the header and the page (owner, 2026-09-14: "Add a
