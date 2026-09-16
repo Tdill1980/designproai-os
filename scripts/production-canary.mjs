@@ -509,22 +509,33 @@ const MAX_EXPORT_FILE_BYTES = 48 * 1024 * 1024;
 const MAX_EXPORT_TOTAL_BYTES = 512 * 1024 * 1024;
 let exportedBytes = 0;
 
-async function digestArtifactBlob(blob, keep) {
+// THE PACK IS NEVER MATERIALISED WHOLE. `.download()` returns a Blob, and a
+// 4.91 GB Blob is what threw "data is too long" on run 35134087621 -- AFTER all
+// 46 image artifacts had been written and the whole production chain had
+// completed through zip.build. The runtime already solves this exact problem
+// the exact same way (`verifyStoredArtifact` in runtime/zip-spool.cjs streams
+// the same object to hash it, in production, on this same pack), so the canary
+// uses the storage client's stream builder rather than its Blob.
+function storageDownload(client, storagePath) {
+  const builder = client.download(storagePath);
+  return typeof builder?.asStream === "function" ? builder.asStream() : builder;
+}
+
+function storageBodyChunks(data) {
+  if (Buffer.isBuffer(data) || data instanceof Uint8Array) return [data];
+  if (data && typeof data[Symbol.asyncIterator] === "function") return data;
+  if (data && typeof data.stream === "function") return data.stream();
+  throw new Error("storage download did not return a readable byte stream");
+}
+
+async function digestStorageBody(data, keep) {
   const hash = createHash("sha256");
   const chunks = keep ? [] : null;
   let byteSize = 0;
-  const stream = typeof blob.stream === "function" ? blob.stream() : null;
-  if (stream) {
-    for await (const chunk of stream) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      hash.update(buffer);
-      byteSize += buffer.length;
-      if (chunks) chunks.push(buffer);
-    }
-  } else {
-    const buffer = Buffer.from(await blob.arrayBuffer());
+  for await (const chunk of storageBodyChunks(data)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     hash.update(buffer);
-    byteSize = buffer.length;
+    byteSize += buffer.length;
     if (chunks) chunks.push(buffer);
   }
   return { contentHash: hash.digest("hex"), byteSize, bytes: chunks ? Buffer.concat(chunks) : null };
@@ -541,7 +552,7 @@ async function collectArtifacts(runId, label) {
   const rows = data || [];
   for (let index = 0; index < rows.length; index += 1) {
     const artifact = rows[index];
-    const { data: blob, error: downloadError } = await service.storage.from(BUCKET).download(artifact.storage_path);
+    const { data: blob, error: downloadError } = await storageDownload(service.storage.from(BUCKET), artifact.storage_path);
     if (downloadError || !blob) {
       evidence.outputs.push({
         run: label,
@@ -558,7 +569,7 @@ async function collectArtifacts(runId, label) {
     }
     const declared = Number(artifact.byte_size) || 0;
     const exportable = declared > 0 && declared <= MAX_EXPORT_FILE_BYTES && exportedBytes + declared <= MAX_EXPORT_TOTAL_BYTES;
-    const { contentHash: observedHash, byteSize, bytes } = await digestArtifactBlob(blob, exportable);
+    const { contentHash: observedHash, byteSize, bytes } = await digestStorageBody(blob, exportable);
     const base = artifact.storage_path.split("/").pop() || `${artifact.artifact_kind}-${index}`;
     const safeSurface = artifact.surface_key ? `-${artifact.surface_key}` : "";
     const file = bytes ? `${label}-${artifact.artifact_kind}${safeSurface}-${index}-${base}` : null;

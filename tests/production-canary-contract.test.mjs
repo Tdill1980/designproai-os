@@ -267,10 +267,15 @@ test("canonical markdown records the explicit diagnostic-canary exception withou
 test("the canary caps its export without weakening a single acceptance check", () => {
   assert.match(canary, /MAX_EXPORT_FILE_BYTES\s*=\s*48 \* 1024 \* 1024/);
   assert.match(canary, /MAX_EXPORT_TOTAL_BYTES\s*=\s*512 \* 1024 \* 1024/);
-  // Bytes are hashed by streaming, so a multi-gigabyte pack is never held whole
-  // in the canary container's memory just to compute its digest.
-  assert.match(canary, /async function digestArtifactBlob\(blob, keep\)/);
-  assert.match(canary, /blob\.stream\(\)/);
+  // Bytes are hashed by STREAMING from the storage client's stream builder, not
+  // from a Blob. Run 35134087621 wrote all 46 image artifacts and then threw
+  // "data is too long" on the 4.91 GB pack, because `.download()` materialises
+  // a Blob. The runtime hashes this same object the same streaming way.
+  assert.match(canary, /function storageDownload\(client, storagePath\)/);
+  assert.match(canary, /builder\?\.asStream === "function" \? builder\.asStream\(\) : builder/);
+  assert.match(canary, /async function digestStorageBody\(data, keep\)/);
+  assert.doesNotMatch(canary, /await blob\.arrayBuffer\(\)/,
+    "the pack must never be materialised whole to be verified");
   // An omitted file says so, by name and reason, instead of going missing.
   assert.match(canary, /notExportedReason/);
   // The acceptance predicate still reads verified hashes, not exported files.
