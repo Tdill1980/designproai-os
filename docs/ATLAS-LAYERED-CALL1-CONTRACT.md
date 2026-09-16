@@ -213,6 +213,57 @@ and stored **by the runtime**, through the existing correction lineage
 reason required. The screen is where the decision is made; the server is where
 the artifact is made.
 
+## 5B. 150 PPI: WHY LAYERS MUST NEVER BE UPSCALED SEPARATELY
+
+Section 2 forbids `panel-base` and `panel-mark` from entering Topaz,
+`output.build`, the ZIP or WrapBox. That was written as policy, by analogy with
+Call 11's `qc-panel`. It is now also a **technical necessity**, and the reason
+has to be on the record or a later session will "optimise" it away.
+
+**Call 1 cannot author at print resolution.** A driver flank at 150 PPI is about
+26,700 px on its long edge. The authoring model tops out at 4K, and Topaz caps
+one request near 96 MP -- which is exactly why RULE 0.25 puts `enhance.upscale`
+per PANEL after human QC rather than producing a print-resolution master. So
+every layer is derived at master scale and the print file is reached by
+enhancement, not by authoring.
+
+**Topaz is a learned enhancer, not a resampler.** Two related images enhanced
+independently do not stay aligned: it invents detail, and it invents *different*
+detail for a panel with type on it than for the same panel without. So:
+
+```
+   base ──Topaz──▶ base@150
+                             these do NOT register.
+   mark ──Topaz──▶ mark@150   recompositing them ghosts at print scale.
+```
+
+A sub-pixel difference at 4K is roughly three pixels at 150 PPI on a flank. That
+is a visible halo on printed vinyl, and it would be discovered on a truck.
+
+**Therefore the print path is unchanged and unconditional:**
+
+```
+panel (composited, server-authored)  ──Topaz──▶  150 PPI print panel  ──▶ ZIP
+```
+
+Layers are **master-scale objects for the studio, QC and the Logo Pack.** They
+are never separately enhanced, never recomposited at print scale, and never
+enter the production chain. When Carley commits a layer edit, the runtime
+composites at master scale and stores ONE corrected panel (§5A), and that single
+raster is what Topaz enhances -- exactly the artifact the existing
+`enhance.upscale` gate already reads, with its `humanCorrectedSurfaces` receipt
+intact.
+
+**Thresholding the difference is necessary and not sufficient.** Clipping
+sub-tolerance variance to transparent removes the anti-aliased grey halo that a
+raw floating-point subtraction leaves, and the mark plate should carry it. It
+does NOT address drift: under a global shift every edge in the design exceeds
+any threshold, so thresholding produces a mark plate containing the outlines of
+the whole wrap. Keep both -- the registration gate in §2 decides whether to
+subtract at all, and the threshold cleans up what is subtracted.
+
+---
+
 ## 6. WHAT THE LAYERS RETIRE
 
 Each of these is a problem currently solved by repair, and repair on a flattened
