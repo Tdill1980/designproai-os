@@ -597,3 +597,83 @@ test("both reads resolving nothing is concordant, recorded honestly, and still m
   assert.equal(result.letteringVerify.status, "no_lettering_seen");
   assert.notEqual(result.letteringVerify.status, "verified");
 });
+
+// The real GENIE shape a manifest is built from: both flanks identical, every
+// surface carrying its 5" bleed, so the mirror's own twin check passes and the
+// topology guard is the only thing under test.
+const MANIFEST_SURFACES = [
+  { surfaceKey: "driver", widthInches: 232, heightInches: 60, surfaceSqFt: 96.67, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "passenger", widthInches: 232, heightInches: 60, surfaceSqFt: 96.67, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "hood", widthInches: 68, heightInches: 62, surfaceSqFt: 29.28, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "roof", widthInches: 62, heightInches: 78, surfaceSqFt: 33.58, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "front", widthInches: 80, heightInches: 50, surfaceSqFt: 27.78, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "rear", widthInches: 80, heightInches: 62, surfaceSqFt: 34.44, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+];
+
+// ── THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY (2026-09-16) ──────────
+//
+// Owner: "Fix passenger we never had this issue before." She is right, and the
+// history is exact: composePassengerFromDriver was added 2026-09-07 (acbfffb1).
+// Before it, Passenger was authored artwork -- which is what the two standing
+// rules that PREDATE it both require (RULE 0.33 "Passenger is its own
+// territory, never mirrored Driver"; RULE 0 "must never be replaced by mirrored
+// Driver pixels"). On field-thirds-v2 the passenger is `third-2`, composed by
+// the model in the same pass as the driver, and the field tail already demands
+// every area read as finished artwork with lettering whole and legible.
+//
+// Every passenger defect since 09-07 is downstream of mirroring it anyway:
+// 8eec8162 reversed PORSCHE, 9789762d pasted stripe patches, cc382c3c
+// certified a flank the reader could not see, 8c525565 shipped a doubled
+// reversed lockup onto a 150-PPI print panel. Four fixes to the READER, and
+// the reader was never the cause.
+
+test("the mirror declines on the field contract and never touches the authored passenger", async () => {
+  const { buildFieldTerritories } = require("../runtime/atlas-field-territories.cjs");
+  const sixSurface = require("../runtime/flat-first-atlas.cjs").buildAtlasManifest(MANIFEST_SURFACES);
+  const field = buildFieldTerritories(sixSurface);
+  assert.equal(field.topology, "field-thirds-v2");
+
+  let providerCalls = 0;
+  const provider = { generateRaw: async () => { providerCalls += 1; return { payload: {} }; } };
+  const result = await composePassengerFromDriver({
+    masterBytes: Buffer.alloc(8), manifest: field, guideBytes: null,
+    input: {}, provider, logger: () => {},
+  });
+
+  assert.equal(result.composed, false, "an authored passenger is never overwritten by a mirror");
+  assert.equal(result.reason, "field_passenger_is_its_own_territory");
+  assert.equal(result.bandsApplied, 0);
+  assert.equal(providerCalls, 0,
+    "and it declines BEFORE spending a single lettering read -- this is latency as well as correctness");
+});
+
+test("the six-surface and hero contracts keep their mirror", async () => {
+  const sixSurface = require("../runtime/flat-first-atlas.cjs").buildAtlasManifest(MANIFEST_SURFACES);
+  assert.notEqual(sixSurface.topology, "field-thirds-v2");
+  // It must get past the topology guard and fail later, on its own merits --
+  // proving the decline above is scoped to the field contract and not a
+  // blanket disabling of the mirror the other two contracts still rely on.
+  const result = await composePassengerFromDriver({
+    masterBytes: Buffer.alloc(8), manifest: sixSurface, guideBytes: null,
+    input: {}, provider: { generateRaw: async () => ({ payload: {} }) }, logger: () => {},
+  });
+  assert.notEqual(result.reason, "field_passenger_is_its_own_territory");
+});
+
+test("Call 1 accounts for its own wall clock, including the two Flash stages", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  // Canary 8c525565: totalMs 105,526, authoringMs 42,311, named buckets 58,230
+  // -- 47,296 ms attributed to nothing, and the two Gemini Flash stages inside
+  // that gap were both untimed.
+  assert.match(src, /outputClassMs: 0,/);
+  assert.match(src, /passengerMirrorMs: 0,/);
+  assert.match(src, /timings\.outputClassMs \+= Date\.now\(\) - outputClassStartedAt;/);
+  assert.match(src, /timings\.outputClassMs \+= Date\.now\(\) - repairedClassStartedAt;/,
+    "the repaired-sheet re-classification is a second Flash call and costs real time");
+  assert.match(src, /timings\.passengerMirrorMs \+= Date\.now\(\) - passengerMirrorStartedAt;/);
+  assert.match(src, /unattributedMs: Math\.max\(0,/,
+    "what the buckets do not explain must be a recorded number, not hand subtraction");
+  // A resumed run must not bill itself again for work it recovered.
+  assert.match(src, /if \(!recoveredState\?\.passengerMirror\) timings\.passengerMirrorMs/);
+});

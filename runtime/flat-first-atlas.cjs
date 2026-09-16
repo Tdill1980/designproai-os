@@ -2687,6 +2687,36 @@ async function composePassengerFromDriver({
   masterBytes, manifest, guideBytes, input, provider, logger = () => {},
 }) {
   const decline = (reason) => ({ composed: false, reason, bandsApplied: 0 });
+  // THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY. DO NOT MIRROR IT.
+  // (2026-09-16, owner: "Fix passenger we never had this issue before.")
+  //
+  // She is right, and the history is exact. This function was added 2026-09-07
+  // (acbfffb1). Before it, Passenger was authored artwork, which is what the
+  // two standing rules that PREDATE it both require:
+  //   RULE 0.33 (09-02) "Passenger is its own territory, never mirrored Driver."
+  //   RULE 0      "Passenger is its own named Call-1 authority and must never
+  //                be replaced by mirrored Driver pixels."
+  // On `field-thirds-v2` the passenger is `third-2` -- its own band of the
+  // sheet, composed by the model in the same pass as the driver -- and the
+  // field tail already demands that every area "read on its own as intentional,
+  // finished, commercially valuable artwork" with lettering "whole and legible"
+  // reading left to right. So a field passenger has forward type BY
+  // CONSTRUCTION, and mirroring it throws away authored artwork to solve a
+  // problem that contract does not have.
+  //
+  // Every passenger defect since 09-07 is downstream of doing it anyway:
+  // 8eec8162 reversed PORSCHE, 9789762d pasted seven raw stripe patches over
+  // mirrored artwork, cc382c3c certified a flank the reader could not see, and
+  // 8c525565 shipped a doubled, reversed lockup onto a 150-PPI print panel.
+  // Four defects, four fixes to the READER, and the reader was never the cause.
+  //
+  // The mirror is kept for the six-surface and hero contracts, where the two
+  // flanks come off one composition and the model has measurably drifted or
+  // reversed them (canaries 6c1bfae6, cad013e1). It is not deleted; it is
+  // stopped from overwriting a passenger that was authored in its own right.
+  if (manifest?.topology === FIELD_TOPOLOGY) {
+    return decline("field_passenger_is_its_own_territory");
+  }
   const driver = (manifest?.zones || []).find((zone) => zone.surfaceKey === "driver");
   const passenger = (manifest?.zones || []).find((zone) => zone.surfaceKey === "passenger");
   // The two flanks are only twins when the manifest made them the same shape.
@@ -3412,6 +3442,18 @@ async function generateOrReuseFlatAtlasResolved(options) {
     projectionMs: 0,
     uploadWaitMs: 0,
     semanticWaitMs: 0,
+    // THE GAP WAS 45% OF CALL 1 AND NOTHING MEASURED IT. (2026-09-16)
+    //
+    // Canary 8c525565: totalMs 105,526 with authoringMs 42,311 -- the image
+    // call is 40% of Call 1. The named buckets above summed to 58,230, leaving
+    // 47,296 ms, 45% of the wall clock, attributed to nothing. Two Gemini
+    // Flash stages live in that gap and neither was timed: the output-class
+    // inspector (one call) and the passenger composition (up to THREE panel
+    // reads plus 4096-square crops). "Where does Call 1 spend its time" has to
+    // be answerable from the revision, or the next latency argument is another
+    // stopwatch against a browser tab.
+    outputClassMs: 0,
+    passengerMirrorMs: 0,
     ...(recoveredState?.timings || {}),
   };
   const checkpointState = () => {
@@ -3563,7 +3605,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
       );
     }
     if (!stillBlocking.length) {
+      const outputClassStartedAt = Date.now();
       outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
+      timings.outputClassMs += Date.now() - outputClassStartedAt;
       if (outputClassReceipt.blocking) {
         // The refusal CODE names which defect, so the ledger and its digest can
         // tell "the model drew a truck" from "the model drew the layout map".
@@ -3685,6 +3729,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // when the bands cannot be established on a design that carries lettering,
   // THE MIRROR DOES NOT RUN. Falling through to the authored passenger is the
   // behaviour of every run before this one; shipping reversed type is not.
+  const passengerMirrorStartedAt = Date.now();
   const passengerMirror = recoveredState?.passengerMirror || await composePassengerFromDriver({
     masterBytes,
     manifest,
@@ -3693,6 +3738,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     provider,
     logger,
   });
+  if (!recoveredState?.passengerMirror) timings.passengerMirrorMs += Date.now() - passengerMirrorStartedAt;
   // HERO-DRIVER: the passenger zone holds a plain flop of the driver sheet
   // until the brand-band mirror above re-drops the lettering forward. If that
   // mirror declined on a design that carries lettering, the flop would ship
@@ -3800,7 +3846,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // question on the pre-repair sheet already passed; asking it again of a
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
+    const repairedClassStartedAt = Date.now();
     outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
+    timings.outputClassMs += Date.now() - repairedClassStartedAt;
     if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
         outputClassReceipt.disposition === "map_drawn"
@@ -4345,6 +4393,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
         genieMs: Number.isFinite(geniePrep?.genieMs) ? geniePrep.genieMs : null,
         geniePrepHit: geniePrep?.prepHit === true,
         totalMs: Date.now() - callOneStartedAt,
+        // What the named buckets do NOT explain. A number that only ever
+        // appeared by subtracting them by hand is a number nobody checks.
+        unattributedMs: Math.max(0, (Date.now() - callOneStartedAt)
+          - Object.entries(timings)
+            .filter(([key]) => key.endsWith("Ms"))
+            .reduce((sum, [, value]) => sum + (Number(value) || 0), 0)),
         // Always zero in active Call 1; retained for timing-schema continuity.
         semanticOverlapped: timings.semanticWaitMs === 0,
       },
