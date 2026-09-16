@@ -747,6 +747,50 @@ reported as a clean run by a session reading slot states and band counts. The
 receipts said 7/7 accepted, 0 bands, master QC passed. The pixels said the
 passenger was reversed. Open the export before calling a run good.
 
+### WHERE THE WORKING SIX-SURFACE ATLAS WENT, AND THE ONE LEVER BACK (2026-09-16)
+
+**Owner, looking at the September 8 screenshot of master `2165a36c7f52738b`:**
+*"We had a working atlas, I thought I was reverted back to this state and we
+were just fixing the fill step."* She is right about what that master was, and
+it was never reverted to. The row says so:
+
+| | |
+|---|---|
+| generation | `5d727ea9-eb71-466b-8a04-dca2d8d411e7` |
+| authored | 2026-09-01, **`v23-orthographic-restored`** |
+| topology | **six-surface** (`authoringTopology` null) |
+| master QC | passed |
+| `masterCutoutSurfaces` | **2** — the two dark wheel blobs visible on the flanks |
+| `cutoutFillApplied` | **2** |
+
+That is a good six-surface sheet with the CUT-OUT FILL as its open problem,
+which is exactly the work the owner believed was in progress. It is also the
+generation RULE 0.32 cites as proof the system can author excellent cohesive
+A.T.L.A.S. artwork.
+
+**What happened instead was forward drift, not a revert:** v23 → v24 one-field
+→ v25 → v26, and on 2026-09-16 field-first became the routing for EVERY class
+("ROUTE TRUCKS THROUGH THE FIELD ALSO"), so six-surface is no longer even the
+first attempt. Every defect the owner has reported since — the painted
+coordinate fractions, the silver field, the lettering pushed off the flanks,
+the reversed passenger — is on field masters, not on that v23 shape.
+
+**The lever exists in the runtime and could not be reached from a deploy.**
+`fieldFirstReason()` honours `DESIGNPRO_ATLAS_FIELD_FIRST=off`, but
+`configure-env.sh` never wrote that key, so it was unset on the droplet and
+unset means field-first ON. It is now a deploy input, `atlas_field_first`
+(`unchanged` | `on` | `off`), threaded exactly like `atlas_topology`: sticky
+across later deploys, validated in `validate-env.py`, and a flip on the
+already-running release reconfigures and restarts rather than no-opping.
+
+**Adding the input changed nothing live** — absent input resolves to `on`, and
+a typo fails safe to `on`. Flipping it to `off` is an OWNER decision and the
+evidence genuinely cuts both ways: this file's own measurement is that
+six-surface drew the vehicle into the sheet on 36 of 52 failures, which is why
+field-first was adopted. That measurement and the owner's September 8 sheet are
+both true. Do not flip it from a documentation pass; run it as a probe and
+judge the exported sheet.
+
 ### STILL OPEN IN THE LETTERING PATH (handed over 2026-09-16, seen in pixels)
 
 1. Flash's boxes are loose both ways. #438's flood key tightens a loose box; a
