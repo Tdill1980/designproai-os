@@ -127,15 +127,20 @@ export type WallProof = {
 };
 
 export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
+  // Owner, 2026-09-16, on the DesignProAI-branded page: "I need that one on
+  // os still with edits, must have images examples, the correct header". So
+  // the DesignProAI page wears the same header contract and the same proof
+  // band as the partner page -- only the lockup differs. The proofs are the
+  // owner's own studio, designed in WallPro, so they are as true here as there.
   designpro: {
     logo: null,
     logoAlt: '',
     eyebrow: 'DesignProAI',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    tagline: 'Custom wall wrap file output',
-    showPrintOffer: false,
-    proofs: [],
+    tagline: 'Custom Wall Wrap design, print files & printed wrap',
+    showPrintOffer: true,
+    get proofs() { return WALL_BRANDS.weprintwraps.proofs; },
   },
   weprintwraps: {
     // The real mark off weprintwraps.com, vendored into public/ so the header
