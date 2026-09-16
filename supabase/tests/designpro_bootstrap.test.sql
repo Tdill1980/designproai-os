@@ -51,6 +51,12 @@ select policies_are(
         'wallpro_file_read','wallpro_file_upload',
         'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read',
         'graphicspro_files_public_read','graphicspro_files_owner_upload',
+        -- The curator-managed before/after band (20260915030000). Its bucket is
+        -- PUBLIC on purpose -- the band paints for an anonymous first-time
+        -- visitor, so a signed read would fail for exactly the audience it
+        -- exists to convince -- which is why the read policy carries no owner
+        -- predicate. Writes stay admin/tester.
+        'wallpro_proofs_public_read','wallpro_proofs_curator_write',
         -- RESTRICTIVE, not permissive: it grants nothing and only withholds a
         -- WallPro production file until a human has released that job
         -- (20260912240000). It appears here because the allowlist covers every
