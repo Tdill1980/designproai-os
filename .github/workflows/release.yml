@@ -269,6 +269,37 @@ jobs:
           npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
             20260827065636 20260827081247 20260827095554 \
             20260827100307 20260827101228 20260827102412 || true
+          # And four more on 2026-09-15, same cause once again: PatternPro's
+          # products and orders tables, the CommercialPro enrolment functions
+          # and the WPLoyalty webhook were applied through the management API
+          # (06:16-07:23Z) under its wall-clock versions, while this repo
+          # carries the same SQL as 20260915090000, 20260915190000,
+          # 20260915191000 and 20260915230000. Live evidence, this workflow,
+          # run 35042427488 (the #430 migration dispatch, 2026-09-16 01:10Z):
+          #
+          #   Remote migration versions not found in local migrations directory.
+          #   supabase migration repair --status reverted 20260915061624
+          #     20260915062132 20260915062147 20260915072353
+          #
+          # That one refusal blocked EVERY production migration behind it,
+          # including the wallpro_proofs table the #430 bundle reads.
+          #
+          # Verified before this list was written, 2026-09-16, by comparing
+          # the orphan bodies read out of supabase_migrations.schema_migrations
+          # against the four local files with comments and whitespace stripped:
+          # three are byte-identical; commercialpro_enrolment differs only in
+          # line wrapping and two em-dashes inside string literals. All four
+          # are also idempotent (IF NOT EXISTS, DROP ... IF EXISTS before every
+          # trigger and policy, CREATE OR REPLACE, ON CONFLICT DO NOTHING, a
+          # guarded Vault secret), so the reconciliation is bookkeeping twice
+          # over: the API versions are marked reverted, and their local twins
+          # are marked applied because their schema is already live -- exactly
+          # the treatment the 202608* chain receives below, as an explicit
+          # list rather than by raising the floor (never raise the floor).
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260915061624 20260915062132 20260915062147 20260915072353 || true
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status applied \
+            20260915090000 20260915190000 20260915191000 20260915230000 || true
           # The schema those orphans carried IS the repo's own 202608* chain,
           # applied under management-API version numbers. Replaying the local
           # files therefore collides on live objects (duplicate policies), so
