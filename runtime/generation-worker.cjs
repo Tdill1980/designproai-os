@@ -496,6 +496,9 @@ function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imagePa
   });
 }
 
+/** One render, plus the one re-render a continuity verdict buys. */
+const ATLAS_PROOF_ATTEMPTS = 2;
+
 const ATLAS_VIEW_ROLES = Object.freeze({
   side: "driver",
   "passenger-side": "passenger",
@@ -789,13 +792,22 @@ async function runAtlasProofStages({
     // been produced by the retired generic renderer, so Atlas must regenerate
     // it from the immutable master instead of adopting anonymous bytes.
     allowOrphanReconciliation: false,
-    maxProviderAttempts: provider.maxProviderAttempts,
-    // Semantic findings never enter this rejection budget: the Atlas validator
-    // publishes them in an advisory receipt after deterministic preflight. The
-    // bounded ceiling remains for an actually invalid proof transport (missing
-    // or corrupt pixels, stale/hash-mismatched authority), which must never be
-    // persisted merely because the presentation reviewer is non-blocking.
-    maxRegenerations: provider.maxProviderAttempts,
+    // THE ONE RE-RENDER THE CONTINUITY GATE PROMISES MUST BE AFFORDABLE.
+    // (Live 455b1723, 2026-09-16: the driver proof dropped the climate-unit
+    // graphic, the inspector correctly refused it, and the slot died on the
+    // spot -- the provider's budget was one attempt, so the "one proof-only
+    // rerender" of RULE 0.15 never happened and the run shipped six views.)
+    // A drift verdict buys exactly one more photographer call, with the
+    // inspector's findings as the correction; the second verdict is terminal
+    // in the validator itself, so this can never become a re-roll loop.
+    maxProviderAttempts: Math.max(Number(provider.maxProviderAttempts) || 1, ATLAS_PROOF_ATTEMPTS),
+    // Semantic findings other than continuity never enter this rejection
+    // budget: the Atlas validator publishes them in an advisory receipt after
+    // deterministic preflight. The bounded ceiling remains for an actually
+    // invalid proof transport (missing or corrupt pixels, stale/hash-mismatched
+    // authority), which must never be persisted merely because the
+    // presentation reviewer is non-blocking.
+    maxRegenerations: ATLAS_PROOF_ATTEMPTS,
   });
   return proofs;
 }
