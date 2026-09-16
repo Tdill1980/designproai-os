@@ -43,6 +43,11 @@ test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone
   assert.ok(nav.includes('key: "patternpro",'));
   assert.ok(nav.includes('route: "/printpro/patternpro",'));
   assert.ok(read("app/src/components/dashboard/ToolWordmark.tsx").includes('patternpro:       { base: "Pattern",    suffix: "Pro" },'));
+  // And the WPW tenant page beside it (owner: "I should see both on navigation
+  // left side, so I can show WPW and also sell").
+  assert.ok(nav.includes('key: "patternpro_wpw",'));
+  assert.ok(nav.includes('route: "/pattern-wrap",'));
+  assert.ok(read("app/src/components/dashboard/ToolWordmark.tsx").includes('patternpro_wpw:   { base: "WPW × Pattern", suffix: "Pro" },'));
 });
 
 test("/pattern-wrap and /printpro/patternpro are routed to the ONE PatternWrap page", () => {
