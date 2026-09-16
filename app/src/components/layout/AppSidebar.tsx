@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -395,6 +395,41 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   >
                     <Shield className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">QC / Production</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
+              {/* THE PARTNER TENANT, REACHABLE BEFORE ITS OWN DOMAIN EXISTS
+                  (owner, 2026-09-16: "The WPW is in nav right so I can show
+                  WPW before it gets the WPW page ... I need to film a demo
+                  video I need both separate").
+                  The WePrintWraps WallPro has always rendered on this host at
+                  /wall-wrap -- it is the same component wearing their brand --
+                  but it was linked from nowhere, so the only way in was to
+                  type the URL. That is not demoable.
+                  ADMIN-ONLY, and that is the whole design: a partner's
+                  storefront in a DesignProAI customer's tool list would be
+                  another company's branding inside our product. The owner and
+                  the team see it; customers never do.
+                  It opens STANDALONE by design -- isWallProPartnerRoute strips
+                  the app shell -- so what fills the screen is exactly what a
+                  WePrintWraps customer sees. Browser back returns here. */}
+              {tool.key === "wallpro" && isAdmin && (
+                <SidebarTooltip
+                  title="WallPro — WePrintWraps tenant"
+                  description="The same WallPro wearing the WePrintWraps brand: their mark, their film price, their order button. This is the partner page, shown on this host until wallpro.weprintwraps.com is pointed at it"
+                >
+                  <Link
+                    to="/wall-wrap"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/wall-wrap")
+                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
+                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                    )}
+                  >
+                    <Store className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">WePrintWraps tenant</span>
                   </Link>
                 </SidebarTooltip>
               )}
