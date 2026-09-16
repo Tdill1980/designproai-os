@@ -3041,6 +3041,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
     failoverFrom = null,
     // Field-first routing receipt (see fieldFirstReason). null on every other path.
     fieldFirst = null,
+    // Set only on the six-surface pass a spent FIELD-FIRST budget fails over to.
+    // It is what makes that hand-off one-way: the six-surface tail may not fail
+    // back to the field contract the request has already exhausted.
+    fieldFirstExhausted = false,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -3114,7 +3118,28 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // A design already accepted on the field contract stays resumable whatever
   // the flag says; the flag only decides whether a NEW refusal fails over.
   const fieldResumable = authoringTopology === "six-surface" && !parentManifest;
-  const failoverEnabled = fieldResumable
+  const failoverEnabled = fieldResumable && !fieldFirstExhausted
+    && String(process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER || "").trim().toLowerCase() !== "off";
+  // THE FIELD-FIRST ROUTING HAD NO FAIL-OVER OF ITS OWN (2026-09-16).
+  //
+  // The one-field fail-over exists so that "a refused Call 1 never leaves the
+  // customer with nothing". Field-first routing was added on top of it and
+  // inverted that guarantee for every request it touches: `fieldResumable` is
+  // false on a field pass, so a field-first budget that is refused twice throws,
+  // with no second contract behind it -- while the SAME request routed
+  // six-surface-first would still have had the field pass as its safety net.
+  // Measured on the refusal ledger, 2026-09-13 to 09-16: of seven requests with
+  // at least one refusal, six reached an accepted master and every one of those
+  // six got there by changing contract after a refusal. The contract change IS
+  // the recovery, so the routing that starts on the field needs one too.
+  //
+  // It is deliberately one-way and bounded: at most two field candidates, then
+  // at most two six-surface candidates, and the six-surface tail carries
+  // `fieldFirstExhausted` so it cannot fail back. Same kill switch as the other
+  // direction -- DESIGNPRO_ATLAS_FIELD_FAILOVER=off restores fail-closed --
+  // because one misspelled flag must not cost a design.
+  const fieldFirstRouted = authoringTopology === "field" && Boolean(fieldFirst) && !parentManifest;
+  const sixSurfaceFallbackEnabled = fieldFirstRouted
     && String(process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER || "").trim().toLowerCase() !== "off";
   const failOverToField = (reason, extra = {}) => generateOrReuseFlatAtlas({
     ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS,
@@ -3125,7 +3150,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // carrying the refusal as provenance. The customer never ends with nothing
   // because the new topology was refused.
   const failOverToSixSurface = (reason, extra = {}) => generateOrReuseFlatAtlas({
-    ...options, authoringTopology: "six-surface", failoverFrom: reason || null, ...extra,
+    ...options, authoringTopology: "six-surface", failoverFrom: reason || null,
+    // The six-surface tail authors on its own contract; carrying the field-first
+    // receipt onto it would claim the design was field-routed when it was not.
+    // `failoverFrom` is where that history is recorded.
+    ...(fieldFirstRouted ? { fieldFirst: null, fieldFirstExhausted: true, maxAuthoringAttempts: undefined } : {}),
+    ...extra,
   });
   const checkpointIdentity = {
     tenantKey, generationId, requestId, ownerId,
@@ -3203,6 +3233,13 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // checks (manifest, prompt and example-set hashes) run on that contract.
     return failOverToField(existing.metadata?.authoringFailover || null);
   }
+  // The mirror of the line above, for the field-first routing. Without it a
+  // resumed field-first request whose design was accepted on the six-surface
+  // tail measures the stored revision against the FIELD manifest and refuses
+  // its own accepted artwork.
+  if (existing && fieldFirstRouted && existing.manifest?.topology !== FIELD_TOPOLOGY) {
+    return failOverToSixSurface(existing.metadata?.authoringFailover || null);
+  }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
       throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
@@ -3229,7 +3266,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // belong to the six-surface identity may be the FIELD acceptance written by
     // the fail-over before the revision row landed; prove that with the field
     // identity before resuming on that contract, and otherwise refuse as before.
-    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch" || !fieldResumable) throw cause;
+    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch") throw cause;
+    if (fieldFirstRouted) {
+      // A field-first request whose six-surface tail was accepted before its
+      // revision row landed. Proven against the six-surface identity first,
+      // exactly as the other direction proves the field identity.
+      const sixCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
+        identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(sixSurfaceManifest)) } })
+        .catch(() => null);
+      if (!sixCheckpoint) throw cause;
+      logger(`atlas call 1: resuming the accepted six-surface tail for ${requestId}`);
+      return failOverToSixSurface(sixCheckpoint.state?.authoringFailover || null);
+    }
+    if (!fieldResumable) throw cause;
     const fieldCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
       identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest))) } })
       .catch(() => null);
@@ -3560,7 +3609,21 @@ async function generateOrReuseFlatAtlasResolved(options) {
           + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
           + refusalReason).slice(0, 1000),
       );
-      if (!failoverEnabled) throw refusal;
+      if (!failoverEnabled) {
+        if (!sixSurfaceFallbackEnabled) throw refusal;
+        logger(`atlas call 1: field-first budget refused (${refusalCode}); failing over to the six-surface contract`);
+        return failOverToSixSurface({
+          contract: AUTHORING_FAILOVER_CONTRACT,
+          from: manifest.topology,
+          to: "six-surface",
+          code: refusalCode,
+          reason: refusalReason,
+          attempts: attempt,
+          rawCandidates: edgeProvenance
+            .filter((item) => item?.masterStoragePath && HASH_RE.test(String(item.masterSha256 || "")))
+            .map((item) => ({ storagePath: item.masterStoragePath, sha256: item.masterSha256 })),
+        }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+      }
       // ONE-FIELD FAIL-OVER. The six-surface budget is spent and refused; the
       // refusal is carried onto the field revision as its provenance, and the
       // fence state travels with it so a spent fence stays cache-only.

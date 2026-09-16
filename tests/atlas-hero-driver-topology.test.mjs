@@ -133,9 +133,19 @@ test("the default topology is unchanged; hero-driver is opt-in by deploy flag an
   assert.match(runtimeSrc, /authoringTopology = "six-surface"/, "the destructured default stays six-surface");
   assert.match(runtimeSrc, /options\?\.authoringTopology === undefined && heroDriverEnabled\(\)\s*\n\s*&& options\?\.parentManifest == null && \(options\?\.revisionSequence \?\? 1\) === 1/);
   assert.match(runtimeSrc, /\["six-surface", "field", HERO_DRIVER_TOPOLOGY\]\.includes\(authoringTopology\)/);
-  // Three fail-over doors, all to six-surface, all recorded as provenance.
+  // SIX fail-over doors, all to six-surface, all recorded as provenance: three
+  // from a refused hero pass, and three added 2026-09-16 for the field-first
+  // routing -- a spent field budget, plus the two resume paths that have to
+  // recognise a six-surface tail that was accepted before its revision landed.
   const seam = runtimeSrc.slice(runtimeSrc.indexOf("async function generateOrReuseFlatAtlasResolved("));
-  assert.equal((seam.match(/return failOverToSixSurface\(/g) || []).length, 3);
+  assert.equal((seam.match(/return failOverToSixSurface\(/g) || []).length, 6);
+  assert.ok(seam.includes("field-first budget refused"), "the spent field-first budget hands over");
+  assert.ok(seam.includes("resuming the accepted six-surface tail for"), "the checkpoint resume mirror exists");
+  assert.match(seam, /existing && fieldFirstRouted && existing\.manifest\?\.topology !== FIELD_TOPOLOGY/);
+  // The hand-off is one-way: the tail may not fail back to the contract this
+  // request has already exhausted.
+  assert.match(seam, /const failoverEnabled = fieldResumable && !fieldFirstExhausted/);
+  assert.match(seam, /fieldFirst: null, fieldFirstExhausted: true/);
   assert.match(seam, /if \(cause\?\.code !== "flat_atlas_hero_driver_refused"\) throw cause;/);
   assert.match(seam, /flat_atlas_hero_passenger_mirror_declined/);
   assert.match(seam, /finishingMode: heroDriver \? HERO_DRIVER_TOPOLOGY/);
