@@ -55,7 +55,29 @@ const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-driver.20260911.v1";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-driver.20260916.v2";
+/**
+ * HERO FIRST (owner, Trish 2026-09-16: "before migration to os.designpro this
+ * is the exact same system, should be the same design quality").
+ *
+ * RestylePro asks the persona for a photograph of the car wearing the wrap
+ * (design-panel-ai-generate, mode restyle/commercial, viewType side) and
+ * derives every flat surface from that approved design. The OS asked the
+ * same persona for the flat sheet first, and a week of contract wording
+ * never made a flat-born design match the on-car one. So the cascade now
+ * opens with that same hero render: it is staged as the driver surface's
+ * design reference (`heroReference`, the edge's attach() door), the driver
+ * flank is DERIVED from it with RestylePro's flatten instruction, and hood,
+ * front, rear and roof continue from the derived driver exactly as before.
+ */
+const HERO_RENDER_CONTRACT = "designpro.atlas-hero-render.v1";
+/** The edge's aspect menu (ATLAS_AUTHOR_ASPECTS), mirrored so the drift gate
+ * judges a return against the shape that was actually requested. */
+const AUTHOR_ASPECTS = Object.freeze([21 / 9, 16 / 9, 3 / 2, 4 / 3, 5 / 4, 1, 4 / 5, 3 / 4, 2 / 3, 9 / 16]);
+function nearestAuthorAspect(ratio) {
+  return AUTHOR_ASPECTS.reduce((best, item) =>
+    Math.abs(Math.log(item / ratio)) < Math.abs(Math.log(best / ratio)) ? item : best);
+}
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -157,20 +179,34 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
   catch (cause) { return { accepted: false, reason: `undecodable:${String(cause?.message || cause).slice(0, 80)}` }; }
   const width = Number(meta.width || 0), height = Number(meta.height || 0);
   if (width < 8 || height < 8) return { accepted: false, reason: "degenerate_size" };
+  // THE MODEL CAN ONLY DRAW A MENU ASPECT. A driver flank is ~3.6:1 and the
+  // widest shape on the menu is 21:9, so judging the return against the ZONE
+  // refused every driver tile before content was seen (the documented reason
+  // hero-driver sat off, 0/3 live runs). The return is judged against the
+  // shape that was requested; the gap between that shape and the zone is
+  // closed the way RestylePro closes it on its proof tiles: a centred cover
+  // crop, never a stretch, so lettering keeps its proportions.
   const want = pixelWidth / pixelHeight, got = width / height;
-  const drift = want > got ? want / got : got / want;
+  const requested = nearestAuthorAspect(want);
+  const ratioDrift = (a, b) => (a > b ? a / b : b / a);
+  const zoneGap = ratioDrift(want, got);
+  const menuGap = ratioDrift(requested, got);
+  // A return near the zone's own shape or near the menu shape that was
+  // requested is the right shape; anything else drifted.
+  const drift = Math.min(zoneGap, menuGap);
   if (!Number.isFinite(drift) || drift > MAX_ASPECT_DRIFT_RATIO) return { accepted: false, reason: `aspect_drift:${drift.toFixed(3)}` };
+  const fit = zoneGap > MAX_ASPECT_DRIFT_RATIO ? "cover" : "fill";
   let normalized;
   try {
     normalized = await sharp(bytes, { limitInputPixels: false })
-      .resize(pixelWidth, pixelHeight, { fit: "fill" })
+      .resize(pixelWidth, pixelHeight, { fit, position: "centre" })
       .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
   } catch (cause) { return { accepted: false, reason: `resize_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
   let holes;
   try { holes = await holeRatio(normalized); }
   catch (cause) { return { accepted: false, reason: `measure_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
   if (holes > MAX_AUTHORED_HOLE_RATIO) return { accepted: false, reason: `unresolved_area:${holes.toFixed(5)}` };
-  return { accepted: true, bytes: normalized, holeRatio: holes, deliveredWidthPx: width, deliveredHeightPx: height };
+  return { accepted: true, bytes: normalized, holeRatio: holes, deliveredWidthPx: width, deliveredHeightPx: height, fit, zoneGap };
 }
 
 /**
@@ -370,7 +406,13 @@ function heroRequestBody(input) {
     qrEnabled: input?.qrEnabled === true,
     vehicleYear: pick(vehicle.year), vehicleMake: pick(vehicle.make), vehicleModel: pick(vehicle.model), vehicleType: pick(vehicle.type),
     styleDescriptors: pick(input?.styleDescriptors),
-    visionboard_intent: pick(input?.visionboard_intent),
+    // HERO FIRST: the staged on-car render is the driver's design authority.
+    // It travels as a storage reference through the edge's attach() door, so
+    // no image bytes ride in the run definition or the provider-cache key.
+    heroReference: input?.heroReference && typeof input.heroReference === "object"
+      ? { storagePath: String(input.heroReference.storagePath), contentHash: String(input.heroReference.contentHash) }
+      : undefined,
+    visionboard_intent: input?.heroReference ? "exact_reference" : pick(input?.visionboard_intent),
   };
 }
 
@@ -379,6 +421,9 @@ function heroDriverEnabled(env = process.env) {
 }
 
 module.exports = {
+  HERO_RENDER_CONTRACT,
+  AUTHOR_ASPECTS,
+  nearestAuthorAspect,
   HERO_DRIVER_TOPOLOGY,
   HERO_DRIVER_CONTRACT,
   HERO_DRIVER_PROMPT_VERSION,

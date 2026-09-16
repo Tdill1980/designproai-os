@@ -2511,7 +2511,24 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-driver.20260911.v1";
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-driver.20260916.v2";
+
+/**
+ * HERO FIRST — the driver flank is DERIVED from an approved on-vehicle render.
+ * (Owner, Trish 2026-09-16: the pre-migration system designed on the car and
+ * derived the flats; the OS must produce the same quality.) This is the
+ * flatten instruction RestylePro's proof tiles run (generate-2d-proof
+ * renderFlatTile tier 0), ported verbatim in intent: the photograph is the
+ * design authority; the output is the artwork by itself. It is appended to
+ * the hero-surface prompt only when the request attaches a `heroReference`.
+ */
+function atlasHeroDerivationContract(label: string, widthInches: number, heightInches: number): string {
+  return [
+    `SOURCE RENDER — the attached image is the approved design photographed on the vehicle. Create the FLAT, RECTANGULAR, PANEL-READY artwork for the ${label} (${widthInches} × ${heightInches} inches) from it, using the photograph only as the design reference.`,
+    "OUTPUT ONLY THE ARTWORK: completely remove the body, cab, windows, glass, wheels, tires, wheel arches, bumpers, mirrors, lights, handles, seams, ground, studio, shadows, reflections and highlights, and continue the real surrounding artwork through every area those parts covered, filling all four edges. No silhouette, no white margin, no border, no mockup.",
+    "Do not redesign, restyle, simplify or substitute anything. Preserve the exact colour relationships, imagery, gradients, patterns, element routing, scale and placement visible on this side, and preserve EVERY graphic and EVERY line of lettering exactly as shown — company name, logo lockups, numbers, badges, sponsor marks — glyph for glyph, in the same position, size, arrangement and colours, sharp and fully legible.",
+  ].join("\n");
+}
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
@@ -2657,6 +2674,12 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
     if (priorTurnsIn.length > ATLAS_AUTHOR_MAX_PRIOR_TURNS) throw new Error(`atlas_author_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
     if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
+    // HERO FIRST: the staged on-vehicle render, attached through the same
+    // sha-verified atlas-call1-inputs door as any neighbour sheet.
+    const heroReferenceIn = first && body.heroReference && typeof body.heroReference === "object"
+      ? body.heroReference as { storagePath?: unknown; contentHash?: unknown }
+      : null;
+    if (!first && body.heroReference) throw new Error("atlas_author_hero_reference_is_driver_only");
     const priorTurns: Array<Record<string, unknown>> = [];
     for (const turn of priorTurnsIn) priorTurns.push(await replayImageTurn(turn, downloadHistoryImage));
 
@@ -2688,13 +2711,17 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         vehicleModel: String(body.vehicleModel || "").trim(),
         vehicleType: String(body.vehicleType || "").trim(),
         viewType: "side",
-        visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
-        visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
+        visionBoardImages: [
+          ...references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
+          ...(heroReferenceIn ? [{ slotLabel: "hero-render" }] : []),
+        ],
+        visionboard_intent: heroReferenceIn || body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
         styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
         atlasFlatMaster: true,
         atlasPanels: [],
         atlasHeroSurface: { label: surfaceLabel, widthInches, heightInches },
       } as any /* hero sheet */);
+      if (heroReferenceIn) prompt += `\n\n${atlasHeroDerivationContract(surfaceLabel, widthInches, heightInches)}`;
       parts.push({ text: prompt });
       for (const ref of references) {
         if (typeof ref === "string" && ref.length > 0) parts.push({ inlineData: { mimeType: "image/png", data: ref } });
@@ -2706,6 +2733,9 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     }
     const neighbourHashes: string[] = [];
     for (const neighbour of neighboursIn) neighbourHashes.push(await attach(neighbour.storagePath, neighbour.contentHash));
+    const heroReferenceHash = heroReferenceIn
+      ? await attach(String(heroReferenceIn.storagePath || ""), heroReferenceIn.contentHash ? String(heroReferenceIn.contentHash) : undefined)
+      : null;
 
     const totalInputImageCount = parts.filter((part) => part.inlineData).length + priorTurns.reduce((count, turn) =>
       count + (turn.parts as Array<Record<string, unknown>>).filter((part) => part.inlineData || part.fileData).length, 0);
@@ -2798,6 +2828,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         imageSize: ATLAS_AUTHOR_IMAGE_SIZE,
         neighbourCount: neighboursIn.length,
         neighbourHashes,
+      heroReferenceHash,
         priorTurnsApplied: priorTurns.length,
         priorSignaturesReplayed: priorTurns.reduce((count, turn) =>
           count + (turn.parts as Array<Record<string, unknown>>).filter((part) => typeof part?.thoughtSignature === "string").length, 0),
