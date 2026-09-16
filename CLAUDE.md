@@ -856,6 +856,77 @@ resolve that trade by relaxing `edgeHoleRatio` or adding wheel-well negatives �
 RULE 0.32 forbids both by name. The resolution is hero-first (RULE 0.37), which
 is a build.
 
+### A LOST LEASE IS WHAT THE DATABASE SAYS, NOT WHAT THE NETWORK DID (2026-09-16, canary 8c525565)
+
+**The first run to reach the back half died at the last mile.** Call 1 accepted
+on the first attempt, then six panels, seven proofs, Call 8, logos, de-logo,
+pack activate, purchase, `manifest.resolve`, `source.verify`, preflight QC and
+**`enhance.upscale` (Topaz) all completed** — and `output.build` failed five
+times on `stage_lease_lost`, ending the run with the six 150-PPI panel masters
+already built.
+
+The timings are the diagnosis: attempts died at **3m22s, 3m52s, 8m54s and
+11m14s**, no fixed boundary, always inside "resumable ZIP upload" / "ZIP
+streaming". An expiry lands on a boundary; a transient RPC error does not.
+
+`heartbeat_designpro_stage` and `acquire_designpro_heavy_lease` each return
+`true` when the row is still ours and `false` when it provably is not. **A
+transport error is a third case, and both heartbeats treated it as the second** —
+one unanswered beat aborted the stage. The stage lease is 900 s and beats every
+30, so each abort threw away up to 870 seconds of provably-held lease and every
+byte of a finished output set, on a stage that streams multi-gigabyte TIFFs.
+
+`leaseKeeper` (`runtime/designpro-standalone-claimant.cjs`) is now the one rule
+for both: `false` aborts at once — that is the fence doing its job, and two
+workers writing one output is what it exists to prevent — while an unanswered
+beat is retried and becomes a loss only once enough time has passed that the row
+itself could have expired (a quarter of the term is kept as margin, measured
+from the last answer actually received, so work always stops BEFORE the database
+would hand the stage to anyone else). A beat slower than the interval cannot
+re-enter itself. `HEAVY_LEASE_SECONDS` is 600, not 120: the slot is fenced by the
+900 s stage lease anyway, and three delayed renewals could expire the old term
+under work still running.
+
+**The two abort reasons are deliberately different sentences** — "lease is no
+longer held by this worker" versus "lease could not be confirmed for Ns of its
+Ns term" — because they are what the next failure carries into
+`fail_designpro_stage`, they surface in the canary's stage transitions, and they
+need different fixes. Locked by `tests/stage-lease-keeper.test.mjs`; three of its
+six cases were verified to fail against the pre-fix behaviour.
+
+**The canary could not have passed that run either.** It asserted
+`[1, 2].includes(imageRequestCount)` — written when six-surface was Call 1's only
+contract — so a run that recovers as designed across a fail-over (three or four
+requests) would have been failed for it, discarding the master, the panels and
+every stage after them. The bound is now checked where it lives: at most two
+candidates on ONE contract (`masterAuthoringAttempts`) and at most one fail-over
+(`authoringFailover`). The latency SLO had the same shape (`usedFallback =
+imageRequestCount === 2` reverted a three-candidate run to the 60-second
+first-attempt budget); it now scales by candidates spent, which reproduces the
+existing 60/120 and 90/180 thresholds exactly at n=1 and n=2. No threshold moved.
+
+### THE STICKY A.T.L.A.S. FLAGS DID NOT STICK, AND NOTHING SAID SO (2026-09-16)
+
+`atlas_field_first` was deployed `off` on `031d8989` — the refusal ledger proves
+it, six-surface ran first — and the very next deploy, dispatched `unchanged`,
+produced a master whose single `atlasEdgeProvenance` entry carries
+`fieldContract: designpro.atlas-field-prompt.v2` and no teaching proof. Field ran
+FIRST. The value did not survive, and the deploy-input plumbing, the SSH
+passthrough and the sticky sed in `configure-env.sh` all read correct on
+inspection, so the mechanism is not yet located.
+
+What is fixed is that it can never again be invisible: `configure-env.sh` now
+prints **the resolved value of all four A.T.L.A.S. routing flags** on the deploy
+log (routing selectors, never a secret — the block sits after every secret is
+consumed). And `ops/tests/deploy-workflow.test.mjs` now EXECUTES each sticky sed
+against a fixture written in the writer's own format, because a pattern that
+stops matching reverts a flag to its default silently — the default being exactly
+what "no value" already means.
+
+**Until the cause is found, set the flag explicitly on every deploy rather than
+relying on `unchanged`.** And read the flag line in the deploy log before
+judging a run's topology.
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology still paints layout marks into the artwork after v26** —

@@ -311,7 +311,14 @@ test("heavy output, lease-loss abort, structural output QC, deterministic stamp 
   assert.match(claimantSource, /stageLeaseContext\.run\(stageGuard/);
   assert.match(claimantSource, /stageGuard\.controller\.abort/);
   assert.match(claimantSource, /acquire_designpro_heavy_lease/);
-  assert.match(claimantSource, /p_stage_id: stage\.id,[\s\S]*?p_lease_token: stage\.lease_token,[\s\S]*?p_worker: requiredString\(stage\.lease_owner,[\s\S]*?p_lease_seconds: 120/);
+  // 2026-09-16: the heavy slot was leased for 120s while being renewed every
+  // 30s, so three delayed renewals could expire the row under work that was
+  // still running. The renewal now goes through leaseKeeper, and the term is
+  // named rather than inlined, bounded by the RPC's own 15..900 and by the
+  // stage lease that fences it. Canary 8c525565 lost output.build five times.
+  assert.match(claimantSource, /p_stage_id: stage\.id,[\s\S]*?p_lease_token: stage\.lease_token,[\s\S]*?p_worker: requiredString\(stage\.lease_owner,[\s\S]*?p_lease_seconds: HEAVY_LEASE_SECONDS/);
+  assert.match(claimantSource, /const HEAVY_LEASE_SECONDS = 600;/);
+  assert.match(claimantSource, /const renew = leaseKeeper\(\{/);
   assert.doesNotMatch(claimantSource, /p_ttl_seconds/);
   assert.doesNotMatch(claimantSource, /sb\.rpc\("release_designpro_heavy_lease"/);
   assert.match(claimantSource, /database stage transition releases the exact slot atomically/);

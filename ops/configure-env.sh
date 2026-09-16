@@ -224,6 +224,22 @@ mv -f -- "$runtime_tmp" "$ROOT/shared/runtime.env"
 mv -f -- "$gateway_tmp" "$ROOT/shared/gateway.env"
 trap - EXIT
 
+# THE RESOLVED A.T.L.A.S. FLAGS, ON THE DEPLOY LOG. (2026-09-16)
+#
+# Every one of these is STICKY -- absent from the deploy, the value already on
+# the droplet is carried forward -- and nothing anywhere printed what that
+# resolution actually produced. Canary 8c525565 authored on the FIELD contract
+# after a deploy that was meant to carry `off` forward, and the difference
+# between "the flag reset" and "I set it wrong" could not be settled from any
+# log, because neither the deploy nor the runtime ever stated the value.
+#
+# These four are routing selectors, not secrets: no key, token or URL is
+# printed here, and the block sits after every secret has been consumed.
+printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s\n' \
+  DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
+  DESIGNPRO_ATLAS_FIELD_FIRST "$atlas_field_first" \
+  DESIGNPRO_ATLAS_CALL1_GRAPH "$atlas_call1_graph" \
+  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish"
 echo "DesignProAI dark environment is configured with outbound email explicitly disabled. No secret was printed."
 if [[ -n $topaz_key ]]; then
   echo "Call 12 upscaling is ENABLED: production packs will enhance through Topaz before QC."
