@@ -51,7 +51,9 @@ test("the price is the server's and the charge is Stripe's", () => {
   assert.match(gateway, /object\.amount_total == null\s*\?\s*Number\(metadata\.amount_cents \|\| 0\)\s*:\s*Number\(object\.amount_total\)/,
     "the recorded amount must be what was actually charged, including zero");
   assert.match(gateway, /total_details\?\.amount_discount/);
-  assert.match(gateway, /stripePromotionCode\(object\)/);
+  // The code itself is resolved from the id an unexpanded webhook carries; see
+  // "the promotion code is resolved from the id a real webhook sends" below.
+  assert.match(gateway, /resolveStripePromotionCode\(fetchImpl, cfg, object\)/);
 });
 
 test("a free order has to name the code that made it free", () => {
@@ -250,4 +252,29 @@ test("case 7: wrong product or amount fails closed", () => {
   assert.match(gateway, /skipped: "not_a_designpro_product"/);
   assert.match(migration, /prepared_pack_not_found/,
     "a payment naming a design with no prepared pack records nothing");
+});
+
+// A WEBHOOK DOES NOT CARRY THE CODE, IT CARRIES THE CODE'S ID.
+//
+// `stripePromotionCode` reads the shapes an EXPANDED session has. A
+// `checkout.session.completed` delivery is not expanded: Stripe sends
+// `discounts[0].promotion_code` as an ID string (`promo_1Abc...`), so `.code`
+// is undefined and the resolved code is null. Combined with the two guards
+// above -- which are correct and stay -- that made EVERY discounted order fail
+// to record: the 100%-off demo code and the 10%-off affiliate codes alike.
+//
+// One retrieve closes it, and a failure throws rather than recording a discount
+// with no attribution, so Stripe retries instead of the money and the
+// entitlement disagreeing.
+test("the promotion code is resolved from the id a real webhook sends", () => {
+  assert.match(gateway, /async function stripeRetrieve\(fetchImpl, cfg, path\)/);
+  assert.match(gateway, /method: "GET"/);
+  assert.match(gateway, /async function resolveStripePromotionCode\(fetchImpl, cfg, session\)/);
+  assert.match(gateway, /\/\^promo_\[A-Za-z0-9\]\+\$\/\.test\(id\)/,
+    "only a real promotion-code id is retrieved, never an arbitrary path segment");
+  assert.match(gateway, /promotion_codes\/\$\{encodeURIComponent\(id\)\}/);
+  // The webhook must use the resolver, not the unexpanded reader.
+  assert.match(gateway, /const promotionCode = await resolveStripePromotionCode\(fetchImpl, cfg, object\);/);
+  assert.doesNotMatch(gateway, /const promotionCode = stripePromotionCode\(object\);/,
+    "reading the unexpanded session directly is what dropped every discounted order");
 });
