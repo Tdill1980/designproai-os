@@ -41,6 +41,20 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_TRANSPORT_DIMENSION = 1800;
 const MAX_TRANSPORT_BYTES = 3 * 1024 * 1024;
 const MAX_BANDS = 24;
+/**
+ * A BAND IS LETTERING ONLY IF IT READS AS LETTERING. Live 220d569f
+ * (2026-09-16): the model had painted the coordinate map onto the sheet and
+ * the reader returned seven "bands" for the digits and the stripes around
+ * them, each a big rectangle, and the mirror pasted seven un-flipped patches
+ * onto the passenger flank. A band with no readable letters or digits is not
+ * lettering, and a band wider or taller than a real word block on a flank is
+ * not a word: both are dropped before any pixel moves.
+ */
+const MIN_BAND_TEXT_CHARS = 2;
+const MAX_BAND_AREA_FRACTION = 0.18;
+const MAX_BAND_WIDTH_FRACTION = 0.6;
+const MAX_BAND_HEIGHT_FRACTION = 0.6;
+const MAX_TOTAL_BAND_AREA_FRACTION = 0.4;
 const ORIENTATIONS = Object.freeze(["forward", "mirrored", "vertical", "unknown"]);
 const SURFACES = Object.freeze(["driver", "passenger"]);
 /** Two bands describing the same lettering overlap at least this much. */
@@ -156,11 +170,29 @@ function normalizeBand(raw) {
   const height = Math.min(Math.max(0, h), 1 - top);
   if (width <= 0 || height <= 0) return null;
   const orientation = ORIENTATIONS.includes(raw.orientation) ? raw.orientation : "unknown";
+  const text = cleanText(raw.text, 80);
+  // Readable characters only: the fraction "0.3633" the model painted on the
+  // sheet reads as digits, so it is refused on shape below; stripes and
+  // graphics with no letters at all are refused here.
+  if ((text.match(/[A-Za-z0-9]/g) || []).length < MIN_BAND_TEXT_CHARS) return null;
+  if (width > MAX_BAND_WIDTH_FRACTION || height > MAX_BAND_HEIGHT_FRACTION || width * height > MAX_BAND_AREA_FRACTION) return null;
   return {
     xPct: left, yPct: top, wPct: width, hPct: height,
-    text: cleanText(raw.text, 80),
+    text,
     orientation,
   };
+}
+
+/** Bands in reading order until their combined area exceeds the cap. */
+function boundTotalArea(bands) {
+  let area = 0;
+  const kept = [];
+  for (const band of bands) {
+    if (area + band.wPct * band.hPct > MAX_TOTAL_BAND_AREA_FRACTION) break;
+    area += band.wPct * band.hPct;
+    kept.push(band);
+  }
+  return kept;
 }
 
 function parseLetteringRead(payload, inspectionId) {
@@ -178,7 +210,7 @@ function parseLetteringRead(payload, inspectionId) {
   if (!Array.isArray(parsed?.bands)) {
     throw new AtlasLetteringReadError("atlas_lettering_bands_invalid", "Reader returned no bands array");
   }
-  const bands = parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean);
+  const bands = boundTotalArea(parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean));
   const confidence = Number(parsed?.confidence);
   return {
     bands,
@@ -312,5 +344,6 @@ module.exports = {
   mirroredBandsToDriverSpace,
   mergeBands,
   responseSchema,
-  _test: { normalizeBand, intersectionOverUnion, boundedTransport, sha256 },
+  MIN_BAND_TEXT_CHARS, MAX_BAND_AREA_FRACTION, MAX_TOTAL_BAND_AREA_FRACTION,
+  _test: { normalizeBand, intersectionOverUnion, boundedTransport, sha256, boundTotalArea },
 };

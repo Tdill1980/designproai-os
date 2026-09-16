@@ -124,9 +124,14 @@ test("ATLAS field branch sends the prompt and customer references only", () => {
   // ... wow factor" -- are gone, and only the physical facts remain: the flat
   // output, the map, and lettering kept inside an area.
   const emitted = fieldTail.slice(fieldTail.indexOf("return ["));
-  assert.doesNotMatch(emitted, /read on its own|They are not separate pictures|Gallery-grade|wow factor|worth what the customer paid|every mark on the printed vinyl/);
-  assert.match(emitted, /Those fractions are a map for you to read./);
-  assert.match(emitted, /sits wholly inside a single one of those areas/);
+  // v26 (2026-09-16): the September 4 wording is the product. It made the
+  // Arctic Air Prius sheet (DID-63E6629A) and the Precision master (1564c66d);
+  // the stripped v25 tail painted the coordinate digits on the vinyl.
+  assert.match(emitted, /They are not separate pictures/);
+  assert.match(emitted, /read on its own as intentional, finished, commercially valuable artwork/);
+  assert.match(emitted, /every mark on the printed vinyl is artwork\. None of the map is drawn/);
+  assert.match(emitted, /sits wholly inside a single area and well clear of its four edges/);
+  assert.match(emitted, /Gallery-grade custom artwork/);
   for (const forbidden of ["panel", "artboard", "orthographic", "rectangle", "sheet", "template", "silhouette",
     "container", "wheel", "window", "do not", "never a", "A.T.L.A.S.", "region", "zone", "band", "third",
     "upper", "middle", "lower", "driver", "passenger", "hood", "roof", "front", "rear", "•"]) {
@@ -177,8 +182,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v25-persona-designs-the-field"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v25-persona-designs-the-field"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v26-map-is-read-not-drawn"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v26-map-is-read-not-drawn"/);
   assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });

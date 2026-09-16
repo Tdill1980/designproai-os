@@ -296,8 +296,8 @@ test("a reader that throws declines rather than failing an accepted run", async 
 const WORD_BAND = { xPct: 0.25, yPct: 0.66, wPct: 0.46, hPct: 0.2 };
 const NUMBER_BAND = { xPct: 0.7, yPct: 0.1, wPct: 0.2, hPct: 0.2 };
 /** The same band as seen on the passenger panel (the driver panel flopped). */
-const onPassenger = (band, orientation) => ({ ...band, xPct: 1 - band.xPct - band.wPct, text: "x", orientation });
-const forward = (band) => ({ ...band, text: "x", orientation: "forward" });
+const onPassenger = (band, orientation) => ({ ...band, xPct: 1 - band.xPct - band.wPct, text: "MARTINI", orientation });
+const forward = (band) => ({ ...band, text: "MARTINI", orientation: "forward" });
 
 test("the driver panel read is the primary band source and the sheet read is not called", async () => {
   const labels = [];
@@ -314,7 +314,7 @@ test("the driver panel read is the primary band source and the sheet read is not
   assert.equal(result.letteringSource, "designpro.atlas-lettering-read.v1");
   assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL], "panel read, mirror, one verify read -- no sheet read");
   assert.deepEqual(result.letteringVerify, {
-    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null,
+    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null, mirroredBands: [],
   });
 });
 

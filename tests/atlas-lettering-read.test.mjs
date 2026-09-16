@@ -40,6 +40,11 @@ test("the read is bound to the panel bytes and returns cleaned, oriented bands",
           // Clamped to the panel, orientation normalised, no area -> dropped.
           { xPct: 0.9, yPct: 0.9, wPct: 0.5, hPct: 0.5, text: "MARTINI", orientation: "sideways" },
           { xPct: 0.5, yPct: 0.5, wPct: 0, hPct: 0.1, text: "empty", orientation: "forward" },
+          // Live 220d569f: stripes and painted coordinates are not lettering.
+          { xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.2, text: "", orientation: "forward" },
+          { xPct: 0.1, yPct: 0.1, wPct: 0.4, hPct: 0.2, text: "~", orientation: "forward" },
+          { xPct: 0.0, yPct: 0.0, wPct: 0.7, hPct: 0.3, text: "PORSCHE", orientation: "forward" },
+          { xPct: 0.0, yPct: 0.0, wPct: 0.5, hPct: 0.5, text: "PORSCHE", orientation: "forward" },
         ],
         confidence: 0.93,
       });
@@ -103,7 +108,7 @@ test("the prompt asks for every band with its orientation and binds the inspecti
 });
 
 test("parseLetteringRead caps the band count and strips code fences", () => {
-  const bands = Array.from({ length: MAX_BANDS + 5 }, (_, i) => ({ xPct: 0.01 * i, yPct: 0.1, wPct: 0.05, hPct: 0.05, text: String(i), orientation: "forward" }));
+  const bands = Array.from({ length: MAX_BANDS + 5 }, (_, i) => ({ xPct: 0.01 * i, yPct: 0.1, wPct: 0.05, hPct: 0.05, text: `T${i}`, orientation: "forward" }));
   const text = "```json\n" + JSON.stringify({ inspectionId: "abcdef0123456789", bands, confidence: 2 }) + "\n```";
   const parsed = parseLetteringRead({ candidates: [{ content: { parts: [{ text }] } }] }, "abcdef0123456789");
   assert.equal(parsed.bands.length, MAX_BANDS);
@@ -165,7 +170,7 @@ test("the parser still enforces what the schema no longer does", () => {
   const text = JSON.stringify({
     inspectionId: "abcdef0123456789",
     bands: [
-      { xPct: -0.2, yPct: 0.5, wPct: 0.9, hPct: 2, text: "x", orientation: "MIRRORED?" },
+      { xPct: -0.2, yPct: 0.5, wPct: 0.3, hPct: 2, text: "MARTINI", orientation: "MIRRORED?" },
     ],
     confidence: 7,
   });
@@ -173,6 +178,7 @@ test("the parser still enforces what the schema no longer does", () => {
   assert.equal(parsed.bands.length, 1);
   assert.equal(parsed.bands[0].xPct, 0, "clamped");
   assert.ok(Math.abs(parsed.bands[0].hPct - 0.5) < 1e-9, "height clamped to the panel");
+  assert.equal(parsed.bands[0].wPct, 0.3);
   assert.equal(parsed.bands[0].orientation, "unknown", "unknown orientation strings normalise");
   assert.equal(parsed.confidence, 1);
   assert.throws(
