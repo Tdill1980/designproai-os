@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -384,22 +384,43 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   board once /admin/wallpro-production was retired into it, so
                   it is gone rather than left pointing at its neighbour. The one
                   above IS the QC gate; its tooltip says so. */}
-              {/* ⛔ NO PARTNER TENANT IN THIS NAV (owner, 2026-09-16, reversing
-                  the instruction of the same day that put one here: "keep wpw
-                  wallpro on RP and the standard WP on os.designpro — no wpw
-                  version, dual belongs on restylepro").
-                  The link that stood here opened /wall-wrap, the same WallPro
-                  wearing the WePrintWraps mark, admin-only, so the owner could
-                  demo the partner page before wallpro.weprintwraps.com exists.
-                  It is out: os.designproai's nav is the STANDARD product, and
-                  another company's branding one click from the tool list is
-                  exactly what a demo of DesignProAI-as-a-product must not show.
-                  The /wall-wrap ROUTES are deliberately still alive — they are
-                  what isWallProPartnerHost serves when that subdomain is
-                  pointed here, and they carry the live WooCommerce film order.
-                  Unadvertised is not deleted, and deleting them is a separate,
-                  owner-directed change that needs somewhere for that traffic to
-                  land first. Do not re-add a link here to "make it reachable". */}
+              {/* THE PARTNER TENANT IS A TOP-LEVEL APP BUTTON, NOT A SUB-LINK
+                  (owner, 2026-09-16: "we must have two WallPro APP buttons, one
+                  is a WPW WallPro and one is standard WallPro App").
+                  A link stood here briefly and it was wrong twice over: it read
+                  as a feature OF WallPro rather than the same app sold to a
+                  different customer, and once the app entry existed it was a
+                  second door beside its own neighbour -- the duplicate this
+                  sidebar has already had to undo twice. `wallpro_wpw` in
+                  dashboard-nav.ts is the entry; the PatternPro pair set the
+                  precedent it follows. */}
+              {/* THE PARTNER'S ACCOUNT PAGE, beside their tool — because the
+                  demo the owner is giving is "how it looks on their own WPW
+                  ShopFlow dashboard", and the tool alone does not show that.
+                  /shopflow is PUBLIC by route (its door is an email proven with
+                  an order number, not a session) but it is linked here
+                  admin-only for the same reason the tenant tool is: it is the
+                  partner's surface, not a DesignProAI customer's. */}
+              {tool.key === "wallpro_wpw" && isAdmin && (
+                <SidebarTooltip
+                  title="WePrintWraps ShopFlow"
+                  description="The partner's own account dashboard — orders, reorders and files, the page that replaces weprintwraps.com/my-account. Show it beside the tenant tool to demo the whole partner experience"
+                >
+                  <Link
+                    to="/shopflow"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/shopflow")
+                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
+                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                    )}
+                  >
+                    <Store className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">WPW ShopFlow</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
               {/* WHAT A CUSTOMER GETS INSTEAD: the two pages that answer the
                   questions the tool cannot answer about itself. Not admin-only
                   -- these are customer pages, and the wall buyer who wants a
