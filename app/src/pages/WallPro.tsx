@@ -1160,6 +1160,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 NOT on the partner page: a WePrintWraps visitor has no
                 DesignProAI account, and offering them one is our brand on
                 somebody else's storefront. */}
+            {/* THE FAQ, IN THE HEADER (owner, 2026-09-16: "standard wallpro
+                that has header faq page on os.designpro"). The body already
+                links it, but the body link sits under the fold on a phone and
+                the header is the one bar that never moves. Text, not a button:
+                it is a reference, and it must not compete with Generate.
+                Hidden on the narrowest widths only because the header's other
+                two controls already wrap there; the sidebar carries it. */}
+            <Link
+              to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'}
+              className="hidden shrink-0 text-sm font-semibold text-white/80 underline-offset-4 hover:text-white hover:underline sm:inline"
+            >
+              FAQ
+            </Link>
             {!theme.showPrintOffer && <ToolAccountMenu />}
           </div>
         </div>
