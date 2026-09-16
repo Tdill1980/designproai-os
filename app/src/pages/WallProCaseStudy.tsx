@@ -174,9 +174,17 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
       <header className="sticky top-0 z-30 bg-black px-4 py-3 md:px-8 md:py-4">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
           <WallProLockup theme={theme} compact />
-          <Button asChild size="sm" className={`${WALL_GRADIENT} text-white md:h-10 md:px-4`}>
-            <Link to={toolHref}>Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* The other half of the story: this page is what happens, the FAQ
+                is what it costs and what the marks on your photo mean. */}
+            <Button asChild size="sm" variant="outline"
+              className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
+              <Link to={`${toolHref}/faq`}>Prices &amp; FAQ</Link>
+            </Button>
+            <Button asChild size="sm" className={`${WALL_GRADIENT} text-white md:h-10 md:px-4`}>
+              <Link to={toolHref}>Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          </div>
         </div>
         <WallProHeaderRule />
       </header>

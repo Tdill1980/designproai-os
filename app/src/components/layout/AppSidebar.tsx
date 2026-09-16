@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers, Store } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -382,38 +382,63 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   board once /admin/wallpro-production was retired into it, so
                   it is gone rather than left pointing at its neighbour. The one
                   above IS the QC gate; its tooltip says so. */}
-              {/* THE PARTNER TENANT, REACHABLE BEFORE ITS OWN DOMAIN EXISTS
-                  (owner, 2026-09-16: "The WPW is in nav right so I can show
-                  WPW before it gets the WPW page ... I need to film a demo
-                  video I need both separate").
-                  The WePrintWraps WallPro has always rendered on this host at
-                  /wall-wrap -- it is the same component wearing their brand --
-                  but it was linked from nowhere, so the only way in was to
-                  type the URL. That is not demoable.
-                  ADMIN-ONLY, and that is the whole design: a partner's
-                  storefront in a DesignProAI customer's tool list would be
-                  another company's branding inside our product. The owner and
-                  the team see it; customers never do.
-                  It opens STANDALONE by design -- isWallProPartnerRoute strips
-                  the app shell -- so what fills the screen is exactly what a
-                  WePrintWraps customer sees. Browser back returns here. */}
-              {tool.key === "wallpro" && isAdmin && (
+              {/* ⛔ NO PARTNER TENANT IN THIS NAV (owner, 2026-09-16, reversing
+                  the instruction of the same day that put one here: "keep wpw
+                  wallpro on RP and the standard WP on os.designpro — no wpw
+                  version, dual belongs on restylepro").
+                  The link that stood here opened /wall-wrap, the same WallPro
+                  wearing the WePrintWraps mark, admin-only, so the owner could
+                  demo the partner page before wallpro.weprintwraps.com exists.
+                  It is out: os.designproai's nav is the STANDARD product, and
+                  another company's branding one click from the tool list is
+                  exactly what a demo of DesignProAI-as-a-product must not show.
+                  The /wall-wrap ROUTES are deliberately still alive — they are
+                  what isWallProPartnerHost serves when that subdomain is
+                  pointed here, and they carry the live WooCommerce film order.
+                  Unadvertised is not deleted, and deleting them is a separate,
+                  owner-directed change that needs somewhere for that traffic to
+                  land first. Do not re-add a link here to "make it reachable". */}
+              {/* WHAT A CUSTOMER GETS INSTEAD: the two pages that answer the
+                  questions the tool cannot answer about itself. Not admin-only
+                  -- these are customer pages, and the wall buyer who wants a
+                  price before measuring anything is the one they exist for. */}
+              {tool.key === "wallpro" && (
                 <SidebarTooltip
-                  title="WallPro — WePrintWraps tenant"
-                  description="The same WallPro wearing the WePrintWraps brand: their mark, their film price, their order button. This is the partner page, shown on this host until wallpro.weprintwraps.com is pointed at it"
+                  title="WallPro — prices & FAQ"
+                  description="The price of every entry path, the GENIE Wall Panelizer pipeline end to end, and what the coloured marks on your room photo mean — every number computed by the tool's own code"
                 >
                   <Link
-                    to="/wall-wrap"
+                    to="/printpro/wallpro/faq"
                     onClick={onNavigate}
                     className={cn(
                       "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
-                      isActive("/wall-wrap")
-                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
-                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                      isActive("/printpro/wallpro/faq")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
                     )}
                   >
-                    <Store className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">WePrintWraps tenant</span>
+                    <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Prices &amp; FAQ</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
+              {tool.key === "wallpro" && (
+                <SidebarTooltip
+                  title="WallPro — how it works"
+                  description="One real wall, bare to installed: the mask, the brief, the scale decision, the panel plan and the finished room"
+                >
+                  <Link
+                    to="/printpro/wallpro/how-it-works"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/printpro/wallpro/how-it-works")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">How it works</span>
                   </Link>
                 </SidebarTooltip>
               )}
