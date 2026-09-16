@@ -20,6 +20,12 @@ const surfaces = [ ['driver',153,56], ['passenger',153,56], ['hood',71.5,56],
 const geometryResolution = { contract:'designpro.genie-manifest.v1', genieManifestId:'0'.repeat(32),
   genieManifestHash:'0'.repeat(64), state:'derived', derivationContract:'designpro.genie-front-derived.v1',
   derivedSurfaces:['front'], geometrySourceRowId:'fixture', productionEligible:false, operatorValidated:false };
+// 2026-09-16: field-first now routes EVERY class (owner: "ROUTE TRUCKS THROUGH
+// THE FIELD ALSO"). This file exercises the six-surface authoring mechanics --
+// repair, fail-over, checkpoints, recovery -- which still exist behind the
+// DESIGNPRO_ATLAS_FIELD_FIRST=off switch and for revision edits, so it pins
+// the switch off for its fixtures; the field-first tests below lift it.
+process.env.DESIGNPRO_ATLAS_FIELD_FIRST = "off";
 const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_MODE,mode:'commercial',
   companyName:'Precision Climate Solutions',brief:'Blue and orange HVAC wrap',
   vehicle:{year:'2022',make:'Ford',model:'F250 Crew Cab',type:'truck'}};
