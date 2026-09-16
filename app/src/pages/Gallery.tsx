@@ -45,14 +45,14 @@ const FLAT_2D_VIEW_KEYS = new Set(["panel", "flat", "artwork"]);
 const TOOL_BADGE: Record<string, { label: string; bg: string }> = {
   inkfusion: { label: "ColorPro™", bg: "bg-cyan-500/90" },
   colorpro: { label: "ColorPro™", bg: "bg-cyan-500/90" },
-  designpanelpro: { label: "DesignProAI™", bg: "bg-purple-500/90" },
+  designpanelpro: { label: "VehiclePro™", bg: "bg-purple-500/90" },
   designproai: { label: "DesignProAI™", bg: "bg-purple-500/90" },
   wbty: { label: "PatternPro™", bg: "bg-emerald-500/90" },
   patternpro: { label: "PatternPro™", bg: "bg-emerald-500/90" },
   fadewraps: { label: "FadeWraps™", bg: "bg-pink-500/90" },
   approvemode: { label: "ApprovePro™", bg: "bg-amber-500/90" },
   wallpro: { label: "WallPro™", bg: "bg-indigo-500/90" },
-  graphicspro: { label: "GraphicsPro™", bg: "bg-fuchsia-500/90" },
+  graphicspro: { label: "CutPro™", bg: "bg-fuchsia-500/90" },
   recreatepro: { label: "RecreatePro™", bg: "bg-orange-500/90" },
   myvehiclepro: { label: "MyVehiclePro™", bg: "bg-blue-500/90" },
 };
@@ -211,7 +211,7 @@ export default function Gallery() {
       'inkfusion': 'ColorPro™',
       'fadewraps': 'FadeWraps™',
       'wbty': 'PatternPro™',
-      'designpanelpro': 'DesignProAI™',
+      'designpanelpro': 'VehiclePro™',
       'approvemode': 'ApprovePro™',
       'myvehiclepro': 'MyVehiclePro™'
     };
@@ -610,9 +610,9 @@ export default function Gallery() {
       const modeType = renderItem?.mode_type || '';
       const MODE_TOOL_MAP: Record<string, string> = {
         colorpro: 'ColorPro™', ColorPro: 'ColorPro™', inkfusion: 'ColorPro™',
-        designpanelpro: 'DesignProAI™', designpro: 'DesignProAI™',
+        designpanelpro: 'VehiclePro™', designpro: 'VehiclePro™',
         fadewraps: 'FadeWraps™', wbty: 'PatternPro™',
-        approvemode: 'ApprovePro™', GraphicsPro: 'GraphicsPro™',
+        approvemode: 'ApprovePro™', GraphicsPro: 'CutPro™',
       };
       const toolName = MODE_TOOL_MAP[modeType] || 'DesignProAI™';
       const manufacturer = renderItem?.infusion_color_id || '';

@@ -29,8 +29,14 @@ const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
   wallpro:          { base: "Wall",       suffix: "Pro" },
   patternpro:       { base: "Pattern",    suffix: "Pro" },
   patternpro_wpw:   { base: "WPW × Pattern", suffix: "Pro" },
-  graphicspro:      { base: "Graphics",   suffix: "Pro" },
-  designpro:        { base: "Design",     suffix: "Pro", subSuffix: "AI" },
+  // Customer-facing names (os-brand.ts, Trish 2026-09-16): the `graphicspro`
+  // key renders CutPro and the `designpro` key renders VehiclePro. The keys
+  // themselves are internal and unchanged.
+  graphicspro:      { base: "Cut",        suffix: "Pro" },
+  designpro:        { base: "Vehicle",    suffix: "Pro" },
+  // The OS itself, for the drawer title and anywhere the master brand is set
+  // in the wordmark treatment.
+  designproai:      { base: "Design",     suffix: "Pro", subSuffix: "AI" },
   revisionstudio:   { base: "RevisionStudio", suffix: "IQ" },
   productionjobs:   { base: "Production\u00A0", suffix: "jobs" },
   panelprostudio:   { base: "PanelPro\u00A0",   suffix: "Studio" },

@@ -37,7 +37,7 @@ const TIER_INFO: Record<string, { name: string; price: number; icon: typeof Zap;
     name: "DesignPro Studio",
     price: 699,
     icon: Crown,
-    features: ["150 renders / mo (combined)", "Real human designer · 48-hr turnaround", "Full DesignPro Design OS + GraphicsPro", "Production Packs $249 each (subscriber rate)"],
+    features: ["150 renders / mo (combined)", "Real human designer · 48-hr turnaround", "Full DesignPro Design OS + CutPro", "Production Packs $249 each (subscriber rate)"],
   },
 };
 

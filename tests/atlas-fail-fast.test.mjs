@@ -131,7 +131,11 @@ test("the customer page exposes the current A.T.L.A.S. graph without a legacy se
   assert.match(premium, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
   assert.doesNotMatch(premium, /initialDesignProPipelineMode/);
   assert.doesNotMatch(premium, /setPipelineMode\("legacy"\)/);
-  assert.match(premium, /A\.T\.L\.A\.S\. graph active/);
+  // The customer reads "Powered by Atlas" (os-brand.ts, Trish 2026-09-16);
+  // "A.T.L.A.S. graph active" was the engineering label. The graph is still
+  // the only pipeline the page exposes -- that is what the lines above lock.
+  assert.match(premium, /ATLAS_BRAND\.poweredBy/);
+  assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. graph active/);
   assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. Preview/);
   assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);
   assert.doesNotMatch(premium, /Google-grounded vehicle proportions/);

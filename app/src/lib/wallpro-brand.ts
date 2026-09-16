@@ -230,7 +230,9 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     eyebrow: '',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    tagline: 'Custom wall wrap design, print files & production panels',
+    // The OS-side tagline is the product-hierarchy line (os-brand.ts, Trish
+    // 2026-09-16). The WePrintWraps partner page below keeps its own words.
+    tagline: 'Prompt-Based Wall Graphics Design + Production-Ready File Output',
     // The print offer stays OFF here: on DesignProAI the customer came for the
     // design tool and printing is a partner's business. The PROOF is not a
     // print offer -- it is what the tool makes.

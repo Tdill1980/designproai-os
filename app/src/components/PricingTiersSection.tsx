@@ -50,7 +50,7 @@ const PRICING_TIERS: PricingTier[] = [
     isPopular: true,
     features: [
       "Real human graphic designer \u00b7 48-hr turnaround",
-      "Full Design OS + GraphicsPro + RecreatePro",
+      "Full Design OS + CutPro + RecreatePro",
       "150 renders / month \u2014 combined across all tools",
       "Production Packs sold separately \u00b7 $249 each at subscriber rate",
     ],

@@ -13,6 +13,7 @@ import { isAllowlistedAdmin, isWpwTenantMember } from "@/lib/admin-allowlist";
 import { NAV_GROUPS } from "@/lib/dashboard-nav";
 import { SproketQueueWidget } from "@/components/queue/SproketQueueWidget";
 import { RpToken } from "@/components/RpToken";
+import { OS_BRAND, OS_TOOLS, OS_TOOL_ORDER, activeOsTool } from "@/lib/os-brand";
 
 
 const RENDER_LIMITS: Record<string, number> = {
@@ -165,6 +166,10 @@ const HeaderComponent = () => {
   };
   
   const isActive = (path: string) => location.pathname === path;
+  // Which of VehiclePro / WallPro / CutPro the customer is inside, if any.
+  // Named BENEATH the DesignProAI lockup (the tool strip below the bar), never
+  // in place of it: the master brand never leaves the header.
+  const activeTool = activeOsTool(location.pathname);
 
   // The account and admin menus were three separate hand-written lists, ~880
   // lines between them, pointing almost entirely at RestylePro surfaces this
@@ -363,8 +368,13 @@ const HeaderComponent = () => {
                 <span className="bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">AI</span>
                 <span className="text-zinc-400 text-[11px] sm:text-xs align-super ml-0.5">&#8482;</span>
               </span>
+              {/* THE OS POSITIONING LINE, not a tool's. (Trish 2026-09-16)
+                  This read "Vehicle Wrap Design System" while the vehicle tool
+                  below it also read "DesignPro / Vehicle Wrap Design System" --
+                  one name for two things. DesignProAI is the OS; the tools
+                  (VehiclePro, WallPro, CutPro) are named beneath it. */}
               <span className="text-[11px] sm:text-xs md:text-sm font-medium italic bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent hidden sm:block">
-                Vehicle Wrap Design System&#8482;
+                {OS_BRAND.positioning}
               </span>
             </div>
           </Link>
@@ -435,15 +445,29 @@ const HeaderComponent = () => {
           
           {/* Desktop Right Side - lean set, everything else in sidebar + Menu */}
           <div className="hidden lg:flex items-center gap-3 ml-auto">
-            <Link
-              to="/designpro/create"
-              className={`text-sm font-semibold transition-colors flex items-center gap-1 ${
-                isActive('/designpro/create') ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="text-foreground">Design</span><span className="text-gradient-designpro">Pro™</span>
-            </Link>
+            {/* The three tools inside the OS, in the order the customer should
+                learn them: VehiclePro | WallPro | CutPro. The "DesignPro™"
+                link this replaced named the vehicle tool with the OS's own
+                name. Routes are the existing ones; only the words changed. */}
+            {OS_TOOL_ORDER.map((key, i) => {
+              const tool = OS_TOOLS[key];
+              const active = activeTool?.key === tool.key;
+              return (
+                <span key={tool.key} className="flex items-center gap-3">
+                  {i > 0 && <span className="text-muted-foreground/40">|</span>}
+                  <Link
+                    to={tool.route}
+                    title={tool.tagline}
+                    className={`text-sm font-semibold transition-colors flex items-center gap-1 ${
+                      active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {i === 0 && <Sparkles className="h-3.5 w-3.5 text-cyan-400" />}
+                    <span className="text-foreground">{tool.wordmark.base}</span><span className="text-gradient-designpro">{tool.wordmark.suffix}</span>
+                  </Link>
+                </span>
+              );
+            })}
 
             <span className="text-muted-foreground/40">|</span>
 
@@ -616,6 +640,21 @@ const HeaderComponent = () => {
           </div>
         </div>
       </div>
+      {activeTool && (
+        <div
+          className="border-t border-[#1c1c1e] bg-[#0f0f10]"
+          data-testid="active-tool-strip"
+          aria-label={`Inside ${activeTool.name}`}
+        >
+          <div className="container mx-auto px-2 sm:px-6 py-1.5 flex items-center gap-2 sm:gap-3 min-w-0">
+            <Link to={activeTool.route} className="text-base sm:text-lg font-bold tracking-tight leading-none whitespace-nowrap">
+              <span className="text-white">{activeTool.wordmark.base}</span>
+              <span className="text-gradient-designpro">{activeTool.wordmark.suffix}</span>
+            </Link>
+            <span className="text-[11px] sm:text-xs text-zinc-400 truncate">{activeTool.tagline}</span>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

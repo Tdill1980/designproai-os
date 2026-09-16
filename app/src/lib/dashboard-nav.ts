@@ -33,6 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
+import { OS_TOOLS } from "@/lib/os-brand";
 
 export type Pillar = "home" | "design" | "output" | "profit" | "marketing" | "account";
 
@@ -51,15 +52,39 @@ export interface ToolNavItem {
 /**
  * Ordered list. Sidebar + tool grid render in this order.
  */
+// CUSTOMER-FACING NAMES COME FROM os-brand.ts (Trish 2026-09-16). The keys
+// below are internal identifiers read by tier gates, analytics and stored
+// rows, and they do not change: `designpro` is VehiclePro, `graphicspro` is
+// CutPro. Order is the product hierarchy: VehiclePro, WallPro, CutPro.
 export const DASHBOARD_TOOLS: ToolNavItem[] = [
+  // ── DESIGN ───────────────────────────────────────────────────
+  {
+    key: "designpro",
+    label: OS_TOOLS.vehiclepro.name,
+    route: "/designpro/create",
+    icon: Brain,
+    pillar: "design",
+    tier: "starter",
+    description: OS_TOOLS.vehiclepro.tagline,
+    brandAnchor: true,
+  },
   {
     key: "wallpro",
-    label: "WallPro",
+    label: OS_TOOLS.wallpro.name,
     route: "/printpro/wallpro",
     icon: ImageIcon,
     pillar: "design",
     tier: "starter",
-    description: "Upload a wall, create or upload artwork, and preview it at measured scale",
+    description: OS_TOOLS.wallpro.tagline,
+  },
+  {
+    key: "graphicspro",
+    label: OS_TOOLS.cutpro.name,
+    route: "/graphics-pro",
+    icon: Scissors,
+    pillar: "design",
+    tier: "complete",
+    description: OS_TOOLS.cutpro.tagline,
   },
   {
     key: "patternpro",
@@ -82,26 +107,6 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     pillar: "design",
     tier: "starter",
     description: "PatternPro as the WePrintWraps tenant ships it — the white-label page a shop's own customers use",
-  },
-  {
-    key: "graphicspro",
-    label: "GraphicsPro",
-    route: "/graphics-pro",
-    icon: Scissors,
-    pillar: "design",
-    tier: "complete",
-    description: "Cut-contour graphics on a wall, a vehicle or a storefront — mark the zones on your own photo, mockup, cut files",
-  },
-  // ── DESIGN ───────────────────────────────────────────────────
-  {
-    key: "designpro",
-    label: "DesignPro",
-    route: "/designpro/create",
-    icon: Brain,
-    pillar: "design",
-    tier: "starter",
-    description: "Describe your wrap — vehicle photos, brand colours and your logo — and get seven photoreal views",
-    brandAnchor: true,
   },
   {
     // The product editor itself -- design library, proof/panel review,

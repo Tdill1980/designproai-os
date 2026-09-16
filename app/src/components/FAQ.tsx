@@ -14,24 +14,24 @@ export const FAQ = ({ productName }: FAQProps) => {
     if (productName === "GraphicsPro") {
       return [
         {
-          question: "What is GraphicsPro?",
-          answer: "GraphicsPro is a prompt-based cut-contour graphics designer. Describe what you want and it produces production-ready cut-vinyl graphics for vehicles, storefront and office windows, and interior or exterior walls.",
+          question: "What is CutPro?",
+          answer: "CutPro is a prompt-based cut-contour graphics designer. Describe what you want and it produces production-ready cut-vinyl graphics for vehicles, storefront and office windows, and interior or exterior walls.",
         },
         {
-          question: "What surfaces does GraphicsPro support?",
+          question: "What surfaces does CutPro support?",
           answer: "Vehicle panels (doors, hoods, tailgates, side panels, rear windows), storefront and office glass, painted and textured walls, and other commercial surfaces like floors, A-frames, banners, and awnings.",
         },
         {
           question: "Is this for printed wraps or cut vinyl?",
-          answer: "Cut vinyl. GraphicsPro is built for cut-contour graphics — solid colors with clean cut paths — not full printed wraps. Designs are tuned to cut and weed cleanly on a plotter.",
+          answer: "Cut vinyl. CutPro is built for cut-contour graphics — solid colors with clean cut paths — not full printed wraps. Designs are tuned to cut and weed cleanly on a plotter.",
         },
         {
           question: "How does the prompt-based design work?",
-          answer: "Type what you want (e.g. \"bold geometric racing stripes in matte black\" or \"window graphic for a downtown coffee shop with hours and phone number\") and GraphicsPro generates a photorealistic mockup on your selected surface, then a flat production file for cutting.",
+          answer: "Type what you want (e.g. \"bold geometric racing stripes in matte black\" or \"window graphic for a downtown coffee shop with hours and phone number\") and CutPro generates a photorealistic mockup on your selected surface, then a flat production file for cutting.",
         },
         {
           question: "Can I include a business name, logo, phone, or website?",
-          answer: "Yes. Add your business info and choose which zones display logo, name, phone, website, tagline, or full contact. GraphicsPro can also generate a clean cut-vinyl-friendly logo for you if you don't have one.",
+          answer: "Yes. Add your business info and choose which zones display logo, name, phone, website, tagline, or full contact. CutPro can also generate a clean cut-vinyl-friendly logo for you if you don't have one.",
         },
         {
           question: "What do I get for production?",
@@ -39,7 +39,7 @@ export const FAQ = ({ productName }: FAQProps) => {
         },
         {
           question: "Can I upload reference images or my own artwork?",
-          answer: "Yes. Upload artwork, a logo, or VisionBoard reference images and choose whether GraphicsPro should match them exactly or use them as style inspiration.",
+          answer: "Yes. Upload artwork, a logo, or VisionBoard reference images and choose whether CutPro should match them exactly or use them as style inspiration.",
         },
         {
           question: "How do I get started?",

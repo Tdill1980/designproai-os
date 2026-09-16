@@ -21,6 +21,7 @@ import {
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
+import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
 
 /**
  * DesignProAIHome — the /designpro front door (matches the DesignProAI mockup).
@@ -316,7 +317,7 @@ export default function DesignProAIHome() {
             <p className="text-[11px] text-white/70">Pick a vehicle, add make & model, describe it.</p>
 
             <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5 text-[10px] text-cyan-200">
-              A.T.L.A.S. graph active — one prepared vehicle topology, one master, six labeled panels and seven proof views.
+              {ATLAS_BRAND.poweredBy} — {ATLAS_BRAND.explanation} One prepared vehicle topology, one master, six labeled panels and seven proof views.
             </div>
 
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}
@@ -448,12 +449,15 @@ export default function DesignProAIHome() {
             {/* legibility fade — behind the text only, fades out before the photo */}
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent md:to-transparent" />
             <div className="relative max-w-md p-7">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-pink-400 [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]">Meet Your New Graphic Designer</div>
+              {/* The vehicle tool is VehiclePro inside DesignProAI (os-brand.ts,
+                  Trish 2026-09-16). The eyebrow keeps the OS; the headline names
+                  the tool; the line under it is the tool's tagline. */}
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-pink-400 [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]">DesignProAI™ · {OS_TOOLS.vehiclepro.category}</div>
               <h1 className="mt-2 text-4xl font-extrabold leading-tight [text-shadow:0_2px_12px_rgba(0,0,0,0.6)]">
-                Prompt to<br />
-                <span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">Print Production™</span>
+                <span className="text-white">{OS_TOOLS.vehiclepro.wordmark.base}</span><span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">{OS_TOOLS.vehiclepro.wordmark.suffix}</span>
               </h1>
-              <p className="mt-3 max-w-md text-sm text-white/70 [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]">DesignProAI™ is engineered to design like a pro, revise in minutes, and deliver print-ready production files.</p>
+              <p className="mt-2 text-sm font-semibold text-white/90 [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]">{OS_TOOLS.vehiclepro.tagline}</p>
+              <p className="mt-2 max-w-md text-sm text-white/70 [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]">{OS_TOOLS.vehiclepro.description}</p>
               <div className="mt-5 flex gap-1.5">
                 {Array.from({ length: dots }).map((_, i) => (
                   <span key={i} className={cn("h-1.5 rounded-full transition-all", i === heroIdx % dots ? "w-6 bg-blue-500" : "w-1.5 bg-white/20")} />

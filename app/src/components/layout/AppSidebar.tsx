@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
 import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -6,6 +7,7 @@ import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
 import { NAV_GROUPS } from "@/lib/dashboard-nav";
 import { ToolWordmark } from "@/components/dashboard/ToolWordmark";
+import { OS_BRAND } from "@/lib/os-brand";
 import { supabase } from "@/integrations/supabase/client";
 import { isAllowlistedAdmin } from "@/lib/admin-allowlist";
 import {
@@ -486,16 +488,36 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
  * Mobile:  off-canvas Sheet drawer opened from the bottom tab bar
  */
 export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = false }: AppSidebarProps) => {
+  // The persistent header grows by one row inside VehiclePro / WallPro / CutPro
+  // (the active-tool strip, Header.tsx), so the sidebar's top follows the
+  // header's measured height instead of a 72px constant.
+  const headerHeight = useHeaderHeight();
   return (
     <>
       {/* Desktop */}
       <aside
         className={cn(
-          "hidden md:flex fixed left-0 top-[72px] bottom-0 w-60 z-30 flex-col overflow-y-auto border-r border-[#48484a] bg-rp-root transition-transform duration-200",
+          "hidden md:flex fixed left-0 bottom-0 w-60 z-30 flex-col overflow-y-auto border-r border-[#48484a] bg-rp-root transition-transform duration-200",
           desktopHidden && "md:-translate-x-full",
         )}
+        style={{ top: headerHeight }}
         aria-label="Dashboard navigation"
       >
+        {/* THE DP MARK, ALWAYS VISIBLE (Trish 2026-09-16: "dark ui persistent
+            header that shows both DP logo and the page logo"). Every tool now
+            owns its own sticky bar (ToolHeader) instead of the marketing
+            <Header>, so the sidebar became the one place left un-branded —
+            straight to the plan pill, no DesignProAI identity at all. Small
+            and quiet on purpose: this names the OS once; the tool's own
+            ToolHeader names the tool. Neither one repeats the other. */}
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-2 border-b border-[#48484a] px-3 py-3 shrink-0"
+          aria-label={`${OS_BRAND.name} home`}
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-blue-500 to-fuchsia-500 text-[10px] font-black text-white">D</span>
+          <span className="text-sm font-bold tracking-tight text-white">{OS_BRAND.name}</span>
+        </Link>
         <SidebarBody />
       </aside>
 
@@ -507,7 +529,7 @@ export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = 
         >
           <SheetHeader className="px-4 py-3 border-b border-[#48484a]">
             <SheetTitle className="text-white text-left font-poppins">
-              <ToolWordmark toolKey="restylepro" size="lg" />
+              <ToolWordmark toolKey="designproai" size="lg" />
             </SheetTitle>
           </SheetHeader>
           <div className="overflow-y-auto h-[calc(100%-60px)]">
