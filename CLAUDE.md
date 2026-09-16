@@ -706,6 +706,123 @@ paste defect — the mirror itself is deterministic and correct; the reader's
 evidence is what has to be strict. Locked by the 9789762d cases in
 `tests/atlas-lettering-read.test.mjs`.
 
+### A VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING (2026-09-16, live cc382c3c)
+
+**The receipt lied, and every gate believed it.** Precision Climate Solutions
+on a 911 Turbo: the driver read missed "PRECISION" on the pre-#440 caps (0.55
+wide x 0.28 tall, padded to 0.19 of the panel, over the old 0.18 area cap), the
+mirror applied no bands, the passenger verify read returned nothing from that
+same blind reader, and the run recorded `mirroredFound: [0]`, `bandsApplied: 0`,
+**`status: "verified"`** while the flank shipped with the company name reversed.
+Seven of seven views `accepted`. The brief named the company only in its prose,
+so `brandStringCount` was 0, `lettersDeclared` was false, and the read-stage
+decline never fired either.
+
+**Zero MIRRORED bands is evidence only when the read resolved lettering at
+all.** `letteringVerify.sawLettering` is now recorded from `verify.bands` (any
+orientation) plus `verify.oversized`, and a read that resolved nothing can
+never write `verified`:
+
+| driver read | verify read | status | composition |
+|---|---|---|---|
+| located bands | sees them, none reversed | `verified` | kept |
+| located bands | **resolves nothing** | `unproven` | **kept** |
+| nothing | resolves nothing | `no_lettering_seen` | **kept** |
+| any | names a band mirrored, still mirrored after the reads | `unresolved` | declined |
+
+**Neither new status declines, deliberately.** RULE 0.36 declines only on a
+POSITIVE finding of reversal; a reader that cannot see is not that finding, and
+declining would destroy a composition that is probably correct — and would
+destroy the genuinely text-free flank (9789762d's Martini stripes) that the
+previous fix exists to protect. What changes is only that the receipt stops
+claiming what it never established, so PanelPro's human QC sees an unproven
+side instead of a certified one. Locked by the cc382c3c cases in
+`tests/atlas-passenger-composition-executes.test.mjs`, verified to fail against
+the pre-fix runtime. **Two fixtures in that file encoded the bug** — they
+returned an EMPTY verify read and asserted `verified`; a working reader sees the
+re-dropped words FORWARD, and they now say so.
+
+**Do not report A.T.L.A.S. status from receipts.** This whole defect was
+reported as a clean run by a session reading slot states and band counts. The
+receipts said 7/7 accepted, 0 bands, master QC passed. The pixels said the
+passenger was reversed. Open the export before calling a run good.
+
+### WHERE THE WORKING SIX-SURFACE ATLAS WENT, AND THE ONE LEVER BACK (2026-09-16)
+
+**Owner, looking at the September 8 screenshot of master `2165a36c7f52738b`:**
+*"We had a working atlas, I thought I was reverted back to this state and we
+were just fixing the fill step."* She is right about what that master was, and
+it was never reverted to. The row says so:
+
+| | |
+|---|---|
+| generation | `5d727ea9-eb71-466b-8a04-dca2d8d411e7` |
+| authored | 2026-09-01, **`v23-orthographic-restored`** |
+| topology | **six-surface** (`authoringTopology` null) |
+| master QC | passed |
+| `masterCutoutSurfaces` | **2** — the two dark wheel blobs visible on the flanks |
+| `cutoutFillApplied` | **2** |
+
+That is a good six-surface sheet with the CUT-OUT FILL as its open problem,
+which is exactly the work the owner believed was in progress. It is also the
+generation RULE 0.32 cites as proof the system can author excellent cohesive
+A.T.L.A.S. artwork.
+
+**What happened instead was forward drift, not a revert:** v23 → v24 one-field
+→ v25 → v26, and on 2026-09-16 field-first became the routing for EVERY class
+("ROUTE TRUCKS THROUGH THE FIELD ALSO"), so six-surface is no longer even the
+first attempt. Every defect the owner has reported since — the painted
+coordinate fractions, the silver field, the lettering pushed off the flanks,
+the reversed passenger — is on field masters, not on that v23 shape.
+
+**The lever exists in the runtime and could not be reached from a deploy.**
+`fieldFirstReason()` honours `DESIGNPRO_ATLAS_FIELD_FIRST=off`, but
+`configure-env.sh` never wrote that key, so it was unset on the droplet and
+unset means field-first ON. It is now a deploy input, `atlas_field_first`
+(`unchanged` | `on` | `off`), threaded exactly like `atlas_topology`: sticky
+across later deploys, validated in `validate-env.py`, and a flip on the
+already-running release reconfigures and restarts rather than no-opping.
+
+**Adding the input changed nothing live** — absent input resolves to `on`, and
+a typo fails safe to `on`. Flipping it to `off` is an OWNER decision and the
+evidence genuinely cuts both ways: this file's own measurement is that
+six-surface drew the vehicle into the sheet on 36 of 52 failures, which is why
+field-first was adopted. That measurement and the owner's September 8 sheet are
+both true. Do not flip it from a documentation pass; run it as a probe and
+judge the exported sheet.
+
+### STILL OPEN IN THE LETTERING PATH (handed over 2026-09-16, seen in pixels)
+
+1. Flash's boxes are loose both ways. #438's flood key tightens a loose box; a
+   box that MISSES part of the lockup (the logo mark on 7c7bd633 sat outside
+   both reads) is only recovered by the side pad, which is not principled.
+2. The flood key is fragile on same-hue art — at tolerance 28 it eats an orange
+   mark touching an orange ribbon. The self-calibration picks the lowest
+   tolerance clearing the border; that held on one real panel and two synthetic
+   ones. Not a law.
+3. The re-dropped lockup is an opaque slab and ribbons break at its edge. Shaped
+   alpha was tried and rejected on real pixels. Removing the seam needs a
+   logo-free base to mirror, the way RestylePro floors on the clean artboard.
+4. On a strong design roll the lockup can be clipped by the third's boundary on
+   the field sheet (cc382c3c). No band read can fix a clipped source.
+
+### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
+
+- **The field topology still paints layout marks into the artwork after v26** —
+  3 of 3 recent 911 runs (`455b1723`, `7c7bd633`, `cc382c3c`). Prompt wording
+  does not stop it. The remedy identified but NOT in the repo: a blocking
+  `map_drawn` verdict in the output-class inspector, so such a sheet re-authors
+  and fails over to six-surface. The branch carrying it was never pushed and is
+  lost; rebuild it rather than re-deriving the diagnosis.
+- **The auto dark deploy only runs when the merge commit message contains the
+  literal `[dark-deploy]`.** Every other merge must be dispatched with
+  `exact_sha`. A green gate is not a deploy.
+- **The canary's GENIE assertion requires an operator-validated catalog row, and
+  the 2022 Porsche 911 Turbo row (`0c211a9d`) has never been validated** — so
+  EVERY 911 canary reports failure at that step regardless of the generation,
+  and its production pack parks at approval required. The F250 row IS validated.
+  Probe on the F250 unless the 911 row is what is being tested.
+
 **Still open, deliberately:** the proof-side continuity gate promises "one
 proof-only re-render" on a drift verdict, but the A.T.L.A.S. proof provider
 runs `maxProviderAttempts: 1`, so the slot dies on the first verdict. It would

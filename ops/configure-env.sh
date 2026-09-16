@@ -118,6 +118,19 @@ fi
 # refuses an empty value, and the runtime reads anything but "hero-driver" as
 # the six-surface default either way.
 [[ $atlas_topology == "hero-driver" ]] || atlas_topology="six-surface"
+# CALL-1 FIELD-FIRST ROUTING. `off` restores the six-surface contract as the
+# FIRST authoring attempt for every class -- the v23 shape that authored
+# 5d727ea9 / master 2165a36c, the sheet RULE 0.32 cites as proof the system can
+# produce excellent cohesive artwork. Unset means field-first, which is what
+# every run since 2026-09-16 has used, so the default here is `on` and this
+# writer changes nothing until a deploy asks. Sticky like the flags below.
+atlas_field_first=${ATLAS_FIELD_FIRST:-}
+if [[ -z $atlas_field_first && -s $ROOT/shared/runtime.env ]]; then
+  atlas_field_first=$(sed -n 's/^DESIGNPRO_ATLAS_FIELD_FIRST=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+# Only the exact string `off` restores six-surface; anything else keeps today's
+# routing, so a typo can never silently change the authoring contract.
+[[ $atlas_field_first == "off" ]] || atlas_field_first=on
 # Call-1 node graph (owner 2026-09-11). ON unless a deploy says "off": the
 # graph is the product; "off" is the kill switch back to the in-process
 # cascade. Sticky like the two flags above.
@@ -175,6 +188,8 @@ trap cleanup EXIT
   printf 'DESIGNPRO_ATLAS_TOPOLOGY=%s\n' "$atlas_topology"
   # CALL-1 NODE GRAPH. `on` (default) or `off` (in-process cascade). Sticky.
   printf 'DESIGNPRO_ATLAS_CALL1_GRAPH=%s\n' "$atlas_call1_graph"
+  # CALL-1 FIELD-FIRST. `on` (default) or `off` (six-surface first). Sticky.
+  printf 'DESIGNPRO_ATLAS_FIELD_FIRST=%s\n' "$atlas_field_first"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then

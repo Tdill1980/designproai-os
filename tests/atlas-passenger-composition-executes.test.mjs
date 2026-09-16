@@ -305,7 +305,13 @@ test("the driver panel read is the primary band source and the sheet read is not
     masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
     provider: providerReturning([], {
       onCall: (_body, label) => labels.push(label),
-      lettering: { driver: [forward(WORD_BAND), forward(NUMBER_BAND)], passenger: [[]] },
+      // A WORKING verify read SEES the re-dropped words, forward. The empty
+      // read this fixture used to carry is what "verified" meant on cc382c3c,
+      // where the reader was simply blind -- see the unproven test below.
+      lettering: {
+        driver: [forward(WORD_BAND), forward(NUMBER_BAND)],
+        passenger: [[onPassenger(WORD_BAND, "forward"), onPassenger(NUMBER_BAND, "forward")]],
+      },
     }),
   });
   assert.equal(result.composed, true, result.reason || "");
@@ -313,9 +319,10 @@ test("the driver panel read is the primary band source and the sheet read is not
   assert.equal(result.letteringRead, "located");
   assert.equal(result.letteringSource, "designpro.atlas-lettering-read.v1");
   assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL], "panel read, mirror, one verify read -- no sheet read");
-  assert.deepEqual(result.letteringVerify, {
-    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null, mirroredBands: [],
-  });
+  assert.equal(result.letteringVerify.status, "verified", "the read resolved the lettering and none of it was reversed");
+  assert.equal(result.letteringVerify.sawLettering, true);
+  assert.deepEqual(result.letteringVerify.mirroredFound, [0]);
+  assert.equal(result.letteringVerify.corrections, 0);
 });
 
 test("a band the driver read missed is caught mirrored on the composed flank and corrected", async () => {
@@ -327,7 +334,9 @@ test("a band the driver read missed is caught mirrored on the composed flank and
       onCall: (_body, label) => labels.push(label),
       // The driver read finds nothing; the first read-back of the composed
       // flank names the word band as mirrored; the second finds it forward.
-      lettering: { driver: [], passenger: [[onPassenger(WORD_BAND, "mirrored")], []] },
+      // The second read must RESOLVE it forward, not go blank -- a blank read
+      // proves nothing and is now recorded as unproven, not verified.
+      lettering: { driver: [], passenger: [[onPassenger(WORD_BAND, "mirrored")], [forward(WORD_BAND)]] },
     }),
   });
   assert.equal(result.composed, true, result.reason || "");
@@ -545,4 +554,46 @@ test("a reversed wordmark on the composed flank that cannot be bounded is a posi
   assert.equal(result.reason, "reversed_lettering_unresolved");
   assert.equal(result.letteringVerify.status, "unresolved");
   assert.equal(result.letteringVerify.code, "reversed_lettering_oversized");
+});
+
+// LIVE cc382c3c (2026-09-16, Precision Climate Solutions on a 911 Turbo) — A
+// VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING.
+//
+// The driver read missed "PRECISION" on the pre-#440 caps, the mirror applied
+// no bands, the passenger verify read returned nothing from that same blind
+// reader, and the receipt recorded `mirroredFound: [0], status: "verified"`
+// while the flank shipped with the company name reversed. The brief named the
+// company only in its prose, so `brandStringCount` was 0 and the read-stage
+// decline never fired either. Zero MIRRORED bands is evidence only when the
+// read resolved lettering at all.
+
+test("a verify read that resolves no lettering never reports verified", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      // The driver read locates the wordmark and it is re-dropped; the verify
+      // read then resolves nothing at all -- it cannot see the panel it just
+      // certified on the old code.
+      lettering: { driver: [forward(WORD_BAND)], passenger: [[]] },
+    }),
+  });
+  assert.equal(result.composed, true, "an unseeing reader is not a positive finding of reversal; the composition stands");
+  assert.equal(result.bandsApplied, 1);
+  assert.equal(result.letteringVerify.status, "unproven", "this is exactly what cc382c3c wrote down as verified");
+  assert.equal(result.letteringVerify.code, "verify_read_saw_no_lettering");
+  assert.equal(result.letteringVerify.sawLettering, false);
+  assert.notEqual(result.letteringVerify.status, "verified");
+});
+
+test("both reads resolving nothing is concordant, recorded honestly, and still mirrors", async () => {
+  // The 9789762d Martini stripe flank: genuinely no lettering. Declining here
+  // would destroy the correct composition RULE 0.36 exists to protect.
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], { lettering: { driver: [], passenger: [[]] } }),
+  });
+  assert.equal(result.composed, true, "a text-free flank still mirrors");
+  assert.equal(result.bandsApplied, 0, "nothing is pasted onto artwork that carries no lettering");
+  assert.equal(result.letteringVerify.status, "no_lettering_seen");
+  assert.notEqual(result.letteringVerify.status, "verified");
 });

@@ -2847,7 +2847,44 @@ async function composePassengerFromDriver({
         const reversed = mirroredBandsToDriverSpace(verify.bands);
         letteringVerify.mirroredFound.push(reversed.length);
         letteringVerify.mirroredBands = [...(letteringVerify.mirroredBands || []), ...reversed.map(bandReceipt)];
-        if (!reversed.length) break;
+        // A VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING.
+        //
+        // Live cc382c3c (2026-09-16, Precision on a 911 Turbo): the driver read
+        // missed "PRECISION" on the pre-#440 caps, the mirror applied no bands,
+        // the passenger verify read returned no bands from that same blind
+        // reader, and `mirroredFound: [0]` was written down as status
+        // "verified" while the flank shipped with the company name reversed.
+        // The brief carried the company only in its prose, so `lettersDeclared`
+        // was false and the read-stage decline never fired either.
+        //
+        // Zero MIRRORED bands is evidence only when the read resolved lettering
+        // at all -- a band of any orientation, or an oversized finding.
+        letteringVerify.sawLettering = verify.bands.length > 0 || (verify.oversized || []).length > 0;
+        if (!reversed.length) {
+          if (!letteringVerify.sawLettering) {
+            if (brandBands.length) {
+              // The reader located lettering on the driver panel and the mirror
+              // re-dropped it, so the composed flank must show it; a read that
+              // now resolves nothing has contradicted itself about a panel it
+              // could see a moment ago. That is NOT a positive finding of
+              // reversal, and RULE 0.36 declines only on one -- declining here
+              // would throw away a composition that is probably correct. The
+              // status simply stops claiming what it did not establish.
+              letteringVerify.status = "unproven";
+              letteringVerify.code = "verify_read_saw_no_lettering";
+              letteringVerify.reason = `${brandBands.length} band(s) were re-dropped but the verify read resolved no lettering at all`;
+            } else {
+              // Both reads resolved nothing, which is concordant and is what a
+              // genuinely text-free flank looks like (the 9789762d Martini
+              // stripes). The mirror stands -- declining here would destroy the
+              // correct composition RULE 0.36 exists to protect -- but it is
+              // recorded honestly so PanelPro's human QC sees an unproven side
+              // instead of a certified one.
+              letteringVerify.status = "no_lettering_seen";
+            }
+          }
+          break;
+        }
         if (read === PASSENGER_VERIFY_READS) {
           letteringVerify.status = "unresolved";
           break;
