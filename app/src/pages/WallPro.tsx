@@ -1185,7 +1185,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             {/* The one question the tool cannot answer about itself: what
                 actually happens after the button. The case study answers it on
                 a real wall, so the link belongs beside the claim it backs. */}
-            <Link to="/wall-wrap/how-it-works" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+            {/* Each brand's own case study. Sending a DesignProAI customer to
+                the partner's version put a printer's logo, a printer's film
+                price and "Order printed film" in front of somebody who came
+                here for the files (owner, 2026-09-16). */}
+            <Link to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
               See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
             </Link>
           </div>
