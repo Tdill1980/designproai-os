@@ -93,20 +93,39 @@ const DEFAULT_SURFACES = [["driver", 153, 56], ["passenger", 153, 56], ["hood", 
     bleed: { top: 5, right: 5, bottom: 5, left: 5 },
   }));
 
+// TWO SERVICE CREDENTIALS, BECAUSE THE FUNCTIONS CHECK DIFFERENT ONES.
+//
+// generate-2d-proof decides `isService` by STRING EQUALITY against its own
+// SUPABASE_SERVICE_ROLE_KEY, or by x-worker-secret against WORKER_SECRET. Run
+// 35159041253 reached Node 3 and was refused "Authentication required", which
+// means the bearer the runtime holds is not character-identical to the key that
+// function compares against -- the two are both valid service credentials for
+// this project but need not be the same string. The worker secret is the other
+// door the same function already opens, and the runtime container has it, so
+// both are presented and whichever matches lets the call through.
+function serviceHeaders(serviceKey, ownerId) {
+  const workerSecret = String(process.env.WORKER_SECRET || "").trim();
+  return {
+    authorization: `Bearer ${serviceKey}`,
+    apikey: serviceKey,
+    "content-type": "application/json",
+    "x-designpro-owner-id": String(ownerId),
+    ...(workerSecret ? { "x-worker-secret": workerSecret } : {}),
+  };
+}
+
 async function invokeEdge(supabaseUrl, serviceKey, ownerId, fn, body) {
   const response = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
     method: "POST",
-    headers: {
-      authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-      "content-type": "application/json",
-      "x-designpro-owner-id": String(ownerId),
-    },
+    headers: serviceHeaders(serviceKey, ownerId),
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success !== true) {
-    throw new Error(`${fn} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)}`);
+    // Presence only. A credential's value never reaches a log or an artifact.
+    const offered = [`bearer:${serviceKey ? "yes" : "no"}`,
+      `workerSecret:${process.env.WORKER_SECRET ? "yes" : "no"}`].join(" ");
+    throw new Error(`${fn} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 400)} [credentials offered — ${offered}]`);
   }
   return payload;
 }
