@@ -82,12 +82,24 @@ function findZone(manifest, surfaceKey) {
   return zone;
 }
 
+/**
+ * A located band is grown by this fraction of the panel on every side before it
+ * is lifted. The reader boxes the glyphs tightly; a box that clips the top of a
+ * word or the tail of its last letter re-drops a garbled word (live on the 911
+ * canary 455b1723: "MARTIN" with a sheared "I"). The pad is small enough that
+ * the mirrored artwork around the word still lines up with what the un-flipped
+ * slice carries, so the seam stays invisible.
+ */
+const BAND_PAD_FRACTION = 0.03;
+
 /** A band is only usable if it lands inside the panel with real area. */
-function bandRect(band, width, height) {
-  const left = Math.round(Number(band?.xPct) * width);
-  const top = Math.round(Number(band?.yPct) * height);
-  const bandWidth = Math.round(Number(band?.wPct) * width);
-  const bandHeight = Math.round(Number(band?.hPct) * height);
+function bandRect(band, width, height, pad = BAND_PAD_FRACTION) {
+  const padX = Math.round(pad * width);
+  const padY = Math.round(pad * height);
+  const left = Math.round(Number(band?.xPct) * width) - padX;
+  const top = Math.round(Number(band?.yPct) * height) - padY;
+  const bandWidth = Math.round(Number(band?.wPct) * width) + 2 * padX;
+  const bandHeight = Math.round(Number(band?.hPct) * height) + 2 * padY;
   if (![left, top, bandWidth, bandHeight].every(Number.isFinite)) return null;
   if (bandWidth < 1 || bandHeight < 1) return null;
   const clampedLeft = Math.min(Math.max(0, left), Math.max(0, width - 1));
@@ -246,5 +258,6 @@ module.exports = {
   MIRROR_CONTRACT: "designpro.atlas-passenger-mirror.v1",
   mirrorPassengerFromDriver,
   extractFlankPanel,
+  BAND_PAD_FRACTION,
   _test: { bandRect, zoneRotation },
 };
