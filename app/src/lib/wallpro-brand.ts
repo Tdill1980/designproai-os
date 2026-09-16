@@ -212,7 +212,10 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
   designpro: {
     logo: null,
     logoAlt: '',
-    eyebrow: 'DesignProAI',
+    // EMPTY ON PURPOSE. The app sidebar is already branded DesignProAI, so an
+    // eyebrow here would be the second time on one screen. Empty makes the
+    // header read simply "WallPro" -- the tool, named once.
+    eyebrow: '',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
     tagline: 'Custom wall wrap design, print files & production panels',
