@@ -173,18 +173,24 @@ const PASSENGER_VERIFY_READS = 3;
 // -- and every car run spent ~2.5 minutes on those two refusals before the
 // one-field contract, which cannot draw a car, produced the sheet. So a first-
 // generation car-class request authors on the field contract directly, with
-// the same two-attempt budget six-surface has. Trucks and vans keep six-surface,
-// where it is proven. DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface
-// first for every class. Revision edits keep their parent's topology.
+// the same two-attempt budget six-surface has.
+//
+// FIELD FIRST FOR EVERY CLASS. (Owner 2026-09-16: "ROUTE TRUCKS THROUGH THE
+// FIELD ALSO".) Trucks and vans had kept six-surface "where it is proven" --
+// and on 2026-09-15 the F-250 itself, the one sheet six-surface ever drew
+// flat, died twice on that path (c4638a66: a refusal, then a repaired sheet
+// classed vehicle_depiction). Of the last fifteen requests, every one of the
+// five failures was six-surface drawing a vehicle; every field-routed request
+// completed. With the field contract now carrying no design direction (RULE
+// 0.37) there is no class that is better served by the container sheet, so
+// the routing is universal and the class only names itself in the receipt.
+// DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface first for every class.
+// Revision edits keep their parent's topology.
 const FIELD_FIRST_ATTEMPTS = 2;
-const SIX_SURFACE_FIRST_VEHICLE_CLASSES = Object.freeze(new Set([
-  "truck", "pickup", "pickup-truck", "van", "cargo-van", "cargo van", "box-truck", "box truck", "bus", "trailer",
-]));
 function fieldFirstReason(vehicle) {
   if (String(process.env.DESIGNPRO_ATLAS_FIELD_FIRST || "").trim().toLowerCase() === "off") return null;
   const type = String(vehicle?.type || vehicle?.vehicleClass || "").trim().toLowerCase();
-  if (!type || SIX_SURFACE_FIRST_VEHICLE_CLASSES.has(type)) return null;
-  return `vehicle-class:${type}`;
+  return `vehicle-class:${type || "unspecified"}`;
 }
 const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
 function resolveMaxAuthoringAttempts(explicit) {

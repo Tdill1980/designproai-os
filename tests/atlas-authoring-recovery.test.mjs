@@ -17,6 +17,12 @@ const surfaces = [["driver",153,56],["passenger",153,56],["hood",71.5,56],
 const geometryResolution = { contract:"designpro.genie-manifest.v1",genieManifestId:"a".repeat(32),
   genieManifestHash:"a".repeat(64),state:"derived",derivationContract:"designpro.genie-front-derived.v1",
   derivedSurfaces:["front"],geometrySourceRowId:"fixture",productionEligible:false,operatorValidated:false };
+// 2026-09-16: field-first now routes EVERY class (owner: "ROUTE TRUCKS THROUGH
+// THE FIELD ALSO"). This file exercises the six-surface authoring mechanics --
+// repair, fail-over, checkpoints, recovery -- which still exist behind the
+// DESIGNPRO_ATLAS_FIELD_FIRST=off switch and for revision edits, so it pins
+// the switch off for its fixtures; the field-first tests below lift it.
+process.env.DESIGNPRO_ATLAS_FIELD_FIRST = "off";
 const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_MODE,mode:"commercial",
   companyName:"Recovery Fixture",brief:"Blue and orange test artwork",vehicle:{year:"2022",make:"Ford",model:"F250 Crew Cab",type:"truck"}};
 const identities = { requestId:"11111111-1111-4111-8111-111111111111",
@@ -626,8 +632,9 @@ test("recoverable artifact reads and explicit provider rejections retain the ori
 // strict referee six-surface has only ever produced a flat sheet for the
 // F-250; on a car it drew the vehicle on every attempt, and every car run paid
 // ~2.5 minutes for those two refusals before the field produced the sheet.
+const fieldFirstOn=t=>{const previous=process.env.DESIGNPRO_ATLAS_FIELD_FIRST;delete process.env.DESIGNPRO_ATLAS_FIELD_FIRST;t.after(()=>{process.env.DESIGNPRO_ATLAS_FIELD_FIRST=previous;});};
 test("a car-class vehicle authors on the one-field contract first and never spends a six-surface try",async t=>{
-  finishFlag(t,"off");failoverFlag(t,undefined);
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
   const {source}=await fixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
   run.masterFor=async body=>body.fieldContract?fieldSource:source;
@@ -641,16 +648,18 @@ test("a car-class vehicle authors on the one-field contract first and never spen
   assert.equal(result.metadata.maxAuthoringAttemptsAllowed,2);
 });
 
-test("trucks keep six-surface first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restores it for every class",async t=>{
-  finishFlag(t,"off");failoverFlag(t,undefined);
-  assert.equal(atlas._test.fieldFirstReason({type:"truck"}),null);
-  assert.equal(atlas._test.fieldFirstReason({type:"van"}),null);
+// 2026-09-16 (owner: "ROUTE TRUCKS THROUGH THE FIELD ALSO"): every class
+// authors on the field first. Of the last fifteen production requests, every
+// failure was six-surface drawing a vehicle -- the F-250 included -- and every
+// field-routed request completed.
+test("every vehicle class authors on the field first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface for every class",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  assert.equal(atlas._test.fieldFirstReason({type:"truck"}),"vehicle-class:truck");
+  assert.equal(atlas._test.fieldFirstReason({type:"van"}),"vehicle-class:van");
   assert.equal(atlas._test.fieldFirstReason({type:"car"}),"vehicle-class:car");
   assert.equal(atlas._test.fieldFirstReason({type:"suv"}),"vehicle-class:suv");
-  assert.equal(atlas._test.fieldFirstReason({type:""}),null,"an unknown class is not routed by guess");
-  const previous=process.env.DESIGNPRO_ATLAS_FIELD_FIRST;
+  assert.equal(atlas._test.fieldFirstReason({type:""}),"vehicle-class:unspecified","no class is left on the container sheet");
   process.env.DESIGNPRO_ATLAS_FIELD_FIRST="off";
-  t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FIRST:process.env.DESIGNPRO_ATLAS_FIELD_FIRST=previous);
   assert.equal(atlas._test.fieldFirstReason({type:"car"}),null);
   const {source}=await fixture();
   const clean=harness(source);
