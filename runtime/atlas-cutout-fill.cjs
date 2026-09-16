@@ -385,7 +385,12 @@ const RING_OFFSETS = (() => {
   return Object.freeze(offsets.map(Object.freeze));
 })();
 
-function inpaintInto(data, width, height, channels, mask) {
+function inpaintInto(data, width, height, channels, mask, options = {}) {
+  // When the hole already carries an estimate (upsampled from a coarser level)
+  // every patch position is worth comparing, including the ones inside the
+  // hole. That is what stops the first ring of pixels committing to an offset
+  // on almost no evidence and then propagating it across the whole opening.
+  const estimated = options.estimated === true;
   const pixelCount = width * height;
   const pending = Uint8Array.from(mask);
   let remaining = 0;
@@ -433,7 +438,8 @@ function inpaintInto(data, width, height, channels, mask) {
         if (tnx < 0 || snx < 0 || tnx >= width || snx >= width) continue;
         const tIndex = tny * width + tnx;
         const sIndex = sny * width + snx;
-        if (pending[tIndex] || pending[sIndex]) continue;
+        if (pending[sIndex]) continue;            // never score against unsettled source
+        if (pending[tIndex] && !estimated) continue; // no estimate: only settled evidence
         const tOffset = tIndex * channels;
         const sOffset = sIndex * channels;
         for (let c = 0; c < 3 && c < channels; c += 1) {
@@ -641,6 +647,450 @@ function inpaintInto(data, width, height, channels, mask) {
   return remaining;
 }
 
+
+/**
+ * MULTI-SCALE: SOLVE THE HOLE SMALL, THEN ADD THE DETAIL.
+ *
+ * `inpaintInto` on its own is single-scale, and on a real wheel arch that is
+ * the whole problem. Measured on generation 5d727ea9's driver flank -- 304,896
+ * px, 8.08% of the panel -- it tripled the texture (stdev 11.9 to 34.5) and
+ * still read as blocky corruption, because the first ring of hole pixels has
+ * almost no evidence to choose an offset from, commits anyway, and coherence
+ * then propagates that choice across three hundred thousand pixels.
+ *
+ * The fix is not a better search at full resolution. It is to make the hole
+ * SMALL. At 1/16 scale that wheel arch is about 38 px across and what has to be
+ * decided is the nebula gradient, which patch matching gets right easily. That
+ * result is then upsampled into the next level as an ESTIMATE, and the finer
+ * level refines it with real evidence in every patch position rather than an
+ * empty hole. Each level only has to add its own octave of detail.
+ *
+ *   coarsest  -- solve the gradient, hole is tens of pixels
+ *   each finer level
+ *              -- upsample the level below into the hole as the estimate
+ *              -- re-run the exemplar pass, now scoring against that estimate
+ *              -- vote
+ *   full res  -- the last refinement; the settled artwork outside the hole is
+ *                never touched at any level
+ *
+ * Downsampling is masked: a coarse pixel averages only its KNOWN children, so
+ * the black of the hole is never mixed into the artwork that has to teach the
+ * fill. A coarse pixel is a hole only when every one of its children is.
+ */
+const MIN_LEVEL_EDGE = 64;   // stop coarsening here; below this there is no structure left
+const MAX_LEVELS = 6;
+
+function downsampleMasked(data, width, height, channels, mask) {
+  const w = Math.max(1, width >> 1);
+  const h = Math.max(1, height >> 1);
+  const out = new Uint8Array(w * h * channels);
+  const outMask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let known = 0;
+      const sums = new Array(channels).fill(0);
+      let anyPixel = 0;
+      const fallback = new Array(channels).fill(0);
+      for (let dy = 0; dy < 2; dy += 1) {
+        for (let dx = 0; dx < 2; dx += 1) {
+          const sy = y * 2 + dy;
+          const sx = x * 2 + dx;
+          if (sy >= height || sx >= width) continue;
+          const index = sy * width + sx;
+          const offset = index * channels;
+          if (!anyPixel) { for (let c = 0; c < channels; c += 1) fallback[c] = data[offset + c]; anyPixel = 1; }
+          if (mask[index]) continue;
+          for (let c = 0; c < channels; c += 1) sums[c] += data[offset + c];
+          known += 1;
+        }
+      }
+      const target = (y * w + x) * channels;
+      if (known) {
+        for (let c = 0; c < channels; c += 1) out[target + c] = Math.round(sums[c] / known);
+      } else {
+        outMask[y * w + x] = 1;
+        for (let c = 0; c < channels; c += 1) out[target + c] = fallback[c];
+      }
+    }
+  }
+  return { data: out, width: w, height: h, mask: outMask };
+}
+
+// Bilinear, and ONLY into the hole. Artwork the model actually drew is never
+// written by an upsample -- the estimate exists to guide the refinement, not to
+// replace anything the master already says.
+function upsampleEstimate(coarse, coarseWidth, coarseHeight, data, width, height, channels, mask) {
+  for (let y = 0; y < height; y += 1) {
+    const fy = Math.min(coarseHeight - 1, Math.max(0, (y - 0.5) / 2));
+    const y0 = Math.floor(fy);
+    const y1 = Math.min(coarseHeight - 1, y0 + 1);
+    const wy = fy - y0;
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      const fx = Math.min(coarseWidth - 1, Math.max(0, (x - 0.5) / 2));
+      const x0 = Math.floor(fx);
+      const x1 = Math.min(coarseWidth - 1, x0 + 1);
+      const wx = fx - x0;
+      const offset = index * channels;
+      for (let c = 0; c < channels; c += 1) {
+        const a = coarse[(y0 * coarseWidth + x0) * channels + c];
+        const b = coarse[(y0 * coarseWidth + x1) * channels + c];
+        const d = coarse[(y1 * coarseWidth + x0) * channels + c];
+        const e = coarse[(y1 * coarseWidth + x1) * channels + c];
+        const top = a + (b - a) * wx;
+        const bottom = d + (e - d) * wx;
+        data[offset + c] = Math.round(top + (bottom - top) * wy);
+      }
+      if (channels > 3) data[offset + channels - 1] = 255;
+    }
+  }
+}
+
+function inpaintPyramid(data, width, height, channels, mask) {
+  // Build the pyramid down from full resolution.
+  const levels = [{ data, width, height, mask }];
+  while (levels.length < MAX_LEVELS) {
+    const top = levels[levels.length - 1];
+    if (Math.min(top.width, top.height) <= MIN_LEVEL_EDGE) break;
+    levels.push(downsampleMasked(top.data, top.width, top.height, channels, top.mask));
+  }
+
+  // Coarsest first. It has no estimate, which is fine: the hole is small there.
+  const coarsest = levels[levels.length - 1];
+  inpaintInto(coarsest.data, coarsest.width, coarsest.height, channels, coarsest.mask);
+
+  // Then refine downward, each level seeded by the one below it.
+  let unresolved = 0;
+  for (let level = levels.length - 2; level >= 0; level -= 1) {
+    const current = levels[level];
+    const coarser = levels[level + 1];
+    upsampleEstimate(coarser.data, coarser.width, coarser.height,
+      current.data, current.width, current.height, channels, current.mask);
+    unresolved = inpaintInto(current.data, current.width, current.height, channels,
+      current.mask, { estimated: true });
+  }
+  return unresolved;
+}
+
+
+/**
+ * CLONE ONE CLEAN REGION OVER THE HOLE, AND FEATHER IT. (owner, "There must be
+ * a better way THINK!")
+ *
+ * THE MISTAKE THE TWO ATTEMPTS ABOVE SHARE. `diffuseInto` decides each hole
+ * pixel from its rim; `inpaintInto` decides each hole pixel from its own best
+ * patch. Both make THREE HUNDRED THOUSAND INDEPENDENT DECISIONS about one
+ * wheel arch, and every disagreement between two neighbouring decisions is a
+ * seam. That is the blob and that is the blockiness -- two faces of the same
+ * error, and no amount of better searching removes it, because the error is
+ * the granularity, not the search.
+ *
+ * AND THERE IS NO GROUND TRUTH TO RECOVER. Nothing was ever drawn behind the
+ * wheel arch, so "reconstruct it" is not the job. The job is what a wrap
+ * designer actually does with a damaged area: CLONE a clean part of the same
+ * artwork over it and blend the edges. One source region means no internal
+ * seams can exist, because there are no independent decisions left to
+ * disagree -- the cloned pixels already agreed with each other in the original.
+ *
+ * How the source is chosen, deterministically: the hole's bounding box is
+ * translated over a fixed grid of candidate offsets; a candidate is legal only
+ * if its whole region is inside the panel and contains no hole pixels itself;
+ * and it is scored on the RIM -- the known artwork in a band just outside the
+ * hole, against the pixels the candidate would place beside it. A source whose
+ * surroundings match the hole's surroundings continues the design; one that
+ * does not, does not win. Ties break on the smaller translation, so the fill
+ * prefers nearby artwork, then on the offset's order in the fixed grid.
+ *
+ * Then two corrections, both cheap and both necessary:
+ *
+ *   COLOUR    the clone is shifted by the difference between the two rims'
+ *             means, so a region lifted from a brighter part of the nebula
+ *             lands at the luminance its new neighbours expect.
+ *   FEATHER   within FEATHER_PX of the hole boundary the clone is blended into
+ *             the diffusion result, which by construction matches the rim
+ *             exactly. So the boundary is seamless (diffusion's one strength)
+ *             and the interior has real texture (the clone's). Neither method
+ *             is used where it is weak.
+ *
+ * Still no invention and still no second producer of design: every pixel
+ * written is this panel's own artwork, translated, and no model is called. A
+ * hole with no legal clean region of its own size falls back to the diffusion
+ * and is reported unchanged.
+ */
+const FEATHER_PX = 48;
+const CLONE_RIM_PX = 12;
+const CLONE_STEP_DIVISOR = 8;   // candidate grid step = holeSize / this
+const BRIGHT_CHANNEL_MIN = 200; // a lettering-bright pixel
+const BRIGHT_EXCESS_PENALTY = 90000; // charged per unit of excess bright fraction
+
+function cloneOverHole(data, width, height, channels, mask, smooth) {
+  // Bounding box of the convicted hole.
+  let minX = width, minY = height, maxX = -1, maxY = -1;
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  if (maxX < 0) return false;
+  const boxWidth = maxX - minX + 1;
+  const boxHeight = maxY - minY + 1;
+
+  // The rim: known artwork just outside the hole. This is the only evidence
+  // about what belongs here, so it is what candidates are judged on.
+  const rim = [];
+  for (let y = Math.max(0, minY - CLONE_RIM_PX); y <= Math.min(height - 1, maxY + CLONE_RIM_PX); y += 1) {
+    for (let x = Math.max(0, minX - CLONE_RIM_PX); x <= Math.min(width - 1, maxX + CLONE_RIM_PX); x += 1) {
+      const index = y * width + x;
+      if (mask[index]) continue;
+      // within CLONE_RIM_PX of the box, not deep in the surrounding artwork
+      const nearBox = x >= minX - CLONE_RIM_PX && x <= maxX + CLONE_RIM_PX
+        && y >= minY - CLONE_RIM_PX && y <= maxY + CLONE_RIM_PX;
+      if (!nearBox) continue;
+      rim.push(index);
+    }
+  }
+  if (!rim.length) return false;
+
+  // How bright the neighbourhood actually is, as the baseline every candidate
+  // is charged against.
+  let rimBright = 0;
+  for (let i = 0; i < rim.length; i += 1) {
+    const offset = rim[i] * channels;
+    const peak = Math.max(data[offset], data[offset + 1] ?? 0, data[offset + 2] ?? 0);
+    if (peak >= BRIGHT_CHANNEL_MIN) rimBright += 1;
+  }
+  const rimBrightFraction = rim.length ? rimBright / rim.length : 0;
+
+  const stepX = Math.max(8, Math.round(boxWidth / CLONE_STEP_DIVISOR));
+  const stepY = Math.max(8, Math.round(boxHeight / CLONE_STEP_DIVISOR));
+
+  let bestScore = -1;
+  let bestDX = 0;
+  let bestDY = 0;
+  let bestDistance = Infinity;
+
+  for (let dy = -height; dy <= height; dy += stepY) {
+    for (let dx = -width; dx <= width; dx += stepX) {
+      if (dx === 0 && dy === 0) continue;
+      if (minX + dx < 0 || minY + dy < 0 || maxX + dx >= width || maxY + dy >= height) continue;
+      // The source region must itself be clean artwork.
+      let clean = true;
+      for (let y = minY; y <= maxY && clean; y += 4) {
+        for (let x = minX; x <= maxX; x += 4) {
+          if (mask[(y + dy) * width + (x + dx)]) { clean = false; break; }
+        }
+      }
+      if (!clean) continue;
+
+      let total = 0;
+      let compared = 0;
+      for (let i = 0; i < rim.length; i += 3) { // every third rim pixel is plenty
+        const index = rim[i];
+        const x = index % width;
+        const y = (index - x) / width;
+        const sx = x + dx;
+        const sy = y + dy;
+        if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+        const source = sy * width + sx;
+        if (mask[source]) continue;
+        const a = index * channels;
+        const b = source * channels;
+        for (let c = 0; c < 3 && c < channels; c += 1) {
+          const delta = data[a + c] - data[b + c];
+          total += delta * delta;
+        }
+        compared += 1;
+      }
+      if (!compared) continue;
+
+      // DO NOT CLONE SOMETHING THE NEIGHBOURHOOD DOES NOT HAVE.
+      //
+      // Scoring the rim alone picks a source whose EDGES match, and on the
+      // September 1 911 that chose a region containing the "911 CYBERSPACE
+      // EDITION" wordmark -- continuous artwork at the boundary, the company
+      // lettering printed a second time inside the wheel arch. A duplicated
+      // wordmark on a print panel is worse than a hole, because a hole is
+      // obviously wrong and a second wordmark looks deliberate.
+      //
+      // Lettering on these sheets is a concentration of very bright pixels
+      // that the surrounding field does not carry, so the source's bright
+      // fraction is compared against the rim's and the difference is charged
+      // against the candidate. It is a statistic of the artwork, not a text
+      // detector, and it needs no model: any region carrying a mark its
+      // neighbourhood lacks -- a logo, a badge, a headline -- is penalised the
+      // same way, which is the property actually wanted.
+      let sourceBright = 0;
+      let sourceCount = 0;
+      for (let y = minY; y <= maxY; y += 4) {
+        for (let x = minX; x <= maxX; x += 4) {
+          const offset = ((y + dy) * width + (x + dx)) * channels;
+          const peak = Math.max(data[offset], data[offset + 1] ?? 0, data[offset + 2] ?? 0);
+          if (peak >= BRIGHT_CHANNEL_MIN) sourceBright += 1;
+          sourceCount += 1;
+        }
+      }
+      const sourceBrightFraction = sourceCount ? sourceBright / sourceCount : 0;
+      const brightExcess = Math.max(0, sourceBrightFraction - rimBrightFraction);
+      const score = (total / compared) + brightExcess * BRIGHT_EXCESS_PENALTY;
+      const distance = dx * dx + dy * dy;
+      if (bestScore < 0 || score < bestScore || (score === bestScore && distance < bestDistance)) {
+        bestScore = score; bestDX = dx; bestDY = dy; bestDistance = distance;
+      }
+    }
+  }
+  if (bestScore < 0) return false;
+
+  // COLOUR: shift the clone by the difference between the two rims' means.
+  const shift = new Array(channels).fill(0);
+  {
+    const here = new Array(channels).fill(0);
+    const there = new Array(channels).fill(0);
+    let count = 0;
+    for (let i = 0; i < rim.length; i += 1) {
+      const index = rim[i];
+      const x = index % width;
+      const y = (index - x) / width;
+      const sx = x + bestDX;
+      const sy = y + bestDY;
+      if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+      const source = sy * width + sx;
+      if (mask[source]) continue;
+      const a = index * channels;
+      const b = source * channels;
+      for (let c = 0; c < channels; c += 1) { here[c] += data[a + c]; there[c] += data[b + c]; }
+      count += 1;
+    }
+    if (count) for (let c = 0; c < channels; c += 1) shift[c] = (here[c] - there[c]) / count;
+  }
+
+  // FEATHER: distance from the hole boundary, in hole pixels only. A simple
+  // two-pass chamfer is enough and is exactly reproducible.
+  const distance = new Int32Array(mask.length).fill(0x3fffffff);
+  for (let index = 0; index < mask.length; index += 1) if (!mask[index]) distance[index] = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      let best = distance[index];
+      if (x > 0) best = Math.min(best, distance[index - 1] + 1);
+      if (y > 0) best = Math.min(best, distance[index - width] + 1);
+      distance[index] = best;
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const index = y * width + x;
+      if (!mask[index]) continue;
+      let best = distance[index];
+      if (x + 1 < width) best = Math.min(best, distance[index + 1] + 1);
+      if (y + 1 < height) best = Math.min(best, distance[index + width] + 1);
+      distance[index] = best;
+    }
+  }
+
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+    const x = index % width;
+    const y = (index - x) / width;
+    const sx = x + bestDX;
+    const sy = y + bestDY;
+    const target = index * channels;
+    if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+    const source = (sy * width + sx) * channels;
+    const alpha = Math.min(1, distance[index] / FEATHER_PX);
+    for (let c = 0; c < 3 && c < channels; c += 1) {
+      const cloned = Math.max(0, Math.min(255, data[source + c] + shift[c]));
+      const blended = smooth[target + c] + (cloned - smooth[target + c]) * alpha;
+      data[target + c] = Math.round(blended);
+    }
+    if (channels > 3) data[target + channels - 1] = 255;
+  }
+  return true;
+}
+
+/**
+ * A CUT-OUT'S OWN OUTLINE IS PART OF THE CUT-OUT. (owner: "wheel well
+ * persists ... see bodyline")
+ *
+ * `convictedHoleMask` convicts the near-BLACK interior of an opening. The model
+ * does not draw a bare black ellipse: it draws a wheel arch, with a bright
+ * glowing rim around it. That rim is not near-black, so it is not masked, so it
+ * is not filled -- and the fill lands inside a contour that survives, leaving
+ * the arch perfectly visible as a curved seam through the artwork. On the
+ * September 1 911 that arc is still legible after a fill that closed 304,896 px
+ * and reported `unresolvedPixels: 0`.
+ *
+ * That curve is a BODY LINE, which RULE 0.28 forbids by name: "no door seams,
+ * panel gaps, rocker or hood contours, wheel arches ... the artwork paints
+ * straight THROUGH every place one would sit." A line drawn on the master
+ * prints as a line on the wrap.
+ *
+ * So the mask grows outward before anything is filled, far enough to swallow
+ * the drawn rim. The radius scales with the opening -- a wheel arch is drawn
+ * with a heavier outline than a door handle -- and is clamped at both ends, so
+ * a small genuine edge nick cannot eat the artwork around it and a large one
+ * cannot leave its own contour behind.
+ */
+const CONTOUR_MIN_PX = 6;
+const CONTOUR_MAX_PX = 56;
+const CONTOUR_RADIUS_DIVISOR = 18;   // of the opening's equivalent radius
+
+function dilateMask(mask, width, height, radius) {
+  if (radius <= 0) return mask;
+  const distance = new Int32Array(mask.length).fill(0x3fffffff);
+  for (let index = 0; index < mask.length; index += 1) if (mask[index]) distance[index] = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      let best = distance[index];
+      if (x > 0) best = Math.min(best, distance[index - 1] + 1);
+      if (y > 0) best = Math.min(best, distance[index - width] + 1);
+      distance[index] = best;
+    }
+  }
+  for (let y = height - 1; y >= 0; y -= 1) {
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const index = y * width + x;
+      let best = distance[index];
+      if (x + 1 < width) best = Math.min(best, distance[index + 1] + 1);
+      if (y + 1 < height) best = Math.min(best, distance[index + width] + 1);
+      distance[index] = best;
+    }
+  }
+  const grown = new Uint8Array(mask.length);
+  for (let index = 0; index < mask.length; index += 1) grown[index] = distance[index] <= radius ? 1 : 0;
+  return grown;
+}
+
+/**
+ * The shipped fill: swallow the drawn contour, diffuse for the boundary, clone
+ * for the body.
+ */
+function fillHole(data, width, height, channels, rawMask) {
+  let area = 0;
+  for (let index = 0; index < rawMask.length; index += 1) if (rawMask[index]) area += 1;
+  const equivalentRadius = Math.sqrt(area / Math.PI);
+  const radius = Math.max(CONTOUR_MIN_PX,
+    Math.min(CONTOUR_MAX_PX, Math.round(equivalentRadius / CONTOUR_RADIUS_DIVISOR)));
+  const mask = dilateMask(rawMask, width, height, radius);
+
+  const smooth = Uint8Array.prototype.slice.call(data);
+  const unresolved = diffuseInto(smooth, width, height, channels, mask);
+  // Start from the diffusion, then clone over it where a clean region exists.
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!mask[index]) continue;
+    const offset = index * channels;
+    for (let c = 0; c < channels; c += 1) data[offset + c] = smooth[offset + c];
+  }
+  cloneOverHole(data, width, height, channels, mask, smooth);
+  return unresolved;
+}
+
 /**
  * Return a duplicate of the master whose convicted cut-outs are closed.
  *
@@ -724,5 +1174,6 @@ module.exports = {
   FILL_CONTRACT,
   MAX_FILL_PASSES,
   fillMasterCutouts,
-  _test: { convictedHoleMask, diffuseInto, inpaintInto, PATCH_RADIUS, RING_OFFSETS, VOTE_PASSES },
+  _test: { convictedHoleMask, diffuseInto, inpaintInto, inpaintPyramid, downsampleMasked, upsampleEstimate, cloneOverHole, fillHole, PATCH_RADIUS, RING_OFFSETS, VOTE_PASSES, MIN_LEVEL_EDGE, MAX_LEVELS, FEATHER_PX, BRIGHT_CHANNEL_MIN,
+    dilateMask, CONTOUR_MIN_PX, CONTOUR_MAX_PX },
 };
