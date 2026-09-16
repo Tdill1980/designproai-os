@@ -557,10 +557,21 @@ jobs:
           # Empty means "leave it as the droplet already has it" -- see
           # configure-env.sh, which rewrites runtime.env on every deploy and so
           # must carry the flag forward rather than silently resetting it.
-          ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish == 'unchanged' && '' || inputs.atlas_panel_finish }}
-          ATLAS_TOPOLOGY: ${{ inputs.atlas_topology == 'unchanged' && '' || inputs.atlas_topology }}
-          ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first == 'unchanged' && '' || inputs.atlas_field_first }}
-          ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph == 'unchanged' && '' || inputs.atlas_call1_graph }}
+          #
+          # THE TEST IS WRITTEN `!= 'unchanged' && <value> || ''`, NEVER
+          # `== 'unchanged' && '' || <value>`. An empty string is FALSY in a
+          # GitHub Actions expression, so the second form's `&&` yields '',
+          # the `||` then falls through, and the literal word `unchanged` is
+          # exported -- which configure-env.sh reads as a real instruction,
+          # skips its sticky read, and resolves to the flag's DEFAULT. That is
+          # how `atlas_field_first=off`, deployed on 031d8989, was silently
+          # reset to `on` by the very next deploy (de581246, 2026-09-16
+          # 05:52Z, whose log prints `ATLAS_FIELD_FIRST: unchanged`), and it
+          # applied to all four flags at once.
+          ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish != 'unchanged' && inputs.atlas_panel_finish || '' }}
+          ATLAS_TOPOLOGY: ${{ inputs.atlas_topology != 'unchanged' && inputs.atlas_topology || '' }}
+          ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first != 'unchanged' && inputs.atlas_field_first || '' }}
+          ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph != 'unchanged' && inputs.atlas_call1_graph || '' }}
         shell: bash
         run: |
           set +x
