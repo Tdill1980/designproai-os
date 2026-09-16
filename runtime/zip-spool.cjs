@@ -174,6 +174,36 @@ async function spoolImmutableBuffer({ spoolDir, runId, materialHash, bytes, sign
   }
 }
 
+async function* storedByteStream(client, storagePath, signal) {
+  if (signal?.aborted) fail("stage_lease_lost", "Stage lease was lost before reading stored bytes");
+  const { data, error } = await streamDownload(client, storagePath);
+  if (error) fail("zip_storage_read_failed", `${storagePath}: ${error.message}`);
+  if (!data) fail("zip_storage_read_missing", `${storagePath}: no bytes`, false);
+  for await (const chunk of iterableStorageBody(data)) yield chunk;
+}
+
+// Re-stream an ALREADY VERIFIED stored ZIP into the local spool so it can be
+// written elsewhere through the resumable transport. This copies bytes; it
+// never authors them, and it refuses unless what it read hashes to the
+// identity the caller named.
+async function spoolStoredZip({ supabase, storagePath, spoolDir, runId, contentHash, byteSize, signal } = {}) {
+  const identity = String(contentHash || "").toLowerCase();
+  if (!HASH_RE.test(identity) || !Number.isSafeInteger(Number(byteSize)) || Number(byteSize) < 1) {
+    fail("zip_spool_identity_invalid", "Re-streaming a stored ZIP requires its exact content hash and byte size", false);
+  }
+  // The client is resolved inside the factory, not before it: an existing
+  // material-addressed winner must be reused without touching Storage at all.
+  const spool = await spoolDeterministicZip64({
+    spoolDir, runId, materialHash: identity,
+    createStream: () => storedByteStream(supabase.storage.from(BUCKET), storagePath, signal),
+    signal,
+  });
+  if (spool.contentHash !== identity || spool.byteSize !== Number(byteSize)) {
+    fail("zip_spool_content_drift", `${storagePath} does not match the verified ZIP identity`, false);
+  }
+  return spool;
+}
+
 function directTusEndpoint(supabaseUrl, configuredEndpoint) {
   const source = String(configuredEndpoint || "").trim();
   let endpoint;
@@ -275,7 +305,13 @@ async function uploadSpoolWithTus({
   const targetMatch = target.match(/^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/(production-pack\.zip|stamped-call8-proof\.png|outputs\/[a-z0-9-]+\.(?:png|tiff|eps)|proof-masters\/(?:raw\/)?[a-z0-9-]+-[0-9a-f]{24}\.png|proof\/(?:flat-wrap-layout|call8-2d-production-proof)-[0-9a-f]{24}\.png|proof\/stamped-view-(?:driver|passenger|hood|roof|front|rear|closeup|hero3d)-[0-9a-f]{24}\.png|panelprofile\/(?:package-[0-9a-f]{64}\.zip|(?:production|review|previews|assets)\/[A-Za-z0-9._~/-]+-[0-9a-f]{64}\.(?:png|tiff|pdf|svg|jpg|webp|eps))|surfaces\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png|panels\/(?:driver|passenger|hood|roof|front|rear)\.png|qc-panels\/(?:driver|passenger|hood|roof|front|rear)\.png|enhanced\/(?:driver|passenger|hood|roof|front|rear)-[0-9a-f]{24}\.png)$/);
   const templateTarget = /^designpro-template-private\/v1\/[0-9a-f-]{36}\/(?:sources\/[0-9a-f]{64}|candidates\/[0-9a-f-]{36})\/[a-z-]+-[0-9a-f]{64}\.(?:png|jpg|webp|svg|pdf|eps|json)$/.test(target)
     || /^designpro\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/panelprofile-templates\/[a-z-]+-[0-9a-f]{64}\.(?:png|json)$/.test(target);
-  if ((!targetMatch && !templateTarget) || target.split("/").some(part => !part || part === "." || part === "..")) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
+  // The delivered WrapBox copy of the production pack. It is the SAME bytes as
+  // designpro/.../production-pack.zip, re-streamed because Supabase's
+  // server-side copy() is one request against the whole object and does not
+  // survive a multi-gigabyte pack. Named here deliberately, like every other
+  // producer that can cross MAX_STANDARD_UPLOAD_BYTES.
+  const deliveryTarget = /^wrapbox\/user_[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/production-pack\.zip$/.test(target);
+  if ((!targetMatch && !templateTarget && !deliveryTarget) || target.split("/").some(part => !part || part === "." || part === "..")) fail("tus_storage_path_invalid", "Resumable artifact path is outside the exact DesignPro run allowlist", false);
   const extension = target.split(".").pop().toLowerCase();
   const expectedType = ({ zip: "application/zip", png: "image/png", tiff: "image/tiff", eps: "application/postscript", pdf: "application/pdf", svg: "image/svg+xml", jpg: "image/jpeg", webp: "image/webp", json: "application/json" })[extension];
   if (!expectedType || String(contentType || "").toLowerCase() !== expectedType) fail("tus_content_type_invalid", "Resumable artifact content type does not match its exact extension", false);
@@ -325,6 +361,7 @@ module.exports = Object.freeze({
   removeCommittedSpool,
   spoolImmutableBuffer,
   spoolDeterministicZip64,
+  spoolStoredZip,
   uploadSpoolWithTus,
   verifyStoredArtifact,
   verifyStoredZip,

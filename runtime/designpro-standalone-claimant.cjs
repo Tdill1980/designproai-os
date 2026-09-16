@@ -26,7 +26,7 @@ const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-pr
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
-const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
+const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
@@ -2202,12 +2202,27 @@ async function approvedProductionAttachments(sb, run) {
   return assertPinnedPanelProfileAttachments(sb, run, output.receipt?.panelProfileAttachments);
 }
 
-async function copyVerifiedZip(sb, sourcePath, targetPath, contentHash, byteSize) {
+// DELIVERING A MULTI-GIGABYTE PACK IS A STREAM, NOT A COPY.
+//
+// Supabase's server-side copy() is one request against the whole object, and
+// canary 35124251343 proved it does not survive a 4.91 GB production pack:
+// every stage through zip.build completed -- six Topaz masters, eighteen
+// production outputs, seven stamped proofs, the certificate and the seal --
+// and wrapbox.deliver died on delivery_zip_copy_failed with all of it built.
+// The runtime already owns the transport this needs, because the same ZIP was
+// UPLOADED through it: a local spool plus resumable TUS. So the copy stays as
+// the fast path for a pack small enough for it, and a copy failure re-streams
+// the verified bytes instead of destroying a finished run. Nothing is
+// authored here -- spoolStoredZip refuses unless what it reads hashes to the
+// identity zip.build recorded.
+async function copyVerifiedZip(sb, stage, run, runtimeConfig, sourcePath, targetPath, contentHash, byteSize) {
   assertStageLeaseActive();
   const client = sb.storage.from(BUCKET);
-  const { error } = await client.copy(safePath(sourcePath, "source ZIP"), safePath(targetPath, "delivered ZIP"));
+  const source = safePath(sourcePath, "source ZIP");
+  const target = safePath(targetPath, "delivered ZIP");
+  const { error } = await client.copy(source, target);
   if (error && !/already exists|duplicate|conflict|resourcealreadyexists/i.test(`${error.code || ""} ${error.message || ""}`)) {
-    throw new StageError("delivery_zip_copy_failed", error.message);
+    return streamVerifiedZipToDelivery(sb, stage, run, runtimeConfig, source, target, contentHash, byteSize, error);
   }
   try {
     const observed = await verifyStoredZip({ supabase: sb, storagePath: targetPath, contentHash, byteSize, signal: stageLeaseContext.getStore()?.controller?.signal });
@@ -2216,6 +2231,37 @@ async function copyVerifiedZip(sb, sourcePath, targetPath, contentHash, byteSize
   } catch (errorValue) {
     if (errorValue instanceof StageError) throw errorValue;
     throw new StageError(errorValue.code || "delivery_zip_copy_invalid", errorValue.message, errorValue.retryable !== false);
+  }
+}
+
+async function streamVerifiedZipToDelivery(sb, stage, run, runtimeConfig, source, target, contentHash, byteSize, copyError) {
+  const signal = stageLeaseContext.getStore()?.controller?.signal;
+  let spool;
+  try {
+    return await withHeavyOutputLease(sb, stage, async () => {
+      spool = await spoolStoredZip({
+        supabase: sb, storagePath: source, spoolDir: runtimeConfig.spoolDir,
+        runId: run.id, contentHash, byteSize: Number(byteSize), signal,
+      });
+      const stored = await uploadSpoolWithTus({
+        supabase: sb, supabaseUrl: runtimeConfig.supabaseUrl, serviceRoleKey: runtimeConfig.serviceRoleKey,
+        endpoint: runtimeConfig.tusEndpoint, spoolDir: runtimeConfig.spoolDir, spool,
+        storagePath: target, contentType: "application/zip", signal,
+      });
+      if (stored.contentHash !== String(contentHash).toLowerCase() || stored.byteSize !== Number(byteSize)) {
+        throw new StageError("delivery_zip_copy_invalid", "The delivered ZIP does not match the verified pack identity", false);
+      }
+      return stored;
+    });
+  } catch (streamError) {
+    if (streamError instanceof StageError) throw streamError;
+    throw new StageError(
+      streamError.code || "delivery_zip_copy_failed",
+      `server-side copy failed (${copyError?.message || "unknown"}); resumable delivery also failed: ${streamError.message}`,
+      streamError.retryable !== false,
+    );
+  } finally {
+    if (spool) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] delivered ZIP spool cleanup failed: ${error.message}`));
   }
 }
 
@@ -3032,7 +3078,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const panelProfileAttachments = authorized.productionPackAuthorized ? await approvedProductionAttachments(sb, run) : [];
     if (JSON.stringify(canonical(zipReceipt.receipt?.panelProfileAttachments || [])) !== JSON.stringify(canonical(panelProfileAttachments))) throw new StageError("panelprofile_attachment_approval_drift", "The archived physical-piece package differs from final QC", false);
     files.push(...attachmentArchiveFiles(panelProfileAttachments).map(file => ({ kind: file.kind, surfaceKey: file.pieceId || "", storagePath: file.storagePath, contentHash: file.contentHash, byteSize: file.byteSize, attachmentId: file.attachmentId })));
-    const deliveredZip = await copyVerifiedZip(sb, zipRow.storage_path, target, zipRow.content_hash, Number(zipRow.byte_size));
+    const deliveredZip = await copyVerifiedZip(sb, stage, run, runtimeConfig, zipRow.storage_path, target, zipRow.content_hash, Number(zipRow.byte_size));
     const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId: sourceRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, stampedViews: zipReceipt.receipt.stampedViews, proofJoin: zipReceipt.receipt.proofJoin, panelProfileAttachments, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files, products: authorized.products, deliverables: authorized.deliverables };
     const manifestBytes = Buffer.from(JSON.stringify(canonical(manifest)));
     const stored = await upload(sb, `wrapbox/${tenant}/${run.entice_pack_id}/${run.id}/manifest.json`, manifestBytes, "application/json");
