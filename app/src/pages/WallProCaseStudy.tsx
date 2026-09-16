@@ -47,7 +47,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, Ruler, Frame, Sparkles, Scaling, Printer, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { wallBrand, WALL_GRADIENT } from '@/lib/wallpro-brand';
+import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { DEFAULT_WALL_PRINT, planWallPrint, wallBilling } from '@/lib/wallpro-print-plan';
@@ -132,8 +132,29 @@ function Fact({ label, value, note }: { label: string; value: string; note?: str
   );
 }
 
-export default function WallProCaseStudy() {
-  const theme = wallBrand('weprintwraps');
+/**
+ * ONE CASE STUDY, TWO BRANDS (owner, 2026-09-16: "I need it to be a wallpro
+ * page on os.designpro — the WPW version is another version").
+ *
+ * This page was hardcoded to `weprintwraps`, so the link the DesignProAI tool
+ * page offers -- "See a real wall, bare to installed" -- landed a DesignProAI
+ * customer on a page wearing a printer's logo, quoting that printer's film
+ * price, and closing with "Order printed film". The wall, the panels and the
+ * arithmetic are identical on both domains; only who prints it differs.
+ *
+ * So it takes the SAME `brand` prop WallPro.tsx takes, defaults the same way,
+ * and reads the same table. Not a copy: a second file would drift from this
+ * one the first time a number changed, and every number here is computed by
+ * the tool's own code precisely so the page cannot go stale.
+ *
+ * Everything gated below hangs off `theme.showPrintOffer` -- the one flag that
+ * already means "this brand sells the printing" -- so a future partner gets
+ * the right page by adding a row to the brand table, not by editing this file.
+ */
+export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
+  const theme = wallBrand(brand);
+  /** Where "design your wall" goes. The partner's tool lives at its own slug. */
+  const toolHref = brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro';
 
   // EVERY number below is the tool's own answer, computed now.
   const settings = DEFAULT_WALL_PRINT;
@@ -153,9 +174,17 @@ export default function WallProCaseStudy() {
       <header className="sticky top-0 z-30 bg-black px-4 py-3 md:px-8 md:py-4">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
           <WallProLockup theme={theme} compact />
-          <Button asChild size="sm" className={`${WALL_GRADIENT} text-white md:h-10 md:px-4`}>
-            <Link to="/wall-wrap">Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* The other half of the story: this page is what happens, the FAQ
+                is what it costs and what the marks on your photo mean. */}
+            <Button asChild size="sm" variant="outline"
+              className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
+              <Link to={`${toolHref}/faq`}>Prices &amp; FAQ</Link>
+            </Button>
+            <Button asChild size="sm" className={`${WALL_GRADIENT} text-white md:h-10 md:px-4`}>
+              <Link to={toolHref}>Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          </div>
         </div>
         <WallProHeaderRule />
       </header>
@@ -168,17 +197,24 @@ export default function WallProCaseStudy() {
               One wall,<br />bare to installed.
             </h1>
             <p className="mt-4 max-w-[48ch] text-base leading-relaxed text-slate-300">
-              A {WALL.widthIn}″ × {WALL.heightIn}″ studio wall, designed in WallPro and printed
-              by WePrintWraps. Every measurement, panel and price on this page is
-              computed live by the same code the tool runs — so what you read here
-              is what you will get, not a screenshot of what it used to do.
+              A {WALL.widthIn}″ × {WALL.heightIn}″ studio wall, designed in WallPro
+              {theme.showPrintOffer ? ' and printed by WePrintWraps' : ''}. Every measurement,
+              panel and price on this page is computed live by the same code the tool
+              runs — so what you read here is what you will get, not a screenshot of
+              what it used to do.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild className={`${WALL_GRADIENT} text-white`}>
-                <Link to="/wall-wrap">Start your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
+                <Link to={toolHref}>Start your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
+              {/* The second door is the printer's, and it is an anchor into a
+                  section that only the printing brand's tool page renders. On
+                  DesignProAI it would scroll to nothing, so the customer who
+                  already has artwork is sent to the step that takes it. */}
               <Button asChild variant="outline" className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
-                <Link to="/wall-wrap#order-printed-film">I already have artwork</Link>
+                {theme.showPrintOffer
+                  ? <Link to="/wall-wrap#order-printed-film">I already have artwork</Link>
+                  : <Link to={`${toolHref}#choose-design`}>I already have artwork</Link>}
               </Button>
             </div>
           </div>
@@ -327,7 +363,12 @@ export default function WallProCaseStudy() {
               <Fact label="Panels" value={String(plan.panels.length)} note={`≤ ${WALLPRO_PRINT_WIDTH}″ each, on a ${ROLL_IN}″ roll`} />
               <Fact label="Source resolution" value={`${settings.minPpi} PPI`} note="enforced before a file is built" />
               {billing && <Fact label="Billed area" value={`${billing.billedSqFt} sq ft`} note={`${billing.panels} panels × ${ROLL_IN}″ × ${billing.panelLengthIn}″`} />}
-              {filmTotal != null && film && <Fact label="Printed film" value={money(filmTotal)} note={`${film.name} at $${(film.price as number).toFixed(2)}/sq ft`} />}
+              {/* A film price is a quote from the brand that prints it. On
+                  DesignProAI nobody is quoting, so the slot carries the fact
+                  that IS true on both domains: the file's own print size. */}
+              {theme.showPrintOffer
+                ? (filmTotal != null && film && <Fact label="Printed film" value={money(filmTotal)} note={`${film.name} at $${(film.price as number).toFixed(2)}/sq ft`} />)
+                : <Fact label="Printed size" value={`${plan.bounds.width}″ × ${plan.bounds.height}″`} note="the whole wall, bleed included, as one file" />}
             </dl>
             {/* The honest line. A quote that hides the roll-width rounding is a
                 quote the invoice contradicts. */}
@@ -342,7 +383,7 @@ export default function WallProCaseStudy() {
             n={6} icon={Home} title="Installed"
             lead="The panels hang in order with the overlap duplicated on both sides of every seam, so the pattern meets itself rather than being coaxed into place. Trimming at the ceiling, skirting and window happens on the wall, which is why the artwork prints straight through them."
             figure={
-              <Figure caption={<><strong className="font-semibold">After.</strong> Designed in WallPro, printed by WePrintWraps.</>}>
+              <Figure caption={<><strong className="font-semibold">After.</strong> Designed in WallPro{theme.showPrintOffer ? ', printed by WePrintWraps' : ''}.</>}>
                 <img src="/wallpro/proof-spa-after.jpg" alt="The finished studio with the tropical mural installed on both walls either side of the window" className="aspect-[4/3] w-full object-cover" />
               </Figure>
             }
@@ -352,16 +393,20 @@ export default function WallProCaseStudy() {
         <section className={`mt-20 ${WALL_GRADIENT} rounded-2xl px-6 py-10 text-center shadow-2xl shadow-blue-900/40 md:px-10 md:py-14`}>
           <h2 className="text-3xl font-extrabold tracking-tight md:text-4xl">Your wall, the same way.</h2>
           <p className="mx-auto mt-3 max-w-[46ch] text-sm text-white/85">
-            Measure it, design it, and take the print-ready files — whether we print
-            them or you do.
+            {theme.showPrintOffer
+              ? <>Measure it, design it, and take the print-ready files — whether we print them or you do.</>
+              : <>Measure it, design it, and take the print-ready files — production panels at {settings.minPpi} PPI, ready for any printer.</>}
           </p>
           <div className="mt-7 flex flex-wrap justify-center gap-3">
             <Button asChild size="lg" className="bg-white text-blue-700 hover:bg-white/90">
-              <Link to="/wall-wrap">Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Link to={toolHref}>Design your wall<ArrowRight className="ml-2 h-4 w-4" /></Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-              <Link to="/wall-wrap#order-printed-film">Order printed film</Link>
-            </Button>
+            {/* Only the brand that sells the printing offers it. */}
+            {theme.showPrintOffer && (
+              <Button asChild size="lg" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                <Link to="/wall-wrap#order-printed-film">Order printed film</Link>
+              </Button>
+            )}
           </div>
         </section>
       </main>

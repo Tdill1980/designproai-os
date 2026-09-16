@@ -296,8 +296,8 @@ test("a reader that throws declines rather than failing an accepted run", async 
 const WORD_BAND = { xPct: 0.25, yPct: 0.66, wPct: 0.46, hPct: 0.2 };
 const NUMBER_BAND = { xPct: 0.7, yPct: 0.1, wPct: 0.2, hPct: 0.2 };
 /** The same band as seen on the passenger panel (the driver panel flopped). */
-const onPassenger = (band, orientation) => ({ ...band, xPct: 1 - band.xPct - band.wPct, text: "x", orientation });
-const forward = (band) => ({ ...band, text: "x", orientation: "forward" });
+const onPassenger = (band, orientation) => ({ ...band, xPct: 1 - band.xPct - band.wPct, text: "MARTINI", orientation });
+const forward = (band) => ({ ...band, text: "MARTINI", orientation: "forward" });
 
 test("the driver panel read is the primary band source and the sheet read is not called", async () => {
   const labels = [];
@@ -305,7 +305,13 @@ test("the driver panel read is the primary band source and the sheet read is not
     masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
     provider: providerReturning([], {
       onCall: (_body, label) => labels.push(label),
-      lettering: { driver: [forward(WORD_BAND), forward(NUMBER_BAND)], passenger: [[]] },
+      // A WORKING verify read SEES the re-dropped words, forward. The empty
+      // read this fixture used to carry is what "verified" meant on cc382c3c,
+      // where the reader was simply blind -- see the unproven test below.
+      lettering: {
+        driver: [forward(WORD_BAND), forward(NUMBER_BAND)],
+        passenger: [[onPassenger(WORD_BAND, "forward"), onPassenger(NUMBER_BAND, "forward")]],
+      },
     }),
   });
   assert.equal(result.composed, true, result.reason || "");
@@ -313,9 +319,10 @@ test("the driver panel read is the primary band source and the sheet read is not
   assert.equal(result.letteringRead, "located");
   assert.equal(result.letteringSource, "designpro.atlas-lettering-read.v1");
   assert.deepEqual(labels, [DRIVER_READ_LABEL, PASSENGER_VERIFY_LABEL], "panel read, mirror, one verify read -- no sheet read");
-  assert.deepEqual(result.letteringVerify, {
-    contract: "designpro.atlas-lettering-read.v1", reads: 1, corrections: 0, mirroredFound: [0], status: "verified", code: null, reason: null,
-  });
+  assert.equal(result.letteringVerify.status, "verified", "the read resolved the lettering and none of it was reversed");
+  assert.equal(result.letteringVerify.sawLettering, true);
+  assert.deepEqual(result.letteringVerify.mirroredFound, [0]);
+  assert.equal(result.letteringVerify.corrections, 0);
 });
 
 test("a band the driver read missed is caught mirrored on the composed flank and corrected", async () => {
@@ -327,7 +334,9 @@ test("a band the driver read missed is caught mirrored on the composed flank and
       onCall: (_body, label) => labels.push(label),
       // The driver read finds nothing; the first read-back of the composed
       // flank names the word band as mirrored; the second finds it forward.
-      lettering: { driver: [], passenger: [[onPassenger(WORD_BAND, "mirrored")], []] },
+      // The second read must RESOLVE it forward, not go blank -- a blank read
+      // proves nothing and is now recorded as unproven, not verified.
+      lettering: { driver: [], passenger: [[onPassenger(WORD_BAND, "mirrored")], [forward(WORD_BAND)]] },
     }),
   });
   assert.equal(result.composed, true, result.reason || "");
@@ -343,6 +352,9 @@ test("a band the driver read missed is caught mirrored on the composed flank and
   // slice, un-flipped, at the mirrored position -- not a flop of it.
   const driver = await extractFlankPanel(before, manifest, "driver");
   const passenger = await extractFlankPanel(result.bytes, manifest, "passenger");
+  // The reader's box is padded, then the flood key tightens the cut back to
+  // the word's own extent, so the word itself is copied pixel for pixel; only
+  // the 2px margin ring around it is feathered.
   const rect = { left: Math.round(WORD_BAND.xPct * ZONE.w), top: Math.round(WORD_BAND.yPct * ZONE.h), width: Math.round(WORD_BAND.wPct * ZONE.w), height: Math.round(WORD_BAND.hPct * ZONE.h) };
   const driverSlice = await sharp(driver.bytes).extract(rect).raw().toBuffer();
   const passengerSlice = await sharp(passenger.bytes).extract({ ...rect, left: ZONE.w - rect.left - rect.width }).raw().toBuffer();
@@ -430,4 +442,238 @@ test("a missing flank zone declines rather than throwing", async () => {
     assert.equal(result.composed, false, missing);
     assert.equal(result.reason, "flank_zones_not_twins", missing);
   }
+});
+
+
+// THE READER'S BOX IS A HINT; THE PIXELS DECIDE THE CUT (live 7c7bd633,
+// 2026-09-16). Flash boxed "Climate Solutions" out to x=0.93 where the word
+// ended at 0.76, so the opaque slab cut on that box landed 0.17 of the panel
+// to the left of the reversed word it was meant to cover, and the two lines
+// of the lockup, boxed separately, slid apart and overlapped. Two things must
+// hold on a loose two-line read: every white lettering pixel on the composed
+// passenger flank is the exact mirror image of the driver's (the lockup lands
+// where the flop put its reverse, nothing doubled, nothing left reversed), and
+// the two lines keep their relative alignment because they moved as one lockup.
+async function whiteMask(bytes) {
+  const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const mask = new Uint8Array(info.width * info.height);
+  for (let i = 0; i < mask.length; i += 1) {
+    mask[i] = data[i * 4] > 235 && data[i * 4 + 1] > 235 && data[i * 4 + 2] > 235 ? 1 : 0;
+  }
+  return { mask, width: info.width, height: info.height };
+}
+
+test("a loose two-line read is cut to the lettering and re-dropped as one lockup, exactly over its reverse", async () => {
+  // Two-line lockup: a long line and a shorter one left-aligned under it.
+  const lines = [
+    { x: 0.25, y: 0.40, w: 0.46, h: 0.14 },
+    { x: 0.25, y: 0.58, w: 0.30, h: 0.14 },
+  ];
+  const lockupPanel = (w, h, fill) => sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+       <rect width="100%" height="100%" fill="#1b6fa8"/>
+       <polygon points="0,0 ${Math.round(w * 0.38)},0 ${Math.round(w * 0.08)},${h}" fill="#f2c14e"/>
+       ${lines.map((l) => `<rect x="${Math.round(l.x * w)}" y="${Math.round(l.y * h)}" width="${Math.round(l.w * w)}" height="${Math.round(l.h * h)}" fill="${fill}"/>`).join("")}
+     </svg>`,
+  )).png().toBuffer();
+  const composites = await Promise.all(manifest.zones.map(async (zone) => ({
+    input: await lockupPanel(zone.w, zone.h, zone.surfaceKey === "passenger" ? "#111111" : "#ffffff"),
+    left: zone.x, top: zone.y,
+  })));
+  const before = await sharp({ create: { width: CANVAS.widthPx, height: CANVAS.heightPx, channels: 3, background: "#ffffff" } })
+    .composite(composites).png().toBuffer();
+  const guide = await guideBytes();
+  // Loose boxes, the way Flash returns them: the top line's box overshoots to
+  // the right by 0.11 of the panel (the reader caps a band at 0.6 wide), the bottom line box is too tall.
+  const loose = [
+    { xPct: 0.22, yPct: 0.37, wPct: 0.60, hPct: 0.19, text: "PRECISION", orientation: "forward" },
+    { xPct: 0.23, yPct: 0.55, wPct: 0.36, hPct: 0.24, text: "CLIMATE", orientation: "forward" },
+  ];
+  const result = await composePassengerFromDriver({
+    input: { companyName: "Precision Climate" }, masterBytes: before, manifest, guideBytes: guide,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: loose, passenger: [[]] } }),
+    logger: () => {},
+  });
+  assert.equal(result.bandsApplied, 2, "both loose bands were located and applied");
+
+  const driver = await whiteMask((await extractFlankPanel(before, manifest, "driver")).bytes);
+  const passenger = await whiteMask((await extractFlankPanel(result.bytes, manifest, "passenger")).bytes);
+  assert.equal(driver.width, passenger.width);
+  // The lockup's own bounding box on the driver, from the pixels.
+  let bl = driver.width; let br = -1; let driverWhite = 0; let passengerWhite = 0;
+  for (let y = 0; y < driver.height; y += 1) {
+    for (let x = 0; x < driver.width; x += 1) {
+      if (driver.mask[y * driver.width + x]) { driverWhite += 1; if (x < bl) bl = x; if (x > br) br = x; }
+      passengerWhite += passenger.mask[y * passenger.width + x];
+    }
+  }
+  // The whole lockup is TRANSLATED to where the flop put its reverse; inside
+  // it, the two lines keep the alignment they were authored with.
+  const shift = (passenger.width - 1 - br) - bl;
+  let mismatched = 0;
+  for (let y = 0; y < driver.height; y += 1) {
+    for (let x = 0; x < driver.width; x += 1) {
+      const d = driver.mask[y * driver.width + x];
+      const px = x + shift;
+      const p = px >= 0 && px < passenger.width ? passenger.mask[y * passenger.width + px] : 0;
+      if (d !== p) mismatched += 1;
+    }
+  }
+  assert.ok(driverWhite > 0);
+  assert.equal(passengerWhite, driverWhite, "no lettering pixel is doubled, lost or left reversed");
+  assert.equal(mismatched, 0, "the lockup sits exactly where the flop put its reverse, both lines aligned as authored");
+  // And the rest of the flank is still the mirror.
+  assert.ok((await mirrorMae(result.bytes)) < 0.26);
+});
+
+// LETTERING THE READER SAW BUT COULD NOT BOUND IS NEVER "NONE" (live
+// cc382c3c, 2026-09-16: "PRECISION" at 0.59 x 0.32 of the panel was dropped
+// on the old area cap, the read said no lettering, the passenger shipped
+// reversed, and the verify read -- same cap -- called it verified).
+test("a wordmark the reader boxes beyond the caps declines the composition rather than reading as no lettering", async () => {
+  const before = await master();
+  const guide = await guideBytes();
+  const whole = { xPct: 0.0, yPct: 0.1, wPct: 0.98, hPct: 0.5, text: "PRECISION", orientation: "forward" };
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: guide, input: WITH_BRAND,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: [whole], passenger: [[]] } }),
+  });
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "brand_bands_oversized");
+});
+
+test("a reversed wordmark on the composed flank that cannot be bounded is a positive finding, never verified", async () => {
+  const before = await master();
+  const guide = await guideBytes();
+  const reversedWhole = { xPct: 0.0, yPct: 0.1, wPct: 0.98, hPct: 0.5, text: "NOISICERP", orientation: "mirrored" };
+  const result = await composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: guide, input: WITH_BRAND,
+    provider: providerReturning([], { masterHash: sha(before), guideHash: sha(guide), lettering: { driver: [forward(WORD_BAND)], passenger: [[reversedWhole]] } }),
+  });
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "reversed_lettering_unresolved");
+  assert.equal(result.letteringVerify.status, "unresolved");
+  assert.equal(result.letteringVerify.code, "reversed_lettering_oversized");
+});
+
+// LIVE cc382c3c (2026-09-16, Precision Climate Solutions on a 911 Turbo) — A
+// VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING.
+//
+// The driver read missed "PRECISION" on the pre-#440 caps, the mirror applied
+// no bands, the passenger verify read returned nothing from that same blind
+// reader, and the receipt recorded `mirroredFound: [0], status: "verified"`
+// while the flank shipped with the company name reversed. The brief named the
+// company only in its prose, so `brandStringCount` was 0 and the read-stage
+// decline never fired either. Zero MIRRORED bands is evidence only when the
+// read resolved lettering at all.
+
+test("a verify read that resolves no lettering never reports verified", async () => {
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], {
+      // The driver read locates the wordmark and it is re-dropped; the verify
+      // read then resolves nothing at all -- it cannot see the panel it just
+      // certified on the old code.
+      lettering: { driver: [forward(WORD_BAND)], passenger: [[]] },
+    }),
+  });
+  assert.equal(result.composed, true, "an unseeing reader is not a positive finding of reversal; the composition stands");
+  assert.equal(result.bandsApplied, 1);
+  assert.equal(result.letteringVerify.status, "unproven", "this is exactly what cc382c3c wrote down as verified");
+  assert.equal(result.letteringVerify.code, "verify_read_saw_no_lettering");
+  assert.equal(result.letteringVerify.sawLettering, false);
+  assert.notEqual(result.letteringVerify.status, "verified");
+});
+
+test("both reads resolving nothing is concordant, recorded honestly, and still mirrors", async () => {
+  // The 9789762d Martini stripe flank: genuinely no lettering. Declining here
+  // would destroy the correct composition RULE 0.36 exists to protect.
+  const result = await composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(), input: NO_BRAND,
+    provider: providerReturning([], { lettering: { driver: [], passenger: [[]] } }),
+  });
+  assert.equal(result.composed, true, "a text-free flank still mirrors");
+  assert.equal(result.bandsApplied, 0, "nothing is pasted onto artwork that carries no lettering");
+  assert.equal(result.letteringVerify.status, "no_lettering_seen");
+  assert.notEqual(result.letteringVerify.status, "verified");
+});
+
+// The real GENIE shape a manifest is built from: both flanks identical, every
+// surface carrying its 5" bleed, so the mirror's own twin check passes and the
+// topology guard is the only thing under test.
+const MANIFEST_SURFACES = [
+  { surfaceKey: "driver", widthInches: 232, heightInches: 60, surfaceSqFt: 96.67, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "passenger", widthInches: 232, heightInches: 60, surfaceSqFt: 96.67, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "hood", widthInches: 68, heightInches: 62, surfaceSqFt: 29.28, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "roof", widthInches: 62, heightInches: 78, surfaceSqFt: 33.58, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "front", widthInches: 80, heightInches: 50, surfaceSqFt: 27.78, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+  { surfaceKey: "rear", widthInches: 80, heightInches: 62, surfaceSqFt: 34.44, bleed: { top: 5, right: 5, bottom: 5, left: 5 } },
+];
+
+// ── THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY (2026-09-16) ──────────
+//
+// Owner: "Fix passenger we never had this issue before." She is right, and the
+// history is exact: composePassengerFromDriver was added 2026-09-07 (acbfffb1).
+// Before it, Passenger was authored artwork -- which is what the two standing
+// rules that PREDATE it both require (RULE 0.33 "Passenger is its own
+// territory, never mirrored Driver"; RULE 0 "must never be replaced by mirrored
+// Driver pixels"). On field-thirds-v2 the passenger is `third-2`, composed by
+// the model in the same pass as the driver, and the field tail already demands
+// every area read as finished artwork with lettering whole and legible.
+//
+// Every passenger defect since 09-07 is downstream of mirroring it anyway:
+// 8eec8162 reversed PORSCHE, 9789762d pasted stripe patches, cc382c3c
+// certified a flank the reader could not see, 8c525565 shipped a doubled
+// reversed lockup onto a 150-PPI print panel. Four fixes to the READER, and
+// the reader was never the cause.
+
+test("the mirror declines on the field contract and never touches the authored passenger", async () => {
+  const { buildFieldTerritories } = require("../runtime/atlas-field-territories.cjs");
+  const sixSurface = require("../runtime/flat-first-atlas.cjs").buildAtlasManifest(MANIFEST_SURFACES);
+  const field = buildFieldTerritories(sixSurface);
+  assert.equal(field.topology, "field-thirds-v2");
+
+  let providerCalls = 0;
+  const provider = { generateRaw: async () => { providerCalls += 1; return { payload: {} }; } };
+  const result = await composePassengerFromDriver({
+    masterBytes: Buffer.alloc(8), manifest: field, guideBytes: null,
+    input: {}, provider, logger: () => {},
+  });
+
+  assert.equal(result.composed, false, "an authored passenger is never overwritten by a mirror");
+  assert.equal(result.reason, "field_passenger_is_its_own_territory");
+  assert.equal(result.bandsApplied, 0);
+  assert.equal(providerCalls, 0,
+    "and it declines BEFORE spending a single lettering read -- this is latency as well as correctness");
+});
+
+test("the six-surface and hero contracts keep their mirror", async () => {
+  const sixSurface = require("../runtime/flat-first-atlas.cjs").buildAtlasManifest(MANIFEST_SURFACES);
+  assert.notEqual(sixSurface.topology, "field-thirds-v2");
+  // It must get past the topology guard and fail later, on its own merits --
+  // proving the decline above is scoped to the field contract and not a
+  // blanket disabling of the mirror the other two contracts still rely on.
+  const result = await composePassengerFromDriver({
+    masterBytes: Buffer.alloc(8), manifest: sixSurface, guideBytes: null,
+    input: {}, provider: { generateRaw: async () => ({ payload: {} }) }, logger: () => {},
+  });
+  assert.notEqual(result.reason, "field_passenger_is_its_own_territory");
+});
+
+test("Call 1 accounts for its own wall clock, including the two Flash stages", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  // Canary 8c525565: totalMs 105,526, authoringMs 42,311, named buckets 58,230
+  // -- 47,296 ms attributed to nothing, and the two Gemini Flash stages inside
+  // that gap were both untimed.
+  assert.match(src, /outputClassMs: 0,/);
+  assert.match(src, /passengerMirrorMs: 0,/);
+  assert.match(src, /timings\.outputClassMs \+= Date\.now\(\) - outputClassStartedAt;/);
+  assert.match(src, /timings\.outputClassMs \+= Date\.now\(\) - repairedClassStartedAt;/,
+    "the repaired-sheet re-classification is a second Flash call and costs real time");
+  assert.match(src, /timings\.passengerMirrorMs \+= Date\.now\(\) - passengerMirrorStartedAt;/);
+  assert.match(src, /unattributedMs: Math\.max\(0,/,
+    "what the buckets do not explain must be a recorded number, not hand subtraction");
+  // A resumed run must not bill itself again for work it recovered.
+  assert.match(src, /if \(!recoveredState\?\.passengerMirror\) timings\.passengerMirrorMs/);
 });

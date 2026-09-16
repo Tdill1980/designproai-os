@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
 import { rectangularWallMask, type Point } from '@/lib/wallpro-geometry';
+// The overlay colours live in ONE place so the FAQ can show the customer the
+// same glass this editor draws, and cannot be left behind by a restyle here.
+import {
+  WALL_GLASS, WallGlassDefs, WALL_AREA_FILL, WALL_PROTECTED_FILL, WALL_HALO_FILTER,
+} from './wall-glass';
 
 type Props = {
   url: string; alt: string; aspect: number; busy: boolean;
@@ -68,29 +73,25 @@ export function WallPhotoEditor(p: Props) {
     onLostPointerCapture={() => {p.onEditing(false);drag.current=null;rectangle.current=null;}}
     onPointerLeave={() => {if(!rectangle.current && !drag.current)setHover(null);}}>
     <img src={p.url} alt={p.alt} className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false}/>
-    {overlays && p.maskUrl && <img src={p.maskUrl} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-35" style={{ filter: 'drop-shadow(0 0 1px #22d3ee)' }} draggable={false}/>}
+    {overlays && p.maskUrl && <img src={p.maskUrl} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-35" style={{ filter: `drop-shadow(0 0 1px ${WALL_GLASS.protected.stroke})` }} draggable={false}/>}
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full">
-      <defs>
-        <linearGradient id="wall-protected-glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#b9f6ff" stopOpacity=".4"/><stop offset=".45" stopColor="#38bdf8" stopOpacity=".13"/><stop offset="1" stopColor="#0e7490" stopOpacity=".28"/></linearGradient>
-        <linearGradient id="wall-area-glass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ddd6fe" stopOpacity=".22"/><stop offset="1" stopColor="#8b5cf6" stopOpacity=".07"/></linearGradient>
-        <filter id="wall-mask-halo" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation=".35"/></filter>
-      </defs>
-      {overlays && <polygon points={coords(p.corners)} fill="url(#wall-area-glass)" stroke="#8b5cf6" strokeWidth=".3"/>}
+      <WallGlassDefs/>
+      {overlays && <polygon points={coords(p.corners)} fill={WALL_AREA_FILL} stroke={WALL_GLASS.area.stroke} strokeWidth=".3"/>}
       {overlays && p.masks.map((mask,i)=>{
         const x=Math.min(...mask.map(q=>q.x))*100, y=Math.min(...mask.map(q=>q.y))*100;
         return <g key={i}>
-          <polygon points={coords(mask)} fill="rgba(0,120,220,.10)" stroke="#00dcff" strokeWidth=".65" filter="url(#wall-mask-halo)"/>
-          <polygon points={coords(mask)} fill="url(#wall-protected-glass)" stroke="#22d3ee" strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:'pointer'}} onPointerDown={e=>{e.stopPropagation();setSelected(i);}}/>
-          <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill="#0e7490" fillOpacity=".9"/>
+          <polygon points={coords(mask)} fill="rgba(0,120,220,.10)" stroke={WALL_GLASS.protected.halo} strokeWidth=".65" filter={WALL_HALO_FILTER}/>
+          <polygon points={coords(mask)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:'pointer'}} onPointerDown={e=>{e.stopPropagation();setSelected(i);}}/>
+          <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill={WALL_GLASS.protected.chip} fillOpacity=".9"/>
           <text x={x+1.2} y={y+2.4} fill="white" fontSize="1.5">Protected {i+1}</text>
-          {(selected===i || !!p.marking) && mask.map((q,j)=><circle key={j} cx={q.x*100} cy={q.y*100} r=".7" fill="white" stroke="#0891b2" strokeWidth=".3" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} point ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>)}
+          {(selected===i || !!p.marking) && mask.map((q,j)=><circle key={j} cx={q.x*100} cy={q.y*100} r=".7" fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".3" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} point ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>)}
         </g>;
       })}
-      {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r=".85" fill="#7c3aed" stroke="white" strokeWidth=".2" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><text x={q.x*100+1.2} y={q.y*100-1.2} fill="#6d28d9" fontSize="2.5">{i+1}</text></g>)}
-      {p.seams.map((seam,i)=><line key={i} x1={seam.top.x*100} y1={seam.top.y*100} x2={seam.bottom.x*100} y2={seam.bottom.y*100} stroke="#06b6d4" strokeWidth=".3" strokeDasharray="1 .8"/>)}
-      {p.marking==='exclude' && <polygon points={coords([...p.draft,...(hover?[hover]:[])])} fill="url(#wall-protected-glass)" stroke="#22d3ee" strokeWidth=".3" strokeDasharray=".8 .5"/>}
-      {rectanglePreview.length>0 && <polygon points={coords(rectanglePreview)} fill="url(#wall-protected-glass)" stroke="#22d3ee" strokeWidth=".3"/>}
-      {p.draft.map((q,i)=><circle key={i} cx={q.x*100} cy={q.y*100} r=".65" fill="#0891b2"/>)}
+      {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r=".85" fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".2" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><text x={q.x*100+1.2} y={q.y*100-1.2} fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g>)}
+      {p.seams.map((seam,i)=><line key={i} x1={seam.top.x*100} y1={seam.top.y*100} x2={seam.bottom.x*100} y2={seam.bottom.y*100} stroke={WALL_GLASS.seam} strokeWidth=".3" strokeDasharray="1 .8"/>)}
+      {p.marking==='exclude' && <polygon points={coords([...p.draft,...(hover?[hover]:[])])} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3" strokeDasharray=".8 .5"/>}
+      {rectanglePreview.length>0 && <polygon points={coords(rectanglePreview)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3"/>}
+      {p.draft.map((q,i)=><circle key={i} cx={q.x*100} cy={q.y*100} r=".65" fill={WALL_GLASS.protected.vertex}/>)}
     </svg>
   </div>;
 }

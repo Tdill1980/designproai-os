@@ -95,6 +95,9 @@ test("no customer-facing surface still names the vehicle tool DesignPro or the c
     "app/src/pages/GraphicsProWindow.tsx",
     "app/src/pages/DesignProAIHome.tsx",
     "app/src/pages/Index.tsx",
+    "app/src/pages/Gallery.tsx",
+    "app/src/pages/PricingColorPro.tsx",
+    "app/src/components/RequireAuth.tsx",
     "app/index.html",
   ]) {
     const offending = stripComments(read(path))
@@ -114,7 +117,9 @@ test("no customer-facing surface still names the vehicle tool DesignPro or the c
 
 test("the OS-side WallPro tagline is the hierarchy line; the partner page keeps its own words", () => {
   const brand = read("app/src/lib/wallpro-brand.ts");
-  assert.match(brand, /eyebrow: 'DesignProAI',[\s\S]{0,400}tagline: 'Prompt-Based Wall Graphics Design \+ Production-Ready File Output'/);
+  // The DesignProAI-side entry keeps an EMPTY eyebrow (the sidebar already
+  // says DesignProAI) and carries the hierarchy tagline.
+  assert.match(brand, /designpro: \{[\s\S]{0,900}wordmarkLead: 'Wall',[\s\S]{0,400}tagline: 'Prompt-Based Wall Graphics Design \+ Production-Ready File Output'/);
   assert.match(brand, /eyebrow: 'WePrintWraps',[\s\S]{0,900}tagline: 'Custom Wall Wrap design, print files & printed wrap'/);
 });
 

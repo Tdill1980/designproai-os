@@ -360,6 +360,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const isFlatFirstDiagnostic = activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE;
   const atlasResponseUnconfirmed = isFlatFirstDiagnostic && isUnconfirmedProviderOutcome(generationErrorCode);
   const latestFlatAtlas = flatAtlasRevisions[flatAtlasRevisions.length - 1];
+  // The accepted driver panel, the moment the server cut it (owner 2026-09-16:
+  // "Show the driver panel as early as it's ready"). The revisions query above
+  // already polls every 2 s until the master is signed, so this URL appears
+  // ~40 s before the first photographer proof on a typical run. It feeds the
+  // progress surface only; the canvas still waits for the driver PROOF.
+  const earlyDriverPanelUrl = latestFlatAtlas?.callOnePanels
+    ?.find((panel) => panel.surfaceKey === "driver" && panel.signedUrl)?.signedUrl || null;
   const inlineRevisionEnabled = inlineRevisionEnabledForPipeline(activePipelineMode);
 
   // --- Feature flag: persona pipeline ---
@@ -2513,6 +2520,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 requestState={generationRequestState}
                                 isAtlas={isFlatFirstDiagnostic}
                                 atlasReady={Boolean(latestFlatAtlas)}
+                                designPreview={earlyDriverPanelUrl
+                                  ? { url: earlyDriverPanelUrl, vehicleLabel: [year, make, model].filter(Boolean).join(" ") }
+                                  : null}
                               />
                             ) : (
                               <div className="flex flex-col items-center gap-3 text-white/70">

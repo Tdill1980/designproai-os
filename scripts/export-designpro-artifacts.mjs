@@ -20,13 +20,28 @@ const runId = flag("--run");
 // exactly the state a Calls 1-7 failure has to be diagnosed from, and it was
 // diagnosed from hashes and QC verdicts because the artwork was unreachable.
 const generationId = flag("--generation");
+// REFUSAL mode. A Call 1 that is refused twice on every topology leaves NO
+// revision row, so neither --run nor --generation can reach anything: the only
+// durable evidence is designpro_atlas_refusals plus the raw candidate bytes it
+// points at. CLAUDE.md's own ruling on the refusal ledger is "judge the gates
+// from those pixels before touching a threshold", and until now there was no
+// way to get them off the private bucket.
+const refusalRequestId = flag("--refusals");
+// DIGEST mode. Which topology should Call 1 be routed through is a measured
+// question, and the refusal ledger is the only place the answer lives: one row
+// per refused candidate, with its topology, attempt and gate verdict. Without
+// this, "six-surface draws the vehicle" and "field draws the vehicle" are both
+// anecdotes from whichever run someone last looked at. No images, no bucket
+// read -- counts and verdict strings only.
+const refusalDigestDays = flag("--refusal-digest");
 const outDir = flag("--out") || "/out";
-if (!runId && !generationId) {
-  console.error("--run <uuid> or --generation <uuid> is required");
+const selectors = [runId, generationId, refusalRequestId, refusalDigestDays].filter(Boolean);
+if (selectors.length === 0) {
+  console.error("--run <uuid>, --generation <uuid>, --refusals <requestId> or --refusal-digest <days> is required");
   process.exit(2);
 }
-if (runId && generationId) {
-  console.error("pass --run or --generation, never both");
+if (selectors.length > 1) {
+  console.error("pass exactly one of --run, --generation, --refusals, --refusal-digest");
   process.exit(2);
 }
 
@@ -86,6 +101,105 @@ async function writePreviews(files) {
       console.error(`preview failed for ${entry.file}: ${entry.previewError}`);
     }
   }
+}
+
+if (refusalDigestDays) {
+  const days = Number(refusalDigestDays);
+  if (!Number.isFinite(days) || days <= 0 || days > 365) {
+    console.error(`--refusal-digest wants a day count between 1 and 365, got ${refusalDigestDays}`);
+    process.exit(2);
+  }
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data: rows, error: digestError } = await supabase
+    .from("designpro_atlas_refusals")
+    .select("request_id,topology,attempt,code,reason,created_at")
+    .gte("created_at", since)
+    .order("created_at", { ascending: true });
+  if (digestError) { console.error(`refusal digest query failed: ${digestError.message}`); process.exit(3); }
+
+  // Per request, in order: which topologies were tried and how each candidate
+  // was refused. A request that appears here with fewer refusals than its
+  // budget is one whose LATER candidate was accepted.
+  const byRequest = new Map();
+  for (const row of rows || []) {
+    if (!byRequest.has(row.request_id)) byRequest.set(row.request_id, []);
+    byRequest.get(row.request_id).push(row);
+  }
+  const byTopologyCode = {};
+  for (const row of rows || []) {
+    const key = `${row.topology}/${row.code}`;
+    byTopologyCode[key] = (byTopologyCode[key] || 0) + 1;
+  }
+  mkdirSync(outDir, { recursive: true });
+  const digest = {
+    sinceUtc: since, days, refusedCandidates: (rows || []).length,
+    requestsWithAtLeastOneRefusal: byRequest.size,
+    byTopologyAndCode: byTopologyCode,
+    requests: [...byRequest.entries()].map(([requestId, list]) => ({
+      requestId, refusals: list.length,
+      sequence: list.map((row) => `${row.topology}#${row.attempt}:${row.code}`),
+      firstRefusedAt: list[0].created_at, lastRefusedAt: list[list.length - 1].created_at,
+    })),
+  };
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify(digest, null, 2));
+  console.error(`refusal digest since ${since}: ${digest.refusedCandidates} refused candidates across ${byRequest.size} requests`);
+  for (const [key, count] of Object.entries(byTopologyCode).sort((a, b) => b[1] - a[1])) {
+    console.error(`  ${key}: ${count}`);
+  }
+  for (const request of digest.requests) {
+    console.error(`  ${request.requestId} ${request.firstRefusedAt} ${request.sequence.join(" -> ")}`);
+  }
+  process.exit(0);
+}
+
+if (refusalRequestId) {
+  const { data: refusals, error: refusalError } = await supabase
+    .from("designpro_atlas_refusals")
+    .select("id,request_id,generation_id,topology,attempt,code,reason,storage_path,sha256,byte_size,content_type,model,created_at")
+    .eq("request_id", refusalRequestId)
+    .order("created_at", { ascending: true });
+  if (refusalError) { console.error(`refusal query failed: ${refusalError.message}`); process.exit(3); }
+  if (!refusals?.length) { console.error(`no refused candidates recorded for request ${refusalRequestId}`); process.exit(4); }
+
+  mkdirSync(outDir, { recursive: true });
+  const files = [];
+  for (const [index, row] of refusals.entries()) {
+    // The verdict is the point, so it goes to the log verbatim -- a caller that
+    // can only read the log still learns which gate refused and why.
+    console.error(`REFUSED #${index + 1} ${row.topology} attempt ${row.attempt} ${row.code}: ${row.reason}`);
+    await fetchVerified(row.storage_path, row.sha256,
+      `refused-${String(index + 1).padStart(2, "0")}__${row.topology}-attempt${row.attempt}.png`, {
+        role: "refused-call1-candidate",
+        topology: row.topology, attempt: row.attempt, code: row.code, reason: row.reason,
+        model: row.model, recordedBytes: row.byte_size, refusedAt: row.created_at,
+      }, files);
+  }
+  await writePreviews(files);
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify({
+    requestId: refusalRequestId,
+    generationId: refusals[0]?.generation_id ?? null,
+    refusedCandidates: refusals.length,
+    verdicts: refusals.map((row) => ({
+      topology: row.topology, attempt: row.attempt, code: row.code,
+      reason: row.reason, model: row.model, refusedAt: row.created_at,
+    })),
+    files,
+  }, null, 2));
+
+  // Every refused sheet on the log, small. Which gate refused is a string; WHY
+  // it refused is only ever visible in the pixels.
+  const { default: sharp } = await import("sharp");
+  for (const entry of files.filter((f) => f.hashMatches)) {
+    const thumb = await sharp(readFileSync(`${outDir}/${entry.file}`))
+      .resize({ width: 640, height: 640, fit: "inside" })
+      .jpeg({ quality: 55, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+    console.error(`ATLAS_REFUSED_PREVIEW_JPEG_BASE64_BEGIN ${entry.file} ${thumb.length}`);
+    console.error(thumb.toString("base64"));
+    console.error("ATLAS_REFUSED_PREVIEW_JPEG_BASE64_END");
+  }
+  console.error(`exported ${files.filter((f) => f.file).length} refused candidates`);
+  process.exit(0);
 }
 
 if (generationId) {
@@ -234,7 +348,14 @@ const { data: rows, error } = await supabase
   .from("designpro_artifacts")
   .select("artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata")
   .eq("run_id", runId)
-  .in("artifact_kind", ["panel", "flat-proof"]);
+  // THE PRINT FILES THE CUSTOMER ACTUALLY BUYS WERE NOT EXPORTABLE.
+  //
+  // `panel` is the Call-1 cut at design density. What the Production Pack ships
+  // is `upscaled-panel` (Call 12, Topaz, panel inches x 150) and `output` (six
+  // sides x three formats). Canary 8c525565 completed enhance.upscale and then
+  // died at output.build, so six 150-PPI panel masters existed on the run with
+  // no way to look at one.
+  .in("artifact_kind", ["panel", "flat-proof", "upscaled-panel", "output"]);
 if (error) { console.error(`artifact query failed: ${error.message}`); process.exit(3); }
 
 // The six panels, plus the customer-facing Call 8 sheet. The six
@@ -243,6 +364,8 @@ if (error) { console.error(`artifact query failed: ${error.message}`); process.e
 // checked against the files rather than taken on trust.
 const wanted = rows.filter((r) =>
   r.artifact_kind === "panel" ||
+  r.artifact_kind === "upscaled-panel" ||
+  r.artifact_kind === "output" ||
   r.metadata?.role === "customer-2d-production-proof" ||
   r.metadata?.role === "canonical-production-surface");
 
@@ -258,11 +381,17 @@ for (const row of wanted.sort((a, b) => `${a.artifact_kind}/${a.surface_key}`.lo
   const bytes = Buffer.from(await data.arrayBuffer());
   const observed = createHash("sha256").update(bytes).digest("hex");
   const role = row.metadata?.role === "customer-2d-production-proof" ? "proof"
-    : row.artifact_kind === "panel" ? "panel" : "surface";
-  const name = `${role}__${row.surface_key || "sheet"}.png`;
+    : row.artifact_kind === "panel" ? "panel"
+    : row.artifact_kind === "upscaled-panel" ? "print-panel"
+    : row.artifact_kind === "output" ? "output" : "surface";
+  // An output's own extension matters -- a TIFF written as .png is unopenable.
+  const extension = String(row.storage_path || "").match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || "png";
+  const name = `${role}__${row.surface_key || "sheet"}${role === "output" ? `.${extension}` : ".png"}`;
   writeFileSync(`${outDir}/${name}`, bytes);
   manifest.push({
     file: name, kind: row.artifact_kind, role: row.metadata?.role, surfaceKey: row.surface_key,
+    effectivePpi: row.metadata?.effectivePpi ?? row.metadata?.ppi ?? null,
+    enhancedBy: row.metadata?.enhancedBy ?? row.metadata?.upscaler ?? null,
     storagePath: row.storage_path, recordedHash: row.content_hash, observedHash: observed,
     hashMatches: observed === String(row.content_hash).toLowerCase(),
     recordedBytes: row.byte_size, observedBytes: bytes.length,

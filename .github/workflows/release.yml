@@ -97,6 +97,40 @@ jobs:
           node-version: 22
       - name: Prove the pinned Supabase CLI can execute
         run: npx --yes "supabase@${SUPABASE_CLI_VERSION}" --version
+      # A PULL-THROUGH MIRROR WAS TRIED HERE AND MEASURED NOT TO WORK
+      # (2026-09-15). mirror.gcr.io registered correctly -- `docker info`
+      # reported it -- and `supabase start` was still refused with
+      # `toomanyrequests`, so the mirror does not hold these images. The same
+      # run also proved waiting is not a strategy: it failed at 23:07, sixteen
+      # hours after the first failure at 06:59, with no recovery. Authenticated
+      # pulls are the remaining fix. Do not re-add a mirror expecting a
+      # different answer without new evidence.
+      #
+      # THE SHADOW APPLY PULLS ITS POSTGRES/AUTH/STORAGE IMAGES FROM DOCKER HUB,
+      # and until 2026-09-15 it pulled them ANONYMOUSLY -- which shares one small
+      # quota across every GitHub runner on the same egress IP. On 2026-09-15 that
+      # quota ran out and the job failed three times in an hour with
+      # `toomanyrequests: Rate exceeded`, before a single line of SQL ran. The
+      # migration under test was fine; there was simply no database to apply it to.
+      #
+      # An authenticated pull has its own, far larger allowance. This step is a
+      # NO-OP until DOCKERHUB_USERNAME and DOCKERHUB_TOKEN exist, so it changes
+      # nothing for a fork or for a repository that never adds them -- it just
+      # stops a shared quota being the thing that decides whether a release can
+      # be verified. `docker login` directly rather than a third-party action:
+      # every action here is SHA-pinned, and this needs no new pin to review.
+      - name: Authenticate to Docker Hub when credentials exist
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            echo "Docker Hub: authenticated pulls."
+          else
+            echo "Docker Hub: no credentials configured, pulls stay anonymous and share the runner-pool quota."
+          fi
+
       - name: Fresh Supabase Auth, Storage, PostgREST, migrations and pgTAP
         run: bash scripts/test-supabase-shadow.sh
 
@@ -235,6 +269,37 @@ jobs:
           npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
             20260827065636 20260827081247 20260827095554 \
             20260827100307 20260827101228 20260827102412 || true
+          # And four more on 2026-09-15, same cause once again: PatternPro's
+          # products and orders tables, the CommercialPro enrolment functions
+          # and the WPLoyalty webhook were applied through the management API
+          # (06:16-07:23Z) under its wall-clock versions, while this repo
+          # carries the same SQL as 20260915090000, 20260915190000,
+          # 20260915191000 and 20260915230000. Live evidence, this workflow,
+          # run 35042427488 (the #430 migration dispatch, 2026-09-16 01:10Z):
+          #
+          #   Remote migration versions not found in local migrations directory.
+          #   supabase migration repair --status reverted 20260915061624
+          #     20260915062132 20260915062147 20260915072353
+          #
+          # That one refusal blocked EVERY production migration behind it,
+          # including the wallpro_proofs table the #430 bundle reads.
+          #
+          # Verified before this list was written, 2026-09-16, by comparing
+          # the orphan bodies read out of supabase_migrations.schema_migrations
+          # against the four local files with comments and whitespace stripped:
+          # three are byte-identical; commercialpro_enrolment differs only in
+          # line wrapping and two em-dashes inside string literals. All four
+          # are also idempotent (IF NOT EXISTS, DROP ... IF EXISTS before every
+          # trigger and policy, CREATE OR REPLACE, ON CONFLICT DO NOTHING, a
+          # guarded Vault secret), so the reconciliation is bookkeeping twice
+          # over: the API versions are marked reverted, and their local twins
+          # are marked applied because their schema is already live -- exactly
+          # the treatment the 202608* chain receives below, as an explicit
+          # list rather than by raising the floor (never raise the floor).
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status reverted \
+            20260915061624 20260915062132 20260915062147 20260915072353 || true
+          npx --yes "supabase@${SUPABASE_CLI_VERSION}" migration repair --status applied \
+            20260915090000 20260915190000 20260915191000 20260915230000 || true
           # The schema those orphans carried IS the repo's own 202608* chain,
           # applied under management-API version numbers. Replaying the local
           # files therefore collides on live objects (duplicate policies), so

@@ -19,6 +19,12 @@ export type PatternBrandKey = 'designpro' | 'weprintwraps';
 export type PatternBrand = LockupBrand & {
   /** The hero beside the headline: a real PatternPro render, and the swatch it was made from. */
   hero: { main: string; swatch: string; alt: string; swatchAlt: string } | null;
+  /** The eyebrow above the headline. */
+  eyebrowLine: string;
+  /** The second line of the headline, after "Pick a pattern. / See it on any vehicle." */
+  lede: string;
+  /** The chips under the lede. */
+  chips: string[];
   /**
    * Where "Already know your pattern?" sends a buyer who needs no proof: the
    * partner's product page per collection, keyed by the collection name. Null
@@ -48,6 +54,22 @@ const RENDER_BASE =
 const SWATCH_BASE =
   'https://kfapjdyythzyvnpdeghu.supabase.co/storage/v1/render/image/public/wrap-files/pattern-swatches-wpw';
 
+/**
+ * The same hero on both brands (owner, 2026-09-16, of the WPW page: "like
+ * this without WPW"): the render and its swatch are the pitch, whoever's name
+ * is on the header.
+ */
+const HERO = {
+  main: `${RENDER_BASE}/1789445607140_Ford_Raptor_side.jpg?width=1400&height=788&resize=contain&quality=78`,
+  // The swatch card is 1500×929 with the pattern NAME printed along its bottom
+  // edge; it ships at its own proportions (owner: "you cropped the swatch name
+  // out"), never squared off. resize=contain is load-bearing: width-only
+  // keeps the ORIGINAL height and crops the sides (800×929, verified).
+  swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=800&resize=contain&quality=80`,
+  alt: 'Chameleon Camo Tan pattern rendered on a 2022 Ford Raptor in PatternPro',
+  swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
+};
+
 export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
   designpro: {
     logo: null,
@@ -56,7 +78,11 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     wordmarkLead: 'Pattern',
     wordmarkAccent: 'Pro',
     tagline: 'Pattern wraps by the yard — proof it on the vehicle first',
-    hero: null,
+    hero: HERO,
+    // No partner name anywhere on this brand (owner: "without WPW").
+    eyebrowLine: 'PatternPro · printed wraps by the yard',
+    lede: 'Choose one of 118 real patterns, enter any year, make and model, and see it wrapped in 3D. PatternPro tells you the yards a full wrap takes, and you order the printed film right here. $95.50 a yard on a 60″ roll, printed and laminated.',
+    chips: ['118 patterns', '5 collections', '60″ Avery film', 'Yards calculated for you', 'Printed & laminated'],
     orderFilmUrls: null,
   },
   weprintwraps: {
@@ -67,16 +93,10 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     wordmarkLead: 'Pattern',
     wordmarkAccent: 'Pro',
     tagline: 'Pattern wraps by the yard · designed in PatternPro, printed by WePrintWraps',
-    hero: {
-      main: `${RENDER_BASE}/1789445607140_Ford_Raptor_side.jpg?width=1400&height=788&resize=contain&quality=78`,
-      // The swatch card is 1500×929 with the pattern NAME printed along its bottom
-      // edge; it ships at its own proportions (owner: "you cropped the swatch name
-      // out"), never squared off. resize=contain is load-bearing: width-only
-      // keeps the ORIGINAL height and crops the sides (800×929, verified).
-      swatch: `${SWATCH_BASE}/modern-trippy/chameleon-camo-tan.jpg?width=800&resize=contain&quality=80`,
-      alt: 'Chameleon Camo Tan pattern rendered on a 2022 Ford Raptor in PatternPro',
-      swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
-    },
+    hero: HERO,
+    eyebrowLine: 'WePrintWraps x PatternPro · printed wraps by the yard',
+    lede: "Choose one of 118 real WePrintWraps patterns, enter any year, make and model, and see it wrapped in 3D. PatternPro tells you the yards a full wrap takes, and you order the printed film right here. $95.50 a yard on a 60″ roll, printed and laminated by WePrintWraps.",
+    chips: ['118 patterns', '5 collections', '60″ Avery film', 'Yards calculated for you', 'Ships from WePrintWraps'],
     // The five WooCommerce product pages, one per collection — the same
     // table the cart link resolves through.
     orderFilmUrls: WPW_PRODUCT_URLS,

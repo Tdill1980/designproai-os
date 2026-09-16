@@ -44,7 +44,7 @@ const { MIRROR_CONTRACT, mirrorPassengerFromDriver, extractFlankPanel } = requir
 const {
   LETTERING_READ_CONTRACT, readPanelLettering, mirroredBandsToDriverSpace, mergeBands,
 } = require("./atlas-lettering-read.cjs");
-const { FILL_CONTRACT, fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
+const { FILL_CONTRACT, fillMasterCutouts, FILL_CONTRACT_V1 } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 // ONE-FIELD RESTORED (owner ruling, Trish 2026-09-07). The six-surface
 // authoring path is measurably not producing an acceptable master: canary
@@ -105,7 +105,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v25-persona-designs-the-field";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260915.v26-map-is-read-not-drawn";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -173,18 +173,24 @@ const PASSENGER_VERIFY_READS = 3;
 // -- and every car run spent ~2.5 minutes on those two refusals before the
 // one-field contract, which cannot draw a car, produced the sheet. So a first-
 // generation car-class request authors on the field contract directly, with
-// the same two-attempt budget six-surface has. Trucks and vans keep six-surface,
-// where it is proven. DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface
-// first for every class. Revision edits keep their parent's topology.
+// the same two-attempt budget six-surface has.
+//
+// FIELD FIRST FOR EVERY CLASS. (Owner 2026-09-16: "ROUTE TRUCKS THROUGH THE
+// FIELD ALSO".) Trucks and vans had kept six-surface "where it is proven" --
+// and on 2026-09-15 the F-250 itself, the one sheet six-surface ever drew
+// flat, died twice on that path (c4638a66: a refusal, then a repaired sheet
+// classed vehicle_depiction). Of the last fifteen requests, every one of the
+// five failures was six-surface drawing a vehicle; every field-routed request
+// completed. With the field contract now carrying no design direction (RULE
+// 0.37) there is no class that is better served by the container sheet, so
+// the routing is universal and the class only names itself in the receipt.
+// DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface first for every class.
+// Revision edits keep their parent's topology.
 const FIELD_FIRST_ATTEMPTS = 2;
-const SIX_SURFACE_FIRST_VEHICLE_CLASSES = Object.freeze(new Set([
-  "truck", "pickup", "pickup-truck", "van", "cargo-van", "cargo van", "box-truck", "box truck", "bus", "trailer",
-]));
 function fieldFirstReason(vehicle) {
   if (String(process.env.DESIGNPRO_ATLAS_FIELD_FIRST || "").trim().toLowerCase() === "off") return null;
   const type = String(vehicle?.type || vehicle?.vehicleClass || "").trim().toLowerCase();
-  if (!type || SIX_SURFACE_FIRST_VEHICLE_CLASSES.has(type)) return null;
-  return `vehicle-class:${type}`;
+  return `vehicle-class:${type || "unspecified"}`;
 }
 const AUTHORING_FAILOVER_CONTRACT = "designpro.atlas-authoring-failover.v1";
 function resolveMaxAuthoringAttempts(explicit) {
@@ -239,7 +245,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v25-persona-designs-the-field";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v26-map-is-read-not-drawn";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -2531,9 +2537,17 @@ async function loadLatestAtlasRevision(supabase, requestId) {
   // The repaired sheet is recomputed, never stored: `fillMasterCutouts` is
   // deterministic, so a resumed run rebuilds exactly the bytes the first pass
   // cut and conditioned from, and the recorded `panelSourceHash` proves it.
+  // REBUILD UNDER THE CONTRACT THIS REVISION WAS AUTHORED WITH, not the current
+  // one. A revision with no recorded contract predates versioning and is
+  // therefore v1 by definition -- which is every revision authored before the
+  // clone fill shipped. Reading the current contract here instead would refuse
+  // the entire back catalogue on resume with
+  // `flat_atlas_surface_source_mismatch`, and the refusal would look like
+  // corruption rather than like a migration.
   const surfaceFill = await fillMasterCutouts(
     masterBytes, manifest,
     Array.isArray(row.metadata?.masterCutoutSurfaces) ? row.metadata.masterCutoutSurfaces : [],
+    { contract: row.metadata?.panelSourceFillContract || FILL_CONTRACT_V1 },
   );
   const surfaceSourceBytes = surfaceFill.bytes;
   const surfaceSourceHash = surfaceFill.changed ? sha256(surfaceSourceBytes) : row.master_content_hash;
@@ -2681,6 +2695,36 @@ async function composePassengerFromDriver({
   masterBytes, manifest, guideBytes, input, provider, logger = () => {},
 }) {
   const decline = (reason) => ({ composed: false, reason, bandsApplied: 0 });
+  // THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY. DO NOT MIRROR IT.
+  // (2026-09-16, owner: "Fix passenger we never had this issue before.")
+  //
+  // She is right, and the history is exact. This function was added 2026-09-07
+  // (acbfffb1). Before it, Passenger was authored artwork, which is what the
+  // two standing rules that PREDATE it both require:
+  //   RULE 0.33 (09-02) "Passenger is its own territory, never mirrored Driver."
+  //   RULE 0      "Passenger is its own named Call-1 authority and must never
+  //                be replaced by mirrored Driver pixels."
+  // On `field-thirds-v2` the passenger is `third-2` -- its own band of the
+  // sheet, composed by the model in the same pass as the driver -- and the
+  // field tail already demands that every area "read on its own as intentional,
+  // finished, commercially valuable artwork" with lettering "whole and legible"
+  // reading left to right. So a field passenger has forward type BY
+  // CONSTRUCTION, and mirroring it throws away authored artwork to solve a
+  // problem that contract does not have.
+  //
+  // Every passenger defect since 09-07 is downstream of doing it anyway:
+  // 8eec8162 reversed PORSCHE, 9789762d pasted seven raw stripe patches over
+  // mirrored artwork, cc382c3c certified a flank the reader could not see, and
+  // 8c525565 shipped a doubled, reversed lockup onto a 150-PPI print panel.
+  // Four defects, four fixes to the READER, and the reader was never the cause.
+  //
+  // The mirror is kept for the six-surface and hero contracts, where the two
+  // flanks come off one composition and the model has measurably drifted or
+  // reversed them (canaries 6c1bfae6, cad013e1). It is not deleted; it is
+  // stopped from overwriting a passenger that was authored in its own right.
+  if (manifest?.topology === FIELD_TOPOLOGY) {
+    return decline("field_passenger_is_its_own_territory");
+  }
   const driver = (manifest?.zones || []).find((zone) => zone.surfaceKey === "driver");
   const passenger = (manifest?.zones || []).find((zone) => zone.surfaceKey === "passenger");
   // The two flanks are only twins when the manifest made them the same shape.
@@ -2723,6 +2767,13 @@ async function composePassengerFromDriver({
   let letteringRead = "located";
   let letteringSource = null;
   let letteringReadFailure = null;
+  let letteringBands = [];
+  let letteringOversized = [];
+  const bandReceipt = (band) => ({
+    text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
+    x: Number(Number(band?.xPct).toFixed(3)), y: Number(Number(band?.yPct).toFixed(3)),
+    w: Number(Number(band?.wPct).toFixed(3)), h: Number(Number(band?.hPct).toFixed(3)),
+  });
   if (!readerAvailable) {
     const declined = declineOrMirror("brand_band_reader_unavailable");
     if (declined) return declined;
@@ -2738,6 +2789,11 @@ async function composePassengerFromDriver({
     if (driverRead.status === "read") {
       brandBands = driverRead.bands;
       letteringSource = LETTERING_READ_CONTRACT;
+      letteringBands = driverRead.bands.map(bandReceipt);
+      letteringOversized = (driverRead.oversized || []).map((band) => ({
+        text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
+        w: Number(Number(band?.wPct).toFixed(3)), h: Number(Number(band?.hPct).toFixed(3)),
+      }));
     } else if (!Buffer.isBuffer(guideBytes)) {
       letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
@@ -2770,9 +2826,18 @@ async function composePassengerFromDriver({
       // it is indistinguishable from "the reader could not see them". Mirroring
       // there is what puts a reversed company name on a customer's vehicle.
       if (!brandBands.length) {
-        const declined = declineOrMirror("brand_bands_not_located");
-        if (declined) return declined;
-        letteringRead = "none_located";
+        // Lettering the reader SAW but could not bound (over the size caps) is
+        // the same dangerous case with a positive finding attached: live
+        // cc382c3c shipped "PRECISION" reversed this way.
+        if (letteringOversized.length) {
+          const declined = declineOrMirror("brand_bands_oversized");
+          if (declined) return declined;
+          letteringRead = "oversized_unbounded";
+        } else {
+          const declined = declineOrMirror("brand_bands_not_located");
+          if (declined) return declined;
+          letteringRead = "none_located";
+        }
       }
     }
   }
@@ -2807,9 +2872,57 @@ async function composePassengerFromDriver({
           break;
         }
         letteringVerify.reads = read;
+        const reversedOversized = (verify.oversized || []).filter((band) => band?.orientation === "mirrored");
+        if (reversedOversized.length) {
+          // A reversed wordmark the reader could not bound cannot be corrected
+          // (no rect to re-drop) and cannot be called verified: it is a
+          // positive finding of reversed lettering.
+          letteringVerify.status = "unresolved";
+          letteringVerify.code = "reversed_lettering_oversized";
+          letteringVerify.reason = `reversed lettering too large to bound: ${reversedOversized.map((band) => String(band.text || "").slice(0, 24)).join(", ")}`.slice(0, 300);
+          break;
+        }
         const reversed = mirroredBandsToDriverSpace(verify.bands);
         letteringVerify.mirroredFound.push(reversed.length);
-        if (!reversed.length) break;
+        letteringVerify.mirroredBands = [...(letteringVerify.mirroredBands || []), ...reversed.map(bandReceipt)];
+        // A VERIFY THAT SAW NOTHING HAS VERIFIED NOTHING.
+        //
+        // Live cc382c3c (2026-09-16, Precision on a 911 Turbo): the driver read
+        // missed "PRECISION" on the pre-#440 caps, the mirror applied no bands,
+        // the passenger verify read returned no bands from that same blind
+        // reader, and `mirroredFound: [0]` was written down as status
+        // "verified" while the flank shipped with the company name reversed.
+        // The brief carried the company only in its prose, so `lettersDeclared`
+        // was false and the read-stage decline never fired either.
+        //
+        // Zero MIRRORED bands is evidence only when the read resolved lettering
+        // at all -- a band of any orientation, or an oversized finding.
+        letteringVerify.sawLettering = verify.bands.length > 0 || (verify.oversized || []).length > 0;
+        if (!reversed.length) {
+          if (!letteringVerify.sawLettering) {
+            if (brandBands.length) {
+              // The reader located lettering on the driver panel and the mirror
+              // re-dropped it, so the composed flank must show it; a read that
+              // now resolves nothing has contradicted itself about a panel it
+              // could see a moment ago. That is NOT a positive finding of
+              // reversal, and RULE 0.36 declines only on one -- declining here
+              // would throw away a composition that is probably correct. The
+              // status simply stops claiming what it did not establish.
+              letteringVerify.status = "unproven";
+              letteringVerify.code = "verify_read_saw_no_lettering";
+              letteringVerify.reason = `${brandBands.length} band(s) were re-dropped but the verify read resolved no lettering at all`;
+            } else {
+              // Both reads resolved nothing, which is concordant and is what a
+              // genuinely text-free flank looks like (the 9789762d Martini
+              // stripes). The mirror stands -- declining here would destroy the
+              // correct composition RULE 0.36 exists to protect -- but it is
+              // recorded honestly so PanelPro's human QC sees an unproven side
+              // instead of a certified one.
+              letteringVerify.status = "no_lettering_seen";
+            }
+          }
+          break;
+        }
         if (read === PASSENGER_VERIFY_READS) {
           letteringVerify.status = "unresolved";
           break;
@@ -2839,6 +2952,8 @@ async function composePassengerFromDriver({
       letteringRead,
       letteringSource,
       letteringReadFailure,
+      letteringBands,
+      letteringOversized,
       letteringVerify,
       reason: null,
     };
@@ -2964,6 +3079,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
     failoverFrom = null,
     // Field-first routing receipt (see fieldFirstReason). null on every other path.
     fieldFirst = null,
+    // Set only on the six-surface pass a spent FIELD-FIRST budget fails over to.
+    // It is what makes that hand-off one-way: the six-surface tail may not fail
+    // back to the field contract the request has already exhausted.
+    fieldFirstExhausted = false,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -3037,7 +3156,28 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // A design already accepted on the field contract stays resumable whatever
   // the flag says; the flag only decides whether a NEW refusal fails over.
   const fieldResumable = authoringTopology === "six-surface" && !parentManifest;
-  const failoverEnabled = fieldResumable
+  const failoverEnabled = fieldResumable && !fieldFirstExhausted
+    && String(process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER || "").trim().toLowerCase() !== "off";
+  // THE FIELD-FIRST ROUTING HAD NO FAIL-OVER OF ITS OWN (2026-09-16).
+  //
+  // The one-field fail-over exists so that "a refused Call 1 never leaves the
+  // customer with nothing". Field-first routing was added on top of it and
+  // inverted that guarantee for every request it touches: `fieldResumable` is
+  // false on a field pass, so a field-first budget that is refused twice throws,
+  // with no second contract behind it -- while the SAME request routed
+  // six-surface-first would still have had the field pass as its safety net.
+  // Measured on the refusal ledger, 2026-09-13 to 09-16: of seven requests with
+  // at least one refusal, six reached an accepted master and every one of those
+  // six got there by changing contract after a refusal. The contract change IS
+  // the recovery, so the routing that starts on the field needs one too.
+  //
+  // It is deliberately one-way and bounded: at most two field candidates, then
+  // at most two six-surface candidates, and the six-surface tail carries
+  // `fieldFirstExhausted` so it cannot fail back. Same kill switch as the other
+  // direction -- DESIGNPRO_ATLAS_FIELD_FAILOVER=off restores fail-closed --
+  // because one misspelled flag must not cost a design.
+  const fieldFirstRouted = authoringTopology === "field" && Boolean(fieldFirst) && !parentManifest;
+  const sixSurfaceFallbackEnabled = fieldFirstRouted
     && String(process.env.DESIGNPRO_ATLAS_FIELD_FAILOVER || "").trim().toLowerCase() !== "off";
   const failOverToField = (reason, extra = {}) => generateOrReuseFlatAtlas({
     ...options, authoringTopology: "field", maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS,
@@ -3048,7 +3188,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // carrying the refusal as provenance. The customer never ends with nothing
   // because the new topology was refused.
   const failOverToSixSurface = (reason, extra = {}) => generateOrReuseFlatAtlas({
-    ...options, authoringTopology: "six-surface", failoverFrom: reason || null, ...extra,
+    ...options, authoringTopology: "six-surface", failoverFrom: reason || null,
+    // The six-surface tail authors on its own contract; carrying the field-first
+    // receipt onto it would claim the design was field-routed when it was not.
+    // `failoverFrom` is where that history is recorded.
+    ...(fieldFirstRouted ? { fieldFirst: null, fieldFirstExhausted: true, maxAuthoringAttempts: undefined } : {}),
+    ...extra,
   });
   const checkpointIdentity = {
     tenantKey, generationId, requestId, ownerId,
@@ -3126,6 +3271,13 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // checks (manifest, prompt and example-set hashes) run on that contract.
     return failOverToField(existing.metadata?.authoringFailover || null);
   }
+  // The mirror of the line above, for the field-first routing. Without it a
+  // resumed field-first request whose design was accepted on the six-surface
+  // tail measures the stored revision against the FIELD manifest and refuses
+  // its own accepted artwork.
+  if (existing && fieldFirstRouted && existing.manifest?.topology !== FIELD_TOPOLOGY) {
+    return failOverToSixSurface(existing.metadata?.authoringFailover || null);
+  }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
       throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
@@ -3152,7 +3304,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // belong to the six-surface identity may be the FIELD acceptance written by
     // the fail-over before the revision row landed; prove that with the field
     // identity before resuming on that contract, and otherwise refuse as before.
-    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch" || !fieldResumable) throw cause;
+    if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch") throw cause;
+    if (fieldFirstRouted) {
+      // A field-first request whose six-surface tail was accepted before its
+      // revision row landed. Proven against the six-surface identity first,
+      // exactly as the other direction proves the field identity.
+      const sixCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
+        identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(sixSurfaceManifest)) } })
+        .catch(() => null);
+      if (!sixCheckpoint) throw cause;
+      logger(`atlas call 1: resuming the accepted six-surface tail for ${requestId}`);
+      return failOverToSixSurface(sixCheckpoint.state?.authoringFailover || null);
+    }
+    if (!fieldResumable) throw cause;
     const fieldCheckpoint = await readAcceptedCheckpoint({ supabase, bucket: BUCKET,
       identity: { ...checkpointIdentity, manifestHash: sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest))) } })
       .catch(() => null);
@@ -3286,6 +3450,18 @@ async function generateOrReuseFlatAtlasResolved(options) {
     projectionMs: 0,
     uploadWaitMs: 0,
     semanticWaitMs: 0,
+    // THE GAP WAS 45% OF CALL 1 AND NOTHING MEASURED IT. (2026-09-16)
+    //
+    // Canary 8c525565: totalMs 105,526 with authoringMs 42,311 -- the image
+    // call is 40% of Call 1. The named buckets above summed to 58,230, leaving
+    // 47,296 ms, 45% of the wall clock, attributed to nothing. Two Gemini
+    // Flash stages live in that gap and neither was timed: the output-class
+    // inspector (one call) and the passenger composition (up to THREE panel
+    // reads plus 4096-square crops). "Where does Call 1 spend its time" has to
+    // be answerable from the revision, or the next latency argument is another
+    // stopwatch against a browser tab.
+    outputClassMs: 0,
+    passengerMirrorMs: 0,
     ...(recoveredState?.timings || {}),
   };
   const checkpointState = () => {
@@ -3299,8 +3475,38 @@ async function generateOrReuseFlatAtlasResolved(options) {
       passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
   };
   if (!recoveredCheckpoint) {
+  // THE MODEL ANSWERING WITH TEXT IS A RE-ROLL, NOT A DEAD REQUEST.
+  //
+  // `atlas_artboard_no_image` means Gemini returned a candidate with no image
+  // part. RestylePro's golden config names this exactly: NO_IMAGE "is NOT a
+  // content safety refusal. Retry with reduced prompt (NOT instant 422)."
+  // Here it escaped the candidate loop entirely -- `callEdge` was not caught --
+  // so a live customer run (6e78ed9e, 2026-09-16) burned ONE image request,
+  // never spent its second candidate, never reached the RULE 0.38 contract
+  // change, and ended with nothing on screen but "no candidate reached the
+  // acceptance gates", which is not what happened: nothing was drawn, so
+  // nothing was judged.
+  //
+  // A candidate that did not draw is now treated as a candidate that was
+  // refused: recorded in the ledger, the next attempt spent, and on exhaustion
+  // handed to the other contract like any other refusal. That fail-over is a
+  // real remedy here and not just a formality -- six-surface carries the 3.4 MB
+  // teaching proof and the guide, and a large multimodal request is measurably
+  // likelier to come back text-only than the field contract's text-only one.
+  //
+  // Deliberately narrow: ONLY a no-image outcome converts. A broken function, a
+  // 401, an expired lease or any `provider_*` transport failure still throws,
+  // because re-rolling those spends the budget against a wall.
+  const atlasNoImageOutcome = (cause) => {
+    if (!cause) return false;
+    const code = String(cause.code || "");
+    if (code === "provider_no_image") return true;
+    if (code !== "flat_atlas_edge_call_failed") return false;
+    return /(?:^|[^a-z0-9_])atlas_(?:artboard|author)_no_image(?:$|[^a-z0-9_])/.test(String(cause.message || ""));
+  };
   for (let attempt = 1; attempt <= maxAuthoringAttempts; attempt += 1) {
     masterAuthoringAttempts = attempt;
+    let noImageCause = null;
     // NO corrective-note text (owner boundary contract 2026-09-01): every attempt is
     // the identical primary-generation request; temperature 1.0 supplies the
     // re-roll variation. The bounded attempt budget above is unchanged.
@@ -3367,82 +3573,110 @@ async function generateOrReuseFlatAtlasResolved(options) {
       generated = { bytes: hero.bytes, model: hero.model, provenance: hero.provenance, heroDriver: hero.provenance };
       timings.heroCascadeMs = (timings.heroCascadeMs || 0) + Number(hero.timings?.heroCascadeMs || 0);
     } else {
-      generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
+      try {
+        generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
+      } catch (cause) {
+        if (!atlasNoImageOutcome(cause)) throw cause;
+        noImageCause = cause;
+      }
     }
     timings.authoringMs += Date.now() - authoringStartedAt;
-    edgeProvenance.push(generated.provenance);
-    const normalizeStartedAt = Date.now();
-    const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
-    timings.normalizeMs += Date.now() - normalizeStartedAt;
-    masterBytes = normalized.bytes;
-    masterDelivery = normalized;
-    masterHash = sha256(masterBytes);
+    if (!noImageCause) edgeProvenance.push(generated.provenance);
+    // A candidate that never drew has nothing to normalize, cut or classify.
+    // It goes straight to the shared refusal tail below, which records it in
+    // the ledger, spends the next attempt, and on exhaustion changes contract.
+    let stillBlocking;
+    let refusalCode;
+    if (noImageCause) {
+      masterCutoutSurfaces = [];
+      masterCutoutFindings = [];
+      refusalCode = "flat_atlas_master_no_image";
+      stillBlocking = [`the model returned no image on this candidate: ${String(noImageCause.message || noImageCause.code || "no_image").slice(0, 300)}`];
+    } else {
+      const normalizeStartedAt = Date.now();
+      const normalized = await normalizeAtlasMaster(generated.bytes, manifest);
+      timings.normalizeMs += Date.now() - normalizeStartedAt;
+      masterBytes = normalized.bytes;
+      masterDelivery = normalized;
+      masterHash = sha256(masterBytes);
 
-    const deterministicStartedAt = Date.now();
-    const deterministic = await deterministicMasterChecks(masterBytes, manifest);
-    timings.deterministicMs += Date.now() - deterministicStartedAt;
-    masterDeterministic = deterministic;
-    const cutoutSurfacesOf = (result) => [...new Set(
-      (result?.cutoutFindings || []).map((item) => String(item.surfaceKey)),
-    )].sort();
+      const deterministicStartedAt = Date.now();
+      const deterministic = await deterministicMasterChecks(masterBytes, manifest);
+      timings.deterministicMs += Date.now() - deterministicStartedAt;
+      masterDeterministic = deterministic;
+      const cutoutSurfacesOf = (result) => [...new Set(
+        (result?.cutoutFindings || []).map((item) => String(item.surfaceKey)),
+      )].sort();
 
-    // PASSENGER IS AUTHORITY, NOT A DERIVATIVE.
-    //
-    // `passengerMirrorMae` remains in `deterministic` as useful continuity
-    // telemetry. It is deliberately absent from `blockingFailures`: two named
-    // Call-1 surfaces may share a design system while legitimately differing in
-    // placement, text and vehicle-side anatomy. Replacing Passenger with a
-    // pixel mirror of Driver destroys that authored region and can make a fake
-    // Passenger look structurally "better" than the actual accepted design.
-    // No semantic call or image rewrite occurs here.
+      // PASSENGER IS AUTHORITY, NOT A DERIVATIVE.
+      //
+      // `passengerMirrorMae` remains in `deterministic` as useful continuity
+      // telemetry. It is deliberately absent from `blockingFailures`: two named
+      // Call-1 surfaces may share a design system while legitimately differing in
+      // placement, text and vehicle-side anatomy. Replacing Passenger with a
+      // pixel mirror of Driver destroys that authored region and can make a fake
+      // Passenger look structurally "better" than the actual accepted design.
+      // No semantic call or image rewrite occurs here.
 
-    // RULE 0.15 RESTORED (owner, Trish 2026-09-14: "Fix it ... get designpro
-    // working end to end"). A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN.
-    //
-    // A wheel arch, glass band or bed opening punched through an otherwise
-    // full-bleed panel is repaired below by `fillMasterCutouts` (deterministic
-    // pixel continuation, no AI) and the repaired sheet is structurally
-    // RE-VALIDATED before anything is accepted (owner boundary, 2026-08-31).
-    // That is the path this file was built around. On 2026-09-10 (82da00d) a
-    // cut-out was made a REFUSAL inside this loop and again before the fill,
-    // which turned the fill into dead code: seven of the thirteen sheets
-    // refused between 09-06 and 09-14 were cut-out-only, and delivered designs
-    // went 17 -> 4 -> 0 per week. The silhouette case (artwork that never
-    // reaches its own borders) is NOT a cut-out; it stays a blocking failure
-    // in atlas-master-qc (edgeHoleRatio) exactly as before, and the fill is
-    // never asked to smear a surround inward.
-    masterCutoutSurfaces = cutoutSurfacesOf(deterministic);
-    masterCutoutFindings = (deterministic.cutoutFindings || []).map((item) => String(item.finding));
+      // RULE 0.15 RESTORED (owner, Trish 2026-09-14: "Fix it ... get designpro
+      // working end to end"). A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN.
+      //
+      // A wheel arch, glass band or bed opening punched through an otherwise
+      // full-bleed panel is repaired below by `fillMasterCutouts` (deterministic
+      // pixel continuation, no AI) and the repaired sheet is structurally
+      // RE-VALIDATED before anything is accepted (owner boundary, 2026-08-31).
+      // That is the path this file was built around. On 2026-09-10 (82da00d) a
+      // cut-out was made a REFUSAL inside this loop and again before the fill,
+      // which turned the fill into dead code: seven of the thirteen sheets
+      // refused between 09-06 and 09-14 were cut-out-only, and delivered designs
+      // went 17 -> 4 -> 0 per week. The silhouette case (artwork that never
+      // reaches its own borders) is NOT a cut-out; it stays a blocking failure
+      // in atlas-master-qc (edgeHoleRatio) exactly as before, and the fill is
+      // never asked to smear a surround inward.
+      masterCutoutSurfaces = cutoutSurfacesOf(deterministic);
+      masterCutoutFindings = (deterministic.cutoutFindings || []).map((item) => String(item.finding));
 
-    // ── THE GATE ─────────────────────────────────────────────────────────
-    //
-    // Deterministic structural failures refuse the candidate, and — owner
-    // ruling 2026-09-01 — so does an explicit OUTPUT-CLASS verdict that the
-    // candidate depicts a vehicle instead of ONE flat A.T.L.A.S. panel-layout
-    // sheet. Generation 470cb0e9 proved a photoreal vehicle-mockup montage
-    // passes every structural gate (a bright render measures as 94% artwork),
-    // so the class question is asked point-blank before anything becomes
-    // canonical or fans out. The class gate fails OPEN only on inspector
-    // transport failure (durable `unavailable` receipt); an explicit
-    // vehicle_depiction verdict always refuses. All other subjective semantic
-    // review remains advisory. Passenger continuity telemetry never enters
-    // this refusal set.
-    const stillBlocking = [...(deterministic.blockingFailures || [])];
-    let refusalCode = "flat_atlas_master_deterministic_failed";
-    if (masterCutoutSurfaces.length && stillBlocking.length) {
-      // Cut-outs beside a real structural failure are recorded on the refusal
-      // for the ledger; alone, they are repaired after the loop, never refused.
-      stillBlocking.push(
-        `cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
-      );
-    }
-    if (!stillBlocking.length) {
-      outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
-      if (outputClassReceipt.blocking) {
-        refusalCode = "flat_atlas_master_output_class_invalid";
+      // ── THE GATE ─────────────────────────────────────────────────────────
+      //
+      // Deterministic structural failures refuse the candidate, and — owner
+      // ruling 2026-09-01 — so does an explicit OUTPUT-CLASS verdict that the
+      // candidate depicts a vehicle instead of ONE flat A.T.L.A.S. panel-layout
+      // sheet. Generation 470cb0e9 proved a photoreal vehicle-mockup montage
+      // passes every structural gate (a bright render measures as 94% artwork),
+      // so the class question is asked point-blank before anything becomes
+      // canonical or fans out. The class gate fails OPEN only on inspector
+      // transport failure (durable `unavailable` receipt); an explicit
+      // vehicle_depiction verdict always refuses. All other subjective semantic
+      // review remains advisory. Passenger continuity telemetry never enters
+      // this refusal set.
+      stillBlocking = [...(deterministic.blockingFailures || [])];
+      refusalCode = "flat_atlas_master_deterministic_failed";
+      if (masterCutoutSurfaces.length && stillBlocking.length) {
+        // Cut-outs beside a real structural failure are recorded on the refusal
+        // for the ledger; alone, they are repaired after the loop, never refused.
         stillBlocking.push(
-          `output class ${outputClassReceipt.disposition} (confidence ${outputClassReceipt.confidence ?? "n/a"}): ${outputClassReceipt.evidence || "vehicle depicted"} -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image`,
+          `cutouts on ${masterCutoutSurfaces.join(", ")}: ${masterCutoutFindings.join("; ")}`,
         );
+      }
+      if (!stillBlocking.length) {
+        const outputClassStartedAt = Date.now();
+        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
+        timings.outputClassMs += Date.now() - outputClassStartedAt;
+        if (outputClassReceipt.blocking) {
+          // The refusal CODE names which defect, so the ledger and its digest can
+          // tell "the model drew a truck" from "the model drew the layout map".
+          // Both refuse; they need different fixes, and a single code hid that.
+          const drewTheMap = outputClassReceipt.disposition === "map_drawn";
+          refusalCode = drewTheMap
+            ? "flat_atlas_master_map_drawn"
+            : "flat_atlas_master_output_class_invalid";
+          stillBlocking.push(
+            `output class ${outputClassReceipt.disposition} (confidence ${outputClassReceipt.confidence ?? "n/a"}): ${outputClassReceipt.evidence || (drewTheMap ? "layout map printed into the artwork" : "vehicle depicted")}`
+            + (drewTheMap
+              ? " -- the panel fractions are a map to read; a printed coordinate is ink on the customer's vinyl"
+              : " -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image"),
+          );
+        }
       }
     }
     const refusalReason = stillBlocking.join("; ").slice(0, 600);
@@ -3483,7 +3717,21 @@ async function generateOrReuseFlatAtlasResolved(options) {
           + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
           + refusalReason).slice(0, 1000),
       );
-      if (!failoverEnabled) throw refusal;
+      if (!failoverEnabled) {
+        if (!sixSurfaceFallbackEnabled) throw refusal;
+        logger(`atlas call 1: field-first budget refused (${refusalCode}); failing over to the six-surface contract`);
+        return failOverToSixSurface({
+          contract: AUTHORING_FAILOVER_CONTRACT,
+          from: manifest.topology,
+          to: "six-surface",
+          code: refusalCode,
+          reason: refusalReason,
+          attempts: attempt,
+          rawCandidates: edgeProvenance
+            .filter((item) => item?.masterStoragePath && HASH_RE.test(String(item.masterSha256 || "")))
+            .map((item) => ({ storagePath: item.masterStoragePath, sha256: item.masterSha256 })),
+        }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+      }
       // ONE-FIELD FAIL-OVER. The six-surface budget is spent and refused; the
       // refusal is carried onto the field revision as its provenance, and the
       // fence state travels with it so a spent fence stays cache-only.
@@ -3536,6 +3784,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // when the bands cannot be established on a design that carries lettering,
   // THE MIRROR DOES NOT RUN. Falling through to the authored passenger is the
   // behaviour of every run before this one; shipping reversed type is not.
+  const passengerMirrorStartedAt = Date.now();
   const passengerMirror = recoveredState?.passengerMirror || await composePassengerFromDriver({
     masterBytes,
     manifest,
@@ -3544,6 +3793,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     provider,
     logger,
   });
+  if (!recoveredState?.passengerMirror) timings.passengerMirrorMs += Date.now() - passengerMirrorStartedAt;
   // HERO-DRIVER: the passenger zone holds a plain flop of the driver sheet
   // until the brand-band mirror above re-drops the lettering forward. If that
   // mirror declined on a design that carries lettering, the flop would ship
@@ -3651,11 +3901,15 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // question on the pre-repair sheet already passed; asking it again of a
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
+    const repairedClassStartedAt = Date.now();
     outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
+    timings.outputClassMs += Date.now() - repairedClassStartedAt;
     if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
-        "flat_atlas_master_output_class_invalid",
-        `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "vehicle depicted"}`,
+        outputClassReceipt.disposition === "map_drawn"
+          ? "flat_atlas_master_map_drawn"
+          : "flat_atlas_master_output_class_invalid",
+        `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "refused by the output-class gate"}`,
       );
     }
   }
@@ -4136,6 +4390,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
             letteringRead: passengerMirror.letteringRead || null,
             letteringSource: passengerMirror.letteringSource || null,
             letteringReadFailure: passengerMirror.letteringReadFailure || null,
+            letteringBands: passengerMirror.letteringBands || [],
             letteringVerify: passengerMirror.letteringVerify || null,
           }
         : null,
@@ -4154,6 +4409,14 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // master. It is kept as its own field because the panel bytes must stay
       // traceable to their source by name, not by an assumed equality.
       panelSourceHash,
+      // WHICH FILL PRODUCED IT. `fillMasterCutouts` is deterministic by
+      // contract and its result is REBUILT on every resume rather than stored,
+      // so the rebuild has to know which algorithm to run. Recording it here is
+      // what lets the fill improve without refusing the back catalogue:
+      // `flat_atlas_surface_source_mismatch` then means the bytes really did
+      // drift, instead of meaning the algorithm moved on underneath them. A
+      // revision with no value predates versioning and is v1 by definition.
+      panelSourceFillContract: cutoutFill.contract,
       // PROVENANCE ONLY -- the pre-repair sheet Gemini returned, kept so a
       // forensic reader can see what arrived, and null when nothing was
       // repaired. It is deliberately NOT called a master: it is not canonical,
@@ -4193,6 +4456,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
         genieMs: Number.isFinite(geniePrep?.genieMs) ? geniePrep.genieMs : null,
         geniePrepHit: geniePrep?.prepHit === true,
         totalMs: Date.now() - callOneStartedAt,
+        // What the named buckets do NOT explain. A number that only ever
+        // appeared by subtracting them by hand is a number nobody checks.
+        unattributedMs: Math.max(0, (Date.now() - callOneStartedAt)
+          - Object.entries(timings)
+            .filter(([key]) => key.endsWith("Ms"))
+            .reduce((sum, [, value]) => sum + (Number(value) || 0), 0)),
         // Always zero in active Call 1; retained for timing-schema continuity.
         semanticOverlapped: timings.semanticWaitMs === 0,
       },

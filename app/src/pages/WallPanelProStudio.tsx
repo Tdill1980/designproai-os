@@ -34,6 +34,8 @@ import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Download, FileJson, LifeBuoy, Loader2, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+// The one money formatter this codebase already has; a second would drift.
+import { money } from '@/lib/wpw-printed-films';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -437,6 +439,18 @@ function DesignBoard({ design, onChanged }: { design: WallStudioProjectRecord; o
         </Link>
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold">
           <span className="rounded bg-slate-900 px-2 py-0.5 font-mono text-lg text-white">{design.designId}</span>
+          {/* THE ORDER NUMBER, WHERE QC SIGNS OFF (owner, 2026-09-16: "It must
+              show in qc page also once they pay they must get an order
+              number"). A paid design and an unpaid one look identical on a
+              board that shows only the DesignID, and the paid one is the
+              expensive one to get wrong. Emerald so it reads as money at a
+              glance, beside the identity it belongs to. Absent until payment,
+              which is the honest state. */}
+          {record.orders.map(o => (
+            <span key={o.orderNumber} className="rounded bg-emerald-600 px-2 py-0.5 font-mono text-sm text-white" title={`${o.productType} · ${money(o.amountCents)} · paid ${when(o.paidAt)}`}>
+              {o.orderNumber}
+            </span>
+          ))}
           <span className="truncate">{design.projectName}</span>
         </h1>
         <p className="mt-1 text-xs text-slate-600">
@@ -467,6 +481,7 @@ function DesignBoard({ design, onChanged }: { design: WallStudioProjectRecord; o
           <span className="text-xs">
             <span className="block font-bold">V{v.version.version_no}{v.version.status === 'approved' ? ' · approved' : ''}</span>
             <span className="block font-mono text-[10px] text-slate-500">{v.designId}</span>
+            {v.orders.map(o => <span key={o.orderNumber} className="block font-mono text-[10px] font-semibold text-emerald-700">{o.orderNumber}</span>)}
             <span className="block text-[10px] text-slate-500">{v.version.kind}</span>
           </span>
         </button>;

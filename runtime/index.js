@@ -36,6 +36,7 @@ const { createAtlasCall1NodeWorker, graphEnabled: atlasCall1GraphEnabled } = req
 const { createAtlasAuthorTransport } = require("./flat-first-atlas.cjs");
 const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
 const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
+const { erasePanelRegions, MAX_ERASE_FRACTION } = require("./atlas-cutout-fill.cjs");
 const { createWallProProductionWorker } = require("./wallpro-production.cjs");
 
 const PORT = Number(process.env.PORT || 3001);
@@ -640,6 +641,151 @@ app.post("/internal/panels/upscale", authMiddleware, async (req, res) => {
       clampedByEngineCeiling: enhanced.plan?.clampedByEngineCeiling === true,
       engineModel: enhanced.model,
       idempotent: Boolean(insertError),
+    });
+  } catch (error) {
+    return res.status(400).json({ error: String(error.code || error.message || error) });
+  }
+});
+
+// PANELPRO STUDIO OPERATOR ERASE. (owner, for Carley on the vector template:
+// "sometimes the panel text needs moving a bit ... she may need to pop off text
+// if that occurs", and "I need to show her end to end and she said she needs
+// that for QC")
+//
+// The designer selects a region on a panel; the runtime fills it from that
+// panel's OWN surrounding artwork and hands back the type as a layer. It is the
+// same `cloneOverHole` the wheel-arch fill uses, because a hole the model
+// punched and a text block a human selected are the same problem.
+//
+// IT IS A CORRECTION AND IT USES THE CORRECTION LINEAGE. The result is recorded
+// through `record_designpro_corrected_panel`, so the branded Call-1 panel is
+// never touched, BOTH artifacts survive for audit, the designer's reason is
+// required, and `enhance.upscale` already enhances the newest correction per
+// surface with its `humanCorrectedSurfaces` receipt. No new artifact kind and
+// nothing on the frozen seam moves. RULE 0.22: forbid generation, never forbid
+// correction.
+//
+// The server does the pixels. A browser may preview a layer stack and drag it,
+// but the artifact that prints is composited here -- RULE 0.18 and RULE 0.21
+// removed the browser-era producers and this does not reintroduce them.
+app.post("/internal/panels/erase", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const expected = ["generationId", "ownerId", "reason", "regions", "surfaceKey"];
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(expected)) {
+      return res.status(400).json({ error: "panel_erase_request_invalid" });
+    }
+    const generationId = canonicalUuid(body.generationId, "generationId");
+    const ownerId = canonicalUuid(body.ownerId, "ownerId");
+    const surfaceKey = String(body.surfaceKey || "");
+    if (!SURFACE_KEYS.includes(surfaceKey)) return res.status(400).json({ error: "panel_erase_surface_invalid" });
+    const regions = Array.isArray(body.regions) ? body.regions : null;
+    if (!regions || !regions.length || regions.length > 24) {
+      return res.status(400).json({ error: "panel_erase_regions_invalid" });
+    }
+    // The RPC requires a reason of its own, and refusing here means the
+    // designer is told before the work is done rather than after.
+    const reason = String(body.reason || "").trim();
+    if (reason.length < 8) return res.status(400).json({ error: "panel_erase_reason_required" });
+
+    const { data: runs, error: runError } = await supabase
+      .from("designpro_workflow_runs")
+      .select("id,tenant_key,owner_id,results,created_at")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false });
+    if (runError) return res.status(400).json({ error: runError.message });
+    const run = (runs || []).find((row) => String(row.results?.generationId || "") === generationId);
+    if (!run) return res.status(404).json({ error: "panel_erase_run_not_found" });
+
+    const { data: artifacts, error: artifactError } = await supabase
+      .from("designpro_artifacts")
+      .select("id,stage_id,artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata,created_at")
+      .eq("run_id", run.id)
+      .in("artifact_kind", ["panel", "corrected-panel"])
+      .eq("surface_key", surfaceKey)
+      .order("created_at", { ascending: false });
+    if (artifactError) return res.status(400).json({ error: artifactError.message });
+    const branded = (artifacts || []).find((row) => row.artifact_kind === "panel");
+    if (!branded) return res.status(409).json({ error: "panel_erase_source_missing" });
+    // Erase the ACTIVE artifact, by the same rule Call 12 enhances by: the
+    // newest correction when one exists, the branded panel otherwise. A second
+    // edit therefore builds on the first rather than reverting it.
+    const source = (artifacts || []).find((row) => row.artifact_kind === "corrected-panel") || branded;
+
+    const download = await supabase.storage.from("wrap-files").download(source.storage_path);
+    if (download.error || !download.data) return res.status(409).json({ error: "panel_erase_source_unreadable" });
+    const sourceBytes = Buffer.from(await download.data.arrayBuffer());
+    // The bytes have to be the ones the database says they are, or the
+    // correction would be bound to a panel that no longer exists.
+    if (createHash("sha256").update(sourceBytes).digest("hex") !== source.content_hash) {
+      return res.status(409).json({ error: "panel_erase_source_changed" });
+    }
+
+    let erased;
+    try {
+      erased = await erasePanelRegions(sourceBytes, regions);
+    } catch (error) {
+      // The fill's own refusals are the operator's answer, not a server fault:
+      // a region outside the panel, or one large enough to be a redesign.
+      return res.status(422).json({ error: String(error.code || "panel_erase_failed"), detail: error.message });
+    }
+
+    const stem = `${surfaceKey}-${String(source.content_hash).slice(0, 24)}`;
+    const basePath = `designpro/${canonicalTenantKey(run.tenant_key)}/${run.id}/enhanced/erase-${stem}.png`;
+    const stored = await uploadEnhancedPanel(basePath, erased.bytes, "image/png", run.tenant_key, run.id, null);
+
+    // THE TYPE, KEPT. Stored beside the corrected panel and referenced from its
+    // metadata rather than as a new artifact kind, so the seam does not move
+    // while the designer still gets the letterforms back to re-place.
+    let liftedPath = null;
+    let liftedHash = null;
+    if (erased.liftedBytes) {
+      liftedPath = `designpro/${canonicalTenantKey(run.tenant_key)}/${run.id}/enhanced/lift-${stem}.png`;
+      const liftStored = await uploadEnhancedPanel(liftedPath, erased.liftedBytes, "image/png", run.tenant_key, run.id, null);
+      liftedHash = liftStored.contentHash;
+    }
+
+    const { data: recorded, error: recordError } = await supabase.rpc("record_designpro_corrected_panel", {
+      p_generation_id: generationId,
+      p_surface_key: surfaceKey,
+      p_asset: {
+        storagePath: basePath,
+        contentHash: stored.contentHash,
+        byteSize: erased.bytes.length,
+        contentType: "image/png",
+        contract: erased.contract,
+        operatorErase: true,
+        regions: erased.regions,
+        maskedPixels: erased.maskedPixels,
+        panelFraction: erased.panelFraction,
+        unresolvedPixels: erased.unresolvedPixels,
+        liftedTypePath: liftedPath,
+        liftedTypeHash: liftedHash,
+        liftedTypePixels: erased.liftedPixels || 0,
+        correctedFromPath: source.storage_path,
+        correctedFromHash: source.content_hash,
+        sourceArtifactKind: source.artifact_kind,
+        brandedPanelHash: branded.content_hash,
+      },
+      p_reason: reason,
+    });
+    if (recordError) return res.status(400).json({ error: recordError.message });
+
+    return res.status(200).json({
+      surfaceKey,
+      contentHash: stored.contentHash,
+      byteSize: erased.bytes.length,
+      widthPx: erased.widthPx,
+      heightPx: erased.heightPx,
+      regions: erased.regions,
+      maskedPixels: erased.maskedPixels,
+      panelFraction: erased.panelFraction,
+      unresolvedPixels: erased.unresolvedPixels,
+      liftedTypePath: liftedPath,
+      liftedTypeHash: liftedHash,
+      liftedTypePixels: erased.liftedPixels || 0,
+      correctedFrom: { path: source.storage_path, hash: source.content_hash, kind: source.artifact_kind },
+      recorded: recorded || null,
     });
   } catch (error) {
     return res.status(400).json({ error: String(error.code || error.message || error) });

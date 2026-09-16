@@ -255,7 +255,7 @@ const PricingColorPro = () => {
         "PatternPro",
         "FadeWraps",
         "RestyleLibrary",
-        "GraphicsPro",
+        "CutPro",
         "RevisionStudioIQ",
         "Gallery",
         "QuickQuote",
@@ -320,7 +320,7 @@ const PricingColorPro = () => {
       bullets: [
         "✓ Everything in Lite",
         "★ Real human graphic designer · 48-hour file turnaround on every Production Pack",
-        "★ Full DesignPro Design OS + GraphicsPro + RecreatePro — the full creative stack",
+        "★ Full DesignPro Design OS + CutPro + RecreatePro — the full creative stack",
         "$$ CreatorMarket publisher — list and sell your wraps to every DesignProAI shop, keep 60% of each sale",
         "✓ 150 renders / month — shared across every tool, covers initial designs and revisions",
         "✓ $4.66 per render effective · $3,750 of work bundled into $699",
@@ -334,7 +334,7 @@ const PricingColorPro = () => {
         "DesignProAI",
         "Real human designer · 48h",
         "Full Design OS",
-        "GraphicsPro",
+        "CutPro",
         "RecreatePro",
         "CreatorMarket publish (60%)",
       ],
@@ -422,7 +422,7 @@ const PricingColorPro = () => {
             <strong className="text-white">Each token = $25 retail value.</strong>{" "}
             One token covers a render OR a revision — no separate
             charge — across every tool on the platform:
-            {" "}<strong className="text-white">ColorPro · DesignProAI · WallPro · PatternPro · FadeWraps · GraphicsPro · RevisionStudioIQ · MyVehiclePro</strong>.
+            {" "}<strong className="text-white">VehiclePro · WallPro · CutPro · PatternPro · ColorPro · FadeWraps · RevisionStudioIQ · MyVehiclePro</strong>.
             Every tier bundles tokens at a discounted effective rate
             below $25; overage tokens are priced per tier (Starter
             $30, Lite/Studio $20, Plus $15) so climbing the ladder
@@ -759,12 +759,12 @@ const PricingColorPro = () => {
             <div className="lg:col-span-5 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] px-3 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 mb-5">
                 <Sparkles className="w-3 h-3" />
-                DesignProAI™ · Vehicle Wrap Design System
+                DesignProAI™ · Prompt-Based Design + Production-Ready File Output
               </div>
               <h1 className="font-montserrat text-4xl sm:text-5xl md:text-[3.4rem] font-bold leading-[1.02] tracking-tight mb-5">
-                Meet Your New Vehicle Wrap{" "}
+                The Design-to-Production OS{" "}
                 <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 bg-clip-text text-transparent">
-                  Design and Marketing Engine
+                  Built for Wide Format.
                 </span>
               </h1>
               <p className="text-base sm:text-lg text-white/85 leading-relaxed mb-3 max-w-xl lg:max-w-none mx-auto">

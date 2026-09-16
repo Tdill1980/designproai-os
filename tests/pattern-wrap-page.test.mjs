@@ -30,16 +30,33 @@ const RENDER_FN = stripComments(read("supabase/functions/generate-pattern-render
 const CONFIG = read("supabase/config.toml");
 const MIGRATION = "supabase/migrations/20260915090000_patternpro_wbty_products.sql";
 
+test("the DesignProAI brand carries the same hero and no partner name — owner: 'like this without WPW'", () => {
+  const designpro = BRAND.slice(BRAND.indexOf("  designpro: {"), BRAND.indexOf("  weprintwraps: {"));
+  assert.ok(designpro.includes("hero: HERO,"));
+  assert.ok(!/weprintwraps|wpw/i.test(designpro.replace(/\/\/[^\n]*/g, "")), "no WPW in the DesignProAI brand");
+  assert.ok(PAGE.includes("{theme.lede}") && PAGE.includes("theme.chips.map") && PAGE.includes("{theme.eyebrowLine}"));
+  assert.ok(!/WePrintWraps/.test(stripComments(PAGE)), "the page holds no partner copy of its own");
+});
+
 test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone to os.designpro'", () => {
   const nav = read("app/src/lib/dashboard-nav.ts");
   assert.ok(nav.includes('key: "patternpro",'));
   assert.ok(nav.includes('route: "/printpro/patternpro",'));
   assert.ok(read("app/src/components/dashboard/ToolWordmark.tsx").includes('patternpro:       { base: "Pattern",    suffix: "Pro" },'));
+  // And the WPW tenant page beside it (owner: "I should see both on navigation
+  // left side, so I can show WPW and also sell").
+  assert.ok(nav.includes('key: "patternpro_wpw",'));
+  assert.ok(nav.includes('route: "/pattern-wrap",'));
+  assert.ok(read("app/src/components/dashboard/ToolWordmark.tsx").includes('patternpro_wpw:   { base: "WPW × Pattern", suffix: "Pro" },'));
 });
 
 test("/pattern-wrap and /printpro/patternpro are routed to the ONE PatternWrap page", () => {
   assert.ok(APP.includes('const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));'));
+  // BOTH pages on every host (owner, 2026-09-16: "I should have a WPW
+  // PatternPro page and a stand alone PatternPro page both on the
+  // os.designpro — WPW is a tenant"). No host redirect on /pattern-wrap.
   assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />'));
+  assert.ok(!APP.includes("PartnerPatternWrap"), "the tenant page must not redirect off the DesignProAI host");
   assert.ok(APP.includes('<Route path="/printpro/patternpro" element={<PatternWrap />} />'));
 });
 

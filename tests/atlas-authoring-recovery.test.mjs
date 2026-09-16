@@ -17,6 +17,12 @@ const surfaces = [["driver",153,56],["passenger",153,56],["hood",71.5,56],
 const geometryResolution = { contract:"designpro.genie-manifest.v1",genieManifestId:"a".repeat(32),
   genieManifestHash:"a".repeat(64),state:"derived",derivationContract:"designpro.genie-front-derived.v1",
   derivedSurfaces:["front"],geometrySourceRowId:"fixture",productionEligible:false,operatorValidated:false };
+// 2026-09-16: field-first now routes EVERY class (owner: "ROUTE TRUCKS THROUGH
+// THE FIELD ALSO"). This file exercises the six-surface authoring mechanics --
+// repair, fail-over, checkpoints, recovery -- which still exist behind the
+// DESIGNPRO_ATLAS_FIELD_FIRST=off switch and for revision edits, so it pins
+// the switch off for its fixtures; the field-first tests below lift it.
+process.env.DESIGNPRO_ATLAS_FIELD_FIRST = "off";
 const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_MODE,mode:"commercial",
   companyName:"Recovery Fixture",brief:"Blue and orange test artwork",vehicle:{year:"2022",make:"Ford",model:"F250 Crew Cab",type:"truck"}};
 const identities = { requestId:"11111111-1111-4111-8111-111111111111",
@@ -626,8 +632,9 @@ test("recoverable artifact reads and explicit provider rejections retain the ori
 // strict referee six-surface has only ever produced a flat sheet for the
 // F-250; on a car it drew the vehicle on every attempt, and every car run paid
 // ~2.5 minutes for those two refusals before the field produced the sheet.
+const fieldFirstOn=t=>{const previous=process.env.DESIGNPRO_ATLAS_FIELD_FIRST;delete process.env.DESIGNPRO_ATLAS_FIELD_FIRST;t.after(()=>{process.env.DESIGNPRO_ATLAS_FIELD_FIRST=previous;});};
 test("a car-class vehicle authors on the one-field contract first and never spends a six-surface try",async t=>{
-  finishFlag(t,"off");failoverFlag(t,undefined);
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
   const {source}=await fixture();const {fieldSource}=await fieldFixture();
   const run=harness(source);
   run.masterFor=async body=>body.fieldContract?fieldSource:source;
@@ -641,16 +648,18 @@ test("a car-class vehicle authors on the one-field contract first and never spen
   assert.equal(result.metadata.maxAuthoringAttemptsAllowed,2);
 });
 
-test("trucks keep six-surface first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restores it for every class",async t=>{
-  finishFlag(t,"off");failoverFlag(t,undefined);
-  assert.equal(atlas._test.fieldFirstReason({type:"truck"}),null);
-  assert.equal(atlas._test.fieldFirstReason({type:"van"}),null);
+// 2026-09-16 (owner: "ROUTE TRUCKS THROUGH THE FIELD ALSO"): every class
+// authors on the field first. Of the last fifteen production requests, every
+// failure was six-surface drawing a vehicle -- the F-250 included -- and every
+// field-routed request completed.
+test("every vehicle class authors on the field first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restores six-surface for every class",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  assert.equal(atlas._test.fieldFirstReason({type:"truck"}),"vehicle-class:truck");
+  assert.equal(atlas._test.fieldFirstReason({type:"van"}),"vehicle-class:van");
   assert.equal(atlas._test.fieldFirstReason({type:"car"}),"vehicle-class:car");
   assert.equal(atlas._test.fieldFirstReason({type:"suv"}),"vehicle-class:suv");
-  assert.equal(atlas._test.fieldFirstReason({type:""}),null,"an unknown class is not routed by guess");
-  const previous=process.env.DESIGNPRO_ATLAS_FIELD_FIRST;
+  assert.equal(atlas._test.fieldFirstReason({type:""}),"vehicle-class:unspecified","no class is left on the container sheet");
   process.env.DESIGNPRO_ATLAS_FIELD_FIRST="off";
-  t.after(()=>previous===undefined?delete process.env.DESIGNPRO_ATLAS_FIELD_FIRST:process.env.DESIGNPRO_ATLAS_FIELD_FIRST=previous);
   assert.equal(atlas._test.fieldFirstReason({type:"car"}),null);
   const {source}=await fixture();
   const clean=harness(source);
@@ -658,4 +667,133 @@ test("trucks keep six-surface first, and DESIGNPRO_ATLAS_FIELD_FIRST=off restore
   assert.deepEqual(clean.masterCalls.map(body=>body.providerRequest.attemptKey),["master:1"]);
   assert.equal(result.metadata.authoringTopology,"six-surface");
   assert.equal(result.metadata.fieldFirst,null);
+});
+
+// THE FIELD-FIRST ROUTING HAD NO FAIL-OVER OF ITS OWN (2026-09-16).
+//
+// Canary cf2a53d8 spent four candidates and gave the customer nothing. The
+// one-field fail-over exists so that never happens, but it only ever ran in one
+// direction: `fieldResumable` is false on a field pass, so a field-FIRST budget
+// that was refused twice threw, while the same request routed six-surface-first
+// still had a second contract behind it. Measured on the refusal ledger
+// 2026-09-13 to 09-16: six of the seven requests that were refused at all still
+// reached an accepted master, and every one of the six got there by CHANGING
+// CONTRACT after a refusal. The contract change is the recovery.
+test("a refused field-first budget fails over ONCE to six-surface instead of leaving the customer with nothing",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  const result=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:field:1","master:field:2","master:1"],
+    "the field budget is spent in full first, then exactly one six-surface contract");
+  const field=run.masterCalls[0],six=run.masterCalls[2];
+  assert.equal(field.fieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(six.fieldContract,undefined,"the tail authors on the container sheet");
+  assert.ok(six.teachingProofStoragePath,"the six-surface tail gets its teaching proof back");
+  assert.ok(six.guideStoragePath);
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.topology,"rectangular-preview-v1");
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,true);
+  assert.equal(result.metadata.fieldFirst,null,
+    "the tail did not author on the field, so it may not claim the field-first receipt");
+  const failover=result.metadata.authoringFailover;
+  assert.equal(failover.contract,"designpro.atlas-authoring-failover.v1");
+  assert.equal(failover.from,FIELD_TOPOLOGY);
+  assert.equal(failover.to,"six-surface");
+  assert.equal(failover.attempts,2);
+  assert.deepEqual(failover.rawCandidates.map(item=>item.storagePath),
+    ["atlas-call1/master:field:1.png","atlas-call1/master:field:2.png"]);
+  assert.equal(run.fenceCalls,1,"the hand-off rides the fence the field pass holds; it never re-claims");
+  assert.equal(result.callOnePanels.length,6);
+  for(const panel of result.callOnePanels)assert.equal(panel.sourceMasterHash,result.master.contentHash);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+  // One-way: the six-surface tail must not fail back to the contract this
+  // request has already exhausted, or a refusal there would loop.
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);
+  assert.equal(reused.master.contentHash,result.master.contentHash);
+  assert.equal(run.masterCalls.length,3,"a completed hand-off never spends again");
+});
+
+test("a field-first hand-off whose revision row never landed resumes from its six-surface checkpoint",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  run.insertFailure=true;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
+  assert.equal(run.masterCalls.length,3);
+  assert.equal(run.publicMasters.length,1,"the six-surface master was published before the row failed");
+  run.insertFailure=false;
+  const result=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(run.masterCalls.length,3,"the field-first pass recognises the six-surface checkpoint and spends nothing");
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.authoringFailover.to,"six-surface");
+  assert.equal(result.callOnePanels.length,6);
+});
+
+test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off fails a spent field-first budget closed, in that direction too",async t=>{
+  finishFlag(t,"off");failoverFlag(t,"off");fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_master_deterministic_failed"
+    ||error.code==="flat_atlas_master_output_class_invalid");
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:field:1","master:field:2"],"no six-surface contract is spent when the switch is off");
+});
+
+// THE MODEL ANSWERING WITH TEXT KILLED A LIVE CUSTOMER RUN (6e78ed9e, 2026-09-16).
+//
+// `atlas_artboard_no_image` -- Gemini returned a candidate with no image part --
+// escaped the candidate loop entirely, because `callEdge` was not caught. One
+// image request was spent, the second candidate never was, the RULE 0.38
+// contract change never ran, and the customer got a failure screen reading "no
+// candidate reached the acceptance gates", which is not what happened: nothing
+// was drawn, so nothing was judged.
+//
+// RestylePro's golden config names this case exactly: NO_IMAGE "is NOT a
+// content safety refusal. Retry with reduced prompt (NOT instant 422)."
+test("a candidate that returns no image is re-rolled, then changes contract — never a dead run",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();const {fieldSource}=await fieldFixture();
+  const run=harness(source);
+  const noImage=()=>Object.assign(
+    new Error("design-panel-ai-generate atlas-artboard failed (HTTP 500): atlas_artboard_no_image"),
+    {code:"flat_atlas_edge_call_failed",retryable:false},
+  );
+  run.masterFor=async body=>{ if(!body.fieldContract) throw noImage(); return fieldSource; };
+  const result=await run.run();
+  // Both six-surface candidates are spent on the empty answers, then the field
+  // contract -- whose request carries no teaching proof and no guide, and is
+  // therefore the cheaper ask for a model that just declined to draw.
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:1","master:2","master:field:1"]);
+  assert.equal(result.metadata.authoringTopology,"field");
+  const failover=result.metadata.authoringFailover;
+  assert.equal(failover.code,"flat_atlas_master_no_image");
+  assert.equal(failover.attempts,2);
+  assert.match(failover.reason,/returned no image/);
+  // A candidate that never drew has no bytes, so it contributes no raw
+  // candidate path -- the ledger must not invent one.
+  assert.deepEqual(failover.rawCandidates,[]);
+  // And the run still delivers: six panels and seven proof authorities.
+  assert.equal(result.callOnePanels.length,6);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+});
+
+// DELIBERATELY NARROW. A broken function, an expired lease or any `provider_*`
+// transport failure still throws: re-rolling those spends the bounded budget
+// against a wall and hides the real fault.
+test("a transport failure that is not a no-image outcome still fails closed",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);
+  const {source}=await fixture();
+  const run=harness(source);
+  run.masterFor=async()=>{throw Object.assign(
+    new Error("design-panel-ai-generate atlas-artboard failed (HTTP 401): missing service authorization"),
+    {code:"flat_atlas_edge_call_failed",retryable:false});};
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_edge_call_failed");
+  assert.equal(run.masterCalls.length,1,"a genuine transport fault must not burn the second candidate");
 });

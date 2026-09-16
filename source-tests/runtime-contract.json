@@ -59,6 +59,7 @@
     "heartbeat_workflow_stage",
     "reconcile_designpro_automatic_production",
     "reconcile_designpro_purchase_gates",
+    "record_designpro_corrected_panel",
     "register_designpro_operator_wrapbox_recipient",
     "release_designpro_heavy_lease",
     "release_workflow_resource_lease",

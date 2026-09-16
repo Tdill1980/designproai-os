@@ -50,6 +50,15 @@ const ATLAS_FIRST_ATTEMPT_SLO_SECONDS = 60;
 const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90;
 const ATLAS_FALLBACK_SLO_SECONDS = 120;
 const DRIVER_FALLBACK_SLO_SECONDS = 180;
+// One Call-1 candidate is one image request, and each costs roughly the same.
+// The two constants above are that allowance for one candidate and for two, so
+// the allowance PER CANDIDATE is the step between them -- and a run that spends
+// its fail-over is slower by construction, which is the design working rather
+// than a regression. Scaling by the candidates actually spent reproduces both
+// thresholds above exactly (n=1 and n=2) and keeps the thing worth convicting,
+// a SLOW CANDIDATE, convicted at every n.
+const ATLAS_SLO_SECONDS_PER_CANDIDATE = ATLAS_FALLBACK_SLO_SECONDS - ATLAS_FIRST_ATTEMPT_SLO_SECONDS;
+const DRIVER_SLO_SECONDS_PER_CANDIDATE = DRIVER_FALLBACK_SLO_SECONDS - DRIVER_FIRST_ATTEMPT_SLO_SECONDS;
 const OPERATOR_EMAIL = "canary-operator@designproai.com";
 const CUSTOMER_REFERENCE = "DESIGNPROAI-ATLAS-GRAPH-CANARY";
 
@@ -481,6 +490,57 @@ async function waitForProduction(operator, operatorId, runId, designId) {
   throw new Error("production workflow did not complete within 60 minutes");
 }
 
+// THE EVIDENCE TRAVELS BACK OVER ONE SSH STDOUT LINE.
+//
+// The remote step tars the output directory, base64s it to a single line and
+// the runner decodes that line. A finished production run is ~5 GB -- six
+// Topaz masters at 130-343 MB each, eighteen print outputs, and the pack ZIP
+// -- and pushing that through one base64 line is what produced
+// "canary failed: data is too long". The run had succeeded; only the courier
+// failed.
+//
+// So EVERY artifact is still hash-verified from its real stored bytes -- that
+// is the acceptance evidence and it is not weakened -- and only what a human
+// can actually open is written into the returned tarball. The master, the six
+// panels, the seven proofs and the Call 8 sheet are all well under the cap; a
+// 343 MB print TIFF is not something anyone judges in a CI artifact, and it
+// is recorded by hash instead.
+const MAX_EXPORT_FILE_BYTES = 48 * 1024 * 1024;
+const MAX_EXPORT_TOTAL_BYTES = 512 * 1024 * 1024;
+let exportedBytes = 0;
+
+// THE PACK IS NEVER MATERIALISED WHOLE. `.download()` returns a Blob, and a
+// 4.91 GB Blob is what threw "data is too long" on run 35134087621 -- AFTER all
+// 46 image artifacts had been written and the whole production chain had
+// completed through zip.build. The runtime already solves this exact problem
+// the exact same way (`verifyStoredArtifact` in runtime/zip-spool.cjs streams
+// the same object to hash it, in production, on this same pack), so the canary
+// uses the storage client's stream builder rather than its Blob.
+function storageDownload(client, storagePath) {
+  const builder = client.download(storagePath);
+  return typeof builder?.asStream === "function" ? builder.asStream() : builder;
+}
+
+function storageBodyChunks(data) {
+  if (Buffer.isBuffer(data) || data instanceof Uint8Array) return [data];
+  if (data && typeof data[Symbol.asyncIterator] === "function") return data;
+  if (data && typeof data.stream === "function") return data.stream();
+  throw new Error("storage download did not return a readable byte stream");
+}
+
+async function digestStorageBody(data, keep) {
+  const hash = createHash("sha256");
+  const chunks = keep ? [] : null;
+  let byteSize = 0;
+  for await (const chunk of storageBodyChunks(data)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    hash.update(buffer);
+    byteSize += buffer.length;
+    if (chunks) chunks.push(buffer);
+  }
+  return { contentHash: hash.digest("hex"), byteSize, bytes: chunks ? Buffer.concat(chunks) : null };
+}
+
 async function collectArtifacts(runId, label) {
   const { data, error } = await service
     .from("designpro_artifacts")
@@ -492,7 +552,7 @@ async function collectArtifacts(runId, label) {
   const rows = data || [];
   for (let index = 0; index < rows.length; index += 1) {
     const artifact = rows[index];
-    const { data: blob, error: downloadError } = await service.storage.from(BUCKET).download(artifact.storage_path);
+    const { data: blob, error: downloadError } = await storageDownload(service.storage.from(BUCKET), artifact.storage_path);
     if (downloadError || !blob) {
       evidence.outputs.push({
         run: label,
@@ -507,19 +567,27 @@ async function collectArtifacts(runId, label) {
       });
       continue;
     }
-    const bytes = Buffer.from(await blob.arrayBuffer());
-    const observedHash = sha256(bytes);
+    const declared = Number(artifact.byte_size) || 0;
+    const exportable = declared > 0 && declared <= MAX_EXPORT_FILE_BYTES && exportedBytes + declared <= MAX_EXPORT_TOTAL_BYTES;
+    const { contentHash: observedHash, byteSize, bytes } = await digestStorageBody(blob, exportable);
     const base = artifact.storage_path.split("/").pop() || `${artifact.artifact_kind}-${index}`;
     const safeSurface = artifact.surface_key ? `-${artifact.surface_key}` : "";
-    const file = `${label}-${artifact.artifact_kind}${safeSurface}-${index}-${base}`;
-    writeFileSync(`${OUT}/${file}`, bytes);
+    const file = bytes ? `${label}-${artifact.artifact_kind}${safeSurface}-${index}-${base}` : null;
+    if (bytes) {
+      writeFileSync(`${OUT}/${file}`, bytes);
+      exportedBytes += bytes.length;
+    }
     evidence.outputs.push({
       run: label,
       artifactKind: artifact.artifact_kind,
       surfaceKey: artifact.surface_key,
       file,
+      exported: Boolean(bytes),
+      notExportedReason: bytes ? null
+        : declared > MAX_EXPORT_FILE_BYTES ? `print-resolution artifact, ${declared} bytes, over the ${MAX_EXPORT_FILE_BYTES}-byte per-file export cap`
+        : `run export budget of ${MAX_EXPORT_TOTAL_BYTES} bytes is spent`,
       storagePath: artifact.storage_path,
-      byteSize: bytes.length,
+      byteSize,
       contentHash: artifact.content_hash,
       observedHash,
       hashVerified: observedHash === artifact.content_hash,
@@ -736,9 +804,31 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
   }
+  // THE BUDGET IS PER CONTRACT, NOT PER RUN.
+  //
+  // This read `[1, 2]`, written when six-surface was the only contract Call 1
+  // had: one candidate, one unchanged fallback. Since 2026-09-10 a spent budget
+  // fails over to a SECOND contract with its own two candidates, and since
+  // 2026-09-16 that holds in both directions -- so a run that recovers exactly
+  // as designed spends three or four image requests and this assertion would
+  // have failed it, throwing away the master, the six panels and every stage
+  // after them to convict a fail-over that worked.
+  //
+  // What is still worth convicting is a budget that was never bounded: more
+  // than two candidates on one contract, or more than two contracts. The
+  // revision records both (`masterAuthoringAttempts` and `authoringFailover`),
+  // so the bound is checked where it actually lives instead of being inferred
+  // from a total.
   const imageRequestCount = Number(atlasRow.metadata?.geminiImageRequestCount);
-  if (![1, 2].includes(imageRequestCount)) {
-    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected one accepted first attempt or one bounded refusal-only fallback`);
+  const failedOver = Boolean(atlasRow.metadata?.authoringFailover);
+  const maxImageRequests = failedOver ? 4 : 2;
+  if (!Number.isInteger(imageRequestCount) || imageRequestCount < 1 || imageRequestCount > maxImageRequests) {
+    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; `
+      + `at most ${maxImageRequests} are bounded on this path`
+      + (failedOver ? ` (two candidates per contract, across one fail-over)` : ` (one accepted first attempt or one bounded refusal-only fallback)`));
+  }
+  if (Number(atlasRow.metadata?.masterAuthoringAttempts) > 2) {
+    throw new Error(`A.T.L.A.S. spent ${atlasRow.metadata.masterAuthoringAttempts} candidates on one contract; the per-contract budget is two`);
   }
   const geometryAuthority = atlasRow.metadata?.geometryAuthority || {};
   if (geometryAuthority.operatorValidated !== true
@@ -841,9 +931,10 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
   const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
   const driverSeconds = elapsedSeconds(row.created_at, driverRow.created_at, "Driver latency");
-  const usedFallback = imageRequestCount === 2;
-  const atlasSloSeconds = usedFallback ? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS;
-  const driverSloSeconds = usedFallback ? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS;
+  const extraCandidates = Math.max(0, imageRequestCount - 1);
+  const usedFallback = extraCandidates > 0;
+  const atlasSloSeconds = ATLAS_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * ATLAS_SLO_SECONDS_PER_CANDIDATE;
+  const driverSloSeconds = DRIVER_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * DRIVER_SLO_SECONDS_PER_CANDIDATE;
   evidence.latency = {
     basis: "request-created-to-durable-artifact",
     requestCreatedAt: row.created_at,
@@ -859,7 +950,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   };
   step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${atlasSloSeconds}s; `
     + `Driver ${driverSeconds.toFixed(2)}s / ${driverSloSeconds}s; `
-    + `${usedFallback ? "bounded fallback used" : "first attempt accepted"}`);
+    + `${usedFallback ? `${extraCandidates} bounded fallback candidate(s) used` : "first attempt accepted"}`
+    + `${failedOver ? ` across a ${atlasRow.metadata.authoringFailover.from} -> ${atlasRow.metadata.authoringFailover.to} fail-over` : ""}`);
   if (!evidence.latency.pass) {
     step("latency SLO missed; recording the miss and continuing through the full graph before final acceptance");
   }

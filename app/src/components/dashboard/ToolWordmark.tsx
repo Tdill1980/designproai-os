@@ -28,6 +28,7 @@ export interface WordmarkSplit {
 const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
   wallpro:          { base: "Wall",       suffix: "Pro" },
   patternpro:       { base: "Pattern",    suffix: "Pro" },
+  patternpro_wpw:   { base: "WPW × Pattern", suffix: "Pro" },
   // Customer-facing names (os-brand.ts, Trish 2026-09-16): the `graphicspro`
   // key renders CutPro and the `designpro` key renders VehiclePro. The keys
   // themselves are internal and unchanged.

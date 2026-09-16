@@ -45,6 +45,20 @@ on:
           - unchanged
           - "on"
           - "off"
+      atlas_field_first:
+        description: >-
+          Call-1 field-first routing. "unchanged" keeps whatever the droplet has
+          (field-first, which is every run since 2026-09-16); "off" restores the
+          SIX-SURFACE contract as the first authoring attempt for every class --
+          the v23 shape that authored master 2165a36c; "on" restores field-first.
+          Sticky across later deploys.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "on"
+          - "off"
       atlas_panel_finish:
         description: >-
           Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
@@ -543,9 +557,21 @@ jobs:
           # Empty means "leave it as the droplet already has it" -- see
           # configure-env.sh, which rewrites runtime.env on every deploy and so
           # must carry the flag forward rather than silently resetting it.
-          ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish == 'unchanged' && '' || inputs.atlas_panel_finish }}
-          ATLAS_TOPOLOGY: ${{ inputs.atlas_topology == 'unchanged' && '' || inputs.atlas_topology }}
-          ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph == 'unchanged' && '' || inputs.atlas_call1_graph }}
+          #
+          # THE TEST IS WRITTEN `!= 'unchanged' && <value> || ''`, NEVER
+          # `== 'unchanged' && '' || <value>`. An empty string is FALSY in a
+          # GitHub Actions expression, so the second form's `&&` yields '',
+          # the `||` then falls through, and the literal word `unchanged` is
+          # exported -- which configure-env.sh reads as a real instruction,
+          # skips its sticky read, and resolves to the flag's DEFAULT. That is
+          # how `atlas_field_first=off`, deployed on 031d8989, was silently
+          # reset to `on` by the very next deploy (de581246, 2026-09-16
+          # 05:52Z, whose log prints `ATLAS_FIELD_FIRST: unchanged`), and it
+          # applied to all four flags at once.
+          ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish != 'unchanged' && inputs.atlas_panel_finish || '' }}
+          ATLAS_TOPOLOGY: ${{ inputs.atlas_topology != 'unchanged' && inputs.atlas_topology || '' }}
+          ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first != 'unchanged' && inputs.atlas_field_first || '' }}
+          ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph != 'unchanged' && inputs.atlas_call1_graph || '' }}
         shell: bash
         run: |
           set +x
@@ -563,7 +589,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in

@@ -26,7 +26,7 @@ const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-pr
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources } = require("./output-qc.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
-const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
+const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
 const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificate.cjs");
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
@@ -38,6 +38,82 @@ const { QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT, ADVISORY_POLICY_CONTRACT: ATLAS_PR
 
 const CLAIM_SECONDS = 900;
 const HEARTBEAT_MS = 30_000;
+// The heavy output slot used to be leased for 120 s while being renewed every
+// 30 s, so three delayed renewals in a row could let the row expire under work
+// that was still running. `acquire_designpro_heavy_lease` accepts 15..900, and
+// the stage lease it is fenced by is already 900, so a slot outliving a crashed
+// worker by longer than 120 s costs nothing the stage lease does not already
+// cost. See leaseKeeper below for the other half of this.
+const HEAVY_LEASE_SECONDS = 600;
+
+/**
+ * A LOST LEASE IS WHAT THE DATABASE SAYS, NOT WHAT THE NETWORK DID.
+ *
+ * Both lease RPCs return `true` when the row is still ours and `false` when it
+ * provably is not. A transport error is neither: it says the question did not
+ * get answered. Until 2026-09-16 both heartbeats treated the three cases alike
+ * and aborted the stage on the first one that was not `true`.
+ *
+ * Measured cost, canary 8c525565: `output.build` streams multi-gigabyte TIFFs,
+ * and one unanswered RPC during that upload aborted the stage. Five attempts,
+ * all `stage_lease_lost`, at 3m22s, 3m52s, 8m54s and 11m14s -- no fixed
+ * boundary, always mid-upload, which is the signature of a transient error and
+ * not of an expiry. The lease is 900 s and beats every 30, so each of those
+ * aborts threw away up to 870 seconds of provably-held lease, and with it every
+ * byte of a finished Topaz output set.
+ *
+ * So: `false` aborts at once -- that is the fence doing its job, and two workers
+ * writing the same output is the thing it exists to prevent. An unanswered beat
+ * is retried, and only becomes a loss once enough time has passed that the row
+ * itself could have expired. `confirmedAt` is the last answer we actually got,
+ * so work always stops BEFORE the database would hand the stage to anyone else.
+ *
+ * The two abort reasons are deliberately different sentences: they are what a
+ * future failure will carry into `fail_designpro_stage`, and "the database says
+ * it is gone" and "the database has not answered for N seconds" need different
+ * fixes.
+ */
+function leaseKeeper({ beat, leaseSeconds, onLost, label }) {
+  const leaseMs = leaseSeconds * 1000;
+  // A quarter of the lease, never less than one beat: the margin the work is
+  // stopped within, so an abort still leaves time to fail the stage durably.
+  const safetyMs = Math.max(HEARTBEAT_MS, Math.floor(leaseMs / 4));
+  let confirmedAt = Date.now();
+  let inFlight = false;
+  const timer = setInterval(async () => {
+    // An RPC slower than the beat interval must not stack up behind itself.
+    if (inFlight) return;
+    inFlight = true;
+    let held = null;
+    let unanswered = null;
+    try {
+      const { data, error } = await beat();
+      if (error) unanswered = error.message || "lease heartbeat transport failed";
+      else held = data === true;
+    } catch (cause) {
+      unanswered = String(cause?.message || cause);
+    } finally {
+      inFlight = false;
+    }
+    if (held === true) {
+      confirmedAt = Date.now();
+      return;
+    }
+    if (held === false) {
+      clearInterval(timer);
+      onLost(`${label} lease is no longer held by this worker`);
+      return;
+    }
+    const staleSeconds = Math.round((Date.now() - confirmedAt) / 1000);
+    console.error(`[DESIGNPRO-OS] ${label} heartbeat unanswered (${unanswered}); last confirmed ${staleSeconds}s ago, lease ${leaseSeconds}s`);
+    if (Date.now() - confirmedAt >= leaseMs - safetyMs) {
+      clearInterval(timer);
+      onLost(`${label} lease could not be confirmed for ${staleSeconds}s of its ${leaseSeconds}s term`);
+    }
+  }, HEARTBEAT_MS);
+  timer.unref?.();
+  return timer;
+}
 const BUCKET = "wrap-files";
 const HASH_RE = /^[0-9a-f]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -838,22 +914,22 @@ async function withHeavyOutputLease(sb, stage, work) {
     p_stage_id: stage.id,
     p_lease_token: stage.lease_token,
     p_worker: requiredString(stage.lease_owner, "heavy lease worker"),
-    p_lease_seconds: 120,
+    p_lease_seconds: HEAVY_LEASE_SECONDS,
   };
   const acquired = await sb.rpc("acquire_designpro_heavy_lease", payload);
   if (acquired.error) throw new StageError("heavy_output_lease_failed", acquired.error.message, true);
   if (acquired.data !== true) throw new StageError("heavy_output_capacity_busy", "Another worker is using the bounded high-resolution output slot", true);
   const context = stageLeaseContext.getStore();
-  const renew = setInterval(async () => {
-    const result = await sb.rpc("acquire_designpro_heavy_lease", payload);
-    if (result.error || result.data !== true) {
-      if (context) {
-        context.lost = true;
-        context.controller.abort(new Error(result.error?.message || "heavy output lease expired"));
-      }
-    }
-  }, 30_000);
-  renew.unref?.();
+  const renew = leaseKeeper({
+    beat: () => sb.rpc("acquire_designpro_heavy_lease", payload),
+    leaseSeconds: HEAVY_LEASE_SECONDS,
+    label: "heavy output",
+    onLost: (reason) => {
+      if (!context) return;
+      context.lost = true;
+      context.controller.abort(new Error(reason));
+    },
+  });
   try {
     return await work();
   } finally {
@@ -2126,12 +2202,27 @@ async function approvedProductionAttachments(sb, run) {
   return assertPinnedPanelProfileAttachments(sb, run, output.receipt?.panelProfileAttachments);
 }
 
-async function copyVerifiedZip(sb, sourcePath, targetPath, contentHash, byteSize) {
+// DELIVERING A MULTI-GIGABYTE PACK IS A STREAM, NOT A COPY.
+//
+// Supabase's server-side copy() is one request against the whole object, and
+// canary 35124251343 proved it does not survive a 4.91 GB production pack:
+// every stage through zip.build completed -- six Topaz masters, eighteen
+// production outputs, seven stamped proofs, the certificate and the seal --
+// and wrapbox.deliver died on delivery_zip_copy_failed with all of it built.
+// The runtime already owns the transport this needs, because the same ZIP was
+// UPLOADED through it: a local spool plus resumable TUS. So the copy stays as
+// the fast path for a pack small enough for it, and a copy failure re-streams
+// the verified bytes instead of destroying a finished run. Nothing is
+// authored here -- spoolStoredZip refuses unless what it reads hashes to the
+// identity zip.build recorded.
+async function copyVerifiedZip(sb, stage, run, runtimeConfig, sourcePath, targetPath, contentHash, byteSize) {
   assertStageLeaseActive();
   const client = sb.storage.from(BUCKET);
-  const { error } = await client.copy(safePath(sourcePath, "source ZIP"), safePath(targetPath, "delivered ZIP"));
+  const source = safePath(sourcePath, "source ZIP");
+  const target = safePath(targetPath, "delivered ZIP");
+  const { error } = await client.copy(source, target);
   if (error && !/already exists|duplicate|conflict|resourcealreadyexists/i.test(`${error.code || ""} ${error.message || ""}`)) {
-    throw new StageError("delivery_zip_copy_failed", error.message);
+    return streamVerifiedZipToDelivery(sb, stage, run, runtimeConfig, source, target, contentHash, byteSize, error);
   }
   try {
     const observed = await verifyStoredZip({ supabase: sb, storagePath: targetPath, contentHash, byteSize, signal: stageLeaseContext.getStore()?.controller?.signal });
@@ -2140,6 +2231,37 @@ async function copyVerifiedZip(sb, sourcePath, targetPath, contentHash, byteSize
   } catch (errorValue) {
     if (errorValue instanceof StageError) throw errorValue;
     throw new StageError(errorValue.code || "delivery_zip_copy_invalid", errorValue.message, errorValue.retryable !== false);
+  }
+}
+
+async function streamVerifiedZipToDelivery(sb, stage, run, runtimeConfig, source, target, contentHash, byteSize, copyError) {
+  const signal = stageLeaseContext.getStore()?.controller?.signal;
+  let spool;
+  try {
+    return await withHeavyOutputLease(sb, stage, async () => {
+      spool = await spoolStoredZip({
+        supabase: sb, storagePath: source, spoolDir: runtimeConfig.spoolDir,
+        runId: run.id, contentHash, byteSize: Number(byteSize), signal,
+      });
+      const stored = await uploadSpoolWithTus({
+        supabase: sb, supabaseUrl: runtimeConfig.supabaseUrl, serviceRoleKey: runtimeConfig.serviceRoleKey,
+        endpoint: runtimeConfig.tusEndpoint, spoolDir: runtimeConfig.spoolDir, spool,
+        storagePath: target, contentType: "application/zip", signal,
+      });
+      if (stored.contentHash !== String(contentHash).toLowerCase() || stored.byteSize !== Number(byteSize)) {
+        throw new StageError("delivery_zip_copy_invalid", "The delivered ZIP does not match the verified pack identity", false);
+      }
+      return stored;
+    });
+  } catch (streamError) {
+    if (streamError instanceof StageError) throw streamError;
+    throw new StageError(
+      streamError.code || "delivery_zip_copy_failed",
+      `server-side copy failed (${copyError?.message || "unknown"}); resumable delivery also failed: ${streamError.message}`,
+      streamError.retryable !== false,
+    );
+  } finally {
+    if (spool) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] delivered ZIP spool cleanup failed: ${error.message}`));
   }
 }
 
@@ -2956,7 +3078,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const panelProfileAttachments = authorized.productionPackAuthorized ? await approvedProductionAttachments(sb, run) : [];
     if (JSON.stringify(canonical(zipReceipt.receipt?.panelProfileAttachments || [])) !== JSON.stringify(canonical(panelProfileAttachments))) throw new StageError("panelprofile_attachment_approval_drift", "The archived physical-piece package differs from final QC", false);
     files.push(...attachmentArchiveFiles(panelProfileAttachments).map(file => ({ kind: file.kind, surfaceKey: file.pieceId || "", storagePath: file.storagePath, contentHash: file.contentHash, byteSize: file.byteSize, attachmentId: file.attachmentId })));
-    const deliveredZip = await copyVerifiedZip(sb, zipRow.storage_path, target, zipRow.content_hash, Number(zipRow.byte_size));
+    const deliveredZip = await copyVerifiedZip(sb, stage, run, runtimeConfig, zipRow.storage_path, target, zipRow.content_hash, Number(zipRow.byte_size));
     const manifest = { contract: MANIFEST_CONTRACT, workflowRunId: run.id, operatorId: run.owner_id, customerId: delivery.customerId, recipientIdentityHash: delivery.recipientIdentityHash, tenantKey: run.tenant_key, enticePackId: run.entice_pack_id, revisionId: run.revision_id, sourceEnticeRunId: sourceRunId, designId: zipReceipt.receipt.designId, orderNumber: zipReceipt.receipt.orderNumber, approvedAt, deliveredAt: approvedAt, zip: { storagePath: deliveredZip.storagePath, contentHash: deliveredZip.contentHash, byteSize: deliveredZip.byteSize }, sourceViews: zipReceipt.receipt.sourceViews, stampedViews: zipReceipt.receipt.stampedViews, proofJoin: zipReceipt.receipt.proofJoin, panelProfileAttachments, dimensionManifest: zipReceipt.receipt.dimensionManifest, businessIdentity: zipReceipt.receipt.businessIdentity, logos, files, products: authorized.products, deliverables: authorized.deliverables };
     const manifestBytes = Buffer.from(JSON.stringify(canonical(manifest)));
     const stored = await upload(sb, `wrapbox/${tenant}/${run.entice_pack_id}/${run.id}/manifest.json`, manifestBytes, "application/json");
@@ -3286,15 +3408,16 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
       // Fill another available slot immediately. Readiness and cross-worker
       // fencing remain owned by claim_designpro_stage, not this local wakeup.
       queueMicrotask(() => void tick());
-      heartbeat = setInterval(async () => {
-        const { data: current, error: beatError } = await supabase.rpc("heartbeat_designpro_stage", { p_stage_id: stage.id, p_lease_token: stage.lease_token, p_lease_seconds: CLAIM_SECONDS });
-        if (beatError || current !== true) {
+      heartbeat = leaseKeeper({
+        beat: () => supabase.rpc("heartbeat_designpro_stage", { p_stage_id: stage.id, p_lease_token: stage.lease_token, p_lease_seconds: CLAIM_SECONDS }),
+        leaseSeconds: CLAIM_SECONDS,
+        label: `stage ${stage.stage_key}`,
+        onLost: (reason) => {
           stageGuard.lost = true;
-          stageGuard.controller.abort(new Error(beatError?.message || "stage lease expired"));
-          console.error(`[DESIGNPRO-OS] heartbeat lost ${stage.id}; aborting current work: ${beatError?.message || "lease expired"}`);
-        }
-      }, HEARTBEAT_MS);
-      heartbeat.unref?.();
+          stageGuard.controller.abort(new Error(reason));
+          console.error(`[DESIGNPRO-OS] ${stage.id} aborting current work: ${reason}`);
+        },
+      });
       await stageLeaseContext.run(stageGuard, async () => {
         if (run.workflow_type === "designpro.entice_pack") await executeEntice(supabase, baseUrl, workerSecret, supabaseUrl, stage, run, { supabaseUrl, serviceRoleKey, spoolDir, tusEndpoint });
         else if (run.workflow_type === "designpro.production_pack") await executeProduction(supabase, stage, run, { supabaseUrl, serviceRoleKey, spoolDir, tusEndpoint, baseUrl, workerSecret });
@@ -3351,4 +3474,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
 
 // Shared deterministic proof rendering. Approval and its stored timestamp are
 // supplied by the authorized workflow; these helpers do not approve a run.
-module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction } };
+module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { leaseKeeper, HEAVY_LEASE_SECONDS, CLAIM_SECONDS, HEARTBEAT_MS, tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction } };

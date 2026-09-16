@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -164,21 +164,21 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
             </Link>
           </SidebarTooltip>
           <SidebarTooltip
-            title="WallPro Production"
-            description="Print-ready 150 PPI wall panels for any customer, filed by DesignID"
+            title="WallPanelProStudio"
+            description="Every wall design by DesignID: version rail, designer QC checklist, the release gate that decides whether a customer may download, and the print files"
           >
             <Link
-              to="/admin/wallpro-production"
+              to="/wallpanelprostudio"
               onClick={onNavigate}
               className={cn(
                 "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
-                isActive("/admin/wallpro-production")
+                isActive("/wallpanelprostudio")
                   ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
                   : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
               )}
             >
               <Shield className="w-4 h-4 shrink-0" />
-              <span className="truncate">WallPro Production</span>
+              <span className="truncate">WallPanelProStudio</span>
             </Link>
           </SidebarTooltip>
           <SidebarTooltip
@@ -197,6 +197,29 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
             >
               <Layers className="w-4 h-4 shrink-0" />
               <span className="truncate">WallPro Batch Generate</span>
+            </Link>
+          </SidebarTooltip>
+          {/* The proof band's curator, which had no entry anywhere and so could
+              only be reached by typing its URL (owner, 2026-09-16: "Add this to
+              navigation under admin"). Beside the batch generator: both are
+              WallPro curation, one making the designs and this one choosing the
+              before/after rooms the landing band shows. */}
+          <SidebarTooltip
+            title="WallPro Before &amp; After"
+            description="The before/after rooms in the band at the top of WallPro. Publishing any row here replaces the three that ship with the build, so publish every room you want shown"
+          >
+            <Link
+              to="/admin/wallpro-proofs"
+              onClick={onNavigate}
+              className={cn(
+                "mt-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 transition border",
+                isActive("/admin/wallpro-proofs")
+                  ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/50"
+                  : "text-fuchsia-300 border-fuchsia-500/30 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+              )}
+            >
+              <Layers className="w-4 h-4 shrink-0" />
+              <span className="truncate">WallPro Before &amp; After</span>
             </Link>
           </SidebarTooltip>
           <SidebarTooltip
@@ -339,7 +362,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               {tool.key === "wallpro" && isAdmin && (
                 <SidebarTooltip
                   title="WallPanelProStudio"
-                  description="Every wall design by DesignID with its version history, print files, designer QC and the release gate — plus the designs that took while the customer timed out"
+                  description="Every wall design by DesignID: version rail, the designer QC checklist, and the RELEASE GATE — until a human ticks every check and releases, the customer cannot download the print file, because the database refuses the read"
                 >
                   <Link
                     to="/wallpanelprostudio"
@@ -356,26 +379,79 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
-              {tool.key === "wallpro" && isAdmin && (
+              {/* The QC / Production sub-link was a SECOND door to the same
+                  board once /admin/wallpro-production was retired into it, so
+                  it is gone rather than left pointing at its neighbour. The one
+                  above IS the QC gate; its tooltip says so. */}
+              {/* ⛔ NO PARTNER TENANT IN THIS NAV (owner, 2026-09-16, reversing
+                  the instruction of the same day that put one here: "keep wpw
+                  wallpro on RP and the standard WP on os.designpro — no wpw
+                  version, dual belongs on restylepro").
+                  The link that stood here opened /wall-wrap, the same WallPro
+                  wearing the WePrintWraps mark, admin-only, so the owner could
+                  demo the partner page before wallpro.weprintwraps.com exists.
+                  It is out: os.designproai's nav is the STANDARD product, and
+                  another company's branding one click from the tool list is
+                  exactly what a demo of DesignProAI-as-a-product must not show.
+                  The /wall-wrap ROUTES are deliberately still alive — they are
+                  what isWallProPartnerHost serves when that subdomain is
+                  pointed here, and they carry the live WooCommerce film order.
+                  Unadvertised is not deleted, and deleting them is a separate,
+                  owner-directed change that needs somewhere for that traffic to
+                  land first. Do not re-add a link here to "make it reachable". */}
+              {/* WHAT A CUSTOMER GETS INSTEAD: the two pages that answer the
+                  questions the tool cannot answer about itself. Not admin-only
+                  -- these are customer pages, and the wall buyer who wants a
+                  price before measuring anything is the one they exist for. */}
+              {tool.key === "wallpro" && (
                 <SidebarTooltip
-                  title="WallPro QC / Production"
-                  description="Approved versions, 150 PPI panels and print files for any customer, filed by DesignID"
+                  title="WallPro — prices & FAQ"
+                  description="The price of every entry path, the GENIE Wall Panelizer pipeline end to end, and what the coloured marks on your room photo mean — every number computed by the tool's own code"
                 >
                   <Link
-                    to="/admin/wallpro-production"
+                    to="/printpro/wallpro/faq"
                     onClick={onNavigate}
                     className={cn(
                       "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
-                      isActive("/admin/wallpro-production")
-                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
-                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                      isActive("/printpro/wallpro/faq")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
                     )}
                   >
-                    <Shield className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">QC / Production</span>
+                    <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Prices &amp; FAQ</span>
                   </Link>
                 </SidebarTooltip>
               )}
+              {tool.key === "wallpro" && (
+                <SidebarTooltip
+                  title="WallPro — how it works"
+                  description="One real wall, bare to installed: the mask, the brief, the scale decision, the panel plan and the finished room"
+                >
+                  <Link
+                    to="/printpro/wallpro/how-it-works"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/printpro/wallpro/how-it-works")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">How it works</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
+              {/* THE PROOF BAND'S CURATOR IS IN THE ADMIN BLOCK, NOT HERE.
+                  Two sessions closed this gap the same night, and the other
+                  one carried an owner instruction this one did not: "Add this
+                  to navigation under admin" (2026-09-16). It also reads right
+                  -- the two links above are boards the design team lives in
+                  all day and reaches from the tool, while the band curator is
+                  merchandising, touched rarely, and belongs beside the batch
+                  generator it sits with now. A second entry here would have
+                  been the same page twice in one sidebar. */}
               </Fragment>
             );
           })}

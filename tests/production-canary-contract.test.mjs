@@ -65,9 +65,23 @@ test("the canary records display latency and defers its hard SLO gate until the 
   assert.match(canary, /const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90/);
   assert.match(canary, /const ATLAS_FALLBACK_SLO_SECONDS = 120/);
   assert.match(canary, /const DRIVER_FALLBACK_SLO_SECONDS = 180/);
-  assert.match(canary, /!\[1, 2\]\.includes\(imageRequestCount\)/);
-  assert.match(canary, /usedFallback \? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS/);
-  assert.match(canary, /usedFallback \? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS/);
+  // 2026-09-16: the Call-1 budget is per CONTRACT, not per run. `[1, 2]` was
+  // written when six-surface was the only contract; a run that recovers exactly
+  // as designed now spends up to two candidates on each of two contracts, and
+  // the old total would have failed such a run -- discarding its master, its six
+  // panels and every stage after them to convict a fail-over that worked. Both
+  // halves of the real bound are still asserted, where they actually live.
+  assert.match(canary, /const maxImageRequests = failedOver \? 4 : 2;/);
+  assert.match(canary, /imageRequestCount < 1 \|\| imageRequestCount > maxImageRequests/);
+  assert.match(canary, /Number\(atlasRow\.metadata\?\.masterAuthoringAttempts\) > 2/,
+    "more than two candidates on ONE contract is still a budget that was never bounded");
+  // The per-candidate allowance IS the step between the two constants above, so
+  // n=1 and n=2 reproduce them exactly and a slow candidate is still convicted
+  // at every n.
+  assert.match(canary, /const ATLAS_SLO_SECONDS_PER_CANDIDATE = ATLAS_FALLBACK_SLO_SECONDS - ATLAS_FIRST_ATTEMPT_SLO_SECONDS;/);
+  assert.match(canary, /const DRIVER_SLO_SECONDS_PER_CANDIDATE = DRIVER_FALLBACK_SLO_SECONDS - DRIVER_FIRST_ATTEMPT_SLO_SECONDS;/);
+  assert.match(canary, /ATLAS_FIRST_ATTEMPT_SLO_SECONDS \+ extraCandidates \* ATLAS_SLO_SECONDS_PER_CANDIDATE/);
+  assert.match(canary, /DRIVER_FIRST_ATTEMPT_SLO_SECONDS \+ extraCandidates \* DRIVER_SLO_SECONDS_PER_CANDIDATE/);
   assert.match(canary, /source_view_type,consumer_role,content_hash,byte_size,content_type,created_at/);
   assert.match(canary, /callOneTimings/);
   assert.match(canary, /atlasEdgeProvenance/);
@@ -237,4 +251,36 @@ test("canonical markdown records the explicit diagnostic-canary exception withou
   assert.match(atlasGraph, /51ea0e06-2ceb-460a-8756-54888a7832a8/);
   assert.match(atlasGraph, /early latency acceptance gate, before Call 8/);
   assert.match(atlasGraph, /final acceptance still requires live[\s\S]{0,80}one customer-style production lineage/i);
+});
+
+// THE RUN SUCCEEDED; THE COURIER FAILED.
+//
+// The canary's evidence travels home as one base64 line on the remote step's
+// stdout. A finished production run is ~5 GB -- six Topaz masters at 130-343 MB
+// each, eighteen print outputs, the pack ZIP -- and pushing that through a
+// single line is what produced "canary failed: data is too long" on a run whose
+// artifacts all existed.
+//
+// The repair caps what is EXPORTED, never what is VERIFIED. Every artifact is
+// still hashed from its real stored bytes, and every acceptance check keys on
+// `hashVerified`, so nothing here makes the canary easier to pass.
+test("the canary caps its export without weakening a single acceptance check", () => {
+  assert.match(canary, /MAX_EXPORT_FILE_BYTES\s*=\s*48 \* 1024 \* 1024/);
+  assert.match(canary, /MAX_EXPORT_TOTAL_BYTES\s*=\s*512 \* 1024 \* 1024/);
+  // Bytes are hashed by STREAMING from the storage client's stream builder, not
+  // from a Blob. Run 35134087621 wrote all 46 image artifacts and then threw
+  // "data is too long" on the 4.91 GB pack, because `.download()` materialises
+  // a Blob. The runtime hashes this same object the same streaming way.
+  assert.match(canary, /function storageDownload\(client, storagePath\)/);
+  assert.match(canary, /builder\?\.asStream === "function" \? builder\.asStream\(\) : builder/);
+  assert.match(canary, /async function digestStorageBody\(data, keep\)/);
+  assert.doesNotMatch(canary, /await blob\.arrayBuffer\(\)/,
+    "the pack must never be materialised whole to be verified");
+  // An omitted file says so, by name and reason, instead of going missing.
+  assert.match(canary, /notExportedReason/);
+  // The acceptance predicate still reads verified hashes, not exported files.
+  assert.match(canary, /verifiedCount\("production", "output"\) === 18/);
+  assert.match(canary, /verifiedCount\("production", "upscaled-panel"\) === 6/);
+  assert.doesNotMatch(canary, /\.filter\(\(item\) => item\.exported === true\)/,
+    "an acceptance count may never be computed from what happened to fit in the tarball");
 });

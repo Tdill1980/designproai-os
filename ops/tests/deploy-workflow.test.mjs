@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { join, resolve } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -630,7 +630,7 @@ test("a flag dispatch of the release already running rewrites the environment an
   const end = remote.indexOf('"$control/backup.sh"');
   assert.ok(start > 0 && end > start);
   const accepted = remote.slice(start, end);
-  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\} \]\]; then/);
+  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\} \]\]; then/);
   const flagged = accepted.slice(accepted.indexOf("if [[ -n"), accepted.indexOf("FLAGS_APPLIED"));
   assert.match(flagged, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY[\s\S]*systemctl restart designproai-os\.service[\s\S]*acceptance\.sh" "\$EXACT_SHA"/,
     "env writer, then restart, then acceptance -- in that order");
@@ -639,4 +639,179 @@ test("a flag dispatch of the release already running rewrites the environment an
   // The empty-flag path is untouched: acceptance, drain stdin, no-op.
   const noop = accepted.slice(accepted.indexOf("FLAGS_APPLIED"));
   assert.match(noop, /acceptance\.sh" "\$EXACT_SHA"\n\s*cat >\/dev\/null\n\s*echo "ALREADY_COMPLETE/);
+});
+
+// THE STICKY A.T.L.A.S. FLAGS MUST STATE THEMSELVES ON THE DEPLOY LOG.
+//
+// All four are sticky: absent from the deploy, configure-env.sh carries the
+// droplet's current value forward. Nothing printed what that resolution
+// produced, so when canary 8c525565 authored on the FIELD contract after a
+// deploy meant to carry `off` forward, "the flag reset" and "it was set wrong"
+// could not be told apart from any log. A routing selector is not a secret and
+// belongs in the record.
+test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret beside them", () => {
+  const configure = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
+  const banner = configure.slice(configure.indexOf("A.T.L.A.S. flags resolved for this release"));
+  assert.ok(banner, "the deploy must state which routing the release will run");
+  for (const flag of ["DESIGNPRO_ATLAS_TOPOLOGY", "DESIGNPRO_ATLAS_FIELD_FIRST",
+    "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_PANEL_FINISH"]) {
+    assert.ok(banner.includes(flag), `${flag} decides routing and must be stated`);
+  }
+  // Scope the secret check to the printf statement itself, not the rest of the
+  // file: `service_key` and friends legitimately appear later in the cleanup.
+  const end = banner.indexOf('echo "DesignProAI dark environment');
+  assert.ok(end > 0, "the banner must sit immediately before the closing notice");
+  const printed = banner.slice(0, end);
+  for (const secret of ["service_key", "google_key", "topaz_key", "stripe_secret",
+    "stripe_webhook", "worker_secret", "SERVICE_ROLE", "API_KEY"]) {
+    assert.ok(!printed.includes(secret), `${secret} must never reach the deploy log`);
+  }
+});
+
+// The sticky read is a sed expression per flag. If one of those patterns stops
+// matching the file the writer itself produces, the flag silently reverts to
+// its default on the next deploy -- which is invisible, because the default is
+// what "no value" already means. So the patterns are executed against a fixture
+// written in exactly the writer's own format.
+test("every sticky A.T.L.A.S. flag reads back the value the writer wrote", () => {
+  const configure = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
+  const fixture = [
+    "SUPABASE_URL=https://example.supabase.co",
+    "DESIGNPRO_ATLAS_PANEL_FINISH=on",
+    "DESIGNPRO_ATLAS_TOPOLOGY=six-surface",
+    "DESIGNPRO_ATLAS_CALL1_GRAPH=on",
+    "DESIGNPRO_ATLAS_FIELD_FIRST=off",
+    "DESIGNPRO_TOPAZ_ENABLED=true",
+    "",
+  ].join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "designpro-env-"));
+  const envFile = join(dir, "runtime.env");
+  writeFileSync(envFile, fixture);
+  try {
+    for (const [flag, expected] of [
+      ["DESIGNPRO_ATLAS_PANEL_FINISH", "on"],
+      ["DESIGNPRO_ATLAS_TOPOLOGY", "six-surface"],
+      ["DESIGNPRO_ATLAS_CALL1_GRAPH", "on"],
+      ["DESIGNPRO_ATLAS_FIELD_FIRST", "off"],
+    ]) {
+      // The exact expression the script uses, lifted from the script.
+      const pattern = new RegExp(`sed -n 's/\\^${flag}=//p'`);
+      assert.match(configure, pattern, `${flag} must be read back with the writer's own key`);
+      const read = execFileSync("sed", ["-n", `s/^${flag}=//p`, envFile], { encoding: "utf8" })
+        .split("\n")[0];
+      assert.equal(read, expected,
+        `${flag} must survive a deploy that does not mention it, or the routing silently changes`);
+    }
+    // And the writer must emit every one of them, or there is nothing to read.
+    for (const flag of ["DESIGNPRO_ATLAS_PANEL_FINISH", "DESIGNPRO_ATLAS_TOPOLOGY",
+      "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_FIELD_FIRST"]) {
+      assert.match(configure, new RegExp(`printf '${flag}=%s\\\\n'`),
+        `${flag} must be written in the format the sticky read expects`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// AN EMPTY STRING IS FALSY IN A GITHUB ACTIONS EXPRESSION, SO THE OBVIOUS
+// TERNARY IS BACKWARDS.
+//
+// `inputs.x == 'unchanged' && '' || inputs.x` reads as "unchanged means send
+// nothing". It does not. `&&` returns its LEFT operand when that operand is
+// falsy and its right otherwise, so the true branch yields '', and `|| ` then
+// sees a falsy left and falls through to `inputs.x` -- exporting the literal
+// word `unchanged`. configure-env.sh reads any non-empty value as a real
+// instruction from this deploy, skips its sticky read of the live runtime.env,
+// and resolves the flag to its DEFAULT.
+//
+// That is what reset `atlas_field_first=off` (deployed on 031d8989) back to
+// `on` at the very next deploy: run 35061242506, 2026-09-16 05:52Z, whose log
+// prints `ATLAS_FIELD_FIRST: unchanged`. It applied to all four flags at once,
+// and it is invisible, because a reset flag looks exactly like a flag nobody
+// set. The evaluator below is the real thing: it models the truthiness rule
+// and the value-returning operators, and runs the workflow's own text.
+const evaluateActionsExpression = (source, inputs) => {
+  const tokens = source.match(/'[^']*'|[A-Za-z_][A-Za-z0-9_.]*|&&|\|\||==|!=|\(|\)/g) ?? [];
+  let at = 0;
+  const falsy = (value) => value === false || value === "" || value === 0 || value === null;
+  const primary = () => {
+    const token = tokens[at++];
+    if (token === "(") {
+      const value = or();
+      assert.equal(tokens[at++], ")", "unbalanced parentheses in the expression");
+      return value;
+    }
+    if (token?.startsWith("'")) return token.slice(1, -1);
+    if (token === "true") return true;
+    if (token === "false") return false;
+    if (token?.startsWith("inputs.")) {
+      const key = token.slice("inputs.".length);
+      assert.ok(key in inputs, `the expression reads inputs.${key}, which the workflow must declare`);
+      return inputs[key];
+    }
+    throw new Error(`unsupported token in a deploy expression: ${token}`);
+  };
+  const comparison = () => {
+    let left = primary();
+    while (tokens[at] === "==" || tokens[at] === "!=") {
+      const op = tokens[at++];
+      const right = primary();
+      left = op === "==" ? left === right : left !== right;
+    }
+    return left;
+  };
+  const and = () => {
+    let left = comparison();
+    while (tokens[at] === "&&") {
+      at += 1;
+      const right = comparison();
+      left = falsy(left) ? left : right;
+    }
+    return left;
+  };
+  const or = () => {
+    let left = and();
+    while (tokens[at] === "||") {
+      at += 1;
+      const right = and();
+      left = falsy(left) ? right : left;
+    }
+    return left;
+  };
+  const value = or();
+  assert.equal(at, tokens.length, "the expression was not fully consumed");
+  return value;
+};
+
+test('a deploy that says "unchanged" must send the droplet NOTHING for that flag', () => {
+  const workflow = readFileSync(new URL("../../.github/workflows/deploy-production.yml", import.meta.url), "utf8");
+  const flags = [
+    ["ATLAS_PANEL_FINISH", "atlas_panel_finish", ["on", "off"]],
+    ["ATLAS_TOPOLOGY", "atlas_topology", ["hero-driver", "six-surface"]],
+    ["ATLAS_FIELD_FIRST", "atlas_field_first", ["on", "off"]],
+    ["ATLAS_CALL1_GRAPH", "atlas_call1_graph", ["on", "off"]],
+  ];
+  for (const [envName, inputName, choices] of flags) {
+    const line = new RegExp(`^\\s*${envName}: \\$\\{\\{(.+?)\\}\\}\\s*$`, "m").exec(workflow);
+    assert.ok(line, `${envName} must be passed to the droplet from a workflow expression`);
+    const expression = line[1].trim();
+
+    // "unchanged" is the WHOLE point: it must resolve to the empty string, or
+    // configure-env.sh stops carrying the droplet's own value forward.
+    assert.equal(evaluateActionsExpression(expression, { [inputName]: "unchanged" }), "",
+      `${envName} must be EMPTY when the deploy says "unchanged", or the flag silently resets`);
+
+    // And an explicit instruction must reach the droplet verbatim.
+    for (const choice of choices) {
+      assert.equal(evaluateActionsExpression(expression, { [inputName]: choice }), choice,
+        `${envName} must pass "${choice}" through unchanged`);
+    }
+  }
+
+  // The evaluator is only worth anything if it convicts the shape that shipped.
+  assert.equal(
+    evaluateActionsExpression("inputs.atlas_field_first == 'unchanged' && '' || inputs.atlas_field_first",
+      { atlas_field_first: "unchanged" }),
+    "unchanged",
+    "the pre-fix expression must still evaluate to the literal word, or this test proves nothing");
 });

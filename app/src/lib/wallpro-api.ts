@@ -343,12 +343,12 @@ export async function requestWallProduction(versionId: string, request: WallProd
 /* ── WallPro purchases: SKU-based, gateway-issued Stripe checkout ────────── */
 
 export type WallProSku = 'wallpro_catalog_file' | 'wallpro_custom_file' | 'wallpro_room_design_file' | 'wallpro_file_prep';
-export type WallProEntitlement = { id: string; version_id: string; product_type: WallProSku; amount_cents: number; paid_at: string };
+export type WallProEntitlement = { id: string; version_id: string; product_type: WallProSku; amount_cents: number; paid_at: string; order_number: string };
 
 /** Whether this exact version has a paid entitlement (any SKU). RLS scopes the
  * read to the caller's own rows, so no explicit owner filter is needed. */
 export async function wallProEntitlements(versionId: string): Promise<WallProEntitlement[]> {
-  const { data, error } = await db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at').eq('version_id', versionId);
+  const { data, error } = await db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at,order_number').eq('version_id', versionId);
   if (error) throw new Error('Entitlements could not be read: ' + error.message);
   return (data || []) as WallProEntitlement[];
 }
@@ -382,6 +382,25 @@ export async function latestWallProductionJob(versionId: string): Promise<WallPr
 /** The DesignID the team files a wall design under: the approved version's
  * identity, in the same DID-XXXXXXXX form the vehicle studio uses. */
 export const wallDesignId = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
+
+/**
+ * THE ORDER NUMBER IS A STORED COLUMN, MINTED BY THE DATABASE.
+ *
+ * Owner, 2026-09-16: "once they pay they must get an order number", then
+ * "Check RestyleProAI they must not have ported the payment gate".
+ *
+ * A first attempt derived this from the entitlement uuid and claimed in its own
+ * comment that no RestylePro counterpart existed. That was wrong: CreatorMarket
+ * has minted WPO-style order numbers since 20260819120000, from a sequence with
+ * a unique column default. The claim came from searching this repository rather
+ * than the reference RULE 1 names — which is the inversion that rule exists to
+ * prevent, and the owner caught it.
+ *
+ * So there is no helper here any more. `order_number` arrives on the row,
+ * guaranteed unique by the database and sequential in payment order, and the UI
+ * renders what it is given. A client that computes an identity the server owns
+ * is a second source of truth waiting to disagree.
+ */
 
 export type WallTeamJob = WallProductionJob & { project_name: string; version_no: number | null; artwork_path: string | null };
 /** Every customer's production jobs, newest first, with the project name and
@@ -474,10 +493,19 @@ export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProSt
 
   const projectIds = [...new Set(versions.map(v => v.project_id))];
   const versionIds = versions.map(v => v.id);
-  const [projects, reviews, jobs, urls] = await Promise.all([
+  const [projects, reviews, jobs, entitlements, urls] = await Promise.all([
     projectIds.length ? db.from('wallpro_projects').select('id,name,owner_id,created_at,updated_at').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_qc_reviews').select('*').in('version_id', versionIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    // The paid entitlements behind these versions, so the board can show the
+    // order number the customer was given. wallpro_entitlement_team_read
+    // already admits admin and tester, so this needs no migration. It fails
+    // SOFT for the same reason the signing below does: a board that shows
+    // nothing is worse than a board missing one column.
+    versionIds.length
+      ? db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at,order_number').in('version_id', versionIds)
+          .then(r => (r.error ? { data: [], error: null } : r))
+      : Promise.resolve({ data: [], error: null }),
     // Signing is best effort so one unreadable object never empties the board.
     openWallAssets([...new Set([
       ...versions.map(v => v.artwork_path),
@@ -491,6 +519,7 @@ export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProSt
     generations,
     reviews: (((reviews as any).data || []) as WallQcReview[]),
     jobs: (((jobs as any).data || []) as WallProductionJob[]),
+    entitlements: (((entitlements as any).data || []) as WallProEntitlement[]),
     urls,
   });
 }
@@ -609,4 +638,95 @@ export async function saveWallDesignMockups(rowId: string, mockups: { sceneId: s
   const { error } = await db.from('wallpro_designs').update({ mockups: saved, updated_at: new Date().toISOString() }).eq('id', rowId);
   if (error) throw new Error('The mockups could not be recorded on the design: ' + error.message);
   return saved;
+}
+
+/**
+ * THE PROOF BAND'S ROWS — curator-managed, so a before/after no longer needs a
+ * developer, a script and a release (owner, 2026-09-15: "just create a
+ * container and i can place on admin side").
+ *
+ * Images live in the PUBLIC `wallpro-proofs` bucket, not in wallpro-files:
+ * the band paints for an anonymous first-time visitor before anything else on
+ * the page, so a signed read would put an authenticated round trip on the
+ * critical path of a marketing image — and would simply fail for the
+ * signed-out visitor the band exists to convince.
+ */
+export const WALLPRO_PROOF_BUCKET = 'wallpro-proofs';
+
+export type WallProofRow = {
+  id: string;
+  brand: string;
+  before_path: string;
+  after_path: string;
+  headline: string;
+  caption: string;
+  alt: string;
+  position: number;
+  published: boolean;
+};
+
+/** A stored path as the browser should request it. Public bucket: no signing. */
+export function wallProofUrl(path: string): string {
+  return supabase.storage.from(WALLPRO_PROOF_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * The published band for a brand, in curator order.
+ *
+ * FAILS SOFT, DELIBERATELY. An unreachable database, a missing migration or a
+ * signed-out read must never blank the band on the partner's product page, so
+ * this returns [] and the caller falls back to the list that ships in the
+ * bundle. A marketing band is exactly the wrong place to surface an outage.
+ */
+export async function listWallProofs(brand: string): Promise<WallProofRow[]> {
+  const { data, error } = await db.from('wallpro_proofs')
+    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('brand', brand).eq('published', true).order('position', { ascending: true });
+  if (error) return [];
+  return (data as WallProofRow[]) ?? [];
+}
+
+/** Every row including drafts — the curator's own view. */
+export async function listWallProofsForCurator(brand: string): Promise<WallProofRow[]> {
+  const { data, error } = await db.from('wallpro_proofs')
+    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('brand', brand).order('position', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data as WallProofRow[]) ?? [];
+}
+
+/** Upload one already-normalized half. Content-addressed so a re-upload of the
+ *  same pixels cannot pile up duplicates in the bucket. */
+export async function uploadWallProofImage(blob: Blob, half: 'before' | 'after'): Promise<string> {
+  const hash = await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+  const path = `${half}/${hash}.jpg`;
+  const { error } = await supabase.storage.from(WALLPRO_PROOF_BUCKET)
+    .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+export async function saveWallProof(row: Partial<WallProofRow> & { id?: string }): Promise<WallProofRow> {
+  const payload = { ...row, updated_at: new Date().toISOString() };
+  const query = row.id
+    ? db.from('wallpro_proofs').update(payload).eq('id', row.id)
+    : db.from('wallpro_proofs').insert(payload);
+  const { data, error } = await query.select().single();
+  if (error) throw new Error(error.message);
+  return data as WallProofRow;
+}
+
+export async function deleteWallProof(id: string): Promise<void> {
+  const { error } = await db.from('wallpro_proofs').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+/** Write the whole order at once: reordering one row renumbers its neighbours,
+ *  and doing that as N independent writes leaves a visible half-order if one
+ *  fails. */
+export async function reorderWallProofs(rows: { id: string; position: number }[]): Promise<void> {
+  for (const { id, position } of rows) {
+    const { error } = await db.from('wallpro_proofs').update({ position }).eq('id', id);
+    if (error) throw new Error(error.message);
+  }
 }

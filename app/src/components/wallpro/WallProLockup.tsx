@@ -29,10 +29,17 @@ export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; 
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2.5">
-        {theme.logo
-          ? <img src={theme.logo} alt={theme.logoAlt} className={compact ? 'h-6 w-auto shrink-0 md:h-7' : 'h-7 w-auto shrink-0 md:h-9'} />
-          : <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
-        <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>
+        {/* NO PREFIX, NO "×", WHEN THE SHELL ALREADY SAYS WHO WE ARE (owner,
+            2026-09-16: "REMOVE THE DUAL DESIGNPRO, SHOULD SAY WALLPRO").
+            On DesignProAI the app sidebar is already branded DesignProAI, so
+            "DESIGNPROAI × WallPro" above it is the company introducing itself
+            twice on one screen -- which is what makes a tool page read as a
+            website. A partner's page still gets the lockup, because there the
+            "×" is doing real work: it says whose tool this is AND who is
+            serving it. */}
+        {theme.logo && <img src={theme.logo} alt={theme.logoAlt} className={compact ? 'h-6 w-auto shrink-0 md:h-7' : 'h-7 w-auto shrink-0 md:h-9'} />}
+        {!theme.logo && theme.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
+        {(theme.logo || theme.eyebrow) && <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>}
         {/* Two tone, not a gradient: against the partner's own mark the wordmark
             has to read as a solid name at a glance. The gradient stays where it
             belongs, on the actions. */}

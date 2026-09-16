@@ -76,6 +76,8 @@ const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
 const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
+// The WallPro FAQ: the corner/mask geometry, the panelizer pipeline, the prices.
+const WallProFaq = lazyWithRetry(() => import("./pages/WallProFaq"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
 // PatternPro worn by a partner: the WePrintWraps pattern-wrap page (owner,
 // 2026-09-15: "all these need to be in os.designpro repo"). Same tool as the
@@ -94,7 +96,8 @@ const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
-const AdminWallProProduction = lazyWithRetry(() => import("./pages/AdminWallProProduction"));
+// The before/after band, run by the curator instead of by a release.
+const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
 // took, designer QC and the release gate (owner, 2026-09-12).
 const WallPanelProStudio = lazyWithRetry(() => import("./pages/WallPanelProStudio"));
@@ -251,11 +254,33 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
  * subdomain exists to protect. So the partner routes render standalone, the
  * same way the customer proof portal already does.
  */
+/**
+ * A TOOL PAGE IS NOT A WEBSITE (owner, 2026-09-16: "SHOULD LOOK LIKE A TOOL
+ * PAGE IN A SAAS NOT A WEBSITE").
+ *
+ * On /printpro/wallpro the app shell already supplies the SaaS chrome -- a
+ * branded left sidebar with the plan, the tool list and the account links --
+ * and the marketing <Header> renders ON TOP of it: a second brand lockup, a
+ * second navigation, Home/Design/Output/Profit dropdowns above a page that has
+ * all of that in the rail. Two navigations for one product is what makes it
+ * read as a website with an app bolted inside.
+ *
+ * SCOPED TO WALLPRO ON PURPOSE. Header.tsx says in as many words that it is
+ * "now persistent on every route (marketing + app)" -- a deliberate decision
+ * someone made, and other app pages may lean on it for navigation. Reversing
+ * that across twenty-odd routes is a product decision, not a fix, so this
+ * removes the duplication where it was reported and nowhere else. Extending it
+ * is one more entry in this predicate once that call is made.
+ */
+const isWallProToolRoute = (pathname: string) =>
+  pathname === "/printpro/wallpro" || pathname.startsWith("/printpro/wallpro/");
+
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   pathname === "/wall-wrap" ||
   // The case study wears the same partner header and must not get DesignProAI
   // chrome stacked on top of it either.
   pathname === "/wall-wrap/how-it-works" ||
+  pathname === "/wall-wrap/faq" ||
   pathname === "/wallwrap-design" ||
   // PatternPro's partner page carries the same WePrintWraps header.
   pathname === "/pattern-wrap" ||
@@ -270,7 +295,7 @@ const HideOnCustomerProof = ({ children }: { children: React.ReactNode }) => {
     (pathname.startsWith("/approve/") && !pathname.startsWith("/approve/manage")) ||
     pathname === "/admin/approve-revisions";
   const hostname = typeof window === "undefined" ? "" : window.location.hostname;
-  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname)) return null;
+  if (isStandaloneApprovedPro || isWallProPartnerRoute(pathname, hostname) || isWallProToolRoute(pathname)) return null;
   return <>{children}</>;
 };
 
@@ -446,11 +471,33 @@ const App = () => {
           {/* The case study: one real wall, bare to installed. Its numbers and
               diagrams are computed by the tool's own libraries, so it cannot
               drift from the product the way a page of screenshots would. */}
-          <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy />} />
+          {/* TWO VERSIONS, ONE COMPONENT (owner, 2026-09-16: "I need it to be a
+              wallpro page on os.designpro — the WPW version is another
+              version"). /wall-wrap/how-it-works is the partner's, with their
+              mark, their film price and their order button; the DesignProAI one
+              lives beside the tool it belongs to and carries none of that. The
+              /printpro/wallpro/ prefix also puts it under isWallProToolRoute,
+              so it wears the app shell rather than the marketing nav. */}
+          <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy brand="weprintwraps" />} />
+          <Route path="/printpro/wallpro/how-it-works" element={<WallProCaseStudy />} />
+          {/* The FAQ, the same way and for the same reason. It carries the
+              corner/mask geometry the editor actually draws, the GENIE Wall
+              Panelizer rail, and the price ladder -- all read from the
+              product's own code, so it is wrong only if the product is. */}
+          <Route path="/wall-wrap/faq" element={<WallProFaq brand="weprintwraps" />} />
+          <Route path="/printpro/wallpro/faq" element={<WallProFaq />} />
           {/* PATTERNPRO, the same way: one component, worn by a brand. /pattern-wrap
               is the WePrintWraps page (white, blue gradient, WPW mark in the
               lockup, a render on the right); /printpro/patternpro is the same
               tool under the DesignProAI name. Owner, 2026-09-15. */}
+          {/* TWO PATTERNPRO PAGES ON THIS HOST, ON PURPOSE (owner, 2026-09-16: "I
+              should have a WPW PatternPro page and a stand alone PatternPro page
+              both on the os.designpro — WPW is a tenant and I need to sell
+              DesignPro to other shops"). /pattern-wrap is the WePrintWraps
+              TENANT page, on every host this app serves, exactly like
+              /wall-wrap; /printpro/patternpro is the standalone DesignProAI
+              page the OS sidebar links. Same component, one brand switch —
+              the next tenant is one entry in PATTERN_BRANDS and one route. */}
           <Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />
           <Route path="/printpro/patternpro" element={<PatternWrap />} />
           {/* /wbty is PatternPro's old address (the suite's sidebar still says
@@ -460,7 +507,22 @@ const App = () => {
           <Route path="/wbty" element={<Navigate to="/printpro/patternpro" replace />} />
           <Route path="/wbty/order-success" element={<WBTYOrderSuccess />} />
           <Route path="/admin/wallpro-batch" element={<RequireAdmin><AdminWallProBatch /></RequireAdmin>} />
-          <Route path="/admin/wallpro-production" element={<RequireAdmin><AdminWallProProduction /></RequireAdmin>} />
+          {/* ONE WALL QC SURFACE (owner, 2026-09-16: "The QC page should be part
+              of wallpanelpro admin that's the entire point ... Yes I need qc
+              gate"). /admin/wallpro-production was a read-only download board
+              with NO release control in it -- measured: zero QC or release
+              references in the whole file -- while WallPanelProStudio carries
+              the real gate: the per-check list, canRelease refusing until every
+              applicable check is ticked, Release for print, Hold, and a review
+              history where a later verdict supersedes without erasing.
+              Two boards meant the team could be looking at print files on a
+              page that cannot release them, which is how a job sits "ready"
+              with nobody realising a human still has to sign it.
+              REDIRECTED, NOT DELETED: the path is in the team's hands and in
+              the sidebar, and a dead bookmark on a production tool is its own
+              small outage. The page file is retired with the route. */}
+          <Route path="/admin/wallpro-production" element={<Navigate to="/wallpanelprostudio" replace />} />
+          <Route path="/admin/wallpro-proofs" element={<RequireAdmin><AdminWallProProofs /></RequireAdmin>} />
           <Route path="/admin/wbty-manager" element={<RequireAdmin><AdminWBTYManager /></RequireAdmin>} />
           <Route path="/admin/wbty-orders" element={<RequireAdmin><AdminWBTYOrders /></RequireAdmin>} />
           {/* WallPanelProStudio, named as the owner names it. Index by DesignID,

@@ -36,7 +36,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
         <title>{partner ? `${theme.logoAlt} x PatternPro™ — Pattern wraps by the yard` : 'PatternPro™ — Pattern wraps by the yard | DesignProAI'}</title>
         <meta
           name="description"
-          content="Pick a pattern and see it on any vehicle. 118 real WePrintWraps patterns, a 3D proof on any year, make and model, the yards for a full wrap, and the printed film ordered by the yard."
+          content={theme.lede}
         />
       </Helmet>
 
@@ -73,7 +73,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
       <section className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-10 sm:px-6 md:grid-cols-2 md:py-14">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-700">
-            {partner ? `${theme.logoAlt} x PatternPro` : 'PatternPro'} · printed wraps by the yard
+            {theme.eyebrowLine}
           </p>
           {/* THE HEADLINE IS THE PRODUCT (owner, 2026-09-15: "should say pick a
               pattern and see it on any vehicle"). Not who designed or printed it —
@@ -83,14 +83,9 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
             <br />
             See it on <span className="wpw-blue-text">any vehicle</span>.
           </h1>
-          <p className="mt-4 max-w-xl text-base text-gray-600 sm:text-lg">
-            Choose one of 118 real WePrintWraps patterns, enter any year, make and model,
-            and see it wrapped in 3D. PatternPro tells you the yards a full wrap takes, and
-            you order the printed film right here. $95.50 a yard on a 60″ roll, printed and
-            laminated by WePrintWraps.
-          </p>
+          <p className="mt-4 max-w-xl text-base text-gray-600 sm:text-lg">{theme.lede}</p>
           <ul className="mt-5 flex flex-wrap gap-2 text-xs font-semibold">
-            {['118 patterns', '5 collections', '60″ Avery film', 'Yards calculated for you', 'Ships from WePrintWraps'].map((chip) => (
+            {theme.chips.map((chip) => (
               <li key={chip} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700">
                 {chip}
               </li>
