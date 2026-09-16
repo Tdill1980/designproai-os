@@ -74,6 +74,12 @@ const CUSTOMER_ROUTE_MODULES = [
   // are computed by the tool's own libraries instead of being screenshots, so
   // it imports real product code and its import closure is worth checking.
   "pages/WallProCaseStudy.tsx",
+  // The WallPro FAQ, routed at /printpro/wallpro/faq (the partner keeps
+  // /wall-wrap/faq). Same reason as the case study, and it reaches further:
+  // it imports the pricing table, the panel planner, the panelizer stage
+  // builder and the photo editor's own overlay colours, so its closure is the
+  // widest of any WallPro marketing surface.
+  "pages/WallProFaq.tsx",
 ];
 
 /**

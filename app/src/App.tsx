@@ -76,6 +76,8 @@ const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
 const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
+// The WallPro FAQ: the corner/mask geometry, the panelizer pipeline, the prices.
+const WallProFaq = lazyWithRetry(() => import("./pages/WallProFaq"));
 const AdminWallProBatch = lazyWithRetry(() => import("./pages/AdminWallProBatch"));
 // PatternPro worn by a partner: the WePrintWraps pattern-wrap page (owner,
 // 2026-09-15: "all these need to be in os.designpro repo"). Same tool as the
@@ -277,6 +279,7 @@ const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   // The case study wears the same partner header and must not get DesignProAI
   // chrome stacked on top of it either.
   pathname === "/wall-wrap/how-it-works" ||
+  pathname === "/wall-wrap/faq" ||
   pathname === "/wallwrap-design" ||
   // PatternPro's partner page carries the same WePrintWraps header.
   pathname === "/pattern-wrap" ||
@@ -476,6 +479,12 @@ const App = () => {
               so it wears the app shell rather than the marketing nav. */}
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy brand="weprintwraps" />} />
           <Route path="/printpro/wallpro/how-it-works" element={<WallProCaseStudy />} />
+          {/* The FAQ, the same way and for the same reason. It carries the
+              corner/mask geometry the editor actually draws, the GENIE Wall
+              Panelizer rail, and the price ladder -- all read from the
+              product's own code, so it is wrong only if the product is. */}
+          <Route path="/wall-wrap/faq" element={<WallProFaq brand="weprintwraps" />} />
+          <Route path="/printpro/wallpro/faq" element={<WallProFaq />} />
           {/* PATTERNPRO, the same way: one component, worn by a brand. /pattern-wrap
               is the WePrintWraps page (white, blue gradient, WPW mark in the
               lockup, a render on the right); /printpro/patternpro is the same

@@ -1205,9 +1205,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 the partner's version put a printer's logo, a printer's film
                 price and "Order printed film" in front of somebody who came
                 here for the files (owner, 2026-09-16). */}
-            <Link to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
-              See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
-            </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              <Link to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+                See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
+              </Link>
+              {/* The FAQ answers what the case study deliberately does not: the
+                  price ladder, the 24-hour human check, and what the coloured
+                  glass on the photo actually means. Same brand, same rule. */}
+              <Link to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+                Prices &amp; questions <span aria-hidden="true">&rarr;</span>
+              </Link>
+            </div>
           </div>
           <WallProHeroProof proofs={bandProofs} />
         </section>
@@ -1643,7 +1651,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             product page answered. A page that REPLACES a product page has to
             answer what it answered, or the questions arrive as phone calls and
             the rankings go elsewhere. */}
-        <WallProProductDetail />
+        <WallProProductDetail faqHref={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'} />
       </div>}
     </div>
     {/* On a phone the form and the wall photo stack, so marking corners puts

@@ -22,6 +22,7 @@
  * reading the same constants the rest of the page reads, so a rate change cannot
  * leave a stale answer behind in an accordion nobody re-reads.
  */
+import { Link } from 'react-router-dom';
 import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { WPW_WALL_FILM_RATE_PER_SQFT, WALL_DESIGN_SKUS, formatMoney } from '@/lib/wallpro-pricing';
 import { WALL_CARD } from '@/lib/wallpro-brand';
@@ -64,7 +65,20 @@ const ALSO_CALLED = [
   'Wall murals', 'Wall wraps',
 ];
 
-export function WallProProductDetail() {
+/**
+ * TWO FAQs ON PURPOSE, AND THEY ARE NOT THE SAME OBJECT.
+ *
+ * This block is the SEO tail of a PRODUCT PAGE: six phrases buyers already
+ * search, answered inline so the swap from the old wall product page costs no
+ * rankings. It stays short by design.
+ *
+ * pages/WallProFaq.tsx is the long form — the corner/mask geometry drawn with
+ * the editor's own colours, the GENIE Wall Panelizer rail, the full price
+ * ladder. A buyer who wants that should not have to find it, so this block ends
+ * by pointing at it, and neither page re-types a number: both read
+ * WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT and WALLPRO_PRINT_WIDTH.
+ */
+export function WallProProductDetail({ faqHref = '/wall-wrap/faq' }: { faqHref?: string } = {}) {
   return (
     <section className={`${WALL_CARD} md:p-6`} aria-label="Wall wrap questions and terms">
       <h2 className="text-lg font-semibold">Questions</h2>
@@ -83,6 +97,11 @@ export function WallProProductDetail() {
           <span key={term} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">{term}</span>
         ))}
       </div>
+      <p className="mt-4">
+        <Link to={faqHref} className="text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+          Every question, with the prices and the geometry <span aria-hidden="true">&rarr;</span>
+        </Link>
+      </p>
       <p className="mt-3 max-w-[68ch] text-xs text-slate-500">
         Printing on specialty film such as reflective or chrome is available by
         request — email the film you want and a WePrintWraps team member will come
