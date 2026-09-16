@@ -26,8 +26,8 @@ const tools = [
   {
     path: "/designpro/create",
     icon: Sparkles,
-    label: "DesignProAI™",
-    description: "Describe your wrap. Vehicle photos, brand colours, your logo — the server renders seven photoreal views.",
+    label: "VehiclePro",
+    description: "Prompt-Based Vehicle Graphics Design + Production-Ready File Output.",
     highlight: false,
     featured: true
   },

@@ -133,7 +133,9 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     eyebrow: 'DesignProAI',
     wordmarkLead: 'Wall',
     wordmarkAccent: 'Pro',
-    tagline: 'Custom wall wrap file output',
+    // The OS-side tagline is the product-hierarchy line (os-brand.ts, Trish
+    // 2026-09-16). The WePrintWraps partner page below keeps its own words.
+    tagline: 'Prompt-Based Wall Graphics Design + Production-Ready File Output',
     showPrintOffer: false,
     proofs: [],
   },

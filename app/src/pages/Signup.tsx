@@ -170,8 +170,8 @@ const Signup = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
-        <title>Create Account - DesignProAI | AI Vehicle Wrap Design</title>
-        <meta name="description" content="Create your free DesignProAI account. Start designing professional vehicle wraps with AI in 60 seconds. No design skills required." />
+        <title>Create Account - DesignProAI | Prompt-Based Design + Production-Ready File Output</title>
+        <meta name="description" content="Create your free DesignProAI account. Prompt-Based Design + Production-Ready File Output for vehicle, wall and cut graphics, inside one wide-format operating system." />
         <link rel="canonical" href="https://designproai.com/signup" />
         <meta property="og:title" content="Get Started Free - DesignProAI" />
         <meta property="og:description" content="Create your free account and start designing vehicle wraps with AI. From prompt to print-ready files in minutes." />

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Scissors } from "lucide-react";
+import { OS_TOOLS } from "@/lib/os-brand";
 import { FAQ } from "@/components/FAQ";
 import { RenderLimitUpsell } from "@/components/RenderLimitUpsell";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,8 +40,8 @@ const GraphicsProV1 = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 overflow-x-hidden">
       <Helmet>
-        <title>GraphicsPro - Cut Vinyl Graphics Design-to-Production | DesignProAI</title>
-        <meta name="description" content="Design cut vinyl graphics for any surface. AI-powered mockups on vehicles, walls, windows, floors. Get production-ready cut files with automatic pricing." />
+        <title>CutPro — Prompt-Based Cut Graphics Design + Production-Ready File Output | DesignProAI</title>
+        <meta name="description" content="CutPro, the cut graphics design environment inside DesignProAI: create professional cut graphics from a prompt and move directly toward production-ready artwork for vehicles, walls and windows." />
         <link rel="canonical" href="https://designproai.com/graphics-pro" />
       </Helmet>
 
@@ -57,7 +58,10 @@ const GraphicsProV1 = () => {
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold leading-tight flex items-baseline gap-2 flex-wrap">
                   <span className="flex items-baseline">
-                    <span className="text-white">GraphicsPro</span>
+                    {/* CutPro is the customer-facing name (os-brand.ts, Trish
+                        2026-09-16). Routes, hooks, buckets and the graphicspro-v1
+                        components keep their GraphicsPro identifiers. */}
+                    <span className="text-white">{OS_TOOLS.cutpro.name}</span>
                     <sup className="text-white/80 text-sm ml-0.5">™</sup>
                   </span>
                   <span className="text-white/80 font-normal text-sm sm:text-base">with</span>
@@ -67,10 +71,10 @@ const GraphicsProV1 = () => {
                   </span>
                 </h1>
                 <p className="text-sm sm:text-base text-white mt-2 font-medium">
-                  Cut contour vinyl graphics for vehicles, walls, and windows
+                  {OS_TOOLS.cutpro.tagline}
                 </p>
                 <p className="text-xs sm:text-sm text-white/85 mt-0.5">
-                  Upload your image or design via text prompt
+                  {OS_TOOLS.cutpro.description} Vehicles, walls and windows; upload your image or design from a prompt.
                 </p>
               </div>
             </div>

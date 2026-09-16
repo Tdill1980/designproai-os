@@ -132,7 +132,7 @@ const Login = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <Helmet>
         <title>Sign In - DesignProAI</title>
-        <meta name="description" content="Sign in to DesignProAI to design vehicle wraps with AI. Access ColorPro, DesignPro, FadeWraps, and more." />
+        <meta name="description" content="Sign in to DesignProAI, the Design-to-Production OS built for wide format. Open VehiclePro, WallPro and CutPro." />
         <link rel="canonical" href="https://designproai.com/login" />
       </Helmet>
 

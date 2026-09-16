@@ -1249,7 +1249,7 @@ export function SurfaceSelection({ surface, onChange, makes, models, onMakeChang
 
               {!showWallUpload && (
                 <p className="text-[10px] text-gray-500">
-                  Pick the wall type below and GraphicsPro will generate a photorealistic wall for you. No photo needed.
+                  Pick the wall type below and CutPro will generate a photorealistic wall for you. No photo needed.
                 </p>
               )}
 
@@ -1408,7 +1408,7 @@ export function SurfaceSelection({ surface, onChange, makes, models, onMakeChang
 
               {!showGlassUpload && (
                 <p className="text-[10px] text-gray-500">
-                  Pick the glass type below and GraphicsPro will generate a photorealistic storefront for you. No photo needed.
+                  Pick the glass type below and CutPro will generate a photorealistic storefront for you. No photo needed.
                 </p>
               )}
 

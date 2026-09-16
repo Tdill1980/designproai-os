@@ -142,7 +142,7 @@ export const faqData: FAQItem[] = [
   },
   {
     question: "What's included in DesignPro Studio?",
-    answer: "DesignPro Studio ($699/mo) is the Design OS — 150 renders per month with a real human graphic designer outputting your files in 48 hours. Everything in Lite plus DesignProAI, GraphicsPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every DesignProAI shop, keep 60% of every sale). Production Packs are sold separately at $249 each (subscriber discount, save $50 vs $299 retail). Extra renders are $15 each (top-tier discount, 40% off retail).",
+    answer: "DesignPro Studio ($699/mo) is the Design OS — 150 renders per month with a real human graphic designer outputting your files in 48 hours. Everything in Lite plus VehiclePro, CutPro, RecreatePro, and CreatorMarket publisher access (list and sell your wraps to every DesignProAI shop, keep 60% of every sale). Production Packs are sold separately at $249 each (subscriber discount, save $50 vs $299 retail). Extra renders are $15 each (top-tier discount, 40% off retail).",
     category: 'pricing',
   },
   {

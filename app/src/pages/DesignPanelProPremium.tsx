@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
+import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
 import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
@@ -1914,10 +1915,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   return (
     <div className={cn("flex flex-col", embedded ? "min-h-0 bg-transparent" : "min-h-screen bg-background")}>
       <Helmet>
-        <title>DesignProAI™ - The World's First AI Design to Print System | DesignProAI Suite™</title>
+        <title>VehiclePro — Prompt-Based Vehicle Graphics Design + Production-Ready File Output | DesignProAI</title>
         <meta
           name="description"
-          content="DesignProAI™ - AI designs custom wraps, renders them on vehicles, and generates production-ready print panels. The world's first AI Design to Print system."
+          content="VehiclePro, the vehicle graphics design environment inside DesignProAI: create professional vehicle graphics from a prompt, visualize and refine the design, then generate files prepared for production."
         />
       </Helmet>
       <main className="flex-1">
@@ -1961,15 +1962,19 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       "w-full lg:w-[420px] shrink-0 rounded-xl border border-white/10 bg-black/40 p-4 space-y-4",
                       (embedded || !leftColOpen) && "hidden",
                     )}>
-                      {/* DesignPro™ wordmark — blue→magenta gradient + magenta subtitle
-                          (mirrors the DesignProAI™ wordmark pattern in Header.tsx). */}
+                      {/* VehiclePro wordmark — blue→magenta gradient + magenta subtitle
+                          (mirrors the DesignProAI™ wordmark pattern in Header.tsx).
+                          This tool is VehiclePro (Trish 2026-09-16: "its a double
+                          name, we need this tool called VehiclePro"); DesignProAI is
+                          the OS in the persistent header above it. Copy from
+                          lib/os-brand.ts. */}
                       <div className="flex flex-col leading-none px-1">
                         <span className="text-2xl font-bold tracking-tight whitespace-nowrap">
-                          <span className="text-white">Design</span><span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">Pro</span>
+                          <span className="text-white">{OS_TOOLS.vehiclepro.wordmark.base}</span><span className="bg-gradient-to-r from-blue-500 to-pink-500 bg-clip-text text-transparent">{OS_TOOLS.vehiclepro.wordmark.suffix}</span>
                           <span className="text-zinc-400 text-xs align-super ml-0.5">&#8482;</span>
                         </span>
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-[#ec4899] mt-0.5">
-                          Vehicle Wrap Design System
+                          {OS_TOOLS.vehiclepro.tagline}
                         </span>
                       </div>
                       <div className="flex items-center justify-between px-1">
@@ -1984,11 +1989,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         </button>
                       </div>
                       <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
+                        {/* Atlas is the intelligence layer, not a fourth product: it
+                            gets "Powered by Atlas" and one line, never a competing
+                            wordmark (os-brand.ts, Trish 2026-09-16). */}
                         <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                          A.T.L.A.S. graph active
+                          {ATLAS_BRAND.poweredBy}
                         </div>
                         <p className="mt-2 text-[10px] leading-4 text-white/65">
-                          One canonical design releases labeled vehicle surfaces and their matched 3D proofs. The same artifact lineage continues into production.
+                          {ATLAS_BRAND.explanation} One canonical design releases labeled vehicle surfaces and their matched 3D proofs, and the same artifact lineage continues into production.
                         </p>
                       </div>
                       {/* Input area */}

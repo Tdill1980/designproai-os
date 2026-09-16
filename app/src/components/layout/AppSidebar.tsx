@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
 import { Lock, Sparkles, Crown, Shield, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -410,14 +411,19 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
  * Mobile:  off-canvas Sheet drawer opened from the bottom tab bar
  */
 export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = false }: AppSidebarProps) => {
+  // The persistent header grows by one row inside VehiclePro / WallPro / CutPro
+  // (the active-tool strip, Header.tsx), so the sidebar's top follows the
+  // header's measured height instead of a 72px constant.
+  const headerHeight = useHeaderHeight();
   return (
     <>
       {/* Desktop */}
       <aside
         className={cn(
-          "hidden md:flex fixed left-0 top-[72px] bottom-0 w-60 z-30 flex-col overflow-y-auto border-r border-[#48484a] bg-rp-root transition-transform duration-200",
+          "hidden md:flex fixed left-0 bottom-0 w-60 z-30 flex-col overflow-y-auto border-r border-[#48484a] bg-rp-root transition-transform duration-200",
           desktopHidden && "md:-translate-x-full",
         )}
+        style={{ top: headerHeight }}
         aria-label="Dashboard navigation"
       >
         <SidebarBody />
@@ -431,7 +437,7 @@ export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = 
         >
           <SheetHeader className="px-4 py-3 border-b border-[#48484a]">
             <SheetTitle className="text-white text-left font-poppins">
-              <ToolWordmark toolKey="restylepro" size="lg" />
+              <ToolWordmark toolKey="designproai" size="lg" />
             </SheetTitle>
           </SheetHeader>
           <div className="overflow-y-auto h-[calc(100%-60px)]">

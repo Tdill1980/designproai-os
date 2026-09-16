@@ -112,6 +112,7 @@ import { DeployVersionWatcher } from "@/components/DeployVersionWatcher";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthedRootRedirect } from "@/components/AuthedRootRedirect";
 import { isDesignProMarketingHost, isWallProPartnerHost } from "@/lib/designpro-host-routing";
+import { OS_TOOL_ALIASES } from "@/lib/os-brand";
 import { WaitlistPopup } from "@/components/WaitlistPopup";
 import { PaywallTokenModal } from "@/components/PaywallTokenModal";
 import { PackPaymentResume } from "@/components/PackPaymentResume";
@@ -472,6 +473,14 @@ const App = () => {
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
           <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />
           <Route path="/graphicspro" element={<Navigate to="/graphics-pro" replace />} />
+          {/* CUSTOMER-FACING NAME ALIASES (os-brand.ts, Trish 2026-09-16). The vehicle
+              tool is VehiclePro and the cut tool is CutPro in every customer-facing
+              word, but their routes are the ones above and stay so: bookmarks,
+              emails, analytics and stored project links all carry them. These
+              short names redirect INTO the served routes; nothing redirects out. */}
+          {OS_TOOL_ALIASES.map((alias) => (
+            <Route key={alias.from} path={alias.from} element={<Navigate to={alias.to} replace />} />
+          ))}
           <Route path="/printpro/designpanelpro" element={<DesignPanelProPrintedProductPage />} />
           <Route path="/printpro/production" element={<PrintProductionPipeline />} />
           <Route path="/printpro/production-os" element={<ProductionOS />} />

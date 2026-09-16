@@ -31,8 +31,10 @@ export const TOOL_REGISTRY = {
   },
   graphicspro: {
     key: 'graphicspro',
-    label: 'GraphicsPro™',
-    description: 'Graphic wrap designs',
+    // Customer-facing name is CutPro (os-brand.ts, Trish 2026-09-16); the key
+    // stays `graphicspro` because stored proofs and PDFs are keyed by it.
+    label: 'CutPro™',
+    description: 'Cut graphics designs',
   },
   approvepro: {
     key: 'approvepro',

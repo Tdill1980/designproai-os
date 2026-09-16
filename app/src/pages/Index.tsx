@@ -159,10 +159,10 @@ const MeetYourSystemSection = () => {
           <p className="text-[11px] tracking-[5px] uppercase text-cyan-400/80 font-semibold">The Platform</p>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white font-poppins flex items-center justify-center gap-2 flex-wrap">
             <img src="/characters/sproket/sproket-laptop.png" alt="SPROKET" className="w-8 h-8 sm:w-12 sm:h-12 md:w-20 md:h-20 object-contain inline-block" loading="lazy" />
-            Meet Your New <span className="text-gradient-blue-subtle">Vehicle Wrap Design System</span>
+            Meet Your <span className="text-gradient-blue-subtle">Design-to-Production OS</span>
           </h2>
           <p className="text-base sm:text-lg text-white/60 max-w-2xl mx-auto">
-            It's like having a graphic designer at your fingertips
+            Prompt-Based Design + Production-Ready File Output, built for wide format
           </p>
         </div>
 
@@ -209,9 +209,9 @@ const MeetYourSystemSection = () => {
 };
 
 const HERO_HEADLINES = [
-  "The World's First Prompt to Production Vehicle Wrap Design System",
-  "SkyRocket Your Vehicle Wrap Designs",
-  "Out of This World Premium Vehicle Wrap Designs",
+  "The Design-to-Production OS Built for Wide Format.",
+  "Prompt-Based Design + Production-Ready File Output",
+  "VehiclePro. WallPro. CutPro. Powered by Atlas.",
 ];
 
 const HeroHeadlineRotator = () => {
@@ -309,16 +309,16 @@ const Index = () => {
   return (
     <div className="min-h-screen flex flex-col bg-black">
       <Helmet>
-        <title>DesignProAI - AI Vehicle Wrap Design Software | Prompt to Production</title>
-        <meta name="description" content="Design vehicle wraps in 60 seconds with AI. The world's first prompt-to-production wrap platform. Generate photorealistic designs, get print-ready EPS files." />
+        <title>DesignProAI — The Design-to-Production OS Built for Wide Format</title>
+        <meta name="description" content="Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built wide-format operating system. VehiclePro, WallPro and CutPro, powered by Atlas." />
         <link rel="canonical" href="https://designproai.com" />
-        <meta property="og:title" content="DesignProAI - AI Vehicle Wrap Design Software" />
-        <meta property="og:description" content="Design vehicle wraps in 60 seconds with AI. From prompt to print-ready EPS files. The game changed." />
+        <meta property="og:title" content="DesignProAI — The Design-to-Production OS Built for Wide Format" />
+        <meta property="og:description" content="Prompt-Based Design + Production-Ready File Output. VehiclePro, WallPro and CutPro inside one wide-format operating system." />
         <meta property="og:url" content="https://designproai.com" />
         <meta property="og:image" content="https://designproai.com/hero-mustang.jpg" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="DesignProAI - AI Vehicle Wrap Design Software" />
-        <meta name="twitter:description" content="Design vehicle wraps in 60 seconds. From prompt to print-ready production files." />
+        <meta name="twitter:title" content="DesignProAI — The Design-to-Production OS Built for Wide Format" />
+        <meta name="twitter:description" content="Prompt-Based Design + Production-Ready File Output, built for wide format." />
         <meta name="twitter:image" content="https://designproai.com/hero-mustang.jpg" />
       </Helmet>
 
@@ -336,11 +336,11 @@ const Index = () => {
               <div className="space-y-5 order-2 lg:order-1">
                 {/* Thin subtitle text */}
                 <p className="text-[11px] sm:text-[13px] md:text-[15px] font-light tracking-[0.25em] sm:tracking-[0.35em] uppercase" style={{ fontFamily: 'Inter, sans-serif' }}>
-                  <span className="text-gradient-blue-subtle">DesignProAI™</span><span className="text-white"> Design. Output. Profit.</span>
+                  <span className="text-gradient-blue-subtle">DesignProAI™</span><span className="text-white"> Prompt-Based Design + Production-Ready File Output</span>
                 </p>
                 {/* Line 1: Hero headline */}
                 <h3 className="text-[28px] sm:text-[32px] font-bold text-white leading-snug min-h-[2.5em]">
-                  The World's First Prompt to Production Vehicle Wrap Design System
+                  The Design-to-Production OS Built for Wide Format.
                 </h3>
 
                 {/* Line 2: DesignProAI™ - largest text, two-tone like logo */}
@@ -1047,7 +1047,7 @@ const Index = () => {
               {[
                 {
                   q: "What is DesignProAI?",
-                  a: "DesignProAI is a complete Vehicle Wrap Design System — it's like having a custom vehicle wrap designer at your fingertips. From prompt to production. No designer. No outsourcing. No waiting."
+                  a: "DesignProAI is the Design-to-Production OS built for wide format. Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built operating system. VehiclePro handles vehicle graphics, WallPro handles wall and environmental graphics, and CutPro handles cut graphics. Powered by Atlas, the intelligence layer behind DesignProAI."
                 },
                 {
                   q: "How fast can I design a vehicle wrap?",

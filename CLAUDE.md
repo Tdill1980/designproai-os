@@ -1,5 +1,34 @@
 # CLAUDE.md — designproai-os
 
+## 🏷️ CUSTOMER-FACING NAMES: DESIGNPROAI IS THE OS; VEHICLEPRO, WALLPRO, CUTPRO RUN INSIDE IT; "POWERED BY ATLAS" (owner ruling, Trish 2026-09-16)
+
+Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
+`app/src/lib/os-brand.ts`. Locked by `tests/os-brand-naming.test.mjs`.
+
+- **DesignProAI** is the master brand, in the persistent header on every page
+  with *Prompt-Based Design + Production-Ready File Output* under it. Hero:
+  *The Design-to-Production OS Built for Wide Format.* Never "an AI image
+  generator", never "a design tool".
+- **VehiclePro** is the vehicle tool (the one at `/designpro/create`). It used
+  to read "DesignPro / Vehicle Wrap Design System" under a header that also
+  read "Vehicle Wrap Design System" — owner: *"its a double name, we need this
+  tool called VehiclePro"*. **CutPro** replaces "GraphicsPro" in every
+  customer-facing word. **WallPro** keeps its name. Inside a tool the header
+  names the tool BENEATH the DesignProAI lockup, never instead of it.
+- **Atlas is not a fourth product.** Customer copy says *Powered by Atlas* and,
+  with room, *The intelligence layer behind DesignProAI.* The A.T.L.A.S.
+  vocabulary in this file, the runtime, the gateway, tests and admin/QC
+  surfaces is engineering vocabulary and stays.
+- **This was copy, not a rename.** Keys (`designpro`, `graphicspro`,
+  `wallpro`), routes (`/designpro/*`, `/graphics-pro*`, `/printpro/wallpro`),
+  buckets, edge functions, tier gates, logic keys (`<FAQ productName="GraphicsPro">`,
+  `toolSource === "GraphicsPro"`) and stored rows are unchanged, on purpose.
+  `/vehiclepro`, `/vehicle-pro`, `/cutpro`, `/cut-pro`, `/cut-pro-wall`,
+  `/cut-pro-window` redirect INTO the served routes; nothing redirects out.
+  Do not "finish the rename" by touching an identifier a stored row or a
+  deployed function reads.
+
+
 ## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
 
 > **STATUS 2026-09-14 — HERO-DRIVER IS OFF IN PRODUCTION (owner: "1st call should
