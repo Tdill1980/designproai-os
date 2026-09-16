@@ -806,6 +806,56 @@ judge the exported sheet.
 4. On a strong design roll the lockup can be clipped by the third's boundary on
    the field sheet (cc382c3c). No band read can fix a clipped source.
 
+### RULE 0.38 — EVERY CALL-1 ROUTING GETS A SECOND CONTRACT (2026-09-16, canary cf2a53d8)
+
+**What the refusal ledger says, now that it can be read.** A read-only
+`--refusals <requestId>` / `--refusal-digest <days>` selector was added to
+`export-designpro-artifacts` because there was no way to get a refused sheet off
+the private bucket: a Call 1 refused on every topology writes NO revision row, so
+neither `--run` nor `--generation` reaches one byte of it. Thirteen refused
+sheets had accumulated unseen while the gates that refused them were tuned.
+
+Digest, 2026-09-13 → 09-16: **12 six-surface refusals, 3 field refusals, across 7
+requests.** Six of those seven still reached an accepted master — and **every one
+of the six got there by CHANGING CONTRACT after a refusal.** The contract change
+is the recovery. Raw accept rate on refused-at-all runs: six-surface 2/14, field
+4/7.
+
+**The defect that cost the seventh.** The one-field fail-over promises "a refused
+Call 1 never leaves the customer with nothing", and field-first routing inverted
+it for every request it touched: `fieldResumable` is false on a field pass, so a
+field-FIRST budget refused twice **threw, with nothing behind it**, while the same
+request routed six-surface-first still had the field pass as its safety net. The
+newer routing had no fail-over at all.
+
+It does now, and it is deliberately one-way and bounded: at most two field
+candidates, then at most two six-surface candidates, and the tail carries
+`fieldFirstExhausted` so it cannot fail back into the contract this request has
+already exhausted. Both resume paths are mirrored (`fieldFirstRouted` on the
+stored revision and on the checkpoint), or a resumed request would measure its
+own accepted six-surface artwork against the FIELD manifest and refuse it. Same
+kill switch as the other direction — `DESIGNPRO_ATLAS_FIELD_FAILOVER=off` fails
+closed both ways — because one misspelled flag must not cost a design. Locked by
+three tests in `tests/atlas-authoring-recovery.test.mjs`, two of them verified to
+fail against the pre-fix runtime, and the door count in
+`tests/atlas-hero-driver-topology.test.mjs` (3 hero + 3 field-first = 6).
+
+**What the four refused canary sheets actually showed, in pixels.** This is the
+evidence for the six-surface-versus-field question, and it cuts both ways:
+
+| # | topology | drawn | verdict |
+|---|---|---|---|
+| 1 | six-surface | **the best artwork of the four** — one cohesive orange/blue wrap across all six surfaces, logo and name set properly on both flanks — but each panel die-cut to the truck's silhouette on black | `edgeHoleRatio` driver 0.706 |
+| 2 | six-surface | a literal 2022 F250 elevation with mirrors, glass and taillights | `vehicle_depiction` c=1 |
+| 3 | field | a photograph of a car door, full bleed, door handle and panel gap | `vehicle_depiction` c=1 |
+| 4 | field | two perfect full-bleed bands over one die-cut fender on grey | `vehicle_depiction` c=1 |
+
+All four gates were right. **Six-surface fails on geometry while drawing the
+better design; the field passes geometry while drawing the weaker one.** Do not
+resolve that trade by relaxing `edgeHoleRatio` or adding wheel-well negatives —
+RULE 0.32 forbids both by name. The resolution is hero-first (RULE 0.37), which
+is a build.
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology still paints layout marks into the artwork after v26** —

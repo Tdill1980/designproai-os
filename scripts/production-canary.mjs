@@ -50,6 +50,15 @@ const ATLAS_FIRST_ATTEMPT_SLO_SECONDS = 60;
 const DRIVER_FIRST_ATTEMPT_SLO_SECONDS = 90;
 const ATLAS_FALLBACK_SLO_SECONDS = 120;
 const DRIVER_FALLBACK_SLO_SECONDS = 180;
+// One Call-1 candidate is one image request, and each costs roughly the same.
+// The two constants above are that allowance for one candidate and for two, so
+// the allowance PER CANDIDATE is the step between them -- and a run that spends
+// its fail-over is slower by construction, which is the design working rather
+// than a regression. Scaling by the candidates actually spent reproduces both
+// thresholds above exactly (n=1 and n=2) and keeps the thing worth convicting,
+// a SLOW CANDIDATE, convicted at every n.
+const ATLAS_SLO_SECONDS_PER_CANDIDATE = ATLAS_FALLBACK_SLO_SECONDS - ATLAS_FIRST_ATTEMPT_SLO_SECONDS;
+const DRIVER_SLO_SECONDS_PER_CANDIDATE = DRIVER_FALLBACK_SLO_SECONDS - DRIVER_FIRST_ATTEMPT_SLO_SECONDS;
 const OPERATOR_EMAIL = "canary-operator@designproai.com";
 const CUSTOMER_REFERENCE = "DESIGNPROAI-ATLAS-GRAPH-CANARY";
 
@@ -736,9 +745,31 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (atlasRow.metadata?.masterQcPassed !== true) {
     throw new Error(`the A.T.L.A.S. master did not pass QC: ${JSON.stringify(atlasRow.metadata || null).slice(0, 300)}`);
   }
+  // THE BUDGET IS PER CONTRACT, NOT PER RUN.
+  //
+  // This read `[1, 2]`, written when six-surface was the only contract Call 1
+  // had: one candidate, one unchanged fallback. Since 2026-09-10 a spent budget
+  // fails over to a SECOND contract with its own two candidates, and since
+  // 2026-09-16 that holds in both directions -- so a run that recovers exactly
+  // as designed spends three or four image requests and this assertion would
+  // have failed it, throwing away the master, the six panels and every stage
+  // after them to convict a fail-over that worked.
+  //
+  // What is still worth convicting is a budget that was never bounded: more
+  // than two candidates on one contract, or more than two contracts. The
+  // revision records both (`masterAuthoringAttempts` and `authoringFailover`),
+  // so the bound is checked where it actually lives instead of being inferred
+  // from a total.
   const imageRequestCount = Number(atlasRow.metadata?.geminiImageRequestCount);
-  if (![1, 2].includes(imageRequestCount)) {
-    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; expected one accepted first attempt or one bounded refusal-only fallback`);
+  const failedOver = Boolean(atlasRow.metadata?.authoringFailover);
+  const maxImageRequests = failedOver ? 4 : 2;
+  if (!Number.isInteger(imageRequestCount) || imageRequestCount < 1 || imageRequestCount > maxImageRequests) {
+    throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; `
+      + `at most ${maxImageRequests} are bounded on this path`
+      + (failedOver ? ` (two candidates per contract, across one fail-over)` : ` (one accepted first attempt or one bounded refusal-only fallback)`));
+  }
+  if (Number(atlasRow.metadata?.masterAuthoringAttempts) > 2) {
+    throw new Error(`A.T.L.A.S. spent ${atlasRow.metadata.masterAuthoringAttempts} candidates on one contract; the per-contract budget is two`);
   }
   const geometryAuthority = atlasRow.metadata?.geometryAuthority || {};
   if (geometryAuthority.operatorValidated !== true
@@ -841,9 +872,10 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
   const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
   const driverSeconds = elapsedSeconds(row.created_at, driverRow.created_at, "Driver latency");
-  const usedFallback = imageRequestCount === 2;
-  const atlasSloSeconds = usedFallback ? ATLAS_FALLBACK_SLO_SECONDS : ATLAS_FIRST_ATTEMPT_SLO_SECONDS;
-  const driverSloSeconds = usedFallback ? DRIVER_FALLBACK_SLO_SECONDS : DRIVER_FIRST_ATTEMPT_SLO_SECONDS;
+  const extraCandidates = Math.max(0, imageRequestCount - 1);
+  const usedFallback = extraCandidates > 0;
+  const atlasSloSeconds = ATLAS_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * ATLAS_SLO_SECONDS_PER_CANDIDATE;
+  const driverSloSeconds = DRIVER_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * DRIVER_SLO_SECONDS_PER_CANDIDATE;
   evidence.latency = {
     basis: "request-created-to-durable-artifact",
     requestCreatedAt: row.created_at,
@@ -859,7 +891,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   };
   step(`latency A.T.L.A.S. ${atlasSeconds.toFixed(2)}s / ${atlasSloSeconds}s; `
     + `Driver ${driverSeconds.toFixed(2)}s / ${driverSloSeconds}s; `
-    + `${usedFallback ? "bounded fallback used" : "first attempt accepted"}`);
+    + `${usedFallback ? `${extraCandidates} bounded fallback candidate(s) used` : "first attempt accepted"}`
+    + `${failedOver ? ` across a ${atlasRow.metadata.authoringFailover.from} -> ${atlasRow.metadata.authoringFailover.to} fail-over` : ""}`);
   if (!evidence.latency.pass) {
     step("latency SLO missed; recording the miss and continuing through the full graph before final acceptance");
   }

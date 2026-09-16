@@ -47,15 +47,30 @@ test("a REFUSED A.T.L.A.S. authoring re-rolls the unchanged request, then fails 
   // proves an accepted candidate never incurs it.
   assert.match(worker, /generateOrReuseFlatAtlas\(\{[\s\S]*?maxAuthoringAttempts: 2,/);
   assert.match(atlas, /const MAX_MASTER_AUTHORING_ATTEMPTS = 2;/);
-  // Owner-directed 2026-09-10: exhausting the six-surface budget surfaces the
-  // real refusal — thrown when the fail-over is off, carried as provenance
-  // onto exactly ONE one-field attempt when it is on. Never a silent retry of
-  // the same request.
+  // Owner-directed 2026-09-10: exhausting the budget surfaces the real refusal
+  // — thrown when there is no second contract behind it, carried as provenance
+  // onto exactly ONE attempt on the other contract when there is. Never a
+  // silent retry of the same request.
+  //
+  // 2026-09-16: that promise now holds in BOTH directions. Until this date a
+  // spent FIELD-FIRST budget threw with nothing behind it, because
+  // `failoverEnabled` is false on a field pass — so the routing added on top of
+  // the fail-over quietly opted every request it touched out of it.
   assert.match(
     atlas,
-    /if \(attempt === maxAuthoringAttempts\) \{\s*const refusal = new FlatAtlasError\([\s\S]*?if \(!failoverEnabled\) throw refusal;[\s\S]*?return failOverToField\(\{/,
-    "exhausting the budget must surface the real refusal, never a silent retry",
+    /if \(attempt === maxAuthoringAttempts\) \{\s*const refusal = new FlatAtlasError\([\s\S]*?if \(!failoverEnabled\) \{\s*if \(!sixSurfaceFallbackEnabled\) throw refusal;/,
+    "exhausting the budget with no second contract behind it must still surface the real refusal",
   );
+  assert.match(
+    atlas,
+    /if \(!sixSurfaceFallbackEnabled\) throw refusal;[\s\S]*?return failOverToSixSurface\(\{[\s\S]*?\/\/ ONE-FIELD FAIL-OVER\.[\s\S]*?return failOverToField\(\{/,
+    "each direction hands over exactly once, and neither replaces the other",
+  );
+  // The hand-off is one-way and keeps the ordinary two-candidate budget: a tail
+  // that could fail back into the contract this request has already exhausted
+  // would turn a bounded pair of budgets into a loop.
+  assert.match(atlas, /const failoverEnabled = fieldResumable && !fieldFirstExhausted/);
+  assert.match(atlas, /fieldFirst: null, fieldFirstExhausted: true, maxAuthoringAttempts: undefined/);
   // 2026-09-15: two field attempts, so one car-shaped field does not end the run.
   assert.match(atlas, /const FIELD_FAILOVER_ATTEMPTS = 2;/);
   assert.match(atlas, /maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS/);

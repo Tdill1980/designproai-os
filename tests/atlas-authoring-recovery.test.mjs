@@ -668,3 +668,79 @@ test("every vehicle class authors on the field first, and DESIGNPRO_ATLAS_FIELD_
   assert.equal(result.metadata.authoringTopology,"six-surface");
   assert.equal(result.metadata.fieldFirst,null);
 });
+
+// THE FIELD-FIRST ROUTING HAD NO FAIL-OVER OF ITS OWN (2026-09-16).
+//
+// Canary cf2a53d8 spent four candidates and gave the customer nothing. The
+// one-field fail-over exists so that never happens, but it only ever ran in one
+// direction: `fieldResumable` is false on a field pass, so a field-FIRST budget
+// that was refused twice threw, while the same request routed six-surface-first
+// still had a second contract behind it. Measured on the refusal ledger
+// 2026-09-13 to 09-16: six of the seven requests that were refused at all still
+// reached an accepted master, and every one of the six got there by CHANGING
+// CONTRACT after a refusal. The contract change is the recovery.
+test("a refused field-first budget fails over ONCE to six-surface instead of leaving the customer with nothing",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  const result=await run.run();
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:field:1","master:field:2","master:1"],
+    "the field budget is spent in full first, then exactly one six-surface contract");
+  const field=run.masterCalls[0],six=run.masterCalls[2];
+  assert.equal(field.fieldContract,"designpro.atlas-field-prompt.v2");
+  assert.equal(six.fieldContract,undefined,"the tail authors on the container sheet");
+  assert.ok(six.teachingProofStoragePath,"the six-surface tail gets its teaching proof back");
+  assert.ok(six.guideStoragePath);
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.topology,"rectangular-preview-v1");
+  assert.equal(result.metadata.atlasDesignTeachingExampleApplied,true);
+  assert.equal(result.metadata.fieldFirst,null,
+    "the tail did not author on the field, so it may not claim the field-first receipt");
+  const failover=result.metadata.authoringFailover;
+  assert.equal(failover.contract,"designpro.atlas-authoring-failover.v1");
+  assert.equal(failover.from,FIELD_TOPOLOGY);
+  assert.equal(failover.to,"six-surface");
+  assert.equal(failover.attempts,2);
+  assert.deepEqual(failover.rawCandidates.map(item=>item.storagePath),
+    ["atlas-call1/master:field:1.png","atlas-call1/master:field:2.png"]);
+  assert.equal(run.fenceCalls,1,"the hand-off rides the fence the field pass holds; it never re-claims");
+  assert.equal(result.callOnePanels.length,6);
+  for(const panel of result.callOnePanels)assert.equal(panel.sourceMasterHash,result.master.contentHash);
+  assert.equal(Object.keys(result.viewAuthorities).length,7);
+  // One-way: the six-surface tail must not fail back to the contract this
+  // request has already exhausted, or a refusal there would loop.
+  const reused=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(reused.reused,true);
+  assert.equal(reused.master.contentHash,result.master.contentHash);
+  assert.equal(run.masterCalls.length,3,"a completed hand-off never spends again");
+});
+
+test("a field-first hand-off whose revision row never landed resumes from its six-surface checkpoint",async t=>{
+  finishFlag(t,"off");failoverFlag(t,undefined);fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  run.insertFailure=true;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
+  assert.equal(run.masterCalls.length,3);
+  assert.equal(run.publicMasters.length,1,"the six-surface master was published before the row failed");
+  run.insertFailure=false;
+  const result=await run.run({claimToken:"55555555-5555-4555-8555-555555555555"});
+  assert.equal(run.masterCalls.length,3,"the field-first pass recognises the six-surface checkpoint and spends nothing");
+  assert.equal(result.metadata.authoringTopology,"six-surface");
+  assert.equal(result.metadata.authoringFailover.to,"six-surface");
+  assert.equal(result.callOnePanels.length,6);
+});
+
+test("DESIGNPRO_ATLAS_FIELD_FAILOVER=off fails a spent field-first budget closed, in that direction too",async t=>{
+  finishFlag(t,"off");failoverFlag(t,"off");fieldFirstOn(t);
+  const {source}=await fixture();const silhouette=await silhouetteFixture();
+  const run=harness(source);
+  run.masterFor=async body=>body.fieldContract?silhouette:source;
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_master_deterministic_failed"
+    ||error.code==="flat_atlas_master_output_class_invalid");
+  assert.deepEqual(run.masterCalls.map(body=>body.providerRequest.attemptKey),
+    ["master:field:1","master:field:2"],"no six-surface contract is spent when the switch is off");
+});
