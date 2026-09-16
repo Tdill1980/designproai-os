@@ -66,6 +66,14 @@ const CUSTOMER_ROUTE_MODULES = [
   // whose output became the print panel. All of that is gone, and this is what
   // keeps it gone.
   "pages/AdminGeminiCompareStudio.tsx",
+  // The WallPro case study, routed at /printpro/wallpro/how-it-works for the
+  // DesignProAI brand (the partner keeps /wall-wrap/how-it-works). It is a
+  // customer-reachable DesignPro URL, so it belongs inside the closure like
+  // every other one -- and it earns the walk rather than merely satisfying it:
+  // the page's whole point is that its panel plan, billed area and repeat width
+  // are computed by the tool's own libraries instead of being screenshots, so
+  // it imports real product code and its import closure is worth checking.
+  "pages/WallProCaseStudy.tsx",
 ];
 
 /**

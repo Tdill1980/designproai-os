@@ -398,6 +398,15 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
+              {/* THE PROOF BAND'S CURATOR IS IN THE ADMIN BLOCK, NOT HERE.
+                  Two sessions closed this gap the same night, and the other
+                  one carried an owner instruction this one did not: "Add this
+                  to navigation under admin" (2026-09-16). It also reads right
+                  -- the two links above are boards the design team lives in
+                  all day and reaches from the tool, while the band curator is
+                  merchandising, touched rarely, and belongs beside the batch
+                  generator it sits with now. A second entry here would have
+                  been the same page twice in one sidebar. */}
               </Fragment>
             );
           })}
