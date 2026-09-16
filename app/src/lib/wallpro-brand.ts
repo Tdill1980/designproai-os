@@ -208,6 +208,18 @@ const WALL_PROOFS: WallProof[] = [
       // in the repository either. Add the block with its photographs.
 ];
 
+/**
+ * THE OPENING PAIR, PINNED (owner, 2026-09-16: "the header must be the one
+ * with the fitness wall before and after").
+ *
+ * It already led WALL_PROOFS, but leading a list is not the same as being
+ * guaranteed: curator rows from /admin/wallpro-proofs REPLACE this list
+ * wholesale, so one published row of a different room silently took the gym
+ * off the front of the band. Exported so the tool page can put it first
+ * whatever else is published behind it.
+ */
+export const WALL_HERO_PROOF: WallProof = WALL_PROOFS[0];
+
 export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
   designpro: {
     logo: null,
