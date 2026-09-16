@@ -27,14 +27,21 @@ const generationId = flag("--generation");
 // from those pixels before touching a threshold", and until now there was no
 // way to get them off the private bucket.
 const refusalRequestId = flag("--refusals");
+// DIGEST mode. Which topology should Call 1 be routed through is a measured
+// question, and the refusal ledger is the only place the answer lives: one row
+// per refused candidate, with its topology, attempt and gate verdict. Without
+// this, "six-surface draws the vehicle" and "field draws the vehicle" are both
+// anecdotes from whichever run someone last looked at. No images, no bucket
+// read -- counts and verdict strings only.
+const refusalDigestDays = flag("--refusal-digest");
 const outDir = flag("--out") || "/out";
-const selectors = [runId, generationId, refusalRequestId].filter(Boolean);
+const selectors = [runId, generationId, refusalRequestId, refusalDigestDays].filter(Boolean);
 if (selectors.length === 0) {
-  console.error("--run <uuid>, --generation <uuid> or --refusals <requestId> is required");
+  console.error("--run <uuid>, --generation <uuid>, --refusals <requestId> or --refusal-digest <days> is required");
   process.exit(2);
 }
 if (selectors.length > 1) {
-  console.error("pass exactly one of --run, --generation, --refusals");
+  console.error("pass exactly one of --run, --generation, --refusals, --refusal-digest");
   process.exit(2);
 }
 
@@ -94,6 +101,55 @@ async function writePreviews(files) {
       console.error(`preview failed for ${entry.file}: ${entry.previewError}`);
     }
   }
+}
+
+if (refusalDigestDays) {
+  const days = Number(refusalDigestDays);
+  if (!Number.isFinite(days) || days <= 0 || days > 365) {
+    console.error(`--refusal-digest wants a day count between 1 and 365, got ${refusalDigestDays}`);
+    process.exit(2);
+  }
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const { data: rows, error: digestError } = await supabase
+    .from("designpro_atlas_refusals")
+    .select("request_id,topology,attempt,code,reason,created_at")
+    .gte("created_at", since)
+    .order("created_at", { ascending: true });
+  if (digestError) { console.error(`refusal digest query failed: ${digestError.message}`); process.exit(3); }
+
+  // Per request, in order: which topologies were tried and how each candidate
+  // was refused. A request that appears here with fewer refusals than its
+  // budget is one whose LATER candidate was accepted.
+  const byRequest = new Map();
+  for (const row of rows || []) {
+    if (!byRequest.has(row.request_id)) byRequest.set(row.request_id, []);
+    byRequest.get(row.request_id).push(row);
+  }
+  const byTopologyCode = {};
+  for (const row of rows || []) {
+    const key = `${row.topology}/${row.code}`;
+    byTopologyCode[key] = (byTopologyCode[key] || 0) + 1;
+  }
+  mkdirSync(outDir, { recursive: true });
+  const digest = {
+    sinceUtc: since, days, refusedCandidates: (rows || []).length,
+    requestsWithAtLeastOneRefusal: byRequest.size,
+    byTopologyAndCode: byTopologyCode,
+    requests: [...byRequest.entries()].map(([requestId, list]) => ({
+      requestId, refusals: list.length,
+      sequence: list.map((row) => `${row.topology}#${row.attempt}:${row.code}`),
+      firstRefusedAt: list[0].created_at, lastRefusedAt: list[list.length - 1].created_at,
+    })),
+  };
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify(digest, null, 2));
+  console.error(`refusal digest since ${since}: ${digest.refusedCandidates} refused candidates across ${byRequest.size} requests`);
+  for (const [key, count] of Object.entries(byTopologyCode).sort((a, b) => b[1] - a[1])) {
+    console.error(`  ${key}: ${count}`);
+  }
+  for (const request of digest.requests) {
+    console.error(`  ${request.requestId} ${request.firstRefusedAt} ${request.sequence.join(" -> ")}`);
+  }
+  process.exit(0);
 }
 
 if (refusalRequestId) {

@@ -41,6 +41,11 @@ on:
         required: false
         default: ""
         type: string
+      atlas_refusal_digest_days:
+        description: "counts only, no images: summarise the Call 1 refusal ledger over this many days"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -66,6 +71,7 @@ jobs:
       RUN_ID: ${{ inputs.run_id }}
       ATLAS_GENERATION_ID: ${{ inputs.atlas_generation_id }}
       ATLAS_REFUSAL_REQUEST_ID: ${{ inputs.atlas_refusal_request_id }}
+      ATLAS_REFUSAL_DIGEST_DAYS: ${{ inputs.atlas_refusal_digest_days }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -87,17 +93,19 @@ jobs:
           [[ -z $RUN_ID ]] || selectors=$((selectors + 1))
           [[ -z $ATLAS_GENERATION_ID ]] || selectors=$((selectors + 1))
           [[ -z $ATLAS_REFUSAL_REQUEST_ID ]] || selectors=$((selectors + 1))
+          [[ -z $ATLAS_REFUSAL_DIGEST_DAYS ]] || selectors=$((selectors + 1))
           if [[ $selectors -gt 1 ]]; then
-            printf '::error title=Ambiguous selector::pass exactly one of run_id, atlas_generation_id, atlas_refusal_request_id.\n' >&2
+            printf '::error title=Ambiguous selector::pass exactly one of run_id, atlas_generation_id, atlas_refusal_request_id, atlas_refusal_digest_days.\n' >&2
             exit 43
           fi
           if [[ $selectors -eq 0 ]]; then
-            printf '::error title=No selector::pass run_id, atlas_generation_id or atlas_refusal_request_id.\n' >&2
+            printf '::error title=No selector::pass run_id, atlas_generation_id, atlas_refusal_request_id or atlas_refusal_digest_days.\n' >&2
             exit 44
           fi
           [[ -z $RUN_ID ]] || [[ $RUN_ID =~ $uuid ]]
           [[ -z $ATLAS_GENERATION_ID ]] || [[ $ATLAS_GENERATION_ID =~ $uuid ]]
           [[ -z $ATLAS_REFUSAL_REQUEST_ID ]] || [[ $ATLAS_REFUSAL_REQUEST_ID =~ $uuid ]]
+          [[ -z $ATLAS_REFUSAL_DIGEST_DAYS ]] || [[ $ATLAS_REFUSAL_DIGEST_DAYS =~ ^[0-9]{1,3}$ ]]
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -138,7 +146,7 @@ jobs:
           payload=$(tar -cz scripts/export-designpro-artifacts.mjs | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' ATLAS_REFUSAL_REQUEST_ID='$ATLAS_REFUSAL_REQUEST_ID' bash -s" \
+            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' ATLAS_REFUSAL_REQUEST_ID='$ATLAS_REFUSAL_REQUEST_ID' ATLAS_REFUSAL_DIGEST_DAYS='$ATLAS_REFUSAL_DIGEST_DAYS' bash -s" \
             > "$RUNNER_TEMP/export.b64" 2>"$RUNNER_TEMP/export.log" <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -158,8 +166,10 @@ jobs:
             selector=(--run "$RUN_ID")
           elif [[ -n ${ATLAS_GENERATION_ID:-} ]]; then
             selector=(--generation "$ATLAS_GENERATION_ID")
-          else
+          elif [[ -n ${ATLAS_REFUSAL_REQUEST_ID:-} ]]; then
             selector=(--refusals "$ATLAS_REFUSAL_REQUEST_ID")
+          else
+            selector=(--refusal-digest "$ATLAS_REFUSAL_DIGEST_DAYS")
           fi
 
           docker run --rm --network host \
@@ -181,7 +191,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
-          name: designpro-run-artifacts-${{ inputs.run_id }}${{ inputs.atlas_generation_id }}${{ inputs.atlas_refusal_request_id }}
+          name: designpro-run-artifacts-${{ inputs.run_id }}${{ inputs.atlas_generation_id }}${{ inputs.atlas_refusal_request_id }}${{ inputs.atlas_refusal_digest_days }}
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
           retention-days: 30
