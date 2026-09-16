@@ -383,6 +383,38 @@ export async function latestWallProductionJob(versionId: string): Promise<WallPr
  * identity, in the same DID-XXXXXXXX form the vehicle studio uses. */
 export const wallDesignId = (versionId: string) => 'DID-' + versionId.replace(/-/g, '').slice(0, 8).toUpperCase();
 
+/**
+ * THE ORDER NUMBER A CUSTOMER GETS WHEN THEY PAY (owner, 2026-09-16: "once
+ * they pay they must get an order number").
+ *
+ * Until now a paid WallPro purchase left the customer with a sentence —
+ * "Purchase confirmed" — and nothing to quote. The row recorded Stripe's
+ * checkout_session_id and payment_intent_id, which are the processor's
+ * identifiers, not ours: too long to read out, meaningless to the design team,
+ * and wrong to print on anything a customer sees.
+ *
+ * DERIVED, NOT MINTED, exactly as wallDesignId above is. The entitlement row
+ * already has a stable unique id, so the order number is a rendering of an
+ * identity that exists rather than new state that has to be allocated,
+ * migrated, backfilled and kept unique. That matters three ways: it cannot
+ * collide, it cannot fail at the moment of payment (the worst possible moment
+ * to depend on a second write), and EVERY PURCHASE ALREADY MADE has one the
+ * instant this ships -- no migration, nothing to reconcile.
+ *
+ * NO RESTYLEPRO COUNTERPART EXISTS, and RULE 1 asks that be said plainly. The
+ * vehicle side's `orderNumber` is a WePrintWraps shop number that arrives on
+ * the revision snapshot and is only VALIDATED here (the regex lives in
+ * 20260806180200); nothing in this repository has ever minted one. A WallPro
+ * self-serve Stripe purchase has no external order to carry, so this is new by
+ * necessity, and it follows the house form rather than inventing a second one.
+ *
+ * The honest limit: it is not sequential, so it does not answer "how many
+ * orders have we taken" — that is what counting rows is for. It answers the
+ * question an order number is actually for: the customer says WPO-3F8A21C4 and
+ * the team finds that exact payment, for that exact version, in one search.
+ */
+export const wallOrderNumber = (entitlementId: string) => 'WPO-' + entitlementId.replace(/-/g, '').slice(0, 8).toUpperCase();
+
 export type WallTeamJob = WallProductionJob & { project_name: string; version_no: number | null; artwork_path: string | null };
 /** Every customer's production jobs, newest first, with the project name and
  * version number joined in. Readable by admins and testers only (RLS). */
@@ -474,10 +506,19 @@ export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProSt
 
   const projectIds = [...new Set(versions.map(v => v.project_id))];
   const versionIds = versions.map(v => v.id);
-  const [projects, reviews, jobs, urls] = await Promise.all([
+  const [projects, reviews, jobs, entitlements, urls] = await Promise.all([
     projectIds.length ? db.from('wallpro_projects').select('id,name,owner_id,created_at,updated_at').in('id', projectIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_qc_reviews').select('*').in('version_id', versionIds) : Promise.resolve({ data: [], error: null }),
     versionIds.length ? db.from('wallpro_production_jobs').select('*').in('version_id', versionIds).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    // The paid entitlements behind these versions, so the board can show the
+    // order number the customer was given. wallpro_entitlement_team_read
+    // already admits admin and tester, so this needs no migration. It fails
+    // SOFT for the same reason the signing below does: a board that shows
+    // nothing is worse than a board missing one column.
+    versionIds.length
+      ? db.from('wallpro_purchase_entitlements').select('id,version_id,product_type,amount_cents,paid_at').in('version_id', versionIds)
+          .then(r => (r.error ? { data: [], error: null } : r))
+      : Promise.resolve({ data: [], error: null }),
     // Signing is best effort so one unreadable object never empties the board.
     openWallAssets([...new Set([
       ...versions.map(v => v.artwork_path),
@@ -491,6 +532,7 @@ export async function loadWallPanelProStudio(limit = 80): Promise<WallPanelProSt
     generations,
     reviews: (((reviews as any).data || []) as WallQcReview[]),
     jobs: (((jobs as any).data || []) as WallProductionJob[]),
+    entitlements: (((entitlements as any).data || []) as WallProEntitlement[]),
     urls,
   });
 }

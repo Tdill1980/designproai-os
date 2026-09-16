@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   WALL_TARGET_PPI, buildWallPanelProStudio, deliveryMessage, deliveryState, jobIsStale, panelHealth,
   panelMap, validationDueAt, validationHoursLeft, versionStage,
-  wallDesignIdOf, wallForensicRecord,
+  wallDesignIdOf, wallOrderNumberOf, wallForensicRecord,
 } from '../wallpro-panelpro';
 import type { WallQcReview, WallGenerationRow } from '../wallpro-qc';
 
@@ -312,5 +312,54 @@ describe('the human validation window', () => {
   it('says a released pack was checked by a person, not just generated', () => {
     const message = deliveryMessage(readyJob({ released_at: cutAt, released_by: OWNER }))!;
     expect(message.detail).toMatch(/checked by a person/i);
+  });
+});
+
+describe('the order number a customer is given when they pay', () => {
+  // The helper is deliberately duplicated: wallpro-api.ts serves the customer
+  // page and this module builds the board from plain rows without importing
+  // the API layer. Two renderings of ONE payment that disagreed would be worse
+  // than showing none at all -- the customer would read out a number the team
+  // could not find. So the duplication is locked rather than trusted.
+  // Compared at the SOURCE, not by importing wallpro-api: that module builds a
+  // Supabase client on load, which is the very coupling this file exists
+  // without. Reading the expression is also the stricter check -- it convicts a
+  // divergent edit even for inputs a sampled test would never try.
+  it('matches wallpro-api.wallOrderNumber, expression for expression', async () => {
+    const { readFileSync } = await import('node:fs');
+    const bodyOf = (file: string, name: string) => {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const m = src.match(new RegExp(`export const ${name} = \\(\\w+: string\\) =>([^;]+);`));
+      if (!m) throw new Error(`${name} not found in ${file} — if it was renamed, this lock must be renamed with it`);
+      return m[1].replace(/\w+Id/g, 'id').trim();
+    };
+    expect(bodyOf('../wallpro-panelpro.ts', 'wallOrderNumberOf'))
+      .toBe(bodyOf('../wallpro-api.ts', 'wallOrderNumber'));
+  });
+
+  it('is the WPO- form, derived from the entitlement and stable', () => {
+    const id = '3f8a21c4-1111-4111-8111-111111111111';
+    expect(wallOrderNumberOf(id)).toBe('WPO-3F8A21C4');
+    expect(wallOrderNumberOf(id)).toBe(wallOrderNumberOf(id));
+  });
+
+  it('attaches every purchase to its own version, oldest first', () => {
+    const v = version();
+    const studio = build({
+      entitlements: [
+        { id: 'bbbbbbbb-2222-4222-8222-222222222222', version_id: v.id, product_type: 'wallpro_custom_file', amount_cents: 14900, paid_at: at('2026-09-13T10:00:00Z') },
+        { id: 'aaaaaaaa-1111-4111-8111-111111111111', version_id: v.id, product_type: 'wallpro_catalog_file', amount_cents: 7900, paid_at: at('2026-09-12T19:30:00Z') },
+      ],
+    });
+    const record = studio.designs[0].versions[0];
+    expect(record.orders.map(o => o.orderNumber)).toEqual(['WPO-AAAAAAAA', 'WPO-BBBBBBBB']);
+    expect(record.orders[0].amountCents).toBe(7900);
+  });
+
+  // An unpaid design must not invent one, and the board must not crash for the
+  // callers and fixtures that pass no entitlements at all.
+  it('is empty until the customer pays', () => {
+    expect(build().designs[0].versions[0].orders).toEqual([]);
+    expect(build({ entitlements: [] }).designs[0].versions[0].orders).toEqual([]);
   });
 });

@@ -34,7 +34,7 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, wallOrderNumber, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -115,6 +115,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const [freeReason, setFreeReason] = useState<string | null>(null);
   const entitled = entitlements.length > 0;
+  /** Every order number for this version, oldest purchase first — the same
+   *  rendering and the same order the QC board shows, so a customer reading
+   *  one out and a team member searching for it always match. */
+  const orderNumbers = [...entitlements].sort((a, b) => a.paid_at.localeCompare(b.paid_at)).map(e => wallOrderNumber(e.id));
   // Ready-to-sell catalog (WrapReady Designs). A pick never regenerates: it
   // loads the approved master and the placement that master was published for.
   const [catalog, setCatalog] = useState<WallCatalogRow[] | null>(null);
@@ -934,7 +938,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setNotice('Payment received — confirming your entitlement…');
     let attempts = 0;
     const poll = () => wallProEntitlements(currentVersionId).then(rows => {
-      if (rows.length) { setEntitlements(rows); setNotice('Purchase confirmed. Your print-ready wall file can now be produced.'); return; }
+      if (rows.length) {
+        setEntitlements(rows);
+        // THE ORDER NUMBER, AT THE MOMENT OF PAYMENT (owner, 2026-09-16: "once
+        // they pay they must get an order number"). This said "Purchase
+        // confirmed" and nothing else, so a customer who had just paid had
+        // nothing to write down, quote in an email, or read out on the phone --
+        // and the team had nothing to look the payment up by except a Stripe
+        // session id. The oldest entitlement is this version's first purchase,
+        // which is the one the order is filed under.
+        const first = [...rows].sort((a, b) => a.paid_at.localeCompare(b.paid_at))[0];
+        setNotice(`Purchase confirmed — your order number is ${wallOrderNumber(first.id)}. Your print-ready wall file can now be produced.`);
+        return;
+      }
       attempts += 1;
       if (attempts < 6) setTimeout(poll, 2000);
     }).catch(() => {});
@@ -1517,7 +1533,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               <span className="text-xs text-slate-500">1 design token per refinement.</span>
             </div>
             {currentVersionId && (entitled
-              ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs font-semibold text-emerald-900">Print-ready wall file unlocked for this version.</p>
+              ? <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900">
+                  <p className="font-semibold">Print-ready wall file unlocked for this version.</p>
+                  {/* THE ORDER NUMBER STAYS ON SCREEN. The confirmation notice
+                      is transient -- it is gone on the next action and on any
+                      reload -- so a customer who looked away lost the only
+                      thing they had to quote. This reads from the entitlement
+                      itself, so it survives reload, is identical to what the
+                      team sees on the QC board, and needs no state of its own.
+                      Selectable and monospaced, because its whole job is to be
+                      copied into an email. */}
+                  {orderNumbers.length > 0 && <p className="mt-1">
+                    {orderNumbers.length > 1 ? 'Order numbers: ' : 'Order number: '}
+                    {orderNumbers.map((n, i) => <span key={n}>{i > 0 ? ', ' : ''}<span className="select-all font-mono font-semibold">{n}</span></span>)}
+                  </p>}
+                </div>
               : <div className="mt-3 flex items-center gap-2">
                   {/* CHARGE FOR THE PATH THEY TOOK. This button used to send
                       'wallpro_custom_file' and say $149 for EVERY entry path,
