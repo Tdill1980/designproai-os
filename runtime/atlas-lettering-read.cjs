@@ -82,10 +82,21 @@ const MAX_BANDS = 24;
  * not a word: both are dropped before any pixel moves.
  */
 const MIN_BAND_TEXT_CHARS = 2;
-const MAX_BAND_AREA_FRACTION = 0.18;
-const MAX_BAND_WIDTH_FRACTION = 0.6;
+/**
+ * A WORDMARK ACROSS THE FLANK IS LETTERING. Live cc382c3c (911 Turbo,
+ * 2026-09-16): "PRECISION" ran 0.55 of the panel wide and 0.28 tall; with the
+ * reader's 2% pad its box was 0.59 x 0.32 = 0.19 of the panel, over the old
+ * 0.18 area cap, so the band was dropped on shape, the read reported no
+ * lettering, the passenger shipped reversed, and the verify read (same cap)
+ * called it verified. RestylePro's own Martini "PORSCHE" spans most of the
+ * flank. The caps now admit a flank-spanning wordmark and refuse only a band
+ * that is effectively the whole panel; the mirror's own flood-fill tightening
+ * cuts a loose big box back to the lettering.
+ */
+const MAX_BAND_AREA_FRACTION = 0.45;
+const MAX_BAND_WIDTH_FRACTION = 0.92;
 const MAX_BAND_HEIGHT_FRACTION = 0.6;
-const MAX_TOTAL_BAND_AREA_FRACTION = 0.4;
+const MAX_TOTAL_BAND_AREA_FRACTION = 0.6;
 const ORIENTATIONS = Object.freeze(["forward", "mirrored", "vertical", "unknown"]);
 const SURFACES = Object.freeze(["driver", "passenger"]);
 /** Two bands describing the same lettering overlap at least this much. */
@@ -211,7 +222,11 @@ function normalizeBand(raw) {
   // sheet reads as digits, so it is refused on shape below; stripes and
   // graphics with no letters at all are refused here.
   if ((text.match(/[A-Za-z0-9]/g) || []).length < MIN_BAND_TEXT_CHARS) return null;
-  if (width > MAX_BAND_WIDTH_FRACTION || height > MAX_BAND_HEIGHT_FRACTION || width * height > MAX_BAND_AREA_FRACTION) return null;
+  if (width > MAX_BAND_WIDTH_FRACTION || height > MAX_BAND_HEIGHT_FRACTION || width * height > MAX_BAND_AREA_FRACTION) {
+    // Readable lettering the reader could not bound: not a band, but not
+    // nothing either. The caller must never report it as "no lettering".
+    return { oversized: { wPct: width, hPct: height, text, orientation } };
+  }
   return {
     xPct: left, yPct: top, wPct: width, hPct: height,
     text,
@@ -270,10 +285,13 @@ function parseLetteringRead(payload, inspectionId) {
   if (!Array.isArray(parsed?.bands)) {
     throw new AtlasLetteringReadError("atlas_lettering_bands_invalid", "Reader returned no bands array");
   }
-  const bands = boundTotalArea(collapseContainedBands(parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean)));
+  const normalized = parsed.bands.slice(0, MAX_BANDS).map(normalizeBand).filter(Boolean);
+  const oversized = normalized.filter((band) => band.oversized).map((band) => band.oversized);
+  const bands = boundTotalArea(collapseContainedBands(normalized.filter((band) => !band.oversized)));
   const confidence = Number(parsed?.confidence);
   return {
     bands,
+    oversized,
     confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : null,
   };
 }
@@ -282,8 +300,10 @@ function parseLetteringRead(payload, inspectionId) {
  * Read every lettering band on one flank panel.
  *
  * Returns a receipt, never throws:
- *   { contract, surface, status: "read"|"unavailable", bands, confidence,
- *     model, panelSha256, code, reason }
+ *   { contract, surface, status: "read"|"unavailable", bands, oversized,
+ *     confidence, model, panelSha256, code, reason }
+ *   `oversized` lists readable lettering the reader boxed beyond the size
+ *   caps (text, orientation, size) -- seen, not bounded, never "none".
  */
 async function readPanelLettering({
   provider, panelBytes, surface, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal,
@@ -341,6 +361,7 @@ async function readPanelLettering({
       model: result?.model || model,
       status: "read",
       bands: read.bands,
+      oversized: read.oversized,
       confidence: read.confidence,
       code: null,
       reason: null,

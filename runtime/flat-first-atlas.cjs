@@ -2730,6 +2730,7 @@ async function composePassengerFromDriver({
   let letteringSource = null;
   let letteringReadFailure = null;
   let letteringBands = [];
+  let letteringOversized = [];
   const bandReceipt = (band) => ({
     text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
     x: Number(Number(band?.xPct).toFixed(3)), y: Number(Number(band?.yPct).toFixed(3)),
@@ -2751,6 +2752,10 @@ async function composePassengerFromDriver({
       brandBands = driverRead.bands;
       letteringSource = LETTERING_READ_CONTRACT;
       letteringBands = driverRead.bands.map(bandReceipt);
+      letteringOversized = (driverRead.oversized || []).map((band) => ({
+        text: String(band?.text || "").slice(0, 40), orientation: band?.orientation || null,
+        w: Number(Number(band?.wPct).toFixed(3)), h: Number(Number(band?.hPct).toFixed(3)),
+      }));
     } else if (!Buffer.isBuffer(guideBytes)) {
       letteringReadFailure = { code: driverRead.code, reason: String(driverRead.reason || "").slice(0, 300) };
       logger(`passenger mirror: driver lettering read unavailable (${driverRead.code}: ${driverRead.reason}) and no guide for the sheet read`);
@@ -2783,9 +2788,18 @@ async function composePassengerFromDriver({
       // it is indistinguishable from "the reader could not see them". Mirroring
       // there is what puts a reversed company name on a customer's vehicle.
       if (!brandBands.length) {
-        const declined = declineOrMirror("brand_bands_not_located");
-        if (declined) return declined;
-        letteringRead = "none_located";
+        // Lettering the reader SAW but could not bound (over the size caps) is
+        // the same dangerous case with a positive finding attached: live
+        // cc382c3c shipped "PRECISION" reversed this way.
+        if (letteringOversized.length) {
+          const declined = declineOrMirror("brand_bands_oversized");
+          if (declined) return declined;
+          letteringRead = "oversized_unbounded";
+        } else {
+          const declined = declineOrMirror("brand_bands_not_located");
+          if (declined) return declined;
+          letteringRead = "none_located";
+        }
       }
     }
   }
@@ -2820,6 +2834,16 @@ async function composePassengerFromDriver({
           break;
         }
         letteringVerify.reads = read;
+        const reversedOversized = (verify.oversized || []).filter((band) => band?.orientation === "mirrored");
+        if (reversedOversized.length) {
+          // A reversed wordmark the reader could not bound cannot be corrected
+          // (no rect to re-drop) and cannot be called verified: it is a
+          // positive finding of reversed lettering.
+          letteringVerify.status = "unresolved";
+          letteringVerify.code = "reversed_lettering_oversized";
+          letteringVerify.reason = `reversed lettering too large to bound: ${reversedOversized.map((band) => String(band.text || "").slice(0, 24)).join(", ")}`.slice(0, 300);
+          break;
+        }
         const reversed = mirroredBandsToDriverSpace(verify.bands);
         letteringVerify.mirroredFound.push(reversed.length);
         letteringVerify.mirroredBands = [...(letteringVerify.mirroredBands || []), ...reversed.map(bandReceipt)];
@@ -2854,6 +2878,7 @@ async function composePassengerFromDriver({
       letteringSource,
       letteringReadFailure,
       letteringBands,
+      letteringOversized,
       letteringVerify,
       reason: null,
     };
