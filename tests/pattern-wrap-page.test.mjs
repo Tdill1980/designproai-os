@@ -30,6 +30,14 @@ const RENDER_FN = stripComments(read("supabase/functions/generate-pattern-render
 const CONFIG = read("supabase/config.toml");
 const MIGRATION = "supabase/migrations/20260915090000_patternpro_wbty_products.sql";
 
+test("the DesignProAI brand carries the same hero and no partner name — owner: 'like this without WPW'", () => {
+  const designpro = BRAND.slice(BRAND.indexOf("  designpro: {"), BRAND.indexOf("  weprintwraps: {"));
+  assert.ok(designpro.includes("hero: HERO,"));
+  assert.ok(!/weprintwraps|wpw/i.test(designpro.replace(/\/\/[^\n]*/g, "")), "no WPW in the DesignProAI brand");
+  assert.ok(PAGE.includes("{theme.lede}") && PAGE.includes("theme.chips.map") && PAGE.includes("{theme.eyebrowLine}"));
+  assert.ok(!/WePrintWraps/.test(stripComments(PAGE)), "the page holds no partner copy of its own");
+});
+
 test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone to os.designpro'", () => {
   const nav = read("app/src/lib/dashboard-nav.ts");
   assert.ok(nav.includes('key: "patternpro",'));
@@ -39,7 +47,14 @@ test("PatternPro is in the OS navigation — owner: 'PatternPro should have gone
 
 test("/pattern-wrap and /printpro/patternpro are routed to the ONE PatternWrap page", () => {
   assert.ok(APP.includes('const PatternWrap = lazyWithRetry(() => import("./pages/PatternWrap"));'));
-  assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PatternWrap brand="weprintwraps" />} />'));
+  // The WPW-branded page renders only on the WePrintWraps host; on a
+  // DesignProAI host the address hands off to the DesignProAI-branded tool
+  // (owner, 2026-09-16: "why is the PatternPro with headers on the os.designproai").
+  assert.ok(APP.includes('<Route path="/pattern-wrap" element={<PartnerPatternWrap />} />'));
+  const partner = APP.slice(APP.indexOf("const PartnerPatternWrap"), APP.indexOf("const HideOnCustomerProof"));
+  assert.ok(partner.includes("isWallProPartnerHost(hostname)"));
+  assert.ok(partner.includes('<PatternWrap brand="weprintwraps" />'));
+  assert.ok(partner.includes('<Navigate to="/printpro/patternpro" replace />'));
   assert.ok(APP.includes('<Route path="/printpro/patternpro" element={<PatternWrap />} />'));
 });
 
