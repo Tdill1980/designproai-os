@@ -856,6 +856,63 @@ resolve that trade by relaxing `edgeHoleRatio` or adding wheel-well negatives �
 RULE 0.32 forbids both by name. The resolution is hero-first (RULE 0.37), which
 is a build.
 
+### THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY. DO NOT MIRROR IT. (2026-09-16)
+
+**Owner: "Fix passenger we never had this issue before."** She is right, and the
+history is exact. `composePassengerFromDriver` was added on **2026-09-07**
+(`acbfffb1`). Before that date Passenger was authored artwork — which is what
+the two standing rules that PREDATE it both require:
+
+| rule | date | wording |
+|---|---|---|
+| RULE 0.33 | 09-02 | "Passenger is its own territory, never mirrored Driver." |
+| RULE 0 | 08-17 | "Passenger is its own named Call-1 authority and must never be replaced by mirrored Driver pixels." |
+
+On `field-thirds-v2` the passenger is **`third-2`** — its own band of the sheet,
+composed by the model in the same pass as the driver — and the field tail
+already demands that every area *"read on its own as intentional, finished,
+commercially valuable artwork"* with lettering *"whole and legible"* reading left
+to right. **A field passenger therefore has forward type BY CONSTRUCTION**, and
+mirroring it throws away authored artwork to solve a problem that contract does
+not have.
+
+Every passenger defect since 09-07 is downstream of mirroring it anyway:
+`8eec8162` reversed PORSCHE, `9789762d` pasted seven raw stripe patches over
+mirrored artwork, `cc382c3c` certified a flank the reader could not see, and
+`8c525565` shipped a doubled reversed lockup onto a 150-PPI print panel. **Four
+defects, four fixes to the READER, and the reader was never the cause.**
+
+`composePassengerFromDriver` now declines immediately on the field topology
+(`field_passenger_is_its_own_territory`) — **before spending a single lettering
+read**, so this is latency as well as correctness. The mirror is NOT deleted: it
+is kept for six-surface and hero-driver, where both flanks come off one
+composition and the model has measurably drifted or reversed them (canaries
+`6c1bfae6`, `cad013e1`). Locked by `tests/atlas-passenger-composition-executes.test.mjs`,
+whose field case was verified to fail against the pre-fix runtime while the
+six-surface case still passes — the decline is scoped, not a blanket disabling.
+
+**Everything RULE 0.36 built stays**, and stays load-bearing on the contracts
+that still mirror. What changed is only which contract it is allowed to touch.
+
+### 45% OF CALL 1 WAS ATTRIBUTED TO NOTHING (2026-09-16)
+
+Canary `8c525565`, from its own receipt: `totalMs` **105,526**, `authoringMs`
+**42,311**. The image call is **40%** of Call 1. The named buckets summed to
+58,230, leaving **47,296 ms — 45% of the wall clock — measured by nothing**, and
+two Gemini Flash stages lived inside that gap untimed: the output-class
+inspector (one call, now two when a repair re-classifies) and the passenger
+composition (up to THREE panel reads plus 4096-square crops).
+
+`outputClassMs`, `passengerMirrorMs` and a computed `unattributedMs` are now on
+`callOneTimings`, so "where does Call 1 spend its time" is a query rather than a
+stopwatch held against a browser tab. A resumed run does not bill itself again
+for a mirror it recovered.
+
+Measured end to end on that run: request → durable master **112.09 s**,
+request → Driver proof **154.48 s**. The SLO is 60 s / 90 s on a first-attempt
+run, so a clean run is currently **~1.9x over** — and that was with ONE image
+call, no refusals.
+
 ### A LOST LEASE IS WHAT THE DATABASE SAYS, NOT WHAT THE NETWORK DID (2026-09-16, canary 8c525565)
 
 **The first run to reach the back half died at the last mile.** Call 1 accepted
@@ -929,12 +986,42 @@ judging a run's topology.
 
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
-- **The field topology still paints layout marks into the artwork after v26** —
-  3 of 3 recent 911 runs (`455b1723`, `7c7bd633`, `cc382c3c`). Prompt wording
-  does not stop it. The remedy identified but NOT in the repo: a blocking
-  `map_drawn` verdict in the output-class inspector, so such a sheet re-authors
-  and fails over to six-surface. The branch carrying it was never pushed and is
-  lost; rebuild it rather than re-deriving the diagnosis.
+- **The field topology paints its own layout map into the artwork, and the
+  `map_drawn` gate now refuses it (2026-09-16).** Four runs in a row —
+  `455b1723`, `7c7bd633`, `cc382c3c` and `8c525565` — printed the panel
+  fractions onto the flanks, and 8c525565's went through Topaz onto 150-PPI
+  print panels: `0.9114 0.3` and `884 0.0000` printed on the customer's driver
+  side.
+
+  **The cause is in the request, not the model.** `atlasFieldContract`
+  (`design-panel-ai-generate/index.ts`) emits the six rectangles as bare
+  four-decimal rows and then says *"None of the map is drawn: the vinyl carries
+  no numbers, outlines or frames of any kind."* A negative instruction standing
+  next to the very thing it forbids is the prompt shape this file warns about
+  in three other places, and it has now failed 4/4. **The rows are load-bearing**
+  — they exist because the lower band alone discarded 27.81% of what was painted
+  and the cut stopped matching the composition — so they are not simply deleted,
+  and RULE 0.37 forbids arguing with that tail without a side-by-side.
+
+  So the gate is the remedy that ships: `map_drawn` is a third blocking verdict
+  in `runtime/atlas-output-class.cjs`, refusing under its own code
+  `flat_atlas_master_map_drawn` so the ledger and its digest can tell "drew a
+  truck" from "drew the map". It re-rolls within the bounded budget and then
+  changes contract under RULE 0.38, so the customer still gets a design.
+
+  **It is deliberately narrow, because a commercial wrap is EXPECTED to carry a
+  phone number.** The verdict convicts a decimal fraction of the sheet dropped
+  onto the picture — a leading zero and a point, small, plain, at a rectangle's
+  edge, belonging to no part of the artwork — plus registration crosses, corner
+  ticks and drawn frames. A telephone number, address, web address, year, price
+  or race number set in the artwork's own typeface is `flat_atlas`. The
+  discriminator is the FORM of the numerals, never their presence. Locked by
+  `tests/atlas-output-class-gate.test.mjs`, which pins that guard by name.
+
+  **The gate catches it; it does not prevent it.** The prevention is hero-first
+  (RULE 0.37): a per-surface authoring pass needs no coordinate table at all,
+  so there is no map to draw. Until that is built, expect field runs to spend
+  refusals here.
 - **The auto dark deploy only runs when the merge commit message contains the
   literal `[dark-deploy]`.** Every other merge must be dispatched with
   `exact_sha`. A green gate is not a deploy.

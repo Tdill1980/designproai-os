@@ -37,6 +37,9 @@
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
 
+// A refusing verdict. `flat_atlas` is the only acceptance; an inspector that
+// cannot answer is `unavailable` and never blocks (RULE 0.30).
+const BLOCKING_CLASSES = new Set(["vehicle_depiction", "map_drawn"]);
 const OUTPUT_CLASS_CONTRACT = "designpro.atlas-output-class-gate.v1";
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 45_000;
@@ -80,7 +83,12 @@ function outputClassPrompt(inspectionId) {
     "",
     "flat_atlas requires EVERY rectangle to read as continuous print artwork edge to edge, with no vehicle-shaped boundary between artwork and surround and no vehicle anatomy anywhere on the sheet. If ANY rectangle shows anatomy, answer vehicle_depiction and name that rectangle in the evidence.",
     "",
-    `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction","confidence":0..1,"anatomyRectangles":0..12,"evidence":"one short sentence naming what you see"}`,
+    "",
+    "CLASS map_drawn — the sheet has the LAYOUT MAP painted into the artwork. The authoring request states the panel rectangles as bare decimal fractions of the image (for example `0.0293 0.6665 0.5413 0.8025`), and on some sheets those digits are rendered as ink. Answer map_drawn when you can see, printed on the artwork: bare decimal numbers written as a leading zero and a point (0.9114, 0.3, 0.0000), or short unlabelled rows or pairs of such numbers, usually small, in a plain typeface, sitting at a rectangle's edge or corner and belonging to no part of the artwork. Also map_drawn: printed registration crosses, corner ticks, dimension arrows or a drawn frame around a rectangle.",
+    "",
+    "NOT map_drawn, and this distinction is the whole point: real lettering the customer asked for is artwork. A telephone number, a street address, a web address, a year, a founding date, a price, a race number, a model name, a measurement inside a logo lockup, or any word or numeral set in the artwork's own typeface and composed as part of it is `flat_atlas`. A commercial wrap is EXPECTED to carry a phone number. Judge by whether the numerals are a decimal fraction of the sheet dropped on top of the picture, not by whether numerals are present.",
+    "",
+    `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction"|"map_drawn","confidence":0..1,"anatomyRectangles":0..12,"evidence":"one short sentence naming what you see"}`,
   ].join("\n");
 }
 
@@ -113,7 +121,7 @@ function parseVerdict(payload, inspectionId) {
     throw new AtlasOutputClassError("atlas_output_class_inspection_mismatch", "Inspector answered for different bytes");
   }
   const outputClass = String(parsed?.outputClass || "");
-  if (outputClass !== "flat_atlas" && outputClass !== "vehicle_depiction") {
+  if (!BLOCKING_CLASSES.has(outputClass) && outputClass !== "flat_atlas") {
     throw new AtlasOutputClassError("atlas_output_class_verdict_invalid", `Unknown outputClass ${cleanText(outputClass, 60)}`);
   }
   const confidence = Number(parsed?.confidence);
@@ -127,10 +135,26 @@ function parseVerdict(payload, inspectionId) {
 }
 
 /**
- * Classify one Call-1 candidate. Returns a durable receipt:
- *   { contract, disposition: "flat_atlas"|"vehicle_depiction"|"unavailable",
+ * THE TWO VERDICTS THAT REFUSE A SHEET.
+ *
+ * `vehicle_depiction` is the original: Call 1 answered with a picture of a
+ * vehicle instead of printed media.
+ *
+ * `map_drawn` is the 2026-09-16 addition, and it convicts a defect the prompt
+ * has failed to prevent four times running. The FIELD contract hands the
+ * designer its six panel rectangles as bare four-decimal fractions and then
+ * says "None of the map is drawn: the vinyl carries no numbers" -- a negative
+ * instruction standing next to the very thing it forbids, which is the prompt
+ * shape this codebase already knows Gemini over-indexes on. Runs 455b1723,
+ * 7c7bd633, cc382c3c and 8c525565 all printed those digits onto the flanks,
+ * and 8c525565's went all the way through Topaz onto 150-PPI print panels.
+ * Wording did not stop it; only refusing the sheet does.
+ *
+ * Returns a durable receipt:
+ *   { contract, disposition: "flat_atlas"|"vehicle_depiction"|"map_drawn"|"unavailable",
  *     blocking, confidence, evidence, model, code, reason, candidateSha256 }
- * `blocking === true` ONLY for an explicit vehicle_depiction verdict.
+ * `blocking === true` for an explicit verdict in BLOCKING_CLASSES; an
+ * inspector outage still fails OPEN, exactly as before.
  */
 async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
   const candidateSha256 = sha256(bytes);
@@ -170,7 +194,7 @@ async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, 
     return {
       ...base,
       disposition: verdict.outputClass,
-      blocking: verdict.outputClass === "vehicle_depiction",
+      blocking: BLOCKING_CLASSES.has(verdict.outputClass),
       confidence: verdict.confidence,
       anatomyRectangles: verdict.anatomyRectangles,
       evidence: verdict.evidence,
@@ -184,6 +208,7 @@ async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, 
 
 module.exports = {
   OUTPUT_CLASS_CONTRACT,
+  BLOCKING_CLASSES,
   AtlasOutputClassError,
   classifyAtlasCandidate,
   outputClassPrompt,
