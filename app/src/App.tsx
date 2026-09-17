@@ -230,7 +230,13 @@ const HostAwareRoot = () => {
   // for the wall wrap page, not a DesignProAI dashboard or a login wall. Every
   // other route still resolves normally on that host, so /printpro/wallpro is
   // the designer and existing deep links keep working.
-  if (isWallProPartnerHost(hostname)) return <WallPro brand="weprintwraps" />;
+  // THE PARTNER'S FRONT DOOR IS THEIR LANDING, not the bare tool (2026-09-17).
+  // /wall-wrap became the landing and this line still returned the tool, so the
+  // same brand would have behaved two different ways depending on whether the
+  // customer arrived by host or by path — the drift the brand-aware page exists
+  // to remove. A domain root serves the landing; the tool is one click in, at
+  // /wallwrap-design, exactly as /wallpro → /printpro/wallpro on this host.
+  if (isWallProPartnerHost(hostname)) return <WallProLanding brand="weprintwraps" />;
   return isDesignProMarketingHost(hostname) ? <Index /> : <AuthedRootRedirect />;
 };
 
