@@ -82,7 +82,7 @@ export function BeforeAfter({ before, after, alt, name }: { before: string; afte
   return <div className="space-y-2">
     <div
       ref={box}
-      className="relative select-none overflow-hidden rounded-xl bg-slate-100"
+      className="relative select-none overflow-hidden rounded-xl bg-[hsl(var(--wall-ground))]"
       style={{ touchAction: 'none' }}
       onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); track(e.clientX); }}
       onPointerMove={e => { if (e.buttons === 1 || e.pointerType === 'touch') track(e.clientX); }}
@@ -128,7 +128,7 @@ export function BeforeAfter({ before, after, alt, name }: { before: string; afte
       <Button size="sm" variant="outline" disabled={exporting} onClick={() => void exportPair()}>
         <Download className="mr-1 h-4 w-4" />{exporting ? 'Building…' : 'Save before & after'}
       </Button>
-      <span className="text-xs text-slate-500">Drag the handle. The after is your real print file on your wall, not an impression.</span>
+      <span className="text-xs wall-muted">Drag the handle. The after is your real print file on your wall, not an impression.</span>
     </div>
     {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-800">{error}</p>}
   </div>;

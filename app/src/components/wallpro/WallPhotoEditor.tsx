@@ -50,7 +50,7 @@ export function WallPhotoEditor(p: Props) {
   let rectanglePreview: Point[] = [];
   if (p.marking === 'rectangle' && p.draft[0] && hover) { try { rectanglePreview = rectangularWallMask(p.draft[0],hover); } catch { /* Pointer has not moved yet. */ } }
   const overlays = p.showMasks || !!p.marking;
-  return <div ref={box} className="relative w-full overflow-hidden rounded-lg bg-slate-100 select-none" style={{ aspectRatio:p.aspect, cursor:p.marking ? 'crosshair' : 'default', touchAction:p.marking ? 'none' : 'auto' }} aria-label="Wall placement photo"
+  return <div ref={box} className="relative w-full overflow-hidden rounded-lg bg-[hsl(var(--wall-ground))] select-none" style={{ aspectRatio:p.aspect, cursor:p.marking ? 'crosshair' : 'default', touchAction:p.marking ? 'none' : 'auto' }} aria-label="Wall placement photo"
     onPointerDown={e => {
       if (p.busy || !p.marking) return; e.preventDefault();
       const next=point(e); e.currentTarget.setPointerCapture(e.pointerId);

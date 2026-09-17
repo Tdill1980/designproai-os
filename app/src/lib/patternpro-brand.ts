@@ -17,6 +17,16 @@ import { WPW_PRODUCT_URLS } from '@/data/patternpro-patterns';
 export type PatternBrandKey = 'designpro' | 'weprintwraps';
 
 export type PatternBrand = LockupBrand & {
+  /**
+   * Which surface token set this brand resolves (index.css `[data-wall-theme]`).
+   *
+   * Owner, 2026-09-17: "a WPW x WallPro, and a WPW x PatternPro, both light UI.
+   * Then a dark navy with charcoal ui for standard WallPro, and PatternPro."
+   *
+   * It is the SAME token set WallPro uses, deliberately: two tools sitting
+   * beside each other in one sidebar must be one dark, not two.
+   */
+  surface: 'light' | 'dark';
   /** The hero beside the headline: a real PatternPro render, and the swatch it was made from. */
   hero: { main: string; swatch: string; alt: string; swatchAlt: string } | null;
   /** The eyebrow above the headline. */
@@ -84,6 +94,8 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     lede: 'Choose one of 118 real patterns, enter any year, make and model, and see it wrapped in 3D. PatternPro tells you the yards a full wrap takes, and you order the printed film right here. $95.50 a yard on a 60″ roll, printed and laminated.',
     chips: ['118 patterns', '5 collections', '60″ Avery film', 'Yards calculated for you', 'Printed & laminated'],
     orderFilmUrls: null,
+    // Dark navy + charcoal: this page is mounted inside the OS shell.
+    surface: 'dark',
   },
   weprintwraps: {
     // The same vendored mark WallPro's partner header uses (app/public/).
@@ -100,6 +112,8 @@ export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
     // The five WooCommerce product pages, one per collection — the same
     // table the cart link resolves through.
     orderFilmUrls: WPW_PRODUCT_URLS,
+    // Light: a retail storefront the partner sends its own customers to.
+    surface: 'light',
   },
 };
 

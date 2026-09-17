@@ -67,7 +67,13 @@ test("the partner page renders standalone — no DesignProAI chrome on a WePrint
 
 test("it is the SAME PatternPro tool under a white skin — never a second tool", () => {
   assert.ok(PAGE.includes("import { WBTYToolUI } from '@/components/productTools/WBTYToolUI';"));
-  assert.ok(PAGE.includes('<section className="wpw-white pb-16">'));
+  // THE SKIN NOW RIDES THE BRAND (owner, 2026-09-17: "a dark navy with charcoal
+  // ui for standard WallPro, and PatternPro"). It was unconditional, which is
+  // exactly why the DesignProAI page came out light. The point this test
+  // protects is unchanged and is the important half: there is ONE tool, and the
+  // partner's light storefront is a skin over it rather than a second copy.
+  // Dropping the skin returns the shared tool to the dark it was written in.
+  assert.ok(PAGE.includes("theme.surface === 'light' ? 'wpw-white' : ''"));
   assert.ok(PAGE.includes("<WBTYToolUI />"));
   assert.ok(PAGE.includes("import './PatternWrap.css';"));
   for (const cls of [".bg-zinc-800", ".bg-zinc-700", ".border-zinc-600", ".text-white", ".text-muted-foreground", "input"]) {
@@ -77,8 +83,12 @@ test("it is the SAME PatternPro tool under a white skin — never a second tool"
   assert.ok(BRAND.includes("export const PATTERN_BLUE_GRADIENT = 'linear-gradient(90deg, #2f7ff7, #174a91)';"));
 });
 
-test("white surface, blue gradient accent, the WPW mark in the lockup, wordmark top-left, a render on the right", () => {
-  assert.ok(PAGE.includes('className="pattern-wrap min-h-screen bg-white text-gray-900"'));
+test("themed surface, blue gradient accent, the WPW mark in the lockup, wordmark top-left, a render on the right", () => {
+  // The page ground is a TOKEN now, not a literal: light on the partner brand,
+  // dark navy on DesignProAI, from the one set in index.css that WallPro reads
+  // too. Locked in detail by tests/printpro-surface-theme.test.mjs.
+  assert.ok(PAGE.includes('data-wall-theme={theme.surface}'));
+  assert.ok(PAGE.includes('className="pattern-wrap min-h-screen wall-ground wall-ink"'));
   assert.ok(PAGE.includes("import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';"));
   assert.ok(PAGE.includes("<WallProLockup theme={theme} />"));
   assert.ok(PAGE.includes('className="sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4"'));

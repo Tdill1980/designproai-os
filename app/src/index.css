@@ -1088,3 +1088,96 @@ p {
   border-color: hsl(var(--primary) / 0.5);
   box-shadow: 0 4px 20px -4px hsl(var(--primary) / 0.15);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRINTPRO SURFACE THEME — light for the partner, dark navy for DesignProAI.
+   Used by BOTH WallPro and PatternPro: one token set, so the two tools cannot
+   drift into two different darks.
+
+   Owner, 2026-09-17: "the system should have a light ui for WPW x Wallpro and
+   a dark for standard wallpro."
+
+   WHY TOKENS AND NOT TWO PAGES. The WallPro page is ONE component worn by two
+   brands (wallpro-brand.ts). A second dark copy is how the partner quietly
+   gets the older tool, which is the exact failure that file was written to
+   prevent. So the colours become variables, the page root declares which set
+   is in force, and every surface reads the same names on both domains.
+
+   WHY CSS VARIABLES AND NOT TAILWIND CLASS SWAPS. The alternative is a
+   conditional class at every colour site -- roughly 190 of them across the
+   page and its fourteen components. That is 190 chances to miss one, and a
+   missed one is white text on white in the dark theme. Here a surface names
+   what it IS (`wall-card`, `wall-muted`) and the theme decides what that
+   looks like, so a new panel is themed the day it is written.
+
+   The scope is the attribute on the page root, never `:root`, because the OS
+   shell around it has its own palette and must not move.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-wall-theme] {
+  /* Light is the default set: the partner page, unchanged from what shipped. */
+  --wall-ground: 210 40% 96%;      /* the page behind the cards */
+  --wall-card: 0 0% 100%;          /* a panel sitting on it */
+  --wall-card-edge: 214 32% 91%;   /* its border */
+  --wall-ink: 222 47% 11%;         /* headings and body */
+  --wall-ink-soft: 215 16% 47%;    /* secondary copy, captions, help text */
+  --wall-field: 0 0% 100%;         /* inputs, dropzones, wells */
+  --wall-shadow: 15 23 42;         /* rgb triplet for the card lift */
+  --wall-shadow-close: 0.06;
+  --wall-shadow-wide: 0.18;
+}
+
+[data-wall-theme="dark"] {
+  /* DARK NAVY GROUND, CHARCOAL CARDS (owner, 2026-09-17: "a dark navy with
+     charcoal ui for standard WallPro, and PatternPro").
+
+     The two are deliberately different hues, not one colour at two
+     brightnesses. The ground keeps real navy saturation so it reads as the
+     product's own blue rather than as "black"; the card drops most of that
+     saturation to a near-neutral charcoal, which is what makes a panel look
+     like a surface laid ON the page instead of a lighter patch of it. A
+     monochrome pair at these luminances reads as a rendering artifact.
+
+     The card is LIGHTER than the ground here for the same reason it is in the
+     light theme: a panel reads as an object only when it separates from what
+     it sits on. */
+  --wall-ground: 222 55% 8%;       /* navy */
+  --wall-card: 220 14% 15%;        /* charcoal, saturation pulled out */
+  --wall-card-edge: 218 14% 25%;
+  --wall-ink: 210 40% 98%;
+  --wall-ink-soft: 215 16% 74%;    /* ~7:1 on the charcoal card */
+  --wall-field: 222 30% 11%;       /* a well is DARKER than its card, as a hole should be */
+  /* Shadow cannot do the work on a dark page -- black on near-black is
+     invisible -- so the lift comes from the edge, and the shadow only deepens
+     the seat. */
+  --wall-shadow: 0 0 0;
+  --wall-shadow-close: 0.5;
+  --wall-shadow-wide: 0.6;
+}
+
+/* The semantic surfaces. Every WallPro panel uses these instead of a literal
+   colour, which is what makes the two themes one code path. */
+.wall-ground { background-color: hsl(var(--wall-ground)); }
+.wall-ink { color: hsl(var(--wall-ink)); }
+.wall-muted { color: hsl(var(--wall-ink-soft)); }
+.wall-edge { border-color: hsl(var(--wall-card-edge)); }
+.wall-field {
+  background-color: hsl(var(--wall-field));
+  border-color: hsl(var(--wall-card-edge));
+  color: hsl(var(--wall-ink));
+}
+
+.wall-card {
+  border-radius: 1rem;
+  border: 1px solid hsl(var(--wall-card-edge));
+  background-color: hsl(var(--wall-card));
+  color: hsl(var(--wall-ink));
+  padding: 1.25rem;
+  box-shadow:
+    0 1px 2px rgba(var(--wall-shadow) / var(--wall-shadow-close)),
+    0 10px 28px -12px rgba(var(--wall-shadow) / var(--wall-shadow-wide));
+}
+
+/* A placeholder has to follow the theme too, or the dark dropzone prompts in
+   near-black on near-black. */
+[data-wall-theme] ::placeholder { color: hsl(var(--wall-ink-soft)); opacity: 1; }

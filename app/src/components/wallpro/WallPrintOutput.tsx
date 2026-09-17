@@ -17,7 +17,7 @@ type Props = {
   busy: boolean; run: (label: string, action: () => Promise<void>) => Promise<void>;
 };
 type Downloads = { signature: string; filename: string; url: string; files: { name: string; url: string }[]; panels: number };
-const fieldClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
+const fieldClass = 'mt-1 w-full rounded-lg border wall-edge bg-[hsl(var(--wall-card))] px-3 py-2 text-sm wall-ink';
 
 export function WallPrintOutput({ artwork, name, projectId, layout, seamless, settings, onSettings, busy, run }: Props) {
   const [pixels, setPixels] = useState<{ url: string; width: number; height: number } | null>(null);
@@ -97,21 +97,21 @@ export function WallPrintOutput({ artwork, name, projectId, layout, seamless, se
         whole plan follows from, on the card that tells the customer what they
         bought. WALLPRO_PRINT_WIDTH is the press width and the runtime's
         DEFAULTS.panelWidthIn matches it; quoting it here keeps that true. */}
-    <p className="mt-2 text-sm text-slate-600">Full-size PDF panels, a wall master and an installation sheet. Every panel stays within the {WALLPRO_PRINT_WIDTH}″ print width, including bleed and overlap.</p>
+    <p className="mt-2 text-sm wall-muted">Full-size PDF panels, a wall master and an installation sheet. Every panel stays within the {WALLPRO_PRINT_WIDTH}″ print width, including bleed and overlap.</p>
     <fieldset disabled={busy} className="mt-4 grid gap-3 sm:grid-cols-3">
       <label className="text-sm">Perimeter bleed (inches)<input className={fieldClass} type="number" min="0" max="5" step="0.125" value={settings.bleed} onChange={e => onSettings({ ...settings, bleed: Number(e.target.value) })} /></label>
       <label className="text-sm">Panel overlap (inches)<input className={fieldClass} type="number" min="0" max="5" step="0.125" value={settings.overlap} onChange={e => onSettings({ ...settings, overlap: Number(e.target.value) })} /></label>
       <label className="text-sm">Minimum source PPI<select className={fieldClass} value={settings.minPpi} onChange={e => onSettings({ ...settings, minPpi: Number(e.target.value) })}>{[72, 100, 150, 200, 300, 600].map(value => <option key={value} value={value}>{value} PPI</option>)}</select></label>
     </fieldset>
-    <p className="mt-2 text-xs text-slate-500">Bleed extends the outside perimeter. Overlap duplicates artwork at each seam. RGB output: apply your printer/media profile in the RIP. Windows and object masks affect the room preview; print panels remain continuous for trimming on site.</p>
-    {!artwork && <p className="mt-4 text-sm text-slate-600">Upload artwork or generate a design to check print resolution.</p>}
+    <p className="mt-2 text-xs wall-muted">Bleed extends the outside perimeter. Overlap duplicates artwork at each seam. RGB output: apply your printer/media profile in the RIP. Windows and object masks affect the room preview; print panels remain continuous for trimming on site.</p>
+    {!artwork && <p className="mt-4 text-sm wall-muted">Upload artwork or generate a design to check print resolution.</p>}
     {problem && <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{problem}</p>}
-    {check && <div className="mt-4 space-y-2 rounded-xl border border-slate-200 p-4 text-sm">
+    {check && <div className="mt-4 space-y-2 rounded-xl border wall-edge p-4 text-sm">
       <p><strong>Source:</strong> {pixels?.width.toLocaleString()} × {pixels?.height.toLocaleString()} pixels · {check.ppi.toFixed(1)} PPI at the chosen size.</p>
       <p><strong>Output:</strong> {check.plan.panels.length} panels · {check.plan.bounds.height}″ printed height · final panel {check.plan.panels.at(-1)?.width}″ wide.</p>
       <p><strong>PDF widths:</strong> {check.plan.panels.map(p => p.width + '″').join(' + ')}</p>
       {check.ready ? <p className="font-medium text-emerald-700">Dimensions and source resolution pass the selected print settings.</p> : check.blockers.map(message => <p key={message} role="alert" className="text-red-700">{message}</p>)}
-      {layout.mode === 'repeat' && (seamBlocker ? <p role={seamless && !seamless.verified ? 'alert' : 'status'} className={seamless && !seamless.verified ? 'text-red-700' : 'text-slate-600'}>{seamBlocker}</p>
+      {layout.mode === 'repeat' && (seamBlocker ? <p role={seamless && !seamless.verified ? 'alert' : 'status'} className={seamless && !seamless.verified ? 'text-red-700' : 'wall-muted'}>{seamBlocker}</p>
         : <p className="font-medium text-emerald-700"><strong>Seam:</strong> {seamless?.method === 'mirror' ? 'mirror repeat, joins identical by construction.' : `verified to join (${(seamless?.after ?? seamless?.before)?.ratio.toFixed(2)}× the neighbouring pixel step${seamless?.method === 'blend' ? ', after deterministic seam blend' : ''}).`}</p>)}
       {!check.ready && <p>Required source at this placement: at least {check.requiredPixels.width.toLocaleString()} × {check.requiredPixels.height.toLocaleString()} pixels.</p>}
       {layout.mode === 'contain' && <p className="text-amber-800">Fit whole artwork prints white margins where the artwork does not cover the wall.</p>}
