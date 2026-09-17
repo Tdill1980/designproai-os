@@ -135,10 +135,21 @@ entry — the clean-base instruction is judged on a real run against the
 
 ### 4.3 `contact.produce`
 
-Same producer and envelope, `role: "contact"`. Input is the **verified** contact
-lines only (`phone`, `url`, `city`). **A line the customer did not supply is
-never rendered** — the contact-invention lock becomes an input assertion instead
-of prompt text, because an element node cannot hallucinate.
+Same producer and envelope, its own node and its own root, `role: "contact"`,
+set in the contact face rather than the display face.
+
+`contactLinesFrom()` reads **`phone` and `website` and nothing else** — those are
+the only contact fields the input contract carries
+(`designpro.calls-1-7-input.v3`), so a city line is never conjured to balance the
+bar. **A line the customer did not supply cannot exist**: the node sets the exact
+strings its row carries, and there is no path from the brief to the canvas that
+does not go through that input. This replaces the prompt sentence asking the
+model not to invent a phone number or a web address — a sentence that has needed
+fixing before, at the phone-missing / website-supplied hole, which is now a
+test case.
+
+A brief with contact details but no company name still gets its bar; a brief with
+a name and no contact details still gets its lockup.
 
 ### 4.4 `logo.prepare`
 
@@ -194,14 +205,26 @@ own absence before it is called done.
 
 | # | chunk | status |
 |---|---|---|
-| 1 | vendor the TTFs + `opentype.js` in `runtime/package.json` + font hash pin | **IN PROGRESS** |
-| 2 | `runtime/atlas-typeset-layer.cjs` + byte-determinism test | pending |
-| 3 | `typeset.produce` node: compiled into the graph, claim, envelope, idempotent re-claim | pending |
-| 4 | `contact.produce` node + the never-invent input assertion | pending |
+| 1 | vendor the TTFs + `opentype.js` in `runtime/package.json` + font hash pin | **done** (`be8d583c`) |
+| 2 | `runtime/atlas-typeset-layer.cjs` + byte-determinism test | **done** (`8768b2f2`) |
+| 3 | `typeset.produce` node: compiled into the graph, claim, envelope, idempotent re-claim | **done** (`a5faf833`, release policy `54ad1039`) |
+| 4 | `contact.produce` node + the never-invent input assertion | **done** |
 | 5 | `logo.prepare` node (pass-through, honest `absent`) | pending |
 | 6 | `element.lockup` placement manifest | pending |
 | 7 | clean-base authoring contract (§4.1) — prompt versions advance together | pending |
 | 8 | `master.composite` + clean master preserved byte-for-byte | pending |
+
+**A CHUNK IS NOT DONE UNTIL THE FULL SUITE IS GREEN, not when its own lock
+passes.** Chunks 1 and 2 passed their own tests and were NOT releasable: the
+release policy (`ops/release-files.txt`) enumerates every runtime file
+individually, so `atlas-typeset-layer.cjs` and its 42 font files would not have
+shipped in the archive — and because that module reads `fonts.json` at REQUIRE
+time while the policy's walk follows `require()` calls and not data reads, the
+faces were invisible to every check. It would have surfaced as a health probe
+timing out after the cutover, with no module name and no stack. Only
+`npm test` caught it. A new runtime file means: `ops/release-files.txt`, the
+count tripwire in `ops/tests/ops-hardening.test.mjs`, and — for a new directory —
+`allowed_directory()` in `ops/validate-archive.py`.
 
 **Rule for every chunk:** no chunk may change a gate threshold, `SURFACE_KEYS`,
 a storage contract, or anything after Call 1. With

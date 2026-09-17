@@ -54,6 +54,7 @@ test("unset means OFF, and off is byte-for-byte today's graph", () => {
   assert.deepEqual(unset, off);
   assert.deepEqual(typo, off, "a typo must not select a customer path");
   assert.ok(!off.some((n) => n.key === graph.TYPESET_NODE));
+  assert.ok(!off.some((n) => n.key === graph.CONTACT_NODE));
   assert.equal(off.length, 8);
 });
 
@@ -73,12 +74,13 @@ test("on, the element node is a ROOT and master's edges do not move", () => {
     assert.ok(same, `${node.key} disappeared`);
     assert.deepEqual(same.dependsOn, node.dependsOn, `${node.key}'s edges moved`);
   }
-  assert.equal(on.length, off.length + 1);
+  assert.equal(on.length, off.length + 2, "typography and contact are separate nodes");
 
   // No surface waits on an element in this chunk; master.composite is chunk 8.
   for (const node of on) {
-    if (node.key !== graph.TYPESET_NODE) {
+    if (node.key !== graph.TYPESET_NODE && node.key !== graph.CONTACT_NODE) {
       assert.ok(!node.dependsOn.includes(graph.TYPESET_NODE), `${node.key} must not wait on the element yet`);
+      assert.ok(!node.dependsOn.includes(graph.CONTACT_NODE), `${node.key} must not wait on the element yet`);
     }
   }
 });
@@ -160,4 +162,84 @@ test("the same brief on two runs resolves to the same artifact", async () => {
   const two = await run("designpro-worker-2");
   assert.equal(one.contentHash, two.contentHash);
   assert.equal(one.storagePath, two.storagePath);
+});
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE_DAG.md chunk 4 — `contact.produce`.
+//
+// THE CONTACT-INVENTION LOCK, MOVED FROM PROSE INTO STRUCTURE. Today it is a
+// sentence in the Call-1 prompt asking the model not to invent a phone number
+// or a web address, and that sentence has needed fixing before (the
+// phone-missing / website-supplied hole). A node cannot hallucinate: it sets the
+// exact strings its row carries, so a line the customer never supplied has no
+// way to exist.
+// ---------------------------------------------------------------------------
+
+const CONTACT = { companyName: "Precision Climate Solutions", phone: "(520) 555-0192", website: "precisionclimate.com" };
+
+test("the contact bar is its own node, and it is a root", () => {
+  const [bar] = compile("on", CONTACT).filter((n) => n.key === graph.CONTACT_NODE);
+  assert.ok(bar);
+  assert.deepEqual(bar.dependsOn, []);
+  assert.equal(bar.input.role, "contact");
+  assert.deepEqual(bar.input.lines, [CONTACT.phone, CONTACT.website]);
+  assert.equal(bar.input.fontKey, typeset.DEFAULT_CONTACT_FONT, "the bar sets in the contact face, not the display face");
+});
+
+test("only supplied lines exist — no invented phone, no invented URL, no invented city", () => {
+  assert.deepEqual(graph.contactLinesFrom({}), []);
+  assert.deepEqual(graph.contactLinesFrom({ phone: "  " }), []);
+
+  // The hole this replaces: a phone that is missing while a website is present.
+  assert.deepEqual(graph.contactLinesFrom({ website: "arcticair.com" }), ["arcticair.com"]);
+  assert.deepEqual(graph.contactLinesFrom({ phone: "(520) 555-0192" }), ["(520) 555-0192"]);
+
+  // `phone` and `website` are the ONLY contact fields the input contract
+  // carries. A city is not conjured to balance the bar.
+  assert.deepEqual(graph.contactLinesFrom({ phone: "p", website: "w", city: "Tucson, AZ" }), ["p", "w"]);
+});
+
+test("no contact details means no contact node — and the name node still compiles", () => {
+  const nameOnly = compile("on", { companyName: "Arctic Air" });
+  assert.ok(nameOnly.some((n) => n.key === graph.TYPESET_NODE));
+  assert.ok(!nameOnly.some((n) => n.key === graph.CONTACT_NODE));
+
+  // ...and the reverse: contact with no company name still gets its bar.
+  const barOnly = compile("on", { phone: "(520) 555-0192" });
+  assert.ok(!barOnly.some((n) => n.key === graph.TYPESET_NODE));
+  assert.ok(barOnly.some((n) => n.key === graph.CONTACT_NODE));
+});
+
+test("executing the bar renders ONLY its own lines, and never the company name", async () => {
+  const [bar] = compile("on", CONTACT).filter((n) => n.key === graph.CONTACT_NODE);
+  const [name] = compile("on", CONTACT).filter((n) => n.key === graph.TYPESET_NODE);
+
+  const exec = async (element) => (await graph.executeNode({
+    claim: {
+      node: { node_key: element.key, input: element.input, depends_on: [], lease_owner: "designpro-worker-1", attempt: 1 },
+      run: { id: "run-1", owner_id: "owner-1", created_at: new Date().toISOString(),
+        definition: { manifest: { zones: [{ surfaceKey: "driver" }] }, input: CONTACT } },
+      claimToken: "token", dependencies: [],
+    },
+    store: { putImmutableBytes: async ({ storagePath, bytes }) => ({ storagePath, byteSize: bytes.length }) },
+    supabase: null,
+    callEdge: () => { throw new Error("an element node must make NO model call"); },
+  })).output;
+
+  const barOut = await exec(bar);
+  assert.equal(barOut.role, "contact");
+  assert.match(barOut.element.contentHash, /^[0-9a-f]{64}$/);
+
+  // The two elements are different artifacts: the bar is not the name lockup,
+  // and the name lockup does not carry the contact lines.
+  const nameOut = await exec(name);
+  assert.notEqual(barOut.element.contentHash, nameOut.element.contentHash);
+
+  // Set at the contact size, so the bar is shorter than the display lockup.
+  assert.ok(barOut.element.height < nameOut.element.height,
+    "the contact bar sets at 5% of width; the name sets at 12%");
+
+  // Same reference discipline as every other node.
+  assert.ok(!("bytes" in barOut));
+  assert.ok(!JSON.stringify(barOut).includes("data:image"));
 });

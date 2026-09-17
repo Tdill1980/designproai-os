@@ -55,6 +55,10 @@ const DRIVER_VIEW_NODE = "surface.driver.view";
 // only on the run's frozen brief, so it is claimable in the same instant as
 // surface.driver.view and adds nothing to the critical path.
 const TYPESET_NODE = "typeset.produce";
+// ARCHITECTURE_DAG.md §4.3 -- the contact bar. Same producer, same envelope,
+// its own node, so a design that carries a phone number but no company name
+// still gets its element, and vice versa.
+const CONTACT_NODE = "contact.produce";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -142,6 +146,33 @@ function typesetNodeFor(input) {
   };
 }
 
+/**
+ * THE CONTACT-INVENTION LOCK, MOVED FROM PROSE INTO STRUCTURE.
+ *
+ * Today that lock is a sentence in the Call-1 prompt asking the model not to
+ * invent a phone number or a web address, and it has needed fixing before
+ * (the phone-missing/website-supplied hole). A node cannot hallucinate: it sets
+ * the exact strings it was handed and nothing else, so a line the customer did
+ * not supply has no way to exist.
+ *
+ * `phone` and `website` are the only contact fields the input contract carries
+ * (`designpro.calls-1-7-input.v3`). A city line is NOT invented to fill the bar.
+ */
+function contactLinesFrom(input) {
+  return [String(input?.phone || "").trim(), String(input?.website || "").trim()].filter(Boolean);
+}
+
+function contactNodeFor(input) {
+  const lines = contactLinesFrom(input);
+  if (!lines.length) return null;
+  return {
+    key: CONTACT_NODE,
+    dependsOn: [],
+    input: { role: "contact", lines, fontKey: typeset.DEFAULT_CONTACT_FONT, widthPx: 1600 },
+    maxAttempts: 3,
+  };
+}
+
 function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
   // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
@@ -164,8 +195,11 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
   // array byte-for-byte identical whether the element graph is on or off --
   // the surfaces do not wait on an element, and chunk 8's master.composite is
   // what will consume it.
-  const typeset = elementGraphEnabled() ? typesetNodeFor(input) : null;
-  if (typeset) nodes.push(typeset);
+  if (elementGraphEnabled()) {
+    for (const element of [typesetNodeFor(input), contactNodeFor(input)]) {
+      if (element) nodes.push(element);
+    }
+  }
   return validateGraph(nodes);
 }
 
@@ -220,12 +254,18 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
   // ARCHITECTURE_DAG.md §4.2 -- ZERO model calls, zero network. The producer
   // returns bytes; this node is what persists them, addressed by their own
   // sha256 so a re-claim re-reads instead of re-writing.
-  if (node.node_key === TYPESET_NODE) {
+  if (node.node_key === TYPESET_NODE || node.node_key === CONTACT_NODE) {
     abortIf();
+    const role = node.node_key === CONTACT_NODE ? "contact" : "typography";
+    // The node sets what its row says and nothing else. There is no path from
+    // the brief to the canvas that does not go through this input.
+    const lines = role === "contact" ? (Array.isArray(node.input?.lines) ? node.input.lines : []) : [];
     const rendered = await typeset.renderLockup({
-      name: String(node.input?.text || ""),
+      name: role === "contact" ? "" : String(node.input?.text || ""),
+      lines,
       width: Number(node.input?.widthPx) || 1600,
       nameFont: node.input?.fontKey || typeset.DEFAULT_NAME_FONT,
+      contactFont: node.input?.fontKey || typeset.DEFAULT_CONTACT_FONT,
       color: node.input?.colorHex,
     });
     const stored = await store.putImmutableBytes({
@@ -233,8 +273,8 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       bytes: rendered.bytes,
       contentType: "image/png",
     });
-    logger(`atlas call 1 graph ${run.id}: typeset ${rendered.contentHash.slice(0, 12)} (${rendered.width}x${rendered.height})`);
-    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "typography",
+    logger(`atlas call 1 graph ${run.id}: ${role} element ${rendered.contentHash.slice(0, 12)} (${rendered.width}x${rendered.height})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role,
       // A REFERENCE, never pixels -- RULE 0.39 across every node boundary.
       element: { storagePath: stored.storagePath, contentHash: rendered.contentHash, byteSize: rendered.byteSize,
         width: rendered.width, height: rendered.height },
@@ -526,7 +566,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
-  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };
