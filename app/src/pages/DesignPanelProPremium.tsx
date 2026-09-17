@@ -103,6 +103,9 @@ import {
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import { ATLAS_UNCONFIRMED_OUTCOME_MESSAGE, isUnconfirmedProviderOutcome } from "@/lib/designpro-generation-error";
+
+/** GENIE's own vehicle-identity rule, mirrored client side so the form can refuse before a generation request exists. */
+const FOUR_DIGIT_YEAR = /^[0-9]{4}$/;
 import {
   flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
@@ -427,6 +430,23 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
         toast({
           title: "Vehicle required",
           description: "Enter year, make, and model.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    // Refuse a year GENIE will refuse, and SAY which field is wrong -- the
+    // commonest way this happens is Year and Make typed into each other, and
+    // "requires a four-digit year" is the sentence that makes that obvious.
+    if (!FOUR_DIGIT_YEAR.test(vehicle.year)) {
+      if (!silent) {
+        setYearError(true);
+        setVehicleInputOpen(true);
+        yearInputRef.current?.focus();
+        setTimeout(() => setYearError(false), 2000);
+        toast({
+          title: "Year must be four digits",
+          description: `Year reads "${vehicle.year}". Check that Year and Make are not swapped.`,
           variant: "destructive",
         });
       }
@@ -1207,8 +1227,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // -- and the one the customer is looking at is not the one Calls 8-12 read.
 
 
+  // GENIE requires a FOUR-DIGIT year and refuses anything else
+  // (`genie_vehicle_identity_invalid`: "requires class, four-digit year, make
+  // and model"). This asked only whether the field was non-empty, so a year the
+  // resolver could never accept was submitted, a generation request was created
+  // and the run failed ~2s later on a failure screen -- live on 2026-09-17,
+  // where Year held "Chrysler" and Make held "2008" after the two were typed
+  // into each other's fields. The red-pulse machinery below already existed;
+  // it was simply being asked the wrong question. An inline red field beats a
+  // dead generation.
   const validateYear = useCallback(() => {
-    if (!year || year.trim() === "") {
+    if (!FOUR_DIGIT_YEAR.test(year.trim())) {
       setYearError(true);
       setVehicleInputOpen(true);
       yearInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
