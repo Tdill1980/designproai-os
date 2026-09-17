@@ -266,7 +266,7 @@ trap - EXIT
 # between "the flag reset" and "I set it wrong" could not be settled from any
 # log, because neither the deploy nor the runtime ever stated the value.
 #
-# These five are routing selectors, not secrets: no key, token or URL is
+# These six are routing selectors, not secrets: no key, token or URL is
 # printed here, and the block sits after every secret has been consumed.
 printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
   DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
@@ -274,8 +274,7 @@ printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%
   DESIGNPRO_ATLAS_HERO_FIRST "$atlas_hero_first" \
   DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph" \
   DESIGNPRO_ATLAS_CALL1_GRAPH "$atlas_call1_graph" \
-  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish" \
-  DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph"
+  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish"
 echo "DesignProAI dark environment is configured with outbound email explicitly disabled. No secret was printed."
 if [[ -n $topaz_key ]]; then
   echo "Call 12 upscaling is ENABLED: production packs will enhance through Topaz before QC."

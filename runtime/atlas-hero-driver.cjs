@@ -51,6 +51,7 @@ const sharp = require("sharp");
 const { createHash } = require("node:crypto");
 const { assembleFinishedMaster } = require("./atlas-finished-master.cjs");
 const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel-authoring.cjs");
+const { fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
@@ -201,8 +202,74 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
   let holes;
   try { holes = await holeRatio(normalized); }
   catch (cause) { return { accepted: false, reason: `measure_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
-  if (holes > MAX_AUTHORED_HOLE_RATIO) return { accepted: false, reason: `unresolved_area:${holes.toFixed(5)}` };
-  return { accepted: true, bytes: normalized, holeRatio: holes, deliveredWidthPx: width, deliveredHeightPx: height };
+  let repaired = null;
+  const holesBefore = holes;
+  if (holes > MAX_AUTHORED_HOLE_RATIO) {
+    // RULE 0.15 -- "DO NOT RE-ROLL FOR A CUT-OUT. FILL IT." The six-surface
+    // path has run the deterministic ~100 ms `fillMasterCutouts` before its
+    // verdict since 2026-08-24; the hero flatten never did, so it refused a
+    // sheet the rest of the system would have repaired. Live cost, generation
+    // 828f31f7 (2026-09-17): node 1 completed, node 3 refused at
+    // `unresolved_area:0.00292` -- a 0.3% defect against a 0.2% ceiling -- and
+    // the whole run fell over to six-surface, which then died on a 35.8%
+    // passenger cut-out. The fill is the SAME implementation, reading
+    // atlas-master-qc's own exported thresholds, so "hole" means here exactly
+    // what it means at the master gate.
+    //
+    // The sheet is one surface, so the fill is pointed at it with a
+    // single-zone manifest covering the whole rectangle.
+    let repair;
+    try {
+      repair = await fillMasterCutouts(
+        normalized,
+        { zones: [{ surfaceKey, x: 0, y: 0, w: pixelWidth, h: pixelHeight }] },
+        [surfaceKey],
+      );
+    } catch (cause) { return { accepted: false, reason: `repair_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
+    const convictedPixels = (repair.filled || []).reduce((sum, entry) => sum + Number(entry.pixels || 0), 0);
+    if (repair.changed) {
+      try {
+        // Back to the shape the rest of the cascade takes: the composite can
+        // carry the extract's alpha, and every consumer here expects flat sRGB.
+        normalized = await sharp(repair.bytes, { limitInputPixels: false })
+          .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
+        holes = await holeRatio(normalized);
+      } catch (cause) { return { accepted: false, reason: `repair_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
+      repaired = {
+        contract: repair.contract,
+        pixels: convictedPixels,
+        components: (repair.filled || []).reduce((sum, entry) => sum + Number(entry.components || 0), 0),
+        unresolvedPixels: (repair.filled || []).reduce((sum, entry) => sum + Number(entry.unresolvedPixels || 0), 0),
+        holeRatioBefore: Number(holesBefore.toFixed(5)),
+      };
+    }
+    if (holes > MAX_AUTHORED_HOLE_RATIO && convictedPixels > 0) {
+      // A real opening the deterministic repair could not close. Refusing is
+      // correct -- this is the six-surface path's own post-repair
+      // re-validation, surface-scoped.
+      return { accepted: false, reason: `unresolved_area:${holes.toFixed(5)}:repaired:${convictedPixels}` };
+    }
+    if (holes > MAX_AUTHORED_HOLE_RATIO) {
+      // NOTHING WAS CONVICTED, so by the gate's own definition there is no
+      // opening here: not one near-black component reaches
+      // MIN_CUTOUT_COMPONENT_RATIO (0.25% of the rectangle). What remains is
+      // near-black ink SCATTERED across the artwork -- anti-aliased lettering
+      // interiors, shadow detail, a dark stripe -- and RULE 0.15 records what
+      // it costs to convict that: the first real master through the master
+      // gate read 7.3% flat black across 3,761 components averaging 0.002% of
+      // the zone, and the aggregate had to be replaced by the concentrated
+      // measure precisely because "ink scattered as specks is design; ink
+      // concentrated in shapes is a hole."
+      //
+      // `MAX_AUTHORED_HOLE_RATIO` is an AGGREGATE over a sheet flattened to no
+      // alpha, so 0.2% of dark artwork trips it. No threshold moves here: the
+      // ceiling is unchanged and still refuses every convicted opening above.
+      // What changes is that an unconvicted residue is judged as what the
+      // system already calls it everywhere else -- artwork.
+      repaired = { ...(repaired || {}), scatteredResidue: Number(holes.toFixed(5)), convicted: 0 };
+    }
+  }
+  return { accepted: true, bytes: normalized, holeRatio: holes, repaired, deliveredWidthPx: width, deliveredHeightPx: height };
 }
 
 /**
@@ -366,7 +433,8 @@ async function authorSurface({
         thoughtSignatureCount: Number(candidate?.thoughtSignatureCount || 0),
         neighbourSurfaces: staged.map((n) => n.surfaceKey),
         deliveredWidthPx: verdict.deliveredWidthPx, deliveredHeightPx: verdict.deliveredHeightPx,
-        holeRatio: verdict.holeRatio, exchange, providerRequestKey: candidate?.providerRequestKey || null,
+        holeRatio: verdict.holeRatio, cutoutRepair: verdict.repaired || null,
+        exchange, providerRequestKey: candidate?.providerRequestKey || null,
         rawStoragePath: candidate?.panelStoragePath || null, rawSha256: candidate?.panelSha256 || null,
       });
     }

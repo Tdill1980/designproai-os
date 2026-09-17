@@ -692,6 +692,18 @@ test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret 
     "stripe_webhook", "worker_secret", "SERVICE_ROLE", "API_KEY"]) {
     assert.ok(!printed.includes(secret), `${secret} must never reach the deploy log`);
   }
+
+  // A printf given MORE arguments than placeholders REUSES the format string,
+  // so one duplicated flag emits a second, malformed line -- which is what the
+  // element-graph flag did when it was appended twice (`...ELEMENT_GRAPH=off =
+  // = = = =` on the 2026-09-17 log). Containment alone passed that. Parity is
+  // what catches it.
+  const placeholders = (printed.match(/%s/g) || []).length;
+  const args = printed.split("\\\n").slice(1).filter((line) => line.trim().length);
+  assert.equal(args.length * 2, placeholders,
+    `the banner prints ${placeholders} placeholders for ${args.length} flags -- printf would loop and emit a malformed line`);
+  const names = args.map((line) => line.trim().split(/\s+/)[0]);
+  assert.equal(new Set(names).size, names.length, `a flag is stated twice: ${names.join(", ")}`);
 });
 
 // The sticky read is a sed expression per flag. If one of those patterns stops
