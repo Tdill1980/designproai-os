@@ -57,6 +57,11 @@ function syntheticEdge(calls, { refuse = null } = {}) {
     // live request died (generation 2099d17d, 2026-09-17, HTTP 500) while this
     // stub happily accepted the panel path node 1 used to return. A fake door
     // that is laxer than the real one cannot catch a door-shaped bug.
+    // The edge refuses history on a from-scratch hero and ALLOWS it on a
+    // flatten; a stub that permitted either would not catch a regression.
+    if (body.first === true && !body.heroViewStoragePath && (body.priorTurns || []).length) {
+      throw Object.assign(new Error("atlas_author_hero_takes_no_history"), { code: "flat_atlas_author_edge_call_failed" });
+    }
     if (body.heroViewStoragePath && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/.test(String(body.heroViewStoragePath))) {
       throw Object.assign(new Error(`atlas_author_input_path_invalid:${body.heroViewStoragePath}`), { code: "flat_atlas_author_edge_call_failed" });
     }
@@ -247,6 +252,19 @@ test("4. end to end across two node workers: five image requests, passenger a fl
     assert.equal(calls[1].heroViewStoragePath, `atlas-call1-inputs/${calls[1].heroViewContentHash}.jpg`,
       "the path IS the hash: content-addressed, so the edge can verify what it read");
     assert.equal(calls[1].heroFlattenTier, 0);
+    // THE FLATTEN CONTINUES THE VIEW'S CONVERSATION. Node 1's exchange is
+    // replayed WITH its thought signature on the part it arrived on -- the
+    // multi-turn spatial reasoning RULE 0.35 requires, on the hop that most
+    // needs it. Asserted as ARRIVING at the edge, not merely as being stored.
+    assert.ok(Array.isArray(calls[1].priorTurns) && calls[1].priorTurns.length === 2,
+      "node 3 replays node 1's user + model turns");
+    assert.equal(calls[1].priorTurns[1].parts[0].thoughtSignature, "sig-driver-view",
+      "…and the VIEW's signature rides on the model part it arrived on");
+    assert.equal(calls[1].priorTurns[1].parts[0].imageRef.storagePath, "atlas-author/driver-view.png",
+      "the replayed turn carries an image REFERENCE, never pixels");
+    // Node 1 itself still draws from scratch: a hero with history would be a
+    // second creative authority.
+    assert.deepEqual(calls[0].priorTurns, [], "the vehicle view replays nothing");
     assert.deepEqual(calls.slice(2, 5).map((c) => c.surfaceKey).sort(), ["front", "hood", "rear"]);
     assert.equal(calls[5].surfaceKey, "roof");
     for (const call of calls.slice(2)) {

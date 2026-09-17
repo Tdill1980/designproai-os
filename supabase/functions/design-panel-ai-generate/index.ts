@@ -2522,7 +2522,7 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260916.v2";
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v3-flatten-continues-the-view";
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
@@ -2723,7 +2723,20 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     if (first && neighboursIn.length) throw new Error("atlas_author_hero_takes_no_neighbours");
     const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
     if (priorTurnsIn.length > ATLAS_AUTHOR_MAX_PRIOR_TURNS) throw new Error(`atlas_author_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
-    if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
+    // A FROM-SCRATCH HERO TAKES NO HISTORY; A FLATTEN IS A CONTINUATION.
+    //
+    // Owner, 2026-09-17: "Are you using thought signatures?? Multimodal best
+    // practice from Gemini pro 3." RULE 0.35 already requires it — "passing the
+    // thought_signature from the hero driver-side generation ... locks the
+    // design continuity" — and the cascade continuations do replay it. The
+    // hero-first FLATTEN did not, because it is also `first:true` and this line
+    // refused history for every first request. So node 3 was attaching node 1's
+    // render as a flat image in a NEW conversation, discarding the reasoning
+    // that produced it, on the one hop where spatial continuity is the point.
+    //
+    // The vehicle view keeps the refusal: it genuinely draws from scratch and
+    // history there would be a second creative authority (RULE 0.26).
+    if (first && !heroFlatten && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
     const priorTurns: Array<Record<string, unknown>> = [];
     for (const turn of priorTurnsIn) priorTurns.push(await replayImageTurn(turn, downloadHistoryImage));
 

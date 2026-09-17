@@ -55,7 +55,7 @@ const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260916.v2";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v3-flatten-continues-the-view";
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -294,7 +294,14 @@ async function authorSurface({
     surfaceKey: n.surfaceKey, surfaceLabel: SURFACE_LABELS[n.surfaceKey] || n.surfaceKey,
     ...(await stageReference(store, n.bytes)),
   })));
-  const chain = trimAuthoringHistory(Array.isArray(priorExchanges) ? priorExchanges : []);
+  // THE FLATTEN CONTINUES THE VIEW'S CONVERSATION (owner, 2026-09-17).
+  // Node 1's exchange is replayed with its thought signature on the part it
+  // arrived on, exactly as the cascade continuations replay the driver's, so the
+  // model flattens artwork it can still reason about rather than an image handed
+  // to a stranger. Prepended, never substituted: the driver has no other history
+  // and every later surface keeps its own chain untouched.
+  const heroExchange = heroView?.exchange ? [heroView.exchange] : [];
+  const chain = trimAuthoringHistory([...heroExchange, ...(Array.isArray(priorExchanges) ? priorExchanges : [])]);
   let lastReason = "not_attempted";
   // The vehicle view's request was SPENT, so it is counted here. Leaving it out
   // under-reports every receipt and every bound that counts image requests --

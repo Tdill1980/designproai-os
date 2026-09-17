@@ -320,12 +320,15 @@ test("hero-first runs the driver as vehicle view then flatten, and changes nothi
       : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, tint);
     const contentHash = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
     const path = vehicleView ? "atlas-author/driver-view.png" : `atlas-author/${body.surfaceKey}.png`;
+    // The two DRIVER stages must be distinguishable, or "the flatten replays the
+    // view's signature" cannot be told from "it replays its own".
+    const turnName = vehicleView ? "driver-view" : body.surfaceKey;
     return {
       bytes, imageRequestCount: 1, providerCacheHit: false, providerRequestKey: "a".repeat(64),
       heroStage: body.surfaceKey === "driver" ? (vehicleView ? "vehicle-view" : "flatten") : null,
       panelStoragePath: path, panelSha256: contentHash, panelByteSize: bytes.length,
-      userTurn: { role: "user", parts: [{ text: `exact ${body.surfaceKey} instructions` }] },
-      modelTurn: { role: "model", parts: [{ imageRef: { storagePath: path, contentHash }, thoughtSignature: `sig-${body.surfaceKey}` }] },
+      userTurn: { role: "user", parts: [{ text: `exact ${turnName} instructions` }] },
+      modelTurn: { role: "model", parts: [{ imageRef: { storagePath: path, contentHash }, thoughtSignature: `sig-${turnName}` }] },
       historyImageBytes: bytes.length, thoughtSignatureCount: 1,
       priorSignaturesReplayed: (body.priorTurns || []).flatMap((turn) => turn.parts).filter((part) => part.thoughtSignature).length,
     };
@@ -355,6 +358,12 @@ test("hero-first runs the driver as vehicle view then flatten, and changes nothi
   assert.equal(flatten.heroViewStoragePath, `atlas-call1-inputs/${flatten.heroViewContentHash}.jpg`,
     "content-addressed: the path IS the hash, so the edge can verify what it read");
   assert.equal(flatten.heroFlattenTier, 0, "first flatten asks the complete instruction");
+  // THE IN-PROCESS CASCADE REPLAYS IT TOO, not only the graph path -- two
+  // execution paths, one contract (owner, 2026-09-17: thought signatures).
+  assert.equal(flatten.priorTurns.length, 2, "the flatten continues the view's conversation");
+  assert.equal(flatten.priorTurns[1].parts[0].thoughtSignature, "sig-driver-view",
+    "with the VIEW's thought signature on the model part it arrived on");
+  assert.deepEqual(view.priorTurns, [], "the vehicle view itself still draws from scratch");
 
   // Everything after the driver is untouched: the continuations still see the
   // finished FLANK, never the vehicle view.
