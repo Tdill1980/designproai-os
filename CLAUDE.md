@@ -1134,7 +1134,6 @@ to the writer's `printf`, the writer's sticky `sed`, and the validator's
 vocabulary. Add a routing flag to the runtime without those four and the build
 fails. **Do not add an env-gated routing flag without adding it to that list.**
 
-<<<<<<< HEAD
 #### NODE 1 MUST STAGE ITS RENDER WHERE THE EDGE WILL ATTACH IT (2026-09-17, live 2099d17d)
 
 **The first real hero-driver run.** The DAG did exactly what RULE 0.39 built —
@@ -1171,36 +1170,53 @@ door laxer than the real one cannot catch a door-shaped defect.** Both now
 enforce the real allowlist and were verified to fail against the pre-fix runtime,
 reproducing the live error verbatim.
 
-#### THE HERO-FIRST FLATTEN PASSES NO THOUGHT SIGNATURE — STILL OPEN (2026-09-17)
+#### THE HERO-FIRST FLATTEN NOW CONTINUES THE VIEW'S CONVERSATION (2026-09-17)
 
 Owner: *"Are you using thought signatures?? Multimodal best practice from Gemini
-pro 3."* Answered honestly from the code: **yes on the cascade, no on the hop
-that needs it most.**
+pro 3."* Answered from the code, and the honest answer was **yes on the cascade,
+no on the hop that needs it most.**
 
 `captureImageTurn` / `replayImageTurn` carry `thoughtSignature` on the part it
-arrived on, and hood/front/rear/roof each replay the driver exchange with it —
-that is implemented and locked. But the hero-first flatten is sent `first: true`,
-and the edge refuses history on a first request outright:
+arrived on, and hood/front/rear/roof each replay the driver exchange with it.
+The hero-first FLATTEN did not, because it is also `first: true` (it IS the
+driver) and the edge refused history for every first request:
 
 ```ts
 if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
 ```
 
-So node 3 attaches the vehicle render as a flat image in a NEW conversation
-rather than continuing the one that produced it. `authorHeroVehicleView` already
-returns that exchange; the graph discards it. That is exactly the multi-turn
-spatial reasoning RULE 0.35 quotes the owner asking for.
+So node 3 attached node 1's render as a flat image in a NEW conversation and
+discarded the reasoning that produced it — on the single hop where the
+multi-turn spatial reasoning RULE 0.35 quotes the owner asking for is the whole
+point.
 
-The fix is narrow — keep the no-history rule for a true from-scratch view
-(`first && !heroFlatten`) and let the flatten replay its own view exchange — and
-it is deliberately NOT in the staging fix's deploy: that fix is verified by tests
-reproducing the live error, while this one is verified by nothing live and
-changes the request shape on a path that has never completed. **One variable per
-deploy on an unproven path**, or a failure tells you nothing about which change
-caused it.
+**Scoped, not removed.** The guard is now `first && !heroFlatten`, so a true
+from-scratch vehicle view still takes no history — a conversation there would be
+a second creative authority (RULE 0.26). Only the flatten may replay, and only
+its own view. Three seams move together: the edge guard; `authorSurface`
+prepending `heroView.exchange` to the chain (attempt 2 still drops it, so the
+existing fallback for a provider that rejects a replayed signature is now also
+the flatten's); and the view node persisting its exchange so whichever worker
+claims the flatten can replay it. It travels as TURNS — image REFERENCES (path +
+hash) plus the signature — never pixels, so RULE 0.39's no-blobs rule across the
+node boundary is unchanged. Prompt versions advance together to
+`v3-flatten-continues-the-view`.
 
-=======
->>>>>>> origin/main
+**LOCKED AS ARRIVING, NOT AS SENT.** Both paths assert the edge RECEIVES two
+prior turns with the VIEW's signature on the model part it arrived on, and that
+the view itself replays nothing. The topology test's assertion was tightened
+from the bare guard string — which passed against the blanket refusal that
+discarded every signature — to the scoped expression.
+
+**What is still NOT multi-step: the design's own elements.** The graph is
+per-SURFACE (`AUTHOR_CASCADE`), not per-element. There is no node that designs
+the logo, the company name or the contact bar as its own artifact and then
+composes it. Lettering and logo are authored INSIDE each surface's single image
+call by the persona's logo architecture, and the only element-level machinery
+downstream is extraction (Call 10 `logos.extract`, Call 11 de-logo) and the
+passenger lettering re-drop. Do not describe A.T.L.A.S. as having element-level
+design decomposition; it does not.
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology paints its own layout map into the artwork, and the
