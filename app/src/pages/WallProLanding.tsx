@@ -187,8 +187,26 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
   const TOOL = TOOL_ROUTE[brand];
   const HOME = LANDING_ROUTE[brand];
   const { media } = useWallProLandingMedia();
-  const slides = EXAMPLE_KEYS.map(key => media[key]).filter(item => item.enabled && item.src);
-  const [selected, setSelected] = useState('residential');
+  /**
+   * THE OWNER'S OWN ROOM IS NOT A SHOWCASE SLIDE (owner, 2026-09-17: "remove
+   * my photo from the hero just show the others").
+   *
+   * The `residential` slot's default is `/wallpro/proof-spa-after.jpg` — the
+   * home spa Trish photographed in her own house, which is the measured
+   * reference this product's scale baseline came from. It is evidence, not a
+   * portfolio piece, and it opened the page as the hero.
+   *
+   * It is EXCLUDED FROM THE ROTATION, not deleted: the slot, its admin row and
+   * every other consumer are untouched, so it still backs the workflow's
+   * "Generate & refine" result and can be re-shown by one line if she wants it.
+   * The hero and the Examples strip read the same list on purpose — they are
+   * the same set of slides, and a thumbnail the hero cannot show would be a
+   * button that does nothing.
+   */
+  const slides = EXAMPLE_KEYS.filter(key => key !== 'residential').map(key => media[key]).filter(item => item.enabled && item.src);
+  /* Opening on a slot no longer in the rotation would render nothing, so the
+     first surviving slide opens the page. */
+  const [selected, setSelected] = useState(() => slides[0]?.slot ?? '');
   const [mobileMenu, setMobileMenu] = useState(false);
   const active = slides.find(item => item.slot === selected) || slides[0];
   const changeSlide = (direction: number) => {
@@ -209,15 +227,34 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
       <div className="wl-header-inner">
         <Link to={HOME} className="wl-brand" aria-label="WallPro home">
           {theme.logo && <img src={theme.logo} alt={theme.logoAlt} className="wl-partner-mark" />}
-          <span>{theme.wordmarkLead}<span>{theme.wordmarkAccent}</span></span>
-          {/* The partner's page says whose product it is in THEIR words; the
-              DesignProAI page keeps the house line. */}
-          <small>{brand === 'weprintwraps' ? <>Printed by <strong>WePrintWraps</strong></> : <>A <strong>DesignProAI</strong> product</>}</small>
+          {/* THE MARK SITS BESIDE THE NAME, SO THE NAME NEEDS ITS OWN COLUMN
+              (owner, 2026-09-17: "must be to the left not stacked"). The
+              wordmark and the "printed by" line are one unit that stacks; the
+              partner's mark is a second unit beside it. Without this wrapper
+              the brand block has three children in a row and the tagline lands
+              next to the wordmark instead of under it. */}
+          <span className="wl-brand-text">
+            <span>{theme.wordmarkLead}<span>{theme.wordmarkAccent}</span></span>
+            {/* The partner's page says whose product it is in THEIR words; the
+                DesignProAI page keeps the house line. */}
+            <small>{brand === 'weprintwraps' ? <>Printed by <strong>WePrintWraps</strong></> : <>A <strong>DesignProAI</strong> product</>}</small>
+          </span>
         </Link>
         <nav className={mobileMenu ? 'wl-nav wl-nav-open' : 'wl-nav'} aria-label="WallPro navigation" onClick={() => setMobileMenu(false)}>
           <a href="#workflow">How it works</a><a href="#examples">Examples</a><Link to={`${TOOL}/faq`}>Prices &amp; FAQ</Link><Link to={`${TOOL}/how-it-works`}>Case study</Link>
+          {/* The header's ShopFlow link is hidden at 800px with Log in, so on a
+              phone this nav is the only way back to the dashboard. */}
+          {brand === 'weprintwraps' && <Link className="wl-nav-shopflow" to="/shopflow">My ShopFlow</Link>}
         </nav>
-        <div className="wl-header-actions"><Link className="wl-login" to="/login" state={{ from: TOOL }}>Log in</Link><Link to={TOOL} className="wl-button wl-header-cta">Design your wall <ArrowRight size={18} /></Link><button className="wl-menu" aria-label={mobileMenu ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileMenu} onClick={() => setMobileMenu(v => !v)}>{mobileMenu ? <X /> : <Menu />}</button></div>
+        {/* BACK TO THE DASHBOARD THEY CAME FROM (owner, 2026-09-17: the WPW
+            WallPro page "must route to this ShopFlow Dashboard").
+            ShopFlow is the WePrintWraps account home — orders, QuickQuote,
+            Club WPW points, the free WallPro designs — and its tool rail now
+            opens this page, so the return trip has to exist or the customer is
+            stranded on a marketing page with only a Log in link. It is shown
+            for the partner brand ONLY: /shopflow is a WePrintWraps surface and
+            would be a stray door on the DesignProAI landing. */}
+        <div className="wl-header-actions">{brand === 'weprintwraps' && <Link className="wl-shopflow" to="/shopflow">Shop<strong>Flow</strong></Link>}<Link className="wl-login" to="/login" state={{ from: TOOL }}>Log in</Link><Link to={TOOL} className="wl-button wl-header-cta">Design your wall <ArrowRight size={18} /></Link><button className="wl-menu" aria-label={mobileMenu ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileMenu} onClick={() => setMobileMenu(v => !v)}>{mobileMenu ? <X /> : <Menu />}</button></div>
       </div>
     </header>
     <main>
