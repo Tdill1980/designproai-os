@@ -65,7 +65,33 @@ const GraphicsProV1 = () => {
           tagline: OS_TOOLS.cutpro.tagline,
         }}
       />
-      {cutProProofs.length > 0 && <WallProHeroProof proofs={cutProProofs} />}
+      {/* THE SAME ABOVE-THE-SCROLL HERO WALLPRO AND VEHICLEPRO SHIP (Trish
+          2026-09-17: "what about the wallpro redesign I gave you"). CutPro's
+          page is still light (`bg-gray-50`), unlike WallPro/VehiclePro's dark
+          UI -- that is a separate, larger theme decision this hero does not
+          make for it, so it is themed for the light background it actually
+          has rather than guessing at a dark rewrite. CutPro has no
+          case-study or FAQ route to link the way WallPro links
+          `/wall-wrap/how-it-works` -- its FAQ is the inline `<FAQ>` further
+          down this same page, not a separate destination, so nothing is
+          invented here. */}
+      <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 px-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <div>
+          <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-gray-900 md:text-4xl">
+            On-demand cut graphics<br />design &amp; file output
+          </h2>
+          <p className="mt-3 max-w-[42ch] text-sm text-gray-600">
+            Describe the cut graphic, generate the design in minutes, and take
+            the production-ready cut-contour files — a real print-and-cut PDF
+            and layered vector film, ready for vehicles, walls and windows.
+          </p>
+        </div>
+        {/* THE SAME CURATOR-MANAGED PROOF BAND WALLPRO USES (Trish
+            2026-09-16: "do the admin page" -- for CutPro too). CutPro has no
+            bundled fallback list -- this renders nothing until a curator
+            publishes a first pair at /admin/wallpro-proofs. */}
+        {cutProProofs.length > 0 && <WallProHeroProof proofs={cutProProofs} />}
+      </section>
       <main className="flex-1">
         <div className="border-b border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-600 sm:text-sm">
           with <span className="font-semibold text-[#ec4899]">ZoneMasker™</span> — {OS_TOOLS.cutpro.description} Vehicles, walls and windows; upload your image or design from a prompt.
