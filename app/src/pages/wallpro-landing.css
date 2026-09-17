@@ -5,10 +5,89 @@
 @media(max-width:480px){.wl-header-inner{padding-inline:15px}.wl-header-cta svg{display:none}.wl-header-actions{gap:6px}.wl-hero h1{font-size:46px}.wl-hero-copy{padding-inline:20px}.wl-subhead{font-size:17px;max-width:330px}.wl-intro{font-size:15px}.wl-actions{gap:10px}.wl-actions .wl-button{font-size:13px;padding:12px 16px;gap:9px}.wl-features{grid-template-columns:repeat(2,1fr);row-gap:15px}.wl-features>div{font-size:12px}.wl-hero-image{height:290px}.wl-install-grid{grid-template-columns:1fr;gap:24px}.wl-video-portrait{max-width:280px;margin:auto}.wl-milestones{grid-template-columns:repeat(2,1fr)}.wl-milestones>div{min-height:90px}.wl-mobile-break{display:block}.wl-page h2{font-size:30px}}
 @media(prefers-reduced-motion:reduce){.wl-page *{transition:none!important;scroll-behavior:auto!important}}
 
-/* The partner's mark in the landing lockup. Height-bounded so a wide logo
-   cannot push the wordmark off a phone header. */
-.wl-partner-mark { height: 26px; width: auto; flex: none; }
-@media (min-width: 768px) { .wl-partner-mark { height: 30px; } }
+/* ── THE PARTNER LOCKUP SITS BESIDE THE WORDMARK, NOT ON TOP OF IT ────────
+   Owner, 2026-09-17, looking at /wall-wrap: "the logo is distorted major and
+   too big must be to the left not stacked."
+
+   BOTH defects were one line. `.wl-brand` is a COLUMN flex container, and a
+   column flex container's default `align-items` is `stretch` — so the mark was
+   stretched to the full width of the brand block while its height stayed
+   pinned at 26px. A logo given a fixed height and a stretched width is a logo
+   with its aspect ratio thrown away, which is why it read as "distorted
+   major" rather than merely large. Stacking was the same line: column.
+
+   So the brand block is a ROW — mark, then a column holding the wordmark and
+   its "printed by" line. `object-fit:contain` makes the aspect ratio
+   impossible to lose again even if some future parent stretches the box, and
+   `align-self:center` keeps the mark off the stretch axis for good. */
+.wl-brand { flex-direction: row; align-items: center; gap: 13px; }
+.wl-partner-mark { height: 30px; width: auto; flex: none; align-self: center; object-fit: contain; }
+@media (min-width: 768px) { .wl-partner-mark { height: 36px; } }
+.wl-brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1; }
+/* The wordmark was 36px beside nothing; beside a real mark it is one of two
+   things on the row, so it comes down to sit WITH the logo rather than shout
+   over it. The base rule targets `.wl-brand>span`, which is now this column. */
+/* THE WRAPPER SHIFTED EVERY BASE SELECTOR DOWN ONE LEVEL, so the two colour
+   rules are restated at a specificity that beats the base. `.wl-brand>span`
+   now matches this COLUMN, and `.wl-brand>span>span` — written for the "Pro"
+   accent — now matches the whole wordmark, which would paint "Wall" blue too.
+   Two classes beat one class plus an element, so these win outright rather
+   than relying on source order. */
+.wl-brand-text > span { font-size: 29px; font-weight: 850; letter-spacing: -1.3px; }
+.wl-brand > .wl-brand-text > span { color: inherit; }
+.wl-brand > .wl-brand-text > span > span { color: #168df2; }
+.wl-brand-text small { margin-top: 5px; font-size: 10px; letter-spacing: .7px; text-transform: uppercase; }
+@media (max-width: 800px) {
+  .wl-brand { gap: 9px; }
+  .wl-brand-text > span { font-size: 23px; }
+  .wl-brand-text small { font-size: 9px; }
+  .wl-partner-mark { height: 26px; }
+}
+
+/* The way back to the WePrintWraps dashboard. It reads as a destination, not
+   a call to action — "Design your wall" is the only button on this bar that
+   should compete for the eye. Hidden on a phone with Log in, where the header
+   is already down to the mark and one button. */
+.wl-shopflow { display: inline-flex; align-items: center; gap: 4px; padding: 11px 16px; border-radius: 12px; border: 1px solid #c2cfdd; font-size: 14px; font-weight: 600; color: #12324f !important; }
+.wl-shopflow strong { background: linear-gradient(100deg, #009cff, #22d3ee); background-clip: text; -webkit-background-clip: text; color: transparent; font-weight: 750; }
+.wl-shopflow:hover { border-color: #1685da; }
+@media (max-width: 1100px) { .wl-shopflow { padding: 10px 12px; font-size: 13px; } }
+@media (max-width: 800px) { .wl-shopflow { display: none; } }
+/* Its counterpart in the nav is the reverse: redundant beside the header link
+   on a desktop, and the only route back once that link is gone. */
+.wl-nav-shopflow { display: none; }
+@media (max-width: 800px) { .wl-nav-shopflow { display: inline; color: #1274c9; } }
+
+/* ── THE HERO CAME DOWN A SIZE ─────────────────────────────────────────────
+   Owner, 2026-09-17: "hero message and image too big."
+
+   The heading was clamp(44px,4.8vw,72px) over a 590px band, rising to 76px /
+   660px above 1500px — which is most of a laptop viewport spent before the
+   customer reaches "Start designing your wall", the block that actually starts
+   the product. Every value here is scaled, not restructured: the same clamp
+   shape, the same grid, the same breakpoints. */
+.wl-hero { min-height: 470px; }
+.wl-hero h1 { font-size: clamp(34px, 3.5vw, 53px); letter-spacing: -1.3px; }
+.wl-hero-image { inset: 0 0 0 38%; border-bottom-left-radius: 110px; }
+.wl-hero-copy { width: 55%; padding: 34px 0 24px 40px; }
+.wl-subhead { font-size: clamp(15px, 1.25vw, 19px); margin-top: 15px !important; }
+.wl-intro { font-size: 15px; margin-top: 10px !important; }
+.wl-actions { margin-top: 20px; }
+.wl-features { margin-top: 26px; }
+@media (min-width: 1500px) {
+  .wl-hero { min-height: 520px; }
+  .wl-hero h1 { font-size: 56px; }
+}
+@media (max-width: 1100px) { .wl-hero { min-height: 430px; } }
+@media (max-width: 800px) {
+  .wl-hero h1 { font-size: 40px; }
+  .wl-hero-image { height: 270px; }
+  .wl-hero-copy { width: 100%; padding: 26px 24px 22px; }
+}
+@media (max-width: 480px) {
+  .wl-hero h1 { font-size: 35px; }
+  .wl-hero-image { height: 235px; }
+}
 
 /* ── THE LIGHT UI, FOR THE PARTNER BRAND ───────────────────────────────────
    Owner, 2026-09-17: "I need also the version with WPW x WallPro light UI."

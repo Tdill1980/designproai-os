@@ -19,9 +19,24 @@ export const LANDING_SLOTS: { key: LandingSlotKey; label: string; kind: 'image' 
   { key: 'hospitality', label: 'Hospitality example', kind: 'image', ratio: '16:9', help: 'The Hospitality hero slide and thumbnail.', defaults: { slot: 'hospitality', src: '/wallpro/landing-hospitality.webp', poster: '', title: 'Hospitality', caption: 'Hotels & restaurants', alt: 'Illustrative hotel lounge with a floral wall wrap', enabled: true } },
   { key: 'corporate', label: 'Corporate example', kind: 'image', ratio: '16:9', help: 'The Corporate hero slide and thumbnail.', defaults: { slot: 'corporate', src: '/wallpro/landing-corporate.webp', poster: '', title: 'Corporate', caption: 'Offices & workspaces', alt: 'Illustrative office reception with a wood-effect feature wall', enabled: true } },
   { key: 'retail', label: 'Retail example', kind: 'image', ratio: '16:9', help: 'The Retail hero slide and thumbnail.', defaults: { slot: 'retail', src: '/wallpro/landing-retail.webp', poster: '', title: 'Retail', caption: 'Stores & showrooms', alt: 'Illustrative eyewear store with a photographic wall wrap', enabled: true } },
-  { key: 'before', label: 'Workflow / before photo', kind: 'image', ratio: '4:3', help: 'The photo shown in Upload and Mark in the five-step workflow.', defaults: { slot: 'before', src: '/wallpro/proof-spa-before.jpg', poster: '', title: 'Your starting point', caption: '', alt: 'The room before adding the wall wrap', enabled: true } },
-  { key: 'process', label: 'Horizontal design / printing video', kind: 'video', ratio: '16:9', help: 'Show designing, scaling, production files, or the wrap printing. Recommended: 1920 × 1080.', defaults: { slot: 'process', src: '', poster: '/wallpro/proof-spa-after.jpg', title: 'A real home spa. Designed in WallPro.', caption: 'Follow the project from a room photo to a custom wall design, measured artwork, and production-ready files.', alt: 'Home spa wall design', enabled: true } },
-  { key: 'install', label: 'Vertical final-install reel', kind: 'video', ratio: '9:16', help: 'Show the installation and the finished wall. Recommended: 1080 × 1920. The full video stays visible without cropping.', defaults: { slot: 'install', src: '', poster: '/wallpro/proof-spa-after.jpg', title: 'The final reveal.', caption: 'From a design on screen to a wall you can walk into.', alt: 'Botanical home spa wall design', enabled: true } },
+  /**
+   * THE LANDING SHOWS THE COMMERCIAL ROOMS, NOT THE OWNER'S OWN (owner,
+   * 2026-09-17: "it must be the other images the fitness, etc not my photo").
+   *
+   * Every default below pointed at `proof-spa-*` — the home spa Trish
+   * photographed in her own house. That room is this product's measured scale
+   * reference and the subject of the case study, both of which are evidence;
+   * it is not what the landing page should be selling. The gym pair is the
+   * same kind of asset (a real before AND a real after of one room, already
+   * normalised to one canvas) so nothing here is a crop or a stand-in.
+   *
+   * These are DEFAULTS. The media admin still overrides any of them per row,
+   * and the spa files are untouched on disk for the case study and the FAQ
+   * figure that measures against them.
+   */
+  { key: 'before', label: 'Workflow / before photo', kind: 'image', ratio: '4:3', help: 'The photo shown in Upload and Mark in the five-step workflow.', defaults: { slot: 'before', src: '/wallpro/proof-gym-before.jpg', poster: '', title: 'Your starting point', caption: '', alt: 'A gym training floor with a plain grey wall behind the squat racks, before the wall wrap', enabled: true } },
+  { key: 'process', label: 'Horizontal design / printing video', kind: 'video', ratio: '16:9', help: 'Show designing, scaling, production files, or the wrap printing. Recommended: 1920 × 1080.', defaults: { slot: 'process', src: '', poster: '/wallpro/proof-gym-after.jpg', title: 'A real training floor. Designed in WallPro.', caption: 'Follow the project from a room photo to a custom wall design, measured artwork, and production-ready files.', alt: 'A gym wall in a full-height athletic mural', enabled: true } },
+  { key: 'install', label: 'Vertical final-install reel', kind: 'video', ratio: '9:16', help: 'Show the installation and the finished wall. Recommended: 1080 × 1920. The full video stays visible without cropping.', defaults: { slot: 'install', src: '', poster: '/wallpro/proof-gym-after.jpg', title: 'The final reveal.', caption: 'From a design on screen to a wall you can walk into.', alt: 'A gym wall in a full-height athletic mural', enabled: true } },
 ];
 
 export function validLandingUrl(value: string): boolean {

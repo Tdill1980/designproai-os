@@ -346,9 +346,23 @@ function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?:
     { href: "#rewards", label: "Club WPW points", icon: Gift, account: true, badge: points },
     { href: "https://weprintwraps.com/commercialpro/", label: "CommercialPro", icon: Building2, external: true,
       thumb: "/assets/commercialpro/commercialpro-thumb.webp", star: commercialPro },
-    { href: "/wallpro", label: "WallPro", icon: LayoutDashboard, badge: credits,
+    /**
+     * A WEPRINTWRAPS TAB OPENS THE WEPRINTWRAPS PAGE (owner, 2026-09-17: the
+     * WPW WallPro page "must … appear in the wpw wallpro tab").
+     *
+     * This rail sat on WPW ShopFlow and pointed at `/wallpro`, which is the
+     * DESIGNPROAI-branded landing — so a WePrintWraps customer clicking WallPro
+     * inside their own WPW dashboard left the brand mid-session. The partner
+     * routes mirror the house ones exactly (landing /wall-wrap → tool
+     * /wallwrap-design), so this is the same product, correctly dressed.
+     *
+     * PatternPro was worse than mis-branded: `/patternpro` HAS NO ROUTE. It
+     * fell through to the catch-all, so the tab was a dead click. Its real
+     * partner page is /pattern-wrap, the route #464 shipped.
+     */
+    { href: "/wall-wrap", label: "WallPro", icon: LayoutDashboard, badge: credits,
       thumb: "/assets/commercialpro/wallpro-thumb.webp" },
-    { href: "/patternpro", label: "PatternPro", icon: Grid3x3,
+    { href: "/pattern-wrap", label: "PatternPro", icon: Grid3x3,
       thumb: "/assets/commercialpro/patternpro-thumb.webp" },
   ];
   return (
@@ -853,7 +867,11 @@ export default function ShopFlow() {
                   </div>
                 </div>
                 <Button asChild className="sm:ml-auto shrink-0 bg-gradient-to-r from-[#3B82F6] to-[#D946EF] hover:brightness-110 text-white rounded-xl">
-                  <a href="/wallpro">
+                  {/* The WePrintWraps page, for the same reason as the rail
+                      above: these free designs ride on the customer's LINKED
+                      WePrintWraps account, so the page they open must be the
+                      one carrying that brand. */}
+                  <a href="/wall-wrap">
                     {wallPro.data.remaining > 0 ? "Start a design" : "Open WallPro"}
                   </a>
                 </Button>
