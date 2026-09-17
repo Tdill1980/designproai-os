@@ -40,7 +40,15 @@
 const { createHash } = require("node:crypto");
 const sharp = require("sharp");
 
+// ONE DEFINITION OF "DARK". The gate's own exported threshold, for the same
+// reason the cut-out fill imports it: two definitions would let this module
+// call a pixel safe that the gate convicts.
+const { FLAT_BLACK_CHANNEL_MAX } = require("./atlas-master-qc.cjs");
+
 const CONTRACT = "designpro.atlas-master-composite.v1";
+// A correct composite changes NOTHING outside its own element rectangles, so
+// the bound is a rounding allowance, not a tolerance for damage.
+const MAX_COMPOSITE_OUTSIDE_DELTA = 0.0001;
 
 class AtlasCompositeError extends Error {
   constructor(code, message, retryable = false) {
@@ -142,6 +150,35 @@ async function compositeElementsOntoMaster({ cleanMasterBytes, zones = [], plan,
     .png()
     .toBuffer();
 
+  // THE COMPOSITE MAY NEVER TRIP THE HOLE GATE (owner, 2026-09-17: "assembles
+  // them deterministically without tripping the hole gate").
+  //
+  // Layer 0 has already passed the gates when it arrives here. Layer 1 is dark
+  // ink -- a company name set in black is exactly the shape the cut-out
+  // detector convicts: a concentrated near-black component. So compositing
+  // lettering onto an accepted sheet could, in principle, make an accepted
+  // master read as holed, and the customer would lose a design that was fine.
+  //
+  // It is measured rather than assumed, on the SAME predicate the gate uses
+  // (atlas-master-qc's exported thresholds -- one definition of "hole", the
+  // standing rule in this repo). Ink ADDED inside a rectangle the system itself
+  // placed is not missing artwork; it is the artwork. So the delta is computed
+  // OUTSIDE every placed element, where a composite has no business changing
+  // anything at all.
+  //
+  // A non-zero delta there means the composite damaged the base, which is a
+  // defect in this module, not a refusal for the sheet -- so it fails closed to
+  // Layer 0 rather than shipping a sheet it just broke. On every correct
+  // composite the delta is exactly zero and this costs one measurement.
+  const outsideDelta = await darkDeltaOutside(cleanMasterBytes, composited, applied);
+  if (outsideDelta > MAX_COMPOSITE_OUTSIDE_DELTA) {
+    throw new AtlasCompositeError(
+      "atlas_composite_altered_base",
+      `composite changed ${(outsideDelta * 100).toFixed(4)}% of the sheet outside its own elements`,
+      false,
+    );
+  }
+
   return {
     contract: CONTRACT,
     bytes: composited,
@@ -150,8 +187,49 @@ async function compositeElementsOntoMaster({ cleanMasterBytes, zones = [], plan,
     cleanMasterHash,
     byteSize: composited.length,
     applied,
+    // THE RECEIPT THE GATE ARGUMENT RESTS ON. `elementRegions` is where Layer 1
+    // legitimately darkened the sheet; `outsideDelta` is what it changed
+    // anywhere else, which is zero on a correct composite.
+    elementRegions: applied.map((item) => ({ surfaceKey: item.surfaceKey, role: item.role, ...item.sheet })),
+    outsideDelta,
     changed: true,
   };
+}
+
+/**
+ * The share of the sheet that became near-black OUTSIDE every placed element.
+ *
+ * Same predicate as the gate (`nearBlackAt` over atlas-master-qc's thresholds),
+ * so "dark" means here exactly what it means where the refusal happens.
+ */
+async function darkDeltaOutside(beforeBytes, afterBytes, applied) {
+  const read = (bytes) => sharp(bytes, { limitInputPixels: false })
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const [before, after] = await Promise.all([read(beforeBytes), read(afterBytes)]);
+  if (before.info.width !== after.info.width || before.info.height !== after.info.height) {
+    throw new AtlasCompositeError("atlas_composite_size_drift", "the composite changed the sheet's dimensions", false);
+  }
+  const { width, height, channels } = after.info;
+  // One byte per pixel: inside a placed element, or not.
+  const masked = new Uint8Array(width * height);
+  for (const item of applied) {
+    const x0 = Math.max(0, Math.floor(item.sheet.left));
+    const y0 = Math.max(0, Math.floor(item.sheet.top));
+    const x1 = Math.min(width, Math.ceil(item.sheet.left + item.sheet.drawWidth));
+    const y1 = Math.min(height, Math.ceil(item.sheet.top + item.sheet.drawHeight));
+    for (let y = y0; y < y1; y += 1) masked.fill(1, y * width + x0, y * width + x1);
+  }
+  const dark = (data, offset) => data[offset] <= FLAT_BLACK_CHANNEL_MAX
+    && data[offset + 1] <= FLAT_BLACK_CHANNEL_MAX
+    && data[offset + 2] <= FLAT_BLACK_CHANNEL_MAX;
+  let changed = 0, considered = 0;
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index]) continue;
+    considered += 1;
+    const offset = index * channels;
+    if (dark(after.data, offset) !== dark(before.data, offset)) changed += 1;
+  }
+  return considered ? changed / considered : 0;
 }
 
 module.exports = {
