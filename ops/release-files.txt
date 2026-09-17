@@ -92,6 +92,56 @@ runtime/atlas-hero-driver.cjs
 # The cascade as a durable node graph (owner 2026-09-11, "graph orchestration
 # in parallel"). index.js and flat-first-atlas.cjs require it at module load.
 runtime/atlas-call1-graph.cjs
+runtime/atlas-typeset-layer.cjs
+# The element graph's typography faces. VENDORED and hash-pinned rather than
+# fetched: a graph node that can fail on raw.githubusercontent.com is not
+# deterministic, and three of the reference registry's paths are already dead
+# upstream. atlas-typeset-layer.cjs reads fonts.json AT REQUIRE TIME, so a
+# release that shipped the module without these would die on require inside the
+# container and surface only as an empty /health -- the exact failure this
+# policy exists to prevent.
+runtime/atlas-fonts/fonts.json
+runtime/atlas-fonts/alfaslab.ttf
+runtime/atlas-fonts/anton.ttf
+runtime/atlas-fonts/archivoblack.ttf
+runtime/atlas-fonts/bangers.ttf
+runtime/atlas-fonts/bebas.ttf
+runtime/atlas-fonts/bungee.ttf
+runtime/atlas-fonts/greatvibes.ttf
+runtime/atlas-fonts/kaushan.ttf
+runtime/atlas-fonts/lobster.ttf
+runtime/atlas-fonts/marker.ttf
+runtime/atlas-fonts/monoton.ttf
+runtime/atlas-fonts/pacifico.ttf
+runtime/atlas-fonts/poppins.ttf
+runtime/atlas-fonts/poppinslight.ttf
+runtime/atlas-fonts/righteous.ttf
+runtime/atlas-fonts/russo.ttf
+runtime/atlas-fonts/sacramento.ttf
+runtime/atlas-fonts/satisfy.ttf
+runtime/atlas-fonts/titan.ttf
+runtime/atlas-fonts/yellowtail.ttf
+# Licence text ships beside each face: OFL-1.1 and Apache-2.0 both require it.
+runtime/atlas-fonts/licenses/alfaslab-OFL.txt
+runtime/atlas-fonts/licenses/anton-OFL.txt
+runtime/atlas-fonts/licenses/archivoblack-OFL.txt
+runtime/atlas-fonts/licenses/bangers-OFL.txt
+runtime/atlas-fonts/licenses/bebas-OFL.txt
+runtime/atlas-fonts/licenses/bungee-OFL.txt
+runtime/atlas-fonts/licenses/greatvibes-OFL.txt
+runtime/atlas-fonts/licenses/kaushan-OFL.txt
+runtime/atlas-fonts/licenses/lobster-OFL.txt
+runtime/atlas-fonts/licenses/marker-LICENSE.txt
+runtime/atlas-fonts/licenses/monoton-OFL.txt
+runtime/atlas-fonts/licenses/pacifico-OFL.txt
+runtime/atlas-fonts/licenses/poppins-OFL.txt
+runtime/atlas-fonts/licenses/poppinslight-OFL.txt
+runtime/atlas-fonts/licenses/righteous-OFL.txt
+runtime/atlas-fonts/licenses/russo-OFL.txt
+runtime/atlas-fonts/licenses/sacramento-OFL.txt
+runtime/atlas-fonts/licenses/satisfy-LICENSE.txt
+runtime/atlas-fonts/licenses/titan-OFL.txt
+runtime/atlas-fonts/licenses/yellowtail-LICENSE.txt
 # Historical immutable Houdini pair, retained for forensic compatibility and
 # not attached to active Call 1.
 runtime/atlas-examples/houdini-flattened-top-view.jpg
