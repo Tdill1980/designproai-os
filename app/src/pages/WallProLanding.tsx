@@ -213,7 +213,11 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
     const i = slides.findIndex(item => item.slot === active?.slot);
     setSelected(slides[(i + direction + slides.length) % slides.length].slot);
   };
-  const result = media.residential.enabled ? media.residential : active;
+  /* The workflow's "Generate & refine" tile preferred the residential slot,
+     which put the owner's own room back on the page one section below the
+     hero it had just been removed from. It shows whichever example is
+     selected, so the tile agrees with the slide the visitor is looking at. */
+  const result = active;
   const watchHref = media.process.enabled ? '#project' : '#workflow';
   // WPW pages light, DesignProAI pages dark navy on charcoal — main's own
   // house rule (#461), applied to the landing as one extra class.

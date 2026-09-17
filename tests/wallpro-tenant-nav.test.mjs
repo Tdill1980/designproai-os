@@ -176,3 +176,33 @@ test("the landing lockup is a row, and the mark cannot be stretched", () => {
   assert.ok(css.includes(".wl-brand > .wl-brand-text > span { color: inherit; }"),
     "the wordmark lead must not inherit the accent colour");
 });
+
+/**
+ * NO SPA ON THE LANDING (owner, 2026-09-17: "it must be the other images the
+ * fitness, etc not my photo").
+ *
+ * Excluding the residential slot from the hero was not enough: the workflow's
+ * "Generate & refine" tile preferred that same slot, the Upload and Mark steps
+ * used the spa's BEFORE frame, and both video posters were the spa's AFTER --
+ * so the owner's own room came back four times below the fold. The landing's
+ * defaults are the gym pair, which is a real before AND after of one room
+ * already normalised to one canvas.
+ *
+ * The files stay on disk: the case study is ABOUT that room and the FAQ corner
+ * figure measures its handle positions as fractions of that exact photograph.
+ */
+test("the landing's own media never defaults to the owner's room", () => {
+  // Scoped to the slots the landing actually RENDERS. The residential slot
+  // still names the spa and that is correct: it is excluded from the rotation
+  // (asserted above), nothing else reads it any more, and it stays as an admin
+  // row so the category can be re-pointed at a real residential room later.
+  const rendered = read("app/src/lib/wallpro-landing-content.ts")
+    .split("\n")
+    .filter(line => /key: '(before|process|install)'/.test(line));
+  assert.equal(rendered.length, 3, "the three rendered media slots must still exist");
+  assert.ok(!rendered.some(line => line.includes("proof-spa")),
+    "the workflow photo and both video posters must not default to the owner's room");
+  // The workflow result tile followed the selected example, not the spa slot.
+  assert.ok(read("app/src/pages/WallProLanding.tsx").includes("const result = active;"),
+    "the Generate & refine tile must follow the selected example");
+});
