@@ -631,6 +631,18 @@ async function callOnePanelSet(sb, run) {
  */
 async function designTimeManifest(sb, run) {
   const panels = await callOnePanelSet(sb, run);
+  // The same frozen row `callOnePanelSet` just validated, re-read for the
+  // vehicle identity below. Best effort by design: a failure here must not cost
+  // the manifest, only the elevation.
+  let snapshot = null;
+  try {
+    const { data } = await sb
+      .from("designpro_revision_sources")
+      .select("snapshot,snapshot_hash")
+      .eq("revision_id", run.revision_id)
+      .maybeSingle();
+    if (data && data.snapshot_hash === run.revision_snapshot_hash) snapshot = data.snapshot || null;
+  } catch { snapshot = null; }
   if (!panels) {
     throw new StageError(
       "call8_dimensions_unavailable",
@@ -657,11 +669,48 @@ async function designTimeManifest(sb, run) {
       surfaceSqFt: round2((widthInches * heightInches) / 144),
     };
   });
+  // THE VEHICLE, SO THE PROOF CAN DRAW ONE.
+  //
+  // The 2D Production Proof is a shop's artwork deliverable: the design shown
+  // on flattened driver, passenger, hood, roof, front and rear ELEVATIONS, the
+  // way `vehicle-proof-template.cjs` renders it -- a deterministic silhouette
+  // used as a display mask over the very same panel bytes, so the proof and the
+  // panels can never disagree and no model ever draws the vehicle.
+  //
+  // That whole system was ported, correct, and unreachable: the GENIE manifest
+  // (post-purchase) carries `vehicle`, and this design-time manifest -- the one
+  // the FREE half's proof.build actually uses -- never did. With no vehicle,
+  // `bodyFamilyFor(undefined)` resolves to the honest "flat" fallback, which is
+  // a plain rectangle on every view, and `vehicleName` falls back to the
+  // literal word "Vehicle". Live c3067608 (2022 Ford Transit Connect) printed
+  // exactly that: "Vehicle: Vehicle" over six bare rectangles, while its own
+  // request row carried {make: FORD, type: van, year: 2022, model: Transit
+  // Connect}.
+  //
+  // Read from the SAME frozen snapshot the panels come from, so the elevation
+  // and the artwork describe one revision. Absent or malformed, the rectangle
+  // fallback stands -- an honest plain panel beats a silhouette that
+  // misrepresents the customer's vehicle.
+  let vehicle;
+  const snapshotVehicle = snapshot?.vehicle;
+  if (snapshotVehicle && typeof snapshotVehicle === "object") {
+    const text = (value) => {
+      const trimmed = String(value ?? "").trim();
+      return trimmed ? trimmed.slice(0, 80) : undefined;
+    };
+    const type = text(snapshotVehicle.type) || text(snapshotVehicle.vehicleType) || text(snapshotVehicle.vehicleClass);
+    const year = text(snapshotVehicle.year);
+    const make = text(snapshotVehicle.make);
+    const model = text(snapshotVehicle.model);
+    if (type || year || make || model) vehicle = { type, year, make, model };
+  }
+
   return {
     contract: "designpro.design-time-dimension-manifest.v1",
     genieVerified: false,
     geometryPurpose: "calls-1-7-layout-only",
     expectedSurfaces,
+    ...(vehicle ? { vehicle } : {}),
     // Keep the same area contract as the validated GENIE manifest: add the
     // raw rectangular areas, then round the total once. Summing each
     // surface's already-rounded display value can drift by a cent (the live
