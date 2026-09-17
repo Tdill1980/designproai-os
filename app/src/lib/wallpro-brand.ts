@@ -60,12 +60,37 @@ export const WALL_GRADIENT = 'bg-gradient-to-r from-blue-700 via-blue-500 to-fuc
  * Then the card gets a real lift: a close contact shadow plus a wide soft one,
  * which is how a physical card casts, and `ring-slate-900/5` to keep the edge
  * crisp at the top where a downward shadow gives none.
+ *
+ * THEMED, 2026-09-17. The literal slate values moved into `.wall-card` in
+ * index.css, where a `[data-wall-theme]` scope decides whether they resolve
+ * light or dark. This constant therefore names a surface instead of painting
+ * one, and every existing call site keeps working unchanged -- which is the
+ * whole reason the card was a single constant in the first place.
  */
-export const WALL_CARD =
-  'rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_28px_-12px_rgba(15,23,42,0.18)] ring-1 ring-slate-900/5';
+export const WALL_CARD = 'wall-card';
 
-/** The page ground the cards sit on. Must stay darker than the card. */
-export const WALL_PAGE_GROUND = 'bg-slate-100';
+/** The page ground the cards sit on. Must stay darker than the card in the
+ *  light theme and LIGHTER than it in the dark one, so a panel always reads as
+ *  an object on a surface rather than a shape cut out of it. */
+export const WALL_PAGE_GROUND = 'wall-ground';
+
+/**
+ * WHICH SURFACE THEME A BRAND WEARS.
+ *
+ * Owner, 2026-09-17: "the system should have a light ui for WPW x Wallpro and
+ * a dark for standard wallpro."
+ *
+ * The partner page stays light: it is a storefront a shop sends its own
+ * retail customers to, and it carries the printed-film offer, where a bright
+ * page is the convention every e-commerce visitor already reads. The
+ * DesignProAI page goes dark because it is mounted inside the OS shell, which
+ * is dark everywhere else -- a light panel in that frame reads as a foreign
+ * document rather than a tool in the product.
+ *
+ * It is a TOKEN SET, not a second page: both themes are the same component and
+ * the same markup, so a fix lands on both at once.
+ */
+export type WallSurfaceTheme = 'light' | 'dark';
 
 export type WallBrandKey = 'designpro' | 'weprintwraps';
 
@@ -112,6 +137,8 @@ export type WallBrand = {
    * middle.
    */
   proofs: WallProof[];
+  /** Which surface token set this brand's pages resolve. See WallSurfaceTheme. */
+  surface: WallSurfaceTheme;
 };
 
 /** One before/after pair: the same room photographed bare and wrapped. */
@@ -238,6 +265,8 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // print offer -- it is what the tool makes.
     showPrintOffer: false,
     proofs: WALL_PROOFS,
+    // Dark: this page is mounted inside the OS shell, which is dark around it.
+    surface: 'dark',
   },
   weprintwraps: {
     // The real mark off weprintwraps.com, vendored into public/ so the header
@@ -265,6 +294,8 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // caption that describes THAT room. Do not reuse a caption across rooms --
     // the specificity is the whole reason a before/after persuades.
     proofs: WALL_PROOFS,
+    // Light: a retail storefront the partner sends its own customers to.
+    surface: 'light',
   },
 };
 

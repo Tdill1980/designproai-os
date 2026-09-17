@@ -84,17 +84,17 @@ export function WallProProductDetail({ faqHref = '/wall-wrap/faq' }: { faqHref?:
       <h2 className="text-lg font-semibold">Questions</h2>
       <div className="mt-3">
         {QUESTIONS.map(([q, a], i) => (
-          <details key={q} open={i === 0} className="border-b border-slate-200 py-3 last:border-b-0">
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">{q}</summary>
-            <p className="mt-2 max-w-[68ch] text-sm text-slate-600">{a}</p>
+          <details key={q} open={i === 0} className="border-b wall-edge py-3 last:border-b-0">
+            <summary className="cursor-pointer text-sm font-semibold wall-ink">{q}</summary>
+            <p className="mt-2 max-w-[68ch] text-sm wall-muted">{a}</p>
           </details>
         ))}
       </div>
 
-      <h3 className="mt-6 text-sm font-semibold text-slate-900">Also called</h3>
+      <h3 className="mt-6 text-sm font-semibold wall-ink">Also called</h3>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {ALSO_CALLED.map(term => (
-          <span key={term} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600">{term}</span>
+          <span key={term} className="rounded-full border wall-edge bg-[hsl(var(--wall-field))] px-2.5 py-1 text-xs wall-muted">{term}</span>
         ))}
       </div>
       <p className="mt-4">
@@ -102,7 +102,7 @@ export function WallProProductDetail({ faqHref = '/wall-wrap/faq' }: { faqHref?:
           Every question, with the prices and the geometry <span aria-hidden="true">&rarr;</span>
         </Link>
       </p>
-      <p className="mt-3 max-w-[68ch] text-xs text-slate-500">
+      <p className="mt-3 max-w-[68ch] text-xs wall-muted">
         Printing on specialty film such as reflective or chrome is available by
         request — email the film you want and a WePrintWraps team member will come
         back with a price.

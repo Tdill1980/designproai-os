@@ -38,7 +38,7 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
   return (
     <section id="order-printed-film" className={WALL_CARD} aria-label="Order printed film">
       <h2 className="text-lg font-semibold">Just need film printed?</h2>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm wall-muted">
         If your artwork is already print-ready, skip the design and order the film.
         Priced by the square foot, printed and shipped ready to install.
       </p>
@@ -49,27 +49,27 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
           <input
             id="film-order-sqft"
             type="number" min="1" step="1" inputMode="numeric"
-            className="mt-1 w-36 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+            className="mt-1 w-36 rounded-lg border wall-edge bg-[hsl(var(--wall-card))] px-3 py-2 text-sm wall-ink"
             placeholder={wallSqFt ? String(Math.ceil(wallSqFt)) : 'Enter sq ft'}
             value={override}
             onChange={e => setOverride(e.target.value)}
           />
         </label>
         {!usingOverride && wallSqFt
-          ? <p className="pb-2 text-xs text-slate-500">Using your wall: {wallSqFt.toFixed(1)} sq ft. Type above to order a different size.</p>
+          ? <p className="pb-2 text-xs wall-muted">Using your wall: {wallSqFt.toFixed(1)} sq ft. Type above to order a different size.</p>
           : usingOverride && wallSqFt
-            ? <p className="pb-2 text-xs text-slate-500">Ordering {Math.ceil(typed)} sq ft — your wall is {wallSqFt.toFixed(1)} sq ft.</p>
-            : <p className="pb-2 text-xs text-slate-500">Enter your wall size in step 1, or type a square footage here.</p>}
+            ? <p className="pb-2 text-xs wall-muted">Ordering {Math.ceil(typed)} sq ft — your wall is {wallSqFt.toFixed(1)} sq ft.</p>
+            : <p className="pb-2 text-xs wall-muted">Enter your wall size in step 1, or type a square footage here.</p>}
       </div>
 
-      <div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200">
+      <div className="mt-4 divide-y divide-slate-200 rounded-xl border wall-edge">
         {WPW_PRINTED_FILMS.map((film, i) => {
           const order = haveFootage ? filmOrder(film, sqFt) : null;
           return (
             <div key={film.wooProductId} className={`flex flex-wrap items-center justify-between gap-3 p-3 ${i === 0 ? 'bg-blue-50/50' : ''}`}>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{film.name}</p>
-                <p className="text-xs text-slate-500">
+                <p className="truncate text-sm font-semibold wall-ink">{film.name}</p>
+                <p className="text-xs wall-muted">
                   {film.use}
                   {typeof film.price === 'number' && film.unit === 'sqft' && <> · ${film.price.toFixed(2)}/sq ft</>}
                 </p>
@@ -77,7 +77,7 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
               <div className="flex shrink-0 items-center gap-3">
                 {/* The total, so the number on the button is never a surprise. */}
                 {order?.cents != null && (
-                  <span className="text-sm font-bold tabular-nums text-slate-900">{money(order.cents)}</span>
+                  <span className="text-sm font-bold tabular-nums wall-ink">{money(order.cents)}</span>
                 )}
                 {/* The wall film leads with the page's own action gradient -- the
                     same one the Generate buttons carry -- so "buy the film" reads
@@ -101,7 +101,7 @@ export function WallProFilmOrder({ wallSqFt }: { wallSqFt: number | null }) {
         })}
       </div>
 
-      <p className="mt-3 text-xs text-slate-500">
+      <p className="mt-3 text-xs wall-muted">
         Adds to your WePrintWraps cart. Need the artwork as well? Design it above —
         the design and the film are separate, so you can buy either or both.
       </p>

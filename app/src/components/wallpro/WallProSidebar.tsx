@@ -66,7 +66,7 @@ export function WallProSidebar({
         {theme.logo && (
           <div className="mb-3 flex items-center gap-2 px-2">
             <img src={theme.logo} alt={theme.logoAlt} className="h-6 w-auto" />
-            <span className="text-sm font-bold text-slate-900">
+            <span className="text-sm font-bold wall-ink">
               Wall<span className="text-blue-600">Pro</span>
             </span>
           </div>
@@ -77,19 +77,19 @@ export function WallProSidebar({
             key={step.id}
             type="button"
             onClick={() => jump(step.id)}
-            className="group flex items-start gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-white"
+            className="group flex items-start gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-[hsl(var(--wall-card))]"
           >
             <span
               aria-hidden="true"
               className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                step.done ? 'bg-emerald-600 text-white' : 'border border-slate-300 bg-white text-slate-500'
+                step.done ? 'bg-emerald-600 text-white' : 'border wall-edge bg-[hsl(var(--wall-card))] wall-muted'
               }`}
             >
               {step.done ? <Check className="h-3 w-3" /> : i + 1}
             </span>
             <span className="min-w-0">
-              <span className="block text-[13px] font-semibold text-slate-900">{step.label}</span>
-              <span className="block truncate text-[11px] text-slate-500">{step.detail}</span>
+              <span className="block text-[13px] font-semibold wall-ink">{step.label}</span>
+              <span className="block truncate text-[11px] wall-muted">{step.detail}</span>
             </span>
           </button>
         ))}

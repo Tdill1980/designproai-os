@@ -31,7 +31,9 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
   const partner = brand !== 'designpro';
 
   return (
-    <div className="pattern-wrap min-h-screen bg-white text-gray-900">
+    // THE THEME SCOPE, same attribute and same token set WallPro uses, so the two
+    // tools are one dark rather than two (owner, 2026-09-17).
+    <div data-wall-theme={theme.surface} className="pattern-wrap min-h-screen wall-ground wall-ink">
       <Helmet>
         <title>{partner ? `${theme.logoAlt} x PatternPro™ — Pattern wraps by the yard` : 'PatternPro™ — Pattern wraps by the yard | DesignProAI'}</title>
         <meta
@@ -53,13 +55,13 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
             <Button
               variant="outline"
               size="sm"
-              className="border-blue-300/70 bg-white text-blue-700 hover:bg-blue-50 md:h-10 md:px-4"
+              className="border-blue-300/70 bg-[hsl(var(--wall-card))] text-blue-700 hover:bg-blue-50 md:h-10 md:px-4"
               title="Start over with a blank vehicle and no pattern selected."
               onClick={() => window.location.assign(window.location.pathname)}
             >
               <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
             </Button>
-            <Button asChild variant="outline" size="sm" className="border-blue-300/70 bg-white text-blue-700 hover:bg-blue-50 md:h-10 md:px-4">
+            <Button asChild variant="outline" size="sm" className="border-blue-300/70 bg-[hsl(var(--wall-card))] text-blue-700 hover:bg-blue-50 md:h-10 md:px-4">
               <Link to="/designpro/jobs" title="My designs">
                 <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My designs</span>
               </Link>
@@ -78,12 +80,12 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
           {/* THE HEADLINE IS THE PRODUCT (owner, 2026-09-15: "should say pick a
               pattern and see it on any vehicle"). Not who designed or printed it —
               what the visitor gets to do, in one line. */}
-          <h1 className="mt-3 font-poppins text-4xl font-extrabold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl">
+          <h1 className="mt-3 font-poppins text-4xl font-extrabold leading-[1.05] tracking-tight wall-ink sm:text-5xl">
             Pick a pattern.
             <br />
             See it on <span className="wpw-blue-text">any vehicle</span>.
           </h1>
-          <p className="mt-4 max-w-xl text-base text-gray-600 sm:text-lg">{theme.lede}</p>
+          <p className="mt-4 max-w-xl text-base wall-muted sm:text-lg">{theme.lede}</p>
           <ul className="mt-5 flex flex-wrap gap-2 text-xs font-semibold">
             {theme.chips.map((chip) => (
               <li key={chip} className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700">
@@ -97,7 +99,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
             <img
               src={theme.hero.main}
               alt={theme.hero.alt}
-              className="w-full rounded-2xl border border-gray-200 shadow-xl"
+              className="w-full rounded-2xl border wall-edge shadow-xl"
               loading="eager"
             />
             {/* The swatch CARD the render was made from, over the truck's corner:
@@ -117,9 +119,9 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
       {/* ── Already know your pattern? Straight to the printed rolls. ─────── */}
       {theme.orderFilmUrls && (
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border wall-edge bg-[hsl(var(--wall-field))] px-4 py-3 text-sm wall-muted">
             <span>
-              <span className="font-bold text-gray-900">Already know your pattern?</span> Skip the
+              <span className="font-bold wall-ink">Already know your pattern?</span> Skip the
               3D proof and order printed rolls by the yard:
             </span>
             <span className="flex flex-wrap gap-x-4 gap-y-1">
@@ -139,8 +141,17 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
         </div>
       )}
 
-      {/* ── The tool — the SAME PatternPro, in white ───────────────────────── */}
-      <section className="wpw-white pb-16">
+      {/* ── The tool — the SAME PatternPro, skinned to the brand ──────────────
+          `.wpw-white` is a skin that repaints the shared WBTYToolUI, which is
+          natively DARK (zinc-900, bg-black), into a light storefront. It used
+          to be applied unconditionally, which is why the DesignProAI page was
+          light too.
+          Owner, 2026-09-17: "a dark navy with charcoal ui for standard
+          WallPro, and PatternPro." So the skin now rides the brand: the
+          partner keeps its light storefront, and dropping the skin on the
+          DesignProAI brand returns the tool to the dark it was written in --
+          no second override, and nothing to keep in sync. */}
+      <section className={`${theme.surface === 'light' ? 'wpw-white' : ''} pb-16`}>
         <ToolContainer>
           <WBTYToolUI />
         </ToolContainer>
