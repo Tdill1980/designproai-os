@@ -457,6 +457,50 @@ async function completeGenerationWithSources({ supabase, ownerId, revisionId, vi
   return data;
 }
 
+/**
+ * THE PRODUCTION HALF IS CREATED BY THE SERVER, NOT BY THE CUSTOMER'S TAB.
+ *
+ * `handoff_designpro_generation_to_production` had exactly one caller in the
+ * whole system -- the gateway, on a browser request -- so the entice workflow
+ * that builds the 2D Production Proof, the panels and the logo pack existed
+ * only if the customer's browser was still open and still polling when the
+ * design landed. Measured 2026-09-17: three consecutive live generations
+ * (194e8f17, aac0f43b, 71c8a5e8) all reached `outputs_ready` with master QC
+ * passed, six panels and seven proofs, all three reported production-eligible
+ * by `designpro_flat_first_handoff_gate` -- and not one of them had a workflow
+ * row, so `proof.build` never ran and there was no 2D proof. The owner saw
+ * exactly that in the product.
+ *
+ * BEST EFFORT, ALWAYS. The design is already complete and durable when this
+ * runs; the handoff is idempotent and the browser may still fire it, and the
+ * gateway's own resume path registers it too. So a failure here is logged and
+ * dropped -- it must never fail a generation that has already succeeded, and it
+ * must never mark a request failed and cost the customer their design.
+ *
+ * It goes through `handoff_designpro_generation_for_worker`, a service-role
+ * wrapper around that same function, because the real one requires an end-user
+ * JWT (its snapshot write is granted to `authenticated`, not `service_role`).
+ * One door, one implementation, every gate unchanged.
+ */
+async function handOffToProduction({ supabase, requestId, ownerId, logger = () => {} }) {
+  if (!supabase || !requestId || !ownerId) return null;
+  try {
+    const { data, error } = await supabase.rpc("handoff_designpro_generation_for_worker", {
+      p_request_id: requestId, p_owner_id: ownerId,
+    });
+    if (error) throw new Error(error.message || "handoff rpc failed");
+    logger(`production handoff ${data?.alreadyHandedOff === true ? "already existed" : "created"}`
+      + ` (revision ${String(data?.revisionId || "?").slice(0, 8)}, run ${String(data?.workflowRunId || "none").slice(0, 8)})`);
+    return data || null;
+  } catch (cause) {
+    // A generation that is ready but not handed off is recoverable from the
+    // product (RevisionStudio's 2D proof button registers the job through the
+    // same RPC). Losing the design to a handoff error would not be.
+    logger(`production handoff deferred: ${String(cause?.message || cause).slice(0, 200)}`);
+    return null;
+  }
+}
+
 function slotsFrom(viewPlan, input, instructions = {}, flatAtlas = null, imageParts = []) {
   const plan = Array.isArray(viewPlan) && viewPlan.length ? viewPlan : angles.viewOrder().map((sourceViewType) => ({ sourceViewType }));
   return plan.map((entry) => {
@@ -1347,6 +1391,17 @@ function createGenerationWorker({
         },
       });
 
+      // A PARTIAL ATLAS SET IS NOT HANDED OFF FROM HERE. The DB gate would
+      // accept it on master acceptance alone, but a run that is still going to
+      // retry its refused views should not race a workflow against itself; the
+      // browser and the resume path both still reach it.
+      if (!atlasPartial) {
+        await handOffToProduction({
+          supabase, requestId, ownerId,
+          logger: (line) => console.log(`[DESIGNPRO-OS] ${requestId}: ${line}`),
+        });
+      }
+
       return {
         requestId,
         state: "outputs_ready",
@@ -1428,6 +1483,7 @@ module.exports = {
   assertAtlasViewLineage,
   createGenerationWorker,
   completeGenerationWithSources,
+  handOffToProduction,
   conditionedPromptPartsFor,
   designBrief,
   generationIdentity,
