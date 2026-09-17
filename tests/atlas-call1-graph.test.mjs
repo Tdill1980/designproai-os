@@ -28,6 +28,16 @@ import { createAtlasCall1Database, createAtlasCall1Adapter, OWNER, REQUEST, GENE
 const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
+
+// HERO-FIRST IS OPT-IN NOW, so this file asks for it by name.
+//
+// The owner's Call-1 order is flat 2D first (`heroFirstEnabled`), so the
+// DEFAULT graph is the seven-node single-call one and the view/flatten split
+// only compiles when the flag says so. This file exists to hold that split's
+// shape, retry isolation and reference handoff, so it pins the flag rather than
+// leaning on a default — which is exactly how these tests silently stopped
+// describing production the last time a default moved underneath them.
+process.env.DESIGNPRO_ATLAS_HERO_FIRST = "on";
 const graph = require("../runtime/atlas-call1-graph.cjs");
 const hero = require("../runtime/atlas-hero-driver.cjs");
 const atlas = require("../runtime/flat-first-atlas.cjs");
@@ -147,10 +157,23 @@ test("1. the compiled graph is the owner's cascade as edges: nothing but a depen
   // the driver's signature already carries.
   assert.deepEqual(waves, [["driver.view", "front.view"], ["driver"], ["passenger"], ["front", "hood", "rear", "roof"], ["master.assemble"]]);
 
-  // THE KILL SWITCH IS THE GRAPH'S SHAPE, decided once when the run is created
-  // and then stored — so a flag flipped mid-run cannot change what a claimed
-  // node does. With hero-first off the graph is byte-for-byte the old one --
-  // no view node for EITHER eligible surface.
+  // THE SHAPE IS THE SWITCH, decided once when the run is created and then
+  // stored — so a flag flipped mid-run cannot change what a claimed node does.
+  // Without hero-first the graph is the seven-node single-call one: no view
+  // node for EITHER eligible surface, driver authored flat and from scratch.
+  //
+  // THAT IS NOW THE DEFAULT (owner: Call 1 authors the flat 2D design first),
+  // so it is asserted through the real `heroFirstEnabled` with the flag absent,
+  // not only through an explicit `heroFirst: false`.
+  const heroFirstFlag = process.env.DESIGNPRO_ATLAS_HERO_FIRST;
+  delete process.env.DESIGNPRO_ATLAS_HERO_FIRST;
+  try {
+    const byDefault = graph.compileHeroDriverGraph();
+    assert.equal(byDefault.length, 7, "flat-first is the default Call 1 shape");
+    assert.ok(!byDefault.some((n) => n.key === graph.DRIVER_VIEW_NODE),
+      "no vehicle render stands in front of the design by default");
+  } finally { process.env.DESIGNPRO_ATLAS_HERO_FIRST = heroFirstFlag; }
+
   const single = graph.compileHeroDriverGraph({ heroFirst: false });
   assert.equal(single.length, 7);
   assert.ok(!single.some((n) => n.key === graph.DRIVER_VIEW_NODE));
