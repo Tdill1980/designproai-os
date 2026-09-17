@@ -51,6 +51,15 @@ function syntheticEdge(calls, { refuse = null } = {}) {
   return async (body) => {
     calls.push(body);
     const tint = { driver: "#2255aa", hood: "#3366bb", front: "#4477cc", rear: "#5588dd", roof: "#6699ee" }[body.surfaceKey];
+    // THE EDGE'S OWN INPUT ALLOWLIST. `attach()` in design-panel-ai-generate
+    // refuses any path outside the content-addressed prefix with
+    // `atlas_author_input_path_invalid` -- which is exactly how node 3's first
+    // live request died (generation 2099d17d, 2026-09-17, HTTP 500) while this
+    // stub happily accepted the panel path node 1 used to return. A fake door
+    // that is laxer than the real one cannot catch a door-shaped bug.
+    if (body.heroViewStoragePath && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/.test(String(body.heroViewStoragePath))) {
+      throw Object.assign(new Error(`atlas_author_input_path_invalid:${body.heroViewStoragePath}`), { code: "flat_atlas_author_edge_call_failed" });
+    }
     const vehicleView = body.first === true && !body.heroViewStoragePath;
     const bytes = vehicleView
       ? await paint(1920, 1080, tint)
@@ -230,8 +239,13 @@ test("4. end to end across two node workers: five image requests, passenger a fl
     assert.equal(calls[0].providerRequest.attemptKey, "author:driver-view:1");
     assert.equal(calls[1].surfaceKey, "driver");
     assert.equal(calls[1].first, true);
-    assert.equal(calls[1].heroViewStoragePath, "atlas-author/driver-view.png", "node 3 consumes node 1 by storage path");
+    // Node 1's render is a Call-1 INPUT for node 3, so it is staged like one --
+    // the edge attaches only from this prefix.
+    assert.match(calls[1].heroViewStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/,
+      "node 3 consumes node 1 by a path the edge will actually attach");
     assert.match(calls[1].heroViewContentHash, /^[0-9a-f]{64}$/, "…and by content hash — an immutable reference");
+    assert.equal(calls[1].heroViewStoragePath, `atlas-call1-inputs/${calls[1].heroViewContentHash}.jpg`,
+      "the path IS the hash: content-addressed, so the edge can verify what it read");
     assert.equal(calls[1].heroFlattenTier, 0);
     assert.deepEqual(calls.slice(2, 5).map((c) => c.surfaceKey).sort(), ["front", "hood", "rear"]);
     assert.equal(calls[5].surfaceKey, "roof");
@@ -302,7 +316,7 @@ test("5a. a refused FLATTEN never re-bills the vehicle view: node 1 completes on
     // Node 1's output stayed a reference. No pixels were written into the row.
     const view = (await db.query("SELECT output FROM public.designpro_atlas_call1_nodes WHERE node_key=$1", [graph.DRIVER_VIEW_NODE])).rows[0].output;
     assert.equal(view.stage, "vehicle-view");
-    assert.match(view.view.storagePath, /driver-view\.png$/);
+    assert.match(view.view.storagePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
     assert.match(view.view.contentHash, /^[0-9a-f]{64}$/);
     assert.ok(view.view.byteSize > 0);
     assert.ok(!JSON.stringify(view).includes("base64"), "the handoff is an identity, never a blob");

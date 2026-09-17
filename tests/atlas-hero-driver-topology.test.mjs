@@ -342,10 +342,18 @@ test("hero-first runs the driver as vehicle view then flatten, and changes nothi
   assert.equal(view.surfaceKey, "driver");
   assert.equal(view.heroViewStoragePath, undefined, "stage 1 is from scratch and is shown no view");
   assert.equal(flatten.surfaceKey, "driver");
-  assert.equal(flatten.heroViewStoragePath, "atlas-author/driver-view.png",
-    "stage 2 must be shown the approved view, by path");
+  // THIS PINNED THE PANEL PATH, WHICH IS THE ONE PATH THE EDGE REFUSES.
+  // `attach()` in design-panel-ai-generate attaches only from the
+  // content-addressed prefix and answers `atlas_author_input_path_invalid` to
+  // anything else -- so this fixture asserted the exact shape that killed node 3
+  // on its first live request (generation 2099d17d, 2026-09-17, HTTP 500). The
+  // contract is the PREFIX, not whatever string the stub happened to return.
+  assert.match(flatten.heroViewStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/,
+    "stage 2 must be shown the approved view by a path the edge will attach");
   assert.match(String(flatten.heroViewContentHash || ""), /^[0-9a-f]{64}$/,
     "and by hash -- a flatten of unverified bytes is a second producer");
+  assert.equal(flatten.heroViewStoragePath, `atlas-call1-inputs/${flatten.heroViewContentHash}.jpg`,
+    "content-addressed: the path IS the hash, so the edge can verify what it read");
   assert.equal(flatten.heroFlattenTier, 0, "first flatten asks the complete instruction");
 
   // Everything after the driver is untouched: the continuations still see the

@@ -211,11 +211,12 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       creativeContext: String(definition.creativeContext || ""),
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
       providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : null,
+      store,
       logger,
     });
     logger(`atlas call 1 graph ${run.id}: driver vehicle view ${view.contentHash.slice(0, 12)}`);
     return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: "driver", stage: "vehicle-view",
-      view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.bytes.length,
+      view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.byteSize,
         imageRequestCount: view.imageRequestCount, providerCacheHit: view.providerCacheHit },
       retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
