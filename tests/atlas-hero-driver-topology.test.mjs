@@ -225,10 +225,12 @@ test("the edge's author mode is internal-only, one image request, and the capabi
 });
 
 test("the cascade runs end to end on synthetic sheets: five image requests, passenger a flop, one assembled sheet, exact exchanges carried", async (t) => {
-  // This pins the SINGLE-CALL driver, which hero-first replaces but does not
-  // delete: it is what DESIGNPRO_ATLAS_HERO_FIRST=off runs, and it must keep
-  // working byte for byte. Not one assertion below is relaxed.
-  heroFirst(t, "off");
+  // THIS IS THE DEFAULT CALL 1, and it is asserted with the flag ABSENT rather
+  // than pinned "off" -- the owner's order is that Call 1 authors the flat 2D
+  // design first, so the single-call driver is the product, not a fallback. A
+  // test that only ever ran this path with an explicit "off" would keep passing
+  // while the default drifted back to a vehicle render in front of it.
+  heroFirst(t, undefined);
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const calls = [];
   const staged = new Map();
@@ -330,8 +332,11 @@ test("the ruling is recorded where the next session will read it", () => {
 // the flatten is shown the approved view by path AND hash, the continuations
 // are unchanged (they still see the finished FLANK), and passenger is still a
 // code flop.
-test("hero-first runs driver AND front as vehicle-view then flatten, and changes nothing after it", async (t) => {
-  heroFirst(t, undefined);
+test("hero-first, OPT-IN, runs driver AND front as vehicle-view then flatten, and changes nothing after it", async (t) => {
+  // `undefined` used to mean this path. The owner's Call-1 order is flat 2D
+  // first, so the default is single-call now and the two-stage path is asked
+  // for by name -- it stays fully working and fully measured, just not default.
+  heroFirst(t, "on");
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const calls = [];
   const store = { async putImmutableBytes() {} };
@@ -463,7 +468,7 @@ test("HERO_VIEW_SURFACES names exactly the surfaces measured to need the split -
 });
 
 test("hero-first refuses a stage-1 return that does not identify itself as the vehicle view", async (t) => {
-  heroFirst(t, undefined);
+  heroFirst(t, "on");
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const store = { async putImmutableBytes() {} };
   const callEdge = async () => ({

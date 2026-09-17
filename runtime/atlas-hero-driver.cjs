@@ -490,17 +490,36 @@ async function containExtend(bytes, targetWidth, targetHeight) {
  * answers; stage 2 then extends that same composition into the true aspect.
  */
 /**
- * HERO-FIRST is ON by default within the hero cascade, and off by one word.
+ * HERO-FIRST IS OFF BY DEFAULT. CALL 1 AUTHORS FLAT 2D, DIRECTLY.
  *
- * The single-call driver it replaces is measured 0/3 on real vehicles: it asks
- * for a flat strip at the flank's own ratio, which this model cannot emit, so
- * the aspect gate refuses it before any artwork is judged. Defaulting ON is
- * therefore not optimism -- the path it replaces cannot pass. The switch exists
- * because a live surprise must be one deploy input away, exactly like
- * `DESIGNPRO_ATLAS_FIELD_FIRST`.
+ * Owner ruling, stated repeatedly and finally on 2026-09-17: *"Call 1 generates
+ * the unified 2D flat proof design asset first. Call 2 takes that 2D proof and
+ * renders the customer-facing 3D proofs (driver side first, then parallel
+ * sides). Call 3 outputs the production panels and print manifest."* — and, of
+ * the render-then-flatten ordering, *"we agreed that never works"*.
+ *
+ * THE ONLY ARGUMENT FOR DEFAULTING ON HAS BEEN REMOVED, so what is left is the
+ * owner's order. That argument was: a single-call driver asks for a flat strip
+ * at the flank's own ratio, this model cannot emit wider than 21:9, and the
+ * aspect gate refused it before any artwork was judged (0/3 on real vehicles).
+ * Every word of that was true of the gate as it stood. It is not true of the
+ * gate now: `evaluateAuthored` fits the returned sheet to the zone with
+ * contain-fit + edge-extend (RestylePro's `containExtend`), so a surface is
+ * asked at a canvas the model CAN emit and code closes the rest. The flat ask
+ * passes on its own.
+ *
+ * What defaulting ON cost, measured live on 2026-09-17: four generations whose
+ * `surface.driver.view` completed cleanly in ~26 s and whose flatten then
+ * refused on aspect, discarding that render and falling over to the flat-sheet
+ * contract anyway — the slower road to the same place, plus a wasted image
+ * call. c04e78c6 is the last of them.
+ *
+ * The switch survives as OPT-IN (`DESIGNPRO_ATLAS_HERO_FIRST=on`) so the
+ * two-stage path stays measurable, and so this is a default change rather than
+ * a deletion of working code. Nothing else about the cascade moves.
  */
 function heroFirstEnabled() {
-  return String(process.env.DESIGNPRO_ATLAS_HERO_FIRST || "").trim().toLowerCase() !== "off";
+  return String(process.env.DESIGNPRO_ATLAS_HERO_FIRST || "").trim().toLowerCase() === "on";
 }
 
 async function authorHeroVehicleView({
