@@ -59,12 +59,28 @@ const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
 const CANVAS_PX = 4096;
 
-/** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
+/**
+ * Execution order. Surfaces inside one stage run in parallel; stages run in
+ * sequence. THREE STAGES, not four (owner, 2026-09-17: "add dims after dims
+ * become atlas boxes in parallel" / a three-tier DAG: one flat proof, then the
+ * sides in parallel, then assembly).
+ *
+ * GENIE resolves the dimensions, `buildAtlasManifest` turns them into the six
+ * boxes, and the boxes then FILL IN PARALLEL behind one design origin. Roof
+ * used to hold a fourth stage on its own, which cost a full model call
+ * (~45 s) of pure wall clock on every run: measured live on 194e8f17, every
+ * surface completed in 9-51 s while the cascade still took minutes because
+ * four waves run end to end.
+ *
+ * Driver stays first and alone. It is the design's origin, and the continuity
+ * every other surface inherits is its thought signature (RULE 0.35) -- six
+ * surfaces started simultaneously would be six independent creative prompts,
+ * which RULE 0.0 forbids by name.
+ */
 const AUTHOR_CASCADE = Object.freeze([
   Object.freeze(["driver"]),
   Object.freeze(["passenger"]),
-  Object.freeze(["hood", "front", "rear"]),
-  Object.freeze(["roof"]),
+  Object.freeze(["hood", "front", "rear", "roof"]),
 ]);
 /** Finished sheets each AI surface is SHOWN (downscaled references). */
 const AUTHOR_NEIGHBOURS = Object.freeze({
@@ -90,7 +106,14 @@ const AUTHOR_HISTORY = Object.freeze({
   hood: Object.freeze(["driver"]),
   front: Object.freeze(["driver"]),
   rear: Object.freeze(["driver"]),
-  roof: Object.freeze(["driver", "hood", "front", "rear"]),
+  // ROOF REPLAYS THE DRIVER ONLY. Replaying hood, front and rear was the ONE
+  // edge holding roof in a fourth stage of its own, and the graph derives its
+  // dependencies from this table -- so that single entry cost a whole model
+  // call of wall clock on every generation. Roof now fills beside them.
+  // Continuity is unchanged in kind: every surface in the parallel stage
+  // inherits the same driver exchange and its thought signature, which is what
+  // RULE 0.35 says locks the design across panels.
+  roof: Object.freeze(["driver"]),
 });
 const SURFACE_LABELS = Object.freeze({
   driver: "DRIVER SIDE", passenger: "PASSENGER SIDE", hood: "HOOD", roof: "ROOF", front: "FRONT", rear: "REAR",
