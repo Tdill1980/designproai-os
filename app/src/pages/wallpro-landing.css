@@ -9,3 +9,46 @@
    cannot push the wordmark off a phone header. */
 .wl-partner-mark { height: 26px; width: auto; flex: none; }
 @media (min-width: 768px) { .wl-partner-mark { height: 30px; } }
+
+/* ── THE LIGHT UI, FOR THE PARTNER BRAND ───────────────────────────────────
+   Owner, 2026-09-17: "I need also the version with WPW x WallPro light UI."
+   This is also main's own house rule from #461 — WPW pages light, DesignProAI
+   pages dark navy on charcoal.
+
+   ONE STYLESHEET, NOT TWO. The layout, the grid, every dimension and the whole
+   component tree are shared; only the SURFACES change. A second CSS file (or a
+   second page) would drift the first time a section moved, which is the exact
+   failure the brand-aware page exists to prevent.
+
+   Four of these are variables and the rest are surfaces the original wrote as
+   literal dark hex. They are overridden by name rather than by rewriting the
+   base, so the dark page stays byte-identical in behaviour. */
+.wl-page.wl-light{--wl-bg:#f7f9fc;--wl-panel:#fff;--wl-line:#dfe6ef;--wl-muted:#4a5a6e;color:#0d1b2a}
+/* The hero shade fades the photo into the page, so it must fade into WHITE. */
+.wl-light .wl-hero-shade{background:linear-gradient(90deg,#f7f9fc 0%,#f7f9fcd0 18%,transparent 44%),linear-gradient(0deg,#f7f9fc22,transparent 55%)}
+.wl-light .wl-eyebrow{color:#0d74d1}
+.wl-light .wl-subhead{color:#2c3e53}
+.wl-light .wl-intro{color:#41546a}
+.wl-light .wl-button-outline{background:#fff;border:1px solid #c3d2e3;color:#12324f!important}
+.wl-light .wl-button-outline svg{color:#1685da}
+.wl-light .wl-features svg{color:#1a7fd4}
+.wl-light .wl-features>div:first-child svg{color:#7a4fe0}
+.wl-light .wl-room-caption{background:#ffffffe8;border:1px solid #d7e1ec;color:#12243a}
+.wl-light .wl-example:hover{background:#eaf1f9}
+.wl-light .wl-example span{color:#51627a}
+.wl-light .wl-milestones>div{background:#fff;border-color:#dce5ef}
+.wl-light .wl-milestones svg{color:#1a7fd4}
+.wl-light .wl-milestones>div:first-child svg{color:#7a4fe0}
+.wl-light .wl-video{background:#eef3f9;border-color:#d7e1ec}
+.wl-light .wl-steps article{background:#fff;border-color:#dce5ef}
+.wl-light .wl-step-picture{background:#e6edf5}
+.wl-light .wl-upload-icon{background:#12324f;color:#fff}
+.wl-light .wl-prompt{background:#f1f5fa;border-color:#d7e1ec;color:#38495e}
+.wl-light .wl-file-output>svg{color:#1a7fd4}
+.wl-light .wl-file-output span{background:#f1f5fa;border-color:#d7e1ec;color:#38495e}
+.wl-light .wl-file-output small{color:#51627a}
+.wl-light .wl-text-link{color:#0d74d1!important}
+.wl-light .wl-end{background:linear-gradient(110deg,#eef4fb,#e7edfa);border-color:#dfe6ef}
+.wl-light .wl-footer{color:#51627a}
+.wl-light .wl-case-copy>p:not(.wl-eyebrow),.wl-light .wl-install-grid p:not(.wl-eyebrow){color:#41546a}
+.wl-light .wl-section-heading p{color:#51627a}

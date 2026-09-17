@@ -70,7 +70,9 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
   };
   const result = media.residential.enabled ? media.residential : active;
   const watchHref = media.process.enabled ? '#project' : '#workflow';
-  return <div className="wl-page">
+  // WPW pages light, DesignProAI pages dark navy on charcoal — main's own
+  // house rule (#461), applied to the landing as one extra class.
+  return <div className={brand === 'weprintwraps' ? 'wl-page wl-light' : 'wl-page'}>
     <Helmet>
       <title>{brand === 'weprintwraps' ? 'WallPro — Custom Wall Wrap Design, Print Files & Printed Wrap | WePrintWraps' : 'WallPro — From a Photo to a Stunning Wall Design | DesignProAI'}</title>
       <meta name="description" content="Design, visualize, scale and create production-ready wall graphics with WallPro. From your room photo to residential, commercial and retail wall wraps." />
