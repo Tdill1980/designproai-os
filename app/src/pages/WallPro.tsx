@@ -1,9 +1,9 @@
 /** WallPro's migrated wall designer. Original creative prompts are in the OS edge
  * function. Physical placement never invokes or changes vehicle production. */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
@@ -43,6 +43,30 @@ const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3
 /** Read, never retyped — WALL_CARD is the one definition (see wallpro-brand). */
 const panelClass = WALL_CARD;
 type History = Awaited<ReturnType<typeof wallHistory>>;
+
+/**
+ * ONE NUMBERED STEP, WITH A REAL ICON (Trish 2026-09-16: "must show it like
+ * this so it shows steps and then the start... with proper icons").
+ *
+ * WallPro's form is one continuous, deeply conditional flow -- five design
+ * intents each with their own fields, a live two-pane preview beside it --
+ * not four equal boxes of interchangeable content. Forcing that into a literal
+ * side-by-side row would either clip the tallest step or leave the others
+ * mostly empty. This keeps the exact same state, handlers and conditions and
+ * changes only what a heading says: every phase gets a numbered badge and an
+ * icon, so the page reads top-to-bottom as "step 1, step 2, step 3 — then the
+ * result", the same narrative the mockup asked for, without reshaping a
+ * working, tested form to match a screenshot's grid.
+ */
+function StepHeading({ n, icon: Icon, children }: { n: number; icon: LucideIcon; children: ReactNode }) {
+  return (
+    <h2 className="mb-3 flex items-center gap-2 font-semibold">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600 text-xs font-bold text-white">{n}</span>
+      <Icon className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+      {children}
+    </h2>
+  );
+}
 
 /** The project a reload reopens when the URL has lost its ?project=. */
 const LAST_PROJECT_KEY = 'wallpro:last-project';
@@ -1333,7 +1357,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
-          <section id="upload-wall" className={panelClass}><h2 className="mb-3 font-semibold">1. Upload your wall</h2>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
+          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs text-slate-500">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
@@ -1368,7 +1392,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </span>
             </div>}
           </section>
-          <section id="choose-design" className={panelClass}><h2 className="mb-3 font-semibold">2. Choose your design</h2><div className="mb-4 grid gap-2">{([
+          <section id="choose-design" className={panelClass}><StepHeading n={2} icon={LayoutGrid}>Choose your design</StepHeading><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
               { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
@@ -1380,6 +1404,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   customer picks knowing what it costs. */}
               <span className="shrink-0 text-sm font-bold text-blue-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
             <p className="mb-4 text-[11px] text-slate-500">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p>
+            {/* STEP 3 (Trish 2026-09-16). Same conditional tree, same state --
+                only a heading, so "Pick a design" reads as its own step and
+                "Describe/match/upload" reads as its own step, matching what the
+                customer actually does next instead of hiding inside step 2. */}
+            <StepHeading n={3} icon={designMode === 'library' ? ImageIcon : Settings2}>
+              {designMode === 'library' ? 'Pick a ready-made design' : designMode === 'upload' ? 'Add your artwork' : 'Configure your design'}
+            </StepHeading>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm text-slate-600">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm text-slate-600">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -1434,11 +1465,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               into stickyTop, plus this page's own -- so the design a finished
               generation scrolls itself to does not land underneath them. */}
           <section id="wall-preview" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
-            {/* Every WallPro design originates as a flat rectangle, and the client
-                sees both at once: the print master on the left and the same file
-                imposed on their photo on the right, the moment the corners exist.
-                The tabs only switch the photo pane between the original wall and
-                the imposed design; the flat master never leaves the screen. */}
+            {/* STEP 4 (Trish 2026-09-16): the result, beside the form that
+                produces it. Every WallPro design originates as a flat
+                rectangle, and the client sees both at once: the print master
+                on the left and the same file imposed on their photo on the
+                right, the moment the corners exist. The tabs only switch the
+                photo pane between the original wall and the imposed design;
+                the flat master never leaves the screen. */}
+            <StepHeading n={4} icon={ImageIcon}>Preview &amp; download</StepHeading>
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
               {/* Before and after (owner, 2026-09-12: "Before and afters will
                   speak volumes"). Offered only once a real composite exists --
