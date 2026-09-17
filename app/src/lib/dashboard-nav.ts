@@ -103,34 +103,6 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: OS_TOOLS.cutpro.tagline,
   },
   {
-    // THE TENANT PAGE BESIDE THE STANDALONE ONE, exactly as PatternPro already
-    // does it below (owner, 2026-09-16: "we must have two WallPro APP buttons,
-    // one is a WPW WallPro and one is standard WallPro App" — so she can show
-    // the WPW client how it will look on their own dashboard).
-    //
-    // A TOP-LEVEL APP BUTTON, not a sub-link under WallPro. It was briefly the
-    // latter and that was wrong twice over: it read as a feature OF WallPro
-    // rather than the same app sold to a different customer, and it put a
-    // second door next to its own neighbour. The PatternPro pair set the
-    // precedent and this now matches it.
-    //
-    // It opens STANDALONE — isWallProPartnerRoute strips the app shell — so a
-    // demo shows exactly what a WePrintWraps customer will see on their own
-    // domain, with no DesignProAI chrome around it. That is the preview of
-    // wallpro.weprintwraps.com before that DNS exists.
-    //
-    // The engine does NOT move with the brand: the durable node graph, the
-    // droplet runtime worker, the panel build, Topaz and the release gate all
-    // stay on os.designproai. A partner gets a hostname, not a codebase.
-    key: "wallpro_wpw",
-    label: "WPW × WallPro",
-    route: "/wall-wrap",
-    icon: ImageIcon,
-    pillar: "design",
-    tier: "starter",
-    description: "WallPro as the WePrintWraps tenant ships it — their mark, their film price, their order button: the white-label page a shop's own customers use",
-  },
-  {
     key: "patternpro",
     label: "PatternPro",
     route: "/printpro/patternpro",
