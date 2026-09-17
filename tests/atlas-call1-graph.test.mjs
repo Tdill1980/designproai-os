@@ -116,7 +116,11 @@ test("1. the compiled graph is the owner's cascade as edges: nothing but a depen
   assert.deepEqual(deps["surface.hood"], ["surface.driver", "surface.passenger"]);
   assert.deepEqual(deps["surface.rear"], ["surface.driver", "surface.passenger"]);
   assert.deepEqual(deps["surface.front"], ["surface.driver", "surface.passenger", graph.viewNode("front")]);
-  assert.deepEqual(deps["surface.roof"], ["surface.driver", "surface.passenger", "surface.hood", "surface.front", "surface.rear"]);
+  // Roof is claimable in the SAME instant as hood/front/rear: it is shown the
+  // two flanks and replays the driver, and depends on nothing else. The old
+  // sibling edges bought no continuity the driver signature does not already
+  // carry, and cost a whole sequential model call.
+  assert.deepEqual(deps["surface.roof"], ["surface.driver", "surface.passenger"]);
   assert.deepEqual(deps[graph.MASTER_NODE].sort(), nodes.filter((n) => n.key !== graph.MASTER_NODE).map((n) => n.key).sort());
   // The stage list and the DAG agree: the set of surfaces ready after each stage is the next stage.
   const states = nodes.map((n) => ({ ...n, state: "pending" }));
@@ -130,7 +134,11 @@ test("1. the compiled graph is the owner's cascade as edges: nothing but a depen
   // Wave 1 is BOTH view nodes -- front's is claimable the instant the run
   // starts, in parallel with driver's, and adds nothing to the critical path:
   // by the time surface.front is ready (wave 4) its view has long completed.
-  assert.deepEqual(waves, [["driver.view", "front.view"], ["driver"], ["passenger"], ["front", "hood", "rear"], ["roof"], ["master.assemble"]]);
+  // THREE STAGES. Roof joins hood/front/rear in ONE parallel wave -- it used to
+  // hold a wave of its own purely because it replayed their exchanges, which
+  // cost a full sequential model call (~45s) on every generation for continuity
+  // the driver's signature already carries.
+  assert.deepEqual(waves, [["driver.view", "front.view"], ["driver"], ["passenger"], ["front", "hood", "rear", "roof"], ["master.assemble"]]);
 
   // THE KILL SWITCH IS THE GRAPH'S SHAPE, decided once when the run is created
   // and then stored — so a flag flipped mid-run cannot change what a claimed
@@ -186,10 +194,11 @@ test("2+3. the database claims ready nodes in parallel, only for a leased reques
   assert.equal(c.dependencies[0].output.sheet.contentHash, "a".repeat(64), "the claim carries every dependency's output");
   await finish(db, c.node, "completed", { sheet: { storagePath: "y", contentHash: "b".repeat(64), byteSize: 1 } });
 
-  // THE PARALLEL WAVE: three claims in a row, three different workers, three different surfaces, then nothing.
-  const wave = [await claim(db, "w1"), await claim(db, "w2"), await claim(db, "w1")];
-  assert.deepEqual(wave.map((x) => x.node.node_key).sort(), ["surface.front", "surface.hood", "surface.rear"]);
-  assert.equal(await claim(db, "w2"), null);
+  // THE PARALLEL WAVE: FOUR claims in a row now -- roof joined hood/front/rear
+  // instead of holding a sequential wave of its own -- then nothing.
+  const wave = [await claim(db, "w1"), await claim(db, "w2"), await claim(db, "w1"), await claim(db, "w2")];
+  assert.deepEqual(wave.map((x) => x.node.node_key).sort(), ["surface.front", "surface.hood", "surface.rear", "surface.roof"]);
+  assert.equal(await claim(db, "w1"), null);
   assert.deepEqual(new Set(wave.map((x) => x.node.lease_owner)), new Set(["w1", "w2"]));
 
   // Lease gating: the generation lease lapses → nothing is claimable, even a ready node.
@@ -199,8 +208,7 @@ test("2+3. the database claims ready nodes in parallel, only for a leased reques
   await db.query("UPDATE public.designpro_generation_requests SET state='retryable', lease_token=NULL");
   assert.equal(await claim(db, "w1"), null, "an unleased request's nodes are never handed out");
   await db.query(`UPDATE public.designpro_generation_requests SET state='leased', lease_token='${CLAIM}', lease_expires_at=now()+interval '10 minutes'`);
-  c = await claim(db, "w1");
-  assert.equal(c.node.node_key, "surface.roof");
+  c = wave[3];
 
   // Attempts exhausted: retryable failures stop at max_attempts and fail the run; resume re-arms them.
   await finish(db, c.node, "pending", { errorCode: "transport", retryable: true });

@@ -41,7 +41,8 @@ const SURFACES = [["driver", 153, 56], ["passenger", 153, 56], ["hood", 71.5, 56
 
 test("the cascade is the owner's graph: driver, then passenger by code, then hood+front+rear in parallel, then roof", () => {
   assert.deepEqual(hero.AUTHOR_CASCADE.map((stage) => [...stage]),
-    [["driver"], ["passenger"], ["hood", "front", "rear"], ["roof"]]);
+    [["driver"], ["passenger"], ["hood", "front", "rear", "roof"]],
+    "three stages: one design origin, then every remaining side in ONE parallel wave, then assembly");
   assert.deepEqual([...hero.AUTHOR_NEIGHBOURS.driver], []);
   assert.deepEqual([...hero.AUTHOR_NEIGHBOURS.passenger], ["driver"]);
   for (const key of ["hood", "front", "rear"]) {
@@ -58,10 +59,15 @@ test("the cascade is the owner's graph: driver, then passenger by code, then hoo
   assert.deepEqual([...hero.AUTHOR_NEIGHBOURS.roof], ["driver", "passenger"], "roof is shown the two flanks");
 });
 
-test("every AI surface replays the driver exchange; roof replays every earlier model exchange", () => {
+test("every AI surface replays the driver exchange, and roof no longer waits on its siblings", () => {
   assert.deepEqual([...hero.AUTHOR_HISTORY.driver], []);
   for (const key of ["hood", "front", "rear"]) assert.deepEqual([...hero.AUTHOR_HISTORY[key]], ["driver"]);
-  assert.deepEqual([...hero.AUTHOR_HISTORY.roof], ["driver", "hood", "front", "rear"]);
+  // ROOF REPLAYS THE DRIVER ONLY. Replaying hood/front/rear was the one edge
+  // holding roof in a fourth stage of its own -- and the graph derives its
+  // dependencies from this table, so that single entry cost a whole model call
+  // of wall clock on every generation (194e8f17: every surface completed in
+  // 9-51s while the run still took minutes, because four waves run end to end).
+  assert.deepEqual([...hero.AUTHOR_HISTORY.roof], ["driver"]);
   assert.equal(hero.AUTHOR_HISTORY.passenger, undefined, "passenger is code and has no conversation");
   // The exchange is replayed FAITHFULLY: the exact user turn and the exact
   // model turn, signatures still on their parts -- through the ONE shared
@@ -248,12 +254,14 @@ test("the cascade runs end to end on synthetic sheets: five image requests, pass
   assert.equal(result.imageRequestCount, 5);
   const order = calls.map((c) => c.surfaceKey);
   assert.equal(order[0], "driver");
-  assert.deepEqual(order.slice(1, 4).sort(), ["front", "hood", "rear"]);
-  assert.equal(order[4], "roof");
+  // THREE STAGES: driver alone, then every remaining side in ONE parallel wave.
+  // Roof is no longer last-and-alone, so its position within the wave is not
+  // pinned -- only that all four are in it.
+  assert.deepEqual(order.slice(1).sort(), ["front", "hood", "rear", "roof"]);
   assert.equal(calls[0].first, true);
   assert.deepEqual(calls[0].priorTurns, []);
   assert.deepEqual(calls[0].neighbours, []);
-  for (const call of calls.slice(1, 4)) {
+  for (const call of calls.slice(1)) {
     assert.equal(call.first, false);
     assert.deepEqual(call.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"]);
     assert.deepEqual(call.priorTurns.map((t) => t.role), ["user", "model"], "the driver exchange is replayed");
@@ -273,7 +281,7 @@ test("the cascade runs end to end on synthetic sheets: five image requests, pass
   const meta = await sharp(result.bytes).metadata();
   assert.equal(meta.width, 4096); assert.equal(meta.height, 4096);
   assert.equal(result.provenance.contract, hero.HERO_DRIVER_CONTRACT);
-  assert.equal(result.provenance.cascade.length, 4);
+  assert.equal(result.provenance.cascade.length, 3, "three stages, not four");
   // References travel downscaled, never the full sheet.
   for (const [path, bytes] of staged) {
     assert.match(path, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
@@ -421,7 +429,9 @@ test("hero-first runs driver AND front as vehicle-view then flatten, and changes
   const at = (c) => calls.indexOf(c);
   assert.ok(at(driverView) < at(driverFlatten) && at(frontView) < at(frontFlatten), "each view precedes its own flatten");
   assert.ok(at(driverFlatten) < at(frontFlatten), "front's flatten waits for driver's flank");
-  for (const c of [hood, frontFlatten, rear]) assert.ok(at(c) < at(roof), "roof waits for hood, front and rear");
+  // Roof no longer waits on its siblings: it is in the SAME parallel wave, so
+  // it only has to follow the driver it replays.
+  assert.ok(at(driverFlatten) < at(roof), "roof still follows the driver it replays");
   // Passenger is still code, never a request.
   assert.ok(!calls.some((call) => call.surfaceKey === "passenger"));
   const passenger = result.surfaces.find((surface) => surface.surfaceKey === "passenger");
