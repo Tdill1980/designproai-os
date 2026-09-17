@@ -224,3 +224,52 @@ test("the runtime refuses a drawn map under its OWN code, so the ledger can tell
     "the repaired-sheet re-classification names it too");
   assert.ok(runtimeSrc.includes("a printed coordinate is ink on the customer's vinyl"));
 });
+
+test("a sheet of captioned die-cut panel shapes on a plain surround is vehicle_depiction", () => {
+  // LIVE: canary 35202369855 (2026-09-17, DID-4A40563D). The accepted master was
+  // a LAYOUT DRAWING -- hood, roof, door, rear and bumper silhouettes floating on
+  // flat mid-grey with REAR / ROOF / HOOD printed into the artwork -- and it went
+  // through Topaz onto 150-PPI print panels.
+  //
+  // The deterministic gate could not catch it: `holeAt` convicts near-black
+  // (FLAT_BLACK_CHANNEL_MAX = 24) or transparent, and mid-grey is neither. That
+  // is the colour-conditional hole RULE 0.32 names by hand.
+  //
+  // The inspector convicted itself in its own receipt -- outputClass flat_atlas,
+  // confidence 1, evidence: "...each representing a vehicle panel (hood, roof,
+  // rear, side panels) with continuous artwork filling the entire panel SHAPE,
+  // and includes panel labels." It substituted the panel shape for the
+  // rectangle, and the island clause named only a WHOLE-VEHICLE outline (a side
+  // profile or a front/rear elevation), so a hood-shaped island never matched it.
+  const prompt = outputClassPrompt("live-8c525565");
+
+  // The island clause must reach a SINGLE PANEL's trimmed shape, not just a
+  // whole vehicle.
+  assert.match(prompt, /single body panel's trimmed shape: a hood, roof, door, bed side, tailgate, fender or bumper silhouette/);
+  assert.match(prompt, /layout drawing of a wrap, not the printed wrap/);
+  // The 2026-09-10 New Aura wording is broadened, never replaced.
+  assert.match(prompt, /vehicle-shaped island/);
+
+  // And it must survive the two things the inspector used to excuse it: correct
+  // artwork inside each shape, and the captions RULE 0.35 deliberately made legal.
+  assert.match(prompt, /EVEN WHEN each shape is filled with correct artwork and EVEN WHEN the shapes are captioned/);
+
+  // The exact substitution the model made is closed by name.
+  assert.match(prompt, /Filling the shape is not filling the rectangle/);
+  assert.match(prompt, /Artwork that fills a PANEL SHAPE rather than the rectangle is NOT flat_atlas/);
+
+  // The surround stays colour-agnostic -- grey is what shipped.
+  assert.match(prompt, /plain single-colour surround \(grey, white, black or any colour\)/);
+});
+
+test("RULE 0.35's caption narrowing is NOT undone: captions alone are still flat_atlas", () => {
+  // The 2026-09-14 ruling narrowed the inspector because it refused two Porsche
+  // Martini livery sheets for their own motifs and a six-panel sheet for having
+  // hood/side/rear panels. Captions on a sheet whose rectangles are filled edge
+  // to edge remain the layout, not a vehicle. Only the SURROUND convicts.
+  const prompt = outputClassPrompt("rule-0-35");
+  assert.match(prompt, /may carry printed panel names or captions \(for example HOOD, ROOF, DRIVER, REAR\): that is the layout, not a vehicle/);
+  assert.match(prompt, /automotive MOTIFS drawn as graphics/);
+  assert.doesNotMatch(prompt, /captions are vehicle_depiction/i,
+    "a caption alone may never convict a sheet -- that reversal cost two good Martini masters");
+});
