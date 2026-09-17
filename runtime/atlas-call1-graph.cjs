@@ -211,12 +211,18 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       creativeContext: String(definition.creativeContext || ""),
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
       providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : null,
+      store,
       logger,
     });
     logger(`atlas call 1 graph ${run.id}: driver vehicle view ${view.contentHash.slice(0, 12)}`);
     return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: "driver", stage: "vehicle-view",
-      view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.bytes.length,
+      view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.byteSize,
         imageRequestCount: view.imageRequestCount, providerCacheHit: view.providerCacheHit },
+      // The exchange travels as TURNS, which carry image REFERENCES (path +
+      // hash) and the thought signature -- never pixels. Node 3 replays it, so
+      // it must survive the node boundary and reach whichever worker claims the
+      // flatten.
+      exchange: view.exchange || null,
       retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
 
@@ -237,7 +243,7 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       if (!view?.storagePath || !view?.contentHash) {
         throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${DRIVER_VIEW_NODE} carries no view reference`, true);
       }
-      heroView = Object.freeze({ ...view });
+      heroView = Object.freeze({ ...view, exchange: deps.get(DRIVER_VIEW_NODE)?.output?.exchange || null });
     }
     result = await hero.authorSurface({
       surfaceKey, zone, first: surfaceKey === "driver", neighbours, priorExchanges, heroView,

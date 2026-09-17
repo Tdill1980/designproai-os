@@ -55,7 +55,7 @@ const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260916.v2";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v3-flatten-continues-the-view";
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -93,6 +93,10 @@ const MAX_ASPECT_DRIFT_RATIO = 1.12;
 const MAX_AUTHORED_HOLE_RATIO = 0.002;
 const REFERENCE_LONG_EDGE_PX = 1280;
 const REFERENCE_JPEG_QUALITY = 82;
+/** The flatten's source is the subject, not a thumbnail: full size, high quality. */
+const HERO_VIEW_JPEG_QUALITY = 92;
+/** The edge's own input allowlist, mirrored so the runtime cannot stage a path it will refuse. */
+const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/;
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
@@ -118,6 +122,34 @@ function zonePixelSize(zone) {
     throw Object.assign(new Error(`${zone?.surfaceKey || "surface"}: zone geometry invalid`), { code: "flat_atlas_hero_zone_invalid" });
   }
   return rotation === 90 ? { pixelWidth: h, pixelHeight: w } : { pixelWidth: w, pixelHeight: h };
+}
+
+/**
+ * THE VEHICLE RENDER, STAGED AS A CALL-1 INPUT.
+ *
+ * The edge attaches an input ONLY from the content-addressed prefix
+ * (`^atlas-call1-inputs/<sha256>\.(png|jpg)$`, `attach()` in
+ * design-panel-ai-generate) -- every other path is refused as
+ * `atlas_author_input_path_invalid`, which is what it exists for: the flatten
+ * must not be able to name an arbitrary object to read.
+ *
+ * Node 1 returned the edge's own PANEL path instead, so node 3's first live
+ * request died HTTP 500 on that validator (generation 2099d17d, 2026-09-17).
+ * Node 1's render IS a Call-1 input for node 3, so it is staged like one.
+ *
+ * Unlike `stageReference` this does NOT downscale. A neighbour is shown for
+ * continuity at 1280px; the hero view is the flatten's actual SUBJECT, and
+ * shrinking it would throw away the detail node 3 exists to reproduce.
+ */
+async function stageHeroView(store, bytes) {
+  const staged = await sharp(bytes, { limitInputPixels: false })
+    .flatten({ background: "#ffffff" })
+    .jpeg({ quality: HERO_VIEW_JPEG_QUALITY, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+  const contentHash = sha256(staged);
+  const storagePath = `atlas-call1-inputs/${contentHash}.jpg`;
+  await store.putImmutableBytes({ storagePath, bytes: staged, contentType: "image/jpeg" });
+  return { storagePath, contentHash, byteSize: staged.length };
 }
 
 async function stageReference(store, bytes) {
@@ -208,8 +240,11 @@ function heroFirstEnabled() {
 }
 
 async function authorHeroVehicleView({
-  zone, heroRequest, creativeContext, callEdge, providerRequest, logger = () => {},
+  zone, heroRequest, creativeContext, callEdge, providerRequest, store, logger = () => {},
 }) {
+  if (!store || typeof store.putImmutableBytes !== "function") {
+    throw new HeroDriverRefusal("driver", "hero_view_store_missing");
+  }
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const candidate = await callEdge({
     mode: "atlas-author",
@@ -230,10 +265,17 @@ async function authorHeroVehicleView({
     throw new HeroDriverRefusal("driver", `hero_view_stage_mismatch:${String(candidate?.heroStage || "none").slice(0, 40)}`);
   }
   if (!candidate?.bytes?.length) throw new HeroDriverRefusal("driver", "hero_view_empty");
-  logger(`hero-first driver: vehicle view ${candidate.panelSha256?.slice(0, 12) || "?"} (${candidate.aspectRatio || "?"})`);
+  // Stage into the prefix the edge will actually attach from. The panel path the
+  // edge returns is NOT one of them.
+  const staged = await stageHeroView(store, candidate.bytes);
+  if (!CALL1_INPUT_PATH.test(staged.storagePath)) {
+    throw new HeroDriverRefusal("driver", `hero_view_path_invalid:${staged.storagePath.slice(0, 80)}`);
+  }
+  logger(`hero-first driver: vehicle view ${staged.contentHash.slice(0, 12)} staged (${candidate.aspectRatio || "?"})`);
   return Object.freeze({
-    storagePath: candidate.panelStoragePath,
-    contentHash: candidate.panelSha256,
+    storagePath: staged.storagePath,
+    contentHash: staged.contentHash,
+    byteSize: staged.byteSize,
     bytes: candidate.bytes,
     imageRequestCount: Number(candidate?.imageRequestCount || 0),
     providerCacheHit: candidate?.providerCacheHit === true,
@@ -252,7 +294,14 @@ async function authorSurface({
     surfaceKey: n.surfaceKey, surfaceLabel: SURFACE_LABELS[n.surfaceKey] || n.surfaceKey,
     ...(await stageReference(store, n.bytes)),
   })));
-  const chain = trimAuthoringHistory(Array.isArray(priorExchanges) ? priorExchanges : []);
+  // THE FLATTEN CONTINUES THE VIEW'S CONVERSATION (owner, 2026-09-17).
+  // Node 1's exchange is replayed with its thought signature on the part it
+  // arrived on, exactly as the cascade continuations replay the driver's, so the
+  // model flattens artwork it can still reason about rather than an image handed
+  // to a stranger. Prepended, never substituted: the driver has no other history
+  // and every later surface keeps its own chain untouched.
+  const heroExchange = heroView?.exchange ? [heroView.exchange] : [];
+  const chain = trimAuthoringHistory([...heroExchange, ...(Array.isArray(priorExchanges) ? priorExchanges : [])]);
   let lastReason = "not_attempted";
   // The vehicle view's request was SPENT, so it is counted here. Leaving it out
   // under-reports every receipt and every bound that counts image requests --
@@ -378,7 +427,7 @@ async function authorHeroDriverMaster({
       let heroView = null;
       if (surfaceKey === "driver" && heroFirstEnabled()) {
         heroView = await authorHeroVehicleView({
-          zone: zoneOf("driver"), heroRequest, creativeContext, callEdge, providerRequest, logger,
+          zone: zoneOf("driver"), heroRequest, creativeContext, callEdge, providerRequest, store, logger,
         });
       }
       return authorSurface({
@@ -483,6 +532,8 @@ module.exports = {
   // node: nothing creative lives outside these three and the assembler.
   authorSurface,
   authorHeroVehicleView,
+  stageHeroView,
+  CALL1_INPUT_PATH,
   heroFirstEnabled,
   composePassengerPlaceholder,
   assembleHeroMaster,

@@ -105,6 +105,8 @@ import {
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import { ATLAS_UNCONFIRMED_OUTCOME_MESSAGE, isUnconfirmedProviderOutcome } from "@/lib/designpro-generation-error";
+import { isPlausibleYear, repairVehicleIdentity } from "@/lib/vehicle-identity";
+
 import {
   flatFirstAtlasSupportedVehicleType,
   inlineRevisionEnabledForPipeline,
@@ -422,14 +424,49 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   };
 
   const beginDesignPrep = async ({ silent = false }: { silent?: boolean } = {}) => {
+    // REPAIR BEFORE REFUSING. Year and Make typed into each other is the
+    // commonest way this form is filled wrong -- on a phone the three inputs
+    // stack and the neighbouring field is one mistap away -- and it is
+    // unambiguously recoverable, so it is corrected rather than rejected (owner,
+    // 2026-09-17). The corrected values are written back into the visible
+    // fields, so what the customer sees is what the server was sent.
+    const repair = repairVehicleIdentity({ year, make, model });
+    if (repair.repaired) {
+      setYear(repair.year);
+      setMake(repair.make);
+      if (!silent) {
+        toast({
+          title: "Fixed the vehicle",
+          description: `Year and Make were swapped — reading this as ${repair.year} ${repair.make}.`,
+        });
+      }
+    }
     const vehicle = {
-      year: year.trim(), make: make.trim(), model: model.trim(), type: vehicleType,
+      year: repair.year, make: repair.make, model: repair.model, type: vehicleType,
     };
     if (!vehicle.year || !vehicle.make || !vehicle.model) {
       if (!silent) {
         toast({
           title: "Vehicle required",
           description: "Enter year, make, and model.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    // Only what the repair could NOT resolve reaches a refusal -- neither field
+    // holds a plausible model year, so there is nothing to move and guessing
+    // would design for the wrong vehicle. Naming the value beats "vehicle
+    // required", which is the message that let this through in the first place.
+    if (!repair.yearValid) {
+      if (!silent) {
+        setYearError(true);
+        setVehicleInputOpen(true);
+        yearInputRef.current?.focus();
+        setTimeout(() => setYearError(false), 2000);
+        toast({
+          title: "Year must be four digits",
+          description: `Year reads "${vehicle.year || "(empty)"}". Enter the model year, e.g. 2008.`,
           variant: "destructive",
         });
       }
@@ -1210,8 +1247,30 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // -- and the one the customer is looking at is not the one Calls 8-12 read.
 
 
+  // GENIE requires a FOUR-DIGIT year and refuses anything else
+  // (`genie_vehicle_identity_invalid`: "requires class, four-digit year, make
+  // and model"). This asked only whether the field was non-empty, so a year the
+  // resolver could never accept was submitted, a generation request was created
+  // and the run failed ~2s later on a failure screen -- live on 2026-09-17,
+  // where Year held "Chrysler" and Make held "2008" after the two were typed
+  // into each other's fields. The red-pulse machinery below already existed;
+  // it was simply being asked the wrong question. An inline red field beats a
+  // dead generation.
   const validateYear = useCallback(() => {
-    if (!year || year.trim() === "") {
+    // Generate can be reached without prep having run, so the repair lives here
+    // too rather than only in beginDesignPrep -- otherwise the same swap that is
+    // corrected on one path is refused on the other.
+    const repair = repairVehicleIdentity({ year, make, model });
+    if (repair.repaired) {
+      setYear(repair.year);
+      setMake(repair.make);
+      toast({
+        title: "Fixed the vehicle",
+        description: `Year and Make were swapped — reading this as ${repair.year} ${repair.make}.`,
+      });
+      return true;
+    }
+    if (!repair.yearValid) {
       setYearError(true);
       setVehicleInputOpen(true);
       yearInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1220,7 +1279,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       return false;
     }
     return true;
-  }, [year]);
+  }, [year, make, model, toast]);
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {

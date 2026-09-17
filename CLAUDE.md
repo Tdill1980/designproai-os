@@ -1134,6 +1134,89 @@ to the writer's `printf`, the writer's sticky `sed`, and the validator's
 vocabulary. Add a routing flag to the runtime without those four and the build
 fails. **Do not add an env-gated routing flag without adding it to that list.**
 
+#### NODE 1 MUST STAGE ITS RENDER WHERE THE EDGE WILL ATTACH IT (2026-09-17, live 2099d17d)
+
+**The first real hero-driver run.** The DAG did exactly what RULE 0.39 built —
+`surface.driver.view` **completed** on `designpro-worker-2`, `surface.driver`
+claimed it — and the edge then refused its own handoff:
+
+```
+design-panel-ai-generate atlas-author failed (HTTP 500):
+atlas_author_input_path_invalid:atlas-author/driver-view.png
+```
+
+`attach()` admits an input ONLY from `^atlas-call1-inputs/<sha256>\.(png|jpg)$`,
+and that guard is correct and stays: it is what stops a flatten naming an
+arbitrary object to read. Node 1 was returning the edge's own PANEL path.
+
+Node 1's render IS a Call-1 input for node 3, so `stageHeroView` now writes it to
+`atlas-call1-inputs/<sha256>.jpg` and `CALL1_INPUT_PATH` mirrors the edge's regex
+in the runtime, so a path the edge would refuse cannot leave the view node.
+Unlike `stageReference` it does NOT downscale — a neighbour is a 1280px
+continuity hint; the hero view is the flatten's SUBJECT. All four of the edge's
+checks were verified rather than assumed: prefix, bucket (`wrap-files`), filename
+hash == bytes hash, and `expectedHash` == the STAGED bytes' hash (the stage
+re-encodes, so sending the returned render's hash would have failed here).
+
+The fail-over behaved correctly — six-surface spent both candidates
+(`edgeHoleRatio` hood 0.476, then `vehicle_depiction`) and exhausted.
+
+**TWO FIXTURES ENCODED THE BUG**, which is why a green suite sat over a broken
+seam, and this is the third time this file has had to record that shape:
+the graph test's synthetic edge accepted ANY `heroViewStoragePath`, and
+`atlas-hero-driver-topology` pinned the literal `atlas-author/driver-view.png`
+as what stage 2 must be shown — asserting the one path the edge refuses. **A fake
+door laxer than the real one cannot catch a door-shaped defect.** Both now
+enforce the real allowlist and were verified to fail against the pre-fix runtime,
+reproducing the live error verbatim.
+
+#### THE HERO-FIRST FLATTEN NOW CONTINUES THE VIEW'S CONVERSATION (2026-09-17)
+
+Owner: *"Are you using thought signatures?? Multimodal best practice from Gemini
+pro 3."* Answered from the code, and the honest answer was **yes on the cascade,
+no on the hop that needs it most.**
+
+`captureImageTurn` / `replayImageTurn` carry `thoughtSignature` on the part it
+arrived on, and hood/front/rear/roof each replay the driver exchange with it.
+The hero-first FLATTEN did not, because it is also `first: true` (it IS the
+driver) and the edge refused history for every first request:
+
+```ts
+if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
+```
+
+So node 3 attached node 1's render as a flat image in a NEW conversation and
+discarded the reasoning that produced it — on the single hop where the
+multi-turn spatial reasoning RULE 0.35 quotes the owner asking for is the whole
+point.
+
+**Scoped, not removed.** The guard is now `first && !heroFlatten`, so a true
+from-scratch vehicle view still takes no history — a conversation there would be
+a second creative authority (RULE 0.26). Only the flatten may replay, and only
+its own view. Three seams move together: the edge guard; `authorSurface`
+prepending `heroView.exchange` to the chain (attempt 2 still drops it, so the
+existing fallback for a provider that rejects a replayed signature is now also
+the flatten's); and the view node persisting its exchange so whichever worker
+claims the flatten can replay it. It travels as TURNS — image REFERENCES (path +
+hash) plus the signature — never pixels, so RULE 0.39's no-blobs rule across the
+node boundary is unchanged. Prompt versions advance together to
+`v3-flatten-continues-the-view`.
+
+**LOCKED AS ARRIVING, NOT AS SENT.** Both paths assert the edge RECEIVES two
+prior turns with the VIEW's signature on the model part it arrived on, and that
+the view itself replays nothing. The topology test's assertion was tightened
+from the bare guard string — which passed against the blanket refusal that
+discarded every signature — to the scoped expression.
+
+**What is still NOT multi-step: the design's own elements.** The graph is
+per-SURFACE (`AUTHOR_CASCADE`), not per-element. There is no node that designs
+the logo, the company name or the contact bar as its own artifact and then
+composes it. Lettering and logo are authored INSIDE each surface's single image
+call by the persona's logo architecture, and the only element-level machinery
+downstream is extraction (Call 10 `logos.extract`, Call 11 de-logo) and the
+passenger lettering re-drop. Do not describe A.T.L.A.S. as having element-level
+design decomposition; it does not.
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology paints its own layout map into the artwork, and the
