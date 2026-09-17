@@ -98,6 +98,8 @@ const AdminWBTYOrders = lazyWithRetry(() => import("./pages/AdminWBTYOrders"));
 const GraphicsProV1 = lazyWithRetry(() => import("./pages/GraphicsProV1"));
 const GraphicsProWall = lazyWithRetry(() => import("./pages/GraphicsProWall"));
 const GraphicsProWindow = lazyWithRetry(() => import("./pages/GraphicsProWindow"));
+// The GraphicsPro FAQ: the cut-vinyl rates, the plotter files, the pipeline.
+const GraphicsProFaq = lazyWithRetry(() => import("./pages/GraphicsProFaq"));
 // The before/after band, run by the curator instead of by a release.
 const AdminWallProProofs = lazyWithRetry(() => import("./pages/AdminWallProProofs"));
 // The WallPro answer to the vehicle PanelPro board: every generation, whether it
@@ -228,7 +230,13 @@ const HostAwareRoot = () => {
   // for the wall wrap page, not a DesignProAI dashboard or a login wall. Every
   // other route still resolves normally on that host, so /printpro/wallpro is
   // the designer and existing deep links keep working.
-  if (isWallProPartnerHost(hostname)) return <WallPro brand="weprintwraps" />;
+  // THE PARTNER'S FRONT DOOR IS THEIR LANDING, not the bare tool (2026-09-17).
+  // /wall-wrap became the landing and this line still returned the tool, so the
+  // same brand would have behaved two different ways depending on whether the
+  // customer arrived by host or by path — the drift the brand-aware page exists
+  // to remove. A domain root serves the landing; the tool is one click in, at
+  // /wallwrap-design, exactly as /wallpro → /printpro/wallpro on this host.
+  if (isWallProPartnerHost(hostname)) return <WallProLanding brand="weprintwraps" />;
   return isDesignProMarketingHost(hostname) ? <Index /> : <AuthedRootRedirect />;
 };
 
@@ -478,7 +486,14 @@ const App = () => {
               /wall-wrap mirrors the WPW product slug; /wallwrap-design is the
               Design-area entry, its own URL so the two menu items stay
               separately measurable rather than one link pretending to be two. */}
-          <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
+          {/* THE PARTNER'S LANDING, mirroring DesignProAI's /wallpro exactly
+              (owner, 2026-09-17: "wpw wallpro was the old UI, didn't have the
+              edits I asked for"). /wall-wrap showed the TOOL because #462 built
+              the landing for DesignProAI only, so the partner page was the one
+              WallPro surface with no landing — and it is the one shown to the
+              partner. The TOOL did not move: it has answered /wallwrap-design
+              since the tenant shipped, and every CTA here points at it. */}
+          <Route path="/wall-wrap" element={<WallProLanding brand="weprintwraps" />} />
           {/* PUBLIC on purpose — the access check lives in wpw-shopflow, not the
               route. See the note on the import above. */}
           <Route path="/shopflow" element={<ShopFlow />} />
@@ -550,6 +565,10 @@ const App = () => {
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
           <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />
+          {/* PUBLIC, unlike the three tool routes. It is the page that
+              answers "what does this cost" -- gating that behind a sign-in
+              asks somebody to create an account to read a price list. */}
+          <Route path="/graphics-pro/faq" element={<GraphicsProFaq />} />
           <Route path="/graphicspro" element={<Navigate to="/graphics-pro" replace />} />
           {/* CUSTOMER-FACING NAME ALIASES (os-brand.ts, Trish 2026-09-16). The vehicle
               tool is VehiclePro and the cut tool is CutPro in every customer-facing

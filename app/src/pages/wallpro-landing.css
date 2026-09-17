@@ -4,3 +4,100 @@
 @media(max-width:800px){.wl-header-inner{min-height:74px;padding:10px 20px;gap:12px}.wl-brand>span{font-size:29px}.wl-brand small{font-size:9px}.wl-header-cta{font-size:12px;min-height:40px;padding:10px 13px;gap:8px}.wl-login{display:none}.wl-menu{display:block;padding:5px}.wl-nav{display:none}.wl-nav-open{display:flex;position:absolute;top:100%;left:0;right:0;padding:20px;background:#f7f8fc;box-shadow:0 10px 20px #0002;font-size:14px;justify-content:center;flex-wrap:wrap}.wl-container{padding-inline:20px}.wl-hero{display:flex;flex-direction:column;padding-bottom:0;min-height:0}.wl-hero-copy{order:0;width:100%;padding:32px 24px 26px}.wl-hero h1{font-size:52px;letter-spacing:-1.5px}.wl-hero-image{order:1;position:relative;inset:auto;width:100%;height:340px;border-bottom-left-radius:60px}.wl-hero-shade{background:linear-gradient(#03121f33,transparent 30%,#03121f22)}.wl-hero-copy .wl-intro{max-width:530px}.wl-features{margin-top:25px;max-width:550px}.wl-features>div{font-size:12px}.wl-arrows{left:5%;right:5%}.wl-room-caption{right:20px;bottom:20px}.wl-examples{display:flex;overflow-x:auto;gap:10px;padding-top:18px;padding-bottom:22px;scroll-snap-type:x mandatory}.wl-example{flex:0 0 165px;scroll-snap-align:center}.wl-example strong{font-size:14px}.wl-example span{font-size:12px}.wl-case-grid{grid-template-columns:1fr;gap:26px}.wl-project{padding-top:30px;padding-bottom:32px}.wl-page h2{font-size:32px}.wl-milestones>div{font-size:13px;min-height:100px}.wl-install-grid{gap:24px;grid-template-columns:1fr 220px;margin-top:34px;padding-top:30px}.wl-install-grid h2{font-size:30px}.wl-install-detail{display:none}.wl-section-heading{display:block}.wl-section-heading h2{font-size:27px}.wl-section-heading p{margin-top:10px;font-size:14px}.wl-steps{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.wl-steps article{padding:16px}.wl-steps h3{font-size:15px}.wl-steps h3 small{font-size:13px}.wl-steps article:last-child{grid-column:1/-1}.wl-file-output{min-height:100px}.wl-end>.wl-container{display:block;padding-block:30px}.wl-end .wl-button{margin-top:22px}.wl-footer{align-items:flex-start;flex-direction:column;gap:18px}.wl-footer>div{gap:16px;font-size:12px}}
 @media(max-width:480px){.wl-header-inner{padding-inline:15px}.wl-header-cta svg{display:none}.wl-header-actions{gap:6px}.wl-hero h1{font-size:46px}.wl-hero-copy{padding-inline:20px}.wl-subhead{font-size:17px;max-width:330px}.wl-intro{font-size:15px}.wl-actions{gap:10px}.wl-actions .wl-button{font-size:13px;padding:12px 16px;gap:9px}.wl-features{grid-template-columns:repeat(2,1fr);row-gap:15px}.wl-features>div{font-size:12px}.wl-hero-image{height:290px}.wl-install-grid{grid-template-columns:1fr;gap:24px}.wl-video-portrait{max-width:280px;margin:auto}.wl-milestones{grid-template-columns:repeat(2,1fr)}.wl-milestones>div{min-height:90px}.wl-mobile-break{display:block}.wl-page h2{font-size:30px}}
 @media(prefers-reduced-motion:reduce){.wl-page *{transition:none!important;scroll-behavior:auto!important}}
+
+/* The partner's mark in the landing lockup. Height-bounded so a wide logo
+   cannot push the wordmark off a phone header. */
+.wl-partner-mark { height: 26px; width: auto; flex: none; }
+@media (min-width: 768px) { .wl-partner-mark { height: 30px; } }
+
+/* ── THE LIGHT UI, FOR THE PARTNER BRAND ───────────────────────────────────
+   Owner, 2026-09-17: "I need also the version with WPW x WallPro light UI."
+   This is also main's own house rule from #461 — WPW pages light, DesignProAI
+   pages dark navy on charcoal.
+
+   ONE STYLESHEET, NOT TWO. The layout, the grid, every dimension and the whole
+   component tree are shared; only the SURFACES change. A second CSS file (or a
+   second page) would drift the first time a section moved, which is the exact
+   failure the brand-aware page exists to prevent.
+
+   Four of these are variables and the rest are surfaces the original wrote as
+   literal dark hex. They are overridden by name rather than by rewriting the
+   base, so the dark page stays byte-identical in behaviour. */
+.wl-page.wl-light{--wl-bg:#f7f9fc;--wl-panel:#fff;--wl-line:#dfe6ef;--wl-muted:#4a5a6e;color:#0d1b2a}
+/* The hero shade fades the photo into the page, so it must fade into WHITE. */
+.wl-light .wl-hero-shade{background:linear-gradient(90deg,#f7f9fc 0%,#f7f9fcd0 18%,transparent 44%),linear-gradient(0deg,#f7f9fc22,transparent 55%)}
+.wl-light .wl-eyebrow{color:#0d74d1}
+.wl-light .wl-subhead{color:#2c3e53}
+.wl-light .wl-intro{color:#41546a}
+.wl-light .wl-button-outline{background:#fff;border:1px solid #c3d2e3;color:#12324f!important}
+.wl-light .wl-button-outline svg{color:#1685da}
+.wl-light .wl-features svg{color:#1a7fd4}
+.wl-light .wl-features>div:first-child svg{color:#7a4fe0}
+.wl-light .wl-room-caption{background:#ffffffe8;border:1px solid #d7e1ec;color:#12243a}
+.wl-light .wl-example:hover{background:#eaf1f9}
+.wl-light .wl-example span{color:#51627a}
+.wl-light .wl-milestones>div{background:#fff;border-color:#dce5ef}
+.wl-light .wl-milestones svg{color:#1a7fd4}
+.wl-light .wl-milestones>div:first-child svg{color:#7a4fe0}
+.wl-light .wl-video{background:#eef3f9;border-color:#d7e1ec}
+.wl-light .wl-steps article{background:#fff;border-color:#dce5ef}
+.wl-light .wl-step-picture{background:#e6edf5}
+.wl-light .wl-upload-icon{background:#12324f;color:#fff}
+.wl-light .wl-prompt{background:#f1f5fa;border-color:#d7e1ec;color:#38495e}
+.wl-light .wl-file-output>svg{color:#1a7fd4}
+.wl-light .wl-file-output span{background:#f1f5fa;border-color:#d7e1ec;color:#38495e}
+.wl-light .wl-file-output small{color:#51627a}
+.wl-light .wl-text-link{color:#0d74d1!important}
+.wl-light .wl-end{background:linear-gradient(110deg,#eef4fb,#e7edfa);border-color:#dfe6ef}
+.wl-light .wl-footer{color:#51627a}
+.wl-light .wl-case-copy>p:not(.wl-eyebrow),.wl-light .wl-install-grid p:not(.wl-eyebrow){color:#41546a}
+.wl-light .wl-section-heading p{color:#51627a}
+
+/* ── "Start designing your wall" — the entry block, above the scroll ────────
+   Same grid language as .wl-steps so the page reads as one system, but these
+   cards are INTERACTIVE and taller: a dropzone and a brief need room a
+   five-across illustration does not. */
+.wl-start{padding-top:26px;padding-bottom:30px;scroll-margin-top:100px}
+.wl-start-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:20px}
+.wl-start-head h2{font-size:clamp(24px,2.6vw,34px)}
+.wl-start-aside{display:flex;align-items:center;gap:18px;font-size:13px;color:var(--wl-muted)}
+.wl-start-example{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--wl-line);border-radius:10px;padding:9px 14px;font-weight:600;font-size:13px}
+.wl-start-example svg{width:16px;height:16px}
+.wl-start-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.wl-start-card{display:flex;flex-direction:column;gap:10px;background:linear-gradient(130deg,#0b2131,#051421);border:1px solid #1d3242;border-radius:14px;padding:16px}
+.wl-start-card h3{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
+.wl-start-card h3 b{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:linear-gradient(140deg,#00a6ff,#3565ff 65%,#ac44ee);font-size:15px}
+.wl-start-card small{font-size:11px;color:var(--wl-muted);line-height:1.45}
+.wl-drop{flex:1;min-height:132px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed #35516b;border-radius:11px;background:#0a1c2b;color:inherit;cursor:pointer;transition:border-color .2s,background .2s;padding:14px}
+.wl-drop:hover{border-color:#159cf7}
+.wl-drop:hover{background:#0d2333}
+.wl-drop svg{width:30px;height:30px;color:#6fb6ff}
+.wl-drop strong{font-size:13px;font-weight:600}
+.wl-drop span{font-size:12px;color:var(--wl-muted)}
+.wl-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.wl-start-picture{position:relative;flex:1;min-height:132px;border:0;padding:0;border-radius:10px;overflow:hidden;background:#193246;cursor:pointer;display:block;width:100%}
+.wl-start-picture img{width:100%;height:100%;object-fit:cover;display:block}
+.wl-start-brief{flex:1;min-height:96px;width:100%;resize:none;border-radius:10px;border:1px solid #30465c;background:#142b40;color:#d3deeb;padding:12px;font:inherit;font-size:13px;line-height:1.5}
+.wl-start-brief::placeholder{color:#7f93aa}
+.wl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.wl-chips button{border:1px solid #2d465c;background:#10283c;color:inherit;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:600;cursor:pointer;transition:border-color .2s,background .2s}
+.wl-chips button:hover{border-color:#159cf7;background:#16344b}
+.wl-start-go{min-height:42px;width:100%;padding:11px 18px;font-size:13.5px;gap:10px}
+.wl-start-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0 0;padding:16px 0 0;list-style:none;border-top:1px solid var(--wl-line)}
+.wl-start-facts li{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--wl-muted)}
+.wl-start-facts svg{width:20px;height:20px;color:#6fb6ff;flex-shrink:0}
+@media (max-width:1100px){.wl-start-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wl-start-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.wl-start-grid{grid-template-columns:1fr}.wl-start-facts{grid-template-columns:1fr}}
+
+/* The light brand's surfaces for the same block. */
+.wl-light .wl-start-card{background:#fff;border-color:#dce5ef}
+.wl-light .wl-drop{background:#f4f8fc;border-color:#c3d5e6}
+.wl-light .wl-drop:hover{background:#eaf2fa;border-color:#1685da}
+.wl-light .wl-drop svg{color:#1a7fd4}
+.wl-light .wl-start-picture{background:#e6edf5}
+.wl-light .wl-start-brief{background:#f4f8fc;border-color:#d0dce8;color:#2c3e53}
+.wl-light .wl-start-brief::placeholder{color:#8296ab}
+.wl-light .wl-chips button{background:#f1f5fa;border-color:#d0dce8}
+.wl-light .wl-chips button:hover{background:#e6f0fa;border-color:#1685da}
+.wl-light .wl-start-facts svg{color:#1a7fd4}
+.wl-light .wl-start-example{border-color:#d0dce8}

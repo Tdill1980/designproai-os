@@ -154,6 +154,13 @@ export const DESIGNPRO_PLUS_PRICING: TierPricing = {
  */
 export const TOOL_TIER_REQUIREMENTS: Record<string, Tier> = {
   wallpro: "starter",
+  // The two TENANT entries — the same apps wearing a partner's brand. They
+  // resolved through the `|| "starter"` fallback below rather than being
+  // listed, which is the right answer arrived at by accident: a paid gate that
+  // depends on a missing key is one rename away from silently opening. Stated
+  // explicitly, and they match the app they are a skin of by construction.
+  wallpro_wpw: "starter",
+  patternpro_wpw: "starter",
   // Starter ($199) — five featured render tools + browsing + quote entry
   colorpro: "starter",
   patternpro: "starter",

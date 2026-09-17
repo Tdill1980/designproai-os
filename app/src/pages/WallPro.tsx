@@ -149,7 +149,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [catalogThumbs, setCatalogThumbs] = useState<Record<string, string>>({});
   const [catalogIndustry, setCatalogIndustry] = useState('all');
   const [designId, setDesignId] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState('');
+  /**
+   * THE LANDING'S "Start designing your wall" HANDS THE BRIEF OVER.
+   *
+   * Owner, 2026-09-17: the block must WORK end to end, not look like it does.
+   * A visitor who types "modern tropical, dark background" on the landing and
+   * then finds an empty box in the tool has been made to type it twice, which
+   * is worse than not offering the box at all.
+   *
+   * So the landing navigates with ?prompt= and the tool opens with it already
+   * in the brief. Read ONCE on mount: re-reading would fight the customer's own
+   * edits every time the URL changed for an unrelated reason.
+   */
+  const [prompt, setPrompt] = useState(() => params.get('prompt') || '');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
   // Tile-or-mural and the tile's width are decided by code from the brief and
@@ -1450,7 +1462,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
                   : freeReason === 'signed-out'
                     ? <p className="text-xs font-semibold text-emerald-700">
-                        Your first design is free — <Link to="/signup" state={{ from: '/wall-wrap' }} className="underline">create a free account</Link> to claim it.
+                        Your first design is free — <Link to="/signup" state={{ from: '/wallwrap-design' }} className="underline">create a free account</Link> to claim it.
                         Pricing film needs no account.
                       </p>
                     : <p className="text-xs wall-muted">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
@@ -1684,7 +1696,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       charges what they actually chose, and the return path
                       follows the brand's own page so a WePrintWraps customer
                       is not dropped onto the DesignProAI route after paying. */}
-                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
+                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
                   <span className="text-xs wall-muted">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>

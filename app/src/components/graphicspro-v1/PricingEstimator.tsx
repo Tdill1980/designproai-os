@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { GRAPHICS_MATERIALS, GRAPHICS_LAMINATION_PER_SQFT } from "@/lib/graphicspro-pricing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,12 +35,12 @@ interface PricingEstimatorProps {
   theme?: "dark" | "light";
 }
 
-const RATES: Record<string, { rate: number; label: string }> = {
-  avery: { rate: 6.32, label: "Avery Cut Contour" },
-  "3m": { rate: 6.92, label: "3M Cut Contour" },
-};
+// The rates live in lib/graphicspro-pricing so the FAQ can quote the SAME
+// numbers this estimator charges. A price typed in two places goes stale in
+// the one nobody re-reads, and that is always the marketing copy.
+const RATES = GRAPHICS_MATERIALS;
 
-const LAMINATION_ADDER = 1.50; // $/sqft additional for lamination
+const LAMINATION_ADDER = GRAPHICS_LAMINATION_PER_SQFT; // $/sqft for lamination
 
 let nextId = 1;
 function makeId() {

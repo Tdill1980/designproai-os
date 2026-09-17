@@ -53,6 +53,28 @@ function stageState(status: GraphicsProJobStatus, at: GraphicsProJobStatus, runn
   return 'pending';
 }
 
+/**
+ * WHAT THE PRODUCTION PIPELINE IS DOING RIGHT NOW, in the customer's terms.
+ *
+ * The `stage` column moves through these while `status` sits on `processing`
+ * for the whole run, so a rail driven by status alone freezes on one step for
+ * minutes and reads as stuck. The bespoke tracker this run replaces showed
+ * these seven, and dropping them would have been a downgrade dressed up as
+ * consolidation — so they survive as the LIVE DETAIL under the cut step.
+ *
+ * Keys are `graphics_pro_jobs.stage` verbatim. An unknown stage falls through
+ * to the step's own explanation rather than showing a raw column value.
+ */
+const CUT_STAGE_DETAIL: Record<string, string> = {
+  upscale: 'Bringing your artwork up to print resolution.',
+  cut_paths: 'Tracing one unified cut line around every graphic, as a real CutContour separation.',
+  cut_files: 'Adding the 1/4″ bleed past the cut line and nesting everything onto one sheet.',
+  production_pdf: 'Writing the print-and-cut PDF at the exact finished size.',
+  pricing: 'Measuring the nested sheet and pricing the material.',
+  packaging: 'Packaging the files your plotter receives.',
+  complete: 'Done — everything a plotter needs is below.',
+};
+
 /** The files a plotter receives. Named, so a customer can check they got them. */
 const EXPECTED_CUT_FILES: Array<[format: string, label: string, detail: string]> = [
   ['pdf', 'Cut-contour PDF', 'One unified cut line as a real CutContour separation, artwork bled 1/4″ past it'],
@@ -92,8 +114,11 @@ export function graphicsPanelizerRun(job: GraphicsProJobRow | null): PanelizerRu
         'mockup_ready', 'rendering'),
       stage('approved', 'You approved it', 'Cut files are produced from the approved mockup and nothing else.',
         'approved', 'approved'),
+      // While this step RUNS it names the sub-stage the pipeline is actually
+      // on, so a five-minute step does not look like a frozen one.
       stage('cut', 'Cut files produced',
-        'The unified cut line, the colour-separated film layers and the nested sheet — worked out deterministically from your artwork, not generated.',
+        (status === 'processing' && job?.stage && CUT_STAGE_DETAIL[job.stage])
+          || 'The unified cut line, the colour-separated film layers and the nested sheet — worked out deterministically from your artwork, not generated.',
         'complete', 'processing'),
     ],
     pieces,

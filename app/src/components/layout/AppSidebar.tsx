@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -389,22 +389,43 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   board once /admin/wallpro-production was retired into it, so
                   it is gone rather than left pointing at its neighbour. The one
                   above IS the QC gate; its tooltip says so. */}
-              {/* ⛔ NO PARTNER TENANT IN THIS NAV (owner, 2026-09-16, reversing
-                  the instruction of the same day that put one here: "keep wpw
-                  wallpro on RP and the standard WP on os.designpro — no wpw
-                  version, dual belongs on restylepro").
-                  The link that stood here opened /wall-wrap, the same WallPro
-                  wearing the WePrintWraps mark, admin-only, so the owner could
-                  demo the partner page before wallpro.weprintwraps.com exists.
-                  It is out: os.designproai's nav is the STANDARD product, and
-                  another company's branding one click from the tool list is
-                  exactly what a demo of DesignProAI-as-a-product must not show.
-                  The /wall-wrap ROUTES are deliberately still alive — they are
-                  what isWallProPartnerHost serves when that subdomain is
-                  pointed here, and they carry the live WooCommerce film order.
-                  Unadvertised is not deleted, and deleting them is a separate,
-                  owner-directed change that needs somewhere for that traffic to
-                  land first. Do not re-add a link here to "make it reachable". */}
+              {/* THE PARTNER TENANT IS A TOP-LEVEL APP BUTTON, NOT A SUB-LINK
+                  (owner, 2026-09-16: "we must have two WallPro APP buttons, one
+                  is a WPW WallPro and one is standard WallPro App").
+                  A link stood here briefly and it was wrong twice over: it read
+                  as a feature OF WallPro rather than the same app sold to a
+                  different customer, and once the app entry existed it was a
+                  second door beside its own neighbour -- the duplicate this
+                  sidebar has already had to undo twice. `wallpro_wpw` in
+                  dashboard-nav.ts is the entry; the PatternPro pair set the
+                  precedent it follows. */}
+              {/* THE PARTNER'S ACCOUNT PAGE, beside their tool — because the
+                  demo the owner is giving is "how it looks on their own WPW
+                  ShopFlow dashboard", and the tool alone does not show that.
+                  /shopflow is PUBLIC by route (its door is an email proven with
+                  an order number, not a session) but it is linked here
+                  admin-only for the same reason the tenant tool is: it is the
+                  partner's surface, not a DesignProAI customer's. */}
+              {tool.key === "wallpro_wpw" && isAdmin && (
+                <SidebarTooltip
+                  title="WePrintWraps ShopFlow"
+                  description="The partner's own account dashboard — orders, reorders and files, the page that replaces weprintwraps.com/my-account. Show it beside the tenant tool to demo the whole partner experience"
+                >
+                  <Link
+                    to="/shopflow"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/shopflow")
+                        ? "bg-fuchsia-500/15 text-fuchsia-200 border-fuchsia-400/60"
+                        : "text-fuchsia-300/90 border-white/15 hover:bg-fuchsia-500/10 hover:text-fuchsia-200"
+                    )}
+                  >
+                    <Store className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">WPW ShopFlow</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
               {/* WHAT A CUSTOMER GETS INSTEAD: the two pages that answer the
                   questions the tool cannot answer about itself. Not admin-only
                   -- these are customer pages, and the wall buyer who wants a
@@ -449,6 +470,41 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   </Link>
                 </SidebarTooltip>
               )}
+              {/* GRAPHICSPRO'S THREE SURFACES ARE ONE TOOL (owner, 2026-09-16:
+                  "wire the entire set"). /graphics-pro-wall and
+                  /graphics-pro-window are the SAME tool with the surface
+                  pre-selected -- they were reachable only by typing the URL,
+                  so two thirds of the product was invisible in the nav. The
+                  FAQ is public where the three tool routes are not, because
+                  gating a price list behind a sign-in asks somebody to create
+                  an account to find out what something costs. */}
+              {tool.key === "graphicspro" && ([
+                { to: "/graphics-pro-wall", label: "Walls", icon: Layers,
+                  title: "GraphicsPro — walls",
+                  description: "The same tool with the wall surface pre-selected: indoor or outdoor, photoreal mockups on any wall texture" },
+                { to: "/graphics-pro-window", label: "Windows", icon: Frame,
+                  title: "GraphicsPro — windows and storefronts",
+                  description: "Day, night and headlight previews. An interior-mount kit is cut in REVERSE so it reads from the street" },
+                { to: "/graphics-pro/faq", label: "Prices & FAQ", icon: HelpCircle,
+                  title: "GraphicsPro — prices & FAQ",
+                  description: "What cut vinyl costs per square foot, the three files your plotter receives, and the production pipeline end to end" },
+              ] as const).map(link => (
+                <SidebarTooltip key={link.to} title={link.title} description={link.description}>
+                  <Link
+                    to={link.to}
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive(link.to)
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <link.icon className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{link.label}</span>
+                  </Link>
+                </SidebarTooltip>
+              ))}
               {/* THE PROOF BAND'S CURATOR IS IN THE ADMIN BLOCK, NOT HERE.
                   Two sessions closed this gap the same night, and the other
                   one carried an owner instruction this one did not: "Add this
