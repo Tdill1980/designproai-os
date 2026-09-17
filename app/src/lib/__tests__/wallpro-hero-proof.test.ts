@@ -29,16 +29,36 @@ const source = (rel: string) =>
 describe('the hero proof band', () => {
   const band = source('../../components/wallpro/WallProHeroProof.tsx');
 
+  /**
+   * The root is now a ternary: the band keeps its centred, capped, definite
+   * width, and the landing hero mounts the SAME slider as an absolute fill
+   * (owner, 2026-09-17: the before/after "both need to be in hero"). The lock
+   * follows the BAND branch — what it guards is unchanged and still the thing
+   * that broke live, so it is re-pointed rather than relaxed.
+   */
+  const bandRoot = () => band.match(/'mx-auto mt-4[^']*'/);
+
   it('gives its root a definite width, so auto margins cannot collapse it in a grid', () => {
-    const root = band.match(/className="mx-auto mt-4[^"]*"/);
+    const root = bandRoot();
     expect(root, 'the band root class list moved; re-point this lock').not.toBeNull();
     expect(root![0]).toContain('w-full');
   });
 
   it('is still capped and centred when it stands alone', () => {
-    const root = band.match(/className="mx-auto mt-4[^"]*"/)![0];
+    const root = bandRoot()![0];
     expect(root).toContain('mx-auto');
     expect(root).toContain('max-w-6xl');
+  });
+
+  it('the fill variant drops the cap and the centring, which are band-only', () => {
+    // A hero panel owns its own shape. Leaving `max-w-6xl` or `mx-auto` on the
+    // fill branch would letterbox the slider inside a box that is already the
+    // right shape — the same class of defect, pointed the other way.
+    const fillRoot = band.match(/fill \? '([^']*)' : 'mx-auto mt-4/);
+    expect(fillRoot, 'the fill branch moved; re-point this lock').not.toBeNull();
+    expect(fillRoot![1]).toContain('absolute');
+    expect(fillRoot![1]).not.toContain('max-w-6xl');
+    expect(fillRoot![1]).not.toContain('mx-auto');
   });
 
   it('is placed in the hero grid, which is why the width matters', () => {

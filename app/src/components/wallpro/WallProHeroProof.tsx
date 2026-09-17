@@ -32,7 +32,25 @@ import type { WallProof } from '@/lib/wallpro-brand';
 const DWELL_MS = 6500;
 const OPENING_REVEAL = 52;
 
-export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
+/**
+ * WHERE THE BAND IS MOUNTED (owner, 2026-09-17: the before and after "both need
+ * to be in hero as a before and after like you did where its draggable").
+ *
+ * `band` is the original: a capped-height strip that sits above the tool and
+ * must never grow with the viewport, for the reason in this file's header.
+ * `fill` mounts the SAME slider inside the landing hero's photo panel, which is
+ * an absolutely-positioned full-bleed box — so the outer centring and the
+ * height cap, both correct for a band, are exactly wrong there.
+ *
+ * A variant, not a second component. This codebase already carries two sliders
+ * (the customer's own BeforeAfter with its PNG export, and this marketing band)
+ * and a third written for the landing would drift from both the first time the
+ * interaction changed.
+ */
+export type HeroProofVariant = 'band' | 'fill';
+
+export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallProof[]; variant?: HeroProofVariant }) {
+  const fill = variant === 'fill';
   const [index, setIndex] = useState(0);
   const [reveal, setReveal] = useState(OPENING_REVEAL);
   const [held, setHeld] = useState(false);
@@ -124,7 +142,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
          the auto margins to eat. Behaviour off the grid is unchanged, because
          `max-w-6xl` still caps it and `mx-auto` still centres it once the
          viewport is wider than that cap. */
-      className="mx-auto mt-4 w-full max-w-6xl px-4"
+      className={fill ? 'absolute inset-0' : 'mx-auto mt-4 w-full max-w-6xl px-4'}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocusCapture={() => setHeld(true)}
@@ -147,7 +165,12 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
            edges; `contain` keeps the photograph intact and pads instead. For a
            before/after the photograph is the argument, so it wins. Both halves
            use the same box and the same fit, so they stay in register. */
-        className="relative h-52 w-full select-none overflow-hidden rounded-xl border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]"
+        /* In `fill` the hero panel already OWNS the height and the rounded
+           corner, so the band's own cap and aspect must not apply — they would
+           letterbox the slider inside a box that is already the right shape. */
+        className={fill
+          ? 'relative h-full w-full select-none overflow-hidden bg-slate-900'
+          : 'relative h-52 w-full select-none overflow-hidden rounded-xl border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]'}
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -161,7 +184,10 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
           src={current.after}
           alt={current.alt}
           onError={() => fail(current.after)}
-          className="absolute inset-0 h-full w-full object-contain"
+          /* `fill` is a full-bleed hero panel whose shape is set by the layout,
+             not by the photograph, so it crops rather than letterboxes. Both
+             halves switch together or they fall out of register. */
+          className={`absolute inset-0 h-full w-full ${fill ? 'object-cover' : 'object-contain'}`}
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -173,7 +199,7 @@ export function WallProHeroProof({ proofs }: { proofs: WallProof[] }) {
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className="absolute inset-y-0 left-0 h-full max-w-none object-contain"
+            className={`absolute inset-y-0 left-0 h-full max-w-none ${fill ? 'object-cover' : 'object-contain'}`}
             style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
