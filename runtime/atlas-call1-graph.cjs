@@ -309,8 +309,11 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     const artwork = new Map();
     for (const placement of planOutput.lockup.placements || []) {
       if (artwork.has(placement.role)) continue;
+      // The WHOLE identity, or downloadVerified refuses it: path, hash AND
+      // byte length. Rebuilding a partial ref here is how a correct artifact
+      // reads as a corrupted one.
       artwork.set(placement.role, await downloadVerified(supabase, {
-        storagePath: placement.storagePath, contentHash: placement.contentHash,
+        storagePath: placement.storagePath, contentHash: placement.contentHash, byteSize: placement.byteSize,
       }));
     }
     abortIf();
@@ -658,15 +661,68 @@ function createAtlasCall1NodeWorker({
         if (n.state === "completed" && !seen.has(n.node_key)) { seen.add(n.node_key); log(`atlas call 1 graph ${run.id}: ${n.node_key} completed on ${n.lease_owner || "?"} (attempt ${n.attempt})`); }
       }
     }
-    const { data: master } = await supabase.from("designpro_atlas_call1_nodes").select("output").eq("run_id", run.id).eq("node_key", MASTER_NODE).single();
-    const output = master?.output;
+    // THE RUN COMPLETES ON master.assemble, NOT ON THE LAST NODE. The RPC keys
+    // the run's master columns -- and its completion -- on that node key, so a
+    // node placed AFTER it is still in flight when the run reads `completed`.
+    // Returning here would hand back Layer 0 while the composite was still
+    // running, and would do the same SILENTLY if it had failed. Both are the
+    // defect this node exists to prevent, so the composite is awaited on its own
+    // row and a failure is fatal rather than a quiet fall-back to the base.
+    let compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    while (compositeRow && compositeRow.state !== "completed" && compositeRow.state !== "failed") {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_timeout", `run ${run.id}: ${COMPOSITE_NODE} did not finish in time`, true);
+      }
+      await sleep(awaitPollMs);
+      compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    }
+    if (compositeRow?.state === "failed") {
+      const failure = compositeRow.output || {};
+      throw new AtlasCall1GraphError(failure.errorCode || compositeRow.error_code || "designpro_atlas_call1_composite_failed",
+        `run ${run.id}: ${COMPOSITE_NODE} failed: ${failure.message || failure.errorCode || compositeRow.error_code || "unknown"}`,
+        failure.retryable === true, { runId: run.id, nodeKey: COMPOSITE_NODE });
+    }
+
+    const { data: masterRows } = await supabase.from("designpro_atlas_call1_nodes")
+      .select("node_key,output").eq("run_id", run.id).in("node_key", [MASTER_NODE, COMPOSITE_NODE]);
+    const output = (masterRows || []).find((r) => r.node_key === MASTER_NODE)?.output;
     if (!output?.master?.storagePath || run.master_content_hash !== output.master.contentHash) {
       throw new AtlasCall1GraphError("designpro_atlas_call1_master_missing", `run ${run.id} completed without a master`);
     }
-    const bytes = await downloadVerified(supabase, { storagePath: run.master_storage_path, contentHash: run.master_content_hash, byteSize: run.master_byte_size });
+
+    // WHAT THE CUSTOMER IS SHOWN IS THE COMPOSITED SHEET, NOT LAYER 0.
+    //
+    // The run row records master.assemble, because the RPC keys those columns on
+    // that node -- and that is correct provenance: the row IS the clean master.
+    // But the panels are cut from what this function RETURNS and the Driver
+    // proof is conditioned on it, so returning Layer 0 would show the customer a
+    // wrap with no company name on it at all. The element graph designs the
+    // lettering separately precisely so it can be composited back on with no
+    // healing; handing back the base would throw that away at the last step.
+    //
+    // With the element graph off there is no composite node and this is
+    // byte-for-byte the previous behaviour.
+    const composited = (masterRows || []).find((r) => r.node_key === COMPOSITE_NODE)?.output;
+    const delivered = composited?.master?.storagePath ? composited.master : output.master;
+    const bytes = await downloadVerified(supabase, delivered);
     const { contract: _c, master: _m, retryable: _r, leaseOwner: _l, attempt: _a, durationMs: _d, ...receipt } = output;
-    return { bytes, contentHash: run.master_content_hash, ...receipt,
+    const elements = composited
+      ? { cleanMasterHash: composited.cleanMasterHash || null, elementsApplied: composited.applied || [] }
+      : {};
+    // ORDER MATTERS AND IS NOT COSMETIC. `receipt` is master.assemble's own
+    // output, and it carries its own `contentHash` -- Layer 0's. Spreading it
+    // after this key silently overwrote the composited hash with the clean one,
+    // which is the same "customer sees the unbranded sheet" defect one layer
+    // further in. The delivered identity is written LAST, deliberately.
+    return { bytes, ...receipt, ...elements, contentHash: delivered.contentHash,
       timings: { ...(receipt.timings || {}), heroCascadeMs: Number(receipt.timings?.heroCascadeMs || 0), graphAwaitMs: Date.now() - startedAt } };
+  }
+
+  /** One node row by key, or null when the compiled graph never had it. */
+  async function readNode(runId, nodeKey) {
+    const { data } = await supabase.from("designpro_atlas_call1_nodes")
+      .select("node_key,state,output,error_code").eq("run_id", runId).eq("node_key", nodeKey).maybeSingle();
+    return data || null;
   }
 
   async function failureOf(run) {

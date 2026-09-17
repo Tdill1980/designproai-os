@@ -275,6 +275,33 @@ Today, with no upload, the typography lockup is the brand mark — which is what
 `buildLogoArchitecture()` directs on the prompt side, and is the honest state
 until this node exists.
 
+**WHAT THE CUSTOMER RECEIVES IS THE COMPOSITED SHEET.** The panels are cut from
+what `author()` RETURNS and the Driver proof is conditioned on it, so returning
+Layer 0 would show the customer a wrap with no company name on it at all — the
+element graph would have designed the lettering separately and then thrown it
+away at the last step. Three things make that impossible, and each was a real
+defect found by the end-to-end test rather than reasoned about:
+
+1. **The run completes on `master.assemble`, not on the last node.** The RPC keys
+   the run's master columns *and its completion* on that node key, so a node
+   placed after it is still in flight when the run reads `completed`. `author()`
+   therefore awaits the composite on its own row.
+2. **A FAILED composite is fatal, never a quiet fall-back to the base.** Silently
+   delivering Layer 0 on failure is the same defect wearing a different hat.
+3. **The delivered identity is written LAST.** `master.assemble`'s receipt
+   carries its own `contentHash` — Layer 0's — so spreading it after the
+   delivered hash overwrote the composited one. Order is not cosmetic here.
+
+The plan carries **path + hash + byteSize**: `downloadVerified` checks all three,
+so a placement with two of them reads a correct artifact as a corrupted one.
+
+Proven end to end (`tests/atlas-call1-graph.test.mjs` 4b): the returned hash is
+not the clean hash, the receipt records four placements across both flanks, the
+element nodes add **zero image requests**, and the driver flank cropped out of
+the sheet the customer receives differs from Layer 0's and carries real ink — a
+receipt saying "4 applied" over an unchanged sheet is exactly the shape CLAUDE.md
+warns about by name.
+
 **Passenger consequence, which is the point of the whole port:** with lettering
 as a known object, the passenger flank is `flop(cleanDriver)` + the SAME element
 composited un-flipped at the mirrored box. There is no band to read back and

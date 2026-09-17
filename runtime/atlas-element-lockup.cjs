@@ -110,6 +110,9 @@ function planElementLockup({ zones = [], elements = [] } = {}) {
     role: element.role,
     contentHash: element.contentHash || null,
     storagePath: element.storagePath || null,
+    // IDENTITY IS ALL THREE (RULE 0.39). downloadVerified checks path, hash AND
+    // byte length, so a plan carrying only two of them cannot be read back.
+    byteSize: Number(element.byteSize) || null,
     wPct,
     hPct: wPct * (element.height / element.width) * (trim.w / trim.h),
   }));
@@ -147,6 +150,7 @@ function planElementLockup({ zones = [], elements = [] } = {}) {
         role: element.role,
         storagePath: element.storagePath,
         contentHash: element.contentHash,
+        byteSize: element.byteSize,
         box,
         mirroredFrom: surfaceKey === PRIMARY_SURFACE ? null : PRIMARY_SURFACE,
         flipped: false,
