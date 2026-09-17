@@ -195,6 +195,20 @@ async function renderLockup({
     bytes,
     contentHash: sha256(bytes),
     byteSize: bytes.length,
+    // LAYER 1 KEEPS ITS VECTOR (owner, 2026-09-17: "Layer 1 & Above ... clean
+    // vector text/graphics ... guaranteeing that the customer gets a clean
+    // vector separation for production").
+    //
+    // These glyphs are already real outlines -- `outline()` converts the font's
+    // paths with opentype's `toSVG()`, which is why they stay crisp at any size
+    // and why sharp can rasterise them without a single system font installed.
+    // The vector was then DISCARDED at this line: only the PNG was returned, so
+    // a production consumer had raster where the geometry existed all along.
+    //
+    // It costs nothing to keep: the same string the PNG is rendered from. The
+    // PNG remains what the composite draws (compositing is pixel work), and the
+    // SVG is what a plotter, a cut path or a print RIP can consume.
+    svg,
     width: canvasWidth,
     height: canvasHeight,
     // Enough geometry for the lockup node to place this without re-measuring.
