@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { rectangularWallMask, type Point } from '@/lib/wallpro-geometry';
+import type { WallItem } from '@/lib/wallpro-items';
 // The overlay colours live in ONE place so the FAQ can show the customer the
 // same glass this editor draws, and cannot be left behind by a restyle here.
 import {
@@ -12,6 +13,13 @@ type Props = {
   corners: Point[]; masks: Point[][]; draft: Point[]; showMasks: boolean;
   /** Pixel-accurate protected areas from detection (white where protected). */
   maskUrl?: string | null;
+  /**
+   * The detected objects, still as objects. Tapping one flips it between kept
+   * and painted-through — the one-click correction the composite masks alone
+   * could never offer, because once rasterised there is no "the sofa" to tap.
+   */
+  items?: WallItem[];
+  onToggleItem?: (id: string) => void;
   seams: { top: Point; bottom: Point }[];
   onEditing: (editing: boolean) => void;
   onPoint: (point: Point) => void;
@@ -85,6 +93,40 @@ export function WallPhotoEditor(p: Props) {
           <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill={WALL_GLASS.protected.chip} fillOpacity=".9"/>
           <text x={x+1.2} y={y+2.4} fill="white" fontSize="1.5">Protected {i+1}</text>
           {(selected===i || !!p.marking) && mask.map((q,j)=><circle key={j} cx={q.x*100} cy={q.y*100} r=".7" fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".3" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} point ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>)}
+        </g>;
+      })}
+      {/* THE DETECTED ITEMS, ONE TAP EACH.
+          Kept reads as the protected glass the rest of the editor already uses,
+          so a customer who has seen a hand-drawn mask recognises it instantly.
+          Painted-through is the SAME outline dashed and unfilled: the item is
+          still shown, because the point of the layer is that she can see what
+          the detector decided and disagree with it. An item nobody can see is
+          an item nobody can correct. */}
+      {overlays && (p.items ?? []).map(item => {
+        const x0 = Math.min(item.box.x0, item.box.x1) * 100, x1 = Math.max(item.box.x0, item.box.x1) * 100;
+        const y0 = Math.min(item.box.y0, item.box.y1) * 100, y1 = Math.max(item.box.y0, item.box.y1) * 100;
+        const kept = item.applied === 'fixed';
+        const chipW = Math.max(9, Math.min(30, item.label.length * 1.05 + 5));
+        return <g key={item.id}>
+          <rect
+            x={x0} y={y0} width={Math.max(0, x1 - x0)} height={Math.max(0, y1 - y0)} rx=".8"
+            fill={kept ? WALL_PROTECTED_FILL : 'transparent'}
+            stroke={kept ? WALL_GLASS.protected.stroke : WALL_GLASS.area.stroke}
+            strokeWidth={kept ? '.45' : '.35'}
+            strokeDasharray={kept ? undefined : '1.4 1'}
+            style={{ pointerEvents: !p.marking && !p.busy && p.onToggleItem ? 'auto' : 'none', cursor: 'pointer' }}
+            tabIndex={p.onToggleItem && !p.marking ? 0 : -1}
+            role="button"
+            aria-pressed={kept}
+            aria-label={`${item.label} — ${kept ? 'kept as photographed' : 'painted through'}. Tap to ${kept ? 'paint through it' : 'keep it'}.`}
+            onPointerDown={e => { if (!p.onToggleItem || p.marking || p.busy) return; e.stopPropagation(); p.onToggleItem(item.id); }}
+            onKeyDown={e => { if (!p.onToggleItem) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); p.onToggleItem(item.id); } }}
+          />
+          <rect x={x0 + .4} y={y0 + .4} width={chipW} height="3.6" rx=".6"
+            fill={kept ? WALL_GLASS.protected.chip : WALL_GLASS.area.label} fillOpacity=".92" pointerEvents="none"/>
+          <text x={x0 + 1.1} y={y0 + 2.9} fill="white" fontSize="1.9" pointerEvents="none">
+            {kept ? '✓ ' : '× '}{item.label}
+          </text>
         </g>;
       })}
       {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r=".85" fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".2" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><text x={q.x*100+1.2} y={q.y*100-1.2} fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g>)}
