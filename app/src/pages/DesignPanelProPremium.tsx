@@ -384,6 +384,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // Preserve the exact customer brief for GENIE trailer dimension grounding when
   // the admin later opens the Production Pack dialog.
   const lastDesignBriefRef = useRef<string>("");
+  // THE FAILURE CARD'S BUTTON HAS TO ACTUALLY TRY AGAIN. It says "Let's try
+  // that again" over "Start New ATLAS Run", and it used to clear the error and
+  // open the left column -- which leaves the customer looking at "Your design
+  // will appear here" with a form to re-fill (owner, 2026-09-17: "when I press
+  // just takes me back to blank page"). The brief she already typed is still in
+  // state, so the run is replayed from the exact params that were submitted.
+  const retryPipelineParamsRef = useRef<DesignIQParams | null>(null);
 
   // --- Vehicle state ---
   const [year, setYear] = useState(() => briefVehicleRef.current?.year || "");
@@ -1288,6 +1295,10 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       return;
     }
     const requestedPipelineMode = pipelineModeRef.current;
+    // The RAW params, captured before enrichment. `lastPipelineParamsRef`
+    // below holds the ENRICHED copy, which carries this run's generationId --
+    // replaying that would re-submit against a request the server is done with.
+    retryPipelineParamsRef.current = { ...params, generationId: undefined };
     if (params.prompt?.trim()) lastDesignBriefRef.current = params.prompt.trim();
     if (
       mvp.isMyVehicleMode &&
@@ -2473,7 +2484,12 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             onStartNew={() => {
                               setRenderError(false);
                               clearGenerationError();
+                              // Mints a fresh GenerationID (it nulls the ref), so
+                              // the replay is a genuinely NEW run against the spent
+                              // request, never a retry of one the server is done with.
                               invalidateDesignPrep();
+                              const replay = retryPipelineParamsRef.current;
+                              if (replay) { void handlePipelineStart(replay); return; }
                               setLeftColOpen(true);
                             }}
                           />
