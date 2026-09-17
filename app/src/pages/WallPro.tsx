@@ -1232,6 +1232,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               FAQ
             </Link>
             {!theme.showPrintOffer && <ToolAccountMenu />}
+            {!theme.showPrintOffer && <Link to="/wallpro" className="hidden text-sm font-semibold text-white/80 hover:text-white sm:inline">Overview</Link>}
           </div>
         </div>
         {/* THE RULE between the header and the page (owner, 2026-09-14: "Add a
