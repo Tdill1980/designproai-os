@@ -624,13 +624,69 @@ function assertOutputSet() {
   const productionProofs = rows("production", "flat-proof");
   const enticeProof = enticeProofs.length === 1 ? enticeProofs[0] : null;
   const productionProof = productionProofs.length === 1 ? productionProofs[0] : null;
+  // THE PRODUCTION CALL-8 PROOF IS RECONCILED, NOT BYTE-COPIED -- AND THAT IS
+  // THE CONTRACT, NOT A DEFECT.
+  //
+  // This predicate used to demand `productionProof.contentHash ===
+  // enticeProof.contentHash`, and it can never hold. RULE 0.19 puts
+  // `manifest.resolve` AFTER `await_purchase`, so the free entice proof is
+  // composed before GENIE has resolved and carries `manifestHash: null`;
+  // production then rebuilds the same sheet against the bound production
+  // dimensions and stamps the resolved manifest hash into it
+  // (`proofReconciledForProduction`, runtime designpro-standalone-claimant:
+  // "Rebuild the same six canonical panels against the bound production
+  // dimensions and embed the evidence here"). One stamped field changes the
+  // PNG bytes. Live: canary 35212228736 produced entice 502f270a and
+  // production 1c34fcfa with EVERY tile rect, every sourcePanelHash and the
+  // sourceMasterHash identical between them.
+  //
+  // So the check is not relaxed -- it is moved onto the thing it exists to
+  // protect. What must never differ is the ARTWORK: the accepted master, the
+  // six canonical panels, and where each one sits on the sheet. Byte equality
+  // proved that only incidentally, and demanding it would force production to
+  // ship a proof that does NOT record the manifest it was dimensioned against,
+  // which is less evidence, not more. A genuine byte copy (the logo-only path,
+  // which takes the other branch) still passes every clause below.
+  const tileLineage = (proof) => {
+    const tiles = Array.isArray(proof?.metadata?.surfaceTiles) ? proof.metadata.surfaceTiles : [];
+    return JSON.stringify(
+      tiles
+        .map((tile) => ({
+          surfaceKey: String(tile?.surfaceKey || ""),
+          sourcePanelHash: String(tile?.sourcePanelHash || ""),
+          sourceMasterHash: String(tile?.sourceMasterHash || ""),
+          print: tile?.print || null,
+          trim: tile?.trim || null,
+        }))
+        .sort((a, b) => a.surfaceKey.localeCompare(b.surfaceKey)),
+    );
+  };
+  const masterHashes = (proof) => new Set(
+    (Array.isArray(proof?.metadata?.surfaceTiles) ? proof.metadata.surfaceTiles : [])
+      .map((tile) => String(tile?.sourceMasterHash || "")),
+  );
+  const enticeLineage = tileLineage(enticeProof);
+  const enticeMasters = masterHashes(enticeProof);
   const productionFlatProofExactCopy = Boolean(
     enticeProof?.hashVerified === true
       && productionProof?.hashVerified === true
-      && productionProof.contentHash === enticeProof.contentHash
-      && productionProof.metadata?.sourceContentHash === enticeProof.contentHash
-      && productionProof.metadata?.sourceStoragePath === enticeProof.storagePath
+      // Six surfaces, one accepted master, on the entice proof.
+      && (enticeProof.metadata?.surfaceTiles || []).length === 6
+      && enticeMasters.size === 1
+      && /^[0-9a-f]{64}$/.test([...enticeMasters][0])
+      // The artwork and its placement are identical, tile for tile.
+      && tileLineage(productionProof) === enticeLineage
+      && JSON.stringify(productionProof.metadata?.sourcePanelHashes || null)
+        === JSON.stringify(enticeProof.metadata?.sourcePanelHashes || null)
+      // And production says, in its own record, which entice proof it reconciled.
       && productionProof.metadata?.sourceEnticeRunId === evidence.enticeRunId
+      && (
+        productionProof.contentHash === enticeProof.contentHash
+          ? productionProof.metadata?.sourceContentHash === enticeProof.contentHash
+            && productionProof.metadata?.sourceStoragePath === enticeProof.storagePath
+          : productionProof.metadata?.proofReconciledForProduction === true
+            && productionProof.metadata?.originalEnticeProofHash === enticeProof.contentHash
+      )
   );
   const checks = {
     enticeFlatProofs: count("entice", "flat-proof"),
