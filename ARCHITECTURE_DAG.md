@@ -182,9 +182,40 @@ the decision to `master.composite` and human QC.
 
 | | |
 |---|---|
-| **depends_on** | `typeset.produce`, `contact.produce`, `logo.prepare` |
-| **output** | one placement manifest: the three references plus normalized `{xPct, yPct, wPct, hPct}` boxes per surface, in the RestylePro vocabulary |
-| **AI calls** | zero |
+| **depends_on** | exactly the element nodes that EXIST — no phantom edge to a node a brief never produced |
+| **producer** | `runtime/atlas-element-lockup.cjs` |
+| **output** | one placement manifest: each element reference plus its normalized `{xPct, yPct, wPct, hPct}` box per surface, in the RestylePro vocabulary |
+| **AI calls** | zero, and it stores nothing — dimensions in, a plan out |
+
+**The coordinate space is the surface's own TRIM rectangle, in the panel's
+READING orientation** — not the 4096 sheet, and not the zone including bleed.
+Stating that precisely is not pedantry: a flank sits rotated 90° on the sheet,
+and "which space is this box in" is exactly the ambiguity that produced four
+separate passenger defects when placement was reconstructed from pixels.
+
+Geometry, derived and locked:
+
+- **aspect is preserved.** The axes are normalized against different pixel
+  dimensions, so holding an element's shape means
+  `hPct = wPct × (elemH/elemW) × (trimW/trimH)`. Getting it wrong stretches the
+  customer's logo, which nobody notices until it is on vinyl.
+- **the passenger box is the driver box MIRRORED** (`xPct' = 1 − xPct − wPct`,
+  RULE 0.36's own mapping) **and the element is composited un-flipped**
+  (`flipped: false`, asserted). Same physical place on the vehicle, still reading
+  left to right.
+- **nothing leaves the safe area**, and an over-tall stack is scaled as a GROUP
+  so the arrangement survives instead of one element shrinking out of proportion.
+
+Taste, defaulted — one named constant each, all the owner's to change:
+`ELEMENT_SURFACES` (the two flanks, which is where both evidence sheets put the
+company name), `LOCKUP_WIDTH_PCT` 0.34, `SAFE_MARGIN_PCT` 0.08, `STACK_GAP_PCT`
+0.03, `STACK_ORDER` logo → typography → contact, left-anchored, vertically
+centred. **Hood, roof, front and rear carry no element** until the owner rules
+on each: inventing a rear contact bar is a design decision, not a geometric one.
+
+**OWNER RULING, 2026-09-17:** an uploaded logo does **not** suppress the typed
+company name. Commercial wraps routinely carry a brand mark and a wordmark, so
+both nodes compile when both exist in the brief.
 
 ### 4.6 `master.composite`
 
@@ -228,7 +259,7 @@ own absence before it is called done.
 | 3 | `typeset.produce` node: compiled into the graph, claim, envelope, idempotent re-claim | **done** (`a5faf833`, release policy `54ad1039`) |
 | 4 | `contact.produce` node + the never-invent input assertion | **done** |
 | 5 | `logo.prepare` node (pass-through, honest `absent`) | **done** |
-| 6 | `element.lockup` placement manifest | pending |
+| 6 | `element.lockup` placement manifest | **done** |
 | 7 | clean-base authoring contract (§4.1) — prompt versions advance together | pending |
 | 8 | `master.composite` + clean master preserved byte-for-byte | pending |
 

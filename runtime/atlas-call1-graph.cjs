@@ -43,6 +43,7 @@ const { createHash } = require("node:crypto");
 const hero = require("./atlas-hero-driver.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const logo = require("./atlas-logo-prepare.cjs");
+const lockup = require("./atlas-element-lockup.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -63,6 +64,9 @@ const CONTACT_NODE = "contact.produce";
 // ARCHITECTURE_DAG.md §4.4 -- the customer's uploaded logo, prepared as Layer 1
 // artwork. It NEVER generates one; absence is an honest answer, not a gap.
 const LOGO_NODE = "logo.prepare";
+// ARCHITECTURE_DAG.md §4.5 -- the placement manifest. The ONE node in the
+// element graph that is not a root: it needs the finished elements' dimensions.
+const LOCKUP_NODE = "element.lockup";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -219,8 +223,13 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
   // the surfaces do not wait on an element, and chunk 8's master.composite is
   // what will consume it.
   if (elementGraphEnabled()) {
-    for (const element of [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)]) {
-      if (element) nodes.push(element);
+    const elements = [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)].filter(Boolean);
+    for (const element of elements) nodes.push(element);
+    // It depends on exactly the elements that EXIST. A brief with no company
+    // name and no contact details and no logo compiles no lockup either --
+    // there is nothing to place, and an empty manifest is not a plan.
+    if (elements.length) {
+      nodes.push({ key: LOCKUP_NODE, dependsOn: elements.map((e) => e.key), input: {}, maxAttempts: 3 });
     }
   }
   return validateGraph(nodes);
@@ -273,6 +282,24 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ARCHITECTURE_DAG.md §4.5 -- where each element sits, as normalized boxes.
+  // Zero AI, zero network, zero pixels: it reads its dependencies' recorded
+  // dimensions and the manifest's zones, and returns a plan.
+  if (node.node_key === LOCKUP_NODE) {
+    abortIf();
+    const elements = (node.depends_on || []).map((key) => {
+      const output = deps.get(key)?.output;
+      if (!output?.element) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${key} carries no element reference`, true);
+      }
+      return { role: output.role, ...output.element };
+    });
+    const plan = lockup.planElementLockup({ zones: manifest.zones, elements });
+    logger(`atlas call 1 graph ${run.id}: lockup planned (${plan.placements.length} placements across ${plan.surfaces.join(", ")})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "lockup", lockup: plan,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   // ARCHITECTURE_DAG.md §4.4 -- the customer's own logo, verified and
   // conditioned. ZERO model calls: this node prepares artwork the customer
@@ -611,7 +638,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

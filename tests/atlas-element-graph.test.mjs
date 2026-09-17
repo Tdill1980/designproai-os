@@ -44,6 +44,9 @@ function withFlag(value, fn) {
   }
 }
 
+// Every node the element graph adds. A surface may depend on none of them.
+const ELEMENT_NODES = [graph.TYPESET_NODE, graph.CONTACT_NODE, graph.LOGO_NODE, graph.LOCKUP_NODE];
+
 const compile = (flag, input) =>
   withFlag(flag, () => graph.compileHeroDriverGraph({ heroFirst: true, input }));
 
@@ -74,13 +77,15 @@ test("on, the element node is a ROOT and master's edges do not move", () => {
     assert.ok(same, `${node.key} disappeared`);
     assert.deepEqual(same.dependsOn, node.dependsOn, `${node.key}'s edges moved`);
   }
-  assert.equal(on.length, off.length + 2, "typography and contact are separate nodes; this brief carries no logo");
+  assert.equal(on.length, off.length + 3, "typography, contact, and the lockup that places them");
 
-  // No surface waits on an element in this chunk; master.composite is chunk 8.
+  // NO SURFACE waits on an element; master.composite (chunk 8) is what will
+  // consume them. element.lockup depends on them by design -- it is an element
+  // node, not a surface -- so the assertion is about the surfaces and master.
   for (const node of on) {
-    if (node.key !== graph.TYPESET_NODE && node.key !== graph.CONTACT_NODE) {
-      assert.ok(!node.dependsOn.includes(graph.TYPESET_NODE), `${node.key} must not wait on the element yet`);
-      assert.ok(!node.dependsOn.includes(graph.CONTACT_NODE), `${node.key} must not wait on the element yet`);
+    if (ELEMENT_NODES.includes(node.key)) continue;
+    for (const elementKey of ELEMENT_NODES) {
+      assert.ok(!node.dependsOn.includes(elementKey), `${node.key} must not wait on ${elementKey}`);
     }
   }
 });
@@ -266,13 +271,12 @@ test("an uploaded logo is its own root, carrying identity and no pixels", () => 
   assert.equal(node.input.role, "logo");
   assert.equal(node.input.source, "customer");
   assert.deepEqual(node.input.asset, LOGO_ASSET);
-  assert.equal(withLogo.length, compile("off", CONTACT).length + 3);
+  assert.equal(withLogo.length, compile("off", CONTACT).length + 4, "three elements plus the lockup");
 
-  // Still no surface waits on an element.
+  // Still no surface waits on the logo (element.lockup does, by design).
   for (const other of withLogo) {
-    if (other.key !== graph.LOGO_NODE) {
-      assert.ok(!other.dependsOn.includes(graph.LOGO_NODE), `${other.key} must not wait on the logo`);
-    }
+    if (ELEMENT_NODES.includes(other.key)) continue;
+    assert.ok(!other.dependsOn.includes(graph.LOGO_NODE), `${other.key} must not wait on the logo`);
   }
 });
 
@@ -286,4 +290,77 @@ test("a malformed logo identity refuses the RUN, before a worker spends a lease"
     () => compile("on", { ...CONTACT, logoAsset: { storagePath: "logos/a.png", contentHash: "short", byteSize: 10 } }),
     (err) => err.code === "flat_atlas_logo_identity_invalid",
   );
+});
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE_DAG.md chunk 6 — `element.lockup`. The one element node that is
+// NOT a root: it needs its dependencies' recorded dimensions.
+// ---------------------------------------------------------------------------
+
+test("the lockup depends on exactly the elements that exist", () => {
+  const both = compile("on", CONTACT).find((n) => n.key === graph.LOCKUP_NODE);
+  assert.deepEqual(both.dependsOn.sort(), [graph.CONTACT_NODE, graph.TYPESET_NODE].sort());
+
+  const nameOnly = compile("on", { companyName: "Arctic Air" }).find((n) => n.key === graph.LOCKUP_NODE);
+  assert.deepEqual(nameOnly.dependsOn, [graph.TYPESET_NODE], "no contact node means no phantom edge to one");
+
+  const all = compile("on", { ...CONTACT, logoAsset: LOGO_ASSET }).find((n) => n.key === graph.LOCKUP_NODE);
+  assert.equal(all.dependsOn.length, 3);
+});
+
+test("nothing to place means no lockup node at all", () => {
+  const bare = compile("on", { vehicle: "F250" });
+  assert.ok(!bare.some((n) => n.key === graph.LOCKUP_NODE), "an empty manifest is not a plan");
+  assert.equal(bare.length, compile("off", CONTACT).length);
+});
+
+test("the lockup still gates nothing — no surface waits on it", () => {
+  for (const node of compile("on", CONTACT)) {
+    if (ELEMENT_NODES.includes(node.key)) continue;
+    assert.ok(!node.dependsOn.includes(graph.LOCKUP_NODE), `${node.key} must not wait on the lockup`);
+  }
+});
+
+test("executing it turns element references into placed boxes", async () => {
+  const element = (key, role, width, height) => ({
+    nodeKey: key, state: "completed",
+    output: { role, element: { storagePath: `atlas-elements/${role}.png`, contentHash: role[0].repeat(64), width, height } },
+  });
+  const out = (await graph.executeNode({
+    claim: {
+      node: { node_key: graph.LOCKUP_NODE, input: {}, depends_on: [graph.TYPESET_NODE, graph.CONTACT_NODE],
+        lease_owner: "designpro-worker-2", attempt: 1 },
+      run: { id: "run-1", owner_id: "owner-1", created_at: new Date().toISOString(),
+        definition: { input: CONTACT, manifest: { zones: [
+          { surfaceKey: "driver", rotationDegrees: 90, trim: { w: 600, h: 2400 } },
+          { surfaceKey: "passenger", rotationDegrees: -90, trim: { w: 600, h: 2400 } },
+        ] } } },
+      claimToken: "token",
+      dependencies: [element(graph.TYPESET_NODE, "typography", 1600, 400), element(graph.CONTACT_NODE, "contact", 1600, 200)],
+    },
+    store: { putImmutableBytes: async () => { throw new Error("the planner stores nothing"); } },
+    supabase: null,
+    callEdge: () => { throw new Error("the planner makes NO model call"); },
+  })).output;
+
+  assert.equal(out.role, "lockup");
+  assert.equal(out.lockup.contract, "designpro.atlas-element-lockup.v1");
+  assert.equal(out.lockup.placements.length, 4, "two elements across two flanks");
+  const driver = out.lockup.placements.find((p) => p.surfaceKey === "driver" && p.role === "typography");
+  const passenger = out.lockup.placements.find((p) => p.surfaceKey === "passenger" && p.role === "typography");
+  assert.ok(Math.abs(passenger.box.xPct - (1 - driver.box.xPct - driver.box.wPct)) < 1e-6);
+  assert.equal(passenger.flipped, false);
+});
+
+test("a dependency with no element reference is incomplete, and RETRYABLE", async () => {
+  await assert.rejects(() => graph.executeNode({
+    claim: {
+      node: { node_key: graph.LOCKUP_NODE, input: {}, depends_on: [graph.TYPESET_NODE], lease_owner: "w", attempt: 1 },
+      run: { id: "run-1", owner_id: "o", created_at: new Date().toISOString(),
+        definition: { input: CONTACT, manifest: { zones: [{ surfaceKey: "driver", trim: { w: 600, h: 2400 } }] } } },
+      claimToken: "t",
+      dependencies: [{ nodeKey: graph.TYPESET_NODE, state: "completed", output: { role: "typography" } }],
+    },
+    store: {}, supabase: null, callEdge: () => {},
+  }), (err) => err.code === "designpro_atlas_call1_dependency_incomplete" && err.retryable === true);
 });
