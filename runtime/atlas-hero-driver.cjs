@@ -522,16 +522,23 @@ async function authorHeroDriverMaster({
       // ONLY on the pass that actually has a view to flatten; with hero-first
       // off (or outside HERO_VIEW_SURFACES) it stays the plain continuation it
       // always was.
-      // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 on
-      // surface.front). Its subject is its own full-size view render, and
-      // continuity already rides the replayed view exchange. Front's
-      // AUTHOR_NEIGHBOURS is ["driver","passenger"], so attaching them put a
-      // view + two flanks + replayed turns in ONE edge invocation and OOM'd
-      // the worker on every attempt; driver's flatten never hit it only
-      // because driver's neighbour list is empty.
+      // A FLATTEN SENDS ONLY ITS OWN VIEW (live 9c6008ec: HTTP 546, the edge
+      // worker exhausted, eight attempts on surface.front). Front's flatten
+      // was carrying its undownscaled view render PLUS driver + passenger as
+      // neighbours PLUS driver's flank replayed -- and `trimAuthoringHistory`
+      // PINS the driver exchange outside the byte budget, so the heaviest
+      // image was the one guaranteed not to be trimmed. Driver's flatten never
+      // hit it because its neighbour list is empty and its only history IS its
+      // own view.
+      //
+      // Nothing is lost: a view is authored `first` (no neighbours, no
+      // history), so front's composition never saw driver in the first place,
+      // and the flatten only re-aspects the view it was handed. This makes
+      // every flatten weigh exactly what driver's proven flatten weighs.
       return authorSurface({
         surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView),
-        neighbours: heroView ? [] : neighbours, priorExchanges,
+        neighbours: heroView ? [] : neighbours,
+        priorExchanges: heroView ? [] : priorExchanges,
         heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
       });
     }));

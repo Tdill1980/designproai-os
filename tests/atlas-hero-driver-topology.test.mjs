@@ -385,11 +385,14 @@ test("hero-first runs driver AND front as vehicle-view then flatten, and changes
     "with the VIEW's thought signature on the model part it arrived on");
   assert.deepEqual(driverView.priorTurns, [], "the vehicle view itself still draws from scratch");
   assert.deepEqual(frontView.priorTurns, [], "front's vehicle view also draws from scratch");
-  // Front's flatten replays TWO exchanges: driver's flank (pinned first by
-  // trimAuthoringHistory, the same pin roof relies on) AND its own view.
-  assert.equal(frontFlatten.priorTurns.length, 4, "front's flatten continues driver's flank AND its own view");
-  assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-driver", "driver's flank is pinned first");
-  assert.equal(frontFlatten.priorTurns[3].parts[0].thoughtSignature, "sig-front-view", "front's own view rides second");
+  // A FLATTEN REPLAYS ONLY ITS OWN VIEW, exactly like driver's. Replaying
+  // driver's flank too meant carrying the one exchange trimAuthoringHistory
+  // PINS outside the byte budget, on top of an undownscaled view render --
+  // live 9c6008ec, HTTP 546 edge OOM, all eight attempts.
+  assert.equal(frontFlatten.priorTurns.length, 2, "front's flatten continues its own view and nothing else");
+  assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-front-view", "its own view's signature");
+  assert.ok(!frontFlatten.priorTurns.some((t) => (t.parts || []).some((p) => p.thoughtSignature === "sig-driver")),
+    "driver's flank is not replayed into a flatten -- it is the pinned, unbudgeted image that exhausted the worker");
   // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 edge OOM on
   // surface.front): view render + driver + passenger + replayed turns in one
   // invocation exhausted the worker. Driver's flatten escaped only because its
