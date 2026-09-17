@@ -58,7 +58,7 @@ test("unset means OFF, and off is byte-for-byte today's graph", () => {
   assert.deepEqual(typo, off, "a typo must not select a customer path");
   assert.ok(!off.some((n) => n.key === graph.TYPESET_NODE));
   assert.ok(!off.some((n) => n.key === graph.CONTACT_NODE));
-  assert.equal(off.length, 8);
+  assert.equal(off.length, 9, "the hero-first base graph now carries two vehicle-view nodes: driver and front");
 });
 
 test("on, the element node is a ROOT and master's edges do not move", () => {

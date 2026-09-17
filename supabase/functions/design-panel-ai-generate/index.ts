@@ -2551,7 +2551,11 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v4-clean-base";
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
+// Mirrors the runtime's HERO_VIEW_SURFACES (atlas-hero-driver.cjs). Add a
+// surface here only on the same evidentiary bar it was added there: a real,
+// measured aspect_drift refusal, never speculatively.
+const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set(["driver", "front"]);
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
@@ -2691,7 +2695,18 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     }
     const surfaceLabel = String(body.surfaceLabel || surfaceKey).toUpperCase();
     const first = body.first === true;
-    if (first !== (surfaceKey === "driver")) throw new Error("atlas_author_first_must_be_driver");
+    // HERO-VIEW-ELIGIBLE SURFACES ONLY -- mirrors the runtime's
+    // HERO_VIEW_SURFACES (atlas-hero-driver.cjs). Driver is ALWAYS `first`
+    // (it is the design's from-scratch origin, split or not); front is
+    // `first` only on the pass that has a vehicle-sheet view to author or
+    // flatten (RULE 0.39 measured driver's aspect refusal at 0/3 real
+    // vehicles; front measured the identical failure live -- two real
+    // generations, `front: aspect_drift:1.342`/`1.354`). Every other surface
+    // is never `first`: a from-scratch persona call there would be a second
+    // creative authority (RULE 0.26).
+    if (first && !ATLAS_HERO_VIEW_ELIGIBLE_SURFACES.has(surfaceKey)) {
+      throw new Error("atlas_author_first_surface_not_hero_view_eligible");
+    }
     // HERO-FIRST is a two-stage driver: stage 1 renders the vehicle view,
     // stage 2 flattens THAT view into the flank. Both stages run here, through
     // the same persona, the same lease and the same durable provider cache.
@@ -2749,7 +2764,12 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
 
     const neighboursIn = Array.isArray(body.neighbours) ? (body.neighbours as Array<Record<string, unknown>>) : [];
     if (neighboursIn.length > ATLAS_AUTHOR_MAX_NEIGHBOURS) throw new Error(`atlas_author_neighbour_budget_exceeded:${neighboursIn.length}`);
-    if (first && neighboursIn.length) throw new Error("atlas_author_hero_takes_no_neighbours");
+    // Scoped to the VIEW leg only, exactly like the priorTurns guard below: a
+    // from-scratch vehicle-sheet view has nothing to reference, but a flatten
+    // legitimately needs neighbours -- front's flatten must see driver and
+    // passenger to stay cohesive with them, the same reference set its plain
+    // continuation call has always used (AUTHOR_NEIGHBOURS.front).
+    if (first && !heroFlatten && neighboursIn.length) throw new Error("atlas_author_hero_takes_no_neighbours");
     const priorTurnsIn = Array.isArray(body.priorTurns) ? (body.priorTurns as Array<Record<string, unknown>>) : [];
     if (priorTurnsIn.length > ATLAS_AUTHOR_MAX_PRIOR_TURNS) throw new Error(`atlas_author_prior_turn_budget_exceeded:${priorTurnsIn.length}`);
     // A FROM-SCRATCH HERO TAKES NO HISTORY; A FLATTEN IS A CONTINUATION.
