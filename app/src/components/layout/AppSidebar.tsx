@@ -223,6 +223,11 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
               <span className="truncate">WallPro Before &amp; After</span>
             </Link>
           </SidebarTooltip>
+          <SidebarTooltip title="WallPro Landing Media" description="Swap landing images, the horizontal design and printing video, and the vertical installation reel">
+            <Link to="/admin/wallpro-landing" onClick={onNavigate} className={cn("mt-1 flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition", isActive("/admin/wallpro-landing") ? "border-sky-400/50 bg-sky-500/15 text-sky-200" : "border-sky-500/30 text-sky-300 hover:bg-sky-500/10")}>
+              <Layers className="h-4 w-4 shrink-0" /><span className="truncate">WallPro Landing Media</span>
+            </Link>
+          </SidebarTooltip>
           <SidebarTooltip
             title="PatternPro Manager"
             description="The 118-pattern Wrap-By-The-Yard library behind /pattern-wrap: names, swatches, collections, pricing, active flags"

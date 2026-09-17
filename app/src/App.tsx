@@ -67,6 +67,8 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+const WallProLanding = lazyWithRetry(() => import("./pages/WallProLanding"));
+const AdminWallProLanding = lazyWithRetry(() => import("./pages/AdminWallProLanding"));
 // MY SHOPFLOW — the WePrintWraps account page, ported from restylepro-os
 // 2026-09-15. It replaces weprintwraps.com/my-account/ (see
 // wordpress/wpw-shopflow-account), so it is PUBLIC on purpose: its door is an
@@ -287,6 +289,7 @@ const MightyMailRedirect = ({ tab }: { tab: string }) => {
  */
 const isSelfHeaderedToolRoute = (pathname: string) =>
   Boolean(activeOsTool(pathname)) ||
+  pathname === "/wallpro" ||
   pathname === "/printpro/wallpro" || pathname.startsWith("/printpro/wallpro/");
 
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
@@ -544,7 +547,8 @@ const App = () => {
           <Route path="/wallpanelprostudio" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
           <Route path="/wallpanelprostudio/:projectId" element={<RequireAdmin><WallPanelProStudio /></RequireAdmin>} />
           <Route path="/admin/wallpro-studio" element={<Navigate to="/wallpanelprostudio" replace />} />
-          <Route path="/wallpro" element={<Navigate to="/printpro/wallpro" replace />} />
+          <Route path="/wallpro" element={<WallProLanding />} />
+          <Route path="/admin/wallpro-landing" element={<RequireAdmin><AdminWallProLanding /></RequireAdmin>} />
           <Route path="/graphics-pro" element={<RequireAuth><GraphicsProV1 /></RequireAuth>} />
           <Route path="/graphics-pro-wall" element={<RequireAuth><GraphicsProWall /></RequireAuth>} />
           <Route path="/graphics-pro-window" element={<RequireAuth><GraphicsProWindow /></RequireAuth>} />

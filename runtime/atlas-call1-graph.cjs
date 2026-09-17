@@ -41,6 +41,10 @@
 
 const { createHash } = require("node:crypto");
 const hero = require("./atlas-hero-driver.cjs");
+const typeset = require("./atlas-typeset-layer.cjs");
+const logo = require("./atlas-logo-prepare.cjs");
+const lockup = require("./atlas-element-lockup.cjs");
+const composite = require("./atlas-master-composite.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -50,6 +54,23 @@ const MASTER_NODE = "master.assemble";
 // rows so a failed flatten retries WITHOUT re-billing the vehicle view, and so
 // the ledger can say which worker drew which half.
 const DRIVER_VIEW_NODE = "surface.driver.view";
+// ARCHITECTURE_DAG.md §4.2 -- the element graph's first node. A ROOT: it depends
+// only on the run's frozen brief, so it is claimable in the same instant as
+// surface.driver.view and adds nothing to the critical path.
+const TYPESET_NODE = "typeset.produce";
+// ARCHITECTURE_DAG.md §4.3 -- the contact bar. Same producer, same envelope,
+// its own node, so a design that carries a phone number but no company name
+// still gets its element, and vice versa.
+const CONTACT_NODE = "contact.produce";
+// ARCHITECTURE_DAG.md §4.4 -- the customer's uploaded logo, prepared as Layer 1
+// artwork. It NEVER generates one; absence is an honest answer, not a gap.
+const LOGO_NODE = "logo.prepare";
+// ARCHITECTURE_DAG.md §4.5 -- the placement manifest. The ONE node in the
+// element graph that is not a root: it needs the finished elements' dimensions.
+const LOCKUP_NODE = "element.lockup";
+// ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. The ONLY element node that
+// consumes the assembled sheet, and the only one after master.assemble.
+const COMPOSITE_NODE = "master.composite";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -107,7 +128,83 @@ function validateGraph(nodes) {
  * passenger depends on the driver it flops. Nothing else orders the graph, so
  * whatever is not an edge runs in parallel.
  */
-function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled() } = {}) {
+/**
+ * ARCHITECTURE_DAG.md §4.2. Resolved at COMPILE time, like heroFirst, so the
+ * stored node rows are the decision and a flag flipped mid-run cannot change
+ * what an already-claimed node does.
+ *
+ * Unset means OFF, deliberately: this port is unproven on a live run, and the
+ * flag that defaulted the other way (DESIGNPRO_ATLAS_FIELD_FIRST) is recorded in
+ * CLAUDE.md as weeks of routing nobody could see.
+ */
+function elementGraphEnabled() {
+  return String(process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH || "").trim().toLowerCase() === "on";
+}
+
+/**
+ * The node carries the EXACT strings it will set, resolved from the frozen
+ * brief at compile time, so the ledger row answers "what was asked for" without
+ * re-reading the brief -- and so a node can never invent a line the customer
+ * did not supply.
+ */
+function typesetNodeFor(input) {
+  const text = String(input?.companyName || input?.businessName || "").trim();
+  if (!text) return null;
+  return {
+    key: TYPESET_NODE,
+    dependsOn: [],
+    input: { role: "typography", text, fontKey: typeset.DEFAULT_NAME_FONT, widthPx: 1600 },
+    maxAttempts: 3,
+  };
+}
+
+/**
+ * THE CONTACT-INVENTION LOCK, MOVED FROM PROSE INTO STRUCTURE.
+ *
+ * Today that lock is a sentence in the Call-1 prompt asking the model not to
+ * invent a phone number or a web address, and it has needed fixing before
+ * (the phone-missing/website-supplied hole). A node cannot hallucinate: it sets
+ * the exact strings it was handed and nothing else, so a line the customer did
+ * not supply has no way to exist.
+ *
+ * `phone` and `website` are the only contact fields the input contract carries
+ * (`designpro.calls-1-7-input.v3`). A city line is NOT invented to fill the bar.
+ */
+function contactLinesFrom(input) {
+  return [String(input?.phone || "").trim(), String(input?.website || "").trim()].filter(Boolean);
+}
+
+function contactNodeFor(input) {
+  const lines = contactLinesFrom(input);
+  if (!lines.length) return null;
+  return {
+    key: CONTACT_NODE,
+    dependsOn: [],
+    input: { role: "contact", lines, fontKey: typeset.DEFAULT_CONTACT_FONT, widthPx: 1600 },
+    maxAttempts: 3,
+  };
+}
+
+/**
+ * Compiled only when the brief actually carries a logo. With no upload there is
+ * no node -- and the typography lockup is the brand mark, which is what
+ * `buildLogoArchitecture()` already directs on the prompt side.
+ *
+ * The identity is verified HERE, at compile time, so a malformed asset refuses
+ * the run before a node is ever claimed and a worker ever spends a lease.
+ */
+function logoNodeFor(input) {
+  if (!logo.hasCustomerLogo(input)) return null;
+  const identity = logo.verifyLogoIdentity(input.logoAsset);
+  return {
+    key: LOGO_NODE,
+    dependsOn: [],
+    input: { role: "logo", source: "customer", asset: identity },
+    maxAttempts: 3,
+  };
+}
+
+function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
   // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
   // 16:9 frame; node 3 flattens that render into the flank. The handoff is the
@@ -124,6 +221,25 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled() } = {}) {
     }
   }
   nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
+  // APPENDED AFTER master.assemble ON PURPOSE. master's depends_on is
+  // `nodes.map(...)` at the moment it is pushed, so appending here leaves that
+  // array byte-for-byte identical whether the element graph is on or off --
+  // the surfaces do not wait on an element, and chunk 8's master.composite is
+  // what will consume it.
+  if (elementGraphEnabled()) {
+    const elements = [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)].filter(Boolean);
+    for (const element of elements) nodes.push(element);
+    // It depends on exactly the elements that EXIST. A brief with no company
+    // name and no contact details and no logo compiles no lockup either --
+    // there is nothing to place, and an empty manifest is not a plan.
+    if (elements.length) {
+      nodes.push({ key: LOCKUP_NODE, dependsOn: elements.map((e) => e.key), input: {}, maxAttempts: 3 });
+      // The sheet's last node. It depends on the assembled CLEAN master and the
+      // plan, and on nothing else -- the element producers are already the
+      // lockup's dependencies, so naming them again would only duplicate edges.
+      nodes.push({ key: COMPOSITE_NODE, dependsOn: [MASTER_NODE, LOCKUP_NODE], input: {}, maxAttempts: 3 });
+    }
+  }
   return validateGraph(nodes);
 }
 
@@ -174,6 +290,120 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. Zero model calls. The CLEAN
+  // master is preserved byte for byte as cleanMasterHash: duplicate, modify the
+  // duplicate, keep the original -- the same rule Call 11 follows, and the
+  // reason an element can later be MOVED without healing anything.
+  if (node.node_key === COMPOSITE_NODE) {
+    const masterOutput = deps.get(MASTER_NODE)?.output;
+    const planOutput = deps.get(LOCKUP_NODE)?.output;
+    if (!masterOutput?.master) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${MASTER_NODE} carries no master reference`, true);
+    }
+    if (!planOutput?.lockup) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${LOCKUP_NODE} carries no plan`, true);
+    }
+    abortIf();
+    const cleanMasterBytes = await downloadVerified(supabase, masterOutput.master);
+    const artwork = new Map();
+    for (const placement of planOutput.lockup.placements || []) {
+      if (artwork.has(placement.role)) continue;
+      // The WHOLE identity, or downloadVerified refuses it: path, hash AND
+      // byte length. Rebuilding a partial ref here is how a correct artifact
+      // reads as a corrupted one.
+      artwork.set(placement.role, await downloadVerified(supabase, {
+        storagePath: placement.storagePath, contentHash: placement.contentHash, byteSize: placement.byteSize,
+      }));
+    }
+    abortIf();
+    const result = await composite.compositeElementsOntoMaster({
+      cleanMasterBytes, zones: manifest.zones, plan: planOutput.lockup, artwork,
+    });
+    const stored = await store.putImmutableBytes({
+      storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/master-composited-${result.contentHash}.png`,
+      bytes: result.bytes, contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: composited ${result.applied.length} elements onto ${result.cleanMasterHash.slice(0, 12)} -> ${result.contentHash.slice(0, 12)}`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "composite",
+      master: stored,
+      // PROVENANCE AND A FLOOR. Layer 0 is not replaced; a later element edit
+      // re-composites onto THIS hash rather than healing painted pixels.
+      cleanMasterHash: result.cleanMasterHash,
+      applied: result.applied, changed: result.changed,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
+  // ARCHITECTURE_DAG.md §4.5 -- where each element sits, as normalized boxes.
+  // Zero AI, zero network, zero pixels: it reads its dependencies' recorded
+  // dimensions and the manifest's zones, and returns a plan.
+  if (node.node_key === LOCKUP_NODE) {
+    abortIf();
+    const elements = (node.depends_on || []).map((key) => {
+      const output = deps.get(key)?.output;
+      if (!output?.element) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${key} carries no element reference`, true);
+      }
+      return { role: output.role, ...output.element };
+    });
+    const plan = lockup.planElementLockup({ zones: manifest.zones, elements });
+    logger(`atlas call 1 graph ${run.id}: lockup planned (${plan.placements.length} placements across ${plan.surfaces.join(", ")})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "lockup", lockup: plan,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
+  // ARCHITECTURE_DAG.md §4.4 -- the customer's own logo, verified and
+  // conditioned. ZERO model calls: this node prepares artwork the customer
+  // already owns and never invents a mark.
+  if (node.node_key === LOGO_NODE) {
+    abortIf();
+    const prepared = await logo.prepareCustomerLogo({ supabase, asset: node.input?.asset });
+    const stored = await store.putImmutableBytes({
+      storagePath: typeset.elementStoragePath(prepared.contentHash),
+      bytes: prepared.bytes,
+      contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: logo prepared ${prepared.contentHash.slice(0, 12)} (${prepared.width}x${prepared.height}, alpha ${prepared.hasAlpha})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo", source: "customer",
+      element: { storagePath: stored.storagePath, contentHash: prepared.contentHash, byteSize: prepared.byteSize,
+        width: prepared.width, height: prepared.height },
+      // Recorded, never manufactured. See atlas-logo-prepare.cjs on why a white
+      // background is not keyed to transparent here.
+      hasAlpha: prepared.hasAlpha,
+      sourceIdentity: prepared.sourceIdentity, deterministic: true,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
+  // ARCHITECTURE_DAG.md §4.2 -- ZERO model calls, zero network. The producer
+  // returns bytes; this node is what persists them, addressed by their own
+  // sha256 so a re-claim re-reads instead of re-writing.
+  if (node.node_key === TYPESET_NODE || node.node_key === CONTACT_NODE) {
+    abortIf();
+    const role = node.node_key === CONTACT_NODE ? "contact" : "typography";
+    // The node sets what its row says and nothing else. There is no path from
+    // the brief to the canvas that does not go through this input.
+    const lines = role === "contact" ? (Array.isArray(node.input?.lines) ? node.input.lines : []) : [];
+    const rendered = await typeset.renderLockup({
+      name: role === "contact" ? "" : String(node.input?.text || ""),
+      lines,
+      width: Number(node.input?.widthPx) || 1600,
+      nameFont: node.input?.fontKey || typeset.DEFAULT_NAME_FONT,
+      contactFont: node.input?.fontKey || typeset.DEFAULT_CONTACT_FONT,
+      color: node.input?.colorHex,
+    });
+    const stored = await store.putImmutableBytes({
+      storagePath: typeset.elementStoragePath(rendered.contentHash),
+      bytes: rendered.bytes,
+      contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: ${role} element ${rendered.contentHash.slice(0, 12)} (${rendered.width}x${rendered.height})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role,
+      // A REFERENCE, never pixels -- RULE 0.39 across every node boundary.
+      element: { storagePath: stored.storagePath, contentHash: rendered.contentHash, byteSize: rendered.byteSize,
+        width: rendered.width, height: rendered.height },
+      metrics: rendered.metrics, fonts: rendered.fonts, color: rendered.color, deterministic: true,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   if (node.node_key === MASTER_NODE) {
     const authored = new Map();
@@ -407,7 +637,7 @@ function createAtlasCall1NodeWorker({
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {
       p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
-      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph(),
+      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph({ input }),
     });
     let run = created?.run;
     if (!run?.id) throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", "create returned no run", true);
@@ -431,15 +661,68 @@ function createAtlasCall1NodeWorker({
         if (n.state === "completed" && !seen.has(n.node_key)) { seen.add(n.node_key); log(`atlas call 1 graph ${run.id}: ${n.node_key} completed on ${n.lease_owner || "?"} (attempt ${n.attempt})`); }
       }
     }
-    const { data: master } = await supabase.from("designpro_atlas_call1_nodes").select("output").eq("run_id", run.id).eq("node_key", MASTER_NODE).single();
-    const output = master?.output;
+    // THE RUN COMPLETES ON master.assemble, NOT ON THE LAST NODE. The RPC keys
+    // the run's master columns -- and its completion -- on that node key, so a
+    // node placed AFTER it is still in flight when the run reads `completed`.
+    // Returning here would hand back Layer 0 while the composite was still
+    // running, and would do the same SILENTLY if it had failed. Both are the
+    // defect this node exists to prevent, so the composite is awaited on its own
+    // row and a failure is fatal rather than a quiet fall-back to the base.
+    let compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    while (compositeRow && compositeRow.state !== "completed" && compositeRow.state !== "failed") {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_timeout", `run ${run.id}: ${COMPOSITE_NODE} did not finish in time`, true);
+      }
+      await sleep(awaitPollMs);
+      compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    }
+    if (compositeRow?.state === "failed") {
+      const failure = compositeRow.output || {};
+      throw new AtlasCall1GraphError(failure.errorCode || compositeRow.error_code || "designpro_atlas_call1_composite_failed",
+        `run ${run.id}: ${COMPOSITE_NODE} failed: ${failure.message || failure.errorCode || compositeRow.error_code || "unknown"}`,
+        failure.retryable === true, { runId: run.id, nodeKey: COMPOSITE_NODE });
+    }
+
+    const { data: masterRows } = await supabase.from("designpro_atlas_call1_nodes")
+      .select("node_key,output").eq("run_id", run.id).in("node_key", [MASTER_NODE, COMPOSITE_NODE]);
+    const output = (masterRows || []).find((r) => r.node_key === MASTER_NODE)?.output;
     if (!output?.master?.storagePath || run.master_content_hash !== output.master.contentHash) {
       throw new AtlasCall1GraphError("designpro_atlas_call1_master_missing", `run ${run.id} completed without a master`);
     }
-    const bytes = await downloadVerified(supabase, { storagePath: run.master_storage_path, contentHash: run.master_content_hash, byteSize: run.master_byte_size });
+
+    // WHAT THE CUSTOMER IS SHOWN IS THE COMPOSITED SHEET, NOT LAYER 0.
+    //
+    // The run row records master.assemble, because the RPC keys those columns on
+    // that node -- and that is correct provenance: the row IS the clean master.
+    // But the panels are cut from what this function RETURNS and the Driver
+    // proof is conditioned on it, so returning Layer 0 would show the customer a
+    // wrap with no company name on it at all. The element graph designs the
+    // lettering separately precisely so it can be composited back on with no
+    // healing; handing back the base would throw that away at the last step.
+    //
+    // With the element graph off there is no composite node and this is
+    // byte-for-byte the previous behaviour.
+    const composited = (masterRows || []).find((r) => r.node_key === COMPOSITE_NODE)?.output;
+    const delivered = composited?.master?.storagePath ? composited.master : output.master;
+    const bytes = await downloadVerified(supabase, delivered);
     const { contract: _c, master: _m, retryable: _r, leaseOwner: _l, attempt: _a, durationMs: _d, ...receipt } = output;
-    return { bytes, contentHash: run.master_content_hash, ...receipt,
+    const elements = composited
+      ? { cleanMasterHash: composited.cleanMasterHash || null, elementsApplied: composited.applied || [] }
+      : {};
+    // ORDER MATTERS AND IS NOT COSMETIC. `receipt` is master.assemble's own
+    // output, and it carries its own `contentHash` -- Layer 0's. Spreading it
+    // after this key silently overwrote the composited hash with the clean one,
+    // which is the same "customer sees the unbranded sheet" defect one layer
+    // further in. The delivered identity is written LAST, deliberately.
+    return { bytes, ...receipt, ...elements, contentHash: delivered.contentHash,
       timings: { ...(receipt.timings || {}), heroCascadeMs: Number(receipt.timings?.heroCascadeMs || 0), graphAwaitMs: Date.now() - startedAt } };
+  }
+
+  /** One node row by key, or null when the compiled graph never had it. */
+  async function readNode(runId, nodeKey) {
+    const { data } = await supabase.from("designpro_atlas_call1_nodes")
+      .select("node_key,state,output,error_code").eq("run_id", runId).eq("node_key", nodeKey).maybeSingle();
+    return data || null;
   }
 
   async function failureOf(run) {
@@ -459,7 +742,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
-  AtlasCall1GraphError, graphEnabled, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

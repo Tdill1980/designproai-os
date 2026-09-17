@@ -20,6 +20,7 @@ type Entry = {
 };
 
 const ENTRIES: Entry[] = [
+  { path: "/wallpro", label: "/wallpro", desc: "WallPro landing page. Manage hero images, the horizontal design / printing video, and the final-install reel at /admin/wallpro-landing.", audience: "general" },
   {
     path: "/wpw",
     label: "/wpw",

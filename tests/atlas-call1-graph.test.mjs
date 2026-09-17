@@ -311,6 +311,75 @@ test("4. end to end across two node workers: five image requests, passenger a fl
   }
 });
 
+test("4b. THE CUSTOMER IS HANDED THE COMPOSITED SHEET, not the clean base", async () => {
+  // The defect this exists to prevent, named by the owner before a live run
+  // found it: the panels are cut from what author() RETURNS and the Driver proof
+  // is conditioned on it, so returning master.assemble's Layer 0 would show the
+  // customer a wrap with no company name anywhere on it. The element graph
+  // designs the lettering separately precisely so it can be composited back on
+  // without healing; handing back the base throws that away at the last step.
+  const before = process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+  process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = "on";
+  const db = await createAtlasCall1Database();
+  const files = new Map();
+  const adapter = createAtlasCall1Adapter(db, files);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const branded = { ...INPUT, companyName: "Precision Climate Solutions", phone: "(520) 555-0192" };
+  const worker = graph.createAtlasCall1NodeWorker({
+    supabase: adapter.supabase, workerId: "runtime-1-elements", callEdge: syntheticEdge(calls),
+    concurrency: 3, pollMs: 25, heartbeatMs: 200, logger: () => {},
+  });
+  try {
+    const result = await worker.author({
+      manifest, input: branded, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      creativeContext: "Precision Climate Solutions · trade",
+      providerRequest: { requestId: REQUEST, generationId: GENERATION, claimToken: CLAIM },
+      logger: () => {}, pollMs: 20, timeoutMs: 60_000,
+    });
+
+    // The element nodes cost NOTHING at the model: still the six surface calls.
+    assert.equal(calls.length, 6, "elements are deterministic — they add no image request");
+
+    // Layer 0 is recorded and preserved; what came back is NOT it.
+    assert.match(result.cleanMasterHash, /^[0-9a-f]{64}$/, "the clean base is kept as provenance");
+    assert.notEqual(result.contentHash, result.cleanMasterHash,
+      "the customer must not be handed the unbranded sheet");
+
+    // Two elements across two flanks.
+    assert.equal(result.elementsApplied.length, 4);
+    assert.deepEqual([...new Set(result.elementsApplied.map((e) => e.surfaceKey))].sort(), ["driver", "passenger"]);
+    assert.deepEqual([...new Set(result.elementsApplied.map((e) => e.role))].sort(), ["contact", "typography"]);
+    for (const applied of result.elementsApplied) assert.equal(applied.flipped, false);
+
+    // AND IT IS ACTUALLY ON THE PIXELS. Crop the driver flank out of the sheet
+    // the customer receives and out of Layer 0, and prove they differ — a
+    // receipt saying "4 applied" over an unchanged sheet is the shape of defect
+    // CLAUDE.md warns about by name ("do not report status from receipts").
+    const cleanPath = [...files.keys()].find((k) => k.includes(`master-${result.cleanMasterHash}`));
+    assert.ok(cleanPath, "Layer 0 must be persisted in its own right");
+    const zone = manifest.zones.find((z) => z.surfaceKey === "driver");
+    const crop = async (bytes) => sharp(bytes)
+      .extract({ left: zone.trim.x, top: zone.trim.y, width: zone.trim.w, height: zone.trim.h })
+      .raw().toBuffer();
+    const cleanFlank = await crop(files.get(cleanPath));
+    const shownFlank = await crop(result.bytes);
+    assert.notEqual(Buffer.compare(cleanFlank, shownFlank), 0,
+      "the driver flank the customer sees must carry the lettering, not be the bare base");
+
+    // The ink is the typeset colour, not noise.
+    let dark = 0;
+    for (let i = 0; i + 2 < shownFlank.length; i += 3) {
+      if (shownFlank[i] < 80 && shownFlank[i + 1] < 90 && shownFlank[i + 2] < 100) dark += 1;
+    }
+    assert.ok(dark > 500, `expected real lettering on the driver flank, found ${dark} ink pixels`);
+  } finally {
+    worker.stop?.();
+    if (before === undefined) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = before;
+  }
+});
+
 test("5a. a refused FLATTEN never re-bills the vehicle view: node 1 completes once and node 3 fails alone", async () => {
   const db = await createAtlasCall1Database();
   const adapter = createAtlasCall1Adapter(db);

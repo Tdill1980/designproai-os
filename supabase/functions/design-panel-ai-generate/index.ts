@@ -218,6 +218,22 @@ const COMMERCIAL_TRANSLATION =
 const COMMERCIAL_TRANSLATION_FIELD =
   "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted plates with sharp swept edges). What the client named should be obvious at a glance.";
 
+// ARCHITECTURE_DAG.md §4.1 — THE CLEAN BASE (owner ruling, 2026-09-17).
+//
+// Layer 0. Under the element graph the company name, the logo and the contact
+// bar are produced as their OWN deterministic artifacts (typeset.produce,
+// contact.produce, logo.prepare) and composited by code at a known box, so the
+// authored surface must carry none of them. This is the RestylePro model: the
+// clean base is AUTHORED, never stripped -- stripping smears, which is why
+// `liftoverlays` was gated off over there and why every passenger defect since
+// 09-07 has been a re-drop over artwork that already had type baked in.
+//
+// It REPLACES the brand/contact block rather than adding to it: leaving the
+// logo direction in place and then asking for no lettering is the negative-
+// instruction shape this file warns about in four places.
+const ATLAS_CLEAN_BASE_CONTRACT =
+  `\nBACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND. This sheet is the background layer of the wrap. The company name, any logo or wordmark, the phone number, the web address and every other piece of type are added afterwards as separate print layers, so they must not appear here. Design the artwork so it stays strong underneath them: keep one calmer passage where a name and a contact line will sit, and let the colour, motion and depth carry the design on their own. No letters, no numerals, no words, no monograms, no logo marks, no badges, no signage, no lettering of any kind anywhere in the artwork.`;
+
 function buildLogoArchitecture(companyName: string, industryType?: string): string {
   // NO FORM PRESCRIBED, DELIBERATELY (owner, 2026-08-01: "remove all word mark
   // or any mention of brand logo — they all look the same").
@@ -803,6 +819,9 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // rule, FINISH_SPECS text, style, movement and depth are untouched; only the
   // presentation phrases that name six panels/fields switch to the one sheet.
   const atlasHero: AtlasHeroSurface | null = atlasFlatMaster && !atlasField ? atlasHeroSurfaceInput((params as any).atlasHeroSurface) : null;
+  // Layer 0 (ARCHITECTURE_DAG.md §4.1). Read only from the params the atlas
+  // author sets; every other caller leaves it undefined and is byte-identical.
+  const atlasCleanBase = (params as any).atlasCleanBase === true;
   const atlasNoseEdge: AtlasNoseEdge = atlasNoseEdgeInput((params as any).atlasNoseEdge);
   const vehicle = [vehicleYear, canonicalMakeModel || [vehicleMake, vehicleModel].filter(Boolean).join(' ')]
     .filter(Boolean)
@@ -983,7 +1002,11 @@ ${atlasField ? COMMERCIAL_TRANSLATION_FIELD : COMMERCIAL_TRANSLATION}
 
 CLIENT BRIEF:`;
 
-    if (companyName) {
+    if (atlasCleanBase) {
+      // Layer 0: no name, no logo, no phone, no website, no customer copy. Those
+      // are separate artifacts composited at a known box by master.composite.
+      assembled += ATLAS_CLEAN_BASE_CONTRACT;
+    } else if (companyName) {
       assembled += `\nBusiness: ${companyName}.${buildLogoArchitecture(companyName, industryType)}`;
     } else {
       // Company name wasn't supplied as a field (the customer typed everything in
@@ -999,7 +1022,9 @@ CLIENT BRIEF:`;
       // interpolating the SAME const rather than by matching prose.
       assembled += `\nIdentify the business name from the creative direction above. Spell it exactly as written in the brief. ${LOGO_REQUIREMENT}`;
     }
-    if (phone) {
+    if (atlasCleanBase) {
+      // deliberately nothing: the contact bar is contact.produce's artifact.
+    } else if (phone) {
       assembled += `\nContact info (place in the contact bar): ${phone} — display this EXACT number, digit for digit. Never alter or invent any digits.`;
     } else {
       assembled += atlasFlatMaster
@@ -1011,12 +1036,16 @@ CLIENT BRIEF:`;
     // "keep exact supplied text/contact data; never invent customer
     // information") so the website half and the customer-authored tagline
     // cannot be dropped by a branch that only guards the phone.
-    if (website) {
+    if (atlasCleanBase) {
+      // deliberately nothing, same reason.
+    } else if (website) {
       assembled += `\nWebsite (place in the contact bar): ${website} — display this EXACT URL, character for character. Never alter or invent it.`;
     } else {
       assembled += `\nNo website was supplied — invent no website, email address or street address, and display none anywhere on the design.`;
     }
-    if (textLayerPrompt) {
+    if (atlasCleanBase) {
+      // The customer's own copy is type. It belongs to the element layer.
+    } else if (textLayerPrompt) {
       assembled += `\nTEXT LAYER DIRECTION (customer-authored): ${textLayerPrompt} Preserve every supplied name, slogan, service and contact string exactly; do not invent replacement copy.`;
     }
     if (industryType) assembled += `\nIndustry: ${industryType}`;
@@ -2522,7 +2551,7 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v3-flatten-continues-the-view";
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v4-clean-base";
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
@@ -2791,6 +2820,10 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         atlasFlatMaster: !heroFlatten,
         atlasPanels: [],
         atlasHeroSurface: heroFlatten ? undefined : { label: surfaceLabel, widthInches, heightInches },
+        // Layer 0. Set on BOTH halves of hero-first: a vehicle view carrying a
+        // painted name would flatten into a flank carrying it, so the clean
+        // base has to start at the render.
+        atlasCleanBase: body.cleanBase === true,
       } as any /* hero sheet */);
       if (heroFlatten) {
         // STAGE 2. The approved vehicle view is the design reference; the
