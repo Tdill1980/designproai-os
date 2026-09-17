@@ -50,7 +50,7 @@ import {
  */
 const TOOLS: { key: ProofBandToolKey; label: string; backTo: string; backLabel: string }[] = [
   { key: 'vehiclepro', label: 'VehiclePro', backTo: '/designpro/create', backLabel: 'The VehiclePro page' },
-  { key: 'wallpro', label: 'WallPro', backTo: '/wall-wrap', backLabel: 'The WallPro page' },
+  { key: 'wallpro', label: 'WallPro', backTo: '/wall-wrap', backLabel: 'The WallPro landing' },
   { key: 'cutpro', label: 'CutPro', backTo: '/graphics-pro', backLabel: 'The CutPro page' },
 ];
 const field = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';

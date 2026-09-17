@@ -1450,7 +1450,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
                   : freeReason === 'signed-out'
                     ? <p className="text-xs font-semibold text-emerald-700">
-                        Your first design is free — <Link to="/signup" state={{ from: '/wall-wrap' }} className="underline">create a free account</Link> to claim it.
+                        Your first design is free — <Link to="/signup" state={{ from: '/wallwrap-design' }} className="underline">create a free account</Link> to claim it.
                         Pricing film needs no account.
                       </p>
                     : <p className="text-xs wall-muted">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
@@ -1684,7 +1684,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       charges what they actually chose, and the return path
                       follows the brand's own page so a WePrintWraps customer
                       is not dropped onto the DesignProAI route after paying. */}
-                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
+                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
                   <span className="text-xs wall-muted">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
                 </div>)}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>

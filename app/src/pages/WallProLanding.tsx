@@ -5,9 +5,38 @@ import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Ruler, FileCheck2, Shi
 import { useWallProLandingMedia } from '@/hooks/useWallProLandingMedia';
 import { EXAMPLE_KEYS, type LandingMedia } from '@/lib/wallpro-landing-content';
 import { OS_BRAND } from '@/lib/os-brand';
+import { wallBrand, type WallBrandKey } from '@/lib/wallpro-brand';
 import './wallpro-landing.css';
 
-const TOOL = '/printpro/wallpro';
+/**
+ * ONE LANDING PAGE, TWO BRANDS (owner, 2026-09-17: "wpw wallpro was the old UI,
+ * didn't have the edits I asked for").
+ *
+ * #462 built this page hardcoded to DesignProAI — "A DesignProAI product", a
+ * fixed `/printpro/wallpro` tool link, an os.designproai canonical — so
+ * /wall-wrap still rendered the TOOL while /wallpro got the landing. The
+ * partner page was therefore the only WallPro surface with no landing at all,
+ * which is exactly the one being shown to the partner.
+ *
+ * So it takes the SAME `brand` prop WallPro.tsx, WallProCaseStudy.tsx and
+ * WallProFaq.tsx already take, and reads the same WALL_BRANDS table. Not a
+ * copy: a second landing file would drift from this one the first time a
+ * section changed, and the whole point of a partner page is that it is the
+ * SAME product wearing their name.
+ *
+ * WHERE EACH BRAND'S TOOL LIVES. DesignProAI is landing /wallpro → tool
+ * /printpro/wallpro. WePrintWraps mirrors it exactly: landing /wall-wrap →
+ * tool /wallwrap-design, a route that has existed since the tenant page
+ * shipped. Nothing new is invented and no tool route moves.
+ */
+const TOOL_ROUTE: Record<WallBrandKey, string> = {
+  designpro: '/printpro/wallpro',
+  weprintwraps: '/wallwrap-design',
+};
+const LANDING_ROUTE: Record<WallBrandKey, string> = {
+  designpro: '/wallpro',
+  weprintwraps: '/wall-wrap',
+};
 const features = [
   { icon: Sparkles, title: 'AI-powered', text: 'design' },
   { icon: Ruler, title: 'Scaled to', text: 'your space' },
@@ -26,7 +55,10 @@ export function LandingVideo({ media, portrait = false }: { media: LandingMedia;
   </div>;
 }
 
-export default function WallProLanding() {
+export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
+  const theme = wallBrand(brand);
+  const TOOL = TOOL_ROUTE[brand];
+  const HOME = LANDING_ROUTE[brand];
   const { media } = useWallProLandingMedia();
   const slides = EXAMPLE_KEYS.map(key => media[key]).filter(item => item.enabled && item.src);
   const [selected, setSelected] = useState('residential');
@@ -40,13 +72,19 @@ export default function WallProLanding() {
   const watchHref = media.process.enabled ? '#project' : '#workflow';
   return <div className="wl-page">
     <Helmet>
-      <title>WallPro — From a Photo to a Stunning Wall Design | DesignProAI</title>
+      <title>{brand === 'weprintwraps' ? 'WallPro — Custom Wall Wrap Design, Print Files & Printed Wrap | WePrintWraps' : 'WallPro — From a Photo to a Stunning Wall Design | DesignProAI'}</title>
       <meta name="description" content="Design, visualize, scale and create production-ready wall graphics with WallPro. From your room photo to residential, commercial and retail wall wraps." />
-      <link rel="canonical" href="https://os.designproai.com/wallpro" />
+      <link rel="canonical" href={`https://os.designproai.com${HOME}`} />
     </Helmet>
     <header className="wl-header">
       <div className="wl-header-inner">
-        <Link to="/wallpro" className="wl-brand" aria-label="WallPro home"><span>Wall<span>Pro</span></span><small>A <strong>DesignProAI</strong> product</small></Link>
+        <Link to={HOME} className="wl-brand" aria-label="WallPro home">
+          {theme.logo && <img src={theme.logo} alt={theme.logoAlt} className="wl-partner-mark" />}
+          <span>{theme.wordmarkLead}<span>{theme.wordmarkAccent}</span></span>
+          {/* The partner's page says whose product it is in THEIR words; the
+              DesignProAI page keeps the house line. */}
+          <small>{brand === 'weprintwraps' ? <>Printed by <strong>WePrintWraps</strong></> : <>A <strong>DesignProAI</strong> product</>}</small>
+        </Link>
         <nav className={mobileMenu ? 'wl-nav wl-nav-open' : 'wl-nav'} aria-label="WallPro navigation" onClick={() => setMobileMenu(false)}>
           <a href="#workflow">How it works</a><a href="#examples">Examples</a><Link to={`${TOOL}/faq`}>Prices &amp; FAQ</Link><Link to={`${TOOL}/how-it-works`}>Case study</Link>
         </nav>
@@ -75,6 +113,6 @@ export default function WallProLanding() {
       </div></section>
       <section className="wl-end"><div className="wl-container"><div><p className="wl-eyebrow">Built for real spaces</p><h2>From inspiration to <span className="wl-gradient-text">installation.</span></h2><p>For designers, print professionals, property owners, and the spaces they create.</p></div><Link to={TOOL} className="wl-button">Design your wall now <ArrowRight size={19} /></Link></div></section>
     </main>
-    <footer className="wl-footer wl-container"><Link to="/" className="wl-os-brand">{OS_BRAND.name}<span>{OS_BRAND.positioning}</span></Link><div><span>Interior designers</span><span>Sign &amp; print pros</span><span>Commercial brands</span><span>Homeowners</span></div></footer>
+    <footer className="wl-footer wl-container"><Link to={HOME} className="wl-os-brand">{brand === 'weprintwraps' ? 'WePrintWraps' : OS_BRAND.name}<span>{brand === 'weprintwraps' ? theme.tagline : OS_BRAND.positioning}</span></Link><div><span>Interior designers</span><span>Sign &amp; print pros</span><span>Commercial brands</span><span>Homeowners</span></div></footer>
   </div>;
 }

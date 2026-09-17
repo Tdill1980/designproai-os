@@ -480,7 +480,14 @@ const App = () => {
               /wall-wrap mirrors the WPW product slug; /wallwrap-design is the
               Design-area entry, its own URL so the two menu items stay
               separately measurable rather than one link pretending to be two. */}
-          <Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />
+          {/* THE PARTNER'S LANDING, mirroring DesignProAI's /wallpro exactly
+              (owner, 2026-09-17: "wpw wallpro was the old UI, didn't have the
+              edits I asked for"). /wall-wrap showed the TOOL because #462 built
+              the landing for DesignProAI only, so the partner page was the one
+              WallPro surface with no landing — and it is the one shown to the
+              partner. The TOOL did not move: it has answered /wallwrap-design
+              since the tenant shipped, and every CTA here points at it. */}
+          <Route path="/wall-wrap" element={<WallProLanding brand="weprintwraps" />} />
           {/* PUBLIC on purpose — the access check lives in wpw-shopflow, not the
               route. See the note on the import above. */}
           <Route path="/shopflow" element={<ShopFlow />} />

@@ -46,10 +46,29 @@ test("the tenant entry has a wordmark, so it cannot render as a raw key", () => 
   assert.ok(wordmarks.includes('wallpro_wpw:      { base: "WPW × Wall", suffix: "Pro" },'));
 });
 
-test("/wall-wrap still renders the WePrintWraps brand of the ONE WallPro page", () => {
+test("each brand has ONE landing and ONE tool, from the same two components", () => {
+  // WHAT THIS GUARDS IS UNCHANGED: there is no second WallPro and no second
+  // landing page -- both brands are the SAME component wearing a `brand` prop.
+  // What moved (2026-09-17) is which page answers /wall-wrap. #462 built the
+  // landing for DesignProAI only, so the partner URL still served the TOOL and
+  // was the one WallPro surface with no landing -- the one shown to the
+  // partner. /wall-wrap is now their landing, mirroring /wallpro, and their
+  // tool keeps /wallwrap-design, a route that has existed since the tenant
+  // shipped. No tool route moved and no component was copied.
   const app = read("app/src/App.tsx");
-  assert.ok(app.includes('<Route path="/wall-wrap" element={<WallPro brand="weprintwraps" />} />'));
-  assert.ok(app.includes('<Route path="/printpro/wallpro" element={<WallPro />} />'));
+  // The landings.
+  assert.ok(app.includes('<Route path="/wallpro" element={<WallProLanding />} />'),
+    "the DesignProAI landing is gone");
+  assert.ok(app.includes('<Route path="/wall-wrap" element={<WallProLanding brand="weprintwraps" />} />'),
+    "the partner landing is gone");
+  // The tools.
+  assert.ok(app.includes('<Route path="/printpro/wallpro" element={<WallPro />} />'),
+    "the DesignProAI tool is gone");
+  assert.ok(app.includes('<Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />'),
+    "the partner tool is gone");
+  // ONE of each component, never a per-brand copy.
+  assert.equal(app.match(/import\("\.\/pages\/WallProLanding"\)/g)?.length, 1);
+  assert.equal(app.match(/import\("\.\/pages\/WallPro"\)/g)?.length, 1);
 });
 
 test("PatternPro keeps the same pair, so the two tools stay symmetrical", () => {

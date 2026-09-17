@@ -187,8 +187,9 @@ const MODE_ORDER: WallDesignMode[] = ['library', 'upload', 'ai', 'match', 'wall'
 
 export default function WallProFaq({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
   const theme = wallBrand(brand);
-  const toolHref = brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro';
-  const caseHref = `${toolHref === '/wall-wrap' ? '/wall-wrap' : '/printpro/wallpro'}/how-it-works`;
+  // /wall-wrap is the partner's LANDING; their tool is /wallwrap-design.
+  const toolHref = brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro';
+  const caseHref = brand === 'weprintwraps' ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works';
 
   // Every number on this page, computed now, by the tool's own code.
   const settings = DEFAULT_WALL_PRINT;

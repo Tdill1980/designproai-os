@@ -154,7 +154,8 @@ function Fact({ label, value, note }: { label: string; value: string; note?: str
 export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
   const theme = wallBrand(brand);
   /** Where "design your wall" goes. The partner's tool lives at its own slug. */
-  const toolHref = brand === 'weprintwraps' ? '/wall-wrap' : '/printpro/wallpro';
+  // /wall-wrap is the partner's LANDING; their tool is /wallwrap-design.
+  const toolHref = brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro';
 
   // EVERY number below is the tool's own answer, computed now.
   const settings = DEFAULT_WALL_PRINT;
@@ -213,7 +214,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
                   already has artwork is sent to the step that takes it. */}
               <Button asChild variant="outline" className="border-white/25 bg-white/5 text-white hover:bg-white/10 hover:text-white">
                 {theme.showPrintOffer
-                  ? <Link to="/wall-wrap#order-printed-film">I already have artwork</Link>
+                  ? <Link to="/wallwrap-design#order-printed-film">I already have artwork</Link>
                   : <Link to={`${toolHref}#choose-design`}>I already have artwork</Link>}
               </Button>
             </div>
@@ -404,7 +405,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
             {/* Only the brand that sells the printing offers it. */}
             {theme.showPrintOffer && (
               <Button asChild size="lg" variant="outline" className="border-white/40 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-                <Link to="/wall-wrap#order-printed-film">Order printed film</Link>
+                <Link to="/wallwrap-design#order-printed-film">Order printed film</Link>
               </Button>
             )}
           </div>
