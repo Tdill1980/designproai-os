@@ -1134,6 +1134,70 @@ to the writer's `printf`, the writer's sticky `sed`, and the validator's
 vocabulary. Add a routing flag to the runtime without those four and the build
 fails. **Do not add an env-gated routing flag without adding it to that list.**
 
+#### NODE 1 MUST STAGE ITS RENDER WHERE THE EDGE WILL ATTACH IT (2026-09-17, live 2099d17d)
+
+**The first real hero-driver run.** The DAG did exactly what RULE 0.39 built —
+`surface.driver.view` **completed** on `designpro-worker-2`, `surface.driver`
+claimed it — and the edge then refused its own handoff:
+
+```
+design-panel-ai-generate atlas-author failed (HTTP 500):
+atlas_author_input_path_invalid:atlas-author/driver-view.png
+```
+
+`attach()` admits an input ONLY from `^atlas-call1-inputs/<sha256>\.(png|jpg)$`,
+and that guard is correct and stays: it is what stops a flatten naming an
+arbitrary object to read. Node 1 was returning the edge's own PANEL path.
+
+Node 1's render IS a Call-1 input for node 3, so `stageHeroView` now writes it to
+`atlas-call1-inputs/<sha256>.jpg` and `CALL1_INPUT_PATH` mirrors the edge's regex
+in the runtime, so a path the edge would refuse cannot leave the view node.
+Unlike `stageReference` it does NOT downscale — a neighbour is a 1280px
+continuity hint; the hero view is the flatten's SUBJECT. All four of the edge's
+checks were verified rather than assumed: prefix, bucket (`wrap-files`), filename
+hash == bytes hash, and `expectedHash` == the STAGED bytes' hash (the stage
+re-encodes, so sending the returned render's hash would have failed here).
+
+The fail-over behaved correctly — six-surface spent both candidates
+(`edgeHoleRatio` hood 0.476, then `vehicle_depiction`) and exhausted.
+
+**TWO FIXTURES ENCODED THE BUG**, which is why a green suite sat over a broken
+seam, and this is the third time this file has had to record that shape:
+the graph test's synthetic edge accepted ANY `heroViewStoragePath`, and
+`atlas-hero-driver-topology` pinned the literal `atlas-author/driver-view.png`
+as what stage 2 must be shown — asserting the one path the edge refuses. **A fake
+door laxer than the real one cannot catch a door-shaped defect.** Both now
+enforce the real allowlist and were verified to fail against the pre-fix runtime,
+reproducing the live error verbatim.
+
+#### THE HERO-FIRST FLATTEN PASSES NO THOUGHT SIGNATURE — STILL OPEN (2026-09-17)
+
+Owner: *"Are you using thought signatures?? Multimodal best practice from Gemini
+pro 3."* Answered honestly from the code: **yes on the cascade, no on the hop
+that needs it most.**
+
+`captureImageTurn` / `replayImageTurn` carry `thoughtSignature` on the part it
+arrived on, and hood/front/rear/roof each replay the driver exchange with it —
+that is implemented and locked. But the hero-first flatten is sent `first: true`,
+and the edge refuses history on a first request outright:
+
+```ts
+if (first && priorTurnsIn.length) throw new Error("atlas_author_hero_takes_no_history");
+```
+
+So node 3 attaches the vehicle render as a flat image in a NEW conversation
+rather than continuing the one that produced it. `authorHeroVehicleView` already
+returns that exchange; the graph discards it. That is exactly the multi-turn
+spatial reasoning RULE 0.35 quotes the owner asking for.
+
+The fix is narrow — keep the no-history rule for a true from-scratch view
+(`first && !heroFlatten`) and let the flatten replay its own view exchange — and
+it is deliberately NOT in the staging fix's deploy: that fix is verified by tests
+reproducing the live error, while this one is verified by nothing live and
+changes the request shape on a path that has never completed. **One variable per
+deploy on an unproven path**, or a failure tells you nothing about which change
+caused it.
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology paints its own layout map into the artwork, and the
