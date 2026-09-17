@@ -1,0 +1,169 @@
+{
+  "contract": "designpro.atlas-fonts.v1",
+  "defaultContactFont": "poppins",
+  "defaultNameFont": "anton",
+  "fonts": {
+    "alfaslab": {
+      "bytes": 97376,
+      "file": "alfaslab.ttf",
+      "license": "licenses/alfaslab-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "28664afa698a3393bd5a29eec750230a0645c5301d62200e5f2d3a027fb2299d",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/alfaslabone/AlfaSlabOne-Regular.ttf"
+    },
+    "anton": {
+      "bytes": 170812,
+      "file": "anton.ttf",
+      "license": "licenses/anton-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf"
+    },
+    "archivoblack": {
+      "bytes": 90988,
+      "file": "archivoblack.ttf",
+      "license": "licenses/archivoblack-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf"
+    },
+    "bangers": {
+      "bytes": 93148,
+      "file": "bangers.ttf",
+      "license": "licenses/bangers-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "4160a7311de9342674cce9160cde9fcbb30f48190397d86ff1b70b455af65824",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf"
+    },
+    "bebas": {
+      "bytes": 61400,
+      "file": "bebas.ttf",
+      "license": "licenses/bebas-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf"
+    },
+    "bungee": {
+      "bytes": 118996,
+      "file": "bungee.ttf",
+      "license": "licenses/bungee-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "c4f5361ce120af3e6b9156d0bf379fa19cda2ea0cd18ac01fd99596c6bf66e3f",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/bungee/Bungee-Regular.ttf"
+    },
+    "greatvibes": {
+      "bytes": 457588,
+      "file": "greatvibes.ttf",
+      "license": "licenses/greatvibes-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "8d509802186f1b51572531ecf313e8098f9a5bfdfaca93f0c9b34467f9982d15",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf"
+    },
+    "kaushan": {
+      "bytes": 210672,
+      "file": "kaushan.ttf",
+      "license": "licenses/kaushan-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "6d8d379d9bba98178bee476d68114c8f83812c18005ecccf679e70f60e03d8f6",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/kaushanscript/KaushanScript-Regular.ttf"
+    },
+    "lobster": {
+      "bytes": 406076,
+      "file": "lobster.ttf",
+      "license": "licenses/lobster-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "d6568e697fd50cedc0be04d8aae4127fe95add607e7bff954ca88604be80c205",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf"
+    },
+    "marker": {
+      "bytes": 74632,
+      "file": "marker.ttf",
+      "license": "licenses/marker-LICENSE.txt",
+      "licenseType": "Apache-2.0",
+      "sha256": "28f82c8a7943cb8e9d599f8554da1d4fc75dbcf69b9885ad6c0611d20c6946c5",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/apache/permanentmarker/PermanentMarker-Regular.ttf"
+    },
+    "monoton": {
+      "bytes": 51604,
+      "file": "monoton.ttf",
+      "license": "licenses/monoton-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "951c4cea65ffede784a7c9672feec5d329a7e1e12216c42d53ecf36c90d04dea",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/monoton/Monoton-Regular.ttf"
+    },
+    "pacifico": {
+      "bytes": 329380,
+      "file": "pacifico.ttf",
+      "license": "licenses/pacifico-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "5b6c0d5334a7bf77dea52b975c5a0c408878c0f7115ed5b6fb151f634b7bf701",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf"
+    },
+    "poppins": {
+      "bytes": 155996,
+      "file": "poppins.ttf",
+      "license": "licenses/poppins-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "983676516167748b74de6f4771fb384c664fd913acb8b471122ecacf5da5ea6c",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf"
+    },
+    "poppinslight": {
+      "bytes": 160316,
+      "file": "poppinslight.ttf",
+      "license": "licenses/poppinslight-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Regular.ttf"
+    },
+    "righteous": {
+      "bytes": 43104,
+      "file": "righteous.ttf",
+      "license": "licenses/righteous-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "2ffb3fe5c27d7e6571210b800448c4e234e651b46c6b4426c1bb567e5341348a",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/righteous/Righteous-Regular.ttf"
+    },
+    "russo": {
+      "bytes": 39124,
+      "file": "russo.ttf",
+      "license": "licenses/russo-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "bc0abcc660bd8b7ad3000ecb2898a27c58a29a50f7ec81652fa12e75148d09df",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/russoone/RussoOne-Regular.ttf"
+    },
+    "sacramento": {
+      "bytes": 79696,
+      "file": "sacramento.ttf",
+      "license": "licenses/sacramento-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "9341fda10adbfeb7efc94302b34507a3e227d7e7f5c432df3f5ac8753ff73d24",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/Sacramento-Regular.ttf"
+    },
+    "satisfy": {
+      "bytes": 47928,
+      "file": "satisfy.ttf",
+      "license": "licenses/satisfy-LICENSE.txt",
+      "licenseType": "Apache-2.0",
+      "sha256": "55bb141a0a23a32278d5fa7fd2e853824faa173b94774660ebeddb106be07c80",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/apache/satisfy/Satisfy-Regular.ttf"
+    },
+    "titan": {
+      "bytes": 55712,
+      "file": "titan.ttf",
+      "license": "licenses/titan-OFL.txt",
+      "licenseType": "OFL-1.1",
+      "sha256": "563ff6de179bbd44bcd7d2a6c448d6dc3bf935834237cf1250e506e65cd86ff1",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/ofl/titanone/TitanOne-Regular.ttf"
+    },
+    "yellowtail": {
+      "bytes": 62216,
+      "file": "yellowtail.ttf",
+      "license": "licenses/yellowtail-LICENSE.txt",
+      "licenseType": "Apache-2.0",
+      "sha256": "3e06841b13000975f3cc38aa84e326e601a4378a4c52d50b5e9fee3598c5d236",
+      "upstream": "https://raw.githubusercontent.com/google/fonts/main/apache/yellowtail/Yellowtail-Regular.ttf"
+    }
+  },
+  "note": "Vendored, not fetched at runtime: a graph node that can fail on a third-party fetch is not deterministic. Three of the reference registry's paths were already stale upstream (marker, satisfy, yellowtail moved ofl/ -> apache/).",
+  "source": "google/fonts @ main, fetched 2026-09-17"
+}

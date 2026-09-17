@@ -146,6 +146,18 @@ fi
 # Only the exact string `off` restores the single-call driver; a typo keeps the
 # split, which is the configuration the aspect gate can actually pass.
 [[ $atlas_hero_first == "off" ]] || atlas_hero_first=on
+
+# ELEMENT GRAPH (owner 2026-09-17, ARCHITECTURE_DAG.md). The logo, typography and
+# contact bar as first-class deterministic nodes. OFF unless a deploy says `on`:
+# unlike the flags above, this one has never run live, and the flag that
+# defaulted the other way is the weeks of invisible field-first routing recorded
+# in CLAUDE.md. Sticky like the rest.
+atlas_element_graph=${ATLAS_ELEMENT_GRAPH:-}
+if [[ -z $atlas_element_graph && -s $ROOT/shared/runtime.env ]]; then
+  atlas_element_graph=$(sed -n 's/^DESIGNPRO_ATLAS_ELEMENT_GRAPH=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+# Only the exact string `on` turns it on; a typo leaves today's graph untouched.
+[[ $atlas_element_graph == "on" ]] || atlas_element_graph=off
 # Call-1 node graph (owner 2026-09-11). ON unless a deploy says "off": the
 # graph is the product; "off" is the kill switch back to the in-process
 # cascade. Sticky like the flags above.
@@ -208,6 +220,9 @@ trap cleanup EXIT
   # HERO-FIRST DRIVER. `on` (default) or `off` (one-call driver). Sticky. Read
   # only inside the hero-driver cascade, so it is inert on six-surface/field.
   printf 'DESIGNPRO_ATLAS_HERO_FIRST=%s\n' "$atlas_hero_first"
+  # ELEMENT GRAPH. `off` (default) or `on`. Sticky. With `off` the compiled
+  # graph is byte-for-byte the one without it.
+  printf 'DESIGNPRO_ATLAS_ELEMENT_GRAPH=%s\n' "$atlas_element_graph"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then
@@ -253,12 +268,14 @@ trap - EXIT
 #
 # These five are routing selectors, not secrets: no key, token or URL is
 # printed here, and the block sits after every secret has been consumed.
-printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
+printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
   DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
   DESIGNPRO_ATLAS_FIELD_FIRST "$atlas_field_first" \
   DESIGNPRO_ATLAS_HERO_FIRST "$atlas_hero_first" \
+  DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph" \
   DESIGNPRO_ATLAS_CALL1_GRAPH "$atlas_call1_graph" \
-  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish"
+  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish" \
+  DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph"
 echo "DesignProAI dark environment is configured with outbound email explicitly disabled. No secret was printed."
 if [[ -n $topaz_key ]]; then
   echo "Call 12 upscaling is ENABLED: production packs will enhance through Topaz before QC."

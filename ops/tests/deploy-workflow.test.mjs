@@ -630,7 +630,7 @@ test("a flag dispatch of the release already running rewrites the environment an
   const end = remote.indexOf('"$control/backup.sh"');
   assert.ok(start > 0 && end > start);
   const accepted = remote.slice(start, end);
-  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\}\$\{ATLAS_HERO_FIRST:-\} \]\]; then/,
+  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\}\$\{ATLAS_HERO_FIRST:-\}\$\{ATLAS_ELEMENT_GRAPH:-\} \]\]; then/,
     "EVERY routing flag opens the reconfigure branch; one missing from this test is one that silently no-ops on a dispatch");
   const flagged = accepted.slice(accepted.indexOf("if [[ -n"), accepted.indexOf("FLAGS_APPLIED"));
   assert.match(flagged, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY[\s\S]*systemctl restart designproai-os\.service[\s\S]*acceptance\.sh" "\$EXACT_SHA"/,
@@ -661,6 +661,7 @@ test("every routing flag the runtime honours is reachable from a deploy", () => 
     ["DESIGNPRO_ATLAS_HERO_FIRST", "runtime/atlas-hero-driver.cjs"],
     ["DESIGNPRO_ATLAS_CALL1_GRAPH", "runtime/atlas-call1-graph.cjs"],
     ["DESIGNPRO_ATLAS_FIELD_FIRST", "runtime/flat-first-atlas.cjs"],
+    ["DESIGNPRO_ATLAS_ELEMENT_GRAPH", "runtime/atlas-call1-graph.cjs"],
   ];
   const writer = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
   const validator = readFileSync(new URL("../validate-env.py", import.meta.url), "utf8");
@@ -678,7 +679,8 @@ test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret 
   const banner = configure.slice(configure.indexOf("A.T.L.A.S. flags resolved for this release"));
   assert.ok(banner, "the deploy must state which routing the release will run");
   for (const flag of ["DESIGNPRO_ATLAS_TOPOLOGY", "DESIGNPRO_ATLAS_FIELD_FIRST",
-    "DESIGNPRO_ATLAS_HERO_FIRST", "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_PANEL_FINISH"]) {
+    "DESIGNPRO_ATLAS_HERO_FIRST", "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_PANEL_FINISH",
+    "DESIGNPRO_ATLAS_ELEMENT_GRAPH"]) {
     assert.ok(banner.includes(flag), `${flag} decides routing and must be stated`);
   }
   // Scope the secret check to the printf statement itself, not the rest of the
@@ -815,6 +817,7 @@ test('a deploy that says "unchanged" must send the droplet NOTHING for that flag
     ["ATLAS_FIELD_FIRST", "atlas_field_first", ["on", "off"]],
     ["ATLAS_CALL1_GRAPH", "atlas_call1_graph", ["on", "off"]],
     ["ATLAS_HERO_FIRST", "atlas_hero_first", ["on", "off"]],
+    ["ATLAS_ELEMENT_GRAPH", "atlas_element_graph", ["on", "off"]],
   ];
   for (const [envName, inputName, choices] of flags) {
     const line = new RegExp(`^\\s*${envName}: \\$\\{\\{(.+?)\\}\\}\\s*$`, "m").exec(workflow);
