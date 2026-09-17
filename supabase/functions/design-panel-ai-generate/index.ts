@@ -2522,7 +2522,7 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-driver.20260911.v1";
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260916.v2";
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
@@ -2531,6 +2531,57 @@ const ATLAS_AUTHOR_ASPECTS: Array<[string, number]> = [
   ["21:9", 21 / 9], ["16:9", 16 / 9], ["3:2", 3 / 2], ["4:3", 4 / 3], ["5:4", 5 / 4], ["1:1", 1],
   ["4:5", 4 / 5], ["3:4", 3 / 4], ["2:3", 2 / 3], ["9:16", 9 / 16],
 ];
+/**
+ * HERO-FIRST: THE FLATTEN, PORTED FROM generate-2d-proof/proof-sheet.ts
+ * `renderFlatTile` (RULE 1 — recover, do not invent).
+ *
+ * WHY IT LIVES HERE AND NOT THERE. `generate-2d-proof` is RETIRED in this
+ * system: `CALLS_1_7_ENGINE_CONTRACT.retiredBlobs` names it and
+ * `proofAuthority` is `designpro-os-call8`, because Call 8 is authored in the
+ * runtime and RULE 0.25 forbids a model in Calls 8-11. Its `renderFlatTile`
+ * was deliberately left unported for exactly that reason. Call 1 is where a
+ * model IS allowed, so the flatten belongs in this branch — which also means
+ * it runs under `authorizeAtlasProviderRequest` and the durable provider
+ * cache, with no second auth door to open.
+ *
+ * TIERED, as the original is: the first ask is complete, the second is the
+ * same instruction compressed, so a refusal on length still returns artwork
+ * rather than nothing.
+ */
+function atlasHeroFlattenPrompt(
+  surfaceLabel: string,
+  vehicleName: string,
+  textLock: string,
+  tier: number,
+): string {
+  const branding =
+    `Preserve EVERY graphic and EVERY line of lettering exactly as shown — company name, logo lockup, phone number, website, taglines, and badges — glyph for glyph, in the same position, size, arrangement, and colors. Lettering must be sharp and fully legible.${textLock}`;
+  if (tier > 0) {
+    return `Convert the attached ${surfaceLabel} render into one edge-to-edge rectangular wrap-art canvas. Remove every vehicle and studio pixel and fill windows, wheels, arches, seams, and all gaps by continuing the existing design. No vehicle outline, no white, no transparency, no margin, no labels. Keep the exact design, colors, positions, photography, logos, and text. ${branding}`;
+  }
+  return `Create the FLAT, RECTANGULAR, PANEL-READY artwork for the ${surfaceLabel} of this ${vehicleName}, using the attached render only as the design reference.
+
+OUTPUT ONLY THE ARTWORK CANVAS. Completely remove the vehicle body, cab, windows, glass, wheels, tires, wheel arches, bumpers, mirrors, lights, handles, seams, ground, studio, shadows, reflections, highlights, and every white or transparent cutout. Continue the real surrounding artwork through every area those parts covered. Fill all four edges with the design. There must be no vehicle silhouette, no white margin, no transparency, no labels, no dimensions, no border, and no mockup.
+
+Do not redesign, restyle, simplify, or substitute anything. Preserve the exact color relationships, imagery, gradients, patterns, element routing, scale, and placement visible on this surface. Keep photographic elements photographic. ${branding}
+
+This returned rectangle becomes the approved Call-1 production source. Nothing after it is allowed to heal or invent pixels.`;
+}
+
+/**
+ * The customer's own strings, so the flatten COPIES lettering instead of
+ * guessing it. `buildProofTextLock`'s reason, verbatim: a tile that cannot read
+ * the words invents plausible ones, and panels cut from it inherit the
+ * fabrication. It never invents a string — no literals, no block.
+ */
+function atlasHeroTextLock(body: Record<string, unknown>): string {
+  const literals = [body.companyName, body.phone, body.website]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (!literals.length) return "";
+  return ` The lettering reads exactly: ${literals.map((value) => `"${value}"`).join(", ")}. Copy these strings character for character; invent nothing.`;
+}
+
 function atlasAuthorAspect(width: number, height: number): string {
   const ratio = width / height;
   return ATLAS_AUTHOR_ASPECTS.reduce((best, item) =>
@@ -2612,6 +2663,11 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     const surfaceLabel = String(body.surfaceLabel || surfaceKey).toUpperCase();
     const first = body.first === true;
     if (first !== (surfaceKey === "driver")) throw new Error("atlas_author_first_must_be_driver");
+    // HERO-FIRST is a two-stage driver: stage 1 renders the vehicle view,
+    // stage 2 flattens THAT view into the flank. Both stages run here, through
+    // the same persona, the same lease and the same durable provider cache.
+    const heroFlatten = first && String(body.heroViewStoragePath || "").trim().length > 0;
+    let heroViewHash: string | null = null;
     const targetWidthPx = Number(body.targetWidthPx);
     const targetHeightPx = Number(body.targetHeightPx);
     const widthInches = Number(body.widthInches);
@@ -2702,13 +2758,45 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
         visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
         styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
-        atlasFlatMaster: true,
+        // HERO-FIRST STAGE 1 ASKS FOR THE VEHICLE, NOT THE FLAT STRIP.
+        //
+        // `atlasFlatMaster` swaps the presentation tail: true gives the
+        // flat-sheet contract, false gives the LOCKED CAMERA ANGLE + commercial
+        // scene + studio environment. Everything above it -- the persona, the
+        // brief, buildLogoArchitecture, the contact lock, the finish, the
+        // customer references -- is byte-identical either way, so this changes
+        // what is asked for and nothing about who is asking.
+        //
+        // Why it must be the vehicle: a driver flank is ~3.6:1 and this model's
+        // widest emittable aspectRatio is 21:9, so asking for the flat strip
+        // directly is an ask it CANNOT answer -- MAX_ASPECT_DRIFT_RATIO refuses
+        // every driver tile before the artwork is looked at (0/3 on real
+        // vehicles). A 16:9 photograph is an ask it answers every day, and
+        // composing against real vehicle geometry is where hierarchy comes
+        // from: name on the door area, contact along the rocker, a clear zone
+        // for a photo. Stage 2 then flattens that approved view to the flank.
+        atlasFlatMaster: !heroFlatten,
         atlasPanels: [],
-        atlasHeroSurface: { label: surfaceLabel, widthInches, heightInches },
+        atlasHeroSurface: heroFlatten ? undefined : { label: surfaceLabel, widthInches, heightInches },
       } as any /* hero sheet */);
-      parts.push({ text: prompt });
-      for (const ref of references) {
-        if (typeof ref === "string" && ref.length > 0) parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+      if (heroFlatten) {
+        // STAGE 2. The approved vehicle view is the design reference; the
+        // persona assembly above is still the design context, so the flatten
+        // inherits every style constraint rather than re-deriving one.
+        heroViewHash = await attach(body.heroViewStoragePath, body.heroViewContentHash);
+        parts.push({
+          text: atlasHeroFlattenPrompt(
+            surfaceLabel,
+            [body.vehicleYear, body.vehicleMake, body.vehicleModel].map((v) => String(v || "").trim()).filter(Boolean).join(" ") || "vehicle",
+            atlasHeroTextLock(body),
+            Number(body.heroFlattenTier) > 0 ? 1 : 0,
+          ),
+        });
+      } else {
+        parts.push({ text: prompt });
+        for (const ref of references) {
+          if (typeof ref === "string" && ref.length > 0) parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+        }
       }
     } else {
       const neighbourLabels = neighboursIn.map((n) => String(n.surfaceLabel || n.surfaceKey || "").toUpperCase());
@@ -2723,7 +2811,12 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     if (totalInputImageCount > ATLAS_PANEL_MAX_REFERENCE_ASSETS) throw new Error(`atlas_author_reference_budget_exceeded:${totalInputImageCount}`);
 
     const model = ATLAS_AUTHOR_MODEL;
-    const aspectRatio = atlasAuthorAspect(targetWidthPx, targetHeightPx);
+    // Stage 1 is a photograph of the vehicle, so it asks for the photographic
+    // 16:9 the locked camera angle is written for -- never the flank's ratio,
+    // which is the ask that cannot be emitted. Stage 2 and every continuation
+    // ask for the surface's own nearest supported aspect, as before.
+    const heroView = first && !heroFlatten;
+    const aspectRatio = heroView ? "16:9" : atlasAuthorAspect(targetWidthPx, targetHeightPx);
     const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const modelRequest = JSON.stringify({
@@ -2798,6 +2891,11 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         promptVersion: ATLAS_AUTHOR_PROMPT_VERSION,
         model,
         surfaceKey,
+        // Which of the two hero stages produced these bytes, and what stage 2
+        // was shown. "vehicle-view" is not a panel and must never be cut as one.
+        heroStage: first ? (heroFlatten ? "flatten" : "vehicle-view") : null,
+        heroViewContentHash: heroViewHash,
+        aspectRatio,
         first,
         imageRequestCount: 1,
         providerCacheContract: cached.providerCacheContract,

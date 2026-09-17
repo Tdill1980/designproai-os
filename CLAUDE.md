@@ -1038,6 +1038,102 @@ secret — the block sits after every secret is consumed), and the same test fil
 EXECUTES each sticky sed against a fixture written in the writer's own format.
 **Read the flag line in the deploy log before judging a run's topology.**
 
+### RULE 0.39 — HERO-FIRST IS TWO NODES, AND THE HANDOFF IS A REFERENCE (2026-09-16)
+
+**Owner, verbatim:** *"Node 1 (the 3D vehicle generation) and Node 3 (the 2D
+flattener) must be distinctly engineered nodes in a DAG. Node 1 executes, passes
+its state and visual output to the orchestration layer, and then Node 3 consumes
+that 3D output to generate the flat panel."* — *"the state handoff between Node 1
+and Node 3 must pass immutable references, never raw image blobs or unpersisted
+memory buffers."*
+
+**Why hero-first exists at all** (RULE 0.37's remaining build): a driver flank is
+~3.6:1, Gemini 3 Pro Image's widest `aspectRatio` is 21:9, and
+`MAX_ASPECT_DRIFT_RATIO=1.12` therefore refuses EVERY single-call driver tile
+before one pixel of artwork is judged — 0/3 on real vehicles. A 16:9 photograph
+of the car is an ask this model answers; the flat strip is one it cannot emit. So
+the driver becomes a vehicle render followed by a flatten of that render, which
+is also the order RestylePro has always used (`mode: 'restyle'`,
+`viewType: 'side'`, flat proof derived from the approved view).
+
+**The DAG, in `runtime/atlas-call1-graph.cjs`:**
+
+```
+surface.driver.view ──▶ surface.driver ──▶ surface.passenger ──▶ hood/front/rear ──▶ roof ──▶ master.assemble
+```
+
+`surface.driver.view` is NODE 1 and `surface.driver` is NODE 3. They were one
+claimed node making two calls, which is what the owner's correction names: a
+refused flatten re-spent the 3D render on every attempt and a lost lease threw
+both halves away. Measured in the lock: against a flatten that refuses twice,
+node 1 runs **exactly once** and its row stays `completed` while `surface.driver`
+fails alone.
+
+**The edge carries an identity, never bytes.** Node 1 finishes with
+`{storagePath, contentHash, byteSize}` and nothing else; node 3 reads it off its
+dependency's output and sends `heroViewStoragePath` + `heroViewContentHash` to
+the edge, which re-reads and hash-verifies the render itself. A node output
+containing base64 fails the test. A missing or malformed reference is an
+incomplete DEPENDENCY, never a silent fall-back to the one-call driver.
+
+**The graph's SHAPE is the kill switch.** `compileHeroDriverGraph({heroFirst})`
+is resolved once when the run is created and then stored as node rows, so a flag
+flipped mid-run cannot change what an already-claimed node does. With hero-first
+off the compiled graph is byte-for-byte the previous seven-node one. No migration:
+`node_key`'s CHECK already admits the dotted key.
+
+**Scope:** read only inside the hero-driver cascade, so it is inert while
+production routes six-surface/field. Nothing about the gates, the assembly, the
+passenger mirror's scoping, Call 8 or anything after Call 1 changes.
+
+Locked by `tests/atlas-call1-graph.test.mjs` (the split shape, the stored kill
+switch, the retry isolation) and `tests/atlas-hero-driver-topology.test.mjs`.
+
+#### THE 2D PROOF BUTTON REPORTED A LIVE DESIGN AS `job_not_found` (live 2026-09-16)
+
+Owner: *"I get the 'Building Production Proof on Server' modal, but it
+immediately throws an error toast: 'The server did not accept this revision: job
+not found'."* The design was fine. **The durable job had never been registered.**
+
+`POST /api/jobs/:id/resume` 404'd whenever no `designpro_workflow_runs` row
+existed — which is **precisely the state that button exists for**, because the
+entice workflow is created by `handoff_designpro_generation_to_production` on
+master acceptance and nothing else could ever create it. The GET path had already
+learned to answer from the generation request (`preHandoffState`); the POST path
+had not, and its 404 read as a rejection of the design.
+
+It now REGISTERS the job through that same idempotent handoff RPC — the one
+`/api/generation/requests/:id/handoff` already calls, so this is the same act by
+the same door and not a second creator — returns the `runId` the frontend will
+poll, and then resumes it. A generation that genuinely is not ready answers
+`flat_first_production_gate_required` (the gate's own reason), and
+RevisionStudio prints that as the state it is. A generation that truly does not
+exist is still 404. Locked in `gateway/tests/gateway.test.mjs`.
+
+#### A FLAG THE RUNTIME READS AND THE WRITER DOES NOT WRITE IS NOT A SWITCH (2026-09-16)
+
+`heroFirstEnabled()` honours `DESIGNPRO_ATLAS_HERO_FIRST`, and
+`configure-env.sh` wrote that key **nowhere** — so unset, and therefore ON, was
+the only value it could ever have. That is exactly how
+`DESIGNPRO_ATLAS_FIELD_FIRST` spent weeks being honoured by the runtime and
+unreachable from a deploy, recorded two sections above; the comment beside the
+new flag already claimed the opposite. **The same mistake was made again within
+hours of documenting it.**
+
+`atlas_hero_first` (`unchanged` | `on` | `off`) is now threaded exactly like
+`atlas_topology`: sticky in `configure-env.sh`, an exact `{on,off}` vocabulary in
+`validate-env.py`, printed in the resolved-flag banner, and opening the
+reconfigure branch so a flip on the already-running release restarts rather than
+printing `ALREADY_COMPLETE`.
+
+**The lock is on the CLASS, not this instance.**
+`ops/tests/deploy-workflow.test.mjs` walks `DESIGNPRO_ATLAS_TOPOLOGY`,
+`DESIGNPRO_ATLAS_HERO_FIRST`, `DESIGNPRO_ATLAS_CALL1_GRAPH` and
+`DESIGNPRO_ATLAS_FIELD_FIRST` from the runtime file that READS each one through
+to the writer's `printf`, the writer's sticky `sed`, and the validator's
+vocabulary. Add a routing flag to the runtime without those four and the build
+fails. **Do not add an env-gated routing flag without adding it to that list.**
+
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology paints its own layout map into the artwork, and the

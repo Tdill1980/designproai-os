@@ -45,6 +45,11 @@ const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
 const MASTER_NODE = "master.assemble";
+// NODE 1 of the hero-first driver: the 3D vehicle render. NODE 3 is
+// `surface.driver`, the 2D flattener that consumes it. They are separate node
+// rows so a failed flatten retries WITHOUT re-billing the vehicle view, and so
+// the ledger can say which worker drew which half.
+const DRIVER_VIEW_NODE = "surface.driver.view";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -102,13 +107,20 @@ function validateGraph(nodes) {
  * passenger depends on the driver it flops. Nothing else orders the graph, so
  * whatever is not an edge runs in parallel.
  */
-function compileHeroDriverGraph() {
+function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled() } = {}) {
   const nodes = [];
+  // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
+  // 16:9 frame; node 3 flattens that render into the flank. The handoff is the
+  // stored render's IDENTITY -- storage path plus sha256 -- never a blob and
+  // never an in-memory buffer, so either half can re-run on the other worker.
+  if (heroFirst) nodes.push({ key: DRIVER_VIEW_NODE, dependsOn: [], input: { surfaceKey: "driver", stage: "vehicle-view" }, maxAttempts: 3 });
   for (const stage of hero.AUTHOR_CASCADE) {
     for (const surfaceKey of stage) {
       const deps = surfaceKey === "passenger" ? ["driver"]
         : [...new Set([...(hero.AUTHOR_NEIGHBOURS[surfaceKey] || []), ...(hero.AUTHOR_HISTORY[surfaceKey] || [])])];
-      nodes.push({ key: surfaceNode(surfaceKey), dependsOn: deps.map(surfaceNode), input: { surfaceKey }, maxAttempts: 3 });
+      const dependsOn = deps.map(surfaceNode);
+      if (surfaceKey === "driver" && heroFirst) dependsOn.push(DRIVER_VIEW_NODE);
+      nodes.push({ key: surfaceNode(surfaceKey), dependsOn, input: { surfaceKey, ...(surfaceKey === "driver" && heroFirst ? { stage: "flatten" } : {}) }, maxAttempts: 3 });
     }
   }
   nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
@@ -189,6 +201,25 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
 
+  // NODE 1 -- the 3D vehicle render. It persists through the edge and returns
+  // only its identity; nothing downstream receives its pixels from this node.
+  if (node.node_key === DRIVER_VIEW_NODE) {
+    abortIf();
+    const view = await hero.authorHeroVehicleView({
+      zone: zoneOf(manifest, "driver"),
+      heroRequest: hero.heroRequestBody(definition.input),
+      creativeContext: String(definition.creativeContext || ""),
+      callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
+      providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : null,
+      logger,
+    });
+    logger(`atlas call 1 graph ${run.id}: driver vehicle view ${view.contentHash.slice(0, 12)}`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: "driver", stage: "vehicle-view",
+      view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.bytes.length,
+        imageRequestCount: view.imageRequestCount, providerCacheHit: view.providerCacheHit },
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
   const surfaceKey = String(node.input?.surfaceKey || node.node_key.replace(/^surface\./, ""));
   const zone = zoneOf(manifest, surfaceKey);
   let result;
@@ -198,8 +229,18 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     const neighbours = await Promise.all((hero.AUTHOR_NEIGHBOURS[surfaceKey] || []).map(loadSurface));
     const priorExchanges = (await Promise.all((hero.AUTHOR_HISTORY[surfaceKey] || []).map(loadSurface))).map((s) => s.exchange).filter(Boolean);
     abortIf();
+    // NODE 3 reads node 1's output as a REFERENCE. A missing or malformed
+    // reference is a dependency failure, never a silent single-call driver.
+    let heroView = null;
+    if (surfaceKey === "driver" && (node.depends_on || []).includes(DRIVER_VIEW_NODE)) {
+      const view = deps.get(DRIVER_VIEW_NODE)?.output?.view;
+      if (!view?.storagePath || !view?.contentHash) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${DRIVER_VIEW_NODE} carries no view reference`, true);
+      }
+      heroView = Object.freeze({ ...view });
+    }
     result = await hero.authorSurface({
-      surfaceKey, zone, first: surfaceKey === "driver", neighbours, priorExchanges,
+      surfaceKey, zone, first: surfaceKey === "driver", neighbours, priorExchanges, heroView,
       heroRequest: hero.heroRequestBody(definition.input), creativeContext: String(definition.creativeContext || ""),
       store, logger,
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
@@ -412,7 +453,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   AtlasCall1GraphError, graphEnabled, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

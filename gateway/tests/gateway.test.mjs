@@ -1490,6 +1490,76 @@ test("artifacts and approved views answer empty, not 404, before the handoff", a
   assert.equal(missing.status, 404);
 });
 
+test("resume REGISTERS the durable job when none exists yet, instead of answering job_not_found", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const generationId = "90000000-0000-4000-8000-00000000002c";
+  const requestId = "11111111-2222-4333-8444-55555555002c";
+  const runId = "22222222-3333-4444-8555-66666666002c";
+  const calls = [];
+  // `eligible: false` is the ONE honest refusal: Call 1 has not accepted a
+  // master, so there is nothing to manufacture. It must never read as "job not
+  // found", which is what sent the owner hunting a missing design.
+  const gateway = ({ eligible }) => createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push(value);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.includes("/rest/v1/designpro_workflow_runs")) return Response.json([]);
+      if (value.includes("/rest/v1/rpc/designpro_generation_workspace")) {
+        if (!String(init?.body ?? "").includes(generationId)) return Response.json(null);
+        return Response.json({
+          requestId, generationId, ownerId: userId, state: "leased",
+          contractVersion: "designpro.calls-1-7-input.v3", pipelineMode: "flat-first-atlas-v1",
+          vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" },
+          brief: "b", designName: "d", viewsSuperseded: false, views: [],
+          createdAt: "2026-09-16T18:00:00Z",
+        });
+      }
+      if (value.includes("/rest/v1/rpc/designpro_flat_first_handoff_gate")) {
+        return Response.json({ flatFirst: true, productionEligible: eligible, revisionId: null });
+      }
+      if (value.includes("/rest/v1/rpc/handoff_designpro_generation_to_production")) {
+        return Response.json({ revisionId: "33333333-4444-4555-8666-77777777002c", generationId, workflowRunId: runId, alreadyHandedOff: false });
+      }
+      if (value.includes("/rest/v1/rpc/resume_designpro_workflow")) return Response.json({ resumedStages: 2 });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+
+  const ready = gateway({ eligible: true });
+  t.after(() => ready.close());
+  const readyBase = await listen(ready);
+  const accepted = await fetch(`${readyBase}/api/jobs/${generationId}/resume`, {
+    method: "POST", headers: { cookie: "dp_session=test-token", origin: readyBase },
+  });
+  assert.equal(accepted.status, 202);
+  const body = await accepted.json();
+  assert.equal(body.runId, runId, "the job id the frontend will poll is returned by the call that created it");
+  assert.equal(body.registered, true);
+  assert.equal(body.resumedStages, 2);
+  assert.ok(calls.some((c) => c.includes("/rpc/handoff_designpro_generation_to_production")), "the job was registered through the existing handoff door, not a second creator");
+  assert.ok(calls.some((c) => c.includes("/rpc/resume_designpro_workflow")), "…and then resumed");
+
+  calls.length = 0;
+  const blocked = gateway({ eligible: false });
+  t.after(() => blocked.close());
+  const blockedBase = await listen(blocked);
+  const refused = await fetch(`${blockedBase}/api/jobs/${generationId}/resume`, {
+    method: "POST", headers: { cookie: "dp_session=test-token", origin: blockedBase },
+  });
+  assert.equal(refused.status, 409);
+  assert.equal((await refused.json()).error, "flat_first_production_gate_required", "the gate's own reason, never job_not_found");
+  assert.ok(!calls.some((c) => c.includes("/rpc/handoff_designpro_generation_to_production")), "an ineligible generation is not handed off");
+
+  // A generation that genuinely does not exist is still 404.
+  const missing = await fetch(`${blockedBase}/api/jobs/90000000-0000-4000-8000-0000000000fe/resume`, {
+    method: "POST", headers: { cookie: "dp_session=test-token", origin: blockedBase },
+  });
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).error, "job_not_found");
+});
+
 test("flat-first v3 opts into the isolated intake RPC without changing v1", async (t) => {
   const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const generationId = "90000000-0000-4000-8000-000000000010";

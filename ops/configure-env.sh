@@ -131,9 +131,24 @@ fi
 # Only the exact string `off` restores six-surface; anything else keeps today's
 # routing, so a typo can never silently change the authoring contract.
 [[ $atlas_field_first == "off" ]] || atlas_field_first=on
+# HERO-FIRST DRIVER (RULE 0.37). Inside the hero-driver cascade the driver is
+# TWO nodes -- a 16:9 vehicle render, then its flatten into the flank -- because
+# a 3.6:1 flat strip is an ask this model cannot emit and the aspect gate
+# refuses every single-call tile before any artwork is judged. ON by default for
+# that reason, not out of optimism. This key was missing from the writer
+# entirely, which is exactly how DESIGNPRO_ATLAS_FIELD_FIRST spent weeks being
+# unreachable from a deploy while the runtime honoured it: unset means ON, so a
+# live surprise had no lever. It has one now. Sticky like the flags around it.
+atlas_hero_first=${ATLAS_HERO_FIRST:-}
+if [[ -z $atlas_hero_first && -s $ROOT/shared/runtime.env ]]; then
+  atlas_hero_first=$(sed -n 's/^DESIGNPRO_ATLAS_HERO_FIRST=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+# Only the exact string `off` restores the single-call driver; a typo keeps the
+# split, which is the configuration the aspect gate can actually pass.
+[[ $atlas_hero_first == "off" ]] || atlas_hero_first=on
 # Call-1 node graph (owner 2026-09-11). ON unless a deploy says "off": the
 # graph is the product; "off" is the kill switch back to the in-process
-# cascade. Sticky like the two flags above.
+# cascade. Sticky like the flags above.
 atlas_call1_graph=${ATLAS_CALL1_GRAPH:-}
 if [[ -z $atlas_call1_graph && -s $ROOT/shared/runtime.env ]]; then
   atlas_call1_graph=$(sed -n 's/^DESIGNPRO_ATLAS_CALL1_GRAPH=//p' "$ROOT/shared/runtime.env" | head -n 1)
@@ -190,6 +205,9 @@ trap cleanup EXIT
   printf 'DESIGNPRO_ATLAS_CALL1_GRAPH=%s\n' "$atlas_call1_graph"
   # CALL-1 FIELD-FIRST. `on` (default) or `off` (six-surface first). Sticky.
   printf 'DESIGNPRO_ATLAS_FIELD_FIRST=%s\n' "$atlas_field_first"
+  # HERO-FIRST DRIVER. `on` (default) or `off` (one-call driver). Sticky. Read
+  # only inside the hero-driver cascade, so it is inert on six-surface/field.
+  printf 'DESIGNPRO_ATLAS_HERO_FIRST=%s\n' "$atlas_hero_first"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
   if [[ -n $topaz_key ]]; then
@@ -233,11 +251,12 @@ trap - EXIT
 # between "the flag reset" and "I set it wrong" could not be settled from any
 # log, because neither the deploy nor the runtime ever stated the value.
 #
-# These four are routing selectors, not secrets: no key, token or URL is
+# These five are routing selectors, not secrets: no key, token or URL is
 # printed here, and the block sits after every secret has been consumed.
-printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s\n' \
+printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
   DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
   DESIGNPRO_ATLAS_FIELD_FIRST "$atlas_field_first" \
+  DESIGNPRO_ATLAS_HERO_FIRST "$atlas_hero_first" \
   DESIGNPRO_ATLAS_CALL1_GRAPH "$atlas_call1_graph" \
   DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish"
 echo "DesignProAI dark environment is configured with outbound email explicitly disabled. No secret was printed."
