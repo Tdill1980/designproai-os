@@ -267,7 +267,7 @@ test("4. end to end across two node workers: seven image requests, passenger a f
     // never by array index -- only the SEQUENTIAL pairs (view before its own
     // flatten; driver's flatten before hood/front/rear; those before roof) are
     // load-bearing, and those are asserted as relative order, not position.
-    assert.equal(calls.length, 8, "driver view, driver flatten, front view, front flatten x2 sections, hood, rear, roof");
+    assert.equal(calls.length, 7, "driver view, driver flatten, front view, front flatten, hood, rear, roof");
     const driverView = calls.find((c) => c.surfaceKey === "driver" && c.first === true && !c.heroViewStoragePath);
     const driverFlatten = calls.find((c) => c.surfaceKey === "driver" && Boolean(c.heroViewStoragePath));
     const frontView = calls.find((c) => c.surfaceKey === "front" && c.first === true && !c.heroViewStoragePath);
@@ -350,8 +350,7 @@ test("4. end to end across two node workers: seven image requests, passenger a f
     const meta = await sharp(result.bytes).metadata();
     assert.equal(meta.width, 4096); assert.equal(meta.height, 4096);
     assert.equal(sha(result.bytes), result.contentHash);
-    assert.equal(result.imageRequestCount, 8,
-      "both view requests are SPENT and counted, plus front's second section: its zone is past the 21:9 ceiling");
+    assert.equal(result.imageRequestCount, 7, "both view requests are SPENT and are counted");
     assert.equal(result.model, "gemini-3-pro-image");
     assert.equal(result.promptVersion, hero.HERO_DRIVER_PROMPT_VERSION);
     assert.equal(result.provenance.contract, hero.HERO_DRIVER_CONTRACT);
@@ -415,7 +414,7 @@ test("4b. THE CUSTOMER IS HANDED THE COMPOSITED SHEET, not the clean base", asyn
 
     // The element nodes cost NOTHING at the model: still exactly the surface
     // authoring calls (7 -- driver + front are each two, hood/rear/roof one).
-    assert.equal(calls.length, 8, "elements are deterministic — they add no image request");
+    assert.equal(calls.length, 7, "elements are deterministic — they add no image request");
 
     // Layer 0 is recorded and preserved; what came back is NOT it.
     assert.match(result.cleanMasterHash, /^[0-9a-f]{64}$/, "the clean base is kept as provenance");
@@ -574,7 +573,7 @@ test("6. the runtime seams: the hero branch runs through the injected graph unle
   assert.match(indexSrc, /atlasCall1Graph\.stop\(\);/);
   assert.match(indexSrc, /atlasCall1Graph: atlasCall1Graph\.health\(\),/);
   // The node executor runs the cascade's OWN primitives and nothing creative of its own.
-  assert.match(graphSrc, /hero\.authorTiledSurface\(\{/);
+  assert.match(graphSrc, /hero\.authorSurface\(\{/);
   assert.match(graphSrc, /hero\.composePassengerPlaceholder\(/);
   assert.match(graphSrc, /hero\.assembleHeroMaster\(\{/);
   assert.ok(!graphSrc.includes("generativelanguage.googleapis.com") && !/buildDesignIQPrompt/.test(graphSrc), "no model call, no prompt in the graph");

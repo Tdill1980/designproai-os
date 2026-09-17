@@ -495,11 +495,7 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       }
       heroView = Object.freeze({ ...view, exchange: deps.get(surfaceViewNode)?.output?.exchange || null });
     }
-    // TILED FLANK CONTINUATION. A zone the model can satisfy in one request runs
-    // byte-for-byte the previous path; a flank wider than its 21:9 ceiling is
-    // authored as continued sections and joined by geometry, so the aspect gate
-    // never has to stretch a company name to accept it.
-    result = await hero.authorTiledSurface({
+    result = await hero.authorSurface({
       // Driver is ALWAYS `first` on the edge, split or not. A surface that is
       // hero-view-eligible only sometimes (front) is `first` only on the pass
       // that actually has a view to flatten.

@@ -250,49 +250,27 @@ test("the cascade runs end to end on synthetic sheets: five image requests, pass
     };
   };
   const result = await hero.authorHeroDriverMaster({ manifest, input: { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } }, store, callEdge });
-  // SIX REQUESTS FOR FIVE SURFACES, and the sixth is the point of the change.
-  // This fixture's FRONT is 129"x34" + 5" bleed all round = 139"x44" = 3.16:1,
-  // which is the exact zone that refused `aspect_drift:1.342`/`1.354` on two
-  // real F250 canaries. It is now authored as TWO continued sections inside the
-  // model's 21:9 ceiling and joined by geometry, so nothing is stretched.
-  // Every other surface here measures under the ceiling and stays one request.
-  assert.equal(calls.length, 6, "driver, hood, front x2 sections, rear, roof");
-  assert.equal(result.imageRequestCount, 6);
-  assert.equal(calls.filter((c) => c.surfaceKey === "front").length, 2,
-    "the wide front is the only tiled surface in this fixture");
+  assert.equal(calls.length, 5, "driver, hood, front, rear, roof");
+  assert.equal(result.imageRequestCount, 5);
   const order = calls.map((c) => c.surfaceKey);
   assert.equal(order[0], "driver");
   // THREE STAGES: driver alone, then every remaining side in ONE parallel wave.
   // Roof is no longer last-and-alone, so its position within the wave is not
   // pinned -- only that all four are in it.
-  assert.deepEqual([...new Set(order.slice(1))].sort(), ["front", "hood", "rear", "roof"],
-    "front appears twice because it is tiled; the WAVE is still these four surfaces");
+  assert.deepEqual(order.slice(1).sort(), ["front", "hood", "rear", "roof"]);
   assert.equal(calls[0].first, true);
   assert.deepEqual(calls[0].priorTurns, []);
   assert.deepEqual(calls[0].neighbours, []);
-  // A TILE CONTINUATION IS SHOWN ITS OWN PREVIOUS SECTION, not the flanks: it
-  // is the other half of the SAME panel, and its label says exactly that so the
-  // model continues the artwork across the join instead of starting again.
-  const sectionCalls = calls.filter((call) => call.neighbours.some((n) => n.surfaceKey === call.surfaceKey));
-  const surfaceCalls = calls.slice(1).filter((call) => !sectionCalls.includes(call));
-  assert.equal(sectionCalls.length, 1, "only the wide front has a second section here");
-  assert.match(sectionCalls[0].neighbours[0].surfaceLabel, /section 1 of 2, one continuous panel/);
-  for (const call of sectionCalls) {
-    assert.equal(call.first, false, "a continuation section is never a from-scratch authority");
-    assert.equal(call.priorTurns[1].parts[0].thoughtSignature, "sig-driver",
-      "the design origin's signature still leads the chain a section replays");
-  }
-  for (const call of surfaceCalls) {
+  for (const call of calls.slice(1)) {
     assert.equal(call.first, false);
     assert.deepEqual(call.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"]);
     assert.deepEqual(call.priorTurns.map((t) => t.role), ["user", "model"], "the driver exchange is replayed");
     assert.equal(call.priorTurns[1].parts[0].thoughtSignature, "sig-driver");
   }
-  const roof = calls.find((call) => call.surfaceKey === "roof");
-  assert.deepEqual(roof.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
+  assert.deepEqual(calls[4].neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
     "roof is shown the two flanks only -- five images exhausted the edge worker on live 194e8f17");
-  assert.ok(roof.priorTurns.length >= 2 && roof.priorTurns.length <= 8, "roof replays the earlier exchanges (trimmed to budget)");
-  assert.equal(roof.priorTurns[1].parts[0].thoughtSignature, "sig-driver", "the driver signature survives the trim");
+  assert.ok(calls[4].priorTurns.length >= 2 && calls[4].priorTurns.length <= 8, "roof replays the earlier exchanges (trimmed to budget)");
+  assert.equal(calls[4].priorTurns[1].parts[0].thoughtSignature, "sig-driver", "the driver signature survives the trim");
   // Attempt keys make every surface idempotent under the provider cache.
   assert.equal(calls[0].providerRequest, undefined);
   const passenger = result.surfaces.find((s) => s.surfaceKey === "passenger");
@@ -391,12 +369,9 @@ test("hero-first runs driver AND front as vehicle-view then flatten, and changes
     store, callEdge,
   });
 
-  // Eight requests, not five. THREE extras, and each is a named, measured cost:
-  // driver's vehicle view, front's vehicle view, and front's SECOND SECTION --
-  // its 139"x44" zone is 3.16:1, past the model's 21:9 ceiling, so it is
-  // authored as two continued sections rather than accepted with a 35% stretch.
-  assert.equal(calls.length, 8);
-  assert.equal(result.imageRequestCount, 8);
+  // Seven requests, not five: TWO extras -- driver's vehicle view and front's.
+  assert.equal(calls.length, 7);
+  assert.equal(result.imageRequestCount, 7);
   const driverView = calls.find((c) => c.surfaceKey === "driver" && c.first === true && !c.heroViewStoragePath);
   const driverFlatten = calls.find((c) => c.surfaceKey === "driver" && Boolean(c.heroViewStoragePath));
   const frontView = calls.find((c) => c.surfaceKey === "front" && c.first === true && !c.heroViewStoragePath);
@@ -464,10 +439,7 @@ test("hero-first runs driver AND front as vehicle-view then flatten, and changes
   assert.equal(passenger.imageRequestCount, 0);
   // Both hero-view-eligible surfaces' own receipts name which path drew them.
   assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "driver").method, "hero_first_flattened");
-  // Front is BOTH hero-view-eligible and wider than the ceiling, so its flatten
-  // is itself tiled: section 1 flattens the view, section 2 continues it. The
-  // method records the outer shape; `tiled.count` records the sections.
-  assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "front").method, "hero_driver_tiled_flank");
+  assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "front").method, "hero_first_flattened");
 });
 
 // A stage-1 return that is not the vehicle view is refused rather than flattened.

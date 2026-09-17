@@ -406,10 +406,7 @@ async function authorSurface({
 }) {
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const staged = await Promise.all(neighbours.map(async (n) => ({
-    // A neighbour may carry its OWN label. The tiled flank uses that to say
-    // "the adjoining left-hand section of this same panel" rather than
-    // "Driver Side", which is what makes the continuation legible to the model.
-    surfaceKey: n.surfaceKey, surfaceLabel: n.surfaceLabel || SURFACE_LABELS[n.surfaceKey] || n.surfaceKey,
+    surfaceKey: n.surfaceKey, surfaceLabel: SURFACE_LABELS[n.surfaceKey] || n.surfaceKey,
     ...(await stageReference(store, n.bytes)),
   })));
   // THE FLATTEN CONTINUES THE VIEW'S CONVERSATION (owner, 2026-09-17).
@@ -493,183 +490,6 @@ async function authorSurface({
     logger(`hero-driver ${surfaceKey}: attempt ${attempt} refused (${verdict.reason})`);
   }
   throw new HeroDriverRefusal(surfaceKey, lastReason, { attempts: AUTHOR_ATTEMPTS, imageRequestCount });
-}
-
-/**
- * TILED FLANK CONTINUATION (owner ruling, Trish 2026-09-17: "lock in Tiled
- * Flank Continuation rather than messing with the distortion threshold").
- *
- * THE PROBLEM, MEASURED. A driver flank is 3.3:1 to 3.6:1 depending on the
- * vehicle. Gemini 3 Pro Image's widest output is 21:9 (2.333:1). So
- * `evaluateAuthored` measures the returned sheet against the zone, finds a
- * drift the model was never able to satisfy, and refuses -- live aac0f43b
- * (2022 Lamborghini Urus, New Aura Day Spa): `surface.driver` refused
- * `aspect_drift:1.423` with `surface.driver.view` already completed. Driver is
- * the one surface that fails the whole run, so the entire cascade died with
- * four element nodes already built and `master.composite` never reached.
- *
- * WHY NOT THE THRESHOLD. `evaluateAuthored` resizes with `fit: "fill"` -- it
- * STRETCHES. `MAX_ASPECT_DRIFT_RATIO` is the bound on how much distortion may
- * be applied, and accepting 1.423 means shipping a 42% horizontal stretch of
- * the customer's company name. RULE 0.32 forbids relaxing a threshold to get a
- * run through, by name, and the owner ruled the same way.
- *
- * WHAT THIS DOES INSTEAD. The flank is authored as N side-by-side sections,
- * each of an aspect the model can actually emit, and joined deterministically.
- * Two sections take a 3.6:1 flank to 1.8:1 each -- comfortably inside the band,
- * so nothing is stretched at all.
- *
- * CONTINUITY IS THE EXISTING MECHANISM, NOT A NEW ONE. Section 2 is authored
- * exactly the way hood/front/rear already are: `first: false`, the previous
- * section attached as a neighbour image, and its exchange replayed with the
- * thought signature on the part it arrived on (RULE 0.35). That is the same
- * multi-turn spatial reasoning that keeps the rest of the cascade cohesive;
- * the only new thing is that the neighbour is the other half of the SAME panel,
- * and the label says so.
- *
- * WHAT IT IS NOT. It is not the six-surface tiling that RULE 0.35 shelved.
- * That was shelved because splitting the sheet would not have fixed the model's
- * die-cut prior -- it would still have drawn the vehicle's shape into the
- * sheet. Hero-first already answers that (the flatten reproduces an approved
- * render, it does not invent a vehicle), so the only thing left in the way was
- * the aspect, and that is what this removes.
- *
- * A single-section plan is byte-for-byte the previous path: `planFlankTiles`
- * returns 1 for every zone the model can already satisfy, and the caller runs
- * `authorSurface` unchanged.
- */
-const MAX_FLANK_TILES = 3;
-/** The widest aspect this model will emit. Not a preference -- a ceiling. */
-const ACHIEVABLE_ASPECT = 21 / 9;
-
-/** How many side-by-side sections this zone needs to stay inside the band. */
-function planFlankTiles(pixelWidth, pixelHeight) {
-  const aspect = Number(pixelWidth) / Number(pixelHeight);
-  if (!Number.isFinite(aspect) || aspect <= 0) return 1;
-  const reachable = ACHIEVABLE_ASPECT * MAX_ASPECT_DRIFT_RATIO;
-  if (aspect <= reachable) return 1;
-  return Math.min(MAX_FLANK_TILES, Math.ceil(aspect / reachable));
-}
-
-/**
- * One section's geometry. Deliberately a PLAIN zone with no `extraction` and no
- * rotation, so `zonePixelSize` returns these numbers directly rather than
- * re-deriving them through a rotation that has already been applied. The inches
- * are scaled by the section's real share of the panel, so the request states the
- * section's true printed width instead of the whole flank's.
- */
-function tileZone(zone, pixelWidth, pixelHeight, index, count) {
-  const left = Math.round((pixelWidth * index) / count);
-  const width = Math.round((pixelWidth * (index + 1)) / count) - left;
-  const share = width / pixelWidth;
-  return {
-    zone: {
-      surfaceKey: zone.surfaceKey,
-      w: width, h: pixelHeight,
-      trimWidthIn: (Number(zone.trimWidthIn) || 0) * share,
-      trimHeightIn: zone.trimHeightIn,
-      printWidthIn: (Number(zone.printWidthIn || zone.trimWidthIn) || 0) * share,
-      printHeightIn: zone.printHeightIn,
-    },
-    left, width,
-  };
-}
-
-const tileLabel = (surfaceKey, index, count) => {
-  const base = SURFACE_LABELS[surfaceKey] || surfaceKey;
-  const ordinal = index === 0 ? "left-hand" : index === count - 1 ? "right-hand" : "middle";
-  return `${base} — ${ordinal} section ${index + 1} of ${count}, one continuous panel`;
-};
-
-async function authorTiledSurface({
-  surfaceKey, zone, first, neighbours, priorExchanges, heroRequest, creativeContext,
-  store, callEdge, providerRequest, logger = () => {}, heroView = null,
-}) {
-  const { pixelWidth, pixelHeight } = zonePixelSize(zone);
-  const count = planFlankTiles(pixelWidth, pixelHeight);
-  if (count <= 1) {
-    return authorSurface({
-      surfaceKey, zone, first, neighbours, priorExchanges, heroRequest, creativeContext,
-      store, callEdge, providerRequest, logger, heroView,
-    });
-  }
-  logger(`hero-driver ${surfaceKey}: ${pixelWidth}x${pixelHeight} is ${(pixelWidth / pixelHeight).toFixed(2)}:1`
-    + ` -- beyond this model's ${ACHIEVABLE_ASPECT.toFixed(2)}:1 ceiling, authoring as ${count} continued sections`);
-
-  const sections = [];
-  let previous = null;
-  for (let index = 0; index < count; index += 1) {
-    const { zone: sectionZone, left, width } = tileZone(zone, pixelWidth, pixelHeight, index, count);
-    // SECTION 1 IS THE PANEL'S ORIGIN and keeps everything the untiled surface
-    // had -- its hero view to flatten, its neighbours, its replayed chain.
-    // EVERY LATER SECTION IS A CONTINUATION, authored the way hood/front/rear
-    // already are: never `first`, shown the section before it, replaying that
-    // section's exchange with its signature.
-    const section = await authorSurface({
-      surfaceKey,
-      zone: sectionZone,
-      first: index === 0 ? first : false,
-      neighbours: index === 0 ? neighbours : [{
-        surfaceKey, bytes: previous.bytes,
-        surfaceLabel: tileLabel(surfaceKey, index - 1, count),
-      }],
-      priorExchanges: index === 0
-        ? priorExchanges
-        : [...(Array.isArray(priorExchanges) ? priorExchanges : []), previous.exchange].filter(Boolean),
-      heroRequest, creativeContext, store, callEdge, logger,
-      // The view belongs to the section that flattens it, once.
-      heroView: index === 0 ? heroView : null,
-      // Each section is its own cache key, or a re-run would read section 1's
-      // image back for section 2.
-      providerRequest: providerRequest
-        ? { ...providerRequest, tileIndex: index, tileCount: count }
-        : null,
-    });
-    sections.push({ ...section, left, width });
-    previous = section;
-  }
-
-  // THE JOIN IS PURE GEOMETRY. Each section is already exactly its own pixel
-  // size (authorSurface resized it to the section zone), so this places them
-  // side by side and invents nothing.
-  const bytes = await sharp({
-    create: {
-      width: pixelWidth, height: pixelHeight, channels: 3,
-      background: { r: 255, g: 255, b: 255 },
-    },
-  })
-    .composite(sections.map((s) => ({ input: s.bytes, left: s.left, top: 0 })))
-    .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
-
-  const sum = (key) => sections.reduce((total, s) => total + Number(s[key] || 0), 0);
-  logger(`hero-driver ${surfaceKey}: ${count} sections joined into ${pixelWidth}x${pixelHeight}`
-    + ` (${sum("imageRequestCount")} image requests)`);
-  return Object.freeze({
-    surfaceKey, bytes, contentHash: sha256(bytes), pixelWidth, pixelHeight,
-    method: "hero_driver_tiled_flank", deterministic: false,
-    attempts: Math.max(...sections.map((s) => Number(s.attempts || 1))),
-    imageRequestCount: sum("imageRequestCount"), providerCacheHits: sum("providerCacheHits"),
-    priorTurnsApplied: sum("priorTurnsApplied"),
-    signaturesReplayed: sum("signaturesReplayed"),
-    thoughtSignatureCount: sum("thoughtSignatureCount"),
-    neighbourSurfaces: sections[0].neighbourSurfaces,
-    deliveredWidthPx: pixelWidth, deliveredHeightPx: pixelHeight,
-    holeRatio: Math.max(...sections.map((s) => Number(s.holeRatio || 0))),
-    cutoutRepair: null,
-    // The LAST section's exchange is what a later surface continues from: it is
-    // the most recent turn of this panel's conversation.
-    exchange: sections[sections.length - 1].exchange,
-    providerRequestKey: sections[0].providerRequestKey || null,
-    rawStoragePath: null, rawSha256: null,
-    tiled: Object.freeze({
-      count,
-      sections: sections.map((s, index) => Object.freeze({
-        index, left: s.left, width: s.width,
-        contentHash: s.contentHash, attempts: s.attempts,
-        imageRequestCount: s.imageRequestCount,
-      })),
-    }),
-  });
 }
 
 /** PASSENGER = flop(driver). Pure code. The caller's brand-band mirror re-drops lettering forward. */
@@ -786,7 +606,7 @@ async function authorHeroDriverMaster({
       // history), so front's composition never saw driver in the first place,
       // and the flatten only re-aspects the view it was handed. This makes
       // every flatten weigh exactly what driver's proven flatten weighs.
-      return authorTiledSurface({
+      return authorSurface({
         surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView),
         neighbours: heroView ? [] : neighbours,
         priorExchanges: heroView ? [] : priorExchanges,
@@ -914,10 +734,6 @@ module.exports = {
   // The node graph (atlas-call1-graph.cjs) runs the SAME primitives, one per
   // node: nothing creative lives outside these three and the assembler.
   authorSurface,
-  authorTiledSurface,
-  planFlankTiles,
-  MAX_FLANK_TILES,
-  ACHIEVABLE_ASPECT,
   authorHeroVehicleView,
   stageHeroView,
   CALL1_INPUT_PATH,
@@ -928,5 +744,5 @@ module.exports = {
   zonePixelSize,
   heroDriverEnabled,
   heroRequestBody,
-  _test: { authorSurface, authorTiledSurface, planFlankTiles, tileZone, authorHeroVehicleView, heroFirstEnabled, evaluateAuthored, composePassengerPlaceholder, zonePixelSize, trimAuthoringHistory },
+  _test: { authorSurface, authorHeroVehicleView, heroFirstEnabled, evaluateAuthored, composePassengerPlaceholder, zonePixelSize, trimAuthoringHistory },
 };
