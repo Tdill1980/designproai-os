@@ -483,24 +483,61 @@ test("5a. a refused FLATTEN never re-bills the vehicle view: node 1 completes on
   }
 });
 
-test("5. a creative refusal on one node fails the run once and surfaces as HeroDriverRefusal, never a retry storm", async () => {
+// 5. ONE REFUSED PANEL MUST NOT DISCARD THE RUN.
+//
+// Measured 2026-09-17 across SIX consecutive live runs: master.assemble was
+// `pending` on every one and has never once completed. Each had authored
+// driver, passenger, hood and rear cleanly and had already produced the
+// separated elements -- typeset.produce, contact.produce and element.lockup all
+// `completed` -- and threw every bit of it away because ONE surface (front, a
+// bumper fascia) was refused. The run then failed over to six-surface, which
+// bakes lettering into pixels. So master.composite has never run, no customer
+// has ever received the clean base + composited lockup, and every delivered
+// sheet still looks exactly like it did before the DAG existed.
+//
+// A refused non-driver panel is now continued deterministically from this
+// design's own authored artwork (no model call, no invented design) so the
+// sheet assembles and the element composite can finally happen. Driver still
+// fails the run: it is the design's origin, with nothing to continue from.
+test("5. a refused NON-DRIVER panel continues deterministically and the sheet still assembles", async () => {
   const db = await createAtlasCall1Database();
   const adapter = createAtlasCall1Adapter(db);
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const calls = [];
   const worker = graph.createAtlasCall1NodeWorker({ supabase: adapter.supabase, workerId: "solo", callEdge: syntheticEdge(calls, { refuse: "hood" }), concurrency: 3, pollMs: 10_000, heartbeatMs: 200 });
   try {
+    const result = await worker.author({ manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER, providerRequest: { requestId: REQUEST, generationId: GENERATION }, pollMs: 20, timeoutMs: 60_000 });
+    assert.ok(result?.contentHash, "the master assembles despite the refusal -- this is the whole point");
+
+    // hood still spent its bounded budget and no more: the continuation is a
+    // last resort, never a way to skip authoring.
+    assert.equal(calls.filter((c) => c.surfaceKey === "hood").length, hero.AUTHOR_ATTEMPTS);
+    const hood = result.surfaces.find((s) => s.surfaceKey === "hood");
+    assert.equal(hood.method, "hero_driver_neighbour_continuation");
+    assert.equal(hood.deterministic, true);
+    assert.equal(hood.imageRequestCount, 0, "a continuation spends no image request");
+    assert.match(hood.refusalReason, /aspect_drift/, "the refusal that caused it is recorded, never hidden");
+
+    // master.assemble reached `completed` -- the state six live runs never saw.
+    const assembled = (await db.query("SELECT state FROM public.designpro_atlas_call1_nodes WHERE node_key='master.assemble'")).rows[0];
+    assert.equal(assembled.state, "completed");
+  } finally { worker.stop(); }
+});
+
+test("5b. a refused DRIVER still fails the run: it is the origin, with nothing to continue from", async () => {
+  const db = await createAtlasCall1Database();
+  const adapter = createAtlasCall1Adapter(db);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const worker = graph.createAtlasCall1NodeWorker({ supabase: adapter.supabase, workerId: "solo", callEdge: syntheticEdge(calls, { refuse: "driver" }), concurrency: 3, pollMs: 10_000, heartbeatMs: 200 });
+  try {
     await assert.rejects(
       worker.author({ manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER, providerRequest: { requestId: REQUEST, generationId: GENERATION }, pollMs: 20, timeoutMs: 60_000 }),
-      (error) => error instanceof hero.HeroDriverRefusal && error.code === "flat_atlas_hero_driver_refused" && error.surfaceKey === "hood" && /aspect_drift/.test(error.reason),
+      (error) => error instanceof hero.HeroDriverRefusal && error.code === "flat_atlas_hero_driver_refused" && error.surfaceKey === "driver",
     );
-    // hood spent its bounded two attempts (the cascade's own budget) and no more; the node is not retried by the graph.
-    assert.equal(calls.filter((c) => c.surfaceKey === "hood").length, hero.AUTHOR_ATTEMPTS);
-    const { rows } = await db.query("SELECT node_key,state,attempt,error_code FROM public.designpro_atlas_call1_nodes WHERE node_key='surface.hood'");
-    assert.equal(rows[0].state, "failed"); assert.equal(rows[0].attempt, 1); assert.equal(rows[0].error_code, "flat_atlas_hero_driver_refused");
     const run = (await db.query("SELECT state,error_code FROM public.designpro_atlas_call1_runs")).rows[0];
     assert.equal(run.state, "failed"); assert.equal(run.error_code, "flat_atlas_hero_driver_refused");
-    // Resuming does nothing: the refusal is final and the caller fails over to six-surface.
+    // Resuming does nothing: the refusal is final and the caller fails over.
     await assert.rejects(worker.author({ manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER, providerRequest: { requestId: REQUEST, generationId: GENERATION }, pollMs: 20 }),
       (error) => error instanceof hero.HeroDriverRefusal);
   } finally { worker.stop(); }

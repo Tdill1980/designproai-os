@@ -474,6 +474,45 @@ async function composePassengerPlaceholder(driver, passengerZone) {
 }
 
 /**
+ * Compose a REFUSED surface deterministically from artwork already authored for
+ * this same design, so one refused panel cannot discard the whole run.
+ *
+ * WHY THIS EXISTS. Measured 2026-09-17 across six consecutive live runs:
+ * `master.assemble` was `pending` on every one of them and has never completed.
+ * Each run authored driver, passenger, hood and rear cleanly, produced the
+ * separated elements (typeset.produce, contact.produce, element.lockup all
+ * completed) -- and then threw ALL of it away because ONE surface, usually
+ * front (a bumper fascia), was refused. The run failed over to six-surface,
+ * which bakes lettering into pixels, which is why every delivered sheet still
+ * looks pre-DAG and why the passenger flank still needs a slab re-drop.
+ * `master.composite` has therefore never run, so the clean base + composited
+ * lockup this architecture exists to produce has never reached a customer.
+ *
+ * This is NOT a second design authority (RULE 0.26) and not a repair heuristic
+ * (RULE 0.32): no model is called and no artwork is invented. It is the same
+ * deterministic move `composePassengerPlaceholder` already makes for passenger
+ * -- this design's own authored pixels, cover-fitted into the refused zone so
+ * the rectangle is continuous, full-bleed and undistorted. `fit: "cover"`,
+ * never `"fill"`: cover crops, fill would stretch the artwork.
+ *
+ * Driver is never composed this way -- it is the design's origin, and a run
+ * with no authored driver has nothing to continue from.
+ */
+async function composeSurfaceFromNeighbour(surfaceKey, donor, zone, reason) {
+  const { pixelWidth, pixelHeight } = zonePixelSize(zone);
+  const bytes = await sharp(donor.bytes, { limitInputPixels: false })
+    .resize(pixelWidth, pixelHeight, { fit: "cover", position: "centre" })
+    .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
+  return Object.freeze({
+    surfaceKey, bytes, contentHash: sha256(bytes), pixelWidth, pixelHeight,
+    method: "hero_driver_neighbour_continuation", deterministic: true, attempts: 0,
+    imageRequestCount: 0, providerCacheHits: 0, priorTurnsApplied: 0, signaturesReplayed: 0,
+    thoughtSignatureCount: 0, neighbourSurfaces: [donor.surfaceKey], exchange: null,
+    continuationOf: donor.contentHash, refusalReason: String(reason || "").slice(0, 300),
+  });
+}
+
+/**
  * Run the cascade and return ONE assembled 4096² sheet in the manifest zones.
  *
  * @returns {{ bytes, contentHash, surfaces, imageRequestCount, model, promptVersion, provenance, timings }}
@@ -540,6 +579,14 @@ async function authorHeroDriverMaster({
         neighbours: heroView ? [] : neighbours,
         priorExchanges: heroView ? [] : priorExchanges,
         heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
+      }).catch(async (cause) => {
+        // One refused panel must not discard the run -- see
+        // composeSurfaceFromNeighbour. Driver still fails: it is the origin.
+        if (!(cause instanceof HeroDriverRefusal) || surfaceKey === "driver") throw cause;
+        const donor = neighbours[0] || authored.get("driver");
+        if (!donor) throw cause;
+        logger(`hero-driver ${surfaceKey} refused (${cause.reason}); continuing deterministically from ${donor.surfaceKey}`);
+        return composeSurfaceFromNeighbour(surfaceKey, donor, zoneOf(surfaceKey), cause.reason);
       });
     }));
     for (const result of results) {
@@ -660,6 +707,7 @@ module.exports = {
   CALL1_INPUT_PATH,
   heroFirstEnabled,
   composePassengerPlaceholder,
+  composeSurfaceFromNeighbour,
   assembleHeroMaster,
   zonePixelSize,
   heroDriverEnabled,
