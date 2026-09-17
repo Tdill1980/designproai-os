@@ -748,40 +748,50 @@ All colors MUST be HSL.
   }
 }
 
-/* Mobile Optimization - Prevents horizontal scroll and optimizes touch */
+/* CLIP, NOT HIDDEN — this is why sticky headers never worked on a phone,
+ * and why a stray horizontal scroll could clip the fixed sidebar on desktop.
+ *
+ * `overflow-x: hidden` makes an element a SCROLL CONTAINER. Every descendant
+ * `position: sticky` then resolves against that container instead of the
+ * viewport, and because these ancestors never scroll, sticky silently does
+ * nothing. Measured on the built app at 390px wide: body, the app shell
+ * <main> and the page <main> all computed to `hidden/auto`, and the WallPro
+ * header — correctly marked sticky — scrolled away to top:-568px. At 1440px
+ * the same chain was `visible/visible` and it stuck at top:65px. That is the
+ * whole of the "the persistent header is not done on mobile" report, and it
+ * was never in the header's own CSS.
+ *
+ * `overflow-x: clip` clips exactly the same overflow but does NOT create a
+ * scroll container, so sticky keeps working. `hidden` is declared first on
+ * purpose: a browser too old to know `clip` ignores that line and keeps
+ * today's behaviour, so this can only improve things, never regress them.
+ *
+ * ONE RULE, EVERY WIDTH (widened 2026-09-17). This used to be
+ * `@media (max-width: 767px)` only, on the reasoning that horizontal overflow
+ * was a phone problem. It is not: the DesignProAI sidebar (`AppSidebar.tsx`)
+ * is `position: fixed left-0`, and a fixed element's containing block is the
+ * viewport — so if ANY ancestor ever ends up wide enough to scroll the
+ * document horizontally (a modal's scroll-lock leaving `document.body` in an
+ * inconsistent state, a wide canvas, a transient layout overflow), the page
+ * scrolls right and the sidebar's own left edge — the DesignProAI mark, the
+ * nav labels — reads as clipped from its FIRST characters, at any viewport
+ * width. Desktop was never protected against that. It is now, the same way
+ * mobile always was: clip the overflow instead of scrolling it, everywhere. */
+html, body {
+  overflow-x: hidden;
+  overflow-x: clip;
+  max-width: 100vw;
+}
+
+/* Constrain layout containers — prevents horizontal overflow */
+.container, main, section, article, aside, [role="main"] {
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* Mobile Optimization - optimizes touch */
 @media (max-width: 767px) {
-  /* CLIP, NOT HIDDEN — this is why sticky headers never worked on a phone.
-   *
-   * `overflow-x: hidden` makes an element a SCROLL CONTAINER. Every descendant
-   * `position: sticky` then resolves against that container instead of the
-   * viewport, and because these ancestors never scroll, sticky silently does
-   * nothing. Measured on the built app at 390px wide: body, the app shell
-   * <main> and the page <main> all computed to `hidden/auto`, and the WallPro
-   * header — correctly marked sticky — scrolled away to top:-568px. At 1440px
-   * the same chain was `visible/visible` and it stuck at top:65px. That is the
-   * whole of the "the persistent header is not done on mobile" report, and it
-   * was never in the header's own CSS.
-   *
-   * `overflow-x: clip` clips exactly the same overflow but does NOT create a
-   * scroll container, so sticky keeps working. `hidden` is declared first on
-   * purpose: a browser too old to know `clip` ignores that line and keeps
-   * today's behaviour, so this can only improve things, never regress them.
-   *
-   * This applies app-wide, not just to WallPro — every sticky element on every
-   * mobile page was affected by the same rule. */
-  html, body {
-    overflow-x: hidden;
-    overflow-x: clip;
-    max-width: 100vw;
-  }
-
-  /* Constrain layout containers — prevents horizontal overflow */
-  .container, main, section, article, aside, [role="main"] {
-    max-width: 100%;
-    overflow-x: hidden;
-    overflow-x: clip;
-  }
-
   img, video, canvas, svg, iframe {
     max-width: 100%;
   }
