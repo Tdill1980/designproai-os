@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
 import { ToolHeader } from "@/components/layout/ToolHeader";
+import { WallProHeroProof } from "@/components/wallpro/WallProHeroProof";
+import { useToolProofBand } from "@/hooks/useToolProofBand";
 import { FolderOpen, ListChecks } from "lucide-react";
 import { Link as ToolHeaderLink } from "react-router-dom";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
@@ -195,6 +197,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const location = useLocation();
+  const vehicleProProofs = useToolProofBand('vehiclepro');
   // When rendered inline on the DesignProAI home (no navigation), the brief comes
   // in as a prop instead of router location.state — so designing stays on one page.
   const briefState: any = embeddedBrief || (location.state as any) || null;
@@ -1967,6 +1970,15 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
             </span>
           }
         />
+      )}
+      {/* THE SAME CURATOR-MANAGED PROOF BAND WALLPRO USES (Trish 2026-09-16:
+          "do the admin page" -- for VehiclePro too). VehiclePro has no
+          bundled fallback list -- there is no real finished-design imagery
+          checked into this repo -- so this renders nothing until a curator
+          publishes a first pair at /admin/wallpro-proofs. Hidden when
+          embedded inline on the DesignProAI home, which has its own hero. */}
+      {!embedded && vehicleProProofs.length > 0 && (
+        <WallProHeroProof proofs={vehicleProProofs} />
       )}
       <main className="flex-1">
         {/* Hero Banner — white, matches the DesignProAI™ banner: gradient wordmark

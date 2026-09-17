@@ -33,14 +33,26 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import {
   listWallProofsForCurator, saveWallProof, deleteWallProof, reorderWallProofs,
-  uploadWallProofImage, wallProofUrl, wallUser, type WallProofRow,
+  uploadWallProofImage, wallProofUrl, wallUser, type WallProofRow, type ProofBandToolKey,
 } from '@/lib/wallpro-api';
 import {
   normalizeProofImage, upscaleFactor, PROOF_CANVAS, PROOF_ASPECT, SOFT_BELOW,
   type ProofTrim,
 } from '@/lib/wallpro-proof-canvas';
 
-const BRAND = 'weprintwraps';
+/**
+ * THREE TOOLS, ONE CURATOR PAGE (Trish 2026-09-16: "do the admin page" -- for
+ * VehiclePro and CutPro too, not just WallPro). Same table, same bucket, same
+ * publish/order/delete behaviour; only which tool's band a row belongs to
+ * changes. WallPro alone has a partner skin (`brand`), because it is the only
+ * tool with a page under a partner's own mark; VehiclePro and CutPro are
+ * always the plain DesignProAI brand.
+ */
+const TOOLS: { key: ProofBandToolKey; label: string; backTo: string; backLabel: string }[] = [
+  { key: 'vehiclepro', label: 'VehiclePro', backTo: '/designpro/create', backLabel: 'The VehiclePro page' },
+  { key: 'wallpro', label: 'WallPro', backTo: '/wall-wrap', backLabel: 'The WallPro page' },
+  { key: 'cutpro', label: 'CutPro', backTo: '/graphics-pro', backLabel: 'The CutPro page' },
+];
 const field = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
 
 type Half = { file: File; natural: { width: number; height: number }; preview: string };
@@ -57,6 +69,11 @@ function useHalf() {
 }
 
 export default function AdminWallProProofs() {
+  const [toolKey, setToolKey] = useState<ProofBandToolKey>('wallpro');
+  // Only WallPro has a partner skin; the other two tools are always the
+  // plain DesignProAI brand, since neither has a page under a partner's mark.
+  const brand = toolKey === 'wallpro' ? 'weprintwraps' : 'designpro';
+  const tool = TOOLS.find(t => t.key === toolKey)!;
   const [rows, setRows] = useState<WallProofRow[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -70,10 +87,15 @@ export default function AdminWallProProofs() {
   const afterInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    try { setRows(await listWallProofsForCurator(BRAND)); }
+    try { setRows(await listWallProofsForCurator(toolKey, brand)); }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not read the band.'); }
-  }, []);
+  }, [toolKey, brand]);
   useEffect(() => { void load(); }, [load]);
+  // Switching tools clears any pair in progress -- a half-filled form is how a
+  // VehiclePro pair would get published under CutPro by mistake.
+  useEffect(() => {
+    setBefore(null); setAfter(null); setHeadline(''); setCaption(''); setAlt(''); setError('');
+  }, [toolKey]);
 
   async function run(label: string, action: () => Promise<void>) {
     setBusy(label); setError('');
@@ -96,7 +118,7 @@ export default function AdminWallProProofs() {
         normalizeProofImage(after!.file, trim).then(b => uploadWallProofImage(b, 'after')),
       ]);
       await saveWallProof({
-        brand: BRAND, before_path: beforePath, after_path: afterPath,
+        tool_key: toolKey, brand, before_path: beforePath, after_path: afterPath,
         headline: headline.trim(), caption: caption.trim(), alt: alt.trim(),
         // New pairs land at the end; the curator moves them up deliberately
         // rather than having the newest silently take the lead slide.
@@ -127,15 +149,42 @@ export default function AdminWallProProofs() {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8 md:px-8">
       <div className="mx-auto max-w-5xl">
-        <Link to="/wall-wrap" className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline">
-          <ArrowLeft className="h-4 w-4" />The WallPro page
+        <Link to={tool.backTo} className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline">
+          <ArrowLeft className="h-4 w-4" />{tool.backLabel}
         </Link>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">Before &amp; after band</h1>
+
+        {/* THE TOOL PICKER. Switching tools swaps the whole list -- rows never
+            leak between VehiclePro, WallPro and CutPro, the same way they
+            never leaked between brands. */}
+        <div className="mt-4 inline-flex rounded-lg border border-slate-300 bg-white p-1" role="tablist" aria-label="Tool">
+          {TOOLS.map(t => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={toolKey === t.key}
+              onClick={() => setToolKey(t.key)}
+              className={
+                'rounded-md px-3 py-1.5 text-sm font-semibold transition ' +
+                (toolKey === t.key ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <p className="mt-2 max-w-[65ch] text-sm text-slate-600">
-          The rotating proof under the header on <code className="rounded bg-slate-200 px-1">/wall-wrap</code>.
+          The rotating proof under {toolKey === 'wallpro' ? 'the header on ' : 'the hero on '}
+          <code className="rounded bg-slate-200 px-1">{tool.backTo}</code>.
           Published pairs show in this order, top first — and the first one is what
           most visitors see, so lead with the most persuasive room. Changes are live
           immediately; there is no deploy.
+          {toolKey !== 'wallpro' && (
+            <> This tool has no built-in fallback list — an empty band here means
+            nothing shows on the live page until you publish a first pair.</>
+          )}
         </p>
 
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}

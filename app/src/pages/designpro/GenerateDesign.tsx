@@ -21,6 +21,7 @@
  * send them and the gateway rejects them if it did.
  */
 import { FormEvent, useCallback, useEffect, useState, useRef } from "react";
+import { ATLAS_BRAND } from "@/lib/os-brand";
 import { useNavigate } from "react-router-dom";
 import { Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import {
@@ -697,7 +698,7 @@ export default function GenerateDesign() {
               )}
               {isAtlasRequest && (
                 <p className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3 text-cyan-100">
-                  A.T.L.A.S. graph active: one master releases six panel nodes and their matched proof nodes, then hands the same artifact lineage to production.
+                  {ATLAS_BRAND.poweredBy}: one master releases six panel nodes and their matched proof nodes, then hands the same artifact lineage to production.
                 </p>
               )}
               {handingOff && <Loading label="Freezing the revision and starting the production workflow…" />}
