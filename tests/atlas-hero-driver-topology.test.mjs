@@ -47,7 +47,15 @@ test("the cascade is the owner's graph: driver, then passenger by code, then hoo
   for (const key of ["hood", "front", "rear"]) {
     assert.deepEqual([...hero.AUTHOR_NEIGHBOURS[key]], ["driver", "passenger"], `${key} is shown driver + passenger`);
   }
-  assert.deepEqual([...hero.AUTHOR_NEIGHBOURS.roof], ["driver", "passenger", "hood", "front", "rear"], "roof sees all five");
+  // ROOF SHOWS THE TWO FLANKS ONLY. Live 194e8f17: roof was the last surface
+  // standing and failed `flat_atlas_author_edge_call_failed` three times into
+  // attempts_exhausted -- the same edge-worker exhaustion front hit. Five
+  // neighbour images plus a replayed chain is the heaviest request the cascade
+  // builds. The flanks carry the colourway, motifs and lettering, and
+  // hood/front/rear are themselves continuations of those flanks, so roof loses
+  // no information it did not already have second-hand. Roof still DEPENDS on
+  // hood/front/rear (AUTHOR_HISTORY), so the ordering is unchanged.
+  assert.deepEqual([...hero.AUTHOR_NEIGHBOURS.roof], ["driver", "passenger"], "roof is shown the two flanks");
 });
 
 test("every AI surface replays the driver exchange; roof replays every earlier model exchange", () => {
@@ -251,7 +259,8 @@ test("the cascade runs end to end on synthetic sheets: five image requests, pass
     assert.deepEqual(call.priorTurns.map((t) => t.role), ["user", "model"], "the driver exchange is replayed");
     assert.equal(call.priorTurns[1].parts[0].thoughtSignature, "sig-driver");
   }
-  assert.deepEqual(calls[4].neighbours.map((n) => n.surfaceKey), ["driver", "passenger", "hood", "front", "rear"]);
+  assert.deepEqual(calls[4].neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
+    "roof is shown the two flanks only -- five images exhausted the edge worker on live 194e8f17");
   assert.ok(calls[4].priorTurns.length >= 2 && calls[4].priorTurns.length <= 8, "roof replays the earlier exchanges (trimmed to budget)");
   assert.equal(calls[4].priorTurns[1].parts[0].thoughtSignature, "sig-driver", "the driver signature survives the trim");
   // Attempt keys make every surface idempotent under the provider cache.

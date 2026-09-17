@@ -328,7 +328,8 @@ test("4. end to end across two node workers: seven image requests, passenger a f
       assert.match(call.providerRequest.attemptKey, /^author:[a-z]+:\d$/);
     }
     for (const call of calls) assert.equal(call.providerRequest.claimToken, CLAIM);
-    assert.deepEqual(roof.neighbours.map((n) => n.surfaceKey), ["driver", "passenger", "hood", "front", "rear"]);
+    assert.deepEqual(roof.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
+      "roof is shown the two flanks only -- five images exhausted the edge worker on live 194e8f17");
     // SEQUENTIAL PRECEDENCE, the only ordering that is actually load-bearing:
     // each view before its own flatten; driver's flatten before every surface
     // that replays it; hood/front/rear before roof.
