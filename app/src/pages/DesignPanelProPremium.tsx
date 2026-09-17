@@ -2030,14 +2030,37 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
           }
         />
       )}
-      {/* THE SAME CURATOR-MANAGED PROOF BAND WALLPRO USES (Trish 2026-09-16:
-          "do the admin page" -- for VehiclePro too). VehiclePro has no
-          bundled fallback list -- there is no real finished-design imagery
-          checked into this repo -- so this renders nothing until a curator
-          publishes a first pair at /admin/wallpro-proofs. Hidden when
-          embedded inline on the DesignProAI home, which has its own hero. */}
-      {!embedded && vehicleProProofs.length > 0 && (
-        <WallProHeroProof proofs={vehicleProProofs} />
+      {/* THE SAME ABOVE-THE-SCROLL HERO WALLPRO SHIPPED (Trish 2026-09-17:
+          "what about the wallpro redesign I gave you" -- WallPro's own hero is
+          live; this ports the same pattern here. It clears the moment a design
+          already exists, same as WallPro's `!photo && !artwork` gate: a visitor
+          with their own render on screen does not need to be told what the
+          tool is. VehiclePro has no case-study or FAQ page to link the way
+          WallPro links `/wall-wrap/how-it-works` and `/wall-wrap/faq` -- do not
+          invent one here; the headline and the curator-managed proof band
+          (below) carry the section on their own until those pages exist. */}
+      {!embedded && !pushedRender && (
+        <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 px-3 sm:px-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+          <div>
+            <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight text-white md:text-4xl">
+              On-demand vehicle wrap<br />design &amp; file output
+            </h2>
+            <p className="mt-3 max-w-[42ch] text-sm text-white/70">
+              Describe the wrap, generate the design in minutes, and take the
+              production-ready files — six panels at full GENIE dimensions,
+              matched 3D proofs, ready for any printer.
+            </p>
+          </div>
+          {/* THE SAME CURATOR-MANAGED PROOF BAND WALLPRO USES (Trish
+              2026-09-16: "do the admin page" -- for VehiclePro too).
+              VehiclePro has no bundled fallback list -- there is no real
+              finished-design imagery checked into this repo -- so this
+              renders nothing until a curator publishes a first pair at
+              /admin/wallpro-proofs. */}
+          {vehicleProProofs.length > 0 && (
+            <WallProHeroProof proofs={vehicleProProofs} />
+          )}
+        </section>
       )}
       <main className="flex-1">
         {/* Hero Banner — white, matches the DesignProAI™ banner: gradient wordmark
