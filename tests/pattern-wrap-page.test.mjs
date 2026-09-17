@@ -90,8 +90,21 @@ test("themed surface, blue gradient accent, the WPW mark in the lockup, wordmark
   assert.ok(PAGE.includes('data-wall-theme={theme.surface}'));
   assert.ok(PAGE.includes('className="pattern-wrap min-h-screen wall-ground wall-ink"'));
   assert.ok(PAGE.includes("import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';"));
-  assert.ok(PAGE.includes("<WallProLockup theme={theme} />"));
-  assert.ok(PAGE.includes('className="sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4"'));
+  // THE HEADER FOLLOWS THE SURFACE (owner, 2026-09-17: "I need the white ui
+  // just add the WPW colored logo in corner"). The partner brand is the light
+  // surface, so its bar is white with dark ink; the OS brand keeps the black
+  // nav bar. Both literals are pinned so neither can quietly drift.
+  assert.ok(PAGE.includes("<WallProLockup theme={theme} tone={light ? 'light' : 'dark'} />"));
+  assert.ok(PAGE.includes("const light = theme.surface === 'light';"));
+  assert.ok(PAGE.includes("'sticky z-30 border-b border-gray-200 bg-white px-4 py-3 text-gray-900 md:px-8 md:py-4'"));
+  assert.ok(PAGE.includes("'sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4'"));
+  assert.ok(BRAND.includes("surface: 'light',"), 'the WPW brand is the light surface');
+  // The lockup's ink is a tone table, never a hard-coded white -- white ink on
+  // a white bar is how the WPW mark would end up beside an invisible name.
+  const LOCKUP = read('app/src/components/wallpro/WallProLockup.tsx');
+  assert.ok(LOCKUP.includes("tone = 'dark'"), 'the default tone keeps every black header unchanged');
+  assert.ok(LOCKUP.includes("light: { lead: 'text-gray-900'"));
+  assert.ok(!LOCKUP.includes('className="text-white">{theme.wordmarkLead}'), 'the lead ink follows the tone');
   // Owner, 2026-09-15: "should say pick a pattern and see it on any vehicle".
   assert.ok(PAGE.includes("Pick a pattern."));
   assert.ok(PAGE.includes('See it on <span className="wpw-blue-text">any vehicle</span>.'));
