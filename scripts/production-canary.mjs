@@ -577,15 +577,19 @@ async function collectArtifacts(runId, label) {
       writeFileSync(`${OUT}/${file}`, bytes);
       exportedBytes += bytes.length;
     }
+    // A capped artifact is EXPECTED, not an error: the cap above exists so a
+    // 343 MB print TIFF is recorded by hash instead of shipped through the
+    // tarball. `bytes` is null in exactly that case.
+    const notExportedReason = bytes ? null
+      : declared > MAX_EXPORT_FILE_BYTES ? `print-resolution artifact, ${declared} bytes, over the ${MAX_EXPORT_FILE_BYTES}-byte per-file export cap`
+      : `run export budget of ${MAX_EXPORT_TOTAL_BYTES} bytes is spent`;
     evidence.outputs.push({
       run: label,
       artifactKind: artifact.artifact_kind,
       surfaceKey: artifact.surface_key,
       file,
       exported: Boolean(bytes),
-      notExportedReason: bytes ? null
-        : declared > MAX_EXPORT_FILE_BYTES ? `print-resolution artifact, ${declared} bytes, over the ${MAX_EXPORT_FILE_BYTES}-byte per-file export cap`
-        : `run export budget of ${MAX_EXPORT_TOTAL_BYTES} bytes is spent`,
+      notExportedReason,
       storagePath: artifact.storage_path,
       byteSize,
       contentHash: artifact.content_hash,
@@ -593,7 +597,17 @@ async function collectArtifacts(runId, label) {
       hashVerified: observedHash === artifact.content_hash,
       metadata: artifact.metadata,
     });
-    step(`wrote ${file} (${(bytes.length / 1024).toFixed(0)} KB)`);
+    // THE COURIER MUST NOT KILL THE RUN IT IS REPORTING. This line read
+    // `bytes.length` unconditionally, so the FIRST capped artifact -- which is
+    // every print-resolution panel, by design -- threw "Cannot read properties
+    // of null (reading 'length')" AFTER the whole graph had completed. Live:
+    // canary 35202369855 (2026-09-17) reached wrapbox.deliver completed, wrote
+    // all 13 entice and 13 production files, and was then reported as a failure
+    // by its own logger. Same shape as the "data is too long" note above: the
+    // run had succeeded; only the courier failed.
+    step(bytes
+      ? `wrote ${file} (${(bytes.length / 1024).toFixed(0)} KB)`
+      : `verified ${base} by hash, not exported (${notExportedReason})`);
   }
 }
 

@@ -284,3 +284,33 @@ test("the canary caps its export without weakening a single acceptance check", (
   assert.doesNotMatch(canary, /\.filter\(\(item\) => item\.exported === true\)/,
     "an acceptance count may never be computed from what happened to fit in the tarball");
 });
+
+test("a capped artifact is logged, never dereferenced -- the courier may not kill the run", () => {
+  // Live: canary 35202369855 (2026-09-17) reached `wrapbox.deliver completed`,
+  // wrote all 13 entice and 13 production files, and was then reported as a
+  // FAILURE by its own logger -- "Cannot read properties of null (reading
+  // 'length')" -- because the step() line read `bytes.length` unconditionally.
+  // `bytes` is null for exactly the artifacts the export cap deliberately keeps
+  // in storage, so the first print-resolution panel killed a successful run.
+  //
+  // Same shape as the "data is too long" note the cap itself was written for:
+  // the run had succeeded; only the courier failed.
+  const collect = canary.slice(
+    canary.indexOf("async function collectArtifacts("),
+    canary.indexOf("function assertOutputSet()"),
+  );
+  assert.ok(collect.length > 0, "collectArtifacts must be findable");
+
+  // Every `bytes.` dereference inside the collector must sit behind a truth
+  // test on `bytes` -- the ternary or the `if (bytes)` block.
+  assert.doesNotMatch(collect, /^\s*step\(`wrote \$\{file\} \(\$\{\(bytes\.length/m,
+    "step() must not dereference bytes unconditionally");
+  assert.match(collect, /step\(bytes\s*\n?\s*\?\s*`wrote /,
+    "the log line must branch on whether the artifact was exported");
+  assert.match(collect, /not exported \(\$\{notExportedReason\}\)/,
+    "a capped artifact must say so, with its reason, rather than going unmentioned");
+
+  // And the acceptance evidence is untouched by which branch ran: the hash is
+  // computed from the streamed bytes either way.
+  assert.match(collect, /hashVerified: observedHash === artifact\.content_hash/);
+});
