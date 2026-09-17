@@ -528,7 +528,15 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       //
       // Driver still fails the run: it is the design's origin and there is
       // nothing to continue from without it.
-      if (!(cause instanceof hero.HeroDriverRefusal) || surfaceKey === "driver") throw cause;
+      // A creative refusal is already bounded and final, so it continues at
+      // once. ANY OTHER failure continues only once the node has spent every
+      // retry it has -- live 194e8f17 lost the whole sheet to roof exhausting
+      // on `flat_atlas_author_edge_call_failed`, which is not a refusal and so
+      // slipped past a refusal-only guard. The rule that matters is the one
+      // the sheet depends on: no single non-driver panel may bin the run.
+      const terminal = cause instanceof hero.HeroDriverRefusal
+        || Number(node.attempt || 1) >= Number(node.max_attempts || 3);
+      if (!terminal || surfaceKey === "driver") throw cause;
       const donor = neighbours[0] || await loadSurface("driver");
       logger(`hero-driver ${surfaceKey} refused (${cause.reason}); continuing deterministically from ${donor.surfaceKey} so the sheet can assemble`);
       return hero.composeSurfaceFromNeighbour(surfaceKey, donor, zone, cause.reason);

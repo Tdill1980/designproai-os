@@ -73,7 +73,16 @@ const AUTHOR_NEIGHBOURS = Object.freeze({
   hood: Object.freeze(["driver", "passenger"]),
   front: Object.freeze(["driver", "passenger"]),
   rear: Object.freeze(["driver", "passenger"]),
-  roof: Object.freeze(["driver", "passenger", "hood", "front", "rear"]),
+  // ROOF SHOWS THE TWO FLANKS ONLY. Live 194e8f17: roof was the last surface
+  // standing and failed `flat_atlas_author_edge_call_failed` three times into
+  // attempts_exhausted -- the same edge-worker exhaustion front hit, for the
+  // same reason. Five neighbour images plus a replayed chain is the heaviest
+  // request the cascade builds, and the flanks already carry the design's
+  // colourway, motifs and lettering; hood/front/rear are themselves
+  // continuations of those flanks. CLAUDE.md names this exact change as a
+  // standing next lever ("roof beside hood/front/rear, showing driver +
+  // passenger only").
+  roof: Object.freeze(["driver", "passenger"]),
 });
 /** Model exchanges each AI surface REPLAYS (passenger has none: it is code). */
 const AUTHOR_HISTORY = Object.freeze({
