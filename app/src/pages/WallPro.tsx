@@ -938,7 +938,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   useEffect(() => {
     let live = true;
     (async () => {
-      const rows = await listWallProofs(brand);
+      const rows = await listWallProofs('wallpro', brand);
       if (!live || !rows.length) return;
       setCuratedProofs(rows.map(r => ({
         before: wallProofUrl(r.before_path),

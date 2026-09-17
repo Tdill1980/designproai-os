@@ -22,7 +22,6 @@ test("ordered migration chain retains existing production boundaries and appends
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
   assert.deepEqual(names.slice(-104), [
-    "20260813190000_designpro_design_master_revisions.sql",
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
     "20260814050000_designpro_generation_slot_leases.sql",
@@ -318,6 +317,10 @@ test("ordered migration chain retains existing production boundaries and appends
     // CreatorMarket sequence pattern recovered from restylepro-os rather than
     // the uuid derivation a first attempt invented.
     "20260916010000_wallpro_order_numbers.sql",
+    // The same curator table (wallpro_proofs) now serves VehiclePro and
+    // CutPro too, via a new tool_key column -- "do the admin page" for the
+    // other two tools without building parallel infrastructure.
+    "20260916220000_wallpro_proofs_all_tools.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.

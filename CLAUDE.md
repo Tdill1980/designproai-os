@@ -1134,6 +1134,7 @@ to the writer's `printf`, the writer's sticky `sed`, and the validator's
 vocabulary. Add a routing flag to the runtime without those four and the build
 fails. **Do not add an env-gated routing flag without adding it to that list.**
 
+<<<<<<< HEAD
 #### NODE 1 MUST STAGE ITS RENDER WHERE THE EDGE WILL ATTACH IT (2026-09-17, live 2099d17d)
 
 **The first real hero-driver run.** The DAG did exactly what RULE 0.39 built —
@@ -1198,6 +1199,8 @@ changes the request shape on a path that has never completed. **One variable per
 deploy on an unproven path**, or a failure tells you nothing about which change
 caused it.
 
+=======
+>>>>>>> origin/main
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
 - **The field topology paints its own layout map into the artwork, and the

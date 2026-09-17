@@ -653,8 +653,13 @@ export async function saveWallDesignMockups(rowId: string, mockups: { sceneId: s
  */
 export const WALLPRO_PROOF_BUCKET = 'wallpro-proofs';
 
+/** The three tools this curator table now serves (Trish 2026-09-16: "do the
+ *  admin page" -- for VehiclePro and CutPro too, not just WallPro). */
+export type ProofBandToolKey = 'vehiclepro' | 'wallpro' | 'cutpro';
+
 export type WallProofRow = {
   id: string;
+  tool_key: ProofBandToolKey;
   brand: string;
   before_path: string;
   after_path: string;
@@ -678,19 +683,19 @@ export function wallProofUrl(path: string): string {
  * this returns [] and the caller falls back to the list that ships in the
  * bundle. A marketing band is exactly the wrong place to surface an outage.
  */
-export async function listWallProofs(brand: string): Promise<WallProofRow[]> {
+export async function listWallProofs(toolKey: ProofBandToolKey, brand: string): Promise<WallProofRow[]> {
   const { data, error } = await db.from('wallpro_proofs')
-    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
-    .eq('brand', brand).eq('published', true).order('position', { ascending: true });
+    .select('id,tool_key,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('tool_key', toolKey).eq('brand', brand).eq('published', true).order('position', { ascending: true });
   if (error) return [];
   return (data as WallProofRow[]) ?? [];
 }
 
 /** Every row including drafts — the curator's own view. */
-export async function listWallProofsForCurator(brand: string): Promise<WallProofRow[]> {
+export async function listWallProofsForCurator(toolKey: ProofBandToolKey, brand: string): Promise<WallProofRow[]> {
   const { data, error } = await db.from('wallpro_proofs')
-    .select('id,brand,before_path,after_path,headline,caption,alt,position,published')
-    .eq('brand', brand).order('position', { ascending: true });
+    .select('id,tool_key,brand,before_path,after_path,headline,caption,alt,position,published')
+    .eq('tool_key', toolKey).eq('brand', brand).order('position', { ascending: true });
   if (error) throw new Error(error.message);
   return (data as WallProofRow[]) ?? [];
 }

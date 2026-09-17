@@ -9,9 +9,12 @@ import { useRenderLimits } from "@/hooks/useRenderLimits";
 import { useQuery } from "@tanstack/react-query";
 import { ToolContainer } from "@/components/layout/ToolContainer";
 import { GraphicsProV1ToolUI } from "@/components/graphicspro-v1/GraphicsProV1ToolUI";
+import { WallProHeroProof } from "@/components/wallpro/WallProHeroProof";
+import { useToolProofBand } from "@/hooks/useToolProofBand";
 
 const GraphicsProV1 = () => {
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const cutProProofs = useToolProofBand('cutpro');
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -62,6 +65,7 @@ const GraphicsProV1 = () => {
           tagline: OS_TOOLS.cutpro.tagline,
         }}
       />
+      {cutProProofs.length > 0 && <WallProHeroProof proofs={cutProProofs} />}
       <main className="flex-1">
         <div className="border-b border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-600 sm:text-sm">
           with <span className="font-semibold text-[#ec4899]">ZoneMasker™</span> — {OS_TOOLS.cutpro.description} Vehicles, walls and windows; upload your image or design from a prompt.
