@@ -40,11 +40,20 @@ export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; 
         {theme.logo && <img src={theme.logo} alt={theme.logoAlt} className={compact ? 'h-6 w-auto shrink-0 md:h-7' : 'h-7 w-auto shrink-0 md:h-9'} />}
         {!theme.logo && theme.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
         {(theme.logo || theme.eyebrow) && <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>}
-        {/* Two tone, not a gradient: against the partner's own mark the wordmark
-            has to read as a solid name at a glance. The gradient stays where it
-            belongs, on the actions. */}
+        {/* THE ONE BRAND GRADIENT, HERE TOO (Trish 2026-09-17: "Pro should be
+            gradient blue"). Every other "Pro" in the product -- sidebar nav,
+            dashboard cards, the hero -- runs ToolWordmark's blue-to-fuchsia
+            gradient. This lockup was the one place still painting a flat
+            `text-blue-400`, which is exactly the kind of per-page drift RULE
+            0 keeps naming: the persistent header is the FIRST thing a visitor
+            sees, so it is the last place that should look like a different
+            product. Against a real partner mark (theme.logo set) the original
+            reasoning still holds -- a gradient competing with someone else's
+            logo reads as noise, not a name -- so only that one case keeps the
+            solid tone. */}
         <h1 className={compact ? 'text-xl font-bold leading-tight md:text-2xl' : 'text-2xl font-bold leading-tight md:text-3xl'}>
-          <span className="text-white">{theme.wordmarkLead}</span><span className="text-blue-400">{theme.wordmarkAccent}</span>
+          <span className="text-white">{theme.wordmarkLead}</span>
+          <span className={theme.logo ? 'text-blue-400' : 'bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent'}>{theme.wordmarkAccent}</span>
         </h1>
       </div>
       <p className="mt-0.5 text-xs text-white/70 md:text-sm">{theme.tagline}</p>
