@@ -74,6 +74,19 @@ on:
           - unchanged
           - "on"
           - "off"
+      atlas_element_graph:
+        description: >-
+          Element-level design graph (ARCHITECTURE_DAG.md). "unchanged" keeps
+          whatever the droplet has; "on" compiles typeset.produce and the other
+          element nodes into the Call-1 graph; "off" is today's graph, byte for
+          byte. Defaults to off -- this port has never run live. Sticky.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "on"
+          - "off"
       atlas_panel_finish:
         description: >-
           Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
@@ -588,6 +601,7 @@ jobs:
           ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first != 'unchanged' && inputs.atlas_field_first || '' }}
           ATLAS_HERO_FIRST: ${{ inputs.atlas_hero_first != 'unchanged' && inputs.atlas_hero_first || '' }}
           ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph != 'unchanged' && inputs.atlas_call1_graph || '' }}
+          ATLAS_ELEMENT_GRAPH: ${{ inputs.atlas_element_graph != 'unchanged' && inputs.atlas_element_graph || '' }}
         shell: bash
         run: |
           set +x
@@ -605,7 +619,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' ATLAS_ELEMENT_GRAPH='$ATLAS_ELEMENT_GRAPH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in

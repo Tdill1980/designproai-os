@@ -41,6 +41,7 @@
 
 const { createHash } = require("node:crypto");
 const hero = require("./atlas-hero-driver.cjs");
+const typeset = require("./atlas-typeset-layer.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -50,6 +51,10 @@ const MASTER_NODE = "master.assemble";
 // rows so a failed flatten retries WITHOUT re-billing the vehicle view, and so
 // the ledger can say which worker drew which half.
 const DRIVER_VIEW_NODE = "surface.driver.view";
+// ARCHITECTURE_DAG.md §4.2 -- the element graph's first node. A ROOT: it depends
+// only on the run's frozen brief, so it is claimable in the same instant as
+// surface.driver.view and adds nothing to the critical path.
+const TYPESET_NODE = "typeset.produce";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -107,7 +112,37 @@ function validateGraph(nodes) {
  * passenger depends on the driver it flops. Nothing else orders the graph, so
  * whatever is not an edge runs in parallel.
  */
-function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled() } = {}) {
+/**
+ * ARCHITECTURE_DAG.md §4.2. Resolved at COMPILE time, like heroFirst, so the
+ * stored node rows are the decision and a flag flipped mid-run cannot change
+ * what an already-claimed node does.
+ *
+ * Unset means OFF, deliberately: this port is unproven on a live run, and the
+ * flag that defaulted the other way (DESIGNPRO_ATLAS_FIELD_FIRST) is recorded in
+ * CLAUDE.md as weeks of routing nobody could see.
+ */
+function elementGraphEnabled() {
+  return String(process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH || "").trim().toLowerCase() === "on";
+}
+
+/**
+ * The node carries the EXACT strings it will set, resolved from the frozen
+ * brief at compile time, so the ledger row answers "what was asked for" without
+ * re-reading the brief -- and so a node can never invent a line the customer
+ * did not supply.
+ */
+function typesetNodeFor(input) {
+  const text = String(input?.companyName || input?.businessName || "").trim();
+  if (!text) return null;
+  return {
+    key: TYPESET_NODE,
+    dependsOn: [],
+    input: { role: "typography", text, fontKey: typeset.DEFAULT_NAME_FONT, widthPx: 1600 },
+    maxAttempts: 3,
+  };
+}
+
+function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
   // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
   // 16:9 frame; node 3 flattens that render into the flank. The handoff is the
@@ -124,6 +159,13 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled() } = {}) {
     }
   }
   nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
+  // APPENDED AFTER master.assemble ON PURPOSE. master's depends_on is
+  // `nodes.map(...)` at the moment it is pushed, so appending here leaves that
+  // array byte-for-byte identical whether the element graph is on or off --
+  // the surfaces do not wait on an element, and chunk 8's master.composite is
+  // what will consume it.
+  const typeset = elementGraphEnabled() ? typesetNodeFor(input) : null;
+  if (typeset) nodes.push(typeset);
   return validateGraph(nodes);
 }
 
@@ -174,6 +216,31 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ARCHITECTURE_DAG.md §4.2 -- ZERO model calls, zero network. The producer
+  // returns bytes; this node is what persists them, addressed by their own
+  // sha256 so a re-claim re-reads instead of re-writing.
+  if (node.node_key === TYPESET_NODE) {
+    abortIf();
+    const rendered = await typeset.renderLockup({
+      name: String(node.input?.text || ""),
+      width: Number(node.input?.widthPx) || 1600,
+      nameFont: node.input?.fontKey || typeset.DEFAULT_NAME_FONT,
+      color: node.input?.colorHex,
+    });
+    const stored = await store.putImmutableBytes({
+      storagePath: typeset.elementStoragePath(rendered.contentHash),
+      bytes: rendered.bytes,
+      contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: typeset ${rendered.contentHash.slice(0, 12)} (${rendered.width}x${rendered.height})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "typography",
+      // A REFERENCE, never pixels -- RULE 0.39 across every node boundary.
+      element: { storagePath: stored.storagePath, contentHash: rendered.contentHash, byteSize: rendered.byteSize,
+        width: rendered.width, height: rendered.height },
+      metrics: rendered.metrics, fonts: rendered.fonts, color: rendered.color, deterministic: true,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   if (node.node_key === MASTER_NODE) {
     const authored = new Map();
@@ -407,7 +474,7 @@ function createAtlasCall1NodeWorker({
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {
       p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
-      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph(),
+      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph({ input }),
     });
     let run = created?.run;
     if (!run?.id) throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", "create returned no run", true);
@@ -459,7 +526,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
-  AtlasCall1GraphError, graphEnabled, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };
