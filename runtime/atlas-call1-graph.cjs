@@ -42,6 +42,7 @@
 const { createHash } = require("node:crypto");
 const hero = require("./atlas-hero-driver.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
+const logo = require("./atlas-logo-prepare.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -59,6 +60,9 @@ const TYPESET_NODE = "typeset.produce";
 // its own node, so a design that carries a phone number but no company name
 // still gets its element, and vice versa.
 const CONTACT_NODE = "contact.produce";
+// ARCHITECTURE_DAG.md §4.4 -- the customer's uploaded logo, prepared as Layer 1
+// artwork. It NEVER generates one; absence is an honest answer, not a gap.
+const LOGO_NODE = "logo.prepare";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -173,6 +177,25 @@ function contactNodeFor(input) {
   };
 }
 
+/**
+ * Compiled only when the brief actually carries a logo. With no upload there is
+ * no node -- and the typography lockup is the brand mark, which is what
+ * `buildLogoArchitecture()` already directs on the prompt side.
+ *
+ * The identity is verified HERE, at compile time, so a malformed asset refuses
+ * the run before a node is ever claimed and a worker ever spends a lease.
+ */
+function logoNodeFor(input) {
+  if (!logo.hasCustomerLogo(input)) return null;
+  const identity = logo.verifyLogoIdentity(input.logoAsset);
+  return {
+    key: LOGO_NODE,
+    dependsOn: [],
+    input: { role: "logo", source: "customer", asset: identity },
+    maxAttempts: 3,
+  };
+}
+
 function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
   // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
@@ -196,7 +219,7 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
   // the surfaces do not wait on an element, and chunk 8's master.composite is
   // what will consume it.
   if (elementGraphEnabled()) {
-    for (const element of [typesetNodeFor(input), contactNodeFor(input)]) {
+    for (const element of [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)]) {
       if (element) nodes.push(element);
     }
   }
@@ -250,6 +273,28 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ARCHITECTURE_DAG.md §4.4 -- the customer's own logo, verified and
+  // conditioned. ZERO model calls: this node prepares artwork the customer
+  // already owns and never invents a mark.
+  if (node.node_key === LOGO_NODE) {
+    abortIf();
+    const prepared = await logo.prepareCustomerLogo({ supabase, asset: node.input?.asset });
+    const stored = await store.putImmutableBytes({
+      storagePath: typeset.elementStoragePath(prepared.contentHash),
+      bytes: prepared.bytes,
+      contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: logo prepared ${prepared.contentHash.slice(0, 12)} (${prepared.width}x${prepared.height}, alpha ${prepared.hasAlpha})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo", source: "customer",
+      element: { storagePath: stored.storagePath, contentHash: prepared.contentHash, byteSize: prepared.byteSize,
+        width: prepared.width, height: prepared.height },
+      // Recorded, never manufactured. See atlas-logo-prepare.cjs on why a white
+      // background is not keyed to transparent here.
+      hasAlpha: prepared.hasAlpha,
+      sourceIdentity: prepared.sourceIdentity, deterministic: true,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   // ARCHITECTURE_DAG.md §4.2 -- ZERO model calls, zero network. The producer
   // returns bytes; this node is what persists them, addressed by their own
@@ -566,7 +611,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

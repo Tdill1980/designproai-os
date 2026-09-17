@@ -74,7 +74,7 @@ test("on, the element node is a ROOT and master's edges do not move", () => {
     assert.ok(same, `${node.key} disappeared`);
     assert.deepEqual(same.dependsOn, node.dependsOn, `${node.key}'s edges moved`);
   }
-  assert.equal(on.length, off.length + 2, "typography and contact are separate nodes");
+  assert.equal(on.length, off.length + 2, "typography and contact are separate nodes; this brief carries no logo");
 
   // No surface waits on an element in this chunk; master.composite is chunk 8.
   for (const node of on) {
@@ -242,4 +242,48 @@ test("executing the bar renders ONLY its own lines, and never the company name",
   // Same reference discipline as every other node.
   assert.ok(!("bytes" in barOut));
   assert.ok(!JSON.stringify(barOut).includes("data:image"));
+});
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE_DAG.md chunk 5 — `logo.prepare`. The customer's OWN logo.
+// It never generates one, and absence is an answer rather than a gap.
+// ---------------------------------------------------------------------------
+
+const LOGO_ASSET = { storagePath: "logos/precision.png", contentHash: "c".repeat(64), byteSize: 4096 };
+
+test("no upload means no logo node — and the lockup is the brand mark", () => {
+  const none = compile("on", CONTACT);
+  assert.ok(!none.some((n) => n.key === graph.LOGO_NODE));
+  assert.ok(none.some((n) => n.key === graph.TYPESET_NODE),
+    "with no logo the typography lockup IS the mark, which is what buildLogoArchitecture already directs");
+});
+
+test("an uploaded logo is its own root, carrying identity and no pixels", () => {
+  const withLogo = compile("on", { ...CONTACT, logoAsset: LOGO_ASSET });
+  const node = withLogo.find((n) => n.key === graph.LOGO_NODE);
+  assert.ok(node);
+  assert.deepEqual(node.dependsOn, []);
+  assert.equal(node.input.role, "logo");
+  assert.equal(node.input.source, "customer");
+  assert.deepEqual(node.input.asset, LOGO_ASSET);
+  assert.equal(withLogo.length, compile("off", CONTACT).length + 3);
+
+  // Still no surface waits on an element.
+  for (const other of withLogo) {
+    if (other.key !== graph.LOGO_NODE) {
+      assert.ok(!other.dependsOn.includes(graph.LOGO_NODE), `${other.key} must not wait on the logo`);
+    }
+  }
+});
+
+test("a malformed logo identity refuses the RUN, before a worker spends a lease", () => {
+  assert.throws(
+    () => compile("on", { ...CONTACT, logoAsset: { url: "https://example.com/logo.png" } }),
+    (err) => err.code === "flat_atlas_logo_identity_invalid",
+    "compile-time refusal: a URL is not an immutable identity",
+  );
+  assert.throws(
+    () => compile("on", { ...CONTACT, logoAsset: { storagePath: "logos/a.png", contentHash: "short", byteSize: 10 } }),
+    (err) => err.code === "flat_atlas_logo_identity_invalid",
+  );
 });

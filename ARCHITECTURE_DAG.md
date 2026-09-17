@@ -158,7 +158,25 @@ a name and no contact details still gets its lockup.
 | **depends_on** | ∅ |
 | **input** | the customer's uploaded logo reference, if any |
 | **output** | same envelope, `role: "logo"`, `source: "customer"` — or `{ role: "logo", source: "absent" }` |
-| **producer** | pass-through + alpha normalisation. **It never GENERATES a logo.** With no upload the typography lockup is the brand mark, which is what `buildLogoArchitecture` already directs |
+| **producer** | `runtime/atlas-logo-prepare.cjs`. **It never GENERATES a logo.** With no upload there is no node, and the typography lockup is the brand mark — which is what `buildLogoArchitecture()` already directs on the prompt side |
+
+The verification is `verifiedCustomerLogoPart`'s (`runtime/flat-first-atlas.cjs`),
+re-homed unchanged so a graph node can run it without dragging in that module:
+a URL in the asset is refused outright, the identity must be
+storagePath + 64-hex hash + positive integer byteSize, and the downloaded bytes
+must be exactly that length and hash to that value. Conditioning is the same
+too — EXIF rotate, fit inside 1600×1600 **without enlarging**, lanczos3, PNG.
+`tests/atlas-logo-prepare.test.mjs` reads flat-first-atlas's own source and
+fails if either the codes or the conditioning parameters drift apart.
+
+**The identity is verified at COMPILE time**, so a malformed asset refuses the
+run before any worker spends a lease.
+
+**Transparency is recorded, never manufactured.** A customer JPEG has no alpha,
+and keying a white background out with a flood fill is the same fragile move
+CLAUDE.md records failing on same-hue artwork (at tolerance 28 it ate an orange
+mark touching an orange ribbon). The node reports `hasAlpha` honestly and leaves
+the decision to `master.composite` and human QC.
 
 ### 4.5 `element.lockup`
 
@@ -209,7 +227,7 @@ own absence before it is called done.
 | 2 | `runtime/atlas-typeset-layer.cjs` + byte-determinism test | **done** (`8768b2f2`) |
 | 3 | `typeset.produce` node: compiled into the graph, claim, envelope, idempotent re-claim | **done** (`a5faf833`, release policy `54ad1039`) |
 | 4 | `contact.produce` node + the never-invent input assertion | **done** |
-| 5 | `logo.prepare` node (pass-through, honest `absent`) | pending |
+| 5 | `logo.prepare` node (pass-through, honest `absent`) | **done** |
 | 6 | `element.lockup` placement manifest | pending |
 | 7 | clean-base authoring contract (§4.1) — prompt versions advance together | pending |
 | 8 | `master.composite` + clean master preserved byte-for-byte | pending |
