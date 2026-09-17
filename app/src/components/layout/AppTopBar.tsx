@@ -374,6 +374,9 @@ export const AppTopBar = ({ onOpenSidebar }: AppTopBarProps) => {
                   WallPro Before &amp; After
                 </Link>
               </DropdownMenuItem>
+              <DropdownMenuItem asChild className="text-white/80 focus:text-white focus:bg-white/10 cursor-pointer">
+                <Link to="/admin/wallpro-landing"><Box className="w-4 h-4 mr-2" />WallPro Landing Media</Link>
+              </DropdownMenuItem>
               <DropdownMenuItem
                 asChild
                 className="text-white/80 focus:text-white focus:bg-white/10 cursor-pointer"

@@ -39,6 +39,7 @@ const EXTENSIONS = ["", ".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"]
  */
 const CUSTOMER_ROUTE_MODULES = [
   "pages/WallPro.tsx",
+  "pages/WallProLanding.tsx",
   "pages/DesignProAIHome.tsx",
   "pages/DesignPanelProPremium.tsx",
   "pages/designpro/GenerateDesign.tsx",
