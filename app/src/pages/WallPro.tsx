@@ -11,7 +11,7 @@ import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
-import { splitDetectedMasks } from '@/lib/wallpro-occlusion';
+import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -195,6 +195,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // never a deterministic guarantee the way detectedMask's recomposite is --
   // best-effort removal is the nature of a generative erase.
   const [removeMask, setRemoveMask] = useState<{ url: string; path: string | null } | null>(null);
+  /**
+   * THE DETECTED OBJECTS, KEPT AS OBJECTS (owner, 2026-09-17: "if I want them
+   * back on wall I simply click on each item and WallPro masks each item with
+   * one click").
+   *
+   * The two masks above are COMPOSITES. Once rasterised there is no "the sofa"
+   * to click, so correcting one wrong item used to mean clearing every detected
+   * area and hand-drawing the correction. The detector has always returned a
+   * labelled, individually-masked list; this holds on to it, and both
+   * composites are rebuilt FROM it whenever an item is toggled — so what is
+   * protected is always exactly what is currently classed `fixed`.
+   */
+  const [items, setItems] = useState<WallItem[]>([]);
   // The AI picture of the design on the wall: presentation only, never print.
   const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
@@ -656,7 +669,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // the covering paints straight through. Masking now runs on every upload
     // (applyMasks is kept only for the manual "Detect wall corners again" /
     // re-run path), classified fixed vs movable by wallpro-occlusion.ts.
-    const { fixed, movable } = splitDetectedMasks(found.masks);
+    // The list survives as ITEMS as well as being rasterised, so each object
+    // stays individually clickable (wallpro-items.ts). splitItems reads what is
+    // APPLIED, so once a customer has clicked, the composites follow her and
+    // not the detector.
+    const detectedItems = toWallItems(found.masks);
+    const { fixed, movable } = splitItems(detectedItems);
     // An accent zone wraps a fireplace, a chimney breast or a niche -- exactly
     // the architecture the main wall's pass correctly protects as `fixed`.
     // Protecting it here would refuse to paint the thing the customer chose to
@@ -673,6 +691,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     let maskCount = 0, removeCount = 0, labels: string[] = [], removeLabels: string[] = [];
     if (!applyMasks) { /* corners only; hand-drawn masks stay as they are */ }
     else {
+      // Items are held whenever masking ran, including when the rasteriser
+      // produced nothing usable — the labels are still worth showing, and an
+      // item with no raster simply contributes nothing to its composite.
+      setItems(detectedItems);
       if (fixedRaster) {
         maskCount = fixed.length; labels = fixed.map(m => m.label);
         const blob = await canvasBlob(fixedRaster);
@@ -779,6 +801,53 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // rather than one (owner, 2026-09-12).
     if (!photo || !artwork || !tileArtwork) return;
     await paintAiView(tileArtwork, photo, false);
+  }
+  /**
+   * ONE CLICK, THEN BOTH COMPOSITES ARE REBUILT FROM THE ITEMS.
+   *
+   * Not "add this item to the protect mask": the two masks are re-rasterised
+   * from the whole list every time, so a toggle in either direction is exact
+   * and there is no way for a composite to drift from the items it represents.
+   * The cost is re-rasterising a handful of small PNGs, which is milliseconds
+   * and no network call.
+   *
+   * The upload is best-effort exactly as the detection path's is — a failed
+   * upload leaves the in-memory mask working, so a signed-out or offline
+   * customer still sees their correction on screen.
+   */
+  async function applyItems(next: WallItem[]) {
+    setItems(next);
+    const asset = photoRef.current;
+    if (!asset?.width || !asset.height) return;
+    const { fixed, movable } = splitItems(next);
+    // An accent zone exists to be wrapped, so nothing in it is auto-protected
+    // — the same exemption the detection path makes, restated here because a
+    // toggle must not reintroduce a protect mask the zone deliberately skips.
+    const accent = accentRef.current;
+    const [fixedRaster, movableRaster] = await Promise.all([
+      fixed.length && !accent ? rasterizeDetectionMasks(fixed, asset.width, asset.height).catch(() => null) : null,
+      movable.length ? rasterizeDetectionMasks(movable, asset.width, asset.height).catch(() => null) : null,
+    ]);
+    if (photoRef.current?.url !== asset.url) return;
+    const user = await wallUser().catch(() => null);
+    const publish = async (
+      raster: HTMLCanvasElement | null,
+      name: string,
+      set: typeof setDetectedMask,
+    ) => {
+      if (!raster) { set(null); return; }
+      const blob = await canvasBlob(raster);
+      const url = retain(URL.createObjectURL(blob));
+      set({ url, path: null });
+      if (!user) return;
+      uploadWallAsset({ url, aspect: asset.aspect, file: new File([blob], name, { type: 'image/png' }) }, user.id)
+        .then(path => set(old => (old && old.url === url ? { ...old, path } : old)))
+        .catch(() => { /* the preview keeps the in-memory mask */ });
+    };
+    await Promise.all([
+      publish(fixedRaster, 'protected-areas.png', setDetectedMask),
+      publish(movableRaster, 'remove-areas.png', setRemoveMask),
+    ]);
   }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
@@ -1587,7 +1656,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <p className="p-2 text-xs wall-muted">{AI_VIEW_EXPLAINER}</p>
                 <div className="px-2 pb-2"><Button size="sm" variant="outline" onClick={() => setView('after')}>Back to the print geometry</Button></div>
               </div> :
-              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
               {/* THE TRUST SIGNAL (owner, 2026-09-12: "There is no trust signal").
                   The composite is not a preview of the print file, it IS the
                   print file on their wall, and that is the reason to buy. Said
@@ -1624,7 +1693,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   {detecting
                     ? 'Finding what to protect on this wall…'
                     : detectedMask || removeMask || exclusions.length
-                      ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
+                      ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{items.length > 0 && <> <strong>Tap any labelled item on the photo to change our mind about it</strong> — {itemSummary(items).kept} kept, {itemSummary(items).through} painted through.</>}{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
                       : 'Nothing needed protecting on this wall.'}
                   {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done adjusting' : 'Adjust'}</button>
                 </p>
@@ -1642,7 +1711,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 </>}
                 {!!exclusions.length && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions(old => old.slice(0,-1))}>Remove last mask</Button>}
                 {exclusions.length > 1 && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => setExclusions([])}>Clear all masks</Button>}
-                {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); }}>Clear detected areas</Button>}
+                {/* An override is reversible in one action, so trying a click
+                    costs nothing — which is what makes people try it. */}
+                {hasOverride(items) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void applyItems(resetItems(items))}>Reset to what we detected</Button>}
+                {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); setItems([]); }}>Clear detected areas</Button>}
               </div>
               <p className="mt-2 text-xs wall-muted">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
