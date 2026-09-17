@@ -57,6 +57,8 @@ select policies_are(
         -- exists to convince -- which is why the read policy carries no owner
         -- predicate. Writes stay admin/tester.
         'wallpro_proofs_public_read','wallpro_proofs_curator_write',
+        -- Public landing media, with uploads restricted to admin/tester.
+        'wallpro_landing_media_read','wallpro_landing_media_upload',
         -- PatternPro's public render bucket (20260915090000): anyone may read a
         -- pattern proof; only the service role writes them.
         'patternpro_files_public_read',
