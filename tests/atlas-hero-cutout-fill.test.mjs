@@ -148,9 +148,15 @@ test("a LARGE but fillable void is repaired here and judged by the master gates"
   assert.equal(verdict.repaired.unresolvedPixels, 0, "it had artwork to grow from");
 });
 
-test("the aspect and decode gates are unchanged -- the fill runs only after them", async () => {
+test("the aspect and decode gates still run FIRST -- the fill never sees a wrong-shaped sheet", async () => {
+  // The shape bound is now `MAX_CONTAIN_DRIFT_RATIO` (2.0) and the gap below it
+  // is closed by contain-fit + edge-extend, so a mere 400x400 square is an
+  // ordinary accepted sheet against most panels. What is still refused is a
+  // canvas so far from the panel that under half of it would be the design --
+  // and the point this test holds is unchanged: that refusal happens BEFORE the
+  // cut-out fill is ever reached.
   const wrongAspect = await sharp({
-    create: { width: 400, height: 400, channels: 3, background: { r: 200, g: 100, b: 50 } },
+    create: { width: 120, height: 1600, channels: 3, background: { r: 200, g: 100, b: 50 } },
   }).png().toBuffer();
   const verdict = await evaluateAuthored("driver", wrongAspect, W, H);
   assert.equal(verdict.accepted, false);

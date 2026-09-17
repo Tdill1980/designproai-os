@@ -70,7 +70,14 @@ function syntheticEdge(calls, { refuse = null } = {}) {
     const bytes = vehicleView
       ? await paint(1920, 1080, tint)
       : body.surfaceKey === refuse
-        ? await paint(400, 400, tint)
+        // A canvas the contain-fit sizer genuinely cannot rescue: a tall
+        // portrait against a landscape panel, drift ~5.6, so the design would
+        // occupy under a fifth of its own rectangle. This used to be a 400x400
+        // square, which against a 1.607:1 hood is only drift 1.607 -- since
+        // `containExtend` landed that is an ordinary accepted sheet with a
+        // vertical bleed, not a refusal, so the old fixture stopped reproducing
+        // the case this test is about.
+        ? await paint(400, 1400, tint)
         : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, tint);
     const contentHash = sha(bytes);
     const name = vehicleView ? `${body.surfaceKey}-view` : body.surfaceKey;

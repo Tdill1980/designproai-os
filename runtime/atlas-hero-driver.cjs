@@ -130,8 +130,34 @@ const AUTHOR_ATTEMPTS = 2;
 // single-step; add a surface here only on the SAME evidentiary bar (a real,
 // measured aspect_drift refusal), never speculatively (RULE 0.32's discipline
 // against untested creative-conditioning changes applies here too).
+//
+// ⚠️ CORRECTION, MEASURED 2026-09-17: SPLITTING A SURFACE HERE NEVER FIXED THE
+// ASPECT REFUSAL, and the paragraph above claimed it did. The FLATTEN inherits
+// the identical 21:9 ceiling — it is still one image request that has to emit
+// the flank's own ratio — so front kept refusing at `aspect_drift:1.342` on
+// three separate live generations AFTER #469 shipped (09-17 09:00, 10:40,
+// 17:08), while `surface.front.view` completed every time. What the split
+// genuinely buys is what RULE 0.39 says elsewhere: node 1 runs once and its
+// render survives a refused flatten. The aspect gap is closed by contain-fit
+// + edge-extend in `evaluateAuthored`, not by this set.
 const HERO_VIEW_SURFACES = Object.freeze(new Set(["driver", "front"]));
-const MAX_ASPECT_DRIFT_RATIO = 1.12;
+/**
+ * How far the returned canvas may sit from the zone's own shape before the
+ * sheet is refused, now that the gap is closed by contain-fit + edge-extend
+ * rather than by distorting the artwork into the rectangle.
+ *
+ * At drift `d`, contain-fit lays the artwork across `1/d` of the rectangle's
+ * long axis and extends the design's own edge pixels over the rest, so `2.0`
+ * says: at least HALF of every panel is the design itself. That is a statement
+ * about how much real artwork a panel carries, which is the thing worth
+ * refusing — unlike 1.12, which refused canvases the model had produced
+ * exactly as asked. The finishing stage keeps its own 1.12
+ * (`atlas-panel-authoring.cjs`) on purpose: that one compares against a CROP of
+ * an already-accepted master, so there is a real reference shape to hold, and
+ * nothing about it changes here.
+ */
+const MAX_CONTAIN_DRIFT_RATIO = 2.0;
+const CONTAIN_EXTEND_CONTRACT = "designpro.atlas-contain-extend.v1";
 // An authored sheet must arrive whole. Finishing compares against a crop; there
 // is no crop here, so the bar is absolute: no more than 0.2% of the rectangle
 // unresolved (transparent or flat black).
@@ -236,12 +262,29 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
   if (width < 8 || height < 8) return { accepted: false, reason: "degenerate_size" };
   const want = pixelWidth / pixelHeight, got = width / height;
   const drift = want > got ? want / got : got / want;
-  if (!Number.isFinite(drift) || drift > MAX_ASPECT_DRIFT_RATIO) return { accepted: false, reason: `aspect_drift:${drift.toFixed(3)}` };
-  let normalized;
+  // CONTAIN-FIT + EDGE-EXTEND, NOT REFUSE-ON-DRIFT (RULE 1; owner, 2026-09-17:
+  // "wire the exact active modules from RestylePro"). See `containExtend`.
+  //
+  // The refusal this replaces was arithmetically unsatisfiable, measured on
+  // generation c3067608's own manifest: front 3.676:1 and both flanks 2.800:1
+  // against a widest emittable 21:9 (2.333:1), so drift 1.576 and 1.200 over a
+  // 1.12 ceiling. A model that complied perfectly was refused every time,
+  // three of the four hero failures on 2026-09-17 reading
+  // `front: aspect_drift:1.342` -- and #469's split of front into view+flatten
+  // could not help, because the FLATTEN inherits the same 21:9 ceiling.
+  //
+  // The bound that remains is about how much of the rectangle is real artwork,
+  // which is the thing actually worth refusing: contain-fit puts the artwork
+  // across 1/drift of the long axis, so the ceiling says the design must still
+  // occupy at least half its own panel.
+  if (!Number.isFinite(drift) || drift > MAX_CONTAIN_DRIFT_RATIO) {
+    return { accepted: false, reason: `aspect_drift:${drift.toFixed(3)}` };
+  }
+  let normalized, containment;
   try {
-    normalized = await sharp(bytes, { limitInputPixels: false })
-      .resize(pixelWidth, pixelHeight, { fit: "fill" })
-      .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
+    const fitted = await containExtend(bytes, pixelWidth, pixelHeight);
+    normalized = fitted.bytes;
+    containment = fitted.receipt;
   } catch (cause) { return { accepted: false, reason: `resize_failed:${String(cause?.message || cause).slice(0, 80)}` }; }
   let holes;
   try { holes = await holeRatio(normalized); }
@@ -313,7 +356,113 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
       repaired = { ...(repaired || {}), scatteredResidue: Number(holes.toFixed(5)), convicted: 0 };
     }
   }
-  return { accepted: true, bytes: normalized, holeRatio: holes, repaired, deliveredWidthPx: width, deliveredHeightPx: height };
+  return {
+    accepted: true, bytes: normalized, holeRatio: holes, repaired,
+    deliveredWidthPx: width, deliveredHeightPx: height, containment,
+  };
+}
+
+/**
+ * CONTAIN-FIT + EDGE-EXTEND — the print-panel sizer that never slices the
+ * design and never distorts it. Ported from `restylepro-os`
+ * `supabase/functions/recreatepro-flat-panels/index.ts` `containExtend`
+ * (RULE 1 — recover, do not invent), which RestylePro itself introduced on
+ * 2026-07-25 after `coverCrop` was reported as "front and hood cropped wrong".
+ * Its own comment states the rule this repo already calls the CORE PRINT RULE:
+ * fill the trim, extend for bleed, never crop the design.
+ *
+ * Why this and not the three alternatives, all of which the owner has ruled
+ * out by name: a `fit: "fill"` resize to the zone DISTORTS (that is what this
+ * replaces, and what the 1.12 drift ceiling existed to bound); a cover-crop
+ * SLICES real artwork off the long axis, which is the exact defect RestylePro
+ * measured; and splitting the flank into sections TILES it. Contain-fit scales
+ * the WHOLE sheet by ONE uniform factor — zero content lost, zero distortion —
+ * centres it, and fills the leftover margin by extending the fitted design's
+ * own edge pixels, which is the same natural bleed the 5" outer bleed already
+ * uses.
+ *
+ * Contain-fit binds EXACTLY ONE axis (`scale = min(tw/sw, th/sh)` makes the
+ * other reach the target), so at most one of the two margin branches ever
+ * runs and there are no corners to reconcile. That is why the vertical rows
+ * may be taken from the fitted image itself: when `oy > 0`, `ox` is 0 and the
+ * fitted artwork already spans the full width.
+ */
+async function containExtend(bytes, targetWidth, targetHeight) {
+  const meta = await sharp(bytes, { limitInputPixels: false }).metadata();
+  const sourceWidth = Number(meta.width || 0), sourceHeight = Number(meta.height || 0);
+  if (!(sourceWidth > 0) || !(sourceHeight > 0)) throw new Error("containExtend: undecodable source");
+  const flat = (pipeline) => pipeline
+    .flatten({ background: "#ffffff" }).removeAlpha().toColourspace("srgb").png().toBuffer();
+
+  const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
+  const fittedWidth = Math.max(1, Math.min(targetWidth, Math.round(sourceWidth * scale)));
+  const fittedHeight = Math.max(1, Math.min(targetHeight, Math.round(sourceHeight * scale)));
+  const fitted = await flat(sharp(bytes, { limitInputPixels: false })
+    .resize(fittedWidth, fittedHeight, { fit: "fill" }));
+
+  const receipt = {
+    contract: CONTAIN_EXTEND_CONTRACT,
+    scale: Number(scale.toFixed(6)),
+    fittedWidthPx: fittedWidth, fittedHeightPx: fittedHeight,
+    bleedXPx: targetWidth - fittedWidth, bleedYPx: targetHeight - fittedHeight,
+  };
+  // Already exactly the zone: the fitted sheet IS the sheet, no margin at all.
+  if (fittedWidth === targetWidth && fittedHeight === targetHeight) return { bytes: fitted, receipt };
+
+  const offsetX = Math.floor((targetWidth - fittedWidth) / 2);
+  const offsetY = Math.floor((targetHeight - fittedHeight) / 2);
+  const layers = [];
+
+  // Horizontal bleed: the fitted design's left/right edge COLUMNS stretched
+  // across the side gaps. `offsetY` is 0 in this branch, so they span the
+  // whole height.
+  if (offsetX > 0) {
+    const rightWidth = targetWidth - fittedWidth - offsetX;
+    layers.push({
+      input: await sharp(fitted).extract({ left: 0, top: 0, width: 1, height: fittedHeight })
+        .resize(offsetX, fittedHeight, { fit: "fill" }).png().toBuffer(),
+      left: 0, top: offsetY,
+    });
+    if (rightWidth > 0) {
+      layers.push({
+        input: await sharp(fitted)
+          .extract({ left: fittedWidth - 1, top: 0, width: 1, height: fittedHeight })
+          .resize(rightWidth, fittedHeight, { fit: "fill" }).png().toBuffer(),
+        left: offsetX + fittedWidth, top: offsetY,
+      });
+    }
+  }
+
+  // Vertical bleed: the top/bottom edge ROWS stretched across the full width.
+  // `offsetX` is 0 here, so the fitted artwork is already full-width.
+  if (offsetY > 0) {
+    const bottomHeight = targetHeight - fittedHeight - offsetY;
+    layers.push({
+      input: await sharp(fitted).extract({ left: 0, top: 0, width: fittedWidth, height: 1 })
+        .resize(targetWidth, offsetY, { fit: "fill" }).png().toBuffer(),
+      left: 0, top: 0,
+    });
+    if (bottomHeight > 0) {
+      layers.push({
+        input: await sharp(fitted)
+          .extract({ left: 0, top: fittedHeight - 1, width: fittedWidth, height: 1 })
+          .resize(targetWidth, bottomHeight, { fit: "fill" }).png().toBuffer(),
+        left: 0, top: offsetY + fittedHeight,
+      });
+    }
+  }
+
+  // THE FULL FITTED ARTWORK, COMPOSITED WHOLE AND LAST — never cropped, and
+  // never painted over by a bleed band.
+  layers.push({ input: fitted, left: offsetX, top: offsetY });
+
+  const composed = await flat(sharp({
+    create: {
+      width: targetWidth, height: targetHeight, channels: 3,
+      background: { r: 255, g: 255, b: 255 },
+    },
+  }).composite(layers));
+  return { bytes: composed, receipt };
 }
 
 /**
@@ -482,6 +631,10 @@ async function authorSurface({
         neighbourSurfaces: staged.map((n) => n.surfaceKey),
         deliveredWidthPx: verdict.deliveredWidthPx, deliveredHeightPx: verdict.deliveredHeightPx,
         holeRatio: verdict.holeRatio, cutoutRepair: verdict.repaired || null,
+        // How much of this panel is the design itself and how much is its own
+        // edge extended for bleed. A reviewer looking at a wide front should be
+        // able to read that from the row rather than from the pixels.
+        containment: verdict.containment || null,
         exchange, providerRequestKey: candidate?.providerRequestKey || null,
         rawStoragePath: candidate?.panelStoragePath || null, rawSha256: candidate?.panelSha256 || null,
       });
@@ -727,6 +880,10 @@ module.exports = {
   AUTHOR_ATTEMPTS,
   HERO_VIEW_SURFACES,
   MAX_AUTHORED_HOLE_RATIO,
+  MAX_CONTAIN_DRIFT_RATIO,
+  CONTAIN_EXTEND_CONTRACT,
+  containExtend,
+  evaluateAuthored,
   SURFACE_LABELS,
   CANVAS_PX,
   HeroDriverRefusal,
