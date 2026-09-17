@@ -10,9 +10,15 @@
  * extra views, the full-wrap yardage, the WooCommerce cart link) under a white
  * skin, with the partner's name in the same lockup WallPro's partner page
  * wears. The brand is DATA (lib/patternpro-brand.ts); a fix to the tool lands
- * on every surface at once. The header bar is black because navigation chrome
- * is always black; everything under it is white with the blue gradient as the
- * accent.
+ * on every surface at once.
+ *
+ * THE HEADER FOLLOWS THE SURFACE. The DesignProAI brand sits inside the OS
+ * shell on the dark surface, so its bar is black like every nav surface. The
+ * partner page is a retail storefront on the light surface, and the owner
+ * wanted it white end to end (2026-09-17: "Go live on patternpro now I need
+ * the white ui just add the WPW colored logo in corner") -- so on `light` the
+ * bar is white with the partner's coloured mark top-left, and the only dark
+ * thing above the fold is the ink. Same lockup, same rule, different tone.
  */
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
@@ -29,6 +35,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
   const theme = patternBrand(brand);
   const stickyTop = useStickyOffset('pattern-header');
   const partner = brand !== 'designpro';
+  const light = theme.surface === 'light';
 
   return (
     // THE THEME SCOPE, same attribute and same token set WallPro uses, so the two
@@ -42,15 +49,19 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
         />
       </Helmet>
 
-      {/* ── Persistent header — black, like every nav surface. The lockup is
-          WallPro's, so the two partner pages read as one system. ────────── */}
+      {/* ── Persistent header. Black on the dark surface, like every nav
+          surface; WHITE on the light surface, with the partner's coloured
+          mark in the corner. The lockup is WallPro's, so the partner pages
+          read as one system. ─────────────────────────────────────────── */}
       <header
         id="pattern-header"
         style={{ top: stickyTop }}
-        className="sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4"
+        className={light
+          ? 'sticky z-30 border-b border-gray-200 bg-white px-4 py-3 text-gray-900 md:px-8 md:py-4'
+          : 'sticky z-30 bg-black px-4 py-3 text-white md:px-8 md:py-4'}
       >
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-          <WallProLockup theme={theme} />
+          <WallProLockup theme={theme} tone={light ? 'light' : 'dark'} />
           <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="outline"

@@ -25,7 +25,22 @@ import type { WallBrand } from '@/lib/wallpro-brand';
  */
 export type LockupBrand = Pick<WallBrand, 'logo' | 'logoAlt' | 'eyebrow' | 'wordmarkLead' | 'wordmarkAccent' | 'tagline'>;
 
-export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; compact?: boolean }) {
+/**
+ * THE INK FOLLOWS THE BAR. The lockup was born on a black bar and painted its
+ * words white by hand. A partner page on the light surface (owner, 2026-09-17:
+ * "I need the white ui just add the WPW colored logo in corner") carries the
+ * same lockup on a WHITE bar, where white ink is invisible. `tone` names the
+ * bar it sits on; the default keeps every existing black header byte-for-byte.
+ */
+export type LockupTone = 'dark' | 'light';
+
+const INK: Record<LockupTone, { lead: string; accent: string; eyebrow: string; cross: string; tagline: string }> = {
+  dark: { lead: 'text-white', accent: 'text-blue-400', eyebrow: 'text-blue-400', cross: 'text-white/50', tagline: 'text-white/70' },
+  light: { lead: 'text-gray-900', accent: 'text-blue-600', eyebrow: 'text-blue-600', cross: 'text-gray-400', tagline: 'text-gray-600' },
+};
+
+export function WallProLockup({ theme, compact = false, tone = 'dark' }: { theme: LockupBrand; compact?: boolean; tone?: LockupTone }) {
+  const ink = INK[tone];
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2.5">
@@ -38,8 +53,8 @@ export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; 
             "×" is doing real work: it says whose tool this is AND who is
             serving it. */}
         {theme.logo && <img src={theme.logo} alt={theme.logoAlt} className={compact ? 'h-6 w-auto shrink-0 md:h-7' : 'h-7 w-auto shrink-0 md:h-9'} />}
-        {!theme.logo && theme.eyebrow && <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-400 md:text-xs">{theme.eyebrow}</p>}
-        {(theme.logo || theme.eyebrow) && <span aria-hidden="true" className="text-lg font-light text-white/50 md:text-xl">&times;</span>}
+        {!theme.logo && theme.eyebrow && <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${ink.eyebrow} md:text-xs`}>{theme.eyebrow}</p>}
+        {(theme.logo || theme.eyebrow) && <span aria-hidden="true" className={`text-lg font-light ${ink.cross} md:text-xl`}>&times;</span>}
         {/* THE ONE BRAND GRADIENT, HERE TOO (Trish 2026-09-17: "Pro should be
             gradient blue"). Every other "Pro" in the product -- sidebar nav,
             dashboard cards, the hero -- runs ToolWordmark's blue-to-fuchsia
@@ -52,11 +67,11 @@ export function WallProLockup({ theme, compact = false }: { theme: LockupBrand; 
             logo reads as noise, not a name -- so only that one case keeps the
             solid tone. */}
         <h1 className={compact ? 'text-xl font-bold leading-tight md:text-2xl' : 'text-2xl font-bold leading-tight md:text-3xl'}>
-          <span className="text-white">{theme.wordmarkLead}</span>
-          <span className={theme.logo ? 'text-blue-400' : 'bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent'}>{theme.wordmarkAccent}</span>
+          <span className={ink.lead}>{theme.wordmarkLead}</span>
+          <span className={theme.logo ? ink.accent : 'bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent'}>{theme.wordmarkAccent}</span>
         </h1>
       </div>
-      <p className="mt-0.5 text-xs text-white/70 md:text-sm">{theme.tagline}</p>
+      <p className={`mt-0.5 text-xs ${ink.tagline} md:text-sm`}>{theme.tagline}</p>
     </div>
   );
 }
