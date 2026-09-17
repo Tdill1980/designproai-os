@@ -514,6 +514,24 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       // The claim carries the generation's CURRENT lease token: the edge
       // authorises the provider request against it (RULE 0.26).
       providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : null,
+    }).catch(async (cause) => {
+      // ONE REFUSED PANEL MUST NOT DISCARD THE RUN. Measured 2026-09-17 over
+      // six consecutive live runs: master.assemble was `pending` on every one
+      // and has NEVER completed. Each had authored driver, passenger, hood and
+      // rear cleanly and had already produced the separated elements
+      // (typeset.produce / contact.produce / element.lockup all completed) --
+      // and threw all of it away because front, a bumper fascia, was refused.
+      // The run then failed over to six-surface, which bakes lettering into
+      // pixels. That is why master.composite has never run, why no customer has
+      // ever received the clean base + composited lockup, and why every sheet
+      // still looks pre-DAG.
+      //
+      // Driver still fails the run: it is the design's origin and there is
+      // nothing to continue from without it.
+      if (!(cause instanceof hero.HeroDriverRefusal) || surfaceKey === "driver") throw cause;
+      const donor = neighbours[0] || await loadSurface("driver");
+      logger(`hero-driver ${surfaceKey} refused (${cause.reason}); continuing deterministically from ${donor.surfaceKey} so the sheet can assemble`);
+      return hero.composeSurfaceFromNeighbour(surfaceKey, donor, zone, cause.reason);
     });
   }
   abortIf();
