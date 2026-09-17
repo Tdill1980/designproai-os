@@ -56,7 +56,7 @@ const { fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v4-clean-base";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -87,6 +87,18 @@ const SURFACE_LABELS = Object.freeze({
   driver: "DRIVER SIDE", passenger: "PASSENGER SIDE", hood: "HOOD", roof: "ROOF", front: "FRONT", rear: "REAR",
 });
 const AUTHOR_ATTEMPTS = 2;
+// SURFACES WHOSE ZONE ASPECT CAN EXCEED WHAT A SINGLE REQUEST CAN EMIT. Driver
+// was measured 0/3 real vehicles (RULE 0.39). The front bumper/fascia strip is
+// the same shape of problem, measured live on the F250 canary: front's zone is
+// 1262x399px (3.16:1), over the 21:9 (2.33:1) ceiling by a drift of 1.354 --
+// `front: aspect_drift:1.342`/`1.354` refused Call 1 identically on two
+// separate real generations (35211386508, 35212228736), forcing a fail-over
+// that spends a full second authoring pass. Hood, rear and roof measure well
+// under the ceiling on every catalog vehicle inspected so far and are left
+// single-step; add a surface here only on the SAME evidentiary bar (a real,
+// measured aspect_drift refusal), never speculatively (RULE 0.32's discipline
+// against untested creative-conditioning changes applies here too).
+const HERO_VIEW_SURFACES = Object.freeze(new Set(["driver", "front"]));
 const MAX_ASPECT_DRIFT_RATIO = 1.12;
 // An authored sheet must arrive whole. Finishing compares against a crop; there
 // is no crop here, so the bar is absolute: no more than 0.2% of the rectangle
@@ -278,19 +290,23 @@ async function evaluateAuthored(surfaceKey, bytes, pixelWidth, pixelHeight) {
  * HeroDriverRefusal after the bounded attempts.
  */
 /**
- * HERO-FIRST STAGE 1 — the driver-side VEHICLE view.
+ * HERO-FIRST STAGE 1 — a surface's VEHICLE-SHEET VIEW, at an achievable aspect.
  *
- * Asks `atlas-author` for a 16:9 photograph of the vehicle wearing the design,
- * through the SAME persona assembly the flat ask uses (only `atlasFlatMaster`
- * differs on the edge). The returned view is not a panel and is never cut as
+ * Asks `atlas-author` for the SAME flat-sheet contract a single-call ask would
+ * use (`atlasHeroSurfaceContract`/`atlasHeroScene`, still "never an on-vehicle
+ * photograph" -- this is not a photograph of the vehicle, whatever the stage
+ * name says), but the request forces `aspectRatio: "16:9"` regardless of the
+ * zone's true ratio. The returned sheet is not a panel and is never cut as
  * one: it is stage 2's design reference, and the edge's receipt says so
  * (`heroStage: "vehicle-view"`).
  *
- * This is what removes the aspect refusal rather than relaxing it. A ~3.6:1
- * flat strip is an ask this model cannot answer -- 21:9 is its widest -- so
- * `evaluateAuthored` refused every driver tile on drift before judging any
- * artwork, 0/3 on real vehicles. A 16:9 photograph is an ask it answers, and
- * composing against real vehicle geometry is where hierarchy comes from.
+ * This is what removes the aspect refusal rather than relaxing it. Driver was
+ * measured 0/3 on real vehicles: its flank is ~3.6:1 and 21:9 is this model's
+ * widest emittable ratio, so `evaluateAuthored` refused every driver tile on
+ * drift before judging any artwork. Front measured the same failure live
+ * (`front: aspect_drift:1.342`/`1.354`, two real generations): its zone is
+ * 3.16:1. Both are in `HERO_VIEW_SURFACES`. A 16:9 sheet is an ask the model
+ * answers; stage 2 then extends that same composition into the true aspect.
  */
 /**
  * HERO-FIRST is ON by default within the hero cascade, and off by one word.
@@ -307,16 +323,16 @@ function heroFirstEnabled() {
 }
 
 async function authorHeroVehicleView({
-  zone, heroRequest, creativeContext, callEdge, providerRequest, store, logger = () => {},
+  surfaceKey = "driver", zone, heroRequest, creativeContext, callEdge, providerRequest, store, logger = () => {},
 }) {
   if (!store || typeof store.putImmutableBytes !== "function") {
-    throw new HeroDriverRefusal("driver", "hero_view_store_missing");
+    throw new HeroDriverRefusal(surfaceKey, "hero_view_store_missing");
   }
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const candidate = await callEdge({
     mode: "atlas-author",
-    surfaceKey: "driver",
-    surfaceLabel: SURFACE_LABELS.driver,
+    surfaceKey,
+    surfaceLabel: SURFACE_LABELS[surfaceKey] || surfaceKey.toUpperCase(),
     first: true,
     targetWidthPx: pixelWidth,
     targetHeightPx: pixelHeight,
@@ -326,19 +342,19 @@ async function authorHeroVehicleView({
     priorTurns: [],
     creativeContext,
     ...(heroRequest || {}),
-    ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: "author:driver-view:1" } } : {}),
+    ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: `author:${surfaceKey}-view:1` } } : {}),
   }, { attempt: 1 });
   if (String(candidate?.heroStage || "") !== "vehicle-view") {
-    throw new HeroDriverRefusal("driver", `hero_view_stage_mismatch:${String(candidate?.heroStage || "none").slice(0, 40)}`);
+    throw new HeroDriverRefusal(surfaceKey, `hero_view_stage_mismatch:${String(candidate?.heroStage || "none").slice(0, 40)}`);
   }
-  if (!candidate?.bytes?.length) throw new HeroDriverRefusal("driver", "hero_view_empty");
+  if (!candidate?.bytes?.length) throw new HeroDriverRefusal(surfaceKey, "hero_view_empty");
   // Stage into the prefix the edge will actually attach from. The panel path the
   // edge returns is NOT one of them.
   const staged = await stageHeroView(store, candidate.bytes);
   if (!CALL1_INPUT_PATH.test(staged.storagePath)) {
-    throw new HeroDriverRefusal("driver", `hero_view_path_invalid:${staged.storagePath.slice(0, 80)}`);
+    throw new HeroDriverRefusal(surfaceKey, `hero_view_path_invalid:${staged.storagePath.slice(0, 80)}`);
   }
-  logger(`hero-first driver: vehicle view ${staged.contentHash.slice(0, 12)} staged (${candidate.aspectRatio || "?"})`);
+  logger(`hero-first ${surfaceKey}: vehicle view ${staged.contentHash.slice(0, 12)} staged (${candidate.aspectRatio || "?"})`);
   return Object.freeze({
     storagePath: staged.storagePath,
     contentHash: staged.contentHash,
@@ -347,7 +363,7 @@ async function authorHeroVehicleView({
     imageRequestCount: Number(candidate?.imageRequestCount || 0),
     providerCacheHit: candidate?.providerCacheHit === true,
     exchange: candidate?.userTurn?.role === "user" && candidate?.modelTurn?.role === "model"
-      ? { surfaceKey: "driver", imageBytes: Number(candidate?.historyImageBytes || 0), turns: [candidate.userTurn, candidate.modelTurn] }
+      ? { surfaceKey, imageBytes: Number(candidate?.historyImageBytes || 0), turns: [candidate.userTurn, candidate.modelTurn] }
       : null,
   });
 }
@@ -488,18 +504,26 @@ async function authorHeroDriverMaster({
       }
       const neighbours = (AUTHOR_NEIGHBOURS[surfaceKey] || []).map((key) => authored.get(key)).filter(Boolean);
       const priorExchanges = (AUTHOR_HISTORY[surfaceKey] || []).map((key) => exchanges.get(key)).filter(Boolean);
-      // HERO-FIRST: the driver is TWO calls -- the vehicle view, then its
-      // flatten. Everything after the driver is unchanged, because what the
-      // continuations are shown and replay is the finished driver FLANK either
-      // way. `DESIGNPRO_ATLAS_HERO_FIRST=off` runs the single-call driver.
+      // HERO-FIRST: an eligible surface is TWO calls -- the vehicle-sheet
+      // view, then its flatten. Driver is always eligible; front joins it on
+      // the SAME measured aspect-drift evidence (HERO_VIEW_SURFACES, above).
+      // Everything else in the cascade is unchanged, because what the
+      // continuations are shown and replay is the finished FLANK either way.
+      // `DESIGNPRO_ATLAS_HERO_FIRST=off` runs every surface single-call.
       let heroView = null;
-      if (surfaceKey === "driver" && heroFirstEnabled()) {
+      if (HERO_VIEW_SURFACES.has(surfaceKey) && heroFirstEnabled()) {
         heroView = await authorHeroVehicleView({
-          zone: zoneOf("driver"), heroRequest, creativeContext, callEdge, providerRequest, store, logger,
+          surfaceKey, zone: zoneOf(surfaceKey), heroRequest, creativeContext, callEdge, providerRequest, store, logger,
         });
       }
+      // Driver is ALWAYS the design's from-scratch origin on the edge, split
+      // or not (`first` there also gates the full persona assembly). A surface
+      // that only sometimes runs the view+flatten pair -- front -- is `first`
+      // ONLY on the pass that actually has a view to flatten; with hero-first
+      // off (or outside HERO_VIEW_SURFACES) it stays the plain continuation it
+      // always was.
       return authorSurface({
-        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver", neighbours, priorExchanges,
+        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges,
         heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
       });
     }));
@@ -607,6 +631,7 @@ module.exports = {
   AUTHOR_NEIGHBOURS,
   AUTHOR_HISTORY,
   AUTHOR_ATTEMPTS,
+  HERO_VIEW_SURFACES,
   MAX_AUTHORED_HOLE_RATIO,
   SURFACE_LABELS,
   CANVAS_PX,

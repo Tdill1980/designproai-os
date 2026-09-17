@@ -49,11 +49,15 @@ const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
 const MASTER_NODE = "master.assemble";
-// NODE 1 of the hero-first driver: the 3D vehicle render. NODE 3 is
-// `surface.driver`, the 2D flattener that consumes it. They are separate node
-// rows so a failed flatten retries WITHOUT re-billing the vehicle view, and so
-// the ledger can say which worker drew which half.
-const DRIVER_VIEW_NODE = "surface.driver.view";
+// NODE 1 of a hero-view surface: the vehicle-sheet render at an achievable
+// aspect. NODE 3 is `surface.<key>`, the flattener that consumes it. They are
+// separate node rows so a failed flatten retries WITHOUT re-billing the view,
+// and so the ledger can say which worker drew which half. Driver is always
+// hero-view-eligible; front joined it on the same measured evidence
+// (hero.HERO_VIEW_SURFACES) -- a real, measured aspect_drift refusal, twice,
+// on the live F250 canary (`front: aspect_drift:1.342`/`1.354`).
+const viewNode = (surfaceKey) => `surface.${surfaceKey}.view`;
+const DRIVER_VIEW_NODE = viewNode("driver");
 // ARCHITECTURE_DAG.md §4.2 -- the element graph's first node. A ROOT: it depends
 // only on the run's frozen brief, so it is claimable in the same instant as
 // surface.driver.view and adds nothing to the critical path.
@@ -206,18 +210,28 @@ function logoNodeFor(input) {
 
 function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
-  // HERO-FIRST SPLITS THE DRIVER IN TWO. Node 1 draws the vehicle in its own
-  // 16:9 frame; node 3 flattens that render into the flank. The handoff is the
-  // stored render's IDENTITY -- storage path plus sha256 -- never a blob and
-  // never an in-memory buffer, so either half can re-run on the other worker.
-  if (heroFirst) nodes.push({ key: DRIVER_VIEW_NODE, dependsOn: [], input: { surfaceKey: "driver", stage: "vehicle-view" }, maxAttempts: 3 });
+  // HERO-FIRST SPLITS EACH ELIGIBLE SURFACE IN TWO. Node 1 draws the sheet in
+  // its own 16:9 frame; node 3 flattens that render into the true zone. The
+  // handoff is the stored render's IDENTITY -- storage path plus sha256 --
+  // never a blob and never an in-memory buffer, so either half can re-run on
+  // the other worker. Driver is always eligible; front joined it on the same
+  // measured aspect-drift evidence (hero.HERO_VIEW_SURFACES). Both view nodes
+  // are ROOTS -- dependsOn: [] -- so front's view is claimable in the same
+  // instant as driver's, in parallel with driver's own authoring, and adds
+  // nothing to the critical path by the time front's flatten is ready.
+  if (heroFirst) {
+    for (const surfaceKey of hero.HERO_VIEW_SURFACES) {
+      nodes.push({ key: viewNode(surfaceKey), dependsOn: [], input: { surfaceKey, stage: "vehicle-view" }, maxAttempts: 3 });
+    }
+  }
   for (const stage of hero.AUTHOR_CASCADE) {
     for (const surfaceKey of stage) {
       const deps = surfaceKey === "passenger" ? ["driver"]
         : [...new Set([...(hero.AUTHOR_NEIGHBOURS[surfaceKey] || []), ...(hero.AUTHOR_HISTORY[surfaceKey] || [])])];
       const dependsOn = deps.map(surfaceNode);
-      if (surfaceKey === "driver" && heroFirst) dependsOn.push(DRIVER_VIEW_NODE);
-      nodes.push({ key: surfaceNode(surfaceKey), dependsOn, input: { surfaceKey, ...(surfaceKey === "driver" && heroFirst ? { stage: "flatten" } : {}) }, maxAttempts: 3 });
+      const hasHeroView = heroFirst && hero.HERO_VIEW_SURFACES.has(surfaceKey);
+      if (hasHeroView) dependsOn.push(viewNode(surfaceKey));
+      nodes.push({ key: surfaceNode(surfaceKey), dependsOn, input: { surfaceKey, ...(hasHeroView ? { stage: "flatten" } : {}) }, maxAttempts: 3 });
     }
   }
   nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
@@ -431,12 +445,15 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
 
-  // NODE 1 -- the 3D vehicle render. It persists through the edge and returns
-  // only its identity; nothing downstream receives its pixels from this node.
-  if (node.node_key === DRIVER_VIEW_NODE) {
+  // NODE 1 -- the vehicle-sheet render, for any hero-view-eligible surface. It
+  // persists through the edge and returns only its identity; nothing
+  // downstream receives its pixels from this node.
+  if (node.node_key.endsWith(".view") && node.node_key.startsWith("surface.")) {
     abortIf();
+    const viewSurfaceKey = String(node.input?.surfaceKey || node.node_key.replace(/^surface\./, "").replace(/\.view$/, ""));
     const view = await hero.authorHeroVehicleView({
-      zone: zoneOf(manifest, "driver"),
+      surfaceKey: viewSurfaceKey,
+      zone: zoneOf(manifest, viewSurfaceKey),
       heroRequest: hero.heroRequestBody(definition.input),
       creativeContext: String(definition.creativeContext || ""),
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
@@ -444,8 +461,8 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       store,
       logger,
     });
-    logger(`atlas call 1 graph ${run.id}: driver vehicle view ${view.contentHash.slice(0, 12)}`);
-    return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: "driver", stage: "vehicle-view",
+    logger(`atlas call 1 graph ${run.id}: ${viewSurfaceKey} vehicle view ${view.contentHash.slice(0, 12)}`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: viewSurfaceKey, stage: "vehicle-view",
       view: { storagePath: view.storagePath, contentHash: view.contentHash, byteSize: view.byteSize,
         imageRequestCount: view.imageRequestCount, providerCacheHit: view.providerCacheHit },
       // The exchange travels as TURNS, which carry image REFERENCES (path +
@@ -467,16 +484,22 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     abortIf();
     // NODE 3 reads node 1's output as a REFERENCE. A missing or malformed
     // reference is a dependency failure, never a silent single-call driver.
+    // Generalized over ANY hero-view-eligible surface (hero.HERO_VIEW_SURFACES),
+    // not just driver -- front's flatten reads surface.front.view the same way.
     let heroView = null;
-    if (surfaceKey === "driver" && (node.depends_on || []).includes(DRIVER_VIEW_NODE)) {
-      const view = deps.get(DRIVER_VIEW_NODE)?.output?.view;
+    const surfaceViewNode = viewNode(surfaceKey);
+    if (hero.HERO_VIEW_SURFACES.has(surfaceKey) && (node.depends_on || []).includes(surfaceViewNode)) {
+      const view = deps.get(surfaceViewNode)?.output?.view;
       if (!view?.storagePath || !view?.contentHash) {
-        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${DRIVER_VIEW_NODE} carries no view reference`, true);
+        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${surfaceViewNode} carries no view reference`, true);
       }
-      heroView = Object.freeze({ ...view, exchange: deps.get(DRIVER_VIEW_NODE)?.output?.exchange || null });
+      heroView = Object.freeze({ ...view, exchange: deps.get(surfaceViewNode)?.output?.exchange || null });
     }
     result = await hero.authorSurface({
-      surfaceKey, zone, first: surfaceKey === "driver", neighbours, priorExchanges, heroView,
+      // Driver is ALWAYS `first` on the edge, split or not. A surface that is
+      // hero-view-eligible only sometimes (front) is `first` only on the pass
+      // that actually has a view to flatten.
+      surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges, heroView,
       heroRequest: hero.heroRequestBody(definition.input), creativeContext: String(definition.creativeContext || ""),
       store, logger,
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
@@ -742,7 +765,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, viewNode, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

@@ -51,7 +51,7 @@ test("the runtime and the edge advance their prompt version TOGETHER", () => {
   const edgeVersion = /const ATLAS_AUTHOR_PROMPT_VERSION = "([^"]+)"/.exec(EDGE)?.[1];
   assert.equal(edgeVersion, hero.HERO_DRIVER_PROMPT_VERSION,
     "a runtime that sends one version to an edge pinned to another is refused at the door");
-  assert.match(edgeVersion, /v4-clean-base$/, "the request contract changed, so the version must say so");
+  assert.match(edgeVersion, /v5-front-view-flatten$/, "the request contract changed again, so the version must say so");
 });
 
 test("ONE flag decides the clean base and the element nodes", () => {
