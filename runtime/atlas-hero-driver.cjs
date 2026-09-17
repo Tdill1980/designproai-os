@@ -522,8 +522,16 @@ async function authorHeroDriverMaster({
       // ONLY on the pass that actually has a view to flatten; with hero-first
       // off (or outside HERO_VIEW_SURFACES) it stays the plain continuation it
       // always was.
+      // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 on
+      // surface.front). Its subject is its own full-size view render, and
+      // continuity already rides the replayed view exchange. Front's
+      // AUTHOR_NEIGHBOURS is ["driver","passenger"], so attaching them put a
+      // view + two flanks + replayed turns in ONE edge invocation and OOM'd
+      // the worker on every attempt; driver's flatten never hit it only
+      // because driver's neighbour list is empty.
       return authorSurface({
-        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges,
+        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView),
+        neighbours: heroView ? [] : neighbours, priorExchanges,
         heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
       });
     }));

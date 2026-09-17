@@ -499,7 +499,13 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       // Driver is ALWAYS `first` on the edge, split or not. A surface that is
       // hero-view-eligible only sometimes (front) is `first` only on the pass
       // that actually has a view to flatten.
-      surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges, heroView,
+      // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 on
+      // surface.front): its own full-size view render IS the subject, and
+      // continuity rides the replayed view exchange. Front's neighbour list
+      // is ["driver","passenger"], so attaching them put a view + two flanks
+      // + replayed turns in one edge invocation and OOM'd the worker.
+      surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView),
+      neighbours: heroView ? [] : neighbours, priorExchanges, heroView,
       heroRequest: hero.heroRequestBody(definition.input), creativeContext: String(definition.creativeContext || ""),
       store, logger,
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),

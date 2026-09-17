@@ -310,8 +310,14 @@ test("4. end to end across two node workers: seven image requests, passenger a f
     assert.equal(frontFlatten.priorTurns[3].parts[0].thoughtSignature, "sig-front-view",
       "front's own view signature rides second, on the part it arrived on");
     assert.equal(frontFlatten.priorTurns[3].parts[0].imageRef.storagePath, "atlas-author/front-view.png");
-    assert.deepEqual(frontFlatten.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
-      "front's flatten still sees driver + passenger as reference IMAGES, unchanged from its plain-continuation call");
+    // A FLATTEN CARRIES NO NEIGHBOUR IMAGES. Live 9c6008ec returned HTTP 546
+    // (edge worker OOM) on surface.front, eight attempts, because the flatten
+    // sent its full-size view render PLUS driver PLUS passenger PLUS four
+    // replayed turns in one invocation. Driver's flatten never hit it only
+    // because driver's neighbour list is empty. Continuity is the replayed
+    // exchange above; the view render is the subject.
+    assert.deepEqual(frontFlatten.neighbours, [],
+      "a flatten sends no neighbour images -- that combination OOM'd the edge worker on every attempt");
     // Node 1 itself still draws from scratch, for BOTH surfaces: a hero-view
     // with history would be a second creative authority.
     assert.deepEqual(driverView.priorTurns, [], "the driver vehicle view replays nothing");

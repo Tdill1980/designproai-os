@@ -390,8 +390,12 @@ test("hero-first runs driver AND front as vehicle-view then flatten, and changes
   assert.equal(frontFlatten.priorTurns.length, 4, "front's flatten continues driver's flank AND its own view");
   assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-driver", "driver's flank is pinned first");
   assert.equal(frontFlatten.priorTurns[3].parts[0].thoughtSignature, "sig-front-view", "front's own view rides second");
-  assert.deepEqual(frontFlatten.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
-    "front's flatten still sees driver + passenger as reference images, unchanged");
+  // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 edge OOM on
+  // surface.front): view render + driver + passenger + replayed turns in one
+  // invocation exhausted the worker. Driver's flatten escaped only because its
+  // neighbour list is empty.
+  assert.deepEqual(frontFlatten.neighbours, [],
+    "a flatten sends no neighbour images -- that combination OOM'd the edge worker");
 
   // Everything else is untouched: hood and rear still see the finished FLANK,
   // never any vehicle view, and roof still sees everyone.
