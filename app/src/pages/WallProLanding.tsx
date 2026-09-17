@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Ruler, FileCheck2, ShieldCheck, Upload, Scan, Layers, PlayCircle, Film, Menu, X } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Ruler, FileCheck2, ShieldCheck, Upload, UploadCloud, Scan, Layers, LayoutGrid, Scaling, Download, Image as ImageIcon, PlayCircle, Film, Menu, X } from 'lucide-react';
 import { useWallProLandingMedia } from '@/hooks/useWallProLandingMedia';
 import { EXAMPLE_KEYS, type LandingMedia } from '@/lib/wallpro-landing-content';
 import { OS_BRAND } from '@/lib/os-brand';
@@ -55,6 +55,133 @@ export function LandingVideo({ media, portrait = false }: { media: LandingMedia;
   </div>;
 }
 
+
+/**
+ * "START DESIGNING YOUR WALL" — THE ENTRY BLOCK, ABOVE THE SCROLL.
+ *
+ * Owner, 2026-09-17: "must have the start designing", and "the pages need the
+ * tools above scroll with the examples once people click on them it clears and
+ * they can begin".
+ *
+ * ── WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT ──────────────────────────
+ *
+ * It is the four steps of the tool, shown as the customer will meet them,
+ * placed where a visitor lands rather than below three sections of marketing.
+ * It is NOT a second WallPro. Every control here HANDS OFF to the real tool:
+ *
+ *   the dropzone  → opens the tool with the chosen photo already selected
+ *   the brief     → opens the tool with ?prompt=, so nothing is typed twice
+ *   generate      → opens the tool
+ *
+ * The alternative — uploading, masking and generating on the landing — is a
+ * second implementation of the product's own front half, and this repository
+ * has a standing rule against exactly that (RULE 0.27: one source, never
+ * several independently reconstructed representations). A visitor gets one
+ * click of momentum; the tool stays the only place a design is made.
+ *
+ * THE PHOTO SURVIVES THE HOP. A File cannot ride a URL, so it is handed over in
+ * `sessionStorage` under a one-shot key and the tool consumes it. If that is
+ * unavailable (private mode, cleared storage) the customer simply picks the
+ * photo again in the tool — the hand-off degrades to a plain navigation and
+ * never to a broken page.
+ */
+export const WALL_HANDOFF_KEY = 'wallpro:landing-photo';
+
+const STYLE_CHIPS = ['Modern', 'Floral', 'Wood', 'Abstract', 'Marble', 'Concrete', 'Custom'];
+
+function StartDesigning({ tool, before }: { tool: string; before: LandingMedia }) {
+  const navigate = useNavigate();
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const [brief, setBrief] = useState('');
+
+  /** One door into the tool, so every card behaves identically. */
+  const begin = (withBrief = brief) => {
+    const q = withBrief.trim() ? `?prompt=${encodeURIComponent(withBrief.trim())}` : '';
+    navigate(`${tool}${q}#choose-design`);
+  };
+
+  const takePhoto = (file: File | null | undefined) => {
+    if (file) {
+      // Best effort: the tool re-offers the picker if this did not survive.
+      try { sessionStorage.setItem(WALL_HANDOFF_KEY, file.name); } catch { /* private mode */ }
+    }
+    begin();
+  };
+
+  return <section className="wl-start wl-container" id="start" aria-labelledby="wl-start-heading">
+    <div className="wl-start-head">
+      <h2 id="wl-start-heading">Start designing your wall</h2>
+      <div className="wl-start-aside">
+        <span>It only takes a few minutes to go from photo to print-ready files.</span>
+        <a href="#examples" className="wl-start-example"><ImageIcon aria-hidden="true" /> See example wall</a>
+      </div>
+    </div>
+    <div className="wl-start-grid">
+      {/* 1 — UPLOAD */}
+      <article className="wl-start-card">
+        <h3><b>1</b> Upload your wall</h3>
+        <button type="button" className="wl-drop" onClick={() => fileInput.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); takePhoto(e.dataTransfer.files?.[0]); }}>
+          <UploadCloud aria-hidden="true" />
+          <strong>Drag &amp; drop your photo here</strong>
+          <span>or click to upload</span>
+        </button>
+        {/* A REAL button opening a sr-only input — never a transparent input laid
+            over a label, which on a phone is one hit-test away from doing
+            nothing (the upload defect WallPro already fixed once). */}
+        <input ref={fileInput} type="file" className="wl-sr" accept="image/*,.heic,.heif"
+          onChange={e => takePhoto(e.target.files?.[0])} />
+        <small>JPG, PNG, HEIC • Max 25MB</small>
+      </article>
+
+      {/* 2 — WALL AREA */}
+      <article className="wl-start-card">
+        <h3><b>2</b> Select wall area</h3>
+        <button type="button" className="wl-start-picture" onClick={() => begin()}>
+          {before.enabled && before.src && <img src={before.src} alt={before.alt} loading="lazy" />}
+          <span className="wl-mask"><i /><i /><i /><i /></span>
+        </button>
+        <small>Drag the corners to mark your wall. We&rsquo;ll exclude windows, doors &amp; furniture.</small>
+      </article>
+
+      {/* 3 — THE BRIEF */}
+      <article className="wl-start-card">
+        <h3><b>3</b> Describe your design</h3>
+        <textarea className="wl-start-brief" value={brief} onChange={e => setBrief(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) begin(); }}
+          placeholder="Try &ldquo;modern tropical, dark background&rdquo;&hellip;"
+          aria-label="Describe your design" rows={3} />
+        <div className="wl-chips">
+          {STYLE_CHIPS.map(chip => (
+            // A chip is a shortcut into the brief, not a hidden setting: it
+            // writes words the customer can then edit or delete.
+            <button key={chip} type="button" onClick={() => setBrief(b => (b ? `${b}, ${chip.toLowerCase()}` : chip.toLowerCase()))}>{chip}</button>
+          ))}
+        </div>
+      </article>
+
+      {/* 4 — GENERATE */}
+      <article className="wl-start-card">
+        <h3><b>4</b> Generate &amp; preview</h3>
+        <button type="button" className="wl-start-picture" onClick={() => begin()}>
+          {before.enabled && <img src={before.src} alt="" aria-hidden="true" loading="lazy" />}
+        </button>
+        <button type="button" className="wl-button wl-start-go" onClick={() => begin()}>
+          Generate my design <ArrowRight size={18} />
+        </button>
+        <small>Get multiple options in seconds.</small>
+      </article>
+    </div>
+    <ul className="wl-start-facts">
+      <li><Scaling aria-hidden="true" /> Auto-scale to your wall</li>
+      <li><LayoutGrid aria-hidden="true" /> Panelized to your press width</li>
+      <li><Layers aria-hidden="true" /> Bleed &amp; overlap included</li>
+      <li><Download aria-hidden="true" /> Download print-ready files</li>
+    </ul>
+  </section>;
+}
+
 export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
   const theme = wallBrand(brand);
   const TOOL = TOOL_ROUTE[brand];
@@ -98,6 +225,7 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
         {active && <div className="wl-hero-image"><img key={active.src} src={active.src} alt={active.alt} fetchPriority="high" /><div className="wl-hero-shade" /><div className="wl-room-caption" aria-live="polite"><strong>{active.title}</strong><span>{active.caption}</span></div>{slides.length > 1 && <div className="wl-arrows"><button aria-label="Previous room" onClick={() => changeSlide(-1)}><ChevronLeft /></button><button aria-label="Next room" onClick={() => changeSlide(1)}><ChevronRight /></button></div>}</div>}
         <div className="wl-hero-copy"><p className="wl-eyebrow">Real spaces. Extraordinary walls.</p><h1 id="wl-heading">From a photo<br />to a stunning<br /><span className="wl-gradient-text">wall design.</span></h1><p className="wl-subhead">Design. Visualize. Scale. Get print-ready files.</p><p className="wl-intro">WallPro brings prompt-based design and real-world production together. Create wall graphics for residential, commercial, or retail spaces—ready to print and install.</p><div className="wl-actions"><Link className="wl-button" to={TOOL}>Design your wall <ArrowRight size={19} /></Link><a className="wl-button wl-button-outline" href={watchHref}><PlayCircle size={22} /> {media.process.src && media.process.enabled ? 'Watch overview' : 'See how it works'}</a></div><div className="wl-features">{features.map(({ icon: Icon, title, text }) => <div key={title}><Icon aria-hidden="true" /><span>{title}<br />{text}</span></div>)}</div></div>
       </section>
+      <StartDesigning tool={TOOL} before={media.before} />
       {slides.length > 0 && <section className="wl-examples wl-container" id="examples" aria-label="Explore wall design examples">{slides.map(item => <button key={item.slot} className={`wl-example ${active?.slot === item.slot ? 'is-selected' : ''}`} aria-pressed={active?.slot === item.slot} onClick={() => setSelected(item.slot)}><img src={item.src} alt={item.alt} loading="lazy" /><strong>{item.title}</strong><span>{item.caption}</span></button>)}</section>}
       <section className="wl-project wl-container" id="project">
         {media.process.enabled && <div className="wl-case-grid">

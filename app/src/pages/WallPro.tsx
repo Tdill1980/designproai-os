@@ -149,7 +149,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [catalogThumbs, setCatalogThumbs] = useState<Record<string, string>>({});
   const [catalogIndustry, setCatalogIndustry] = useState('all');
   const [designId, setDesignId] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState('');
+  /**
+   * THE LANDING'S "Start designing your wall" HANDS THE BRIEF OVER.
+   *
+   * Owner, 2026-09-17: the block must WORK end to end, not look like it does.
+   * A visitor who types "modern tropical, dark background" on the landing and
+   * then finds an empty box in the tool has been made to type it twice, which
+   * is worse than not offering the box at all.
+   *
+   * So the landing navigates with ?prompt= and the tool opens with it already
+   * in the brief. Read ONCE on mount: re-reading would fight the customer's own
+   * edits every time the URL changed for an unrelated reason.
+   */
+  const [prompt, setPrompt] = useState(() => params.get('prompt') || '');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
   // Tile-or-mural and the tile's width are decided by code from the brief and

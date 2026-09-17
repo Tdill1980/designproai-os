@@ -52,3 +52,52 @@
 .wl-light .wl-footer{color:#51627a}
 .wl-light .wl-case-copy>p:not(.wl-eyebrow),.wl-light .wl-install-grid p:not(.wl-eyebrow){color:#41546a}
 .wl-light .wl-section-heading p{color:#51627a}
+
+/* ── "Start designing your wall" — the entry block, above the scroll ────────
+   Same grid language as .wl-steps so the page reads as one system, but these
+   cards are INTERACTIVE and taller: a dropzone and a brief need room a
+   five-across illustration does not. */
+.wl-start{padding-top:26px;padding-bottom:30px;scroll-margin-top:100px}
+.wl-start-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:20px}
+.wl-start-head h2{font-size:clamp(24px,2.6vw,34px)}
+.wl-start-aside{display:flex;align-items:center;gap:18px;font-size:13px;color:var(--wl-muted)}
+.wl-start-example{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--wl-line);border-radius:10px;padding:9px 14px;font-weight:600;font-size:13px}
+.wl-start-example svg{width:16px;height:16px}
+.wl-start-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.wl-start-card{display:flex;flex-direction:column;gap:10px;background:linear-gradient(130deg,#0b2131,#051421);border:1px solid #1d3242;border-radius:14px;padding:16px}
+.wl-start-card h3{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:650}
+.wl-start-card h3 b{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border-radius:50%;background:linear-gradient(140deg,#00a6ff,#3565ff 65%,#ac44ee);font-size:15px}
+.wl-start-card small{font-size:11px;color:var(--wl-muted);line-height:1.45}
+.wl-drop{flex:1;min-height:132px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed #35516b;border-radius:11px;background:#0a1c2b;color:inherit;cursor:pointer;transition:border-color .2s,background .2s;padding:14px}
+.wl-drop:hover{border-color:#159cf7}
+.wl-drop:hover{background:#0d2333}
+.wl-drop svg{width:30px;height:30px;color:#6fb6ff}
+.wl-drop strong{font-size:13px;font-weight:600}
+.wl-drop span{font-size:12px;color:var(--wl-muted)}
+.wl-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.wl-start-picture{position:relative;flex:1;min-height:132px;border:0;padding:0;border-radius:10px;overflow:hidden;background:#193246;cursor:pointer;display:block;width:100%}
+.wl-start-picture img{width:100%;height:100%;object-fit:cover;display:block}
+.wl-start-brief{flex:1;min-height:96px;width:100%;resize:none;border-radius:10px;border:1px solid #30465c;background:#142b40;color:#d3deeb;padding:12px;font:inherit;font-size:13px;line-height:1.5}
+.wl-start-brief::placeholder{color:#7f93aa}
+.wl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.wl-chips button{border:1px solid #2d465c;background:#10283c;color:inherit;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:600;cursor:pointer;transition:border-color .2s,background .2s}
+.wl-chips button:hover{border-color:#159cf7;background:#16344b}
+.wl-start-go{min-height:42px;width:100%;padding:11px 18px;font-size:13.5px;gap:10px}
+.wl-start-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0 0;padding:16px 0 0;list-style:none;border-top:1px solid var(--wl-line)}
+.wl-start-facts li{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--wl-muted)}
+.wl-start-facts svg{width:20px;height:20px;color:#6fb6ff;flex-shrink:0}
+@media (max-width:1100px){.wl-start-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wl-start-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.wl-start-grid{grid-template-columns:1fr}.wl-start-facts{grid-template-columns:1fr}}
+
+/* The light brand's surfaces for the same block. */
+.wl-light .wl-start-card{background:#fff;border-color:#dce5ef}
+.wl-light .wl-drop{background:#f4f8fc;border-color:#c3d5e6}
+.wl-light .wl-drop:hover{background:#eaf2fa;border-color:#1685da}
+.wl-light .wl-drop svg{color:#1a7fd4}
+.wl-light .wl-start-picture{background:#e6edf5}
+.wl-light .wl-start-brief{background:#f4f8fc;border-color:#d0dce8;color:#2c3e53}
+.wl-light .wl-start-brief::placeholder{color:#8296ab}
+.wl-light .wl-chips button{background:#f1f5fa;border-color:#d0dce8}
+.wl-light .wl-chips button:hover{background:#e6f0fa;border-color:#1685da}
+.wl-light .wl-start-facts svg{color:#1a7fd4}
+.wl-light .wl-start-example{border-color:#d0dce8}
