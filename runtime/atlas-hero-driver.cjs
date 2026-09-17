@@ -55,7 +55,7 @@ const { holeRatio, trimHistory, MAX_HISTORY_EXCHANGES } = require("./atlas-panel
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v3-flatten-continues-the-view";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v4-clean-base";
 const CANVAS_PX = 4096;
 
 /** Execution order. Surfaces inside one stage run in parallel; stages run in sequence. */
@@ -508,7 +508,22 @@ function heroRequestBody(input) {
     vehicleYear: pick(vehicle.year), vehicleMake: pick(vehicle.make), vehicleModel: pick(vehicle.model), vehicleType: pick(vehicle.type),
     styleDescriptors: pick(input?.styleDescriptors),
     visionboard_intent: pick(input?.visionboard_intent),
+    // ARCHITECTURE_DAG.md §4.1 -- Layer 0. When the element graph is on, the
+    // name, logo and contact bar are separate deterministic artifacts, so every
+    // authored surface is asked for BACKGROUND ARTWORK ONLY. Off, this is
+    // undefined and the request is byte-identical to before.
+    cleanBase: cleanBaseEnabled() ? true : undefined,
   };
+}
+
+/**
+ * The clean base is the element graph's other half: authoring surfaces without
+ * lettering only makes sense when something else is going to set it. One flag
+ * decides both, so they can never be half-on -- a clean base with no element
+ * nodes would ship a wrap with no company name on it at all.
+ */
+function cleanBaseEnabled(env = process.env) {
+  return String(env.DESIGNPRO_ATLAS_ELEMENT_GRAPH || "").trim().toLowerCase() === "on";
 }
 
 function heroDriverEnabled(env = process.env) {
@@ -516,6 +531,7 @@ function heroDriverEnabled(env = process.env) {
 }
 
 module.exports = {
+  cleanBaseEnabled,
   HERO_DRIVER_TOPOLOGY,
   HERO_DRIVER_CONTRACT,
   HERO_DRIVER_PROMPT_VERSION,

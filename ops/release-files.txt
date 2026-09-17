@@ -95,6 +95,7 @@ runtime/atlas-call1-graph.cjs
 runtime/atlas-typeset-layer.cjs
 runtime/atlas-logo-prepare.cjs
 runtime/atlas-element-lockup.cjs
+runtime/atlas-master-composite.cjs
 # The element graph's typography faces. VENDORED and hash-pinned rather than
 # fetched: a graph node that can fail on raw.githubusercontent.com is not
 # deterministic, and three of the reference registry's paths are already dead

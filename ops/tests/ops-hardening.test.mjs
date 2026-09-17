@@ -23,8 +23,9 @@ test("one canonical policy includes every required runtime file and five deploy 
   // producer and its 42 vendored font files (ARCHITECTURE_DAG.md chunk 1-2:
   // atlas-typeset-layer.cjs reads fonts.json at REQUIRE time, so the faces and
   // their licences are release files, not test fixtures), and the logo
-  // preparer (chunk 5) and the placement planner (chunk 6).
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 127);
+  // preparer (chunk 5), the placement planner (chunk 6) and the Layer 0 +
+  // Layer 1 compositor (chunk 8).
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 128);
   for (const name of [
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",

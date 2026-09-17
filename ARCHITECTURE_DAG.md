@@ -227,6 +227,54 @@ both nodes compile when both exist in the brief.
 | **AI calls** | zero — sharp composite at the manifest's boxes |
 | **gates** | the composited sheet is what the whole-master gates judge, and what the six panels are cut from |
 
+**The coordinate transform, stated because it is the whole risk.** The plan's
+boxes are normalized to the trim rectangle in the panel's READING orientation;
+the sheet stores a flank ROTATED, and extraction restores reading orientation by
+rotating the crop by `-rotationDegrees`. So reading → sheet is `+rotationDegrees`
+and the box moves with it, with reading size `(RW, RH) = rotated ? (trim.h, trim.w) : (trim.w, trim.h)`:
+
+```
+rot   0 : sheet = (trim.x + rx,                 trim.y + ry)                size (dw, dh)
+rot +90 : sheet = (trim.x + trim.w - ry - dh,   trim.y + rx)                size (dh, dw)
+rot -90 : sheet = (trim.x + ry,                 trim.y + trim.h - rx - dw)  size (dh, dw)
+```
+
+Proven by ROUND TRIP in `tests/atlas-master-composite.test.mjs`: composite onto a
+sheet, extract the panel the way the runtime really extracts it, and read the
+pixels. The marker is **asymmetric** — left half red, right half blue — so a
+mirror is visible; a symmetric fixture cannot fail that test, which is what made
+the earlier passenger fixtures useless. The element is resized in reading space
+and then rotated; rotating first would swap the axes the resize is measured
+against.
+
+### 4.7 STILL TO BUILD — `logo.generate` (owner requirement, 2026-09-17)
+
+**Owner, verbatim:** *"We must add a logo.generate node. If a client does not
+upload a logo, VehiclePro MUST automatically generate a unique, custom brand
+mark/icon as an isolated asset to be fed into the lockup. We want unique custom
+branding for every wrap, not just text."*
+
+| | |
+|---|---|
+| **when** | `logo.prepare` reports `source: "absent"` — no customer upload |
+| **depends_on** | ∅ (a root, from the brief) |
+| **output** | the same element envelope, `role: "logo"`, `source: "generated"`, on transparent alpha |
+| **feeds** | `element.lockup`, exactly like an uploaded mark |
+
+This is the ONE element node that is not deterministic, and it must be built as
+such: its own bounded image call, its own refusal path, its own receipt, and a
+`source` that never claims to be the customer's. It does not change §4.4 —
+`logo.prepare` still never generates; generation is a separate node with a
+separate name, so a receipt can always answer "was this mark theirs or ours".
+
+RULE 1 first: `restylepro-os` has `logopro-generate-concepts` and
+`logopro-finalize-logo`, which are the proven generator and are named in RULE
+0.26's pinned stack. Locate and compare them before designing anything.
+
+Today, with no upload, the typography lockup is the brand mark — which is what
+`buildLogoArchitecture()` directs on the prompt side, and is the honest state
+until this node exists.
+
 **Passenger consequence, which is the point of the whole port:** with lettering
 as a known object, the passenger flank is `flop(cleanDriver)` + the SAME element
 composited un-flipped at the mirrored box. There is no band to read back and
@@ -260,8 +308,9 @@ own absence before it is called done.
 | 4 | `contact.produce` node + the never-invent input assertion | **done** |
 | 5 | `logo.prepare` node (pass-through, honest `absent`) | **done** |
 | 6 | `element.lockup` placement manifest | **done** |
-| 7 | clean-base authoring contract (§4.1) — prompt versions advance together | pending |
-| 8 | `master.composite` + clean master preserved byte-for-byte | pending |
+| 7 | clean-base authoring contract (§4.1) — prompt versions advance together | **done** (v4-clean-base) |
+| 8 | `master.composite` + clean master preserved byte-for-byte | **done** |
+| 9 | `logo.generate` (§4.7) — a custom brand mark when the client has none | **NEXT SPRINT** |
 
 **A CHUNK IS NOT DONE UNTIL THE FULL SUITE IS GREEN, not when its own lock
 passes.** Chunks 1 and 2 passed their own tests and were NOT releasable: the

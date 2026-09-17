@@ -44,6 +44,7 @@ const hero = require("./atlas-hero-driver.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const logo = require("./atlas-logo-prepare.cjs");
 const lockup = require("./atlas-element-lockup.cjs");
+const composite = require("./atlas-master-composite.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -67,6 +68,9 @@ const LOGO_NODE = "logo.prepare";
 // ARCHITECTURE_DAG.md §4.5 -- the placement manifest. The ONE node in the
 // element graph that is not a root: it needs the finished elements' dimensions.
 const LOCKUP_NODE = "element.lockup";
+// ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. The ONLY element node that
+// consumes the assembled sheet, and the only one after master.assemble.
+const COMPOSITE_NODE = "master.composite";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -230,6 +234,10 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
     // there is nothing to place, and an empty manifest is not a plan.
     if (elements.length) {
       nodes.push({ key: LOCKUP_NODE, dependsOn: elements.map((e) => e.key), input: {}, maxAttempts: 3 });
+      // The sheet's last node. It depends on the assembled CLEAN master and the
+      // plan, and on nothing else -- the element producers are already the
+      // lockup's dependencies, so naming them again would only duplicate edges.
+      nodes.push({ key: COMPOSITE_NODE, dependsOn: [MASTER_NODE, LOCKUP_NODE], input: {}, maxAttempts: 3 });
     }
   }
   return validateGraph(nodes);
@@ -282,6 +290,46 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. Zero model calls. The CLEAN
+  // master is preserved byte for byte as cleanMasterHash: duplicate, modify the
+  // duplicate, keep the original -- the same rule Call 11 follows, and the
+  // reason an element can later be MOVED without healing anything.
+  if (node.node_key === COMPOSITE_NODE) {
+    const masterOutput = deps.get(MASTER_NODE)?.output;
+    const planOutput = deps.get(LOCKUP_NODE)?.output;
+    if (!masterOutput?.master) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${MASTER_NODE} carries no master reference`, true);
+    }
+    if (!planOutput?.lockup) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${LOCKUP_NODE} carries no plan`, true);
+    }
+    abortIf();
+    const cleanMasterBytes = await downloadVerified(supabase, masterOutput.master);
+    const artwork = new Map();
+    for (const placement of planOutput.lockup.placements || []) {
+      if (artwork.has(placement.role)) continue;
+      artwork.set(placement.role, await downloadVerified(supabase, {
+        storagePath: placement.storagePath, contentHash: placement.contentHash,
+      }));
+    }
+    abortIf();
+    const result = await composite.compositeElementsOntoMaster({
+      cleanMasterBytes, zones: manifest.zones, plan: planOutput.lockup, artwork,
+    });
+    const stored = await store.putImmutableBytes({
+      storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/master-composited-${result.contentHash}.png`,
+      bytes: result.bytes, contentType: "image/png",
+    });
+    logger(`atlas call 1 graph ${run.id}: composited ${result.applied.length} elements onto ${result.cleanMasterHash.slice(0, 12)} -> ${result.contentHash.slice(0, 12)}`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "composite",
+      master: stored,
+      // PROVENANCE AND A FLOOR. Layer 0 is not replaced; a later element edit
+      // re-composites onto THIS hash rather than healing painted pixels.
+      cleanMasterHash: result.cleanMasterHash,
+      applied: result.applied, changed: result.changed,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   // ARCHITECTURE_DAG.md §4.5 -- where each element sits, as normalized boxes.
   // Zero AI, zero network, zero pixels: it reads its dependencies' recorded
@@ -638,7 +686,7 @@ function createAtlasCall1NodeWorker({
 }
 
 module.exports = {
-  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
+  GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

@@ -45,7 +45,7 @@ function withFlag(value, fn) {
 }
 
 // Every node the element graph adds. A surface may depend on none of them.
-const ELEMENT_NODES = [graph.TYPESET_NODE, graph.CONTACT_NODE, graph.LOGO_NODE, graph.LOCKUP_NODE];
+const ELEMENT_NODES = [graph.TYPESET_NODE, graph.CONTACT_NODE, graph.LOGO_NODE, graph.LOCKUP_NODE, graph.COMPOSITE_NODE];
 
 const compile = (flag, input) =>
   withFlag(flag, () => graph.compileHeroDriverGraph({ heroFirst: true, input }));
@@ -77,7 +77,7 @@ test("on, the element node is a ROOT and master's edges do not move", () => {
     assert.ok(same, `${node.key} disappeared`);
     assert.deepEqual(same.dependsOn, node.dependsOn, `${node.key}'s edges moved`);
   }
-  assert.equal(on.length, off.length + 3, "typography, contact, and the lockup that places them");
+  assert.equal(on.length, off.length + 4, "typography, contact, the lockup, and the composite");
 
   // NO SURFACE waits on an element; master.composite (chunk 8) is what will
   // consume them. element.lockup depends on them by design -- it is an element
@@ -271,7 +271,7 @@ test("an uploaded logo is its own root, carrying identity and no pixels", () => 
   assert.equal(node.input.role, "logo");
   assert.equal(node.input.source, "customer");
   assert.deepEqual(node.input.asset, LOGO_ASSET);
-  assert.equal(withLogo.length, compile("off", CONTACT).length + 4, "three elements plus the lockup");
+  assert.equal(withLogo.length, compile("off", CONTACT).length + 5, "three elements, the lockup, the composite");
 
   // Still no surface waits on the logo (element.lockup does, by design).
   for (const other of withLogo) {
@@ -363,4 +363,51 @@ test("a dependency with no element reference is incomplete, and RETRYABLE", asyn
     },
     store: {}, supabase: null, callEdge: () => {},
   }), (err) => err.code === "designpro_atlas_call1_dependency_incomplete" && err.retryable === true);
+});
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE_DAG.md chunk 8 — `master.composite`. The only element node that
+// runs AFTER master.assemble, and the only one that touches the sheet.
+// ---------------------------------------------------------------------------
+
+test("the composite depends on the assembled master and the plan, and nothing else", () => {
+  const node = compile("on", CONTACT).find((n) => n.key === graph.COMPOSITE_NODE);
+  assert.ok(node);
+  assert.deepEqual(node.dependsOn, ["master.assemble", graph.LOCKUP_NODE],
+    "the element producers are already the lockup's dependencies; naming them again duplicates edges");
+});
+
+test("no elements means no composite — the assembled master is the master", () => {
+  const bare = compile("on", { vehicle: "F250" });
+  assert.ok(!bare.some((n) => n.key === graph.COMPOSITE_NODE));
+  assert.equal(bare.length, compile("off", CONTACT).length);
+});
+
+test("master.assemble's own edges are STILL untouched by any of this", () => {
+  const off = compile("off", CONTACT).find((n) => n.key === "master.assemble");
+  const on = compile("on", { ...CONTACT, logoAsset: LOGO_ASSET }).find((n) => n.key === "master.assemble");
+  assert.deepEqual(on.dependsOn, off.dependsOn,
+    "the six surfaces assemble exactly as before; the composite is a node AFTER them");
+});
+
+test("an incomplete dependency is retryable, never a silent un-composited sheet", async () => {
+  const run = (dependencies) => graph.executeNode({
+    claim: {
+      node: { node_key: graph.COMPOSITE_NODE, input: {}, depends_on: ["master.assemble", graph.LOCKUP_NODE], lease_owner: "w", attempt: 1 },
+      run: { id: "run-1", owner_id: "o", created_at: new Date().toISOString(),
+        definition: { input: CONTACT, manifest: { zones: [{ surfaceKey: "driver", rotationDegrees: 90, trim: { x: 0, y: 0, w: 200, h: 600 } }] } } },
+      claimToken: "t", dependencies,
+    },
+    store: {}, supabase: null, callEdge: () => { throw new Error("no model call"); },
+  });
+
+  await assert.rejects(() => run([
+    { nodeKey: "master.assemble", state: "completed", output: {} },
+    { nodeKey: graph.LOCKUP_NODE, state: "completed", output: { lockup: { placements: [] } } },
+  ]), (err) => err.code === "designpro_atlas_call1_dependency_incomplete" && err.retryable === true);
+
+  await assert.rejects(() => run([
+    { nodeKey: "master.assemble", state: "completed", output: { master: { storagePath: "p", contentHash: "a".repeat(64) } } },
+    { nodeKey: graph.LOCKUP_NODE, state: "completed", output: {} },
+  ]), (err) => err.code === "designpro_atlas_call1_dependency_incomplete" && err.retryable === true);
 });
