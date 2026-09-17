@@ -297,21 +297,26 @@ test("4. end to end across two node workers: seven image requests, passenger a f
       "…and the VIEW's signature rides on the model part it arrived on");
     assert.equal(driverFlatten.priorTurns[1].parts[0].imageRef.storagePath, "atlas-author/driver-view.png",
       "the replayed turn carries an image REFERENCE, never pixels");
-    // Front's flatten replays TWO exchanges: driver's flank (for cohesion with
-    // the rest of the wrap -- the same signature hood/rear/roof replay) AND its
-    // own view (what it is actually flattening). trimAuthoringHistory pins the
-    // driver exchange first by construction, so driver's signature arrives
-    // BEFORE front-view's -- the same pin roof relies on to still carry driver
-    // after hood/front/rear.
-    assert.ok(Array.isArray(frontFlatten.priorTurns) && frontFlatten.priorTurns.length === 4,
-      "front's flatten replays driver's flank AND its own view");
-    assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-driver",
-      "driver's flank signature is pinned first");
-    assert.equal(frontFlatten.priorTurns[3].parts[0].thoughtSignature, "sig-front-view",
-      "front's own view signature rides second, on the part it arrived on");
-    assert.equal(frontFlatten.priorTurns[3].parts[0].imageRef.storagePath, "atlas-author/front-view.png");
-    assert.deepEqual(frontFlatten.neighbours.map((n) => n.surfaceKey), ["driver", "passenger"],
-      "front's flatten still sees driver + passenger as reference IMAGES, unchanged from its plain-continuation call");
+    // A FLATTEN REPLAYS ONLY ITS OWN VIEW -- exactly what driver's flatten
+    // does. It used to also replay driver's flank, and trimAuthoringHistory
+    // PINS that exchange outside the byte budget, so the heaviest image in the
+    // request was the one guaranteed never to be trimmed. Live 9c6008ec: HTTP
+    // 546, the edge worker exhausted, on all eight attempts.
+    assert.ok(Array.isArray(frontFlatten.priorTurns) && frontFlatten.priorTurns.length === 2,
+      "front's flatten replays its own view and nothing else");
+    assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-front-view",
+      "its own view's signature, on the part it arrived on");
+    assert.equal(frontFlatten.priorTurns[1].parts[0].imageRef.storagePath, "atlas-author/front-view.png");
+    assert.ok(!frontFlatten.priorTurns.some((t) => (t.parts || []).some((p) => p.thoughtSignature === "sig-driver")),
+      "driver's flank is NOT replayed into a flatten: it is the pinned, unbudgeted image that OOM'd the worker");
+    // A FLATTEN CARRIES NO NEIGHBOUR IMAGES. Live 9c6008ec returned HTTP 546
+    // (edge worker OOM) on surface.front, eight attempts, because the flatten
+    // sent its full-size view render PLUS driver PLUS passenger PLUS four
+    // replayed turns in one invocation. Driver's flatten never hit it only
+    // because driver's neighbour list is empty. Continuity is the replayed
+    // exchange above; the view render is the subject.
+    assert.deepEqual(frontFlatten.neighbours, [],
+      "a flatten sends no neighbour images -- that combination OOM'd the edge worker on every attempt");
     // Node 1 itself still draws from scratch, for BOTH surfaces: a hero-view
     // with history would be a second creative authority.
     assert.deepEqual(driverView.priorTurns, [], "the driver vehicle view replays nothing");

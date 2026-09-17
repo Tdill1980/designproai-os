@@ -522,8 +522,23 @@ async function authorHeroDriverMaster({
       // ONLY on the pass that actually has a view to flatten; with hero-first
       // off (or outside HERO_VIEW_SURFACES) it stays the plain continuation it
       // always was.
+      // A FLATTEN SENDS ONLY ITS OWN VIEW (live 9c6008ec: HTTP 546, the edge
+      // worker exhausted, eight attempts on surface.front). Front's flatten
+      // was carrying its undownscaled view render PLUS driver + passenger as
+      // neighbours PLUS driver's flank replayed -- and `trimAuthoringHistory`
+      // PINS the driver exchange outside the byte budget, so the heaviest
+      // image was the one guaranteed not to be trimmed. Driver's flatten never
+      // hit it because its neighbour list is empty and its only history IS its
+      // own view.
+      //
+      // Nothing is lost: a view is authored `first` (no neighbours, no
+      // history), so front's composition never saw driver in the first place,
+      // and the flatten only re-aspects the view it was handed. This makes
+      // every flatten weigh exactly what driver's proven flatten weighs.
       return authorSurface({
-        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges,
+        surfaceKey, zone: zoneOf(surfaceKey), first: surfaceKey === "driver" || Boolean(heroView),
+        neighbours: heroView ? [] : neighbours,
+        priorExchanges: heroView ? [] : priorExchanges,
         heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView,
       });
     }));

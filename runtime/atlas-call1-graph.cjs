@@ -499,7 +499,15 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
       // Driver is ALWAYS `first` on the edge, split or not. A surface that is
       // hero-view-eligible only sometimes (front) is `first` only on the pass
       // that actually has a view to flatten.
-      surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView), neighbours, priorExchanges, heroView,
+      // A FLATTEN SENDS ONLY ITS OWN VIEW (live 9c6008ec, HTTP 546 edge OOM on
+      // surface.front): the undownscaled view render plus driver + passenger
+      // neighbours plus driver's PINNED flank exchange -- trimAuthoringHistory
+      // keeps the driver head outside the byte budget -- exhausted the worker
+      // on all eight attempts. A view is authored `first`, so the composition
+      // never saw driver anyway and the flatten only re-aspects it.
+      surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView),
+      neighbours: heroView ? [] : neighbours,
+      priorExchanges: heroView ? [] : priorExchanges, heroView,
       heroRequest: hero.heroRequestBody(definition.input), creativeContext: String(definition.creativeContext || ""),
       store, logger,
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
