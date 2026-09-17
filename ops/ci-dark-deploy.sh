@@ -24,7 +24,8 @@ trap cleanup EXIT
 if [[ -L /opt/designproai-os/current ]] && \
    [[ $(readlink -f /opt/designproai-os/current) == "/opt/designproai-os/releases/$EXACT_SHA" ]]; then
   # A FLAG FLIP ON THE RELEASE ALREADY RUNNING. The Call-1 flags
-  # (ATLAS_PANEL_FINISH, ATLAS_TOPOLOGY, ATLAS_CALL1_GRAPH, ATLAS_FIELD_FIRST)
+  # (ATLAS_PANEL_FINISH, ATLAS_TOPOLOGY, ATLAS_CALL1_GRAPH, ATLAS_FIELD_FIRST,
+  # ATLAS_HERO_FIRST)
   # only ever reach the droplet through the env writer below, which this
   # branch used to skip -- so
   # a dispatch of the current SHA with a flag set printed ALREADY_COMPLETE and
@@ -33,7 +34,7 @@ if [[ -L /opt/designproai-os/current ]] && \
   # the one writer (it consumes the secrets on stdin exactly as a full deploy
   # does), restart the service so both runtime replicas re-read it, and prove
   # acceptance again. An empty flag set keeps the pure no-op: nothing touched.
-  if [[ -n ${ATLAS_PANEL_FINISH:-}${ATLAS_TOPOLOGY:-}${ATLAS_CALL1_GRAPH:-}${ATLAS_FIELD_FIRST:-} ]]; then
+  if [[ -n ${ATLAS_PANEL_FINISH:-}${ATLAS_TOPOLOGY:-}${ATLAS_CALL1_GRAPH:-}${ATLAS_FIELD_FIRST:-}${ATLAS_HERO_FIRST:-} ]]; then
     "$control/configure-env.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY
     systemctl restart designproai-os.service
     "$control/acceptance.sh" "$EXACT_SHA"

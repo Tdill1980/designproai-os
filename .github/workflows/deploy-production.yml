@@ -59,6 +59,21 @@ on:
           - unchanged
           - "on"
           - "off"
+      atlas_hero_first:
+        description: >-
+          Hero-first driver inside the hero-driver cascade (RULE 0.37). The
+          driver becomes TWO nodes -- a 16:9 vehicle render, then its flatten
+          into the flank -- because the single-call driver is refused on aspect
+          drift before any artwork is judged. "unchanged" keeps whatever the
+          droplet has (on); "off" restores the one-call driver. Inert unless
+          atlas_topology is hero-driver. Sticky across later deploys.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "on"
+          - "off"
       atlas_panel_finish:
         description: >-
           Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
@@ -571,6 +586,7 @@ jobs:
           ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish != 'unchanged' && inputs.atlas_panel_finish || '' }}
           ATLAS_TOPOLOGY: ${{ inputs.atlas_topology != 'unchanged' && inputs.atlas_topology || '' }}
           ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first != 'unchanged' && inputs.atlas_field_first || '' }}
+          ATLAS_HERO_FIRST: ${{ inputs.atlas_hero_first != 'unchanged' && inputs.atlas_hero_first || '' }}
           ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph != 'unchanged' && inputs.atlas_call1_graph || '' }}
         shell: bash
         run: |
@@ -589,7 +605,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in

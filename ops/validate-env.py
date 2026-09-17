@@ -119,7 +119,7 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     # present so a typo cannot select a customer path. The topology is written
     # as the literal "six-surface" for the default -- this loader refuses an
     # empty value, and the runtime reads anything but "hero-driver" as off.
-    for flag, allowed in (("DESIGNPRO_ATLAS_TOPOLOGY", {"six-surface", "hero-driver"}), ("DESIGNPRO_ATLAS_CALL1_GRAPH", {"on", "off"}), ("DESIGNPRO_ATLAS_FIELD_FIRST", {"on", "off"})):
+    for flag, allowed in (("DESIGNPRO_ATLAS_TOPOLOGY", {"six-surface", "hero-driver"}), ("DESIGNPRO_ATLAS_CALL1_GRAPH", {"on", "off"}), ("DESIGNPRO_ATLAS_FIELD_FIRST", {"on", "off"}), ("DESIGNPRO_ATLAS_HERO_FIRST", {"on", "off"})):
         if flag in runtime:
             if runtime[flag] not in allowed:
                 raise ValidationError(f"{flag} must be exactly one of {','.join(sorted(allowed))}")
