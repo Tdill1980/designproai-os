@@ -536,12 +536,31 @@ test("the prompt names the attachments in the order the function sends them", ()
   assert.deepEqual(named.sort((a, b) => a[1] - b[1]).map(([role]) => role), roles,
     "the prompt lists the attachments in a different order than the function attaches them");
 
+  // THE TWO ATTACHMENTS GOVERN DIFFERENT THINGS, AND THE PROMPT MUST SAY WHICH.
+  //
+  // Owner, 2026-09-18: "Are we not expecting Gemini to fit in rectangles? Each
+  // vehicle's diff. We should fix system example perhaps." Measured across three
+  // real manifests, the pinned example's cells are one vehicle's: its driver is
+  // 3.34:1 against the Transit's 3.25 (close) and the F250's 4.19 (25% out), and
+  // its ROOF is 0.77 — portrait — where the F250's is 1.21, landscape. A sheet
+  // that is the standard for LAYOUT is therefore the wrong authority for SHAPE.
+  //
+  // The container is already redrawn per vehicle and is attachment (1), so the
+  // fix is not a per-vehicle example — regenerating that sheet with a model
+  // reintroduces the hallucinated figures this whole contract removed. It is to
+  // say which attachment owns which decision.
+  assert.match(tail, /drawn for THIS vehicle/,
+    "the container must be named as the per-vehicle shape authority");
+  assert.match(tail, /take no shape or figure from it/,
+    "the example must be excluded as a shape authority, or its one vehicle teaches every vehicle");
+
   // And only the FILLED sheet is the standard. Saying it of the blank one is
   // the exact failure this test exists to catch, so say it of neither by
-  // accident: the phrase must sit in item (2).
-  const standardAt = tail.indexOf("THE STANDARD TO MATCH");
+  // accident: the phrase must sit in item (2), AFTER the container.
+  const standardAt = tail.indexOf("the standard for the QUALITY");
+  assert.ok(standardAt >= 0, "the prompt no longer names a standard at all");
   assert.ok(standardAt > tail.indexOf("BLANK CONTAINER TEMPLATE"),
-    "THE STANDARD TO MATCH must describe the finished proof, never the blank template");
+    "the standard must describe the finished proof, never the blank template");
 });
 
 test("the sheet's SHAPE is gated in the edge, and JPEG is what actually comes back", async () => {

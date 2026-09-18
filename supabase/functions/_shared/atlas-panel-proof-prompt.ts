@@ -349,8 +349,9 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     }));
   out.push("", SHEET_LAYOUT);
   out.push("",
-    "ATTACHED: (1) the BLANK CONTAINER TEMPLATE to fill; (2) a FINISHED PROOF — THE STANDARD TO MATCH,",
-    "its layout and the quality of its work, but another company's brand. Every panel on it is a plain",
-    "rectangle of artwork; the only shapes on the sheet are Zone 3's cut graphics.");
+    "ATTACHED: (1) the BLANK CONTAINER TEMPLATE — it is drawn for THIS vehicle, so every panel's",
+    "shape and position comes from it; (2) a FINISHED PROOF — the standard for the QUALITY of the",
+    "work, on a different vehicle and another company's brand, so take no shape or figure from it.",
+    "Every panel on both is a plain rectangle of artwork; the only shapes are Zone 3's cut graphics.");
   return out.join("\n");
 }
