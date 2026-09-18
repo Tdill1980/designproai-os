@@ -1269,7 +1269,40 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     }
     if (marking === 'exclude') { setExcludeDraft(old => [...old, p]); return; }
     const next = corners.length >= 4 ? [p] : [...corners, p]; setCorners(next); cornersOrigin.current = 'manual'; setCornerSource('manual');
-    if (next.length === 4) { setMarking(null); if (!validWallCorners(next)) setError('Those corners cross or form a narrow area. Mark them clockwise starting at the top left.'); else { setError(''); if (artwork) setView('after'); } }
+    if (next.length === 4) {
+      setMarking(null);
+      if (!validWallCorners(next)) setError('Those corners cross or form a narrow area. Mark them clockwise starting at the top left.');
+      else {
+        setError('');
+        if (artwork) setView('after');
+        /**
+         * THE FOURTH TAP HANDS OVER TO THE NEXT QUESTION (owner, 2026-09-18:
+         * "It doesn't let me mask, it hides the tools … it should just state
+         * next mark your corners by touching corners, then ask you if you want
+         * to mask").
+         *
+         * The mask tools live behind an "Adjust" link that starts closed, so
+         * the moment the corners were set the page went quiet and the customer
+         * had no idea masking existed at all. Marking the wall and protecting
+         * what is on it are two steps of ONE job, so the second one opens
+         * itself when the first finishes, with the overlay on so a tap has
+         * something visible to land on.
+         *
+         * Anything the detector already found stays protected by default --
+         * framed photos, a mounted TV, shelves -- so the honest prompt is
+         * "check what we kept", not "start masking". Skipping is a real answer:
+         * nothing here blocks Generate, and print panels are full rectangles
+         * whatever is masked.
+         */
+        setShowMaskTools(true);
+        setShowMasks(true);
+        setNotice(
+          itemSummary(items).kept > 0
+            ? `Corners set. We are keeping ${itemSummary(items).kept} thing${itemSummary(items).kept === 1 ? '' : 's'} on this wall exactly as photographed — tap any labelled item on the photo to change that. Or go straight to describing your design.`
+            : 'Corners set. Anything mounted on this wall you want to keep — framed photos, a TV, shelves? Tap "Mask window / drapes" and draw around it. Otherwise go straight to describing your design.',
+        );
+      }
+    }
   }
   async function prepareArtworkDownload() {
     await run('Preparing artwork download', async () => {
@@ -1758,7 +1791,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     : detectedMask || removeMask || exclusions.length
                       ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{items.length > 0 && <> <strong>Tap any labelled item on the photo to change our mind about it</strong> — {itemSummary(items).kept} kept, {itemSummary(items).through} painted through.</>}{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
                       : 'Nothing needed protecting on this wall.'}
-                  {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done adjusting' : 'Adjust'}</button>
+                  {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done' : 'Change what we keep'}</button>
                 </p>
               </div>
               {showMaskTools && <>

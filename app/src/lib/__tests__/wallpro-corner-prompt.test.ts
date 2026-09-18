@@ -61,3 +61,45 @@ describe('a detection landing late cannot undo the customer', () => {
     expect(page).toContain('if (applied) setMarking(null);');
   });
 });
+
+/**
+ * THE FOURTH TAP HANDS OVER TO THE NEXT QUESTION.
+ *
+ * Owner, 2026-09-18: "It doesn't let me mask it hides the tools … it should
+ * just state next mark your corners by touching corners, then ask you if you
+ * want to mask and photos will automatically be put back on … for instance
+ * living room wall family photos mounted to wall."
+ *
+ * Marking the wall and protecting what is mounted on it are two steps of ONE
+ * job. The mask tools lived behind a closed "Adjust" link, so the moment the
+ * corners were set the page went silent and the customer never learned masking
+ * existed.
+ */
+describe('after the corners are set, the page asks about masking', () => {
+  it('opens the mask tools and the overlay on the fourth valid corner', () => {
+    // Both: the tools are useless without the overlay, because a tap needs
+    // something visible to land on.
+    expect(page).toContain('setShowMaskTools(true);');
+    expect(page).toContain('setShowMasks(true);');
+  });
+
+  it('names real mounted things, so the question is concrete', () => {
+    expect(page).toMatch(/framed photos, a TV, shelves/);
+  });
+
+  it('says what is already kept rather than asking for work already done', () => {
+    // Detected items are protected by default; the honest prompt is "check
+    // what we kept", not "start masking".
+    expect(page).toContain('exactly as photographed — tap any labelled item');
+  });
+
+  it('offers skipping as a real answer', () => {
+    // Nothing here blocks Generate, and print panels stay full rectangles
+    // whatever is masked, so the prompt must not read as a required step.
+    expect(page).toMatch(/go straight to describing your design/);
+  });
+
+  it('labels the toggle as what it does, not as "Adjust"', () => {
+    expect(page).toContain('Change what we keep');
+  });
+});
