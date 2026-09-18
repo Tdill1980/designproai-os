@@ -118,7 +118,8 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
   const out: string[] = [SYSTEM_JOB, "", INSTALLATION_FACT, ""];
   out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
   if (rows.length) {
-    out.push("", "PANELS ON THIS PROOF, at their finished trim size:", ...rows.map((row) => `  ${row}`));
+    out.push("", "PANELS ON THIS PROOF, at their finished trim size, each printed with a",
+      "5-inch bleed of artwork continuing past every edge:", ...rows.map((row) => `  ${row}`));
   }
   out.push("", "THE DESIGN:", `"${pick(params.creativeDirection)}"`);
   if (strings.length) {

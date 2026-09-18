@@ -183,7 +183,12 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
 
   out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
   if (table.length) {
-    out.push("", "PANELS ON THIS PROOF, at their finished trim size:", ...table.map((row) => `  ${row}`));
+    // TRIM SIZE, with the bleed stated as the owner's own spec sheet states it.
+    // A production proof legitimately carries a bleed callout, and these panels
+    // ARE cut at trim + 5 inches -- so the number is the document's own content,
+    // not a coordinate to transcribe (the map_drawn distinction, RULE 0.33).
+    out.push("", "PANELS ON THIS PROOF, at their finished trim size, each printed with a",
+      "5-inch bleed of artwork continuing past every edge:", ...table.map((row) => `  ${row}`));
   }
 
   out.push("", "THE DESIGN:", `"${String(creativeDirection || input.brief || "").trim()}"`);

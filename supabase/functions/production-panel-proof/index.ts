@@ -93,7 +93,14 @@ serve(async (req) => {
 
   // INTERNAL ONLY. This spends a real image request against the production
   // project; it is not reachable by a customer session.
-  const caller = await resolveDesignProInternalCaller(req, svc);
+  //
+  // ONE ARGUMENT. The resolver takes the Request alone and builds its own admin
+  // client from the caller's `apikey` header -- that IS the privilege check (a
+  // publishable key cannot resolve a user by id). Handing it `svc` would have
+  // been a TypeScript arity error, so the deploy would have failed at
+  // type-check; every other call site in this project passes `req` only.
+  const caller = await resolveDesignProInternalCaller(req);
+  if (caller.rejection) return caller.rejection;
   if (!caller.internal || !caller.userId) {
     return json({ error: "production_panel_proof_internal_only" }, 403);
   }
