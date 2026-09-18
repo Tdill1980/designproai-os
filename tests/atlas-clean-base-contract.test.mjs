@@ -54,7 +54,7 @@ test("the runtime and the edge advance their prompt version TOGETHER", () => {
   assert.match(edgeVersion, /v5-front-view-flatten$/, "the request contract changed again, so the version must say so");
 });
 
-test("ONE flag decides the clean base and the element nodes", () => {
+test("the element graph's own flag decides the clean base", () => {
   assert.equal(withFlag(null, () => hero.cleanBaseEnabled()), false);
   assert.equal(withFlag("off", () => hero.cleanBaseEnabled()), false);
   assert.equal(withFlag("ON PLEASE", () => hero.cleanBaseEnabled()), false, "a typo must not author a nameless wrap");
@@ -64,6 +64,55 @@ test("ONE flag decides the clean base and the element nodes", () => {
   // that ships a wrap with no company name anywhere on it.
   assert.match(RUNTIME, /DESIGNPRO_ATLAS_ELEMENT_GRAPH/,
     "cleanBaseEnabled must read the element graph's own key, not a second one");
+});
+
+test("THE CALL-1 GRAPH KILL SWITCH ALSO TURNS THE ASK OFF, or it is half-on", () => {
+  // The compositor is reached only through the Call-1 node worker:
+  //
+  //   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? ... : null;
+  //
+  // so DESIGNPRO_ATLAS_CALL1_GRAPH=off silences it. That flag is a documented
+  // kill switch for the HERO CASCADE and says nothing about lettering, so
+  // someone reaching for it to disable the cascade would, with ELEMENT_GRAPH
+  // still on, leave Call 1 asking for a sheet with no lettering and nothing to
+  // put it back -- a wrap with no company name, which is the one combination
+  // CLAUDE.md says to treat as a bug rather than a variation.
+  //
+  // Production runs CALL1_GRAPH=on, so this was never live. It was reachable by
+  // one flip of an unrelated switch, while both the code comment and CLAUDE.md
+  // claimed the two could never be half-on.
+  const withBoth = (elementGraph, call1Graph, fn) => {
+    const beforeElement = process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    const beforeGraph = process.env.DESIGNPRO_ATLAS_CALL1_GRAPH;
+    if (elementGraph === null) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = elementGraph;
+    if (call1Graph === null) delete process.env.DESIGNPRO_ATLAS_CALL1_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_CALL1_GRAPH = call1Graph;
+    try { return fn(); } finally {
+      if (beforeElement === undefined) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+      else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = beforeElement;
+      if (beforeGraph === undefined) delete process.env.DESIGNPRO_ATLAS_CALL1_GRAPH;
+      else process.env.DESIGNPRO_ATLAS_CALL1_GRAPH = beforeGraph;
+    }
+  };
+
+  // THE TRAP ITSELF. Elements asked for, compositor unreachable -> no ask.
+  assert.equal(withBoth("on", "off", () => hero.cleanBaseEnabled()), false,
+    "CALL1_GRAPH=off silences the compositor, so Call 1 must author its own lettering");
+  assert.equal(withBoth("on", "off", () => hero.heroRequestBody({ companyName: "Oasis Pools" }).cleanBase), undefined,
+    "the request must be byte-identical to the pre-v28 contract when nothing can composite");
+
+  // Production's shape, and the two ways CALL1_GRAPH is legitimately absent --
+  // `graphEnabled` treats anything that is not `off` as on, and so must this.
+  assert.equal(withBoth("on", "on", () => hero.cleanBaseEnabled()), true);
+  assert.equal(withBoth("on", null, () => hero.cleanBaseEnabled()), true,
+    "unset CALL1_GRAPH is ON for graphEnabled, so it must be ON here too");
+  assert.equal(withBoth("on", "OFF", () => hero.cleanBaseEnabled()), false, "case must not decide it");
+
+  // And the element flag still governs on its own: the graph being available
+  // is never by itself a reason to strip lettering out of Call 1.
+  assert.equal(withBoth("off", "on", () => hero.cleanBaseEnabled()), false);
+  assert.equal(withBoth(null, "on", () => hero.cleanBaseEnabled()), false);
 });
 
 test("the request carries cleanBase only when the flag is on", () => {

@@ -92,6 +92,46 @@ test("every canonical binding cites the accepted master, not the pre-repair one"
     "each persisted panel's sourceMasterHash must be the accepted master");
 });
 
+test("THE PANEL AND PROOF BYTES MOVE WITH THE COMPOSITE, or the hash lies about them", () => {
+  // The assertion directly above passes `surfaceSourceBytes` and
+  // `acceptedMasterHash` to `cutCallOnePanels` and calls that "the accepted
+  // master" -- but it only ever checked the HASH argument. The BYTES are a
+  // different variable, and when the element composite promoted
+  // `acceptedMasterBytes` without promoting `surfaceSourceBytes` this file
+  // stayed green over exactly the defect it exists to prevent:
+  //
+  //   master shown to humans  = composited, company name on both flanks
+  //   six PRINT PANELS        = the unlettered clean base
+  //   seven 3D proofs         = conditioned on that same clean base
+  //   panel `sourceMasterHash`= the COMPOSITED hash
+  //
+  // so PanelPro's "proof and panel came from the same master" check passes
+  // while the bytes disagree, and the customer's print files ship blank. That
+  // is the 2026-08-31 two-master ruling rebuilt under a new name. Receipts
+  // green, pixels wrong -- the failure this file is named after.
+  const body = source.slice(source.indexOf("let acceptedMasterBytes ="));
+  const promotion = body.indexOf("acceptedMasterBytes = composited.bytes;");
+  assert.ok(promotion !== -1, "the element composite promotion is gone");
+
+  const cut = body.indexOf("cutCallOnePanels(surfaceSourceBytes");
+  const projection = body.indexOf("projectionDerivative(surfaceSourceBytes)");
+  assert.ok(cut !== -1 && projection !== -1,
+    "the panels and the projection still read surfaceSourceBytes");
+
+  // Between promoting the accepted master and cutting the panels from it, the
+  // panel/proof bytes AND their recorded identity must both have followed.
+  const between = body.slice(promotion, Math.min(cut, projection));
+  assert.match(between, /^\s*surfaceSourceBytes = composited\.bytes;/m,
+    "the panels and proofs must be built from the COMPOSITED sheet, not the clean base");
+  assert.match(between, /^\s*panelSourceHash = composited\.contentHash;/m,
+    "panelSourceHash is what a RESUME re-derives; leaving it on the clean base "
+    + "turns flat_atlas_surface_source_mismatch into a guaranteed failure");
+
+  // And nothing between that promotion and the cut may put the clean base back.
+  assert.doesNotMatch(between, /surfaceSourceBytes = (?!composited\.bytes)/,
+    "surfaceSourceBytes may only ever be promoted TO the composited sheet here");
+});
+
 test("nothing canonical still points at the raw pre-repair bytes", () => {
   // The specific defect, asserted as an absence so it cannot creep back under a
   // different name.

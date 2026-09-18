@@ -29,6 +29,137 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
+## 🅰️ v28 — THE CLEAN BASE IS LIVE ON SIX-SURFACE (deployed 2026-09-18, NOT yet judged on pixels)
+
+Full record: `docs/ATLAS-V28-CLEAN-BASE-ELEMENTS.md`. Read it before touching the
+element graph, the output-class inspector or the deploy order.
+
+**Deployed and verified from each side itself, not from a green check:** migration
+`20260918030000` in `schema_migrations` AND in the live
+`finish_designpro_atlas_call1_node` body; edge
+`atlas-artboard-designiq.20260918.v28-clean-base-elements` read out of the
+deployed function; runtime `a02066f5` on both replicas, `VERIFIED_WORKING`. Flags
+resolved on the box: `TOPOLOGY=six-surface FIELD_FIRST=off HERO_FIRST=off
+ELEMENT_GRAPH=on CALL1_GRAPH=on PANEL_FINISH=off`.
+
+**The element architecture was already built and correct; it was UNREACHABLE.**
+`ATLAS_CLEAN_BASE_CONTRACT`, `cleanBaseEnabled()` and the five element nodes all
+existed and were right. They compiled only inside `compileHeroDriverGraph`, and
+hero-driver is off — so `DESIGNPRO_ATLAS_ELEMENT_GRAPH=on` was live on the droplet
+and INERT. Measured: live `efca5e03` had zero graph runs and zero nodes; across
+all history there are 6 `master.composite` rows and **one** completed. No customer
+had ever received a clean base with a composited lockup. That is the whole reason
+lettering was diffusion paint. `elementNodes()` is now one builder for both
+shapes; six-surface sends `cleanBase` and runs the subgraph against its already
+accepted sheet, with the master crossing the node boundary as
+`{storagePath, contentHash, byteSize}` (RULE 0.39), re-validated before it
+replaces the accepted master and refused back to Layer 0 if it is not printable.
+
+### THE COMPOSITE PROMOTED THE MASTER AND NOT THE PANEL BYTES (found 2026-09-18, never ran live)
+
+**The v28 change shipped the two-master defect the 2026-08-31 ruling retired by
+name, and the lock written to prevent it stayed green.** The promotion moved
+`acceptedMasterBytes` / `acceptedMasterHash` / `acceptedMasterStoragePath` — but
+the six print panels and the seven proof authorities are built from
+`surfaceSourceBytes`, a DIFFERENT variable, which stayed on the clean base:
+
+| | |
+|---|---|
+| master shown to humans, revision row, checkpoint | **composited** — company name on both flanks |
+| the six PRINT PANELS the customer buys | **the unlettered clean base** |
+| the seven 3D proofs | conditioned on that same clean base |
+| each panel's `sourceMasterHash` | the **COMPOSITED** hash |
+
+So PanelPro's "proof and panel came from the same master" check PASSES while the
+bytes disagree, and the print files ship blank. Receipts green, pixels wrong —
+the failure mode this file names in three other places.
+
+`surfaceSourceBytes` and `panelSourceHash` now move with the promotion.
+`panelSourceHash` must, because it is the identity a RESUME re-derives: the
+resumed worker re-runs `fillMasterCutouts` over the STORED master, which is now
+the composited sheet, so leaving the hash on the clean base would turn
+`flat_atlas_surface_source_mismatch` into a guaranteed failure.
+
+**THE LOCK ENCODED THE BUG — the fourth time in this file.**
+`tests/atlas-accepted-master-is-the-repaired-one.test.mjs` asserted
+`cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {` and called
+that "the six panels cite the accepted master". It only ever checked the HASH
+argument; the BYTES were never asserted, which is exactly the gap the defect
+lived in. The new case pins both, and was verified to fail against the pre-fix
+runtime. **When a lock names two things, assert both of them.**
+
+It never reached a customer: the element graph had not composited once on
+production, so the first run to fire it would have been the first to ship blank
+panels.
+
+**`metadata.elementGraph` has three states and they are NOT interchangeable:**
+`null` = never ran · `changed:true` = composited · `changed:false` with `refused`
+= ran and its sheet failed re-validation. A run with `cleanBase` on and
+`elementGraph: null` ships a wrap with NO company name — treat that as a bug.
+
+**ROLLBACK IS ONE FLAG:** `atlas_element_graph: off`. The migration is safe to
+leave applied: `master.composite` writes the run's master columns only WHILE THEY
+ARE NULL, so hero-driver provenance still records Layer 0.
+
+**BUT THE ASK AND THE COMPOSITOR ARE GOVERNED BY TWO FLAGS, NOT ONE, AND READING
+ONLY THE FIRST WAS A TRAP.** The compositor is reached solely through the Call-1
+node worker — `generateOrReuseFlatAtlas` requires `atlasCall1GraphEnabled()` as
+well before it calls `authorElements` — so `atlas_call1_graph: off`, a documented
+kill switch for the HERO CASCADE that says nothing about lettering, silenced the
+compositor while Call 1 went on asking for a sheet with no lettering on it. A
+wrap with no company name, reachable by flipping an unrelated switch, while this
+file and the code comment both claimed half-on was impossible. `cleanBaseEnabled`
+now returns false when `DESIGNPRO_ATLAS_CALL1_GRAPH=off`: **the ask follows the
+ability.** The opposite coupling is NOT done — `authorElements` drives that same
+worker's `tick()` and would hang against a disabled one. Production runs
+`CALL1_GRAPH=on`, so this was never live. Locked by the half-on case in
+`tests/atlas-clean-base-contract.test.mjs`, verified to fail against the pre-fix
+runtime.
+
+**THE MIGRATION MUST LAND BEFORE A v28 RUNTIME, and the commit message that says
+otherwise is wrong.** `authorElements` does NOT fail soft on a missing migration:
+the nodes run and the LAST one trips the `master_storage_path IS NOT NULL` CHECK
+after doing the work, and with `cleanBase` on there is no recovery — Layer 0 has
+no company name. The three genuinely soft `null` returns are: flag off, nothing to
+place, worker without `authorElements`.
+
+### THE OUTPUT-CLASS INSPECTOR JUDGED A SQUEEZED SHEET (live efca5e03, 2026-09-18)
+
+Both flanks came back die-cut to a truck silhouette — wheel arches, door seams,
+handles, mirror — on an `rgb(88,88,88)` surround, and EVERY gate passed it. Every
+hole predicate is a DARKNESS test (`holeAt` ≤ 24, `nearBlackAt` ≤ 40) and that
+surround is luma 88, so `edgeHoleRatio` read 0.073 against a 0.35 limit,
+`nonBlackFraction` 0.939, `opaqueRatio` 1.00000, and the fill had nothing to fill.
+
+**The inspector's prompt was already right** — it names "a vehicle-shaped island …
+a plain single-colour surround (grey, white, black or any colour)" — and it
+answered `flat_atlas` at confidence 1.0 with "no visible vehicle anatomy", because
+it judged the whole 4096² master squeezed into ONE 1280px JPEG, leaving the driver
+flank ~303px across its short side and lying sideways. Perception, not wording.
+It now transports each surface separately, cropped and rotated into reading
+orientation with the same `extract → rotate → flatten` order `cutCallOnePanels`
+uses. Without `zones` the request is byte-for-byte the previous one. This is the
+SAME defect RULE 0.36 fixed for the lettering reader; the lesson had never been
+carried here.
+
+**A colour-agnostic field detector was built and deliberately left NON-BLOCKING.**
+`measurePlainSurround` records the dominant plain border field per zone. It
+separates the real cases cleanly (efca5e03 driver 0.624 border share vs the Sept-8
+good master's 0.064) and it still may not convict: this repo's OWN full-bleed
+fixtures — a flat ground with graphics inset from the edge — score **1.000**, more
+extreme than the defect, and are legitimate. No border-share threshold separates
+"canvas showing through" from "a flat ground that IS the design", which is exactly
+why RULE 0.32 refused this detector. Do not promote it without a new
+discriminator.
+
+### ⚠️ CLAUDE.md WAS STALE: THE `release.yml` CONCURRENCY HAZARD IS FIXED
+
+The section below warning that a dispatch on `main` cancels the merge's own push
+gate describes a defect that **has been repaired**. `release.yml` now keys its
+concurrency group on the EVENT as well as the ref, and says so in its own comment.
+The ordering advice still stands, but for the migration reason above, not this
+one. Verify a concurrency claim against the workflow before planning around it.
+
 ## 🚗 RULE 0.35 — CALL 1 IS THE HERO-DRIVER CASCADE: ONE CONVERSATION, NOT ONE IMAGE (owner ruling, Trish 2026-09-11)
 
 > **STATUS 2026-09-14 — HERO-DRIVER IS OFF IN PRODUCTION (owner: "1st call should
