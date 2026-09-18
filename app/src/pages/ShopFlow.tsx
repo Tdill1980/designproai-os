@@ -51,6 +51,7 @@ import {
   type WpwOrder,
 } from "@/hooks/useWpwOrders";
 import { useWallProDesignCredits, WALLPRO_WELCOME_DESIGNS } from "@/hooks/useWallProDesignCredits";
+import { SHOPFLOW_APPS, shopflowApp } from "@/lib/shopflow-apps";
 import { useAutoSyncWpw } from "@/hooks/useAutoSyncWpw";
 import { SignInWithWPWButton } from "@/components/SignInWithWPWButton";
 import { shopflowStageFor, SHOPFLOW_STAGES } from "@/lib/shopflowStages";
@@ -285,6 +286,41 @@ function JobTrackerSpine({ order }: { order?: WpwOrder | null }) {
   );
 }
 
+
+/**
+ * The apps, on a phone. `lg:hidden`, so it is the exact complement of the
+ * rail rather than a duplicate beside it: one of the two is on screen at any
+ * width and never both.
+ *
+ * Cards rather than a list, because this is the first thing a partner is shown
+ * on a phone and a 44px row of text does not read as "here is the product".
+ */
+function ShopflowAppStrip() {
+  return (
+    <section aria-label="WePrintWraps apps" className="lg:hidden -mx-4 mt-4 px-4 sm:-mx-6 sm:px-6">
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-gray-400">Your apps</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {SHOPFLOW_APPS.map(app => {
+          const inner = (
+            <>
+              <img src={app.thumb} alt="" loading="lazy" width={44} height={44}
+                className="h-11 w-11 shrink-0 rounded-lg border border-white/15 object-cover" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold leading-tight text-white">{app.label}</span>
+                <span className="block truncate text-[11px] leading-tight text-[#9dc2f5]">{app.blurb}</span>
+              </span>
+            </>
+          );
+          const row = "flex min-h-[64px] items-center gap-2.5 rounded-xl bg-gradient-to-br from-[#0b1830] to-[#174a91] px-3 py-2.5 text-left shadow-sm";
+          return app.external
+            ? <a key={app.key} href={app.href} target="_blank" rel="noopener noreferrer" className={row}>{inner}</a>
+            : <Link key={app.key} to={app.href} className={row}>{inner}</Link>;
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?: number | null; locked: boolean; commercialPro?: boolean; points?: number | null }) {
   /**
    * Each PRODUCT tab carries a picture of the product (owner, 2026-09-15:
@@ -346,8 +382,7 @@ function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?:
     { href: "/design-proofs?brand=weprintwraps", label: "DesignProofs", icon: Grid3x3 },
     { href: "#orders", label: "All my orders", icon: Search, account: true },
     { href: "#rewards", label: "Club WPW points", icon: Gift, account: true, badge: points },
-    { href: "https://weprintwraps.com/commercialpro/", label: "CommercialPro", icon: Building2, external: true,
-      thumb: "/assets/commercialpro/commercialpro-thumb.webp", star: commercialPro },
+    { ...shopflowApp("commercialpro"), icon: Building2, star: commercialPro },
     /**
      * THE RAIL OPENS APPS, NEVER MARKETING PAGES.
      *
@@ -373,10 +408,8 @@ function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?:
      * product. It was also once pointed at `/patternpro`, which HAS NO ROUTE
      * and fell through to the catch-all as a dead click.
      */
-    { href: "/wallwrap-design", label: "WallPro", icon: LayoutDashboard, badge: credits,
-      thumb: "/assets/commercialpro/wallpro-thumb.webp" },
-    { href: "/pattern-wrap", label: "PatternPro", icon: Grid3x3,
-      thumb: "/assets/commercialpro/patternpro-thumb.webp" },
+    { ...shopflowApp("wallpro"), icon: LayoutDashboard, badge: credits },
+    { ...shopflowApp("patternpro"), icon: Grid3x3 },
   ];
   return (
     <aside className="sticky top-0 hidden min-h-screen w-[268px] shrink-0 flex-col self-start bg-gradient-to-b from-[#0b1830] via-[#101b32] to-[#174a91] px-4 py-6 lg:flex">
@@ -651,6 +684,11 @@ export default function ShopFlow() {
           {!atTheDoor && <ShopflowSidebar credits={wallPro.data?.remaining ?? null} locked={signedIn !== true} commercialPro={data?.commercialpro === true}
               points={data?.loyalty?.points_balance ?? null} />}
           <div className="min-w-0 flex-1 px-4 pb-16 sm:px-6 lg:px-10">
+        {/* The apps, on a phone. The rail above is `lg:flex` and this is
+            `lg:hidden`, so exactly one of them is on screen at any width --
+            and ShopFlow stops being a dashboard with no way into its own
+            products below 1024px, which is every phone a demo runs on. */}
+        {!atTheDoor && <ShopflowAppStrip />}
         {!embedded && <header className="border-b border-gray-200 py-7">
           <div>
             {/* A guest has no dashboard to go back to. */}
