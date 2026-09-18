@@ -929,6 +929,48 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (Number(atlasRow.metadata?.masterAuthoringAttempts) > 2) {
     throw new Error(`A.T.L.A.S. spent ${atlasRow.metadata.masterAuthoringAttempts} candidates on one contract; the per-contract budget is two`);
   }
+  // DECLARING THE BRAND FIELDS IS NOT THE SAME AS PROVING THE GRAPH RAN.
+  //
+  // The fix above put companyName/phone/website on the request so the element
+  // subgraph would COMPILE. It did not make this canary notice if the subgraph
+  // then produced nothing -- so a null elementGraph would have passed silently
+  // all over again, one layer up from the defect that comment describes.
+  //
+  // CLAUDE.md states the consequence exactly: with the clean base on, Call 1 is
+  // asked for a sheet with NO lettering, so `elementGraph: null` is a wrap that
+  // ships with no company name on it. The three states are not interchangeable:
+  //   null          = never ran            -> a BUG on a branded brief
+  //   changed:true  = composited           -> what we are proving
+  //   changed:false + refused              -> ran, its sheet failed re-validation
+  //
+  // `refused` is reported rather than thrown: Layer 0 survived by design and the
+  // owner judges that sheet on pixels. Silence is what is forbidden.
+  const elementGraph = atlasRow.metadata?.elementGraph;
+  const declaredBranding = Boolean(COMPANY_NAME || COMPANY_PHONE || COMPANY_WEBSITE);
+  if (declaredBranding) {
+    if (elementGraph === null || elementGraph === undefined) {
+      throw new Error("the element graph never ran on a brief that declares a company name and contact details: "
+        + "with the clean base on, Call 1 authored no lettering and nothing composited it, "
+        + "so this wrap carries no company name. metadata.elementGraph is null.");
+    }
+    if (elementGraph.changed === true) {
+      const applied = Array.isArray(elementGraph.applied) ? elementGraph.applied.length : 0;
+      step(`element graph composited ${applied} element(s) onto the accepted master`);
+      // Both flanks, or the passenger is bare. ELEMENT_SURFACES is exactly
+      // driver and passenger, and the passenger box is the MIRROR of the
+      // driver's with the artwork un-flipped.
+      const surfaces = new Set((elementGraph.applied || []).map((item) => item?.surfaceKey));
+      for (const surface of ["driver", "passenger"]) {
+        if (!surfaces.has(surface)) {
+          throw new Error(`the element composite placed nothing on the ${surface} flank: `
+            + `surfaces = ${JSON.stringify([...surfaces])}`);
+        }
+      }
+    } else {
+      step(`WARNING: the element graph ran and its sheet was refused back to Layer 0 -- `
+        + `${JSON.stringify(elementGraph.refused || null).slice(0, 300)}`);
+    }
+  }
   const geometryAuthority = atlasRow.metadata?.geometryAuthority || {};
   if (geometryAuthority.operatorValidated !== true
     || String(geometryAuthority.candidateId || "").toLowerCase()
