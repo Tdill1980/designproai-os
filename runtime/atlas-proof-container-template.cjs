@@ -129,6 +129,29 @@ function row(surfaces, { top, height, left = 54, right = 1482, gap = 42, detail 
   }).join("");
 }
 
+/**
+ * The contract's OWN row strings -> a manifest this renderer can draw.
+ *
+ * `buildPanelProofPrompt` states the panels to the model as
+ * `DRIVER: 165.7" wide x 49.6" high`, and the container has to draw the SAME
+ * six rectangles the prompt names. Parsing that one format here means there is
+ * exactly one place the two can agree or disagree, instead of a caller
+ * re-deriving inches beside a caller that states them.
+ */
+function parsePanelRows(rows) {
+  const zones = [];
+  for (const raw of Array.isArray(rows) ? rows : []) {
+    const m = /^\s*([A-Za-z ]+?)\s*:\s*([0-9.]+)"?\s*wide\s*x\s*([0-9.]+)"?\s*high/i.exec(String(raw || ""));
+    if (!m) continue;
+    const key = m[1].trim().toLowerCase().replace(/\s+side$/, "").replace(/\s+/g, "");
+    const widthIn = Number(m[2]);
+    const heightIn = Number(m[3]);
+    if (!SURFACE_ORDER.includes(key) || !Number.isFinite(widthIn) || !Number.isFinite(heightIn)) continue;
+    zones.push({ surfaceKey: key, trimInches: { widthIn, heightIn } });
+  }
+  return { zones };
+}
+
 /** GENIE surfaces → the rows this sheet draws. Falls back to nothing. */
 function surfacesFrom(manifest = {}) {
   const zones = Array.isArray(manifest.zones) ? manifest.zones : [];
@@ -268,6 +291,7 @@ module.exports = {
   WIDTH,
   HEIGHT,
   SURFACE_ORDER,
+  parsePanelRows,
   renderContainerTemplate,
   _test: { surfacesFrom, panelCell, row },
 };

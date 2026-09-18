@@ -90,10 +90,45 @@ mkdirSync(outDir, { recursive: true });
  * wheel wells back into the source rectangles.
  */
 const PINNED = [
-  { local: "runtime/atlas-examples/panel-proof-container-template.png", remote: "atlas-examples/panel-proof-container-template.png" },
   { local: "runtime/atlas-examples/panel-proof-zones-filled.png", remote: "atlas-examples/panel-proof-zones-filled.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
+
+/**
+ * THE CONTAINER IS RENDERED FOR THIS VEHICLE, NOT PINNED.
+ *
+ * It was a fixed PNG carrying the Prius's own 165.7" x 49.6" flanks, so every
+ * other vehicle would have been shown a template dimensioned for a car it is
+ * not -- silently, because a pinned hash verifies only that the bytes are the
+ * ones we pinned, never that they are the ones this request needs. A derived
+ * artifact cannot be pinned by hash once it legitimately varies.
+ *
+ * What replaces the byte pin is the RULE 0.39 discipline the hero view already
+ * proved: the renderer is deterministic and locked, the object is named by its
+ * own sha256 so a swapped one cannot keep its name, and the edge re-reads the
+ * bytes and checks they hash to what this caller claimed. Three checks, and
+ * none of them can be satisfied by an object nobody in this request rendered.
+ */
+async function stageContainerTemplate(rows, { companyName, vehicle }) {
+  const { parsePanelRows, renderContainerTemplate } =
+    require("../runtime/atlas-proof-container-template.cjs");
+  const manifest = parsePanelRows(rows);
+  if (manifest.zones.length !== 6) {
+    throw new Error(`container_template_rows_unparsed:${manifest.zones.length}/6`);
+  }
+  const bytes = await renderContainerTemplate({ manifest, companyName, vehicle, bleedInches: 5 });
+  const digest = sha256(bytes);
+  // The edge's own allowlist shape: a Call-1 input is named by its content.
+  const remote = `atlas-call1-inputs/${digest}.png`;
+  const { data } = await svc.storage.from(BUCKET).download(remote);
+  if (!data) {
+    const { error } = await svc.storage.from(BUCKET)
+      .upload(remote, bytes, { contentType: "image/png", upsert: false });
+    if (error && !/exists/i.test(String(error.message))) throw error;
+  }
+  console.log(`  container rendered for ${vehicle} (${digest.slice(0, 12)}, ${bytes.length} B)`);
+  return { containerStoragePath: remote, containerContentHash: digest, containerByteSize: bytes.length };
+}
 
 async function stagePinnedInputs() {
   for (const item of PINNED) {
@@ -202,6 +237,10 @@ async function measure(bytes) {
       + "clinical chair inlaid into the rear three-quarter of each side panel."),
     panelRows: panelRows(),
   };
+  Object.assign(request, await stageContainerTemplate(request.panelRows, {
+    companyName: request.companyName,
+    vehicle: [request.vehicleYear, request.vehicleMake, request.vehicleModel].filter(Boolean).join(" "),
+  }));
   console.log(`calling production-panel-proof for the ${request.vehicleYear} ${request.vehicleMake} ${request.vehicleModel}`);
 
   const started = Date.now();

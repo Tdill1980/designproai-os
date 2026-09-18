@@ -191,7 +191,7 @@ jobs:
           # is not this probe at all.
           tar -cz --exclude runtime/node_modules \
             scripts/atlas-panel-proof-probe.mjs \
-            runtime/atlas-examples/panel-proof-container-template.png \
+            runtime/atlas-proof-container-template.cjs \
             runtime/atlas-examples/panel-proof-zones-filled.png \
             runtime/atlas-examples/installer-one-panel-per-side.png > "$RUNNER_TEMP/probe-payload.tgz"
           payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \

@@ -237,54 +237,90 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   assert.ok(prompt.length < 4000, `assembled prompt is ${prompt.length} chars; the ceiling is 4000`);
 });
 
-test("the BLANK CONTAINER TEMPLATE is pinned, shipped, staged and enforced", async () => {
-  // Owner, 2026-09-18: "This is just the container template edge function that
-  // needs in system instruction along with the version that has graphics" /
-  // "produce a blank container template for system". So it is a second pinned
-  // system-level attachment and gets exactly the treatment the first one gets:
-  // a hash the function REFUSES a mismatch against, bytes on disk that match
-  // it, a workflow that actually ships those bytes, and a probe that stages the
-  // same remote path. The format sheet's first live run died on a missing file
-  // because only three of those four agreed; a second pinned input is a second
-  // chance to make that mistake.
-  const { createHash } = await import("node:crypto");
-  const pin = runtime.PANEL_PROOF_CONTAINER_TEMPLATE;
-  const bytes = readFileSync(
-    new URL(`../runtime/atlas-examples/${pin.path.split("/").pop()}`, import.meta.url));
-  assert.equal(createHash("sha256").update(bytes).digest("hex"), pin.sha256,
-    "the container template on disk is not the pinned one");
-  assert.equal(bytes.length, pin.byteSize);
-
-  // IT IS DRAWN BY CODE, and that is the reason it can be pinned at all. The
-  // owner's generated container read "2012 TOYOTA PRIORS" and "5 BLEON ON ALL
-  // FOUR EDGES" -- a teaching input with a typo in it teaches the typo.
+test("the CONTAINER TEMPLATE is rendered per vehicle and verified, not byte-pinned", async () => {
+  // Owner, 2026-09-18: "produce a blank container template for system", then
+  // the architecture note: the template is generated "using the target
+  // vehicle's exact panel dimensions".
+  //
+  // THE FIRST VERSION OF THIS SHIPPED A FIXED PNG and pinned its sha256. That
+  // PNG is drawn for the Prius -- 165.7" x 49.6" flanks -- so every other
+  // vehicle would have been shown a template dimensioned for a car it is not,
+  // and the pin would have verified it happily: a hash proves the bytes are the
+  // ones we pinned, never that they are the ones THIS request needs.
   const renderer = require("../runtime/atlas-proof-container-template.cjs");
-  assert.equal(renderer.CONTAINER_CONTRACT, pin.contract,
-    "the renderer and the pin name different contract versions");
-  assert.equal(renderer.WIDTH, pin.width);
-  assert.equal(renderer.HEIGHT, pin.height);
+  const rows = [
+    'DRIVER: 165.7" wide x 49.6" high', 'PASSENGER: 165.7" wide x 49.6" high',
+    'ROOF: 43" wide x 56" high', 'HOOD: 50" wide x 41" high',
+    'FRONT: 50" wide x 22" high', 'REAR: 58" wide x 40" high',
+  ];
+  // ONE FORMAT, PARSED ONCE. The prompt states the panels to the model in these
+  // exact words; the container must draw those same six rectangles.
+  const manifest = renderer.parsePanelRows(rows);
+  assert.equal(manifest.zones.length, 6, "the contract's own row format must parse");
+  assert.deepEqual(manifest.zones.map((z) => z.surfaceKey).sort(),
+    ["driver", "front", "hood", "passenger", "rear", "roof"]);
 
-  // BOTH SHEETS ARE ONE GEOMETRY. The prompt tells the model the finished proof
-  // is this template filled in, and the request asks for 3:2. A container at a
-  // different shape would make that sentence false and force a re-flow.
-  assert.equal(pin.width / pin.height, 1.5, "the container template must be 3:2");
-  assert.equal(pin.width, runtime.PANEL_PROOF_FORMAT_EXAMPLE.width);
-  assert.equal(pin.height, runtime.PANEL_PROOF_FORMAT_EXAMPLE.height);
+  // DETERMINISM IS WHAT REPLACES THE BYTE PIN. Same manifest in, identical
+  // bytes out -- that is the property that makes a rendered teaching input as
+  // trustworthy as a pinned one, and it is why the container is code and not a
+  // generation (the owner's generated one read "2012 TOYOTA PRIORS").
+  const { createHash } = await import("node:crypto");
+  const draw = (m, vehicle) => renderer.renderContainerTemplate({
+    manifest: m, companyName: "BRIGHT SMILES DENTAL", vehicle, bleedInches: 5 });
+  const [a, b] = await Promise.all([draw(manifest, "2012 TOYOTA PRIUS"), draw(manifest, "2012 TOYOTA PRIUS")]);
+  assert.equal(createHash("sha256").update(a).digest("hex"),
+    createHash("sha256").update(b).digest("hex"), "the renderer must be deterministic");
 
-  assert.ok(edgeSource.includes(pin.sha256), "the edge is missing the container-template hash");
+  // AND A DIFFERENT VEHICLE MUST PRODUCE A DIFFERENT SHEET. This is the whole
+  // defect: if these two matched, the F250 would be shown the Prius's numbers.
+  const f250 = renderer.parsePanelRows([
+    'DRIVER: 251" wide x 60" high', 'PASSENGER: 251" wide x 60" high',
+    'ROOF: 79" wide x 68" high', 'HOOD: 66" wide x 55" high',
+    'FRONT: 80" wide x 32" high', 'REAR: 80" wide x 60" high',
+  ]);
+  // HOLD EVERY OTHER INPUT CONSTANT. The first version of this assertion also
+  // changed the vehicle NAME, which is printed in the header -- so the bytes
+  // differed for that reason alone and the check passed against a renderer
+  // hard-wired to the Prius. Verified: with the name varying too, a container
+  // that ignores its manifest entirely still slips through. Only the manifest
+  // moves here, so only the dimensions can move the bytes.
+  const other = await draw(f250, "2012 TOYOTA PRIUS");
+  assert.notEqual(createHash("sha256").update(a).digest("hex"),
+    createHash("sha256").update(other).digest("hex"),
+    "the container ignored its manifest -- a second vehicle got the first one's dimensions");
+
+  assert.equal(renderer.WIDTH / renderer.HEIGHT, 1.5, "the container must be 3:2");
+  assert.equal(renderer.WIDTH, runtime.PANEL_PROOF_FORMAT_EXAMPLE.width);
+  assert.equal(renderer.HEIGHT, runtime.PANEL_PROOF_FORMAT_EXAMPLE.height);
+  assert.equal(renderer.CONTAINER_CONTRACT, runtime.PANEL_PROOF_CONTAINER_TEMPLATE.contract);
+
+  // THE EDGE VERIFIES THE REFERENCE -- the three checks RULE 0.39 runs on the
+  // hero view. A container nobody in this request rendered passes none of them.
   const fn = readFileSync(
     new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
-  assert.ok(fn.includes("PANEL_PROOF_CONTAINER_TEMPLATE.sha256"),
-    "the function must enforce the container template's hash, not merely attach it");
+  assert.match(fn, /panel_proof_container_reference_required/,
+    "the function must require the reference rather than falling back to a fixed sheet");
+  assert.match(fn, /CALL1_INPUT_PATH\.test\(containerPath\)/, "the path must be allowlisted");
+  assert.match(fn, /panel_proof_container_not_content_addressed/,
+    "the filename must be proven to be the content hash");
+  assert.match(fn, /panel_proof_container_hash_mismatch/,
+    "the bytes must be proven to be what the caller claimed");
+  assert.ok(!fn.includes("PANEL_PROOF_CONTAINER_TEMPLATE.sha256"),
+    "a per-vehicle artifact must not be byte-pinned");
 
+  // AND THE RENDERER MUST REACH THE DROPLET. The probe runs inside the runtime
+  // image from a payload tar; a renderer the tar does not carry cannot run at
+  // all. This is the same four-places-must-agree check the format sheet needs,
+  // whose first live run died on exactly that.
   const workflow = readFileSync(
     new URL("../.github/workflows/atlas-panel-proof-probe.yml", import.meta.url), "utf8");
-  assert.ok(workflow.includes(`runtime/atlas-examples/${pin.path.split("/").pop()}`),
-    "the probe workflow does not ship the container template to the droplet");
+  assert.ok(workflow.includes("runtime/atlas-proof-container-template.cjs"),
+    "the probe workflow does not ship the container renderer to the droplet");
   const probe = readFileSync(
     new URL("../scripts/atlas-panel-proof-probe.mjs", import.meta.url), "utf8");
-  assert.ok(probe.includes(pin.path),
-    "the probe stages a different remote path than the contract pins");
+  assert.match(probe, /stageContainerTemplate/, "the probe must render and stage the container");
+  assert.match(probe, /atlas-call1-inputs\/\$\{digest\}\.png/,
+    "the probe must stage it content-addressed under the Call-1 input prefix");
 });
 
 test("the prompt names the attachments in the order the function sends them", () => {
@@ -296,11 +332,19 @@ test("the prompt names the attachments in the order the function sends them", ()
   // still ships all three, and the prompt is still under budget.
   const fn = readFileSync(
     new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
-  const block = fn.slice(fn.indexOf("const PINNED_INPUTS"), fn.indexOf("] as const;",
-    fn.indexOf("const PINNED_INPUTS")));
-  const roles = [...block.matchAll(/role:\s*"([a-z]+)"/g)].map((m) => m[1]);
+  // THE EFFECTIVE ORDER IS TWO PIECES NOW, because the container is rendered
+  // per vehicle and attached from the request rather than from PINNED_INPUTS.
+  // Both pieces have to be read, or the lock would check half the sequence.
+  const containerAt = fn.indexOf('role: "container"');
+  const loopAt = fn.indexOf("for (const pinned of PINNED_INPUTS)");
+  assert.ok(containerAt > 0 && loopAt > 0, "both attachment paths must exist");
+  assert.ok(containerAt < loopAt,
+    "the container is attachment (1) in the prompt, so it must be pushed before the pinned loop");
+  const pinnedBlock = fn.slice(fn.indexOf("const PINNED_INPUTS"),
+    fn.indexOf("] as const;", fn.indexOf("const PINNED_INPUTS")));
+  const roles = ["container", ...[...pinnedBlock.matchAll(/role:\s*"([a-z]+)"/g)].map((m) => m[1])];
   assert.deepEqual(roles, ["container", "format", "installation"],
-    "PINNED_INPUTS order changed; the prompt's numbered list must change with it");
+    "attachment order changed; the prompt's numbered list must change with it");
 
   const prompt = runtime.buildPanelProofPrompt({
     input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",

@@ -90,14 +90,28 @@ const BUCKET = "wrap-files";
  * aspectRatio, so nothing has to be re-flowed to be read.
  */
 const PINNED_INPUTS = [
-  {
-    path: PANEL_PROOF_CONTAINER_TEMPLATE.path,
-    role: "container",
-    sha256: PANEL_PROOF_CONTAINER_TEMPLATE.sha256,
-  },
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
   { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation", sha256: null },
 ] as const;
+
+/**
+ * THE CONTAINER TEMPLATE ARRIVES AS A REFERENCE, NOT AS A PIN OR AS BYTES.
+ *
+ * It was pinned by hash beside the format sheet, and that was wrong the moment
+ * it carried dimensions: the pinned PNG is drawn for the Prius's 165.7" x 49.6"
+ * flanks, so an F250 request would have been shown a template dimensioned for a
+ * car it is not. A hash pin proves the bytes are the ones we pinned; it cannot
+ * prove they are the ones THIS request needs, and for a derived artifact that
+ * is the only question worth asking.
+ *
+ * So the runtime renders it (Deno has no libvips; sharp lives in the runtime
+ * image) and hands over `{storagePath, contentHash}` -- RULE 0.39's rule for
+ * crossing a node boundary, and the same three checks `attach()` runs on the
+ * hero view: the path must be content-addressed under the Call-1 input prefix,
+ * the bytes must hash to the filename, and they must hash to what the caller
+ * claimed. An object nobody in this request rendered satisfies none of them.
+ */
+const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -161,6 +175,37 @@ serve(async (req) => {
     // in, twice, with a bodiless 504.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const attached: Array<Record<string, unknown>> = [];
+
+    // THE CONTAINER GOES FIRST, because the prompt names it as attachment (1).
+    const containerPath = String(body?.containerStoragePath || "").trim();
+    const containerHash = String(body?.containerContentHash || "").trim();
+    if (!containerPath || !containerHash) {
+      throw new Error("panel_proof_container_reference_required");
+    }
+    if (!CALL1_INPUT_PATH.test(containerPath)) {
+      throw new Error(`panel_proof_container_path_invalid:${containerPath.slice(0, 64)}`);
+    }
+    {
+      const { data, error } = await svc.storage.from(BUCKET).download(containerPath);
+      if (error || !data) throw new Error(`panel_proof_input_missing:${containerPath}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = await sha256Hex(bytes);
+      // The filename IS the content hash, so these two comparisons are not the
+      // same check: one catches a swapped object, the other a caller whose
+      // claim does not match what it staged.
+      if (digest !== containerPath.slice("atlas-call1-inputs/".length, -4)) {
+        throw new Error(`panel_proof_container_not_content_addressed:${digest.slice(0, 16)}`);
+      }
+      if (digest !== containerHash) {
+        throw new Error(`panel_proof_container_hash_mismatch:${digest.slice(0, 16)}`);
+      }
+      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
+      attached.push({
+        role: "container", path: containerPath, sha256: digest, byteSize: bytes.length,
+        contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract,
+      });
+    }
+
     for (const pinned of PINNED_INPUTS) {
       const { data, error } = await svc.storage.from(BUCKET).download(pinned.path);
       if (error || !data) throw new Error(`panel_proof_input_missing:${pinned.path}`);
