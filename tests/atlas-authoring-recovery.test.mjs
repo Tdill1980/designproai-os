@@ -797,3 +797,42 @@ test("a transport failure that is not a no-image outcome still fails closed",asy
   await assert.rejects(run.run(),error=>error.code==="flat_atlas_edge_call_failed");
   assert.equal(run.masterCalls.length,1,"a genuine transport fault must not burn the second candidate");
 });
+
+// AN UNNAMED CONJUNCTION IS NOT A DIAGNOSIS (live 0a5fc4ef, 2026-09-18).
+//
+// The acceptance guard is fifteen terms in one `if`. When it fired on a live
+// canary -- the first occurrence in the entire history of that error code --
+// the request row, the canary artifact and every log that leaves the droplet
+// said only "does not prove the existing master acceptance gates passed".
+// WHICH of the fifteen was unknowable from outside the box, so the defect could
+// not be diagnosed at all, only guessed at.
+//
+// Every term and every threshold is unchanged. What is locked here is that the
+// one which fires SAYS SO, with the value that failed it, so the next
+// occurrence is a diagnosis instead of a riddle.
+test("the acceptance guard names the condition that failed, and its value",async t=>{
+  finishFlag(t,"off");
+  const {source}=await fixture();const run=harness(source);run.insertFailure=true;
+  // Force the first pass to fail AFTER acceptance, exactly as the sibling test
+  // does, so the second pass goes through recovery and reads the checkpoint.
+  await assert.rejects(run.run(),error=>error.code==="flat_atlas_revision_insert_failed");
+  run.insertFailure=false;
+  const checkpointPath=[...run.bytes.keys()].find(path=>path.endsWith("/accepted.json"));
+  const envelope=JSON.parse(run.bytes.get(checkpointPath));
+
+  // Valid in every respect except ONE term: the output-class disposition.
+  envelope.record.state.outputClassReceipt.disposition="vehicle_depiction";
+  envelope.recordHash=sha256(atlas._test.canonicalBytes(envelope.record));
+  run.bytes.set(checkpointPath,Buffer.from(JSON.stringify(envelope)));
+
+  await assert.rejects(run.run(),error=>{
+    assert.equal(error.code,"flat_atlas_checkpoint_acceptance_invalid");
+    // The failing term, BY NAME, with its value -- not a bare sentence.
+    assert.match(error.message,/outputClass\.disposition=vehicle_depiction/);
+    // And only that term: the fourteen that passed must not add noise, or the
+    // message is a haystack again.
+    assert.doesNotMatch(error.message,/masterDeterministic\.accepted/);
+    assert.doesNotMatch(error.message,/maxAuthoringAttemptsAllowed/);
+    return true;
+  });
+});
