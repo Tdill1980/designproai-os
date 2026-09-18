@@ -246,14 +246,16 @@ const staticAccountGroup: NavGroup = {
 
 const WPW_TOOL_KEYS = new Set(["patternpro_wpw", "wallpro_wpw"]);
 
+export const WPW_SHOPFLOW_URL = "https://www.restyleproai.com/shopflow";
+
 const wpwShopFlowGroup: NavGroup = {
   id: "wpw",
   label: "WPW ShopFlow",
   items: [
     {
       type: "link",
-      label: "ShopFlow dashboard",
-      route: "/shopflow",
+      label: "WPW ShopFlow dashboard",
+      route: WPW_SHOPFLOW_URL,
       icon: Store,
       description: "WePrintWraps orders, reorders, rewards and files",
     },

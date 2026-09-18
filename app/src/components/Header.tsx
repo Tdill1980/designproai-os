@@ -10,6 +10,7 @@ import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useIsAppRoute } from "@/hooks/useIsAppRoute";
 import { supabase } from "@/integrations/supabase/client";
 import { isAllowlistedAdmin, isWpwTenantMember } from "@/lib/admin-allowlist";
+import { WpwShopflowNavLink } from "@/components/layout/WpwShopflowNavLink";
 import { NAV_GROUPS } from "@/lib/dashboard-nav";
 import { SproketQueueWidget } from "@/components/queue/SproketQueueWidget";
 import { RpToken } from "@/components/RpToken";
@@ -270,9 +271,10 @@ const HeaderComponent = () => {
   // operator on the 404 page.
   const MobileNavLinks = () => (
     <>
+      <WpwShopflowNavLink onNavigate={() => setIsOpen(false)} />
       {NAV_GROUPS.map((group) => (
         <div key={group.id} className="mb-2">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">
+          <h4 className="text-xs font-semibold text-white/60 uppercase tracking-wider px-2 mb-1">
             {group.label}
           </h4>
           {group.items.map((item) => {
@@ -284,7 +286,7 @@ const HeaderComponent = () => {
                 key={route}
                 to={route}
                 onClick={() => setIsOpen(false)}
-                className={`block py-3 px-2 text-base font-semibold transition-colors rounded-lg min-h-[44px] flex items-center gap-2 ${isActive(route) ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                className={`block py-3 px-2 text-base font-semibold transition-colors rounded-lg min-h-[44px] flex items-center gap-2 ${isActive(route) ? "bg-primary/10 text-primary" : "text-white/90 hover:text-white hover:bg-white/10"}`}
               >
                 <Icon className="h-4 w-4 text-cyan-400" />
                 {label}
@@ -295,13 +297,13 @@ const HeaderComponent = () => {
       ))}
       {showAdminMenu && (
         <div className="mb-2">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2 mb-1">
+          <h4 className="text-xs font-semibold text-white/60 uppercase tracking-wider px-2 mb-1">
             Admin
           </h4>
           <Link
             to="/admin"
             onClick={() => setIsOpen(false)}
-            className={`block py-3 px-2 text-base font-semibold transition-colors rounded-lg min-h-[44px] flex items-center gap-2 ${isActive("/admin") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+            className={`block py-3 px-2 text-base font-semibold transition-colors rounded-lg min-h-[44px] flex items-center gap-2 ${isActive("/admin") ? "bg-primary/10 text-primary" : "text-white/90 hover:text-white hover:bg-white/10"}`}
           >
             <LayoutDashboard className="h-4 w-4 text-cyan-400" />
             Admin dashboard
@@ -386,9 +388,9 @@ const HeaderComponent = () => {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] bg-card border-border">
+            <SheetContent side="left" className="z-[120] w-[min(360px,90vw)] overflow-y-auto overscroll-contain bg-[#101820] text-white border-white/15 pb-[calc(24px+env(safe-area-inset-bottom))]">
               <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
-              <nav className="flex flex-col gap-2 mt-8">
+              <nav className="flex flex-col gap-3 mt-8">
                 <MobileNavLinks />
                 <div className="flex flex-col gap-3 pt-4 border-t border-border">
                   {user ? (

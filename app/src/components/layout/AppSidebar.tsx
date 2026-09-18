@@ -1,3 +1,4 @@
+import { WpwShopflowNavLink } from "./WpwShopflowNavLink";
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
@@ -115,6 +116,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
   return (
     <TooltipProvider delayDuration={150}>
     <nav className="flex flex-col gap-5 px-3 py-4 text-sm font-inter h-full">
+      <WpwShopflowNavLink onNavigate={onNavigate} />
       {/* ── Compact tier pill (replaces Current Plan KPI) ── */}
       <SidebarTooltip
         title={`Current plan: ${TIER_LABELS[userTier] || "Free"}`}
@@ -549,7 +551,7 @@ export const AppSidebar = ({ mobileOpen = false, onMobileClose, desktopHidden = 
       <Sheet open={mobileOpen} onOpenChange={(open) => !open && onMobileClose?.()}>
         <SheetContent
           side="left"
-          className="w-72 p-0 bg-rp-root border-r border-[#48484a]"
+          className="z-[120] w-[min(360px,90vw)] p-0 bg-rp-root border-r border-[#48484a]"
         >
           <SheetHeader className="px-4 py-3 border-b border-[#48484a]">
             <SheetTitle className="text-white text-left font-poppins">
