@@ -91,7 +91,7 @@ mkdirSync(outDir, { recursive: true });
  */
 const PINNED = [
   { local: "runtime/atlas-examples/panel-proof-container-template.png", remote: "atlas-examples/panel-proof-container-template.png" },
-  { local: "runtime/atlas-examples/panel-production-proof-three-version.png", remote: "atlas-examples/panel-production-proof-three-version.png" },
+  { local: "runtime/atlas-examples/panel-proof-zones-filled.png", remote: "atlas-examples/panel-proof-zones-filled.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
 

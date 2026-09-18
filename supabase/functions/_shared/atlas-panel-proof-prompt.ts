@@ -28,8 +28,12 @@ export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proo
 /**
  * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18).
  *
- * The Bright Smiles Dental three-version 2D PRODUCTION PROOF, 1536x1024,
- * carrying every block this contract names. Pinned exactly as the Flamingo
+ * The Bright Smiles Dental 2012 Toyota Prius 2D PRODUCTION PROOF, 1536x1024:
+ * header and TOTAL COVERAGE, three full-width ZONE bands, the PANEL DIMENSIONS
+ * REFERENCE row, TEMPLATE NOTES, GUIDE legend, footer. It is the FILLED TWIN of
+ * the container template, which is why it replaced the two-column sheet pinned
+ * earlier the same day -- two layouts cannot both be "the template filled in".
+ * Pinned exactly as the Flamingo
  * teaching proof is pinned, for the same reason: a teaching input that silently
  * changes teaches something nobody chose (canary 33389124918). NEVER recreate,
  * crop, relabel or re-encode it.
@@ -41,9 +45,9 @@ export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proo
  * carries only the strings in their own request.
  */
 export const PANEL_PROOF_FORMAT_EXAMPLE = {
-  path: "atlas-examples/panel-production-proof-three-version.png",
-  sha256: "57c07672f644a9b3a38783807fd1cf67fbdf21829905e01d8b7afed042e315db",
-  byteSize: 1793915,
+  path: "atlas-examples/panel-proof-zones-filled.png",
+  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
+  byteSize: 1870997,
   width: 1536,
   height: 1024,
 } as const;
@@ -67,8 +71,8 @@ export const PANEL_PROOF_FORMAT_EXAMPLE = {
  */
 export const PANEL_PROOF_CONTAINER_TEMPLATE = {
   path: "atlas-examples/panel-proof-container-template.png",
-  sha256: "f66ab43b95dc0755e85271eaeae51f6489ef330f98bd1632a6057bb030e5efb0",
-  byteSize: 100028,
+  sha256: "96e82fbf03d141b5d115378a9e44a8097a623c4a9036d8117db8ac5ce1e4bc42",
+  byteSize: 112895,
   width: 1536,
   height: 1024,
   contract: "designpro.atlas-proof-container-template.v1",
@@ -120,10 +124,10 @@ export const INSTALLATION_FACT = [
  * done that; a coordinate table has, 4/4.
  */
 export const SHEET_LAYOUT = [
-  "THE SHEET, drawn empty on the attached template: a header band (logo and tagline left,",
-  "2D PRODUCTION PROOF centred, job block right); VERSION 1 across the upper half;",
-  "a TRIM SIZE REFERENCE table and TOTAL COVERAGE beside the smaller panels; VERSION 2 lower",
-  "left; the cut proof lower right; a footer band. Fill it; do not re-flow it.",
+  "THE SHEET, drawn empty on the attached template: a header band (lockup left, 2D PRODUCTION PROOF",
+  "and vehicle centred, job block right); THREE FULL-WIDTH ZONE BANDS stacked down the page, each a",
+  "coloured title bar over its six panels in one row; then a PANEL DIMENSIONS REFERENCE row, TEMPLATE",
+  "NOTES, a GUIDE legend, and a footer. Fill it; do not re-flow it.",
   "",
   "DIMENSION IT AS A DRAFTSMAN WOULD: a measured line outside each panel, arrowheads at both ends,",
   "thin extension lines back to the edge, the figure on the line. A shop drawing, not a poster.",
@@ -136,33 +140,31 @@ export const SHEET_LAYOUT = [
  * a real returned sheet before anything binds to them.
  */
 export const PROOF_REGIONS = {
-  header: { x: 0, y: 0, w: 1, h: 0.093 },
-  version1: { x: 0, y: 0.105, w: 1, h: 0.42 },
-  trimTable: { x: 0.655, y: 0.37, w: 0.2, h: 0.14 },
-  totalCoverage: { x: 0.865, y: 0.37, w: 0.125, h: 0.1 },
-  version2: { x: 0, y: 0.54, w: 0.5, h: 0.35 },
-  cutProof: { x: 0.5, y: 0.54, w: 0.5, h: 0.35 },
-  footer: { x: 0, y: 0.905, w: 1, h: 0.095 },
+  header: { x: 0, y: 0, w: 1, h: 0.094 },
+  zone1: { x: 0, y: 0.105, w: 1, h: 0.258 },
+  zone2: { x: 0, y: 0.363, w: 1, h: 0.270 },
+  zone3: { x: 0, y: 0.633, w: 1, h: 0.174 },
+  reference: { x: 0, y: 0.807, w: 1, h: 0.105 },
+  footer: { x: 0, y: 0.912, w: 1, h: 0.088 },
 } as const;
 
 /** The three artifacts, in one pass, by one designer. */
 export const VERSIONS = [
   {
     key: "branded",
-    label: "VERSION 1 — FULL DESIGN (WITH TEXT & LOGO)",
-    instruction: "every panel carrying the finished design: artwork, logo, company name and contact line.",
+    label: "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
+    instruction: "every panel carrying the finished design: artwork, logo, name and contact line.",
   },
   {
     key: "artwork",
-    label: "VERSION 2 — ARTWORK ONLY (NO TEXT OR LOGO)",
+    label: "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
     instruction:
       "the SAME panels with every word, numeral and logo removed and the artwork continued through where they sat. "
-      + "Not erased or blanked -- drawn as the design would be if it had never carried type. This is the "
-      + "installer's reference sheet.",
+      + "Not erased or blanked -- drawn as if it had never carried type.",
   },
   {
     key: "elements",
-    label: "VERSION 3 — LOGO + TEXT ONLY (CUT PROOF)",
+    label: "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
     instruction:
       "the logo, company name and contact line alone, drawn as standalone vector cut outlines on a plain empty "
       + "ground -- no vehicle, no panels and no background artwork. This is the sheet a plotter cuts.",
@@ -230,7 +232,7 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     out.push("", "JOB BLOCK — set these in the header exactly as given:",
       ...job.map(([label, value]) => `  ${label}: ${value}`));
   }
-  out.push("", "PRODUCE THREE VERSIONS ON THE PROOF, in this order:",
+  out.push("", "PRODUCE THE THREE ZONES ON THE PROOF, in this order:",
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label} — ${v.instruction}`));
   out.push("", SHEET_LAYOUT);
   out.push("",

@@ -160,8 +160,14 @@ test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
     manifest: { zones: [{ surfaceKey: "driver", trimInches: { widthIn: 165.7, heightIn: 49.6 } }] },
     creativeDirection: "blue wave",
   });
-  assert.match(prompt, /VERSION 1 across the upper half/);
-  assert.match(prompt, /TRIM SIZE REFERENCE table/);
+  // THE LANDMARKS MOVED BECAUSE THE OWNER'S LAYOUT MOVED, not to make a failing
+  // assertion pass. She supplied the filled twin of the container on 2026-09-18
+  // and it is three full-width ZONE bands, not the earlier two-column sheet
+  // (VERSION 1 upper half, trim table beside the small panels, VERSION 2 lower
+  // left, cut proof lower right). What this test protects is unchanged: the
+  // layout reaches the model as PROSE and the coordinates never do.
+  assert.match(prompt, /THREE FULL-WIDTH ZONE BANDS/);
+  assert.match(prompt, /PANEL DIMENSIONS REFERENCE row/);
   assert.match(prompt, /BS-2012PRIUS-01/, "the job block must reach the header");
 
   // THE COORDINATE TABLE MUST NEVER REACH CALL 1. atlasFieldContract emitted

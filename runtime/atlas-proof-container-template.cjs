@@ -106,7 +106,13 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
 }
 
 /** Lay six cells across a band, each scaled to its own proportion. */
-function row(surfaces, { top, height, left = 54, right = 1482, gap = 22, detail }) {
+// GAP 42, NOT 22, AND IT IS THE HEIGHT LABEL THAT SETS IT. panelCell draws the
+// height dimension at x-12 behind a knock-out box reaching x-32, so a 22px gap
+// put every label except the first one 10px INSIDE the previous panel. Measured
+// on the first render: the passenger, hood, front and rear figures all collided.
+// The clearance the label needs is 32px plus air; anything below that silently
+// overprints, which on a teaching input is a sheet that teaches a collision.
+function row(surfaces, { top, height, left = 54, right = 1482, gap = 42, detail }) {
   const usable = right - left - gap * (surfaces.length - 1);
   const totalW = surfaces.reduce((sum, s) => sum + s.widthIn, 0);
   let x = left;
@@ -148,6 +154,26 @@ async function renderContainerTemplate({ manifest = {}, companyName = "", vehicl
   // it is trim + 2x bleed in each dimension. Stating both is the point of the
   // sheet: the shop cuts on the trim line and prints to the larger rectangle.
   const printOf = (s) => ({ w: s.widthIn + bleedInches * 2, h: s.heightIn + bleedInches * 2 });
+
+  // EVERY PANEL CARRIES ITS OWN TRIM / PRINT / BLEED, IN BOTH ZONES -- which is
+  // what the owner's filled twin does, and it is also the only place the sheet
+  // states the difference between the rectangle the shop CUTS and the rectangle
+  // it PRINTS. Zone 1 had the captions without it, so a reader of the blank
+  // template learned the panel names and not the numbers under them.
+  const panelDetail = (s) => {
+    const p = printOf(s);
+    return [`TRIM ${r1(s.widthIn)}" x ${r1(s.heightIn)}"`,
+      `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
+      `${bleedInches}" bleed all edges`];
+  };
+
+  // TOTAL COVERAGE IS COMPUTED, NEVER COPIED. The owner's filled sheet carries
+  // "TOTAL COVERAGE: 176.26 SQ FT" and that figure reproduces from none of the
+  // dimensions printed beside it -- its per-panel square footages do not match
+  // its own trim or print rectangles either, because a diffusion model wrote
+  // them. This one is the sum of the GENIE trim areas and nothing else, so the
+  // blank template can never teach arithmetic that does not close.
+  const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (s.widthIn * s.heightIn) / 144, 0);
   const m = [];
 
   // ── header ───────────────────────────────────────────────────────────────
@@ -156,6 +182,9 @@ async function renderContainerTemplate({ manifest = {}, companyName = "", vehicl
   m.push(text(54, 61, "VEHICLE WRAP PRODUCTION TEMPLATE", { size: 9, fill: MUTED, spacing: 1.3 }));
   m.push(text(WIDTH / 2, 44, "2D PRODUCTION PROOF", { size: 21, weight: 700, anchor: "middle", spacing: 0.4 }));
   m.push(text(WIDTH / 2, 61, vehicle || "VEHICLE", { size: 10, fill: MUTED, anchor: "middle", spacing: 0.6 }));
+  m.push(text(WIDTH / 2, 77, `TOTAL COVERAGE (TRIM): ${totalTrimSqFt.toFixed(2)} SQ FT`
+    + `  |  EVERY PANEL DIMENSIONED BY GENIE  |  ${bleedInches}" BLEED ON ALL FOUR EDGES`,
+    { size: 8.5, fill: MUTED, anchor: "middle", spacing: 0.3 }));
   m.push(`<rect x="1180" y="22" width="302" height="62" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   ["DATE:", "ORDER #:", "DESIGNER:", "VERSION:"].forEach((k, i) => {
     m.push(text(1192, 38 + i * 14, k, { size: 8.5, fill: MUTED }));
@@ -167,21 +196,13 @@ async function renderContainerTemplate({ manifest = {}, companyName = "", vehicl
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
     "6 PANELS — COMPLETE WRAP ARTWORK"));
-  m.push(row(surfaces, { top: 150, height: 150 }));
+  m.push(row(surfaces, { top: 150, height: 150, detail: panelDetail }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
     "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
     "6 PANELS — BACKGROUND ARTWORK ONLY"));
-  m.push(row(surfaces, {
-    top: 414, height: 150,
-    detail: (s) => {
-      const p = printOf(s);
-      return [`TRIM ${r1(s.widthIn)}" x ${r1(s.heightIn)}"`,
-        `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
-        `${bleedInches}" bleed all edges`];
-    },
-  }));
+  m.push(row(surfaces, { top: 414, height: 150, detail: panelDetail }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,

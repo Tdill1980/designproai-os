@@ -70,10 +70,11 @@ const BUCKET = "wrap-files";
  * `panel-production-proof-example.png` -- the Arctic Air sheet, 874x717, which
  * carries ONE version. This contract asks for THREE, so the reference was
  * teaching a different document than the one requested: the same class of
- * defect, pointed the other way. The three-version sheet is 1536x1024 and shows
- * every block this contract names -- header job block, VERSION 1 dimensioned,
- * trim table and total coverage, VERSION 2 artwork-only, and the cut proof with
- * outlined elements.
+ * defect, pointed the other way. The pinned sheet is 1536x1024 and shows every
+ * block this contract names -- header job block and total coverage, then three
+ * full-width ZONE bands (full design panels dimensioned / backgrounds only /
+ * cut graphics), the panel dimensions reference row, template notes and guide
+ * legend. It is the filled twin of the container template attached beside it.
  *
  * The installation photograph is the PHYSICAL REASON a panel is one rectangle.
  * A positive fact conditions better than "do not draw wheel arches", which is
