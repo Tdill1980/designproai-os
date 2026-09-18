@@ -71,24 +71,44 @@ function readingSize(zone) {
   return { trim, rotation, rw: rotated ? trim.h : trim.w, rh: rotated ? trim.w : trim.h };
 }
 
-/** Reading-space box -> sheet-space placement. See the header for the algebra. */
+/**
+ * Reading-space box -> sheet-space placement. See the header for the algebra.
+ *
+ * TWO SIZES COME BACK AND THEY ARE NOT THE SAME NUMBER ON A ROTATED ZONE.
+ * `drawWidth`/`drawHeight` are READING space: the compositor resizes to them
+ * and only THEN rotates, so they are what `.resize()` must be handed.
+ * `sheetWidth`/`sheetHeight` are what the layer actually occupies ON THE SHEET
+ * once rotated -- the transpose, for +/-90. Anything measuring, masking or
+ * reporting the painted region wants the sheet pair; only the resize wants the
+ * reading pair.
+ *
+ * This distinction was implicit before (the 90-degree branch already derives
+ * `left` from `dh`, the post-rotation width) and `darkDeltaOutside` read the
+ * reading pair as though it were the sheet pair -- masking the transpose of the
+ * region the composite had just painted. On the two flanks, which are the only
+ * surfaces the element graph ever touches and are always rotated, that made a
+ * correct composite convict itself. Live: element run ac8ab0a0, 2026-09-18.
+ */
 function sheetPlacement(zone, box) {
   const { trim, rotation, rw, rh } = readingSize(zone);
   const dw = Math.max(1, Math.round(box.wPct * rw));
   const dh = Math.max(1, Math.round(box.hPct * rh));
   const rx = Math.round(box.xPct * rw);
   const ry = Math.round(box.yPct * rh);
+  // A quarter turn swaps the axes; anything else here is refused below.
+  const turned = Math.abs(rotation) === 90;
+  const footprint = { sheetWidth: turned ? dh : dw, sheetHeight: turned ? dw : dh };
 
   if (rotation === 90) {
-    return { left: trim.x + (trim.w - ry - dh), top: trim.y + rx, drawWidth: dw, drawHeight: dh, rotation };
+    return { left: trim.x + (trim.w - ry - dh), top: trim.y + rx, drawWidth: dw, drawHeight: dh, ...footprint, rotation };
   }
   if (rotation === -90) {
-    return { left: trim.x + ry, top: trim.y + (trim.h - rx - dw), drawWidth: dw, drawHeight: dh, rotation };
+    return { left: trim.x + ry, top: trim.y + (trim.h - rx - dw), drawWidth: dw, drawHeight: dh, ...footprint, rotation };
   }
   if (rotation !== 0) {
     throw new AtlasCompositeError("atlas_composite_rotation_unsupported", `${zone.surfaceKey}: rotation ${rotation}`);
   }
-  return { left: trim.x + rx, top: trim.y + ry, drawWidth: dw, drawHeight: dh, rotation };
+  return { left: trim.x + rx, top: trim.y + ry, drawWidth: dw, drawHeight: dh, ...footprint, rotation };
 }
 
 /**
@@ -213,10 +233,13 @@ async function darkDeltaOutside(beforeBytes, afterBytes, applied) {
   // One byte per pixel: inside a placed element, or not.
   const masked = new Uint8Array(width * height);
   for (const item of applied) {
+    // THE SHEET FOOTPRINT, never the reading-space draw size. On a rotated
+    // flank those are transposed, and masking the transpose makes the
+    // composite's own ink read as damage to the base.
     const x0 = Math.max(0, Math.floor(item.sheet.left));
     const y0 = Math.max(0, Math.floor(item.sheet.top));
-    const x1 = Math.min(width, Math.ceil(item.sheet.left + item.sheet.drawWidth));
-    const y1 = Math.min(height, Math.ceil(item.sheet.top + item.sheet.drawHeight));
+    const x1 = Math.min(width, Math.ceil(item.sheet.left + item.sheet.sheetWidth));
+    const y1 = Math.min(height, Math.ceil(item.sheet.top + item.sheet.sheetHeight));
     for (let y = y0; y < y1; y += 1) masked.fill(1, y * width + x0, y * width + x1);
   }
   const dark = (data, offset) => data[offset] <= FLAT_BLACK_CHANNEL_MAX
