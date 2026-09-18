@@ -348,3 +348,35 @@ test("the canary CONVICTS an element graph that never ran on a branded brief", (
   assert.match(canary, /const declaredBranding = Boolean\(COMPANY_NAME \|\| COMPANY_PHONE \|\| COMPANY_WEBSITE\);/,
     "the element-graph assertion must be scoped to a branded brief");
 });
+
+test("the canary reports WHICH configuration GENIE resolved, and convicts one that matches none", () => {
+  // The operator-validated assertion proves WHO validated the candidate. It
+  // says nothing about WHICH of the vehicle's catalogued configurations it is,
+  // and for an F-series truck that is a hundred-inch question: "F250 Crew Cab"
+  // matches a 153" chassis cab and a 259.8" 8ft box alike, and 34613569
+  // silently took the shortest.
+  //
+  // 153" is a REAL measured catalog row, so there is nothing to convict there
+  // and the check must not pretend otherwise -- failing would convict correct
+  // geometry. What it must do is SAY SO, because the receipt looks identical
+  // whichever configuration was picked.
+  assert.match(canary, /const matched = candidates\.filter\(\(row\) => Math\.abs\(row\.width - resolvedFlankIn\) <= row\.width \* 0\.02\);/,
+    "a resolved flank matches a catalogued configuration within 2% -- trim differs by rounding and bleed, never by body style");
+  assert.match(canary, /if \(!matched\.length\) \{\s*\n\s*throw new Error\(`the resolved driver flank is/,
+    "a flank matching NO catalogued configuration must throw -- that is the RULE 0.28 class-constant estimate");
+  assert.match(canary, /step\(`GENIE flank \$\{resolvedFlankIn\}" matches \$\{matched/,
+    "the matched configuration must be named, not merely accepted");
+  assert.match(canary, /WARNING: "\$\{CANARY_MAKE\} \$\{CANARY_MODEL\}" matches \$\{candidates\.length\} catalogued configurations spanning/,
+    "an ambiguous model string must be reported loudly -- status-board item 18");
+
+  // Matched on make + model family, never on year: the catalog has no row
+  // covering 2022 for this truck, so a year-exact lookup would find nothing and
+  // check nothing -- which is exactly how this went unnoticed.
+  assert.doesNotMatch(canary, /\.eq\("year_start"|\.eq\("year_range"/,
+    "the catalog lookup must not filter by year");
+
+  // A vehicle the catalog has never seen is grounded estimation, which is
+  // legitimate. It is REPORTED as provisional, never convicted (item 19).
+  assert.match(canary, /GENIE geometry is GROUNDED\/PROVISIONAL/,
+    "an uncatalogued vehicle must be reported as provisional rather than failed");
+});
