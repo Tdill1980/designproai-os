@@ -105,6 +105,39 @@ const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
 });
 
 /**
+ * THE BLANK CONTAINER TEMPLATE — the SECOND system-level attachment.
+ *
+ * Owner ruling, Trish 2026-09-18: "This is just the container template edge
+ * function that needs in system instruction along with the version that has
+ * graphics" / "produce a blank container template for system". So the request
+ * carries BOTH: the empty structure and a finished example of it.
+ *
+ * DRAWN BY CODE (`runtime/atlas-proof-container-template.cjs`), not generated.
+ * A generated container comes back slightly different every time, and the
+ * owner's own generated one read "2012 TOYOTA PRIORS" and "5 BLEON ON ALL FOUR
+ * EDGES" -- a teaching input with a typo in it teaches the typo. sharp + SVG:
+ * same manifest in, byte-identical sheet out, no glyph the code did not place.
+ *
+ * NOT A BLANK CANVAS, deliberately. RULE 0.33 removed a blank neutral guide
+ * from Call 1 on measured evidence ("a blank canvas handed to an image model
+ * reads as content to interpret"). This is the opposite object: every region is
+ * captioned, banded and dimensioned, so it reads as a DOCUMENT WITH EMPTY
+ * FIELDS. It is also RULE 0.27 applied to the teaching input -- the code owns
+ * the geometry, the A.I. owns the design.
+ *
+ * 3:2 at 1536x1024, identical to the filled reference and to the request's own
+ * aspectRatio, so all three agree and nothing has to be re-flowed.
+ */
+const PANEL_PROOF_CONTAINER_TEMPLATE = Object.freeze({
+  path: "atlas-examples/panel-proof-container-template.png",
+  sha256: "f66ab43b95dc0755e85271eaeae51f6489ef330f98bd1632a6057bb030e5efb0",
+  byteSize: 100028,
+  width: 1536,
+  height: 1024,
+  contract: "designpro.atlas-proof-container-template.v1",
+});
+
+/**
  * THE SYSTEM-LEVEL JOB STATEMENT. Multimodal best practice: state the ROLE and
  * the ARTIFACT before any content, so the model's object class is fixed before
  * it reads a single design word.
@@ -158,12 +191,13 @@ const INSTALLATION_FACT = [
  * sections has never produced that failure; a coordinate table has, 4/4.
  */
 const SHEET_LAYOUT = [
-  "THE SHEET, in this order: a header band (logo and tagline left, 2D PRODUCTION PROOF centred, job",
-  "block right); VERSION 1 across the upper half; a TRIM SIZE REFERENCE table and TOTAL COVERAGE",
-  "beside the smaller panels; VERSION 2 lower left; the cut proof lower right; a footer band.",
+  "THE SHEET, drawn empty on the attached template: a header band (logo and tagline left,",
+  "2D PRODUCTION PROOF centred, job block right); VERSION 1 across the upper half;",
+  "a TRIM SIZE REFERENCE table and TOTAL COVERAGE beside the smaller panels; VERSION 2 lower",
+  "left; the cut proof lower right; a footer band. Fill it; do not re-flow it.",
   "",
   "DIMENSION IT AS A DRAFTSMAN WOULD: a measured line outside each panel, arrowheads at both ends,",
-  "thin extension lines back to the edge, the figure on the line. A working shop drawing, not a poster.",
+  "thin extension lines back to the edge, the figure on the line. A shop drawing, not a poster.",
 ].join("\n");
 
 /**
@@ -308,10 +342,10 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   out.push("", SHEET_LAYOUT);
 
   out.push("",
-    "The attached proof sheet is THE STANDARD TO MATCH — its layout and callouts, and equally the quality",
-    "of the design work on it: the finish, the confidence of the type, the depth of the artwork. Meet that",
-    "standard. Its brand is another company's; carry only the name, tagline, logo and contact given above.",
-    "The attached installation photograph shows why a panel is one continuous rectangle.");
+    "ATTACHED, in order: (1) the BLANK CONTAINER TEMPLATE; (2) a FINISHED PROOF —",
+    "THE STANDARD TO MATCH, its callouts and equally the quality of the work on it: the finish, the",
+    "confidence of the type, the depth of the artwork. Its brand is another company's; carry only the",
+    "strings given above; (3) an INSTALLATION PHOTOGRAPH — why a panel is one continuous rectangle.");
 
   return out.join("\n");
 }
@@ -319,6 +353,7 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
 module.exports = {
   PANEL_PROOF_CONTRACT,
   PANEL_PROOF_FORMAT_EXAMPLE,
+  PANEL_PROOF_CONTAINER_TEMPLATE,
   SYSTEM_JOB,
   INSTALLATION_FACT,
   SHEET_LAYOUT,

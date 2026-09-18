@@ -90,6 +90,7 @@ mkdirSync(outDir, { recursive: true });
  * wheel wells back into the source rectangles.
  */
 const PINNED = [
+  { local: "runtime/atlas-examples/panel-proof-container-template.png", remote: "atlas-examples/panel-proof-container-template.png" },
   { local: "runtime/atlas-examples/panel-production-proof-three-version.png", remote: "atlas-examples/panel-production-proof-three-version.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
@@ -148,6 +149,29 @@ async function measure(bytes) {
       { reusedFrom: reuse, proofSha256: sha256(bytes), proofByteSize: bytes.length, returned }, null, 2));
     console.log(`reused ${reuse} (${bytes.length} B)`);
     if (returned) console.log(`${returned.width}x${returned.height}, ${returned.megapixels} MP, aspect ${returned.aspect}`);
+    return;
+  }
+
+  // PROMOTE: adopt a sheet this probe generated as a pinned example, by copying
+  // it inside the bucket. The owner's ruling is that the empty three-zone sheet
+  // is the CONTAINER TEMPLATE and belongs in the system instruction beside the
+  // filled one. Copying server-side keeps the original bytes exactly -- a
+  // re-encode would break the hash pin, which is the whole point of pinning.
+  const promote = arg("promote", "");
+  if (promote) {
+    const target = arg("as", "atlas-examples/panel-proof-container-template.png");
+    const { data, error } = await svc.storage.from(BUCKET).download(promote);
+    if (error || !data) throw new Error(`could not read ${promote}: ${error?.message || "missing"}`);
+    const bytes = Buffer.from(await data.arrayBuffer());
+    const digest = sha256(bytes);
+    const { error: copyErr } = await svc.storage.from(BUCKET)
+      .upload(target, bytes, { contentType: "image/png", upsert: true });
+    if (copyErr) throw copyErr;
+    const meta = await measure(bytes);
+    writeFileSync(path.join(outDir, "promoted.json"), JSON.stringify(
+      { source: promote, target, sha256: digest, byteSize: bytes.length, ...meta }, null, 2));
+    console.log(`promoted ${promote}\n  -> ${target}\n  sha256 ${digest}\n  ${bytes.length} B`
+      + (meta ? `, ${meta.width}x${meta.height}, ${meta.megapixels} MP, aspect ${meta.aspect}` : ""));
     return;
   }
 

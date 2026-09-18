@@ -49,6 +49,7 @@ import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts"
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 import {
   ATLAS_PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_CONTAINER_TEMPLATE,
   PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
 } from "../_shared/atlas-panel-proof-prompt.ts";
@@ -78,8 +79,21 @@ const BUCKET = "wrap-files";
  * A positive fact conditions better than "do not draw wheel arches", which is
  * the negative shape this repo warns about in four places and which has failed
  * 4/4 on the field map.
+ *
+ * THE ORDER IS THE PROMPT'S ORDER, and it is load-bearing. The tail names the
+ * attachments "in order: (1) the BLANK CONTAINER TEMPLATE ... (2) a FINISHED
+ * PROOF ... (3) an INSTALLATION PHOTOGRAPH", so reordering this array makes the
+ * text point at the wrong image. Container first is deliberate: the empty
+ * structure, then a filled example of that same structure, then the physical
+ * fact behind it. Both sheets are 1536x1024, which is also the request's
+ * aspectRatio, so nothing has to be re-flowed to be read.
  */
 const PINNED_INPUTS = [
+  {
+    path: PANEL_PROOF_CONTAINER_TEMPLATE.path,
+    role: "container",
+    sha256: PANEL_PROOF_CONTAINER_TEMPLATE.sha256,
+  },
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
   { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation", sha256: null },
 ] as const;
@@ -156,7 +170,7 @@ serve(async (req) => {
       // canary 33389124918 taught wheel wells back into the source rectangles,
       // and it took a request inspection to find out. Refuse rather than draw.
       if (pinned.sha256 && digest !== pinned.sha256) {
-        throw new Error(`panel_proof_format_example_mismatch:${digest.slice(0, 16)}`);
+        throw new Error(`panel_proof_format_example_mismatch:${pinned.role}:${digest.slice(0, 16)}`);
       }
       parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });

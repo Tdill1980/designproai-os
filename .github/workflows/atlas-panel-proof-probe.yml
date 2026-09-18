@@ -45,6 +45,11 @@ on:
         description: "Owner UUID (an operator account; the edge resolves it through auth admin)"
         required: true
         type: string
+      promote:
+        description: "Adopt an already generated sheet as the pinned CONTAINER TEMPLATE (storage path). Copies it inside the bucket; spends no image request."
+        required: false
+        type: string
+        default: ""
       reuse:
         description: "Collect an ALREADY generated sheet by its storage path instead of spending a new image request (e.g. atlas-panel-proof/<sha>.png). Leave empty to generate."
         required: false
@@ -174,6 +179,7 @@ jobs:
           P_MODEL: ${{ inputs.vehicle_model }}
           P_PANELS: ${{ inputs.panels }}
           P_REUSE: ${{ inputs.reuse }}
+          P_PROMOTE: ${{ inputs.promote }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -185,6 +191,7 @@ jobs:
           # is not this probe at all.
           tar -cz --exclude runtime/node_modules \
             scripts/atlas-panel-proof-probe.mjs \
+            runtime/atlas-examples/panel-proof-container-template.png \
             runtime/atlas-examples/panel-production-proof-three-version.png \
             runtime/atlas-examples/installer-one-panel-per-side.png > "$RUNNER_TEMP/probe-payload.tgz"
           payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
@@ -200,7 +207,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_REUSE='$P_REUSE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
+            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_REUSE='$P_REUSE' P_PROMOTE='$P_PROMOTE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing"; exit 41; }
@@ -238,7 +245,7 @@ jobs:
               --website "${p_text[3]}" --services "${p_text[4]}" --promo "${p_text[5]}" \
               --brief "${p_text[6]}" \
               --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" \
-              --panels "$p_panels" ${P_REUSE:+--reuse "$P_REUSE"}
+              --panels "$p_panels" ${P_REUSE:+--reuse "$P_REUSE"} ${P_PROMOTE:+--promote "$P_PROMOTE"}
           status=$?
           set -e
 

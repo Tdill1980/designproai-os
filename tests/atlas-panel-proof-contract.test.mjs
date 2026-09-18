@@ -230,3 +230,90 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   });
   assert.ok(prompt.length < 4000, `assembled prompt is ${prompt.length} chars; the ceiling is 4000`);
 });
+
+test("the BLANK CONTAINER TEMPLATE is pinned, shipped, staged and enforced", async () => {
+  // Owner, 2026-09-18: "This is just the container template edge function that
+  // needs in system instruction along with the version that has graphics" /
+  // "produce a blank container template for system". So it is a second pinned
+  // system-level attachment and gets exactly the treatment the first one gets:
+  // a hash the function REFUSES a mismatch against, bytes on disk that match
+  // it, a workflow that actually ships those bytes, and a probe that stages the
+  // same remote path. The format sheet's first live run died on a missing file
+  // because only three of those four agreed; a second pinned input is a second
+  // chance to make that mistake.
+  const { createHash } = await import("node:crypto");
+  const pin = runtime.PANEL_PROOF_CONTAINER_TEMPLATE;
+  const bytes = readFileSync(
+    new URL(`../runtime/atlas-examples/${pin.path.split("/").pop()}`, import.meta.url));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), pin.sha256,
+    "the container template on disk is not the pinned one");
+  assert.equal(bytes.length, pin.byteSize);
+
+  // IT IS DRAWN BY CODE, and that is the reason it can be pinned at all. The
+  // owner's generated container read "2012 TOYOTA PRIORS" and "5 BLEON ON ALL
+  // FOUR EDGES" -- a teaching input with a typo in it teaches the typo.
+  const renderer = require("../runtime/atlas-proof-container-template.cjs");
+  assert.equal(renderer.CONTAINER_CONTRACT, pin.contract,
+    "the renderer and the pin name different contract versions");
+  assert.equal(renderer.WIDTH, pin.width);
+  assert.equal(renderer.HEIGHT, pin.height);
+
+  // BOTH SHEETS ARE ONE GEOMETRY. The prompt tells the model the finished proof
+  // is this template filled in, and the request asks for 3:2. A container at a
+  // different shape would make that sentence false and force a re-flow.
+  assert.equal(pin.width / pin.height, 1.5, "the container template must be 3:2");
+  assert.equal(pin.width, runtime.PANEL_PROOF_FORMAT_EXAMPLE.width);
+  assert.equal(pin.height, runtime.PANEL_PROOF_FORMAT_EXAMPLE.height);
+
+  assert.ok(edgeSource.includes(pin.sha256), "the edge is missing the container-template hash");
+  const fn = readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  assert.ok(fn.includes("PANEL_PROOF_CONTAINER_TEMPLATE.sha256"),
+    "the function must enforce the container template's hash, not merely attach it");
+
+  const workflow = readFileSync(
+    new URL("../.github/workflows/atlas-panel-proof-probe.yml", import.meta.url), "utf8");
+  assert.ok(workflow.includes(`runtime/atlas-examples/${pin.path.split("/").pop()}`),
+    "the probe workflow does not ship the container template to the droplet");
+  const probe = readFileSync(
+    new URL("../scripts/atlas-panel-proof-probe.mjs", import.meta.url), "utf8");
+  assert.ok(probe.includes(pin.path),
+    "the probe stages a different remote path than the contract pins");
+});
+
+test("the prompt names the attachments in the order the function sends them", () => {
+  // THE ORDER IS LOAD-BEARING AND NOTHING ELSE CHECKS IT. The tail says
+  // "ATTACHED, in order: (1) ... (2) ... (3) ...", so a reordered PINNED_INPUTS
+  // leaves the text pointing at the wrong image -- the model would be told the
+  // blank template is THE STANDARD TO MATCH and produce an empty sheet. That is
+  // invisible to every other lock here: the hashes still verify, the workflow
+  // still ships all three, and the prompt is still under budget.
+  const fn = readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  const block = fn.slice(fn.indexOf("const PINNED_INPUTS"), fn.indexOf("] as const;",
+    fn.indexOf("const PINNED_INPUTS")));
+  const roles = [...block.matchAll(/role:\s*"([a-z]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(roles, ["container", "format", "installation"],
+    "PINNED_INPUTS order changed; the prompt's numbered list must change with it");
+
+  const prompt = runtime.buildPanelProofPrompt({
+    input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
+  });
+  const tail = prompt.slice(prompt.indexOf("ATTACHED, in order:"));
+  assert.ok(tail, "the prompt must name its attachments");
+  const named = [
+    ["container", tail.indexOf("BLANK CONTAINER TEMPLATE")],
+    ["format", tail.indexOf("FINISHED PROOF")],
+    ["installation", tail.indexOf("INSTALLATION PHOTOGRAPH")],
+  ];
+  for (const [role, at] of named) assert.ok(at >= 0, `the prompt never names the ${role} attachment`);
+  assert.deepEqual(named.sort((a, b) => a[1] - b[1]).map(([role]) => role), roles,
+    "the prompt lists the attachments in a different order than the function attaches them");
+
+  // And only the FILLED sheet is the standard. Saying it of the blank one is
+  // the exact failure this test exists to catch, so say it of neither by
+  // accident: the phrase must sit in item (2).
+  const standardAt = tail.indexOf("THE STANDARD TO MATCH");
+  assert.ok(standardAt > tail.indexOf("BLANK CONTAINER TEMPLATE"),
+    "THE STANDARD TO MATCH must describe the finished proof, never the blank template");
+});
