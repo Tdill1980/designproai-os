@@ -346,7 +346,31 @@ function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?:
     { href: "#rewards", label: "Club WPW points", icon: Gift, account: true, badge: points },
     { href: "https://weprintwraps.com/commercialpro/", label: "CommercialPro", icon: Building2, external: true,
       thumb: "/assets/commercialpro/commercialpro-thumb.webp", star: commercialPro },
-    // Open the WPW designers directly, including their shared branded proofs.
+    /**
+     * THE RAIL OPENS APPS, NEVER MARKETING PAGES.
+     *
+     * Open the WPW designers directly, including their shared branded proofs.
+     *
+     * The history is worth keeping, because the tab has been wrong twice in
+     * opposite directions. It first pointed at `/wallpro` — the DESIGNPROAI
+     * landing — so a WePrintWraps customer clicking WallPro inside their own
+     * dashboard left the brand mid-session. The correction then overshot to
+     * `/wall-wrap` in the same change that turned /wall-wrap INTO a landing
+     * page (owner, 2026-09-18: "no longer shows WPW WallPro App page, it's now
+     * showing a landing page"): right brand, wrong destination.
+     *
+     * This customer is signed in and already sold; a landing page is a step
+     * backwards from where they are standing. /wallwrap-design is the
+     * WePrintWraps WallPro TOOL — the same product as /printpro/wallpro,
+     * wearing the partner's name.
+     *
+     * PatternPro needs no equivalent correction: /pattern-wrap renders the real
+     * tool (WBTYToolUI) under a white skin, so it already IS the app. That
+     * asymmetry is why "does it point at the partner route" is not a sufficient
+     * check — for WallPro the partner has TWO surfaces and only one is the
+     * product. It was also once pointed at `/patternpro`, which HAS NO ROUTE
+     * and fell through to the catch-all as a dead click.
+     */
     { href: "/wallwrap-design", label: "WallPro", icon: LayoutDashboard, badge: credits,
       thumb: "/assets/commercialpro/wallpro-thumb.webp" },
     { href: "/pattern-wrap", label: "PatternPro", icon: Grid3x3,
@@ -858,7 +882,7 @@ export default function ShopFlow() {
                       above: these free designs ride on the customer's LINKED
                       WePrintWraps account, so the page they open must be the
                       one carrying that brand. */}
-                  <a href="/wall-wrap">
+                  <a href="/wallwrap-design">
                     {wallPro.data.remaining > 0 ? "Start a design" : "Open WallPro"}
                   </a>
                 </Button>
