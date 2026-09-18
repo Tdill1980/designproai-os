@@ -40,13 +40,15 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
   const partner = brand !== 'designpro';
   const light = theme.surface === 'light';
   /**
-   * The hero's before/after pairs. Curated rows win — /admin/wallpro-proofs
-   * carries a PatternPro tab, so the pair is swappable with no deploy — and
-   * PATTERN_HERO_PROOF is the floor, so the slider is there on a first load,
-   * signed out, or when the request fails. Both brands read the same rows for
-   * the same reason both brands are this one component.
+   * The hero's before/after pairs, from /admin/wallpro-proofs' PatternPro tab.
+   * PATTERN_HERO_PROOF is the floor and is currently EMPTY, because the stock
+   * vehicle photograph a bundled pair would need was never uploaded — see the
+   * note on that constant. So until a curator publishes one, the hero stays the
+   * static render it has always been, and the first published row turns it into
+   * a slider with no deploy. Both brands read the same rows for the same reason
+   * both brands are this one component.
    */
-  const [curated, setCurated] = useState<typeof PATTERN_HERO_PROOF[] | null>(null);
+  const [curated, setCurated] = useState<typeof PATTERN_HERO_PROOF | null>(null);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -60,11 +62,11 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
           headline: r.headline || 'Proofed in PatternPro.',
           caption: r.caption || '',
         })));
-      } catch { /* the bundled pair is the floor; the hero never goes empty */ }
+      } catch { /* the static render is the floor; the hero never goes empty */ }
     })();
     return () => { live = false; };
   }, [brand]);
-  const heroProofs = useMemo(() => curated ?? [PATTERN_HERO_PROOF], [curated]);
+  const heroProofs = useMemo(() => curated ?? PATTERN_HERO_PROOF, [curated]);
 
   return (
     // THE THEME SCOPE, same attribute and same token set WallPro uses, so the two

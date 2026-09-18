@@ -90,24 +90,31 @@ const HERO = {
  * made in the time it takes to drag a handle — exactly the move WallPro's
  * landing hero makes.
  *
- * The pair is real and already in the bucket: the after is the hero render this
- * page has always shown, and the before is `white-f150-side.jpg`, the stock
- * vehicle photograph that render was MADE from (data/stock-vehicle-photos.ts).
- * Same truck, same angle, same studio — which is what makes a wipe legible
- * rather than two loosely related photographs.
+ * THERE IS NO BUNDLED PAIR, AND THAT IS A MEASUREMENT, NOT A DECISION.
  *
- * This is the FLOOR, not the ceiling: /admin/wallpro-proofs now carries a
- * PatternPro tab, and curated rows replace this pair with no deploy.
+ * The first attempt shipped one: the after is the hero render this page has
+ * always shown, and the before was `white-f150-side.jpg` from
+ * data/stock-vehicle-photos.ts — the stock photograph that render was made
+ * from. Correct in principle, and the file does not exist. That module's own
+ * header says so in as many words: "Upload real vehicle photos matching the
+ * file names below." Nobody did. The URL returns 400 in both projects, and
+ * every name in that list is a placeholder.
+ *
+ * It fails SILENTLY, which is what makes it worth a comment rather than a
+ * fix-and-forget: WallProHeroProof drops any pair whose halves do not both
+ * load, so the slider would have rendered null and the page would have fallen
+ * back to the static render — looking perfectly fine while doing nothing it
+ * was built to do. A green build, a shipped bundle, and no slider.
+ *
+ * So the floor is EMPTY until a real pair exists, and the page says so by
+ * showing the render it always showed. The door is open: /admin/wallpro-proofs
+ * carries a PatternPro tab, and the first curated row turns the hero into a
+ * slider with no deploy. Give this constant a pair the moment two real frames
+ * of one vehicle — bare, then wrapped — are actually in the bucket.
  */
-const STOCK_BASE = `${import.meta.env.VITE_SUPABASE_URL as string}/storage/v1/object/public/wrap-files/admin/deploy-photos`;
-
-export const PATTERN_HERO_PROOF = {
-  before: `${STOCK_BASE}/white-f150-side.jpg`,
-  after: HERO.main,
-  alt: 'A white Ford F-150 photographed in the studio, and the same truck wrapped in the Chameleon Camo Tan pattern',
-  headline: 'One truck, any pattern.',
-  caption: 'Chameleon Camo Tan, proofed on the vehicle in PatternPro. Drag to compare.',
-};
+export const PATTERN_HERO_PROOF: {
+  before: string; after: string; alt: string; headline: string; caption: string;
+}[] = [];
 
 export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
   designpro: {
