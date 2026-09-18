@@ -71,21 +71,47 @@ function assertIdentity(record, identity) {
   }
   const checks = record.state?.masterDeterministic;
   const zoneKeys = Array.isArray(checks?.zones) ? checks.zones.map((zone) => zone.surfaceKey) : [];
-  if (record.state?.masterDeterministic?.accepted !== true
-    || !Array.isArray(checks.blockingFailures) || checks.blockingFailures.length
-    || !Array.isArray(checks.cutoutFindings) || checks.cutoutFindings.length
-    || zoneKeys.length !== 6 || new Set(zoneKeys).size !== 6
-    || ["driver", "passenger", "hood", "roof", "front", "rear"].some((key) => !zoneKeys.includes(key))
-    || record.state.outputClassReceipt?.contract !== "designpro.atlas-output-class-gate.v1"
-    || !["flat_atlas", "unavailable"].includes(record.state.outputClassReceipt?.disposition)
-    || record.state.outputClassReceipt?.blocking !== false
-    || ![record.master.contentHash, record.state.preMirrorMasterHash].filter(Boolean)
-      .includes(record.state.outputClassReceipt?.candidateSha256)
-    || !Number.isSafeInteger(record.state.masterAuthoringAttempts) || record.state.masterAuthoringAttempts < 1
-    || !Number.isSafeInteger(record.state.maxAuthoringAttemptsAllowed)
-    || record.state.maxAuthoringAttemptsAllowed < record.state.masterAuthoringAttempts
-    || record.state.maxAuthoringAttemptsAllowed > 2) {
-    throw new AtlasCheckpointError("flat_atlas_checkpoint_acceptance_invalid", "Recovery record does not prove the existing master acceptance gates passed");
+  const receipt = record.state?.outputClassReceipt;
+  // NAMED, BECAUSE AN UNNAMED CONJUNCTION IS NOT A DIAGNOSIS (2026-09-18).
+  //
+  // This was one fifteen-term `if`, and when it fired on a live canary
+  // (0a5fc4ef, the first occurrence in the table's history) the failure said
+  // only "does not prove the existing master acceptance gates passed" -- which
+  // of the fifteen was unknowable from the row, the canary artifact or any log
+  // that leaves the droplet. Every term and every threshold below is
+  // UNCHANGED; the only difference is that the one that fires now says so.
+  //
+  // Same lesson this repo keeps paying for in a different place: a gate that
+  // reports a verdict without its evidence cannot be debugged from the outside.
+  const acceptanceFailures = [
+    [checks?.accepted !== true, "masterDeterministic.accepted is not true"],
+    [!Array.isArray(checks?.blockingFailures) || checks.blockingFailures.length,
+      `blockingFailures=${JSON.stringify(checks?.blockingFailures || null).slice(0, 160)}`],
+    [!Array.isArray(checks?.cutoutFindings) || checks.cutoutFindings.length,
+      `cutoutFindings=${JSON.stringify(checks?.cutoutFindings || null).slice(0, 160)}`],
+    [zoneKeys.length !== 6 || new Set(zoneKeys).size !== 6
+      || ["driver", "passenger", "hood", "roof", "front", "rear"].some((key) => !zoneKeys.includes(key)),
+      `zones=${JSON.stringify(zoneKeys)}`],
+    [receipt?.contract !== "designpro.atlas-output-class-gate.v1",
+      `outputClass.contract=${receipt?.contract}`],
+    [!["flat_atlas", "unavailable"].includes(receipt?.disposition),
+      `outputClass.disposition=${receipt?.disposition}`],
+    [receipt?.blocking !== false, `outputClass.blocking=${receipt?.blocking}`],
+    [![record.master?.contentHash, record.state?.preMirrorMasterHash].filter(Boolean)
+      .includes(receipt?.candidateSha256),
+      `outputClass.candidateSha256=${String(receipt?.candidateSha256).slice(0, 12)} is neither the accepted master `
+      + `${String(record.master?.contentHash).slice(0, 12)} nor the pre-mirror ${String(record.state?.preMirrorMasterHash).slice(0, 12)}`],
+    [!Number.isSafeInteger(record.state?.masterAuthoringAttempts) || record.state.masterAuthoringAttempts < 1,
+      `masterAuthoringAttempts=${record.state?.masterAuthoringAttempts}`],
+    [!Number.isSafeInteger(record.state?.maxAuthoringAttemptsAllowed)
+      || record.state.maxAuthoringAttemptsAllowed < record.state.masterAuthoringAttempts
+      || record.state.maxAuthoringAttemptsAllowed > 2,
+      `maxAuthoringAttemptsAllowed=${record.state?.maxAuthoringAttemptsAllowed} against `
+      + `masterAuthoringAttempts=${record.state?.masterAuthoringAttempts}`],
+  ].filter(([failed]) => failed).map(([, why]) => why);
+  if (acceptanceFailures.length) {
+    throw new AtlasCheckpointError("flat_atlas_checkpoint_acceptance_invalid",
+      `Recovery record does not prove the existing master acceptance gates passed: ${acceptanceFailures.join("; ")}`);
   }
 }
 

@@ -270,3 +270,6 @@ verify_jwt = false
 # Proof delivery validates the bearer with auth.getUser inside the handler.
 [functions.design-proof-export]
 verify_jwt = false
+
+[functions.production-panel-proof]
+verify_jwt = false

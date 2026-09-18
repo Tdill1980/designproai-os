@@ -543,7 +543,22 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
         promptContract: ATLAS_PROOF_PROMPT_CONTRACT,
         authority: { panelPath, panelHash, sourceMasterHash: body.sourceMasterHash,
           atlasRevisionId: body.atlasRevisionId, generationId: body.generationId, shotKey, surfaceKey },
-        models: [PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL],
+        // STAY ON PRO FOR EVERY ATTEMPT. FALLBACK_IMAGE_MODEL is Gemini 3.1
+        // FLASH -- a weaker image model, not Gemini 3 Pro Image -- and the
+        // owner's 2026-08-28 ruling names this stack: "use gemini-3-pro-image
+        // GA for Call 1 AND the 3D proof stack."
+        //
+        // generate-color-render had this identical downgrade and it was already
+        // removed there, with its own comment naming the symptom: it "silently
+        // produced muted / illustrated cloned views whenever the earlier Pro
+        // tiers timed out or returned NO_IMAGE." That is the owner's own
+        // complaint about proof quality, and the lesson was never carried here.
+        //
+        // Measured before changing it: across all 669 recorded views, 593 ran on
+        // gemini-3-pro-image and 75 on the pre-cutover -preview alias. ZERO ever
+        // ran on Flash -- so this closes a latent path, it does not repair
+        // shipped output.
+        models: [PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL],
         invoke: async ({ model, body: modelBody, timeoutMs }: { model: string; body: string; timeoutMs: number }) => {
           const response = await fetch(geminiImageUrl(getGeminiKey(), model), {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -560,7 +575,10 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
     // Compatibility only for runtime requests already in flight during rollout.
     const MAX_RETRIES = 2;
     for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt += 1) {
-      const currentModel = attempt < MAX_RETRIES + 1 ? PRIMARY_IMAGE_MODEL : FALLBACK_IMAGE_MODEL;
+      // Pro on every attempt, for the reason stated on the ladder above: Flash
+      // is not Gemini 3 Pro Image, and a proof that quietly renders on it looks
+      // like a design defect rather than a model swap.
+      const currentModel = PRIMARY_IMAGE_MODEL;
       modelUsed = currentModel;
       try {
         imageRequestCount += 1;

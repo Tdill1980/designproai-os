@@ -82,7 +82,32 @@ test("the photographer's adaptation touches the artwork input and nothing else",
   assert.ok(!atlas.includes("buildPhotographerPrompt"),
     "atlas-proof must not also send the creative photographer prose");
   assert.match(atlas, /PRIMARY_IMAGE_MODEL/);
-  assert.match(atlas, /FALLBACK_IMAGE_MODEL/);
+
+  // THE MODEL COMES FROM model-config, AND IT IS PRO ON EVERY ATTEMPT.
+  //
+  // This assertion used to read `assert.match(atlas, /FALLBACK_IMAGE_MODEL/)`.
+  // Its intent was right -- prove the model is imported rather than invented in
+  // this file -- but it PINNED THE DOWNGRADE IN PLACE: the atlas-proof ladder
+  // ran [PRIMARY, PRIMARY, FALLBACK], and FALLBACK_IMAGE_MODEL is
+  // gemini-3.1-flash-image-preview, a weaker model that is not Gemini 3 Pro
+  // Image at all. A third attempt rendered the customer's proof on Flash.
+  //
+  // generate-color-render carried the identical downgrade and already removed
+  // it, naming the symptom in its own comment: "silently produced muted /
+  // illustrated cloned views". The lesson was never carried to the proof stack
+  // the owner's 2026-08-28 ruling names by name.
+  //
+  // Asserted against OPERATIVE CODE with comments stripped, because the
+  // explanation of why Flash is banned necessarily contains the word -- and a
+  // lock that a comment can satisfy is not a lock.
+  const operative = atlas
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").map((line) => line.replace(/\/\/.*$/, "")).join("\n");
+  assert.ok(!operative.includes("FALLBACK_IMAGE_MODEL"),
+    "atlas-proof must never fall back to the weaker image model: a proof that "
+    + "quietly renders on Flash reads as a design defect, not a model swap");
+  assert.match(operative, /models: \[PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL, PRIMARY_IMAGE_MODEL\]/,
+    "every attempt on the atlas-proof ladder must be Gemini 3 Pro Image");
   for (const invented of ["LED strip", "daylight balanced", "seamless white cyclorama", "Camera:", "Framing:"]) {
     assert.ok(!atlas.includes(invented),
       `atlas-proof restates presentation text that belongs to the pinned modules: ${invented}`);
