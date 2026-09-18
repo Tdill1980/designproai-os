@@ -30,6 +30,7 @@ import {
   LayoutDashboard,
   CreditCard,
   Grid3x3,
+  Store,
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
@@ -78,16 +79,10 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     description: OS_TOOLS.wallpro.tagline,
   },
   {
-    // The TENANT page beside the standalone one, exactly as PatternPro has
-    // (owner, 2026-09-17: "where is the wpw x wallpro page in os.designproai
-    // navigation? Only WPW x PatternPro show"). The page has existed at
-    // /wall-wrap the whole time and the nav simply never named it, so the one
-    // tool with a live partner customer was the one the owner could not demo
-    // from the sidebar. Same ruling as the PatternPro twin below: "I should
-    // see both on navigation left side, so I can show WPW and also sell."
+    // The WPW ShopFlow group opens the tenant's designer and shared proof.
     key: "wallpro_wpw",
     label: "WPW × WallPro",
-    route: "/wall-wrap",
+    route: "/wallwrap-design",
     icon: ImageIcon,
     pillar: "design",
     tier: "starter",
@@ -213,7 +208,7 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
 ];
 
 export interface NavGroup {
-  id: Pillar;
+  id: Pillar | "wpw";
   label: string;
   items: Array<
     | { type: "tool"; tool: ToolNavItem }
@@ -249,10 +244,30 @@ const staticAccountGroup: NavGroup = {
   ],
 };
 
+const WPW_TOOL_KEYS = new Set(["patternpro_wpw", "wallpro_wpw"]);
+
+const wpwShopFlowGroup: NavGroup = {
+  id: "wpw",
+  label: "WPW ShopFlow",
+  items: [
+    {
+      type: "link",
+      label: "ShopFlow dashboard",
+      route: "/shopflow",
+      icon: Store,
+      description: "WePrintWraps orders, reorders, rewards and files",
+    },
+    ...DASHBOARD_TOOLS.filter((tool) => WPW_TOOL_KEYS.has(tool.key)).map((tool) => ({
+      type: "tool" as const,
+      tool,
+    })),
+  ],
+};
+
 const buildToolGroup = (id: Pillar, label: string): NavGroup => ({
   id,
   label,
-  items: DASHBOARD_TOOLS.filter((t) => t.pillar === id).map((tool) => ({
+  items: DASHBOARD_TOOLS.filter((t) => t.pillar === id && !WPW_TOOL_KEYS.has(t.key)).map((tool) => ({
     type: "tool" as const,
     tool,
   })),
@@ -263,6 +278,7 @@ export const NAV_GROUPS: NavGroup[] = [
   buildToolGroup("design", "Design"),
   buildToolGroup("output", "Output"),
   buildToolGroup("profit", "Profit"),
+  wpwShopFlowGroup,
   staticAccountGroup,
 ];
 
