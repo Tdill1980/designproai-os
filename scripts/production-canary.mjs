@@ -91,6 +91,29 @@ const DESIGN_BRIEF = arg("brief",
   + "sunrise-orange airflow ribbons sweeping front to rear, clean modern sans-serif "
   + "company name, high contrast and legible at highway distance.");
 
+// THE CANARY COULD NOT SEE THE ELEMENT GRAPH AT ALL, AND THAT IS WHY IT KEPT
+// REPORTING A CLEAN RUN OVER AN UNTESTED FEATURE. (2026-09-18, live 82c13a6d.)
+//
+// The v3 input carried `brief` and `designName` and NOTHING STRUCTURED, so
+// `typesetNodeFor` (companyName/businessName) and `contactNodeFor`
+// (phone/website) both returned null, `compileElementGraph` returned [], and
+// `authorElements` correctly answered null. The run recorded
+// `elementGraph: null` -- the documented "nothing to place" path -- and looked
+// like a pass while proving nothing about the element subgraph, the clean base
+// or the passenger mirror, which are the three things v28 changed.
+//
+// The company name was in the BRIEF's prose the whole time ("for Precision
+// Climate Solutions"), which is exactly the cc382c3c trap: prose is not a
+// declared brand string, and every guard keyed on the structured fields saw a
+// design with no branding.
+//
+// So the canary now declares them, overridable per dispatch. The numbers are
+// the fictional 555 range and the domain is this project's own, so nothing here
+// can collide with a real customer's contact details.
+const COMPANY_NAME = arg("company", "Precision Climate Solutions");
+const COMPANY_PHONE = arg("phone", "(520) 555-0192");
+const COMPANY_WEBSITE = arg("website", "precisionclimate.designproai.com");
+
 if (!SUPABASE_URL || !SERVICE_KEY || !WORKER_SECRET || !CUSTOMER_EMAIL) {
   console.error(
     "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET and DESIGNPRO_CANARY_EMAIL are required"
@@ -764,6 +787,12 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     vehicle: VEHICLE,
     brief: DESIGN_BRIEF,
     designName: DESIGN_NAME,
+    // Structured, not prose. These are what typesetNodeFor and contactNodeFor
+    // read, so without them the element subgraph compiles to zero nodes and the
+    // canary silently tests none of v28.
+    companyName: COMPANY_NAME,
+    phone: COMPANY_PHONE,
+    website: COMPANY_WEBSITE,
     mode: "commercial",
     industry: "HVAC and climate control",
     colors: ["deep blue", "sunrise orange"],
