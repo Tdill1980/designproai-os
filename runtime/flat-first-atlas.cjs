@@ -4083,6 +4083,25 @@ async function generateOrReuseFlatAtlasResolved(options) {
         acceptedMasterBytes = composited.bytes;
         acceptedMasterHash = composited.contentHash;
         acceptedMasterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash });
+        // THE PANELS AND THE PROOFS READ `surfaceSourceBytes`, NOT
+        // `acceptedMasterBytes`, so promoting only the accepted bindings would
+        // rebuild the exact two-master defect the 2026-08-31 ruling retired by
+        // name: the sheet shown to humans carries the company name while the
+        // six PRINT PANELS are cut from the unlettered base and the seven 3D
+        // proofs are conditioned on it -- and the panels would still be stamped
+        // with the composited `acceptedMasterHash`, so PanelPro's "proof and
+        // panel came from the same master" check PASSES while the bytes
+        // disagree. Receipts green, print files blank.
+        //
+        // `panelSourceHash` moves with the bytes because it is the recorded
+        // identity a RESUME re-derives (`recordedSurfaceSourceHash`): the
+        // resumed worker re-runs `fillMasterCutouts` over the STORED master,
+        // which is now this composited sheet, and a clean sheet returns the same
+        // buffer -- so the recorded hash still reproduces and
+        // `flat_atlas_surface_source_mismatch` stays a real check rather than a
+        // guaranteed failure.
+        surfaceSourceBytes = composited.bytes;
+        panelSourceHash = composited.contentHash;
         logger(`atlas element graph: ${composited.applied.length} elements composited onto ${elementLayer.cleanMasterHash.slice(0, 12)} -> ${acceptedMasterHash.slice(0, 12)}`);
       }
     } else if (composited) {

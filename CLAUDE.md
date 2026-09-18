@@ -55,6 +55,43 @@ accepted sheet, with the master crossing the node boundary as
 `{storagePath, contentHash, byteSize}` (RULE 0.39), re-validated before it
 replaces the accepted master and refused back to Layer 0 if it is not printable.
 
+### THE COMPOSITE PROMOTED THE MASTER AND NOT THE PANEL BYTES (found 2026-09-18, never ran live)
+
+**The v28 change shipped the two-master defect the 2026-08-31 ruling retired by
+name, and the lock written to prevent it stayed green.** The promotion moved
+`acceptedMasterBytes` / `acceptedMasterHash` / `acceptedMasterStoragePath` — but
+the six print panels and the seven proof authorities are built from
+`surfaceSourceBytes`, a DIFFERENT variable, which stayed on the clean base:
+
+| | |
+|---|---|
+| master shown to humans, revision row, checkpoint | **composited** — company name on both flanks |
+| the six PRINT PANELS the customer buys | **the unlettered clean base** |
+| the seven 3D proofs | conditioned on that same clean base |
+| each panel's `sourceMasterHash` | the **COMPOSITED** hash |
+
+So PanelPro's "proof and panel came from the same master" check PASSES while the
+bytes disagree, and the print files ship blank. Receipts green, pixels wrong —
+the failure mode this file names in three other places.
+
+`surfaceSourceBytes` and `panelSourceHash` now move with the promotion.
+`panelSourceHash` must, because it is the identity a RESUME re-derives: the
+resumed worker re-runs `fillMasterCutouts` over the STORED master, which is now
+the composited sheet, so leaving the hash on the clean base would turn
+`flat_atlas_surface_source_mismatch` into a guaranteed failure.
+
+**THE LOCK ENCODED THE BUG — the fourth time in this file.**
+`tests/atlas-accepted-master-is-the-repaired-one.test.mjs` asserted
+`cutCallOnePanels(surfaceSourceBytes, manifest, acceptedMasterHash, {` and called
+that "the six panels cite the accepted master". It only ever checked the HASH
+argument; the BYTES were never asserted, which is exactly the gap the defect
+lived in. The new case pins both, and was verified to fail against the pre-fix
+runtime. **When a lock names two things, assert both of them.**
+
+It never reached a customer: the element graph had not composited once on
+production, so the first run to fire it would have been the first to ship blank
+panels.
+
 **`metadata.elementGraph` has three states and they are NOT interchangeable:**
 `null` = never ran · `changed:true` = composited · `changed:false` with `refused`
 = ran and its sheet failed re-validation. A run with `cleanBase` on and
