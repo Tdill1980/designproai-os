@@ -43,7 +43,7 @@ export const TOOL_REGISTRY = {
   },
   wbty: {
     key: 'wbty',
-    label: 'WBTY™',
+    label: 'PatternPro™',
     description: 'Wrap By The Yard products',
   },
 } as const;

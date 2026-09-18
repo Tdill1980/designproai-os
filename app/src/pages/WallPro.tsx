@@ -5,6 +5,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
+import { captureWallProof } from '@/lib/wallpro-proof';
+import type { DesignProofMetadata } from '@/lib/design-proof-export';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
@@ -183,6 +187,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [showMasks, setShowMasks] = useState(true);
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
+  const [proof, setProof] = useState<{ views: Awaited<ReturnType<typeof captureWallProof>>; name: string; sourceId: string; wall: NonNullable<DesignProofMetadata['wall']> } | null>(null);
+  const [preparingProof, setPreparingProof] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [productionKick, setProductionKick] = useState(0);
@@ -536,6 +542,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setBusy(label); setError(''); setNotice(''); beginAppBusy();
     try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'The operation could not be completed.'); }
     finally { setBusy(''); endAppBusy(); }
+  }
+
+  async function openDesignProof() {
+    if (!photo || !preview || !canvas.current || rendering || !artwork || !wallLocated || !billing || !dimensionsValid || !seamReady || scaleSettling || preparingProof || busy || detecting) return;
+    const version = previewVersion.current;
+    const projectName = name.trim() || 'My wall design';
+    const snapshot = { name: zoneLabel ? `${projectName} — ${zoneLabel}` : projectName, sourceId: currentVersionId || projectId,
+      wall: { widthInches: width, heightInches: height, squareFeet: billing.wallSqFt, linearFeet: billing.linearFeet, panels: billing.panels } };
+    setPreparingProof(true); setError('');
+    try {
+      const views = await captureWallProof(photo.url, canvas.current, corners);
+      if (version !== previewVersion.current) throw new Error('The wall changed while preparing the proof. Open it again when the preview finishes.');
+      setProof({ ...snapshot, views });
+    } catch (e) { setError(e instanceof Error ? e.message : 'The proof could not be prepared.'); }
+    finally { setPreparingProof(false); }
   }
   async function fileSelected(file: File | undefined, role: 'photo' | 'artwork' | 'reference') {
     if (!file) return;
@@ -1725,7 +1746,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             </div>
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
-          <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs wall-muted">The wall photo download is a visual proof. Use Prepare print files below for full-size panel PDFs.</p></section>
+          <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || rendering || detecting || preparingProof || scaleSettling || !photo || !preview || !canvas.current || !artwork || !wallLocated || !billing || !dimensionsValid || !seamReady} onClick={() => void openDesignProof()}>{preparingProof ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}3D Proof</Button><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs wall-muted">3D Proof includes your before photo, finished wall, and a detail close-up. Add a wall photo and locate its corners to prepare it. Use Prepare print files below for full-size panel PDFs.</p></section>
           {artwork && <section className={panelClass} aria-label="Refine and approve">
             <h2 className="font-semibold">Refine this design</h2>
             <p className="mt-1 text-sm wall-muted">Changes are applied to the current version and saved as the next version. Composition and everything you do not mention stay as they are.{currentVersion ? ` Current: V${currentVersion.version_no}${currentVersion.status === 'approved' ? ' (approved)' : ''}.` : ''}</p>
@@ -1865,6 +1886,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
       {generationBlocker && <p className="mt-1 text-center text-[11px] wall-muted">{generationBlocker}</p>}
     </div>}
+    <Dialog open={!!proof} onOpenChange={open => { if (!open) setProof(null); }}>
+      <DialogContent className="max-w-[96vw] w-[1500px] max-h-[95vh] overflow-y-auto p-0">
+        <DialogTitle className="sr-only">WallPro Design Approval Proof</DialogTitle>
+        <DialogDescription className="sr-only">Before, after, and a detail close-up of your wall. Print, download, share, or email the proof.</DialogDescription>
+        {proof && <ProfessionalProofSheet views={proof.views} designName={proof.name} finish="Matte / Luster"
+          designProof={{ tool: 'wallpro', brand, sourceId: proof.sourceId, wall: proof.wall }} />}
+      </DialogContent>
+    </Dialog>
   </main>
   </div>;
 }

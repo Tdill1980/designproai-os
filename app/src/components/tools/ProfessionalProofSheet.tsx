@@ -28,6 +28,10 @@ import { useTermsOnboarding } from '@/hooks/useTermsOnboarding';
 import { ShopTermsOnboardingWizard } from './ShopTermsOnboardingWizard';
 import { TwoDProofSheet } from './TwoDProofSheet';
 import { EmailConfigurator } from './EmailConfigurator';
+import { DesignProofEmailDialog } from './DesignProofEmailDialog';
+import { saveDesignProof, type SavedDesignProof, type DesignProofMetadata } from '@/lib/design-proof-export';
+import { designProofBrand } from '@/lib/patternpro-proof';
+import type { PatternBrandKey } from '@/lib/patternpro-brand';
 // Lazy so the proof sheet doesn't drag the entire QuickQuote estimator
 // bundle into every tool's initial paint. Only loaded when the rep
 // clicks "+ New" to create a quote inline.
@@ -105,6 +109,8 @@ interface ProfessionalProofSheetProps {
   /** Proof already generated + stored during the render pass. When present,
    *  the 2D Proof viewer shows it instantly instead of regenerating (30-60s). */
   initialProofUrl?: string | null;
+  /** Standalone tools share this proof, with explicit tenant branding and material quantities. */
+  designProof?: { brand: PatternBrandKey; tool?: 'patternpro' | 'wallpro'; yards?: number; sourceId?: string; wall?: DesignProofMetadata['wall'] };
 }
 
 const SHORT_DISCLAIMER = `TERMS & CONDITIONS OF APPROVAL:
@@ -141,6 +147,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   initialQuoteNumber,
   coverageUnit = 'sqft',
   initialProofUrl,
+  designProof,
 }) => {
   const proofRef = useRef<HTMLDivElement>(null);
   const { currentShop } = useOrganization();
@@ -150,7 +157,10 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
     ? findVehicle(vehicleMake, vehicleModel, vehicleYear)
     : null;
   const estimatedSqFt = vehicleMeasurement?.corrSqFt || vehicleMeasurement?.totalSqFt || null;
-  const estimatedYards = estimatedSqFt ? sqFtToYards(estimatedSqFt) : null;
+  const estimatedYards = designProof?.yards ?? (estimatedSqFt ? sqFtToYards(estimatedSqFt) : null);
+  const [savedProof, setSavedProof] = useState<SavedDesignProof | null>(null);
+  const [savedMetadata, setSavedMetadata] = useState<DesignProofMetadata | null>(null);
+  const [shareUrl, setShareUrl] = useState('');
 
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -185,10 +195,11 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   const [showCreateQuoteDialog, setShowCreateQuoteDialog] = useState(false);
 
   // Terms onboarding
-  const { needsOnboarding, markComplete } = useTermsOnboarding();
+  const { needsOnboarding, markComplete } = useTermsOnboarding(!designProof);
 
   // Load shop profile on mount
   useEffect(() => {
+    if (designProof) return;
     loadShopProfile().then(profile => {
       if (profile) {
         setShopProfile(profile);
@@ -205,6 +216,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   // most common case (rep is reading a printed quote number off a sticky
   // note). Customer-name search would require a join filter; defer that.
   useEffect(() => {
+    if (designProof) return;
     if (linkedQuote && linkedQuote.quote_number === quoteNumber) return;
     const term = quoteNumber.trim();
     if (!quoteSearchFocus || !currentShop?.id || term.length < 1) {
@@ -232,6 +244,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
 
   // ─── Typeahead: search orders by order_number ──────────────────────────
   useEffect(() => {
+    if (designProof) return;
     if (linkedOrder && linkedOrder.order_number === orderNumber) return;
     const term = orderNumber.trim();
     if (!orderSearchFocus || !currentShop?.id || term.length < 1) {
@@ -291,13 +304,15 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
 
   // Resolve tool label from registry
   const resolvedToolKey: ToolKey = toolKey || 'colorpro';
-  const displayToolLabel = getToolLabel(resolvedToolKey);
+  const proofBrand = designProof ? designProofBrand(designProof.brand, designProof.tool) : null;
+  const displayToolLabel = proofBrand?.title || getToolLabel(resolvedToolKey);
 
   // Use shop profile values if props not provided
-  const shopName = propShopName || shopProfile?.shop_name;
-  const shopLogo = propShopLogo || shopProfile?.shop_logo_url;
+  const shopName = designProof ? undefined : propShopName || shopProfile?.shop_name;
+  const shopLogo = designProof ? undefined : propShopLogo || shopProfile?.shop_logo_url;
 
-  const vehicleFullName = [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(' ');
+  const isWallProof = designProof?.tool === 'wallpro';
+  const vehicleFullName = isWallProof ? designName || 'Wall Design' : [vehicleYear, vehicleMake, vehicleModel].filter(Boolean).join(' ');
   const proofDate = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -324,21 +339,24 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   const captureProofAsPdf = async (): Promise<jsPDF | null> => {
     if (!proofRef.current) return null;
 
-    // Wait for all images to load before capturing
+    // A missing photo must fail visibly, never become a blank emailed proof.
     const images = proofRef.current.querySelectorAll('img');
-    await Promise.all(
-      Array.from(images).map(img =>
-        img.complete ? Promise.resolve() : new Promise(resolve => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        })
-      )
-    );
+    await Promise.all(Array.from(images).map(img => new Promise<void>((resolve, reject) => {
+      const failed = () => finish(new Error(`The ${img.alt || 'proof'} image could not load. Reopen the proof and try again.`));
+      const loaded = () => img.naturalWidth > 0 ? finish() : failed();
+      const timer = setTimeout(failed, 15000);
+      const finish = (error?: Error) => {
+        clearTimeout(timer); img.removeEventListener('load', loaded); img.removeEventListener('error', failed);
+        if (error) reject(error); else resolve();
+      };
+      if (img.complete) loaded();
+      else { img.addEventListener('load', loaded, { once: true }); img.addEventListener('error', failed, { once: true }); }
+    })));
 
     const canvas = await html2canvas(proofRef.current, {
       scale: 2, // 2x for sharp output
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
     });
@@ -378,7 +396,8 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
 
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
-      const termsLines = pdf.splitTextToSize(SHORT_DISCLAIMER, contentWidth);
+      const terms = isWallProof ? SHORT_DISCLAIMER.replace('Vehicle condition', 'Wall condition').replace('Existing paint damage, rust, dents, or previous wrap residue', 'Surface damage, moisture, texture, or existing coverings') : SHORT_DISCLAIMER;
+      const termsLines = pdf.splitTextToSize(terms, contentWidth);
       pdf.text(termsLines, margin, y);
       y += termsLines.length * 11 + 20;
 
@@ -425,24 +444,28 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
 
   // Print - captures the exact on-screen proof and opens print dialog
   const handlePrint = async () => {
+    // Open synchronously so browsers do not block it after PDF capture awaits.
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ title: 'Allow pop-ups to print', description: 'You can also download the PDF.', variant: 'destructive' });
+      return;
+    }
     setIsGenerating(true);
     try {
       const pdf = await captureProofAsPdf();
       if (pdf) {
         const pdfBlob = pdf.output('blob');
         const blobUrl = URL.createObjectURL(pdfBlob);
-        const printWindow = window.open(blobUrl, '_blank');
-        if (printWindow) {
-          printWindow.onload = () => {
-            printWindow.print();
-            URL.revokeObjectURL(blobUrl);
-          };
-        }
+        printWindow.location.href = blobUrl;
+        printWindow.onload = () => printWindow.print();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
         toast({ title: 'Print Ready', description: 'Print dialog will open shortly.' });
       } else {
+        printWindow.close();
         toast({ title: 'Error', description: 'Could not capture proof sheet.', variant: 'destructive' });
       }
     } catch (err: any) {
+      printWindow.close();
       console.error('PDF print error:', err);
       toast({ title: 'Error', description: err.message || 'Failed to generate PDF', variant: 'destructive' });
     } finally {
@@ -474,9 +497,35 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   };
 
   // Save & Share
+  const saveStandaloneProof = async () => {
+    if (!designProof || !proofBrand) throw new Error('Proof details are missing.');
+    const pdf = await captureProofAsPdf();
+    if (!pdf) throw new Error('The proof PDF could not be captured.');
+    const metadata: DesignProofMetadata = {
+      tool: designProof.tool || 'patternpro', brand: designProof.brand, ...proofBrand, vehicle: vehicleFullName,
+      design: designName || colorName || 'Custom Pattern', finish: finish || 'Gloss',
+      yards: designProof.yards, wall: designProof.wall, sourceId: designProof.sourceId,
+      customerName, quoteNumber, orderNumber, includeTerms: includeDisclaimer,
+    };
+    const saved = await saveDesignProof(pdf.output('blob'), metadata);
+    setSavedProof(saved); setSavedMetadata(metadata);
+    return saved;
+  };
+
   const handleSaveAndShare = async () => {
     setIsGenerating(true);
     try {
+      if (designProof) {
+        const saved = await saveStandaloneProof();
+        setShareUrl(saved.pdfUrl);
+        try {
+          await navigator.clipboard.writeText(saved.pdfUrl);
+          toast({ title: 'Proof link copied', description: 'The PDF download link is available for seven days.' });
+        } catch {
+          toast({ title: 'Proof saved', description: 'Copy the download link shown below.' });
+        }
+        return;
+      }
       const result = await generateAndSaveProof(buildProofRequest());
       if (result.success) {
         // Best-effort: attach the saved PDF to the linked quote so it
@@ -499,6 +548,8 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
       } else {
         toast({ title: 'Error', description: result.error || 'Failed to save proof', variant: 'destructive' });
       }
+    } catch (error) {
+      toast({ title: 'Proof not shared', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {
       setIsGenerating(false);
     }
@@ -510,6 +561,16 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   // permanent storage URL. For "quote only" we skip the PDF gen — the
   // email is text/quote-data only and doesn't need the renders saved.
   const openEmailDialog = async (mode: 'proof' | 'quote' | 'all') => {
+    if (designProof) {
+      setIsGenerating(true);
+      try {
+        await saveStandaloneProof();
+        setShowEmailDialog(true);
+      } catch (error) {
+        toast({ title: 'Proof not ready to email', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+      } finally { setIsGenerating(false); }
+      return;
+    }
     setEmailMode(mode);
     if (mode === 'quote') {
       setShowEmailDialog(true);
@@ -577,18 +638,23 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
   // per-side authority, so a mirrored side is a faithful preview there and this
   // component is shared. DesignProAI renders passenger from its own panel, so a
   // fallback can only ever be wrong.
-  const mirrorForbidden = resolvedToolKey === 'designpanelpro';
+  const mirrorForbidden = resolvedToolKey === 'designpanelpro' || resolvedToolKey === 'wbty';
   const passengerIsFlipped = !passengerView && !!sideView && !mirrorForbidden;
   const effectivePassengerView = passengerView || (mirrorForbidden ? undefined : sideView);
 
   // All 7 canonical views — top row: 4 views, bottom row: 3 views
-  const topRow: Array<{ label: string; view?: RenderView; flipped?: boolean }> = [
+  const topRow: Array<{ label: string; view?: RenderView; flipped?: boolean }> = isWallProof ? [
+    { label: 'Before', view: views.find(v => v.type === 'before') },
+    { label: 'After', view: views.find(v => v.type === 'after') },
+  ] : [
     { label: 'Driver Side', view: sideView },
     { label: 'Passenger Side', view: effectivePassengerView, flipped: passengerIsFlipped },
     { label: 'Front', view: frontView },
     { label: 'Rear', view: rearView },
   ];
-  const bottomRow: Array<{ label: string; view?: RenderView; flipped?: boolean }> = [
+  const bottomRow: Array<{ label: string; view?: RenderView; flipped?: boolean }> = isWallProof ? [
+    { label: 'Detail close-up', view: views.find(v => v.type === 'detail') },
+  ] : [
     { label: 'Hood', view: hoodView },
     { label: 'Close-Up', view: closeUpView },
     { label: 'Roof', view: roofView },
@@ -605,6 +671,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           </Label>
           <Input
             id="customerName"
+            disabled={isGenerating}
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
             placeholder="Enter customer name"
@@ -623,6 +690,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
               </Label>
               <Input
                 id="quoteNumber"
+                disabled={isGenerating}
                 value={quoteNumber}
                 onChange={(e) => {
                   setQuoteNumber(e.target.value);
@@ -632,7 +700,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
                 }}
                 onFocus={() => setQuoteSearchFocus(true)}
                 onBlur={() => setTimeout(() => setQuoteSearchFocus(false), 150)}
-                placeholder="Search QT-… or type new"
+                placeholder={designProof ? 'Optional quote number' : 'Search QT-… or type new'}
                 className="w-full sm:max-w-[220px]"
                 autoComplete="off"
               />
@@ -650,7 +718,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
                   pre-seeded with the current vehicle + customer. On
                   save, the dialog fires onSaved → we auto-link the
                   freshly-minted quote to this proof. */}
-              {!linkedQuote && (
+              {!designProof && !linkedQuote && (
                 <button
                   type="button"
                   onClick={() => setShowCreateQuoteDialog(true)}
@@ -695,6 +763,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
               </Label>
               <Input
                 id="orderNumber"
+                disabled={isGenerating}
                 value={orderNumber}
                 onChange={(e) => {
                   setOrderNumber(e.target.value);
@@ -704,7 +773,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
                 }}
                 onFocus={() => setOrderSearchFocus(true)}
                 onBlur={() => setTimeout(() => setOrderSearchFocus(false), 150)}
-                placeholder="Search RP-… or type new"
+                placeholder={designProof ? "Optional order number" : "Search RP-… or type new"}
                 className="w-full sm:max-w-[220px]"
                 autoComplete="off"
               />
@@ -750,7 +819,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           {/* 2D Proof — opens the flat-panel AI proof viewer in a dialog.
               Available in DesignPanelPro today; surfacing it here makes
               it available across all 6 tools that use this sheet. */}
-          <Button
+          {!isWallProof && (<Button
             variant="outline"
             onClick={() => setShow2DProof(true)}
             disabled={isGenerating || views.length === 0}
@@ -759,7 +828,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           >
             <FileImage className="h-4 w-4 text-cyan-500" />
             <span>2D Proof</span>
-          </Button>
+          </Button>)}
           <Button
             variant="outline"
             onClick={handlePrint}
@@ -808,7 +877,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
               </span>
               {(linkedQuote || linkedOrder) && <Check className="h-3 w-3 opacity-80" />}
             </Button>
-            <DropdownMenu>
+            {!designProof && <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   disabled={isGenerating}
@@ -844,14 +913,17 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
                   </div>
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu>}
           </div>
         </div>
+
+        {shareUrl && <div className="space-y-1"><Label htmlFor="saved-proof-link">Proof PDF link · available for seven days</Label><Input id="saved-proof-link" readOnly value={shareUrl} onFocus={e => e.target.select()} /></div>}
 
         {/* T&C Toggle */}
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
           <Checkbox
             id="includeDisclaimer"
+            disabled={isGenerating}
             checked={includeDisclaimer}
             onCheckedChange={(checked) => setIncludeDisclaimer(checked === true)}
             className="border-amber-500 data-[state=checked]:bg-amber-500 mt-0.5"
@@ -870,7 +942,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
       <div className="w-full overflow-x-auto md:overflow-visible bg-muted/10">
         <div
           ref={proofRef}
-          className="aspect-[16/9] bg-white text-black p-4 sm:p-6 mx-auto w-[1200px] md:w-full md:max-w-[1920px]"
+          className={`${designProof ? '' : 'aspect-[16/9]'} bg-white text-black p-4 sm:p-6 mx-auto w-[1200px] md:w-full md:max-w-[1920px]`}
         >
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
@@ -903,14 +975,15 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
         </div>
 
         {/* 7-View Grid Layout — top row: 4 views, bottom row: 3 views */}
-        <div className="grid grid-cols-4 gap-2 mb-2">
+        <div className={`grid ${isWallProof ? 'grid-cols-2' : 'grid-cols-4'} gap-2 mb-2`}>
           {topRow.map(({ label, view, flipped }) => (
             <div key={label} className="relative aspect-video rounded-lg overflow-hidden">
               {view?.url ? (
                 <img
                   src={view.url}
                   alt={label}
-                  className="w-full h-full object-cover"
+                  crossOrigin="anonymous"
+                  className="w-full h-full object-contain bg-gray-50"
                   style={flipped ? { transform: 'scaleX(-1)' } : undefined}
                 />
               ) : (
@@ -922,14 +995,15 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className={`grid ${isWallProof ? 'grid-cols-1 max-w-[48%] mx-auto' : 'grid-cols-3'} gap-2 mb-4`}>
           {bottomRow.map(({ label, view, flipped }) => (
             <div key={label} className="relative aspect-video rounded-lg overflow-hidden">
               {view?.url ? (
                 <img
                   src={view.url}
                   alt={label}
-                  className="w-full h-full object-cover"
+                  crossOrigin="anonymous"
+                  className="w-full h-full object-contain bg-gray-50"
                   style={flipped ? { transform: 'scaleX(-1)' } : undefined}
                 />
               ) : (
@@ -949,6 +1023,13 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
             '—' or 'Custom' fallback when the swatch metadata is empty. */}
         <div className="bg-gray-900 text-white px-4 py-3 rounded-lg mb-4 flex items-center justify-between">
           <div className="flex items-center gap-6">
+            {isWallProof && designProof?.wall ? <>
+              <div><span className="text-gray-400 text-xs uppercase tracking-wide">Wall size</span><p className="font-semibold">{designProof.wall.widthInches}″ × {designProof.wall.heightInches}″</p></div>
+              <div><span className="text-gray-400 text-xs uppercase tracking-wide">Area</span><p className="font-semibold">{designProof.wall.squareFeet} sq ft</p></div>
+              <div><span className="text-gray-400 text-xs uppercase tracking-wide">Panels</span><p className="font-semibold">{designProof.wall.panels}</p></div>
+              <div><span className="text-gray-400 text-xs uppercase tracking-wide">Design</span><p className="font-semibold">{designName}</p></div>
+              <div><span className="text-gray-400 text-xs uppercase tracking-wide">Finish</span><p className="font-semibold">{finish || 'Matte / Luster'}</p></div>
+            </> : <>
             {/* Manufacturer — always rendered */}
             <div>
               <span className="text-gray-400 text-xs uppercase tracking-wide">Manufacturer</span>
@@ -1008,11 +1089,13 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
               <>
                 <div className="h-8 w-px bg-gray-700" />
                 <div>
-                  <span className="text-gray-400 text-xs uppercase tracking-wide">Film Needed</span>
-                  <p className="font-semibold">{estimatedYards} yards</p>
+                  <span className="text-gray-400 text-xs uppercase tracking-wide">Film quantity</span>
+                  <p className="font-semibold">{estimatedYards} linear yards</p>
+                  {designProof && <p className="text-xs text-gray-300">60″ roll · selected order quantity</p>}
                 </div>
               </>
             )}
+            </>}
           </div>
 
           {hex && (
@@ -1066,6 +1149,7 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
         <div className="mt-3 text-[10px] text-gray-500 leading-tight italic">
           {includeDisclaimer ? 'Full Terms & Conditions will appear on Page 2' : MINIMAL_APPROVAL}
         </div>
+        {proofBrand && <div className="mt-3 text-right text-xs text-black font-medium">{proofBrand.footer}</div>}
         </div>
       </div>
 
@@ -1107,7 +1191,10 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           an order is linked (or nothing is linked), we fall back to
           emailType='proof'. The hero render URL is used as the email
           hero image so the inbox preview shows the design. */}
-      {showEmailDialog && (
+      {showEmailDialog && designProof && savedProof && savedMetadata && (
+        <DesignProofEmailDialog proof={savedProof} metadata={savedMetadata} initialEmail={customerEmail} onClose={() => setShowEmailDialog(false)} />
+      )}
+      {showEmailDialog && !designProof && (
         <EmailConfigurator
           isOpen={showEmailDialog}
           onClose={() => setShowEmailDialog(false)}

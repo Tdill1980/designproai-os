@@ -74,7 +74,8 @@ test("it is the SAME PatternPro tool under a white skin — never a second tool"
   // partner's light storefront is a skin over it rather than a second copy.
   // Dropping the skin returns the shared tool to the dark it was written in.
   assert.ok(PAGE.includes("theme.surface === 'light' ? 'wpw-white' : ''"));
-  assert.ok(PAGE.includes("<WBTYToolUI />"));
+  // The tool is still shared; its proof now needs the page's tenant brand.
+  assert.ok(PAGE.includes("<WBTYToolUI brand={brand} />"));
   assert.ok(PAGE.includes("import './PatternWrap.css';"));
   for (const cls of [".bg-zinc-800", ".bg-zinc-700", ".border-zinc-600", ".text-white", ".text-muted-foreground", "input"]) {
     assert.ok(CSS.includes(`.wpw-white ${cls}`), `skin must cover ${cls}`);
