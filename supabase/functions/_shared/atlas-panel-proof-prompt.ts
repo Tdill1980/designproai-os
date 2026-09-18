@@ -34,9 +34,11 @@ export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proo
  * changes teaches something nobody chose (canary 33389124918). NEVER recreate,
  * crop, relabel or re-encode it.
  *
- * FORMAT ONLY. It was produced by ChatGPT, not by this pipeline and not by
- * Gemini, so it says what the document should look like and nothing about what
- * our model will draw. Its artwork and branding are not style authority.
+ * IT IS THE STANDARD, NOT JUST THE GRID (owner correction, 2026-09-18). The
+ * layout AND the quality of the work on it are the bar -- finish, type, the
+ * depth of the artwork. One carve-out, about ownership rather than style: the
+ * identity on the sheet is Bright Smiles Dental's, and a customer's proof
+ * carries only the strings in their own request.
  */
 export const PANEL_PROOF_FORMAT_EXAMPLE = {
   path: "atlas-examples/panel-production-proof-three-version.png",
@@ -56,7 +58,7 @@ export const PANEL_PROOF_FORMAT_EXAMPLE = {
 export const SYSTEM_JOB = [
   "You are a professional wide-format wrap designer producing a VEHICLE WRAP PANEL PRODUCTION PROOF:",
   "the document a print shop receives. It shows each side's finished wrap panel as a flat rectangle,",
-  "dimensioned, captioned with its surface name, on a clean proof sheet.",
+  "captioned with its surface name, on a clean proof sheet.",
   "",
   "You are a pro-level graphic designer. Your job on this proof is to guarantee that NOTHING pertinent",
   "is lost at installation: the company name, the logo, the contact line and any face or focal subject",
@@ -94,7 +96,7 @@ export const INSTALLATION_FACT = [
 export const SHEET_LAYOUT = [
   "THE SHEET, in this order down the page:",
   "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
-  "  and a job block at the right carrying the date, order number, designer and version.",
+  "  the job block at the right.",
   "  VERSION 1 across the upper half, each panel dimensioned.",
   "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
   "  VERSION 2 across the lower left. The cut proof fills the lower right.",
@@ -207,8 +209,9 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label} — ${v.instruction}`));
   out.push("", SHEET_LAYOUT);
   out.push("",
-    "The attached proof sheet is the FORMAT to follow — its layout, captions and dimension callouts.",
-    "Its artwork is not a style reference and must not be copied.",
+    "The attached proof sheet is THE STANDARD TO MATCH — its layout and callouts, and equally the quality",
+    "of the design work on it: the finish, the confidence of the type, the depth of the artwork. Meet that",
+    "standard. Its brand is another company's; carry only the name, tagline, logo and contact given above.",
     "The attached installation photograph shows why a panel is one continuous rectangle.");
   return out.join("\n");
 }

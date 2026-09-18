@@ -80,10 +80,21 @@ const PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
  * re-encode or "improve" this file. Replacing it is an owner decision and the
  * hash changes with it.
  *
- * It is a FORMAT reference and nothing else. It was produced by ChatGPT, not by
- * this pipeline and not by Gemini, so it says nothing about what our model will
- * draw -- it says what the document should look like. Its artwork, palette,
- * brand and typography are not style authority (RULE 0.24).
+ * IT IS THE STANDARD, NOT JUST THE GRID (owner correction, 2026-09-18). An
+ * earlier revision of this comment called it "a FORMAT reference and nothing
+ * else ... not style authority". The owner said no, and she is right about her
+ * own product: the layout AND the quality of the work on it are the bar -- the
+ * finish, the confidence of the type, the depth of the artwork, the
+ * professionalism of the document. A proof that copies the grid and misses the
+ * craft has missed the point of pinning it.
+ *
+ * ONE CARVE-OUT, and it is about ownership rather than style: the identity on
+ * this sheet belongs to Bright Smiles Dental. A customer's proof carries the
+ * name, tagline, logo and contact strings in their own request and no others,
+ * which the EXACT TEXT block already states. Nothing else here is off limits.
+ *
+ * (It was produced by ChatGPT, so it is a target rather than a demonstration of
+ * what this model will draw. That is what the probe measures.)
  */
 const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
   path: "atlas-examples/panel-production-proof-three-version.png",
@@ -106,7 +117,7 @@ const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
 const SYSTEM_JOB = [
   "You are a professional wide-format wrap designer producing a VEHICLE WRAP PANEL PRODUCTION PROOF:",
   "the document a print shop receives. It shows each side's finished wrap panel as a flat rectangle,",
-  "dimensioned, captioned with its surface name, on a clean proof sheet.",
+  "captioned with its surface name, on a clean proof sheet.",
   "",
   "You are a pro-level graphic designer. Your job on this proof is to guarantee that NOTHING pertinent",
   "is lost at installation: the company name, the logo, the contact line and any face or focal subject",
@@ -149,7 +160,7 @@ const INSTALLATION_FACT = [
 const SHEET_LAYOUT = [
   "THE SHEET, in this order down the page:",
   "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
-  "  and a job block at the right carrying the date, order number, designer and version.",
+  "  the job block at the right.",
   "  VERSION 1 across the upper half, each panel dimensioned.",
   "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
   "  VERSION 2 across the lower left. The cut proof fills the lower right.",
@@ -299,8 +310,9 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   out.push("", SHEET_LAYOUT);
 
   out.push("",
-    "The attached proof sheet is the FORMAT to follow — its layout, captions and dimension callouts.",
-    "Its artwork is not a style reference and must not be copied.",
+    "The attached proof sheet is THE STANDARD TO MATCH — its layout and callouts, and equally the quality",
+    "of the design work on it: the finish, the confidence of the type, the depth of the artwork. Meet that",
+    "standard. Its brand is another company's; carry only the name, tagline, logo and contact given above.",
     "The attached installation photograph shows why a panel is one continuous rectangle.");
 
   return out.join("\n");
