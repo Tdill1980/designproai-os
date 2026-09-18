@@ -111,7 +111,7 @@ for (const format of ['png', 'jpeg', 'webp']) test(`${format}: six-surface trans
   const bytes=await sharp({create:{width:16,height:16,channels:3,background:'#438992'}}).toFormat(format).toBuffer();let downloads=0;
   const body=atlas._test.atlasEdgeRequestBody(input,atlas.buildAtlasManifest(surfaces),extras);
   const reply={success:true,imageRequestCount:1,fieldContract:null,teachingProofIdentity:teaching.identity,
-    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260918.v27-ask-not-spec-sheet',
+    modelInputImageCount:2,promptVersion:'atlas-artboard-designiq.20260918.v28-clean-base-elements',
     masterStoragePath:`fixture.${format}`,masterSha256:sha(bytes),masterContentType:`image/${format}`};
   const transport={supabase:{storage:{from(){return {async download(){downloads++;return {data:new Blob([bytes]),error:null}}}}}},
     fetchImpl:async()=>({ok:true,status:200,json:async()=>reply})};

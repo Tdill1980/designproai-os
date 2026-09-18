@@ -628,3 +628,63 @@ test("6. the runtime seams: the hero branch runs through the injected graph unle
   assert.match(migration, /FOR UPDATE OF n SKIP LOCKED LIMIT 1/);
   assert.match(migration, /REVOKE ALL ON public\.%I FROM PUBLIC,anon,authenticated/);
 });
+
+/**
+ * THE ELEMENT GRAPH MUST BE REACHABLE WITHOUT THE HERO CASCADE. (2026-09-18.)
+ *
+ * typeset.produce / contact.produce / logo.prepare / element.lockup /
+ * master.composite were all built, deterministic and correct -- and compiled
+ * ONLY inside compileHeroDriverGraph, so with hero-driver off (production) they
+ * never ran. Live efca5e03 recorded zero graph runs and zero nodes; across all
+ * history there are 6 master.composite rows and ONE completed. No customer has
+ * ever received a clean base with a composited lockup, which is why lettering
+ * is still diffusion paint. DESIGNPRO_ATLAS_ELEMENT_GRAPH=on was already live
+ * on the droplet and inert for exactly that reason.
+ */
+test("the element subgraph compiles standalone, with no master node to wait for", () => {
+  const nodes = graph.compileElementGraph({ input: { companyName: "Oasis Pools", phone: "555-0142", website: "oasispools.com" } });
+  assert.deepEqual(nodes.map((n) => n.key),
+    ["typeset.produce", "contact.produce", "element.lockup", "master.composite"]);
+  // The producers are ROOTS -- they need the brief, never the sheet -- so they
+  // are claimable immediately and by either worker.
+  assert.deepEqual(nodes.find((n) => n.key === "typeset.produce").dependsOn, []);
+  assert.deepEqual(nodes.find((n) => n.key === "contact.produce").dependsOn, []);
+  // And the composite waits ONLY for the plan: its base is the already-accepted
+  // master, which arrives on the run definition as a reference.
+  assert.deepEqual(nodes.find((n) => n.key === "master.composite").dependsOn, ["element.lockup"]);
+});
+
+test("the hero cascade still makes the composite wait for the assembled sheet", () => {
+  const previous = process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+  process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = "on";
+  try {
+    const nodes = graph.compileHeroDriverGraph({ heroFirst: false, input: { companyName: "Oasis Pools", phone: "555-0142" } });
+    // One builder serves both shapes, so they cannot drift -- but the hero
+    // composite must still depend on master.assemble, or it would composite
+    // onto a sheet that does not exist yet.
+    assert.deepEqual(nodes.find((n) => n.key === "master.composite").dependsOn,
+      ["master.assemble", "element.lockup"]);
+  } finally {
+    if (previous === undefined) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = previous;
+  }
+});
+
+test("a brief with nothing to place compiles no element nodes at all", () => {
+  // Layer 0 IS the product here. validateGraph refuses a zero-node graph, and
+  // correctly so -- the create RPC does too -- but an empty element set is an
+  // answer, not a malformed graph, and it must not throw on the way out.
+  assert.deepEqual(graph.compileElementGraph({ input: {} }), []);
+  assert.deepEqual(graph.compileElementGraph({ input: { brief: "teal water, no branding" } }), []);
+  // One field is enough to earn a lockup.
+  assert.equal(graph.compileElementGraph({ input: { companyName: "Oasis Pools" } }).length, 3);
+  assert.equal(graph.compileElementGraph({ input: { phone: "555-0142" } }).length, 3);
+});
+
+test("the contact node still cannot invent a line the customer never gave", () => {
+  // The invention lock is structural, not prose: a node sets the strings it was
+  // handed. A website with no phone produces a one-line bar, not a filled one.
+  const nodes = graph.compileElementGraph({ input: { companyName: "Oasis Pools", website: "oasispools.com" } });
+  assert.deepEqual(nodes.find((n) => n.key === "contact.produce").input.lines, ["oasispools.com"]);
+  assert.equal(nodes.find((n) => n.key === "typeset.produce").input.text, "Oasis Pools");
+});

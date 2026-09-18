@@ -249,7 +249,13 @@ function elementNodes({ input, masterNode = null }) {
  * and the same rule that lets either worker claim this node.
  */
 function compileElementGraph({ input = null } = {}) {
-  return validateGraph(elementNodes({ input, masterNode: null }));
+  const nodes = elementNodes({ input, masterNode: null });
+  // EMPTY IS AN ANSWER, NOT AN ERROR. `validateGraph` refuses a zero-node graph
+  // -- correctly, because the create RPC does too -- but a brief with no name,
+  // no contact and no logo legitimately compiles nothing, and that is Layer 0
+  // being the whole product rather than a malformed graph. The caller reads the
+  // empty array and keeps the authored master.
+  return nodes.length ? validateGraph(nodes) : [];
 }
 
 function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
@@ -721,6 +727,98 @@ function createAtlasCall1NodeWorker({
   }
 
   /**
+   * THE SIX-SURFACE AND FIELD DOOR — Layer 1 onto an already-accepted sheet.
+   *
+   * `author()` below owns the whole of Call 1 for the hero cascade. This owns
+   * only the element half, because six-surface and field have already authored,
+   * gated and ACCEPTED their master by the time it is called. So there is no
+   * master.assemble here: the accepted sheet arrives as `masterRef`, a
+   * {storagePath, contentHash, byteSize} identity that master.composite
+   * re-reads and hash-verifies (RULE 0.39 -- a reference, never bytes).
+   *
+   * IT RETURNS NULL RATHER THAN THROWING ON EVERY PATH WHERE LAYER 0 IS STILL
+   * A VALID PRODUCT. A brief with no name, no contact and no logo compiles no
+   * nodes at all; a database without the migration cannot run them. Neither is
+   * a reason to fail a design that is already accepted and already correct --
+   * the caller keeps the authored master, exactly as it does today. What is NOT
+   * swallowed is a composite that ran and failed: that is a real defect in work
+   * that was supposed to happen, and it throws.
+   */
+  async function authorElements({
+    masterRef, manifest, input, requestId, generationId, ownerId,
+    logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
+  }) {
+    if (!elementGraphEnabled()) return null;
+    if (!masterRef?.storagePath || !masterRef?.contentHash || !Number.isFinite(Number(masterRef.byteSize))) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_author_invalid",
+        "element authoring requires the accepted master's storagePath, contentHash and byteSize");
+    }
+    if (!manifest?.zones || !requestId || !generationId || !ownerId) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_author_invalid", "element authoring requires the manifest and the request identity");
+    }
+    const nodes = compileElementGraph({ input });
+    // Nothing to place. The sheet is the product and Layer 0 IS the design --
+    // a brief with no lettering at all is exactly the 9789762d case the
+    // passenger rules already protect.
+    if (!nodes.length) return null;
+
+    // The definition hash keys the run, so it must move when the element
+    // producers' own contract does -- a typeset change must not resume a run
+    // whose elements were rendered by the previous one.
+    const definition = { contract: GRAPH_CONTRACT, manifest, input, role: "elements", masterRef,
+      elementContracts: { typeset: typeset.CONTRACT, lockup: lockup.CONTRACT, composite: composite.CONTRACT } };
+    const definitionHash = hashJson(definition);
+    const created = await rpc("create_designpro_atlas_call1_run", {
+      p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
+      p_definition_hash: definitionHash, p_definition: definition, p_nodes: nodes,
+    });
+    let run = created?.run;
+    if (!run?.id) throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", "create returned no element run", true);
+    log(`atlas element graph: ${created.created ? "created" : "resumed"} run ${run.id} for request ${requestId} (${nodes.length} nodes)`);
+    if (run.state === "failed") run = await rpc("resume_designpro_atlas_call1_run", { p_run_id: run.id });
+
+    // The composite is the LAST node, so waiting on its own row is waiting on
+    // the whole graph -- and it is the row that carries the delivered sheet.
+    const startedAt = Date.now();
+    let compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    while (compositeRow && compositeRow.state !== "completed" && compositeRow.state !== "failed") {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_timeout", `element run ${run.id}: ${COMPOSITE_NODE} did not finish in time`, true);
+      }
+      await tick();
+      await sleep(awaitPollMs);
+      compositeRow = await readNode(run.id, COMPOSITE_NODE);
+    }
+    if (compositeRow?.state === "failed") {
+      const failure = compositeRow.output || {};
+      throw new AtlasCall1GraphError(failure.errorCode || compositeRow.error_code || "designpro_atlas_call1_composite_failed",
+        `element run ${run.id}: ${COMPOSITE_NODE} failed: ${failure.message || failure.errorCode || compositeRow.error_code || "unknown"}`,
+        failure.retryable === true, { runId: run.id, nodeKey: COMPOSITE_NODE });
+    }
+    const composited = compositeRow?.output;
+    if (!composited?.master?.storagePath) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_master_missing", `element run ${run.id} completed without a composited sheet`);
+    }
+    // NOT `changed: false` -> null. A composite that legitimately applied
+    // nothing still returns the base's own identity, and the caller compares
+    // hashes; inventing a second "nothing happened" signal here would be a
+    // second way to say the same thing and a second way to get it wrong.
+    const bytes = await downloadVerified(supabase, composited.master);
+    log(`atlas element graph ${run.id}: composited ${(composited.applied || []).length} elements -> ${composited.master.contentHash.slice(0, 12)}`);
+    return {
+      bytes,
+      contentHash: composited.master.contentHash,
+      storagePath: composited.master.storagePath,
+      byteSize: composited.master.byteSize,
+      cleanMasterHash: composited.cleanMasterHash || masterRef.contentHash,
+      applied: composited.applied || [],
+      changed: composited.changed === true,
+      runId: run.id,
+      elementGraphMs: Date.now() - startedAt,
+    };
+  }
+
+  /**
    * THE GENERATION WORKER'S DOOR. Same argument shape as authorHeroDriverMaster
    * plus the request identity; same return shape; same refusal class on a
    * creative refusal, so flat-first-atlas's fail-over is untouched.
@@ -839,11 +937,11 @@ function createAtlasCall1NodeWorker({
       output.retryable === true || node?.error_code === "attempts_exhausted", { runId: run.id, nodeKey: node?.node_key || null });
   }
 
-  return { start, stop, tick, health, author, executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, logger, ...extra }), workerId };
+  return { start, stop, tick, health, author, authorElements, executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, logger, ...extra }), workerId };
 }
 
 module.exports = {
   GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, viewNode, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
-  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, readyNodes, hashJson,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, elementNodes, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

@@ -308,7 +308,7 @@ test("the prompt version fences vehicle-atlas masters from every obsolete author
   // RESTORED TO v23 (owner ruling 2026-09-08): v23 is the CURRENT contract --
   // it authored the accepted master 1564c66da0a1c482 -- so v28 and the other
   // later contracts are the obsolete ones now.
-  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260918\.v27-ask-not-spec-sheet"/);
+  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260918\.v28-clean-base-elements"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260906\.v28-authored-topology"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260902\.v24-one-field"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v16-flat-example-only"/);

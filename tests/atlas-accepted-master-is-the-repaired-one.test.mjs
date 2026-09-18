@@ -39,9 +39,31 @@ const acceptance = source.slice(
 );
 
 test("the accepted master is chosen from the repair result, not assumed", () => {
-  assert.match(acceptance, /const acceptedMasterBytes = cutoutFill\.changed \? surfaceSourceBytes : masterBytes;/);
-  assert.match(acceptance, /const acceptedMasterHash = cutoutFill\.changed \? panelSourceHash : masterHash;/);
+  // `let`, not `const`, since 2026-09-18: the element graph promotes the
+  // COMPOSITED sheet over this one when Layer 1 lands and re-validates. The
+  // initial derivation is unchanged and still pinned -- what the repair decides
+  // is still what acceptance starts from.
+  assert.match(acceptance, /let acceptedMasterBytes = cutoutFill\.changed \? surfaceSourceBytes : masterBytes;/);
+  assert.match(acceptance, /let acceptedMasterHash = cutoutFill\.changed \? panelSourceHash : masterHash;/);
+  // preRepairMasterHash stays const: provenance is never reassigned.
   assert.match(acceptance, /const preRepairMasterHash = cutoutFill\.changed \? masterHash : null;/);
+});
+
+test("the ONLY thing allowed to reassign the accepted master is the element composite", () => {
+  // `const` used to carry this guarantee for free. Relaxing it to `let` for
+  // Layer 1 would otherwise open the accepted master to any later write, which
+  // is precisely the "two masters, one of them canonical" defect this whole
+  // file exists to prevent -- so the guarantee moves from the keyword into an
+  // assertion instead of quietly disappearing with it.
+  const body = source.slice(source.indexOf("let acceptedMasterBytes ="));
+  const reassignments = [...body.matchAll(/^\s*acceptedMaster(?:Bytes|Hash|StoragePath) = /gm)];
+  assert.equal(reassignments.length, 3,
+    `expected exactly the three element-composite promotions, found ${reassignments.length}`);
+  // All three sit inside the composite's own re-validated branch.
+  const promotion = body.indexOf("acceptedMasterBytes = composited.bytes;");
+  const revalidated = body.indexOf("revalidated.blockingFailures.length");
+  assert.ok(revalidated !== -1 && revalidated < promotion,
+    "the composited sheet must be re-validated BEFORE it replaces the accepted master");
 });
 
 test("acceptance happens AFTER the post-repair re-validation, never before", () => {
@@ -49,7 +71,7 @@ test("acceptance happens AFTER the post-repair re-validation, never before", () 
   // they have passed structural re-validation. Promoting first and validating
   // after would publish a malformed master and then complain about it.
   const revalidate = acceptance.indexOf("flat_atlas_repaired_master_invalid");
-  const promote = acceptance.indexOf("const acceptedMasterBytes");
+  const promote = acceptance.indexOf("let acceptedMasterBytes");
   assert.ok(revalidate !== -1, "the post-repair re-validation is gone");
   assert.ok(revalidate < promote,
     "bytes must pass re-validation BEFORE they are promoted to canonical");
@@ -99,7 +121,7 @@ test("a CLEAN master is byte-identical and pays no extra transform", () => {
   // path derivation, no re-encode.
   assert.match(acceptance, /: masterBytes;/, "clean path must fall through to the original bytes");
   assert.match(acceptance, /: masterHash;/, "clean path must fall through to the original hash");
-  assert.match(acceptance, /const acceptedMasterStoragePath = cutoutFill\.changed\s*\n\s*\? atlasStoragePath\([^)]*\)\s*\n\s*: masterStoragePath;/,
+  assert.match(acceptance, /let acceptedMasterStoragePath = cutoutFill\.changed\s*\n\s*\? atlasStoragePath\([^)]*\)\s*\n\s*: masterStoragePath;/,
     "clean path must reuse the already-derived storage path, not re-derive one");
 
   // And the re-validation itself is skipped when nothing changed, so a clean
@@ -111,7 +133,7 @@ test("a CLEAN master is byte-identical and pays no extra transform", () => {
 test("the repaired sheet is addressed by its own content hash", () => {
   // A content-addressed store cannot have two different byte streams at one
   // path. The repaired sheet therefore gets a path derived from ITS hash.
-  const pathDerivation = acceptance.slice(acceptance.indexOf("const acceptedMasterStoragePath"));
+  const pathDerivation = acceptance.slice(acceptance.indexOf("let acceptedMasterStoragePath"));
   assert.match(pathDerivation, /contentHash: acceptedMasterHash/,
     "the accepted master's storage path must be derived from the accepted hash");
 });
