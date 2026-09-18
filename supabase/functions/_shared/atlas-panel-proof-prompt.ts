@@ -74,10 +74,15 @@ export const SHEET_LAYOUT = [
   "THE SHEET, in this order down the page:",
   "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
   "  and a job block at the right carrying the date, order number, designer and version.",
-  "  VERSION 1 across the upper half, each panel dimensioned with its width above and height beside it.",
+  "  VERSION 1 across the upper half, each panel dimensioned.",
   "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
   "  VERSION 2 across the lower left. The cut proof fills the lower right.",
   "  A footer band repeating the logo and tagline.",
+  "",
+  "DIMENSION IT THE WAY A DRAFTSMAN WOULD: a measured line outside each panel with an arrowhead",
+  "at each end and a thin extension line running back to the edge it measures, the figure set on",
+  "the line in plain type -- width above the panel, height beside it. The trim table is ruled, one",
+  "surface per row. This is a working shop drawing, not a poster of one.",
 ].join("\n");
 
 /**
