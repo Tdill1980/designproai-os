@@ -112,21 +112,57 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
 // on the first render: the passenger, hood, front and rear figures all collided.
 // The clearance the label needs is 32px plus air; anything below that silently
 // overprints, which on a teaching input is a sheet that teaches a collision.
-function row(surfaces, { top, height, left = 54, right = 1482, gap = 42, detail }) {
+/**
+ * WHERE the cells go. Pure geometry, no drawing -- and it is SEPARATE from the
+ * drawing on purpose.
+ *
+ * The inspector gate has to judge the panel CELLS of a returned proof, not the
+ * white document around them: `edgeHoleRatio`, `nonBlackFraction` and the
+ * output-class inspector all measure a whole sheet today and would convict a
+ * correct proof instantly, because a proof sheet IS mostly white. So the gate
+ * needs the cell rectangles -- and the only thing that truly knows them is the
+ * code that drew them. Deriving them a second time somewhere else is how the
+ * drawing and the checking drift apart; RULE 0.27's "the code owns the
+ * geometry" applied to validation rather than to authoring.
+ */
+function layoutRow(surfaces, { top, height, left = 54, right = 1482, gap = 42 }) {
   const usable = right - left - gap * (surfaces.length - 1);
   const totalW = surfaces.reduce((sum, s) => sum + s.widthIn, 0);
   let x = left;
   return surfaces.map((s) => {
     const w = Math.max(56, Math.round((s.widthIn / totalW) * usable));
     const h = Math.min(height, Math.round(w * (s.heightIn / s.widthIn)));
-    const cell = panelCell(x, top + (height - h), w, h, {
-      widthIn: s.widthIn, heightIn: s.heightIn,
-      caption: LABEL[s.surfaceKey] || s.surfaceKey.toUpperCase(),
-      detail: detail ? detail(s) : [],
-    });
+    const cell = { surfaceKey: s.surfaceKey, x, y: top + (height - h), w, h,
+      widthIn: s.widthIn, heightIn: s.heightIn };
     x += w + gap;
     return cell;
-  }).join("");
+  });
+}
+
+/** Lay six cells across a band, each scaled to its own proportion. */
+function row(surfaces, opts) {
+  const { detail } = opts;
+  return layoutRow(surfaces, opts).map((cell) => panelCell(cell.x, cell.y, cell.w, cell.h, {
+    widthIn: cell.widthIn, heightIn: cell.heightIn,
+    caption: LABEL[cell.surfaceKey] || cell.surfaceKey.toUpperCase(),
+    detail: detail ? detail(cell) : [],
+  })).join("");
+}
+
+/** The two panel bands' geometry, for the gate. Same numbers the sheet draws. */
+const BAND = Object.freeze({ zone1: { top: 150, height: 150 }, zone2: { top: 414, height: 150 } });
+
+function containerLayout(manifest) {
+  const surfaces = surfacesFrom(manifest);
+  if (surfaces.length !== 6) {
+    throw new Error(`atlas_container_template_needs_six_surfaces:${surfaces.length}`);
+  }
+  return {
+    width: WIDTH,
+    height: HEIGHT,
+    zone1: layoutRow(surfaces, BAND.zone1),
+    zone2: layoutRow(surfaces, BAND.zone2),
+  };
 }
 
 /**
@@ -219,13 +255,13 @@ async function renderContainerTemplate({ manifest = {}, companyName = "", vehicl
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
     "6 PANELS — COMPLETE WRAP ARTWORK"));
-  m.push(row(surfaces, { top: 150, height: 150, detail: panelDetail }));
+  m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
     "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
     "6 PANELS — BACKGROUND ARTWORK ONLY"));
-  m.push(row(surfaces, { top: 414, height: 150, detail: panelDetail }));
+  m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,
@@ -291,7 +327,8 @@ module.exports = {
   WIDTH,
   HEIGHT,
   SURFACE_ORDER,
+  containerLayout,
   parsePanelRows,
   renderContainerTemplate,
-  _test: { surfacesFrom, panelCell, row },
+  _test: { surfacesFrom, panelCell, row, layoutRow, BAND },
 };
