@@ -108,9 +108,16 @@ test("a customer reference declares artwork authority and distinguishes itself f
 // CREATIVE INPUT. The relationship pair is attached in separate server fields.
 test("with no customer reference, the Call 1 prompt keeps current vehicle and brief authority", () => {
   const prompt = authored({ mode: "commercial", brief: "Wrap for Acme", companyName: "Acme" });
-  assert.match(prompt, /opaque, unbroken and full-bleed to all four edges/);
+  // ⚠️ UPDATED 2026-09-18 (v27-ask-not-spec-sheet, PR #486): both strings below
+  // were deliberately shortened in atlasFlatMasterContract as two of six
+  // redundant restatements of the same ideas -- see that PR's own updates to
+  // tests/atlas-artboard-edge-call1.test.mjs and
+  // tests/designpro-persona-contract.test.mjs for the identical replacement.
+  // This file's copies were missed in that PR; fixed here to match, not
+  // widened or re-litigated.
+  assert.match(prompt, /Every panel is opaque and full-bleed to all four edges/);
   assert.match(prompt, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
-  assert.match(prompt, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
+  assert.match(prompt, /no panel names, surface IDs or captions are set anywhere in the artwork/);
   assert.match(prompt, /ARTBOARD for this exact 2022 Ford F250 Crew Cab/);
   assert.doesNotMatch(prompt, /studio photograph|widthInches|heightInches/i);
 });
