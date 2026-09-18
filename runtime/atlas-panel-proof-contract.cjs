@@ -80,8 +80,9 @@ const SYSTEM_JOB = [
   "",
   "You are a pro-level graphic designer. Your job on this proof is to guarantee that NOTHING pertinent",
   "is lost at installation: the company name, the logo, the contact line and any face or focal subject",
-  "must sit clear of where the installer trims -- wheel arches, door handles, mirrors, glass and the",
-  "panel's own outer trim line. Artwork runs past the trim on every edge; type and logos do not.",
+  "must sit clear of where the installer trims or the vinyl distorts -- wheel arches, door handles,",
+  "deep body creases, mirrors, glass and the panel's own outer trim line. Artwork runs past the trim on",
+  "every edge; type and logos do not.",
 ].join("\n");
 
 /**
@@ -112,24 +113,39 @@ const VERSIONS = Object.freeze([
     label: "VERSION 2 — ARTWORK ONLY (NO TEXT OR LOGO)",
     instruction:
       "the SAME panels with every word, numeral and logo removed and the artwork continued through where they sat. "
-      + "Not erased or blanked -- drawn as the design would be if it had never carried type.",
+      + "Not erased or blanked -- drawn as the design would be if it had never carried type. This is the "
+      + "installer's reference sheet.",
   }),
   Object.freeze({
     key: "elements",
     label: "VERSION 3 — LOGO + TEXT ONLY (CUT PROOF)",
     instruction:
-      "the logo, company name and contact line alone as individual cut paths on a plain ground, no vehicle and no "
-      + "background artwork -- the sheet a plotter cuts.",
+      "the logo, company name and contact line alone, drawn as standalone vector cut outlines on a plain empty "
+      + "ground -- no vehicle, no panels and no background artwork. This is the sheet a plotter cuts.",
   }),
 ]);
 
-/** Every literal string stated ONCE, to be reproduced character for character. */
+/**
+ * Every literal string stated ONCE, to be reproduced character for character.
+ *
+ * TAGLINE, SERVICES AND PROMOTIONAL TEXT ARE LITERALS TOO. A commercial wrap
+ * carries more words than a phone number, and a string the contract does not
+ * state is a string the model invents -- which is the exact failure the element
+ * graph was built to prevent (RestylePro measured a proof reading 877-555-0000
+ * against a hero reading 555-0142). The owner's own Prius brief carries a
+ * tagline and service lines, so leaving them out of the exact block would
+ * retest the premise on only half the lettering.
+ */
 function exactStrings(input = {}) {
   const pick = (v) => String(v == null ? "" : v).trim();
+  const list = (v) => (Array.isArray(v) ? v.map(pick).filter(Boolean).join(", ") : pick(v));
   return [
     ["Company name", pick(input.companyName || input.businessName)],
+    ["Tagline", pick(input.tagline)],
     ["Phone", pick(input.phone)],
     ["Web address", pick(input.website)],
+    ["Services", list(input.services)],
+    ["Promotional text", pick(input.promo || input.promotionalText)],
   ].filter(([, value]) => value);
 }
 

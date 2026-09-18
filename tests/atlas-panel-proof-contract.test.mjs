@@ -83,6 +83,30 @@ test("every literal string is stated ONCE and marked exact", () => {
     "a literal must appear exactly once -- twice is two chances to diverge");
 });
 
+test("the exact block carries EVERY literal the wrap wears, not just the contact bar", () => {
+  // A commercial wrap carries a tagline, service lines and promotional text as
+  // well as a phone number, and a string the contract does not state is a
+  // string the model invents. The owner's own Prius brief carries all three, so
+  // omitting them would retest the diffusion-text premise on half the lettering.
+  const prompt = runtime.buildPanelProofPrompt({
+    input: {
+      companyName: "Bright Smiles Dental", tagline: "HEALTHY SMILES BRIGHTER LIVES",
+      phone: "(520) 555-0192", website: "brightsmiles.com",
+      services: ["General Dentistry", "Cosmetic", "Implants"], promo: "NEW PATIENTS WELCOME",
+    },
+    manifest: { zones: [] }, creativeDirection: "blue wave",
+  });
+  for (const literal of ["HEALTHY SMILES BRIGHTER LIVES", "General Dentistry, Cosmetic, Implants",
+    "NEW PATIENTS WELCOME"]) {
+    assert.equal((prompt.match(new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length, 1,
+      `${literal} must appear exactly once -- twice is two chances to diverge`);
+  }
+  // An absent field adds no label at all; a blank "Tagline:" invites one.
+  assert.doesNotMatch(runtime.buildPanelProofPrompt({
+    input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
+  }), /Tagline|Services|Promotional text/);
+});
+
 test("INCHES, never normalized fractions", () => {
   // RULE 0.33 removed the [0,1] topology table from Call 1 on measured
   // evidence, and the field contract's bare four-decimal rows are what FOUR

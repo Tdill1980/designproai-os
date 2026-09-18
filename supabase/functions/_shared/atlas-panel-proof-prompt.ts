@@ -39,8 +39,9 @@ export const SYSTEM_JOB = [
   "",
   "You are a pro-level graphic designer. Your job on this proof is to guarantee that NOTHING pertinent",
   "is lost at installation: the company name, the logo, the contact line and any face or focal subject",
-  "must sit clear of where the installer trims -- wheel arches, door handles, mirrors, glass and the",
-  "panel's own outer trim line. Artwork runs past the trim on every edge; type and logos do not.",
+  "must sit clear of where the installer trims or the vinyl distorts -- wheel arches, door handles,",
+  "deep body creases, mirrors, glass and the panel's own outer trim line. Artwork runs past the trim on",
+  "every edge; type and logos do not.",
 ].join("\n");
 
 /**
@@ -70,21 +71,26 @@ export const VERSIONS = [
     label: "VERSION 2 — ARTWORK ONLY (NO TEXT OR LOGO)",
     instruction:
       "the SAME panels with every word, numeral and logo removed and the artwork continued through where they sat. "
-      + "Not erased or blanked -- drawn as the design would be if it had never carried type.",
+      + "Not erased or blanked -- drawn as the design would be if it had never carried type. This is the "
+      + "installer's reference sheet.",
   },
   {
     key: "elements",
     label: "VERSION 3 — LOGO + TEXT ONLY (CUT PROOF)",
     instruction:
-      "the logo, company name and contact line alone as individual cut paths on a plain ground, no vehicle and no "
-      + "background artwork -- the sheet a plotter cuts.",
+      "the logo, company name and contact line alone, drawn as standalone vector cut outlines on a plain empty "
+      + "ground -- no vehicle, no panels and no background artwork. This is the sheet a plotter cuts.",
   },
 ] as const;
 
 export interface PanelProofParams {
   companyName?: string;
+  /** Every literal the wrap carries, not just the contact bar -- see the runtime twin. */
+  tagline?: string;
   phone?: string;
   website?: string;
+  services?: string[] | string;
+  promo?: string;
   vehicleYear?: string;
   vehicleMake?: string;
   vehicleModel?: string;
@@ -95,10 +101,14 @@ export interface PanelProofParams {
 
 export function buildPanelProofPrompt(params: PanelProofParams): string {
   const pick = (v: unknown) => String(v == null ? "" : v).trim();
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(pick).filter(Boolean).join(", ") : pick(v));
   const strings: Array<[string, string]> = ([
     ["Company name", pick(params.companyName)],
+    ["Tagline", pick(params.tagline)],
     ["Phone", pick(params.phone)],
     ["Web address", pick(params.website)],
+    ["Services", list(params.services)],
+    ["Promotional text", pick(params.promo)],
   ] as Array<[string, string]>).filter(([, value]) => value.length > 0);
 
   const vehicle = [params.vehicleYear, params.vehicleMake, params.vehicleModel]

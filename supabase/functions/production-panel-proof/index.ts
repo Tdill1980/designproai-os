@@ -108,8 +108,11 @@ serve(async (req) => {
       : [];
     const prompt = buildPanelProofPrompt({
       companyName: body?.companyName,
+      tagline: body?.tagline,
       phone: body?.phone,
       website: body?.website,
+      services: body?.services,
+      promo: body?.promo,
       vehicleYear: body?.vehicleYear,
       vehicleMake: body?.vehicleMake,
       vehicleModel: body?.vehicleModel,

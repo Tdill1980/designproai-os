@@ -111,8 +111,14 @@ function panelRows() {
 
   const request = {
     companyName: arg("company", "Bright Smiles Dental"),
+    // Every literal the wrap carries rides in the exact-text block, not only the
+    // contact bar -- a string the contract does not state is a string the model
+    // invents, which is the premise this probe exists to retest.
+    tagline: arg("tagline", "HEALTHY SMILES BRIGHTER LIVES"),
     phone: arg("phone", "(520) 555-0192"),
     website: arg("website", "brightsmiles.com"),
+    services: arg("services", "General Dentistry|Cosmetic|Implants|Emergency Care").split("|"),
+    promo: arg("promo", "NEW PATIENTS WELCOME"),
     vehicleYear: arg("year", "2012"),
     vehicleMake: arg("make", "Toyota"),
     vehicleModel: arg("model", "Prius"),
