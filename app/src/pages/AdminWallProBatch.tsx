@@ -9,8 +9,9 @@ import { Helmet } from 'react-helmet-async';
 import { Loader2, Play, Square, Upload, RefreshCw, Trash2, Download, Zap, Layers, Star, Eye, EyeOff, FileJson, Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import library from '@/data/wallpro-prompt-library.json';
-import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, writeWallBriefs, type WallAsset, type WallGeneratedBrief, type WallBriefRequest } from '@/lib/wallpro-api';
+import { wallUser, uploadWallAsset, openWallAsset, openWallAssets, generateWall, getWallGeneration, listWallCatalogAll, listRecoverableWallGenerations, publishWallDesign, updateWallDesign, deleteWallDesign, sha256Hex, detectWall, listWallScenesAll, publishWallScene, updateWallScene, deleteWallScene, saveWallDesignMockups, writeWallBriefs, type WallAsset, type WallGeneratedBrief, type WallBriefRequest } from '@/lib/wallpro-api';
 import { WALL_PRESETS, WALL_CATEGORIES, WALL_CATEGORY_LABELS, presetAsEntry, presetDomain, generatedBriefAsEntry, type WallCategory } from '@/data/wallpro-presets';
+import { recoverableGenerations, recoveryEntry, recoveryTitle, nextRecoveryDesignId, inferIndustry, type RecoverableGeneration } from '@/lib/wallpro-recovery';
 import { validateWallUpload, prepareWallUpload, loadWallImage, canvasBlob, renderWallPreview } from '@/lib/wallpro-render';
 import { WallPhotoEditor } from '@/components/wallpro/WallPhotoEditor';
 import { sceneUpsertRow, sceneLayoutFor, mockupCaption, DEFAULT_SCENE_WALL_IN, FULL_FRAME_CORNERS, type WallCatalogScene } from '@/lib/wallpro-scenes';
@@ -97,7 +98,7 @@ async function thumbnailOf(image: HTMLImageElement): Promise<Blob> {
 }
 
 export default function AdminWallProBatch() {
-  const [tab, setTab] = useState<'generator' | 'gallery' | 'history' | 'scenes'>('generator');
+  const [tab, setTab] = useState<'generator' | 'gallery' | 'history' | 'scenes' | 'recover'>('generator');
   // Room scenes (stock photographs with the feature wall's corners and real
   // inches recorded once) and the "In a room" mockup modal for a published design.
   const [scenes, setScenes] = useState<WallCatalogScene[]>([]);
@@ -130,6 +131,24 @@ export default function AdminWallProBatch() {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [galleryIndustry, setGalleryIndustry] = useState('all');
   const [galleryDomain, setGalleryDomain] = useState<'all' | 'commercial' | 'residential'>('all');
+  /**
+   * THE RECOVERY LANE (owner, 2026-09-18: "The library should be recovering
+   * the WallPro batch generator designs").
+   *
+   * Thirteen batch designs were generated in this project and never
+   * registered, so the storefront read an empty catalog while the artwork sat
+   * in `wallpro-files`. This lists every completed batch generation that has
+   * no catalog row and publishes it through the SAME `publishWallDesign` the
+   * generator uses — a new way to reach the one publish door, not a second
+   * door. `lib/wallpro-recovery.ts` holds the reasoning and the pure logic.
+   */
+  const [recoverable, setRecoverable] = useState<RecoverableGeneration[] | null>(null);
+  const [recoverThumbs, setRecoverThumbs] = useState<Record<string, string>>({});
+  const [recoverEdits, setRecoverEdits] = useState<Record<string, { title: string; industry: string }>>({});
+  const [recovered, setRecovered] = useState<Record<string, string>>({});
+  /** DesignIDs handed out in this session, so a second publish in the same
+   * pass cannot reuse the first one's id and UPSERT over it. */
+  const assignedRecoveryIds = useRef<string[]>([]);
   const stop = useRef(false);
   const urls = useRef<string[]>([]);
   useEffect(() => () => urls.current.forEach(u => URL.revokeObjectURL(u)), []);
@@ -169,15 +188,70 @@ export default function AdminWallProBatch() {
     setCatalog(rows);
     const paths = rows.map(r => r.thumb_path || r.master_path);
     setThumbs(await openWallAssets(paths).catch(() => ({})));
+    return rows;
   }
   async function refreshScenes() {
     const rows = await listWallScenesAll();
     setScenes(rows);
     setSceneThumbs(await openWallAssets(rows.map(r => r.image_path)).catch(() => ({})));
   }
+  async function refreshRecoverable(publishedGenerationIds: string[]) {
+    const rows = await listRecoverableWallGenerations();
+    const list = recoverableGenerations(rows, publishedGenerationIds);
+    setRecoverable(list);
+    setRecoverThumbs(await openWallAssets(list.map(g => g.artwork_path)).catch(() => ({})));
+  }
   // Scenes fail soft: a database without 20260914160000 yet must not take
-  // the generator down with it.
-  useEffect(() => { refreshCatalog().catch(e => setError(e.message)); refreshScenes().catch(() => {}); }, []);
+  // the generator down with it. The recovery lane is the same: it is a repair
+  // tool, and a repair tool that breaks the generator is worse than no repair.
+  useEffect(() => {
+    refreshCatalog()
+      .then(rows => refreshRecoverable((rows || []).map(r => r.generation_id)).catch(() => setRecoverable([])))
+      .catch(e => setError(e.message));
+    refreshScenes().catch(() => {});
+  }, []);
+
+  /**
+   * Publish one recovered generation. Deliberately mirrors `publish()` rather
+   * than sharing its body: that one reads a queued Job (its blended master,
+   * its seam receipt, its rating), and this one has none of those — a
+   * recovered design carries no seam receipt, which is exactly why it
+   * publishes as a mural and never as a claimed repeat.
+   */
+  async function publishRecovered(generation: RecoverableGeneration) {
+    await guarded('Publishing ' + recoveryTitle(generation.design_name), async () => {
+      const user = await wallUser();
+      const record = await getWallGeneration(generation.id);
+      if (record.state !== 'completed' || !record.artwork_path) throw new Error('That generation is not complete.');
+      const source = await openWallAsset(record.artwork_path);
+      const response = await fetch(source);
+      if (!response.ok) throw new Error('The master could not be read for hashing.');
+      const blob = await response.blob();
+      const sha = await sha256Hex(await blob.arrayBuffer());
+      const measured = await measureAsset(source);
+      const fileId = crypto.randomUUID();
+      const designIdValue = nextRecoveryDesignId([...catalog.map(r => r.design_id), ...assignedRecoveryIds.current]);
+      assignedRecoveryIds.current.push(designIdValue);
+      const edit = recoverEdits[generation.id];
+      const entry = recoveryEntry(generation, designIdValue, { title: edit?.title, industry: edit?.industry });
+      const row = designUpsertRow({
+        entry, mode: 'mural', generationId: record.id, promptHash: record.input_hash,
+        masterPath: catalogMasterPath(fileId, blob.type), thumbPath: catalogThumbPath(fileId), masterSha256: sha,
+        widthPx: measured.widthPx, heightPx: measured.heightPx, seam: null, batchId: 'recovered', createdBy: user.id,
+      });
+      const thumb = await thumbnailOf(measured.image);
+      const saved = await publishWallDesign(record.artwork_path, thumb, row);
+      setRecovered(old => ({ ...old, [generation.id]: saved.design_id }));
+      setRecoverable(old => (old || []).filter(g => g.id !== generation.id));
+      await refreshCatalog();
+    });
+  }
+  async function publishAllRecovered() {
+    for (const generation of [...(recoverable || [])]) {
+      if (stop.current) break;
+      await publishRecovered(generation);
+    }
+  }
 
   async function guarded(label: string, action: () => Promise<void>) {
     setBusy(label); setError('');
@@ -371,7 +445,7 @@ export default function AdminWallProBatch() {
         <div className="text-xs text-slate-500">{catalog.length} in catalog · {catalog.filter(r => r.is_active).length} active · {LIBRARY.length - published.size} library prompts unpublished</div>
       </header>
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
-      <div className="flex gap-2">{(['generator', 'gallery', 'scenes', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : t === 'scenes' ? `Room scenes (${scenes.length})` : `History (${batches.length})`}</Button>)}</div>
+      <div className="flex gap-2">{(['generator', 'gallery', 'recover', 'scenes', 'history'] as const).map(t => <Button key={t} size="sm" variant={tab === t ? 'default' : 'outline'} onClick={() => setTab(t)}>{t === 'generator' ? 'Generator' : t === 'gallery' ? `Gallery (${catalog.length})` : t === 'recover' ? `Recover (${recoverable?.length ?? 0})` : t === 'scenes' ? `Room scenes (${scenes.length})` : `History (${batches.length})`}</Button>)}</div>
 
       {tab === 'generator' && <>
         <section className={panelClass}>
@@ -477,6 +551,59 @@ export default function AdminWallProBatch() {
             </div>
           </div>
         </article>)}</div>}
+      </section>}
+
+      {tab === 'recover' && <section className={panelClass}>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Recover unpublished batch designs</h2>
+            {/* THE ARTWORK WAS NEVER LOST; IT WAS NEVER REGISTERED. Say that
+                plainly, because the screen it replaces said "no designs are
+                published yet" and read as if the work had disappeared. */}
+            <p className="mt-1 max-w-3xl text-sm text-slate-600">
+              Every completed batch generation that has no catalog row. The masters are already in storage —
+              only the publish step never ran, which is why the storefront reads as empty. Publishing copies the
+              master into the catalog, hashes it and writes the row, exactly as the generator does.
+            </p>
+            <p className="mt-1 max-w-3xl text-xs text-slate-500">
+              Customer sessions are excluded: anything with a wall photo, a matched upload or a refinement is
+              somebody's private design and never appears here. Recovered designs publish as murals — a repeat
+              may only be published with a verified seam, and a past generation carries no seam receipt.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void guarded('Reloading', () => refreshRecoverable(catalog.map(r => r.generation_id)))}>
+              <RefreshCw className="mr-2 h-4 w-4" />Reload
+            </Button>
+            <Button size="sm" disabled={!!busy || !recoverable?.length} onClick={() => { stop.current = false; void publishAllRecovered(); }}>
+              <Zap className="mr-2 h-4 w-4" />Publish all {recoverable?.length ? `(${recoverable.length})` : ''}
+            </Button>
+          </div>
+        </div>
+        {recoverable === null ? <p className="mt-4 text-sm text-slate-500">Reading past generations…</p>
+          : recoverable.length === 0 ? <p className="mt-4 text-sm text-slate-500">Nothing to recover — every completed batch generation is already in the catalog.</p>
+          : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {recoverable.map(generation => {
+              const edit = recoverEdits[generation.id] || { title: recoveryTitle(generation.design_name, typeof generation.input?.prompt === 'string' ? generation.input.prompt : ''), industry: inferIndustry(generation.design_name || (typeof generation.input?.prompt === 'string' ? generation.input.prompt : '')) };
+              const src = recoverThumbs[generation.artwork_path];
+              return <div key={generation.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="aspect-[4/3] bg-slate-100">{src && <img src={src} alt={edit.title} className="h-full w-full object-cover" loading="lazy" />}</div>
+                <div className="space-y-2 p-3">
+                  <label className="block text-xs font-semibold text-slate-600">Title
+                    <input className={inputClass} maxLength={160} value={edit.title} onChange={e => setRecoverEdits(old => ({ ...old, [generation.id]: { ...edit, title: e.target.value } }))} />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600">Industry
+                    <select className={inputClass} value={edit.industry} onChange={e => setRecoverEdits(old => ({ ...old, [generation.id]: { ...edit, industry: e.target.value } }))}>
+                      {[...new Set([edit.industry, ...INDUSTRIES])].map(i => <option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </label>
+                  <p className="text-[11px] text-slate-500">{new Date(generation.created_at).toLocaleString()}</p>
+                  <Button size="sm" className="w-full" disabled={!!busy} onClick={() => void publishRecovered(generation)}>Publish to catalog</Button>
+                </div>
+              </div>;
+            })}
+          </div>}
+        {Object.keys(recovered).length > 0 && <p className="mt-3 text-sm text-emerald-700">Published this session: {Object.values(recovered).join(', ')}</p>}
       </section>}
 
       {tab === 'history' && <section className={panelClass}>
