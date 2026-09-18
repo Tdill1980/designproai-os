@@ -97,24 +97,44 @@ test("PatternPro keeps the same pair, so the two tools stay symmetrical", () => 
  * naive route assertion and still break the demo.
  */
 test("ShopFlow's product rail opens the WHITE partner pages, not the house ones", () => {
+  // THE DESTINATIONS MOVED OUT OF THE PAGE, SO THIS TEST FOLLOWS THEM.
+  //
+  // This assertion used to read the literal `{ href: "/wallwrap-design",
+  // label: "WallPro"` out of ShopFlow.tsx. #502 lifted the three apps into
+  // lib/shopflow-apps.ts so the desktop rail and the new phone strip could not
+  // drift apart -- and that literal stopped existing, which turned main red and
+  // blocked every PR in the repo until it was found.
+  //
+  // The lesson is in HOW it is repaired: the guarantees below are unchanged and
+  // the negatives are now WIDER (they cover both files, so a bad href cannot
+  // hide in whichever one this test does not read). A source-literal assertion
+  // has to name the file the data actually lives in, or a refactor that changes
+  // nothing about behaviour fails the gate.
   const shopflow = read("app/src/pages/ShopFlow.tsx");
+  const apps = read("app/src/lib/shopflow-apps.ts");
+  const both = shopflow + "\n" + apps;
   // THE APP, NOT THE LANDING (owner, 2026-09-18: the dashboard "no longer shows
   // WPW WallPro App page, it's now showing a landing page"). The first fix
   // re-pointed this rail at /wall-wrap in the same change that turned
   // /wall-wrap INTO the landing -- right brand, wrong destination. A customer
   // inside their own account dashboard is already signed in and already sold;
   // a marketing page is a step backwards from where they are standing.
-  assert.ok(shopflow.includes('{ href: "/wallwrap-design", label: "WallPro"'),
-    "the WallPro tab must open the WePrintWraps TOOL, not its landing page");
-  assert.ok(!/href[=:]\s*"\/wall-wrap"/.test(shopflow),
+  assert.ok(/key:\s*"wallpro"[\s\S]{0,200}?href:\s*"\/wallwrap-design"/.test(apps),
+    "the WallPro app must open the WePrintWraps TOOL, not its landing page");
+  assert.ok(/key:\s*"patternpro"[\s\S]{0,200}?href:\s*"\/pattern-wrap"/.test(apps),
+    "the PatternPro app must open the WePrintWraps page");
+  // ...and the rail actually draws them, rather than the list sitting unread.
+  assert.ok(shopflow.includes('shopflowApp("wallpro")'),
+    "the ShopFlow rail must build its WallPro row from the shared app list");
+  assert.ok(shopflow.includes('shopflowApp("patternpro")'),
+    "the ShopFlow rail must build its PatternPro row from the shared app list");
+  // The landing, the dead route and the house route must not come back in
+  // EITHER file -- including the free-designs CTA, which had the same defect.
+  assert.ok(!/href[=:]\s*"\/wall-wrap"/.test(both),
     "no ShopFlow link may open the WallPro landing; this dashboard opens apps");
-  assert.ok(shopflow.includes('{ href: "/pattern-wrap", label: "PatternPro"'),
-    "the PatternPro tab must open the WePrintWraps page");
-  // The dead route and the house route must not come back anywhere on this
-  // page -- including the free-designs CTA, which had the same defect.
-  assert.ok(!/href[=:]\s*"\/wallpro"/.test(shopflow),
+  assert.ok(!/href[=:]\s*"\/wallpro"/.test(both),
     "ShopFlow must not send a WePrintWraps customer to the DesignProAI landing");
-  assert.ok(!/href[=:]\s*"\/patternpro"/.test(shopflow),
+  assert.ok(!/href[=:]\s*"\/patternpro"/.test(both),
     "/patternpro has no route; the PatternPro tab must not point at it");
 
   // Both targets are real routes, and the WallPro one resolves to the TOOL.
