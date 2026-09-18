@@ -203,6 +203,25 @@ export async function listWallCatalogAll(): Promise<WallCatalogRow[]> {
   if (error) throw new Error('The design catalog could not be loaded: ' + error.message);
   return (data || []) as WallCatalogRow[];
 }
+/**
+ * Completed generations the curator could still publish — the raw read behind
+ * the batch page's recovery lane (see lib/wallpro-recovery.ts for why it
+ * exists: thirteen batch designs were generated in this project and never
+ * registered, so the catalog was empty while the artwork sat in storage).
+ *
+ * Curator-only, like every other catalog write path. The filtering of customer
+ * sessions out of this list is pure and lives in `recoverableGenerations`, so
+ * it is testable without a database.
+ */
+export async function listRecoverableWallGenerations(): Promise<import('@/lib/wallpro-recovery').RecoverableGeneration[]> {
+  await wallUser();
+  const { data, error } = await db.from('wallpro_generations')
+    .select('id,design_name,artwork_path,created_at,input')
+    .eq('state', 'completed').not('artwork_path', 'is', null)
+    .order('created_at', { ascending: false }).limit(300);
+  if (error) throw new Error('The past generations could not be read: ' + error.message);
+  return (data || []) as import('@/lib/wallpro-recovery').RecoverableGeneration[];
+}
 export async function getWallGeneration(requestId: string) {
   const { data, error } = await db.from('wallpro_generations').select('id,input_hash,state,artwork_path,design_name').eq('id', requestId).maybeSingle();
   if (error || !data) throw new Error('The generation record for this design could not be read.');
