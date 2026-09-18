@@ -15,6 +15,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { loadDesignIQ, ATLAS_PANELS } from "./helpers/load-designiq.mjs";
 
 const require = createRequire(import.meta.url);
 const runtime = require("../runtime/atlas-panel-proof-contract.cjs");
@@ -87,7 +88,7 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // is the negative shape CLAUDE.md warns about in four places and which has
   // failed 4/4 on the field map.
   assert.match(runtime.INSTALLATION_FACT, /ONE CONTINUOUS PANEL/);
-  assert.match(runtime.INSTALLATION_FACT, /trims the wheel openings, handles and glass afterwards/);
+  assert.match(runtime.INSTALLATION_FACT, /trimmed on the vehicle afterwards/);
   assert.doesNotMatch(runtime.INSTALLATION_FACT, /\bdo not\b/i,
     "the installation fact must state what IS, never what is forbidden");
 });
@@ -101,8 +102,11 @@ test("three versions, in one pass, and the clean base is one of them", () => {
   // mid-blue artwork, clipped mid-word, in a font that knows nothing about the
   // design underneath.
   const artwork = runtime.VERSIONS.find((v) => v.key === "artwork");
-  assert.match(artwork.instruction, /artwork continued through where they sat/);
-  assert.match(artwork.instruction, /Not erased or blanked/);
+  assert.match(artwork.instruction, /as if they had never carried type/);
+  // The band LABEL is the rule now — it is drawn on the sheet and it says the
+  // whole thing — so the instruction beside it stays one clause. Restating a
+  // label in prose is budget the designer needed and did not have.
+  assert.match(artwork.label, /BACKGROUNDS ONLY \(NO TEXT OR LOGO\)/);
 });
 
 test("every literal string is stated ONCE and marked exact", () => {
@@ -113,8 +117,8 @@ test("every literal string is stated ONCE and marked exact", () => {
     input: { companyName: "Bright Smiles Dental", phone: "(520) 555-0192", website: "brightsmiles.com" },
     manifest: { zones: [] }, creativeDirection: "blue wave",
   });
-  assert.match(prompt, /reproduce each of these character for character/);
-  assert.match(prompt, /Invent no other words/);
+  assert.match(prompt, /EXACT TEXT, character for character/);
+  assert.match(prompt, /invent no other words, numerals or web address/);
   assert.equal((prompt.match(/\(520\) 555-0192/g) || []).length, 1,
     "a literal must appear exactly once -- twice is two chances to diverge");
 });
@@ -166,8 +170,15 @@ test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
   // (VERSION 1 upper half, trim table beside the small panels, VERSION 2 lower
   // left, cut proof lower right). What this test protects is unchanged: the
   // layout reaches the model as PROSE and the coordinates never do.
-  assert.match(prompt, /THREE FULL-WIDTH ZONE BANDS/);
-  assert.match(prompt, /PANEL DIMENSIONS REFERENCE row/);
+  // The zone bands are DRAWN on the attached container, so the prompt names them
+  // by their titles and tells the model to fill the sheet rather than describing
+  // a layout it can already see. Describing it twice was budget the designer
+  // needed: the proof shipped with zero characters of A.C.E. to stay under 4000.
+  assert.match(prompt, /each band titled exactly as written/);
+  assert.match(prompt, /Fill the attached template; do not re-flow it/);
+  // The reference row is DRAWN on the attached container, so the prompt points
+  // at it rather than re-describing the sheet it is looking at.
+  assert.match(prompt, /identical in every zone and in the reference row/);
   assert.match(prompt, /BS-2012PRIUS-01/, "the job block must reach the header");
 
   // THE COORDINATE TABLE MUST NEVER REACH CALL 1. atlasFieldContract emitted
@@ -198,6 +209,18 @@ test("INCHES, never normalized fractions", () => {
   assert.doesNotMatch(prompt, /0\.\d{4}/, "no normalized fractions may reach Call 1");
 });
 
+// A.C.E. AS THE EDGE ACTUALLY ASSEMBLES IT, transpiled and EXECUTED — never a
+// paraphrase. `loadDesignIQ` bundles the real buildDesignIQPrompt out of the
+// deployed design-panel-ai-generate, which is the same source
+// scripts/build-designiq-shared.mjs ships to the edge.
+const { buildDesignIQPrompt } = await loadDesignIQ();
+const ACE_FIXTURE = buildDesignIQPrompt({
+  mode: "commercial", prompt: "clean modern dental wrap, teal and white", finish: "Gloss",
+  substrate: "standard", companyName: "Bright Smiles Dental", phone: "(520) 555-0192",
+  website: "brightsmiles.com", vehicleYear: "2012", vehicleMake: "Toyota", vehicleModel: "Prius",
+  vehicleType: "car", viewType: "side", atlasFlatMaster: true, atlasPanels: ATLAS_PANELS,
+});
+
 test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   // v19: creative conditioning held at 2,490 chars through the last known-good
   // master; the 4K ceiling is the persona stack's own stated quality limit.
@@ -211,7 +234,7 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   // the hero-view path allowlist, the two-master hash assertion, the empty
   // verify read, the element-graph null). Every field the probe can send is set
   // here; add a field to the contract and it belongs in this fixture too.
-  const prompt = runtime.buildPanelProofPrompt({
+  const FIXTURE_ARGS = {
     input: {
       companyName: "Bright Smiles Dental", tagline: "HEALTHY SMILES BRIGHTER LIVES",
       phone: "(520) 555-0192", website: "brightsmiles.com",
@@ -233,8 +256,36 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
     creativeDirection: "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth "
       + "logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling "
       + "dental patient in a clinical chair inlaid into the rear three-quarter of each side panel.",
-  });
-  assert.ok(prompt.length < 4000, `assembled prompt is ${prompt.length} chars; the ceiling is 4000`);
+  };
+  const prompt = runtime.buildPanelProofPrompt(FIXTURE_ARGS);
+  // WITHOUT THE A.C.E. HEAD this is the document contract alone, and it must
+  // stay small — it is packaging, and the budget belongs to the design.
+  assert.ok(prompt.length < 2600,
+    `the document contract alone is ${prompt.length} chars; it must stay under 2600`);
+
+  // WITH IT, the ceiling is 4800 and NOT 4000, and the change is deliberate.
+  //
+  // 4000 was this file's reading of the persona stack's own rule — "Prompt
+  // length = quality killer. Keep under 4K chars total." What that rule was
+  // measured on is a RATIO, not a length: CLAUDE.md records the wall prompt at
+  // "4,501 characters, of which 3,342 were generic persona boilerplate and 44
+  // were the customer's brief — the persona outweighed the design 76 to 1".
+  //
+  // Holding 4000 here bought nothing and cost everything. The panel proof came
+  // in at 3,906 UNDER the ceiling and returned generic blue waves, because the
+  // only way to fit was to carry no persona at all: 40 characters of brief and
+  // zero of A.C.E. A ceiling that is satisfied by deleting the designer is
+  // measuring the wrong thing.
+  //
+  // So the lock is now on the RATIO the measurement was actually about, plus a
+  // real ceiling above it. A.C.E.'s own production Call 1 assembles at 3,707,
+  // and the document contract this adds is mostly the customer's own data.
+  const head = runtime.panelProofCreativeHead(ACE_FIXTURE);
+  const full = runtime.buildPanelProofPrompt({ ...FIXTURE_ARGS, creativeHead: head });
+  assert.ok(full.length < 4800, `assembled prompt is ${full.length} chars; the ceiling is 4800`);
+  assert.ok(head.length >= full.length - head.length,
+    `the designer (${head.length}) must not be outweighed by the paperwork `
+    + `(${full.length - head.length}) — that ratio is the defect this lock exists for`);
 });
 
 test("the CONTAINER TEMPLATE is rendered per vehicle and verified, not byte-pinned", async () => {
@@ -341,7 +392,7 @@ test("the CONTAINER TEMPLATE is rendered per vehicle and verified, not byte-pinn
 
 test("the prompt names the attachments in the order the function sends them", () => {
   // THE ORDER IS LOAD-BEARING AND NOTHING ELSE CHECKS IT. The tail says
-  // "ATTACHED, in order: (1) ... (2) ... (3) ...", so a reordered PINNED_INPUTS
+  // "ATTACHED: (1) ... (2) ... (3) ...", so a reordered PINNED_INPUTS
   // leaves the text pointing at the wrong image -- the model would be told the
   // blank template is THE STANDARD TO MATCH and produce an empty sheet. That is
   // invisible to every other lock here: the hashes still verify, the workflow
@@ -365,7 +416,7 @@ test("the prompt names the attachments in the order the function sends them", ()
   const prompt = runtime.buildPanelProofPrompt({
     input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
   });
-  const tail = prompt.slice(prompt.indexOf("ATTACHED, in order:"));
+  const tail = prompt.slice(prompt.indexOf("ATTACHED: (1)"));
   assert.ok(tail, "the prompt must name its attachments");
   const named = [
     ["container", tail.indexOf("BLANK CONTAINER TEMPLATE")],
@@ -419,5 +470,12 @@ test("the six panels are demanded ONCE each, because the live sheet drew FRONT t
     input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
   });
   assert.match(prompt, /each drawn ONCE/);
-  assert.match(prompt, /Never repeat a panel, never add a seventh, never leave a box empty/);
+  assert.match(prompt, /never repeated, never a seventh, never an empty box/);
+  // AND THE EMPTY BOX IS NOW NAMED WITH WHAT FILLS IT. Zone 3 came back with
+  // three of five boxes blank under a rule that only forbade blankness; a rule
+  // with no content behind it cannot be followed.
+  assert.match(prompt, /ZONE 3'S FIVE BOXES, every one filled:/);
+  for (const slot of runtime.CUT_GRAPHIC_SLOTS) {
+    assert.ok(prompt.includes(`  ${slot.caption}: `), `Zone 3 slot ${slot.caption} is unfilled`);
+  }
 });

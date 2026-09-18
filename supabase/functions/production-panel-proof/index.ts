@@ -52,10 +52,39 @@ import {
   PANEL_PROOF_CONTAINER_TEMPLATE,
   PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
+  panelProofCreativeHead,
 } from "../_shared/atlas-panel-proof-prompt.ts";
 import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-container-render.ts";
+/**
+ * A.C.E. ITSELF — the real `buildDesignIQPrompt` out of the deployed
+ * design-panel-ai-generate, sliced by scripts/build-designiq-shared.mjs and
+ * locked against it by tests/designiq-shared-assembly.test.mjs.
+ *
+ * Owner ruling, Trish 2026-09-18: "Must use our suite of custom design edge
+ * functions no fucking excuses!!!" This function used to carry a designer
+ * paragraph I wrote and none of the proven persona — measured on the live
+ * sheet at 3,906 prompt characters with roughly 40 of customer brief and ZERO
+ * of A.C.E. That is why it returned generic blue waves and stock photography.
+ */
+import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
 
 const BUCKET = "wrap-files";
+
+/**
+ * The six named surfaces A.C.E.'s flat-master branch requires. It REFUSES a
+ * missing or mismatched surface identity (asserted in
+ * tests/designpro-persona-contract.test.mjs), which is why this is a constant
+ * and not assembled from the request: a caller that sent five would get a throw
+ * rather than a five-panel design.
+ */
+const ATLAS_PANELS = [
+  { label: "DRIVER SIDE", surfaceId: "DS", placement: "right-flank" },
+  { label: "PASSENGER SIDE", surfaceId: "PS", placement: "left-flank" },
+  { label: "HOOD", surfaceId: "HD", placement: "center-column" },
+  { label: "ROOF", surfaceId: "RF", placement: "center-column" },
+  { label: "FRONT", surfaceId: "FR", placement: "center-column" },
+  { label: "REAR", surfaceId: "RR", placement: "center-column" },
+] as const;
 
 /**
  * The two PINNED multimodal inputs. The container is a third attachment and
@@ -280,7 +309,35 @@ serve(async (req) => {
     const panelRows = Array.isArray(body?.panelRows)
       ? (body.panelRows as unknown[]).map((row) => String(row || "").trim()).filter(Boolean)
       : [];
+    // THE DESIGN COMES FROM A.C.E., AND ONLY THE OUTPUT CONTRACT IS SWAPPED.
+    // `atlasFlatMaster: true` is the same branch Call 1 runs, so the persona,
+    // the concept translation, the layered build order, the logo architecture
+    // and the customer's own FINISH_SPEC all fire exactly as they do in
+    // production; `panelProofCreativeHead` then cuts its six-rectangle artboard
+    // tail off and throws if that seam ever moves, rather than shipping a
+    // prompt that asks for two different documents at once.
+    const vehicleType = String(body?.vehicleType || "").trim() || undefined;
+    const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
+      mode: "commercial",
+      prompt: String(body?.creativeDirection || body?.prompt || ""),
+      finish: String(body?.finish || "Gloss"),
+      substrate: "standard",
+      companyName: body?.companyName,
+      phone: body?.phone,
+      website: body?.website,
+      industryType: body?.industryType,
+      brandColors: body?.brandColors,
+      vehicleYear: body?.vehicleYear,
+      vehicleMake: body?.vehicleMake,
+      vehicleModel: body?.vehicleModel,
+      vehicleType,
+      viewType: "side",
+      atlasFlatMaster: true,
+      atlasPanels: ATLAS_PANELS,
+    } as Record<string, unknown>));
+
     const prompt = buildPanelProofPrompt({
+      creativeHead,
       companyName: body?.companyName,
       tagline: body?.tagline,
       phone: body?.phone,
