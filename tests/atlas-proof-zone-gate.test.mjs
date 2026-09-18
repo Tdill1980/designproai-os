@@ -19,6 +19,24 @@ const ROWS = [
 const manifest = container.parsePanelRows(ROWS);
 const sheet = (name) => readFileSync(new URL(`../runtime/atlas-examples/${name}`, import.meta.url));
 
+/**
+ * THE BLANK CONTAINER IS RENDERED HERE, NOT READ FROM A PINNED PNG.
+ *
+ * It used to slice `atlas-examples/panel-proof-container-template.png`, a
+ * pre-rendered sheet — and that file stopped being what the code draws the
+ * moment the cell gap moved (the height tags needed 56px of clearance, not 42,
+ * or their leading digits clipped). The cells this test computes then landed on
+ * the fixture's gutters and two of them convicted, reporting the LAYOUT CHANGE
+ * as a gate failure.
+ *
+ * A fixture that is not the real thing cannot test the real thing — the fifth
+ * time this repository has recorded that shape. The blank container for THIS
+ * manifest is one call away, so there is no reason to hold a stale copy of it.
+ */
+const blankContainer = () => container.renderContainerTemplate({
+  manifest, companyName: "BRIGHT SMILES DENTAL", vehicle: "2012 TOYOTA PRIUS", bleedInches: 5,
+});
+
 test("SLICING ALONE PASSES A BLANK PROOF — ink is the discriminator", async () => {
   // This is the whole reason the gate measures ink at all, and it was found by
   // running the gate rather than by reasoning about it. Every predicate
@@ -26,8 +44,7 @@ test("SLICING ALONE PASSES A BLANK PROOF — ink is the discriminator", async ()
   // white panel cell is not a hole by any of them. A gate that only sliced
   // would wave a proof with six blank boxes straight through -- the efca5e03
   // shape, where a luma-88 surround scored 0.073 against a 0.35 limit.
-  const empty = await gate.inspectProofZones({
-    proofBytes: sheet("panel-proof-container-template.png"), manifest });
+  const empty = await gate.inspectProofZones({ proofBytes: await blankContainer(), manifest });
   assert.equal(empty.blocking.length, 0,
     "if the imported predicates ever DO convict the blank container, this comment is stale");
   for (const cell of empty.cells) {

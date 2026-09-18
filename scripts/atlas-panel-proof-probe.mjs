@@ -321,12 +321,54 @@ async function measure(bytes) {
     console.log(`could not measure the returned sheet: ${String(error?.message || error)}`);
   }
 
+  // ── THE DOCUMENT IS COMPOSITED, NEVER PROMPTED ──────────────────────────
+  //
+  // The model returns ARTWORK in three bands; every caption, figure, note and
+  // legend is drawn here from this request's own manifest. Live 35393135814 is
+  // why: one 141 x 78 request came back reading 195.7 x 89.6 in Zone 1,
+  // 155.7 x 49.6 in Zone 2 and 105.7 x 49.6 in its own reference table, with
+  // template notes reading "Drop-impertanli zlomadte onteed". Baking the figures
+  // into the attached container had already shipped and did not help — that
+  // container carried "141.0" ten times — because the model redraws the document
+  // rather than filling it. A number the model never types cannot come back
+  // wrong. RestylePro reached the same answer and states it: the sheet's
+  // furniture is DRAWN, "so they cannot be hallucinated".
+  //
+  // It fails SOFT. The raw sheet is already written and hash-verified above; a
+  // compositor fault must cost the document, never the run whose design is the
+  // thing being judged.
+  let composed = null;
+  try {
+    const { composeProofChrome } = require("../runtime/atlas-proof-compose.cjs");
+    const { parsePanelRows } = require("../runtime/atlas-proof-container-template.cjs");
+    const parsed = payload.intake || seen;
+    const out = await composeProofChrome({
+      proofBytes: bytes,
+      manifest: parsePanelRows(request.panelRows),
+      companyName: parsed?.companyName || "",
+      vehicle: [parsed?.vehicleYear, parsed?.vehicleMake, parsed?.vehicleModel]
+        .filter(Boolean).join(" ") || vehicle,
+      bleedInches: 5,
+      job: { date: request.proofDate, order: request.orderNumber,
+        designer: request.designer, version: request.proofVersion },
+      sharp: require("../runtime/node_modules/sharp"),
+    });
+    writeFileSync(path.join(outDir, "panel-production-proof-composed.png"), out.bytes);
+    composed = { contract: out.contract, width: out.width, height: out.height,
+      designAspect: out.designAspect, sheetAspect: out.sheetAspect };
+    console.log(`document composited at ${out.width}x${out.height} `
+      + `(chrome authored at ${out.designAspect}, sheet came back ${out.sheetAspect})`);
+  } catch (error) {
+    composed = { failed: String(error?.message || error).slice(0, 200) };
+    console.log(`document NOT composited: ${composed.failed}`);
+  }
+
   // The COMPLETE assembled request, so a disagreement about the design is
   // settled on the request rather than on impressions of the output.
   writeFileSync(path.join(outDir, "prompt.txt"), payload.prompt);
   writeFileSync(path.join(outDir, "evidence.json"), JSON.stringify({
     contract: payload.contract, model: payload.model,
-    proofSha256: payload.proofSha256, proofByteSize: payload.proofByteSize, returned,
+    proofSha256: payload.proofSha256, proofByteSize: payload.proofByteSize, returned, composed,
     promptChars: payload.promptChars, attachedInputs: payload.attachedInputs,
     thoughtSignatureCount: payload.thoughtSignatureCount,
     elapsedMs: payload.elapsedMs, totalMs: Date.now() - started, request,
@@ -383,7 +425,13 @@ async function measure(bytes) {
     console.log("\ndie-cut gate: clean — no page-coloured opening enclosed by artwork in either panel zone");
   }
 
-  console.log(`\nJUDGE THE SHEET, NOT THIS LOG. panel-proof-probe/panel-production-proof.png`);
+  // AND NAME THE COMPOSITED ONE FIRST, because it is the deliverable. The raw
+  // sheet stays beside it: it is what the model actually drew, which is the only
+  // thing that answers "is the design good" — and it is what the die-cut gate
+  // above measured, since the chrome would cover part of what it looks at.
+  console.log(`\nJUDGE THE SHEET, NOT THIS LOG.`);
+  console.log(`  delivered: panel-proof-probe/panel-production-proof-composed.png`);
+  console.log(`  as drawn:  panel-proof-probe/panel-production-proof.png`);
 })().catch((error) => {
   console.error(String(error?.message || error));
   process.exit(1);

@@ -192,6 +192,7 @@ jobs:
           tar -cz --exclude runtime/node_modules \
             scripts/atlas-panel-proof-probe.mjs \
             runtime/atlas-proof-container-template.cjs \
+            runtime/atlas-proof-compose.cjs \
             runtime/atlas-intake-parse.cjs \
             runtime/atlas-proof-diecut.cjs \
             runtime/atlas-panel-proof-contract.cjs \

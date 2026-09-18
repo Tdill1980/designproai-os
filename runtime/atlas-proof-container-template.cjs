@@ -30,7 +30,14 @@
  * attachments agree on geometry and the request's aspectRatio agrees with both.
  */
 
-const sharp = require("sharp");
+// SHARP IS REQUIRED LAZILY, INSIDE THE RASTERISER THAT NEEDS IT.
+//
+// This module's whole point is that `containerSvg` is pure -- the half that can
+// also run in Deno, where sharp cannot load at all. A top-level require made
+// that false at MODULE level: importing the file to call the pure function
+// still needed libvips, so the "portable half" could not be loaded anywhere the
+// rasteriser could not run. Found by a workspace with no node_modules, which is
+// exactly the condition the edge twin lives in permanently.
 
 const CONTAINER_CONTRACT = "designpro.atlas-proof-container-template.v1";
 const WIDTH = 1536;
@@ -60,6 +67,19 @@ const esc = (v) => String(v == null ? "" : v)
 
 const r1 = (n) => (Math.round(Number(n) * 10) / 10).toFixed(1);
 
+// A KNOCK-OUT NARROWER THAN ITS OWN TEXT IS INVISIBLE UNTIL SOMETHING IS BEHIND IT.
+// The height figure is drawn right-anchored at x-3 behind a white tag, and the tag
+// was a fixed 34px while "141.0"" measures ~34 and "78.0"" ~28 -- so the leading
+// digits fell OUTSIDE the tag. On the template alone the neighbour cell is white,
+// so dark ink on white read perfectly and every render looked correct. Composited
+// over the model's artwork the same glyphs are dark on dark green, and the live
+// sheet read "8.0"", "2.0"" and "6.0"" for 68, 42 and 36 -- indistinguishable from
+// the dimension hallucination this whole change exists to remove.
+// 5.6 is the per-character advance measured on the embedded face at these sizes,
+// rounded up; over-wide is a slightly larger white tag, under-wide is a wrong number.
+const CHAR_ADVANCE = 5.6;
+const textWidth = (value, size) => String(value).length * CHAR_ADVANCE * (size / 9.5);
+
 function text(x, y, value, { size = 11, fill = INK, weight = 400, anchor = "start", spacing = 0 } = {}) {
   return `<text x="${x}" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="${size}"`
     + ` font-weight="${weight}" fill="${fill}" text-anchor="${anchor}"`
@@ -79,25 +99,29 @@ function zoneBand(x, y, w, colour, title, note) {
  * on the line -- because that is the drafting convention the contract asks the
  * model to follow, and showing it is worth more than describing it.
  */
-function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimension = true }) {
-  const out = [`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#ffffff" stroke="${FRAME}" stroke-width="1"/>`];
+function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimension = true, fill = "#ffffff" }) {
+  const out = [`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" stroke="${FRAME}" stroke-width="1"/>`];
   if (dimension && widthIn != null) {
     const dy = y - 12;
+    const label = `${r1(widthIn)}"`;
+    const tw = textWidth(label, 9.5) + 8;
     out.push(`<line x1="${x}" y1="${dy}" x2="${x + w}" y2="${dy}" stroke="${INK}" stroke-width="0.8"/>`,
       `<line x1="${x}" y1="${dy - 4}" x2="${x}" y2="${dy + 4}" stroke="${INK}" stroke-width="0.8"/>`,
       `<line x1="${x + w}" y1="${dy - 4}" x2="${x + w}" y2="${dy + 4}" stroke="${INK}" stroke-width="0.8"/>`,
       `<line x1="${x}" y1="${dy}" x2="${x}" y2="${y}" stroke="${RULE}" stroke-width="0.5"/>`,
       `<line x1="${x + w}" y1="${dy}" x2="${x + w}" y2="${y}" stroke="${RULE}" stroke-width="0.5"/>`,
-      `<rect x="${x + w / 2 - 22}" y="${dy - 7}" width="44" height="12" fill="#ffffff"/>`,
-      text(x + w / 2, dy + 3.5, `${r1(widthIn)}"`, { size: 9.5, anchor: "middle" }));
+      `<rect x="${x + w / 2 - tw / 2}" y="${dy - 7}" width="${tw}" height="12" fill="#ffffff"/>`,
+      text(x + w / 2, dy + 3.5, label, { size: 9.5, anchor: "middle" }));
   }
   if (dimension && heightIn != null) {
     const dx = x - 12;
+    const label = `${r1(heightIn)}"`;
+    const tw = textWidth(label, 9.5) + 8;
     out.push(`<line x1="${dx}" y1="${y}" x2="${dx}" y2="${y + h}" stroke="${INK}" stroke-width="0.8"/>`,
       `<line x1="${dx - 4}" y1="${y}" x2="${dx + 4}" y2="${y}" stroke="${INK}" stroke-width="0.8"/>`,
       `<line x1="${dx - 4}" y1="${y + h}" x2="${dx + 4}" y2="${y + h}" stroke="${INK}" stroke-width="0.8"/>`,
-      `<rect x="${dx - 20}" y="${y + h / 2 - 6}" width="34" height="12" fill="#ffffff"/>`,
-      text(dx - 3, y + h / 2 + 3.5, `${r1(heightIn)}"`, { size: 9.5, anchor: "end" }));
+      `<rect x="${dx - tw}" y="${y + h / 2 - 6}" width="${tw}" height="12" fill="#ffffff"/>`,
+      text(dx - 4, y + h / 2 + 3.5, label, { size: 9.5, anchor: "end" }));
   }
   out.push(text(x + w / 2, y + h + 15, caption, { size: 10, weight: 700, anchor: "middle" }));
   detail.forEach((line, i) => out.push(
@@ -106,12 +130,14 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
 }
 
 /** Lay six cells across a band, each scaled to its own proportion. */
-// GAP 42, NOT 22, AND IT IS THE HEIGHT LABEL THAT SETS IT. panelCell draws the
-// height dimension at x-12 behind a knock-out box reaching x-32, so a 22px gap
-// put every label except the first one 10px INSIDE the previous panel. Measured
-// on the first render: the passenger, hood, front and rear figures all collided.
-// The clearance the label needs is 32px plus air; anything below that silently
-// overprints, which on a teaching input is a sheet that teaches a collision.
+// GAP 56, AND IT IS THE HEIGHT LABEL THAT SETS IT. panelCell draws the height
+// dimension at x-12 behind a knock-out sized from the text, so the widest figure
+// this sheet carries ("141.0"", 41.6px of tag) reaches x-53.6. Anything narrower
+// than that puts the tag INSIDE the previous cell, where it either overprints a
+// neighbouring dimension (the 22px original) or -- once artwork is composited
+// behind it -- clips the leading digits off a correct number (the 42px second
+// attempt, which read "8.0"" for 68). The gap is derived from the label, not
+// chosen: raise the figures' size or add a digit and this must move with it.
 /**
  * WHERE the cells go. Pure geometry, no drawing -- and it is SEPARATE from the
  * drawing on purpose.
@@ -125,7 +151,7 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
  * drawing and the checking drift apart; RULE 0.27's "the code owns the
  * geometry" applied to validation rather than to authoring.
  */
-function layoutRow(surfaces, { top, height, left = 54, right = 1482, gap = 42 }) {
+function layoutRow(surfaces, { top, height, left = 56, right = 1482, gap = 56 }) {
   const usable = right - left - gap * (surfaces.length - 1);
   const totalW = surfaces.reduce((sum, s) => sum + s.widthIn, 0);
   let x = left;
@@ -146,6 +172,7 @@ function row(surfaces, opts) {
     widthIn: cell.widthIn, heightIn: cell.heightIn,
     caption: LABEL[cell.surfaceKey] || cell.surfaceKey.toUpperCase(),
     detail: detail ? detail(cell) : [],
+    fill: opts.fill,
   })).join("");
 }
 
@@ -204,6 +231,35 @@ function surfacesFrom(manifest = {}) {
 }
 
 /**
+ * TWO MODES, ONE DRAWING.
+ *
+ * "template" is the blank sheet shown to the model. "chrome" is the SAME
+ * drawing with every opaque ground removed, so it can be composited OVER the
+ * artwork the model returns.
+ *
+ * WHY THAT EXISTS. Live sheet 35393135814 printed the driver panel as
+ * 195.7" x 89.6" in Zone 1, 155.7" x 49.6" in Zone 2 and 105.7" x 49.6" in its
+ * own reference table -- against a request that said 141 x 78 and a container
+ * with "141.0" burned into it TEN times and "78.0" TWELVE times. The template
+ * notes and the guide legend came back as word-salad ("Drop-impertanli
+ * zlomadte onteed: 1" frore the ican lew").
+ *
+ * So baking the numbers into the attachment was already done and did not work,
+ * because the model does not FILL the template -- it redraws a picture that
+ * resembles it, and every glyph in that picture is re-typed. A 8px numeral
+ * re-typed by a diffusion model is a guess with a plausible shape.
+ *
+ * The answer is RestylePro's, which solved this exact problem and states it in
+ * as many words (RULE 1 -- recover before you invent): "the sheet is assembled
+ * by CODE ... Header, footer, tile labels and per-tile GENIE callouts are
+ * DRAWN, never prompted, SO THEY CANNOT BE HALLUCINATED."
+ *
+ * A number the model never types is a number it cannot get wrong. Nothing about
+ * the ARTWORK changes -- the company name, the contact line and the service
+ * strings stay model-drawn, because those came back perfect on every live sheet
+ * and they belong to the design.
+ */
+/**
  * THE SVG IS BUILT PURELY, AND THE RASTERISER IS THE ONLY PART THAT IS NOT.
  *
  * Split out so the SAME drawing can run in the edge function. I said for three
@@ -212,7 +268,10 @@ function surfacesFrom(manifest = {}) {
  * concatenation with no dependency at all, and resvg-wasm rasterises it in
  * Deno. Separating the two makes the portable half portable.
  */
-function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5 } = {}) {
+function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5,
+  mode = "template", job = {} } = {}) {
+  const chrome = mode === "chrome";
+  const ground = chrome ? "none" : "#ffffff";
   const surfaces = surfacesFrom(manifest);
   if (surfaces.length !== 6) {
     throw new Error(`atlas_container_template_needs_six_surfaces:${surfaces.length}`);
@@ -244,8 +303,32 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (s.widthIn * s.heightIn) / 144, 0);
   const m = [];
 
+  // ── the knock-out, in chrome mode only ──────────────────────────────────
+  //
+  // THE MODEL'S OWN METADATA IS COVERED, NOT ARGUED WITH. Compositing code-drawn
+  // captions over a sheet that still carries the model's produces the doubling
+  // measured on 35393135814's composite: "DRIVER SIDEDRIVER SIDE", two sets of
+  // dimensions, "Cedar & Stone Tree Caree". The prompt now asks for artwork
+  // only, and this makes that instruction unnecessary to obey.
+  //
+  // EVERY ONE OF THESE RECTANGLES IS DOCUMENT MARGIN — the header above the
+  // first band, the caption strips BETWEEN bands, and the reference/notes/legend
+  // block below the last one. No panel occupies any of them in the container,
+  // and no live sheet has drawn artwork into one. The bands themselves are never
+  // knocked out, which is why the artwork survives.
+  if (chrome) {
+    for (const [kx, ky, kw, kh] of [
+      [0, 0, WIDTH, 100],        // header and job block
+      [0, 300, WIDTH, 70],       // under zone 1
+      [0, 564, WIDTH, 82],       // under zone 2
+      [0, 778, WIDTH, HEIGHT - 778], // zone 3 captions, reference row, notes, legend, footer
+    ]) {
+      m.push(`<rect x="${kx}" y="${ky}" width="${kw}" height="${kh}" fill="#ffffff"/>`);
+    }
+  }
+
   // ── header ───────────────────────────────────────────────────────────────
-  m.push(`<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="#ffffff"/>`);
+  if (!chrome) m.push(`<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="#ffffff"/>`);
   m.push(text(54, 44, companyName || "COMPANY NAME", { size: 23, weight: 700, spacing: 0.2 }));
   m.push(text(54, 61, "VEHICLE WRAP PRODUCTION TEMPLATE", { size: 9, fill: MUTED, spacing: 1.3 }));
   m.push(text(WIDTH / 2, 44, "2D PRODUCTION PROOF", { size: 21, weight: 700, anchor: "middle", spacing: 0.4 }));
@@ -254,9 +337,16 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
     + `  |  EVERY PANEL DIMENSIONED BY GENIE  |  ${bleedInches}" BLEED ON ALL FOUR EDGES`,
     { size: 8.5, fill: MUTED, anchor: "middle", spacing: 0.3 }));
   m.push(`<rect x="1180" y="22" width="302" height="62" fill="none" stroke="${RULE}" stroke-width="1"/>`);
-  ["DATE:", "ORDER #:", "DESIGNER:", "VERSION:"].forEach((k, i) => {
+  // THE JOB BLOCK IS FILLED BY CODE WHEN THE REQUEST CARRIES IT, and left as a
+  // ruled line when it does not. The prompt used to ask the model for these four
+  // values; once the document became the code's job that instruction was one the
+  // model is told to ignore, and deleting it without drawing them here would
+  // have silently dropped a supplied order number off the sheet.
+  [["DATE:", job.date], ["ORDER #:", job.order], ["DESIGNER:", job.designer],
+    ["VERSION:", job.version]].forEach(([k, v], i) => {
     m.push(text(1192, 38 + i * 14, k, { size: 8.5, fill: MUTED }));
-    m.push(`<line x1="1258" y1="${41 + i * 14}" x2="1470" y2="${41 + i * 14}" stroke="${RULE}" stroke-width="0.7"/>`);
+    if (v) m.push(text(1262, 38 + i * 14, v, { size: 8.5 }));
+    else m.push(`<line x1="1258" y1="${41 + i * 14}" x2="1470" y2="${41 + i * 14}" stroke="${RULE}" stroke-width="0.7"/>`);
   });
   m.push(`<line x1="0" y1="96" x2="${WIDTH}" y2="96" stroke="${INK}" stroke-width="1.5"/>`);
 
@@ -264,13 +354,13 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
     "6 PANELS — COMPLETE WRAP ARTWORK"));
-  m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail }));
+  m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail, fill: ground }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
     "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
     "6 PANELS — BACKGROUND ARTWORK ONLY"));
-  m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail }));
+  m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,
@@ -285,7 +375,7 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   ];
   let sx = 54;
   for (const slot of slots) {
-    m.push(`<rect x="${sx}" y="690" width="${slot.w}" height="86" fill="#ffffff" stroke="${FRAME}"`
+    m.push(`<rect x="${sx}" y="690" width="${slot.w}" height="86" fill="${ground}" stroke="${FRAME}"`
       + ` stroke-width="1" stroke-dasharray="5 4"/>`);
     m.push(text(sx + slot.w / 2, 792, slot.caption, { size: 9.5, weight: 700, anchor: "middle" }));
     m.push(text(sx + slot.w / 2, 803, slot.note, { size: 7.5, fill: MUTED, anchor: "middle" }));
@@ -324,12 +414,13 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
     { size: 9, fill: MUTED }));
   m.push(text(WIDTH - 54, 962, CONTAINER_CONTRACT, { size: 8, fill: MUTED, anchor: "end" }));
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">`
-    + `<rect width="100%" height="100%" fill="#ffffff"/>${m.join("")}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">`
+    + (chrome ? "" : `<rect width="100%" height="100%" fill="#ffffff"/>`) + `${m.join("")}</svg>`;
 }
 
 /** Rasterise with sharp. The runtime half; the edge uses resvg-wasm instead. */
 async function renderContainerTemplate(options = {}) {
+  const sharp = require("sharp");
   const svg = containerSvg(options);
   return sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } })
     .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])

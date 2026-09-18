@@ -19,6 +19,7 @@ import { loadDesignIQ, ATLAS_PANELS } from "./helpers/load-designiq.mjs";
 
 const require = createRequire(import.meta.url);
 const runtime = require("../runtime/atlas-panel-proof-contract.cjs");
+const containerTemplate = require("../runtime/atlas-proof-container-template.cjs");
 const edgeSource = readFileSync(
   new URL("../supabase/functions/_shared/atlas-panel-proof-prompt.ts", import.meta.url), "utf8");
 
@@ -82,7 +83,22 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // The object class is the whole point of this contract: every previous
   // experiment changed the ask while keeping the object a bare artboard.
   assert.match(runtime.SYSTEM_JOB, /VEHICLE WRAP PANEL PRODUCTION PROOF/);
-  assert.match(runtime.SYSTEM_JOB, /the document a print shop receives/);
+
+  // THE ASK IS NOW THE ARTWORK, NOT THE DOCUMENT — and that is the fix for the
+  // owner's "dimension hallucination", so it is asserted rather than assumed.
+  // This used to pin "the document a print shop receives", which asked the model
+  // to DRAW the header, the captions and every figure. It did, and live sheet
+  // 35393135814 answered one 141 x 78 request with 195.7 x 89.6 in Zone 1,
+  // 155.7 x 49.6 in Zone 2 and 105.7 x 49.6 in its own reference table — three
+  // answers to one question. Baking the numbers into the attachment had already
+  // been shipped and did not help (that container carried "141.0" ten times),
+  // because the model redraws the document rather than filling it.
+  // A number the model never types is a number it cannot get wrong, so the
+  // document is composited by code and the ask is the panels alone.
+  assert.match(runtime.SYSTEM_JOB, /DRAW ONLY THE PANELS/);
+  assert.match(runtime.SYSTEM_JOB, /printed onto this\s+sheet by the press/,
+    "the model must be told the document arrives after it, not that it draws one");
+  assert.match(runtime.SYSTEM_JOB, /not a panel plain white/);
 
   // A positive physical fact, never a prohibition. "Do not draw wheel arches"
   // is the negative shape CLAUDE.md warns about in four places and which has
@@ -180,12 +196,30 @@ test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
   // by their titles and tells the model to fill the sheet rather than describing
   // a layout it can already see. Describing it twice was budget the designer
   // needed: the proof shipped with zero characters of A.C.E. to stay under 4000.
-  assert.match(prompt, /each band titled exactly as written/);
-  assert.match(prompt, /Fill the attached template; do not re-flow it/);
-  // The reference row is DRAWN on the attached container, so the prompt points
-  // at it rather than re-describing the sheet it is looking at.
-  assert.match(prompt, /identical in every zone and in the reference row/);
-  assert.match(prompt, /BS-2012PRIUS-01/, "the job block must reach the header");
+  assert.match(prompt, /THE THREE BANDS, in this order:/);
+  assert.match(prompt, /Fill the attached template; do not re-flow it/,
+    "the chrome is composited at the container's own cell positions, so a re-flow "
+    + "puts every caption under the wrong panel");
+
+  // THE JOB BLOCK LEFT THE PROMPT AND MUST LAND ON THE SHEET ANYWAY. It used to
+  // be asserted here, and once the model was told to draw no document that
+  // instruction became one it is told to ignore — so the order number has to be
+  // drawn by the compositor instead, or removing the ask silently loses it.
+  // Asserting the prompt no longer carries it WITHOUT asserting the sheet does
+  // is how a field disappears while every test stays green.
+  assert.doesNotMatch(prompt, /JOB BLOCK/,
+    "the code draws the job block; asking the model for it is noise in the design's budget");
+  const chrome = containerTemplate.containerSvg({
+    manifest: containerTemplate.parsePanelRows([
+      'DRIVER: 165.7" wide x 49.6" high', 'PASSENGER: 165.7" wide x 49.6" high',
+      'ROOF: 110.2" wide x 55.1" high', 'HOOD: 55.9" wide x 48.0" high',
+      'FRONT: 50.0" wide x 22.0" high', 'REAR: 55.1" wide x 30.7" high',
+    ]),
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", mode: "chrome",
+    job: { date: "2026-09-18", order: "BS-2012PRIUS-01", designer: "A.L.", version: "1.0" },
+  });
+  assert.ok(chrome.includes("BS-2012PRIUS-01"), "the job block must reach the header the code draws");
+  assert.ok(chrome.includes("A.L."), "every supplied job field must be drawn, not just the order");
 
   // THE COORDINATE TABLE MUST NEVER REACH CALL 1. atlasFieldContract emitted
   // bare four-decimal rows and FOUR consecutive live runs painted those digits
