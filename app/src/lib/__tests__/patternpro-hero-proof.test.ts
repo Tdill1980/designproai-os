@@ -73,7 +73,7 @@ describe('the curator can swap the pair without a deploy', () => {
   it('is admitted by the database, not just by the UI', () => {
     // A tool key the CHECK constraint refuses would let a curator fill in the
     // form and fail on save.
-    const migration = source('../../../../supabase/migrations/20260917230000_wallpro_proofs_patternpro.sql');
+    const migration = source('../../../../supabase/migrations/20260917234500_wallpro_proofs_patternpro.sql');
     expect(migration).toMatch(/CHECK \(tool_key IN \('vehiclepro', 'wallpro', 'cutpro', 'patternpro'\)\)/);
     // The inline constraint's name is generated, so it is dropped by INSPECTION
     // and replaced by a named one -- which is also what makes this idempotent.
