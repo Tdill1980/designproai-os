@@ -20,6 +20,7 @@
  * bar is white with the partner's coloured mark top-left, and the only dark
  * thing above the fold is the ink. Same lockup, same rule, different tone.
  */
+import { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { RotateCcw, FolderOpen, ArrowRight } from 'lucide-react';
@@ -28,7 +29,9 @@ import { WBTYToolUI } from '@/components/productTools/WBTYToolUI';
 import { ToolContainer } from '@/components/layout/ToolContainer';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { useStickyOffset } from '@/lib/use-sticky-offset';
-import { patternBrand, type PatternBrandKey } from '@/lib/patternpro-brand';
+import { patternBrand, PATTERN_HERO_PROOF, type PatternBrandKey } from '@/lib/patternpro-brand';
+import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
+import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
 import './PatternWrap.css';
 
 export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBrandKey } = {}) {
@@ -36,6 +39,32 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
   const stickyTop = useStickyOffset('pattern-header');
   const partner = brand !== 'designpro';
   const light = theme.surface === 'light';
+  /**
+   * The hero's before/after pairs. Curated rows win — /admin/wallpro-proofs
+   * carries a PatternPro tab, so the pair is swappable with no deploy — and
+   * PATTERN_HERO_PROOF is the floor, so the slider is there on a first load,
+   * signed out, or when the request fails. Both brands read the same rows for
+   * the same reason both brands are this one component.
+   */
+  const [curated, setCurated] = useState<typeof PATTERN_HERO_PROOF[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const rows = await listWallProofs('patternpro', brand === 'designpro' ? 'designpro' : 'weprintwraps');
+        if (!live || !rows.length) return;
+        setCurated(rows.map(r => ({
+          before: wallProofUrl(r.before_path),
+          after: wallProofUrl(r.after_path),
+          alt: r.alt || 'A vehicle before and after its pattern wrap',
+          headline: r.headline || 'Proofed in PatternPro.',
+          caption: r.caption || '',
+        })));
+      } catch { /* the bundled pair is the floor; the hero never goes empty */ }
+    })();
+    return () => { live = false; };
+  }, [brand]);
+  const heroProofs = useMemo(() => curated ?? [PATTERN_HERO_PROOF], [curated]);
 
   return (
     // THE THEME SCOPE, same attribute and same token set WallPro uses, so the two
@@ -107,12 +136,32 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
         </div>
         {theme.hero && (
           <div className="relative">
+            {/* THE HERO IS DRAGGABLE (owner, 2026-09-17: "must have the
+                draggable tool ... on the patternpro page", for "both wpw
+                version and standard").
+
+                A render of a wrapped truck is a picture of a wrapped truck. The
+                SAME truck bare and then wrapped is what PatternPro sells, and
+                the wipe makes that argument in a second. The slider is the one
+                WallPro already uses, mounted in its `fill` variant inside a box
+                that owns the hero's shape — not a second implementation.
+
+                Curated rows win; PATTERN_HERO_PROOF is the floor. The static
+                render stays as the last resort, so a failed request or an
+                unreachable stock photo still shows the vehicle rather than an
+                empty frame. */}
+            {heroProofs.length > 0 ? (
+              <div className="relative aspect-[1400/788] w-full overflow-hidden rounded-2xl border wall-edge shadow-xl">
+                <WallProHeroProof proofs={heroProofs} variant="fill" />
+              </div>
+            ) : (
             <img
               src={theme.hero.main}
               alt={theme.hero.alt}
               className="w-full rounded-2xl border wall-edge shadow-xl"
               loading="eager"
             />
+            )}
             {/* The swatch CARD the render was made from, over the truck's corner:
                 this pattern, that vehicle. Its own proportions, because the
                 pattern's name is printed along the card's bottom edge and a

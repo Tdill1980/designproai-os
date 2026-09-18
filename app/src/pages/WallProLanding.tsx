@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles, Ruler, FileCheck2, ShieldCheck, Upload, UploadCloud, Scan, Layers, LayoutGrid, Scaling, Download, Image as ImageIcon, PlayCircle, Film, Menu, X } from 'lucide-react';
@@ -6,6 +6,8 @@ import { useWallProLandingMedia } from '@/hooks/useWallProLandingMedia';
 import { EXAMPLE_KEYS, type LandingMedia } from '@/lib/wallpro-landing-content';
 import { OS_BRAND } from '@/lib/os-brand';
 import { wallBrand, type WallBrandKey } from '@/lib/wallpro-brand';
+import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
+import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
 import './wallpro-landing.css';
 
 /**
@@ -218,6 +220,54 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
      hero it had just been removed from. It shows whichever example is
      selected, so the tile agrees with the slide the visitor is looking at. */
   const result = active;
+  /**
+   * THE HERO'S PAIRS ARE CURATED, NOT HARD-CODED (owner, 2026-09-17: "tell me
+   * if I can swap out in an admin page").
+   *
+   * She can: /admin/wallpro-proofs writes before/after rows per brand, and the
+   * tool page has read them for as long as they have existed. The landing was
+   * about to read the BUNDLED list only, which would have made that admin page
+   * a liar for this surface — she would upload a pair, the tool would change
+   * and the hero she is filming would not.
+   *
+   * Rows win when they exist; the bundle answers when they do not, so a signed
+   * -out visitor or a failed request still gets a hero rather than an empty
+   * panel. Exactly the fallback the tool page already uses, for the same
+   * reason.
+   */
+  const [curatedProofs, setCuratedProofs] = useState<typeof theme.proofs | null>(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const rows = await listWallProofs('wallpro', brand);
+        if (!live || !rows.length) return;
+        setCuratedProofs(rows.map(r => ({
+          before: wallProofUrl(r.before_path),
+          after: wallProofUrl(r.after_path),
+          alt: r.alt || 'A wall before and after its printed covering',
+          headline: r.headline || 'Designed in WallPro.',
+          caption: r.caption || '',
+        })));
+      } catch { /* the bundled pairs are the floor; a hero never goes empty */ }
+    })();
+    return () => { live = false; };
+  }, [brand]);
+  /**
+   * The pairs the hero slider shows. The brand's proof list is the source —
+   * the same rooms the tool page's band already carries, so the landing and the
+   * tool cannot show different work.
+   *
+   * The owner's own home spa is filtered out for the reason the rest of this
+   * page filters it out (2026-09-17: "remove my photo from the hero just show
+   * the others"): it is this product's measured scale reference, not a
+   * portfolio piece. Filtering by the proof's own `before` path keeps that
+   * decision in one readable place instead of renumbering the brand table.
+   */
+  const heroProofs = useMemo(
+    () => (curatedProofs ?? theme.proofs).filter(p => !p.before.includes('proof-spa') && !p.after.includes('proof-spa')),
+    [curatedProofs, theme.proofs],
+  );
   const watchHref = media.process.enabled ? '#project' : '#workflow';
   // WPW pages light, DesignProAI pages dark navy on charcoal — main's own
   // house rule (#461), applied to the landing as one extra class.
@@ -263,7 +313,23 @@ export default function WallProLanding({ brand = 'designpro' }: { brand?: WallBr
     </header>
     <main>
       <section className="wl-hero" aria-labelledby="wl-heading">
-        {active && <div className="wl-hero-image"><img key={active.src} src={active.src} alt={active.alt} fetchPriority="high" /><div className="wl-hero-shade" /><div className="wl-room-caption" aria-live="polite"><strong>{active.title}</strong><span>{active.caption}</span></div>{slides.length > 1 && <div className="wl-arrows"><button aria-label="Previous room" onClick={() => changeSlide(-1)}><ChevronLeft /></button><button aria-label="Next room" onClick={() => changeSlide(1)}><ChevronRight /></button></div>}</div>}
+        {/* THE HERO IS A BEFORE AND AFTER THE VISITOR CAN DRAG (owner,
+            2026-09-17: "both need to be in hero as a before and after like you
+            did where its draggable").
+
+            A finished room is a photograph of a nice room; the same wall bare
+            and then wrapped is the product's whole argument, and it is made in
+            the time it takes to drag a handle. The band already exists, proven
+            on the tool page, so it is MOUNTED here in its `fill` variant rather
+            than rebuilt — same maths, same keyboard handling, same cycling
+            through however many pairs the brand carries.
+
+            It falls back to the rotating example when a brand has no before/
+            after pair: `WallProHeroProof` renders null rather than broken
+            frames, and a hero that renders nothing is worse than a photograph. */}
+        {heroProofs.length > 0
+          ? <div className="wl-hero-image wl-hero-compare"><WallProHeroProof proofs={heroProofs} variant="fill" /></div>
+          : active && <div className="wl-hero-image"><img key={active.src} src={active.src} alt={active.alt} fetchPriority="high" /><div className="wl-hero-shade" /><div className="wl-room-caption" aria-live="polite"><strong>{active.title}</strong><span>{active.caption}</span></div>{slides.length > 1 && <div className="wl-arrows"><button aria-label="Previous room" onClick={() => changeSlide(-1)}><ChevronLeft /></button><button aria-label="Next room" onClick={() => changeSlide(1)}><ChevronRight /></button></div>}</div>}
         <div className="wl-hero-copy"><p className="wl-eyebrow">Real spaces. Extraordinary walls.</p><h1 id="wl-heading">From a photo<br />to a stunning<br /><span className="wl-gradient-text">wall design.</span></h1><p className="wl-subhead">Design. Visualize. Scale. Get print-ready files.</p><p className="wl-intro">WallPro brings prompt-based design and real-world production together. Create wall graphics for residential, commercial, or retail spaces—ready to print and install.</p><div className="wl-actions"><Link className="wl-button" to={TOOL}>Design your wall <ArrowRight size={19} /></Link><a className="wl-button wl-button-outline" href={watchHref}><PlayCircle size={22} /> {media.process.src && media.process.enabled ? 'Watch overview' : 'See how it works'}</a></div><div className="wl-features">{features.map(({ icon: Icon, title, text }) => <div key={title}><Icon aria-hidden="true" /><span>{title}<br />{text}</span></div>)}</div></div>
       </section>
       <StartDesigning tool={TOOL} before={media.before} />

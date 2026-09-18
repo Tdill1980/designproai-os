@@ -655,7 +655,7 @@ export const WALLPRO_PROOF_BUCKET = 'wallpro-proofs';
 
 /** The three tools this curator table now serves (Trish 2026-09-16: "do the
  *  admin page" -- for VehiclePro and CutPro too, not just WallPro). */
-export type ProofBandToolKey = 'vehiclepro' | 'wallpro' | 'cutpro';
+export type ProofBandToolKey = 'vehiclepro' | 'wallpro' | 'cutpro' | 'patternpro';
 
 export type WallProofRow = {
   id: string;
