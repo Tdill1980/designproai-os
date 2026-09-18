@@ -119,6 +119,106 @@ const PINNED_INPUTS = [
  */
 const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
 
+/**
+ * THE EDGE-SIDE INSPECTOR GATE: the sheet's SHAPE, read without decoding it.
+ *
+ * Owner: the gate must run before the payload reaches the UI, with no stubs.
+ * This is the half of that which can honestly execute inside Deno.
+ *
+ * WHY NOT PIXEL VALIDATION HERE. A returned sheet is 5056x3392 -- 17.15 MP,
+ * measured on d5314267 -- and decoding it with ImageScript costs roughly 69 MB
+ * of RGBA before a single pixel is examined. This repo has a recorded 546 OOM
+ * history with imagescript, and THIS function already died twice on a bodiless
+ * 504 from a 2.2 MB base64 request. A gate that kills the worker rejects every
+ * proof, including the good ones. Deno also cannot load sharp, which is why the
+ * container is rendered on the runtime and crosses as a reference to begin with.
+ *
+ * So the per-panel pixel gate lives on the runtime beside sharp
+ * (`runtime/atlas-proof-panel-locator.cjs`), and what runs HERE needs no decode:
+ * both formats carry their dimensions in a header near the front of the file.
+ *
+ * ⚠️ THE MODEL RETURNS JPEG, NOT PNG, AND THIS FUNCTION HAS BEEN MISLABELLING
+ * IT. The first version of this gate read the PNG IHDR at fixed offsets 16..23
+ * and threw `panel_proof_sheet_not_png` on the real artifact -- which would have
+ * refused EVERY proof the moment it deployed. The file is JFIF: the bytes begin
+ * ff d8 ff e0, and `file` reports "JPEG image data ... 5056x3392". Meanwhile the
+ * upload has always named it `.png` with `contentType: image/png`, so every
+ * stored proof is a JPEG wearing a PNG label. sharp does not care; a browser
+ * download, a RIP or anything trusting the extension does. Both are fixed here.
+ *
+ * WHAT IT ACTUALLY CATCHES, which is not nothing: a re-flowed sheet. Every
+ * coordinate any downstream slicer uses is a FRACTION of the page, so a sheet
+ * returned at a different aspect makes all of them point somewhere else. That
+ * is the single failure mode which silently corrupts every later measurement,
+ * and it is decidable from a handful of bytes.
+ */
+const SHEET_ASPECT = PANEL_PROOF_CONTAINER_TEMPLATE.width / PANEL_PROOF_CONTAINER_TEMPLATE.height;
+const MAX_SHEET_ASPECT_DRIFT = 0.02;
+const MIN_SHEET_MEGAPIXELS = 2;
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** PNG keeps width/height in the IHDR chunk at fixed offsets 16..23. */
+function readPngSize(bytes: Uint8Array) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+/**
+ * JPEG keeps them in a start-of-frame segment, which is NOT at a fixed offset --
+ * the encoder may write any number of APPn/DQT/DRI segments first, so the
+ * segment chain has to be walked. SOF0..SOF15 are 0xC0..0xCF except 0xC4
+ * (Huffman tables), 0xC8 (JPEG extension) and 0xCC (arithmetic conditioning),
+ * which are not frame headers and must be skipped rather than parsed.
+ */
+function readJpegSize(bytes: Uint8Array) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) { offset += 1; continue; }
+    const marker = bytes[offset + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const length = view.getUint16(offset + 2);
+    const isFrame = marker >= 0xc0 && marker <= 0xcf
+      && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isFrame) {
+      return { height: view.getUint16(offset + 5), width: view.getUint16(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  throw new Error("panel_proof_sheet_no_jpeg_frame_header");
+}
+
+function readSheet(bytes: Uint8Array) {
+  if (bytes.length > 24 && PNG_MAGIC.every((b, i) => bytes[i] === b)) {
+    return { format: "png" as const, extension: "png", mime: "image/png", ...readPngSize(bytes) };
+  }
+  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return { format: "jpeg" as const, extension: "jpg", mime: "image/jpeg", ...readJpegSize(bytes) };
+  }
+  throw new Error("panel_proof_sheet_unrecognised_format");
+}
+
+function assertProofSheetShape(bytes: Uint8Array) {
+  const sheet = readSheet(bytes);
+  const megapixels = (sheet.width * sheet.height) / 1e6;
+  if (!Number.isFinite(sheet.width) || !Number.isFinite(sheet.height)
+    || sheet.width < 1 || sheet.height < 1) {
+    throw new Error(`panel_proof_sheet_shape_invalid:${sheet.width}x${sheet.height}`);
+  }
+  if (megapixels < MIN_SHEET_MEGAPIXELS) {
+    throw new Error(`panel_proof_sheet_too_small:${megapixels.toFixed(2)}MP`);
+  }
+  const aspect = sheet.width / sheet.height;
+  if (Math.abs(aspect - SHEET_ASPECT) / SHEET_ASPECT > MAX_SHEET_ASPECT_DRIFT) {
+    throw new Error(`panel_proof_sheet_reflowed:${aspect.toFixed(3)}!=${SHEET_ASPECT.toFixed(3)}`);
+  }
+  return { ...sheet, megapixels: Number(megapixels.toFixed(2)), aspect: Number(aspect.toFixed(3)) };
+}
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -257,10 +357,18 @@ serve(async (req) => {
       throw new Error(`panel_proof_no_image:${payload?.candidates?.[0]?.finishReason || "unknown"}`);
     }
     const bytes = decodeBase64(image.inlineData.data as string);
+
+    // THE GATE RUNS BEFORE ANYTHING IS STORED OR RETURNED. A re-flowed sheet is
+    // refused here rather than handed onward for a downstream slicer to measure
+    // confidently in the wrong places.
+    const sheetShape = assertProofSheetShape(bytes);
+
     const sha256 = await sha256Hex(bytes);
-    const storagePath = `atlas-panel-proof/${sha256}.png`;
+    // NAMED FOR WHAT IT IS. This wrote `.png` with `contentType: image/png`
+    // regardless of what the model returned, and the model returns JFIF.
+    const storagePath = `atlas-panel-proof/${sha256}.${sheetShape.extension}`;
     const { error: upErr } = await svc.storage.from(BUCKET)
-      .upload(storagePath, bytes, { contentType: "image/png", upsert: false });
+      .upload(storagePath, bytes, { contentType: sheetShape.mime, upsert: false });
     if (upErr && !/exists/i.test(String(upErr.message))) throw upErr;
 
     return json({
@@ -271,6 +379,7 @@ serve(async (req) => {
       proofStoragePath: storagePath,
       proofSha256: sha256,
       proofByteSize: bytes.length,
+      sheetShape,
       // The whole assembled ask, so a disagreement about the design is settled
       // on the REQUEST rather than on impressions of the output -- the reason
       // the designiq A/B harness exists at all.

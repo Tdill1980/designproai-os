@@ -204,10 +204,13 @@ const INSTALLATION_FACT = [
  * sections has never produced that failure; a coordinate table has, 4/4.
  */
 const SHEET_LAYOUT = [
-  "THE SHEET, drawn empty on the attached template: a header band (lockup left, 2D PRODUCTION PROOF",
-  "and vehicle centred, job block right); THREE FULL-WIDTH ZONE BANDS stacked down the page, each a",
-  "coloured title bar over its six panels in one row; then a PANEL DIMENSIONS REFERENCE row, TEMPLATE",
-  "NOTES, a GUIDE legend, and a footer. Fill it; do not re-flow it.",
+  "THE SHEET, drawn empty on the attached template: a header band with the job block;",
+  "THREE FULL-WIDTH ZONE BANDS, each a coloured title bar over its six panels in one row;",
+  "then a PANEL DIMENSIONS REFERENCE row, TEMPLATE NOTES, a GUIDE legend, and a footer.",
+  "Fill it; do not re-flow it.",
+  "",
+  "EACH BAND HOLDS THE SIX PANELS NAMED ABOVE, each drawn ONCE, in that order.",
+  "Never repeat a panel, never add a seventh, never leave a box empty.",
   "",
   "DIMENSION IT AS A DRAFTSMAN WOULD: a measured line outside each panel, arrowheads at both ends,",
   "thin extension lines back to the edge, the figure on the line. A shop drawing, not a poster.",
@@ -328,10 +331,9 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   out.push("", "THE DESIGN:", `"${String(creativeDirection || input.brief || "").trim()}"`);
 
   if (strings.length) {
-    out.push("", "EXACT TEXT — reproduce each of these character for character, set in the typefaces the",
-      "design calls for: the company name as a confident display lockup, the contact line and service",
-      "marks in a clean sans that stays legible small. Invent no other words, no other numerals, no",
-      "other address or web address anywhere on the proof:",
+    out.push("", "EXACT TEXT — reproduce each of these character for character: the company name as a",
+      "confident display lockup, the contact line and service marks in a clean sans that stays",
+      "legible small. Invent no other words, numerals, address or web address on the proof:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
 

@@ -367,3 +367,41 @@ test("the prompt names the attachments in the order the function sends them", ()
   assert.ok(standardAt > tail.indexOf("BLANK CONTAINER TEMPLATE"),
     "THE STANDARD TO MATCH must describe the finished proof, never the blank template");
 });
+
+test("the sheet's SHAPE is gated in the edge, and JPEG is what actually comes back", async () => {
+  // Owner: the gate runs before the payload reaches the UI, with no stubs.
+  // This is the half that can honestly execute in Deno -- the pixel gate needs
+  // sharp, which Deno cannot load, and ImageScript decoding the real 17.15 MP
+  // sheet costs ~69 MB of RGBA in a worker that has already died on a 504.
+  const fn = readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  assert.match(fn, /assertProofSheetShape\(bytes\)/, "the gate must run on the returned bytes");
+  assert.ok(fn.indexOf("assertProofSheetShape(bytes)") < fn.indexOf("const storagePath"),
+    "the gate must run BEFORE the sheet is stored or returned");
+  assert.match(fn, /panel_proof_sheet_reflowed/,
+    "a re-flowed sheet makes every fractional coordinate point elsewhere");
+
+  // ⚠️ THE MODEL RETURNS JPEG. The first version of this gate read the PNG IHDR
+  // at fixed offsets and threw on the real artifact -- it would have refused
+  // EVERY proof on deploy. d5314267's bytes begin ff d8 ff e0 and `file` reads
+  // "JPEG image data ... 5056x3392", while the upload named it .png with
+  // contentType image/png. Both halves are fixed; this pins them.
+  assert.match(fn, /readJpegSize/, "the gate must understand the format the model returns");
+  assert.match(fn, /\$\{sha256\}\.\$\{sheetShape\.extension\}/,
+    "a JPEG must not be stored under a .png name");
+  assert.match(fn, /contentType: sheetShape\.mime/,
+    "a JPEG must not be served as image/png");
+  assert.ok(!/\.png`, bytes, \{ contentType: "image\/png"/.test(fn),
+    "the hardcoded png upload must be gone");
+});
+
+test("the six panels are demanded ONCE each, because the live sheet drew FRONT twice", () => {
+  // d5314267: ZONE 1 came back with SEVEN panels -- FRONT at 50.0" x 22.0"
+  // drawn twice -- and ZONE 3 left two of its boxes empty. The contract had no
+  // sentence forbidding either, so the model was not wrong to do it.
+  const prompt = runtime.buildPanelProofPrompt({
+    input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
+  });
+  assert.match(prompt, /each drawn ONCE/);
+  assert.match(prompt, /Never repeat a panel, never add a seventh, never leave a box empty/);
+});
