@@ -206,31 +206,20 @@ const WALL_PROOFS: WallProof[] = [
         headline: 'A training floor, transformed.',
         caption: 'A gym wall in a full-height athletic mural, designed in WallPro. Drag to compare.',
       },
-      {
-        before: '/wallpro/proof-spa-before.jpg',
-        after: '/wallpro/proof-spa-after.jpg',
-        alt: 'A home studio photographed with plain cream walls either side of the window, and again with a dark tropical anthurium mural covering both',
-        headline: 'One wall, one afternoon.',
-        caption: 'A home studio in a dark tropical print, designed in WallPro. Drag to compare.',
-      },
-      {
-        // THE SAME BARE WALL as the entry above, deliberately. One room shown
-        // two ways is the argument this tool actually makes -- the wall did not
-        // change, the design did -- and it is a stronger second slide than a
-        // different room would be, because the visitor has already learned this
-        // room from slide one and can read the change instantly.
-        //
-        // The frame was REGISTERED onto that bare photograph rather than eyed
-        // in: scripts/wallpro-proof-normalize.mjs --align-to, best 0.782 at
-        // 108% scale. WallPro's renders come back framed a few percent wider
-        // than the photograph they were made from, and a few percent is enough
-        // for the sofa to slide under the wipe and read as two rooms.
-        before: '/wallpro/proof-studio-slat-before.jpg',
-        after: '/wallpro/proof-studio-slat-after.jpg',
-        alt: 'The same home studio with plain cream walls, and again with a warm vertical timber-slat wrap running wall to wall behind the window',
-        headline: 'Same wall. Different room.',
-        caption: 'The same studio in a warm timber slat, designed in WallPro. Drag to compare.',
-      },
+      // THE OWNER'S OWN HOME IS NOT A PORTFOLIO (owner, 2026-09-18, seeing it
+      // on the tool page after it had already been taken off the landing:
+      // "somehow it's the old wpw x wallpro page", and earlier "remove my
+      // photo ... just show the others").
+      //
+      // TWO entries were her house, not one: the spa pair and the slat pair are
+      // the SAME home studio shot two ways, which is why removing one of them
+      // earlier was not enough and it reappeared here. Both are gone.
+      //
+      // The files stay on disk. That room is this product's measured scale
+      // reference and the subject of the case study -- evidence, which is a
+      // different job from a showcase slide. Add real customer installs here as
+      // they land; a shorter honest list beats a longer one padded with the
+      // owner's living room.
       // PENDING: the hotel lobby feature wall. Described but its files are not
       // in the repository either. Add the block with its photographs.
 ];
