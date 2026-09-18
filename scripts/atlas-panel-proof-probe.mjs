@@ -147,15 +147,24 @@ async function stagePinnedInputs() {
   }
 }
 
-/** GENIE trim rows for the probe vehicle, in INCHES (never normalized). */
+/**
+ * GENIE trim rows for the probe vehicle, in INCHES (never normalized).
+ *
+ * A 2019 Ford Transit 250 high roof, which is a DIFFERENT SHAPE from the Prius
+ * these were written for — a tall cargo van, so the flanks are nearly square
+ * rather than long and shallow, and the roof is the largest panel on the sheet
+ * instead of one of the smallest. That matters beyond realism: the container is
+ * laid out from these proportions, so a sheet that still looks like the Prius
+ * template is a sheet that ignored its own template.
+ */
 function panelRows() {
   const raw = arg("panels", [
-    "DRIVER: 165.7\" wide x 49.6\" high",
-    "PASSENGER: 165.7\" wide x 49.6\" high",
-    "HOOD: 50\" wide x 41\" high",
-    "ROOF: 43\" wide x 56\" high",
-    "FRONT: 50\" wide x 22\" high",
-    "REAR: 58\" wide x 40\" high",
+    "DRIVER: 141.0\" wide x 78.0\" high",
+    "PASSENGER: 141.0\" wide x 78.0\" high",
+    "HOOD: 66.0\" wide x 42.0\" high",
+    "ROOF: 148.0\" wide x 68.0\" high",
+    "FRONT: 74.0\" wide x 36.0\" high",
+    "REAR: 70.0\" wide x 80.0\" high",
   ].join("|"));
   return String(raw).split("|").map((s) => s.trim()).filter(Boolean);
 }
@@ -213,35 +222,61 @@ async function measure(bytes) {
   console.log("staging pinned multimodal inputs");
   await stagePinnedInputs();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // THE PROBE SENDS A RAW CUSTOMER MESSAGE, NOT A FILLED-IN FORM.
+  //
+  // Owner ruling, Trish 2026-09-18: "you shouldn't test it by giving it the
+  // same design prompt as the example. How are we supposed to validate that it
+  // can design if it's just recreating from the system example."
+  //
+  // She is right, and the old default was worse than that. It read "Bright
+  // Smiles Dental — clean flowing blue and teal wave design, a custom tooth
+  // logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional
+  // photograph of a smiling dental patient in a clinical chair inlaid into the
+  // rear three-quarter of each side panel" — a DESCRIPTION OF THE PINNED
+  // EXAMPLE SHEET, which was attached to the same request as the standard to
+  // match. A model handed a picture and a description of that picture returns
+  // the picture, whether or not there is a designer behind it. That test could
+  // not fail, so it proved nothing.
+  //
+  // EVERYTHING IS DIFFERENT NOW, ON PURPOSE. A different vehicle class (a high-
+  // roof cargo van, not a compact hatchback), a different trade, a different
+  // palette, different imagery, a different promotional line. If the sheet
+  // comes back with blue waves and a tooth, the design is coming from the
+  // attachment and not from the brief — and that is now visible instead of
+  // being hidden by a brief that asked for the attachment.
+  const customerPrompt = arg("customer-prompt",
+    "need a wrap for my 2019 ford transit 250 high roof - company is Cedar & Stone Tree Care, "
+    + "we do tree removal, stump grinding and storm cleanup. want it rugged and outdoorsy, "
+    + "deep forest green with a weathered wood grain texture and a big pine silhouette down "
+    + "the side, kind of like a national park sign. phone 520-555-0192 and cedarandstonetree.com, "
+    + "put FREE ESTIMATES on there");
+
+  // NOTHING ELSE IS SENT. No companyName, no tagline, no services, no promo, no
+  // year/make/model and no creativeDirection — the edge's intake node parses
+  // all of it out of that one sentence, which is the thing being tested. A
+  // field set here would be a field intake never had to find.
   const request = {
-    companyName: arg("company", "Bright Smiles Dental"),
-    // Every literal the wrap carries rides in the exact-text block, not only the
-    // contact bar -- a string the contract does not state is a string the model
-    // invents, which is the premise this probe exists to retest.
-    tagline: arg("tagline", "HEALTHY SMILES BRIGHTER LIVES"),
-    phone: arg("phone", "(520) 555-0192"),
-    website: arg("website", "brightsmiles.com"),
-    services: arg("services", "General Dentistry|Cosmetic|Implants|Emergency Care").split("|"),
-    promo: arg("promo", "NEW PATIENTS WELCOME"),
-    vehicleYear: arg("year", "2012"),
-    vehicleMake: arg("make", "Toyota"),
-    vehicleModel: arg("model", "Prius"),
-    // The header job block the reference sheet carries top-right.
+    customerPrompt,
     proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
-    orderNumber: arg("order", "BS-2012PRIUS-01"),
+    orderNumber: arg("order", "CS-2019TRANSIT-01"),
     designer: arg("designer", "A.L."),
     proofVersion: arg("proof-version", "1.0"),
-    creativeDirection: arg("brief",
-      "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth logo, the tagline "
-      + "HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling dental patient in a "
-      + "clinical chair inlaid into the rear three-quarter of each side panel."),
     panelRows: panelRows(),
   };
+  // THE FALLBACK CONTAINER IS DRAWN FROM THE DETERMINISTIC HALF OF INTAKE, the
+  // same parser the edge runs. The edge draws its own container from its own
+  // parse; this one exists only for a cold isolate that cannot fetch the wasm,
+  // and it must name the same vehicle or the fallback would teach a different
+  // truck than the one requested.
+  const { extractDeterministic } = require("../runtime/atlas-intake-parse.cjs");
+  const seen = extractDeterministic(customerPrompt);
+  const vehicle = [seen.vehicleYear, seen.vehicleMake, seen.vehicleModel].filter(Boolean).join(" ");
   Object.assign(request, await stageContainerTemplate(request.panelRows, {
-    companyName: request.companyName,
-    vehicle: [request.vehicleYear, request.vehicleMake, request.vehicleModel].filter(Boolean).join(" "),
+    companyName: "", vehicle,
   }));
-  console.log(`calling production-panel-proof for the ${request.vehicleYear} ${request.vehicleMake} ${request.vehicleModel}`);
+  console.log(`calling production-panel-proof with a RAW customer message (${customerPrompt.length} chars)`);
+  console.log(`  deterministic parse: ${vehicle} | ${seen.phone} | ${seen.website}`);
 
   const started = Date.now();
   const res = await fetch(`${SUPABASE_URL}/functions/v1/production-panel-proof`, {

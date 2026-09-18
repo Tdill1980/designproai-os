@@ -67,6 +67,59 @@ import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-cont
  * of A.C.E. That is why it returned generic blue waves and stock photography.
  */
 import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
+import {
+  INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
+  extractDeterministic, intakePrompt, mergeIntake,
+} from "../_shared/atlas-intake-parse.ts";
+
+/**
+ * NODE 0 — INTAKE. Raw customer text in, the structured schema out.
+ *
+ * Owner ruling, Trish 2026-09-18: "you shouldn't test it by giving it the same
+ * design prompt as the example ... the pipeline must ingest raw, unstructured
+ * customer natural language and dynamically parse it."
+ *
+ * The deterministic pass has already decided the phone, the web address and the
+ * year/make/model before this runs, and it WINS on conflict — so the one field
+ * class that must never be invented cannot be touched by a model. What this
+ * call decides is only what no regular expression can: where a company name
+ * ends, which words are services, which line is promotional, and which words
+ * are the design brief.
+ *
+ * IT FAILS SOFT, on the WallPro consultant's rule: "no answer, bad JSON or a
+ * timeout and the customer's own words go through unchanged". An intake reader
+ * that is down must not cost a design — the raw message becomes the creative
+ * direction and the deterministic fields still stand.
+ */
+async function parseCustomerIntake(text: string) {
+  const deterministic = extractDeterministic(text);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${INTAKE_MODEL}:generateContent?key=${getGeminiKey()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: intakePrompt(text) }] }],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json",
+            responseSchema: INTAKE_SCHEMA,
+          },
+        }),
+      },
+    );
+    if (!response.ok) throw new Error(`intake_http_${response.status}`);
+    const payload = await response.json();
+    const raw = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
+    return { ...mergeIntake(deterministic, JSON.parse(String(raw || "{}"))), intakeRead: "ok" };
+  } catch (error) {
+    return {
+      ...mergeIntake(deterministic, { creativeDirection: text }),
+      intakeRead: `unavailable:${String((error as Error)?.message || error).slice(0, 80)}`,
+    };
+  }
+}
 
 const BUCKET = "wrap-files";
 
@@ -306,6 +359,19 @@ serve(async (req) => {
   try {
     const body = await req.json();
 
+    // NODE 0 RUNS FIRST, and only when the caller sent raw text. A caller that
+    // already holds structured fields — the real order form, once it exists —
+    // skips it and spends nothing, which is why this is a branch and not a
+    // stage every request pays for.
+    const customerPrompt = String(body?.customerPrompt || "").trim();
+    const intake = customerPrompt ? await parseCustomerIntake(customerPrompt) : null;
+    // THE EXPLICIT FIELD WINS OVER THE PARSED ONE. Intake is a convenience for
+    // free text; a caller that states a value is stating it, not suggesting it.
+    const field = (name: string) => {
+      const explicit = String((body as Record<string, unknown>)?.[name] ?? "").trim();
+      return explicit || String((intake as Record<string, unknown>)?.[name] ?? "").trim();
+    };
+
     const panelRows = Array.isArray(body?.panelRows)
       ? (body.panelRows as unknown[]).map((row) => String(row || "").trim()).filter(Boolean)
       : [];
@@ -319,17 +385,17 @@ serve(async (req) => {
     const vehicleType = String(body?.vehicleType || "").trim() || undefined;
     const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
       mode: "commercial",
-      prompt: String(body?.creativeDirection || body?.prompt || ""),
+      prompt: field("creativeDirection") || String(body?.prompt || ""),
       finish: String(body?.finish || "Gloss"),
       substrate: "standard",
-      companyName: body?.companyName,
-      phone: body?.phone,
-      website: body?.website,
-      industryType: body?.industryType,
+      companyName: field("companyName"),
+      phone: field("phone"),
+      website: field("website"),
+      industryType: field("industryType"),
       brandColors: body?.brandColors,
-      vehicleYear: body?.vehicleYear,
-      vehicleMake: body?.vehicleMake,
-      vehicleModel: body?.vehicleModel,
+      vehicleYear: field("vehicleYear"),
+      vehicleMake: field("vehicleMake"),
+      vehicleModel: field("vehicleModel"),
       vehicleType,
       viewType: "side",
       atlasFlatMaster: true,
@@ -338,20 +404,20 @@ serve(async (req) => {
 
     const prompt = buildPanelProofPrompt({
       creativeHead,
-      companyName: body?.companyName,
-      tagline: body?.tagline,
-      phone: body?.phone,
-      website: body?.website,
-      services: body?.services,
-      promo: body?.promo,
-      vehicleYear: body?.vehicleYear,
-      vehicleMake: body?.vehicleMake,
-      vehicleModel: body?.vehicleModel,
+      companyName: field("companyName"),
+      tagline: field("tagline"),
+      phone: field("phone"),
+      website: field("website"),
+      services: (body?.services ?? intake?.services),
+      promo: field("promo"),
+      vehicleYear: field("vehicleYear"),
+      vehicleMake: field("vehicleMake"),
+      vehicleModel: field("vehicleModel"),
       proofDate: body?.proofDate,
       orderNumber: body?.orderNumber,
       designer: body?.designer,
       proofVersion: body?.proofVersion,
-      creativeDirection: body?.creativeDirection || body?.prompt,
+      creativeDirection: field("creativeDirection") || String(body?.prompt || ""),
       panelRows,
     });
 
@@ -373,9 +439,8 @@ serve(async (req) => {
     try {
       const drawn = await stageProofContainer(svc.storage.from(BUCKET), {
         manifest: parsePanelRows(panelRows),
-        companyName: String(body?.companyName || "").trim(),
-        vehicle: [body?.vehicleYear, body?.vehicleMake, body?.vehicleModel]
-          .map((v) => String(v || "").trim()).filter(Boolean).join(" "),
+        companyName: field("companyName"),
+        vehicle: ["vehicleYear", "vehicleMake", "vehicleModel"].map(field).filter(Boolean).join(" "),
       });
       containerPath = drawn.storagePath;
       containerHash = drawn.contentHash;
@@ -496,6 +561,9 @@ serve(async (req) => {
       // the designiq A/B harness exists at all.
       promptChars: prompt.length,
       prompt,
+      // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
+      // sheet just quietly carries the wrong company or the wrong truck.
+      intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
       attachedInputs: attached,
       elapsedMs: Date.now() - t0,
       // Whether the model returned reasoning alongside the image, so the
