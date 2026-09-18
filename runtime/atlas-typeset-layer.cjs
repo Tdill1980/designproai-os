@@ -112,6 +112,34 @@ function clampWidth(value) {
   return Math.max(MIN_WIDTH_PX, Math.min(MAX_WIDTH_PX, Math.round(n)));
 }
 
+/**
+ * The largest size at or below `nominal` whose advance fits the usable width.
+ *
+ * WHY THIS EXISTS (live 34613569, 2026-09-18). The sizes below are fixed
+ * PROPORTIONS OF THE CANVAS — `nameSize = canvasWidth * 0.12` — and say nothing
+ * about how many characters the name has. `outline()` centres by
+ * `x = max(pad, (width - advance) / 2)`, so once the advance exceeds the canvas
+ * the term goes negative, x clamps to `pad`, and the rest of the word simply
+ * runs off the right edge of the SVG and is CLIPPED.
+ *
+ * Measured on that run: `nameSize` 192 implies a 1600px canvas, and the
+ * receipt's own `inkWidth` was 2102 — "Precision Climate Solutions" overflowed
+ * by 502px and the composited flank read "Precision Climate Se".
+ *
+ * An advance scales linearly with size, so the fitting size is exact and needs
+ * no search: size = nominal * usable / advance. Names that already fit are
+ * untouched, which is every fixture in the suite.
+ */
+function fitSize(font, text, nominal, usableWidth) {
+  const t = String(text || "").trim();
+  if (!t || !(usableWidth > 0)) return nominal;
+  const advance = font.getAdvanceWidth(t, nominal);
+  if (!(advance > usableWidth)) return nominal;
+  // Floor, never round: rounding up can re-overflow by a sub-pixel and clip a
+  // glyph's final stem.
+  return Math.max(1, Math.floor(nominal * (usableWidth / advance)));
+}
+
 /** One centred line of outlines. Ported from the reference's `outline()`. */
 function outline(font, text, size, baseline, width, color, pad) {
   const t = String(text || "").trim();
@@ -162,26 +190,40 @@ async function renderLockup({
   let widest = 0;
   let y = pad;
 
+  // FIT BEFORE DRAWING. The proportions above are the reference's and stay; what
+  // changes is that a name too long for them is scaled to the canvas instead of
+  // running off it.
+  const usableWidth = canvasWidth - pad * 2;
+  const fittedNameSize = fitSize(faceName.font, headline, nameSize, usableWidth);
+
   if (headline) {
-    y += nameSize;
-    const drawn = outline(faceName.font, headline, nameSize, y, canvasWidth, fill, pad);
+    y += fittedNameSize;
+    const drawn = outline(faceName.font, headline, fittedNameSize, y, canvasWidth, fill, pad);
     parts.push(drawn.svg);
     widest = Math.max(widest, drawn.advance);
   }
+  // A web address overflows the same way a long name does, and on 34613569 the
+  // contact bar carried "precisionclimate.designproai.com". Each line is fitted
+  // on its own, so one long URL does not shrink the phone number beside it.
+  let narrowestLineSize = lineSize;
   for (const line of body) {
+    const fitted = fitSize(faceBody.font, line, lineSize, usableWidth);
+    narrowestLineSize = Math.min(narrowestLineSize, fitted);
     // First line on a bare canvas drops by its own size; every later line adds
     // the gap as well. (The reference always had a headline, so it only ever
     // needed the second case.)
-    y += parts.length === 0 ? lineSize : lineSize + lineGap;
-    const drawn = outline(faceBody.font, line, lineSize, y, canvasWidth, fill, pad);
+    y += parts.length === 0 ? fitted : fitted + lineGap;
+    const drawn = outline(faceBody.font, line, fitted, y, canvasWidth, fill, pad);
     parts.push(drawn.svg);
     widest = Math.max(widest, drawn.advance);
   }
 
   const measured = body.length ? faceBody : faceName;
+  // The descender belongs to the LAST size actually drawn, not the nominal one,
+  // or a fitted lockup reserves space it never uses.
   const descent =
     Math.abs((measured.font.descender || 0) / (measured.font.unitsPerEm || 1000)) *
-    (body.length ? lineSize : nameSize);
+    (body.length ? narrowestLineSize : fittedNameSize);
   const canvasHeight = Math.round(y + descent + pad);
 
   const svg =
@@ -214,8 +256,10 @@ async function renderLockup({
     // Enough geometry for the lockup node to place this without re-measuring.
     metrics: {
       inkWidth: Math.round(widest),
-      nameSize,
-      lineSize,
+      nameSize: fittedNameSize,
+      nominalNameSize: nameSize,
+      lineSize: narrowestLineSize,
+      nominalLineSize: lineSize,
       pad,
       descent: Math.round(descent),
     },
