@@ -98,8 +98,16 @@ test("PatternPro keeps the same pair, so the two tools stay symmetrical", () => 
  */
 test("ShopFlow's product rail opens the WHITE partner pages, not the house ones", () => {
   const shopflow = read("app/src/pages/ShopFlow.tsx");
+  // THE APP, NOT THE LANDING (owner, 2026-09-18: the dashboard "no longer shows
+  // WPW WallPro App page, it's now showing a landing page"). The first fix
+  // re-pointed this rail at /wall-wrap in the same change that turned
+  // /wall-wrap INTO the landing -- right brand, wrong destination. A customer
+  // inside their own account dashboard is already signed in and already sold;
+  // a marketing page is a step backwards from where they are standing.
   assert.ok(shopflow.includes('{ href: "/wallwrap-design", label: "WallPro"'),
-    "the WallPro tab must open the WePrintWraps designer");
+    "the WallPro tab must open the WePrintWraps TOOL, not its landing page");
+  assert.ok(!/href[=:]\s*"\/wall-wrap"/.test(shopflow),
+    "no ShopFlow link may open the WallPro landing; this dashboard opens apps");
   assert.ok(shopflow.includes('{ href: "/pattern-wrap", label: "PatternPro"'),
     "the PatternPro tab must open the WePrintWraps page");
   // The dead route and the house route must not come back anywhere on this
@@ -109,9 +117,10 @@ test("ShopFlow's product rail opens the WHITE partner pages, not the house ones"
   assert.ok(!/href[=:]\s*"\/patternpro"/.test(shopflow),
     "/patternpro has no route; the PatternPro tab must not point at it");
 
-  // Both targets are real routes.
+  // Both targets are real routes, and the WallPro one resolves to the TOOL.
   const app = read("app/src/App.tsx");
-  assert.ok(app.includes('<Route path="/wallwrap-design"'), "/wallwrap-design must be routed");
+  assert.ok(app.includes('<Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />'),
+    "/wallwrap-design must render the WallPro tool for the partner brand");
   assert.ok(app.includes('<Route path="/pattern-wrap"'), "/pattern-wrap must be routed");
 
   // And both are the LIGHT skin.

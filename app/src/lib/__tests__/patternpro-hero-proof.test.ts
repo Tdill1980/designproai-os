@@ -33,11 +33,11 @@ describe('the PatternPro hero', () => {
     expect(page.match(/export default function/g)?.length).toBe(1);
   });
 
-  it('reads curated rows with the bundled pair as the floor', () => {
+  it('reads curated rows, with the bundled list as the floor', () => {
     // Without this the PatternPro tab on /admin/wallpro-proofs would be a liar
     // for this surface -- the exact defect the WallPro landing had.
     expect(page).toContain("listWallProofs('patternpro'");
-    expect(page).toContain('curated ?? [PATTERN_HERO_PROOF]');
+    expect(page).toContain('curated ?? PATTERN_HERO_PROOF');
   });
 
   it('keeps the static render as the last resort, so the hero is never empty', () => {
@@ -46,18 +46,30 @@ describe('the PatternPro hero', () => {
   });
 });
 
-describe('the bundled pair is one truck, twice', () => {
-  it('is the stock photograph the hero render was made from', () => {
-    // Same truck, same angle, same studio -- which is what makes a wipe read as
-    // one vehicle changing rather than two loosely related photographs.
-    expect(PATTERN_HERO_PROOF.before).toContain('white-f150-side.jpg');
-    expect(PATTERN_HERO_PROOF.after).toContain('Ford_Raptor_side.jpg');
+describe('the bundled floor is empty, on purpose and on evidence', () => {
+  /**
+   * The first attempt bundled a pair whose "before" was white-f150-side.jpg
+   * from stock-vehicle-photos. That file does not exist -- the module's own
+   * header says "Upload real vehicle photos matching the file names below" and
+   * nobody did; the URL returns 400 in both Supabase projects.
+   *
+   * It fails SILENTLY, which is the reason this test exists rather than a
+   * comment: WallProHeroProof drops any pair whose halves do not both load, so
+   * the hero would have rendered the static image and looked fine while the
+   * slider it was built for never appeared.
+   */
+  it('ships no pair, so the page never requests an image that 404s', () => {
+    expect(PATTERN_HERO_PROOF).toEqual([]);
   });
 
-  it('carries words, because the slider prints them over the image', () => {
-    expect(PATTERN_HERO_PROOF.alt.length).toBeGreaterThan(20);
-    expect(PATTERN_HERO_PROOF.headline).toBeTruthy();
-    expect(PATTERN_HERO_PROOF.caption).toBeTruthy();
+  it('every pair it ever carries must be complete, or the slider drops it', () => {
+    // Guards the refill: a half-filled entry is worse than none, because the
+    // component discards it and the hero silently stops being a slider.
+    for (const pair of PATTERN_HERO_PROOF) {
+      expect(pair.before).toBeTruthy();
+      expect(pair.after).toBeTruthy();
+      expect(pair.alt.length).toBeGreaterThan(20);
+    }
   });
 });
 
