@@ -110,7 +110,9 @@ test("the DesignPro surfaces keep the app shell chrome", () => {
 });
 
 test("every sidebar destination is a route the router serves", () => {
-  const routes = [...NAV.matchAll(/route:\s*"([^"]+)"/g)].map((match) => match[1]);
+  // Query filters select a library view; React Router matches the pathname,
+  // just as the tool-rail check below already does for its prefilled links.
+  const routes = [...NAV.matchAll(/route:\s*"([^"]+)"/g)].map((match) => match[1].split(/[?#]/)[0]);
   assert.ok(routes.length > 0, "the navigation registry declares no routes");
   const dead = routes.filter((route) => !isServed(route));
   assert.deepEqual(dead, [], `sidebar entries with no route: ${dead.join(", ")}`);
