@@ -109,6 +109,71 @@ test("the two vehicles produce DIFFERENT sheets — the renderer is not pinned t
   assert.ok(!f250.includes("165.7&quot;"));
 });
 
+/**
+ * A WHITE TAG NARROWER THAN ITS OWN FIGURE IS A WRONG NUMBER ONCE ANYTHING IS
+ * BEHIND IT — and it is invisible until then.
+ *
+ * The height dimension is right-anchored at x-12-4 behind a knock-out. The tag
+ * was a fixed 34px wide while "141.0"" measures ~34 and needs padding, so the
+ * leading glyphs were drawn OUTSIDE it. On the blank template the neighbour cell
+ * is white, dark ink on white read perfectly, and seven renders of this sheet
+ * looked correct. Composited over the model's dark artwork the same glyphs went
+ * dark-on-dark and the live sheet read "8.0"" for 68, "2.0"" for 42 and "6.0""
+ * for 36 — which is exactly the figure this whole change exists to stop being
+ * wrong, arriving by a completely different route.
+ *
+ * So the assertion is not "the tag is 34 wide". It is the two things that
+ * actually have to hold, in the same units the drawing uses.
+ */
+test("every dimension figure fits inside its own knock-out, and clears the previous cell", async () => {
+  const { containerSvg, containerLayout } = await edge();
+  // The advance the drawing sizes its tags with; asserting against a LARGER
+  // estimate would let a too-narrow tag through, so this deliberately over-
+  // measures relative to the real face.
+  const CHAR = 5.9;
+
+  for (const rows of [PRIUS, F250]) {
+    const manifest = runtimeTemplate.parsePanelRows(rows);
+    const svg = containerSvg({ manifest, ...BRAND });
+    const layout = containerLayout(manifest);
+
+    for (const band of [layout.zone1, layout.zone2]) {
+      band.forEach((cell, i) => {
+        for (const [label, anchorX, anchored] of [
+          [`${cell.heightIn.toFixed(1)}"`, cell.x - 16, "end"],
+          [`${cell.widthIn.toFixed(1)}"`, cell.x + cell.w / 2, "middle"],
+        ]) {
+          // The tag the drawing actually emitted for this figure.
+          const tag = new RegExp(
+            `<rect x="(-?[\\d.]+)" y="[\\d.]+" width="([\\d.]+)" height="12" fill="#ffffff"/>`
+            + `<text x="${anchorX}" [^>]*text-anchor="${anchored}"[^>]*>`
+            + label.replace(/"/g, "&quot;") + `</text>`);
+          const hit = tag.exec(svg);
+          assert.ok(hit, `no knock-out precedes the ${anchored} figure ${label} at x=${anchorX}`);
+
+          const [tagLeft, tagWidth] = [Number(hit[1]), Number(hit[2])];
+          const ink = label.length * CHAR;
+          const inkLeft = anchored === "end" ? anchorX - ink : anchorX - ink / 2;
+
+          assert.ok(inkLeft >= tagLeft && inkLeft + ink <= tagLeft + tagWidth,
+            `${label} spans ${inkLeft.toFixed(1)}..${(inkLeft + ink).toFixed(1)} but its tag covers `
+            + `${tagLeft}..${tagLeft + tagWidth} — the digits outside it vanish over dark artwork`);
+
+          // AND IT MUST NOT REACH BACKWARDS INTO THE NEIGHBOUR. A tag that fits
+          // its text and sits on the previous panel punches a white hole in the
+          // customer's artwork, which is the other half of the same defect.
+          if (i > 0 && anchored === "end") {
+            const prev = band[i - 1];
+            assert.ok(tagLeft >= prev.x + prev.w,
+              `the ${label} tag starts at ${tagLeft}, inside ${prev.surfaceKey} `
+              + `which ends at ${prev.x + prev.w} — widen the gap with the label`);
+          }
+        }
+      });
+    }
+  }
+});
+
 test("both homes agree on the cell geometry the gate measures", async () => {
   const { containerLayout } = await edge();
   for (const rows of [PRIUS, F250]) {

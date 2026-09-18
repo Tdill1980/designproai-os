@@ -19,6 +19,7 @@ import { loadDesignIQ, ATLAS_PANELS } from "./helpers/load-designiq.mjs";
 
 const require = createRequire(import.meta.url);
 const runtime = require("../runtime/atlas-panel-proof-contract.cjs");
+const containerTemplate = require("../runtime/atlas-proof-container-template.cjs");
 const edgeSource = readFileSync(
   new URL("../supabase/functions/_shared/atlas-panel-proof-prompt.ts", import.meta.url), "utf8");
 
@@ -82,13 +83,34 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // The object class is the whole point of this contract: every previous
   // experiment changed the ask while keeping the object a bare artboard.
   assert.match(runtime.SYSTEM_JOB, /VEHICLE WRAP PANEL PRODUCTION PROOF/);
-  assert.match(runtime.SYSTEM_JOB, /the document a print shop receives/);
+
+  // THE ASK IS NOW THE ARTWORK, NOT THE DOCUMENT — and that is the fix for the
+  // owner's "dimension hallucination", so it is asserted rather than assumed.
+  // This used to pin "the document a print shop receives", which asked the model
+  // to DRAW the header, the captions and every figure. It did, and live sheet
+  // 35393135814 answered one 141 x 78 request with 195.7 x 89.6 in Zone 1,
+  // 155.7 x 49.6 in Zone 2 and 105.7 x 49.6 in its own reference table — three
+  // answers to one question. Baking the numbers into the attachment had already
+  // been shipped and did not help (that container carried "141.0" ten times),
+  // because the model redraws the document rather than filling it.
+  // A number the model never types is a number it cannot get wrong, so the
+  // document is composited by code and the ask is the panels alone.
+  assert.match(runtime.SYSTEM_JOB, /DRAW ONLY THE PANELS/);
+  assert.match(runtime.SYSTEM_JOB, /printed onto this\s+sheet by the press/,
+    "the model must be told the document arrives after it, not that it draws one");
+  assert.match(runtime.SYSTEM_JOB, /not a panel plain white/);
 
   // A positive physical fact, never a prohibition. "Do not draw wheel arches"
   // is the negative shape CLAUDE.md warns about in four places and which has
   // failed 4/4 on the field map.
   assert.match(runtime.INSTALLATION_FACT, /ONE CONTINUOUS PANEL/);
-  assert.match(runtime.INSTALLATION_FACT, /trimmed on the vehicle afterwards/);
+  // THE SENTENCE THAT FORBIDS A DIE-CUT PANEL IS BACK, and this is the lock on
+  // it. I cut it to 90 characters for budget and live sheet 35389031759 came
+  // back with the windshield cut out of both flanks. RULE 0.32's acceptance
+  // contract is not a nice-to-have in this prompt; it IS the prompt.
+  assert.match(runtime.INSTALLATION_FACT, /SOLID RECTANGLE of artwork/);
+  assert.match(runtime.INSTALLATION_FACT, /no holes and no vehicle-shaped outline/);
+  assert.match(runtime.INSTALLATION_FACT, /artwork runs straight through the places those openings will be/);
   assert.doesNotMatch(runtime.INSTALLATION_FACT, /\bdo not\b/i,
     "the installation fact must state what IS, never what is forbidden");
 });
@@ -174,12 +196,30 @@ test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
   // by their titles and tells the model to fill the sheet rather than describing
   // a layout it can already see. Describing it twice was budget the designer
   // needed: the proof shipped with zero characters of A.C.E. to stay under 4000.
-  assert.match(prompt, /each band titled exactly as written/);
-  assert.match(prompt, /Fill the attached template; do not re-flow it/);
-  // The reference row is DRAWN on the attached container, so the prompt points
-  // at it rather than re-describing the sheet it is looking at.
-  assert.match(prompt, /identical in every zone and in the reference row/);
-  assert.match(prompt, /BS-2012PRIUS-01/, "the job block must reach the header");
+  assert.match(prompt, /THE THREE BANDS, in this order:/);
+  assert.match(prompt, /Fill the attached template; do not re-flow it/,
+    "the chrome is composited at the container's own cell positions, so a re-flow "
+    + "puts every caption under the wrong panel");
+
+  // THE JOB BLOCK LEFT THE PROMPT AND MUST LAND ON THE SHEET ANYWAY. It used to
+  // be asserted here, and once the model was told to draw no document that
+  // instruction became one it is told to ignore — so the order number has to be
+  // drawn by the compositor instead, or removing the ask silently loses it.
+  // Asserting the prompt no longer carries it WITHOUT asserting the sheet does
+  // is how a field disappears while every test stays green.
+  assert.doesNotMatch(prompt, /JOB BLOCK/,
+    "the code draws the job block; asking the model for it is noise in the design's budget");
+  const chrome = containerTemplate.containerSvg({
+    manifest: containerTemplate.parsePanelRows([
+      'DRIVER: 165.7" wide x 49.6" high', 'PASSENGER: 165.7" wide x 49.6" high',
+      'ROOF: 110.2" wide x 55.1" high', 'HOOD: 55.9" wide x 48.0" high',
+      'FRONT: 50.0" wide x 22.0" high', 'REAR: 55.1" wide x 30.7" high',
+    ]),
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", mode: "chrome",
+    job: { date: "2026-09-18", order: "BS-2012PRIUS-01", designer: "A.L.", version: "1.0" },
+  });
+  assert.ok(chrome.includes("BS-2012PRIUS-01"), "the job block must reach the header the code draws");
+  assert.ok(chrome.includes("A.L."), "every supplied job field must be drawn, not just the order");
 
   // THE COORDINATE TABLE MUST NEVER REACH CALL 1. atlasFieldContract emitted
   // bare four-decimal rows and FOUR consecutive live runs painted those digits
@@ -214,8 +254,17 @@ test("INCHES, never normalized fractions", () => {
 // deployed design-panel-ai-generate, which is the same source
 // scripts/build-designiq-shared.mjs ships to the edge.
 const { buildDesignIQPrompt } = await loadDesignIQ();
+// THE SAME BRIEF GOES TO BOTH HALVES, because in a real request it only goes
+// to ONE of them: the customer's words reach A.C.E. and the document contract
+// no longer restates them. Giving the head a four-word brief while the doc
+// fixture carried a 260-character one made the paperwork look heavier than the
+// designer by construction, which is the exact ratio this file asserts on.
+const FIXTURE_BRIEF = "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth "
+  + "logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling "
+  + "dental patient in a clinical chair inlaid into the rear three-quarter of each side panel.";
+
 const ACE_FIXTURE = buildDesignIQPrompt({
-  mode: "commercial", prompt: "clean modern dental wrap, teal and white", finish: "Gloss",
+  mode: "commercial", prompt: FIXTURE_BRIEF, finish: "Gloss",
   substrate: "standard", companyName: "Bright Smiles Dental", phone: "(520) 555-0192",
   website: "brightsmiles.com", vehicleYear: "2012", vehicleMake: "Toyota", vehicleModel: "Prius",
   vehicleType: "car", viewType: "side", atlasFlatMaster: true, atlasPanels: ATLAS_PANELS,
@@ -253,9 +302,7 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
     // shorter one, which is the other half of why this lock passed at 3,317
     // against a real request of 4,020. If the probe's brief changes, change it
     // here too -- the ceiling is only meaningful against the real payload.
-    creativeDirection: "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth "
-      + "logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling "
-      + "dental patient in a clinical chair inlaid into the rear three-quarter of each side panel.",
+    creativeDirection: FIXTURE_BRIEF,
   };
   const prompt = runtime.buildPanelProofPrompt(FIXTURE_ARGS);
   // WITHOUT THE A.C.E. HEAD this is the document contract alone, and it must
@@ -263,7 +310,8 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   assert.ok(prompt.length < 2600,
     `the document contract alone is ${prompt.length} chars; it must stay under 2600`);
 
-  // WITH IT, the ceiling is 4800 and NOT 4000, and the change is deliberate.
+  // ⚠️ THE CEILING IS NOT A FIXED TOTAL, AND WRITING IT AS ONE WAS THE MISTAKE
+  // BEHIND EVERY OTHER MISTAKE IN THIS FILE.
   //
   // 4000 was this file's reading of the persona stack's own rule — "Prompt
   // length = quality killer. Keep under 4K chars total." What that rule was
@@ -271,18 +319,27 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   // "4,501 characters, of which 3,342 were generic persona boilerplate and 44
   // were the customer's brief — the persona outweighed the design 76 to 1".
   //
-  // Holding 4000 here bought nothing and cost everything. The panel proof came
-  // in at 3,906 UNDER the ceiling and returned generic blue waves, because the
-  // only way to fit was to carry no persona at all: 40 characters of brief and
-  // zero of A.C.E. A ceiling that is satisfied by deleting the designer is
-  // measuring the wrong thing.
+  // A FIXED TOTAL PENALISES A CUSTOMER WHO WRITES MORE. The assembled prompt
+  // grows with the brief, because A.C.E. carries the brief — measured, same
+  // payload, brief of 24 chars against one of 260: the Call-1 assembly goes
+  // 3,691 -> 4,192 and this prompt goes 4,772 -> 5,273. Nothing got more
+  // bloated; the customer said more. Holding a fixed number would mean cutting
+  // the document contract every time somebody typed a longer sentence, and the
+  // first thing cut for budget last time was RULE 0.32's own acceptance
+  // contract — after which the very next live sheet came back die-cut.
   //
-  // So the lock is now on the RATIO the measurement was actually about, plus a
-  // real ceiling above it. A.C.E.'s own production Call 1 assembles at 3,707,
-  // and the document contract this adds is mostly the customer's own data.
+  // So the lock is on WHAT THIS CONTRACT ADDS to the prompt Call 1 already
+  // sends. That number is constant at 1,081 across both briefs, because the
+  // document half is constant and the artboard tail it replaces is constant.
   const head = runtime.panelProofCreativeHead(ACE_FIXTURE);
   const full = runtime.buildPanelProofPrompt({ ...FIXTURE_ARGS, creativeHead: head });
-  assert.ok(full.length < 4800, `assembled prompt is ${full.length} chars; the ceiling is 4800`);
+  const added = full.length - ACE_FIXTURE.length;
+  assert.ok(added <= 1200,
+    `the document contract adds ${added} chars over Call 1's own assembly; the budget is 1200`);
+
+  // AND IT STILL CANNOT BE SATISFIED BY DELETING THE DESIGNER, which is what
+  // the old ceiling was satisfied by: the proof shipped at 3,906 chars UNDER
+  // 4000 with 40 characters of brief and zero of A.C.E.
   assert.ok(head.length >= full.length - head.length,
     `the designer (${head.length}) must not be outweighed by the paperwork `
     + `(${full.length - head.length}) — that ratio is the defect this lock exists for`);

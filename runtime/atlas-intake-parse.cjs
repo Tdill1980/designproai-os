@@ -93,6 +93,31 @@ const titleCase = (value) => String(value || "").trim().split(/\s+/)
     : word.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join("-")))
   .join(" ");
 
+/**
+ * BODY CLASS, from the model name. A.C.E. prints it into its own first line —
+ * "Design the printed wrap artwork for a 2019 Ford Transit 250 High Roof
+ * (vehicle)" — and "(vehicle)" is what it says when nothing told it. The Prius
+ * run read "(car)" because the probe stated it; the Transit run read
+ * "(vehicle)" because raw text does not, so the designer was told the shape of
+ * the thing it was designing for by nobody.
+ *
+ * Keyword-deterministic and honestly empty when it cannot tell — the same
+ * discipline as the classifier RestylePro uses for its asset library: "No match
+ * = honest unclassified, never a guess."
+ */
+const BODY_CLASS = Object.freeze([
+  ["van", /\b(transit|sprinter|promaster|express|savana|nv\d*|metris|connect|city express|cargo van|van)\b/i],
+  ["truck", /\b(f-?\d{3}|silverado|sierra|ram \d{3,4}|tundra|titan|ranger|colorado|canyon|tacoma|frontier|ridgeline|super duty|pickup|truck)\b/i],
+  ["suv", /\b(explorer|tahoe|suburban|yukon|expedition|pilot|highlander|4runner|escalade|navigator|traverse|telluride|suv)\b/i],
+]);
+
+/** "" when the model name decides nothing — never a guess. */
+function bodyClassOf(vehicleModel) {
+  const text = String(vehicleModel || "");
+  for (const [name, pattern] of BODY_CLASS) if (pattern.test(text)) return name;
+  return "";
+}
+
 /** Normalise a matched NANP number to the form a proof prints. */
 function normalizePhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
@@ -147,6 +172,7 @@ function extractDeterministic(text) {
     vehicleYear: yearMatch ? yearMatch[1] : "",
     vehicleMake,
     vehicleModel,
+    vehicleType: bodyClassOf(vehicleModel),
   };
 }
 
@@ -222,6 +248,7 @@ function mergeIntake(deterministic = {}, parsed = {}) {
     vehicleYear: pick(deterministic.vehicleYear),
     vehicleMake: pick(deterministic.vehicleMake),
     vehicleModel: pick(deterministic.vehicleModel),
+    vehicleType: pick(deterministic.vehicleType),
   };
 }
 

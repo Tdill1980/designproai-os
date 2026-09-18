@@ -111,8 +111,11 @@ export const PANEL_PROOF_CONTAINER_TEMPLATE = {
  * not creative direction -- and it is one sentence, not two paragraphs.
  */
 export const SYSTEM_JOB = [
-  "THE DELIVERABLE IS A VEHICLE WRAP PANEL PRODUCTION PROOF — the document a print shop receives:",
-  "each side's finished wrap panel as a flat rectangle on a clean sheet.",
+  "THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF: the printed panels",
+  "themselves, laid out in three bands on a clean white sheet.",
+  "",
+  "DRAW ONLY THE PANELS. Every caption, figure, note and rule around them is printed onto this",
+  "sheet by the press afterwards. Leave every part of the sheet that is not a panel plain white.",
 ].join("\n");
 
 /**
@@ -158,8 +161,11 @@ export function panelProofCreativeHead(aceAssembly: string): string {
  * which has failed 4/4 on the field map.
  */
 export const INSTALLATION_FACT = [
-  "One side is wrapped with ONE CONTINUOUS PANEL, trimmed on the vehicle afterwards — so type and",
-  "logos stay well clear of the trim line.",
+  "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
+  "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
+  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
+  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "trim line; the artwork does not.",
 ].join("\n");
 
 /**
@@ -174,8 +180,8 @@ export const INSTALLATION_FACT = [
  * done that; a coordinate table has, 4/4.
  */
 export const SHEET_LAYOUT = [
-  "Fill the attached template; do not re-flow it. Each band holds those six panels, each drawn ONCE,",
-  "in that order — never repeated, never a seventh, never an empty box.",
+  "Fill the attached template; do not re-flow it. Each band holds those six panels in the template's",
+  "own cells, in that order, each drawn ONCE — never repeated, never a seventh, never an empty box.",
 ].join("\n");
 
 /**
@@ -293,7 +299,11 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     ["Web address", pick(params.website)],
     ["Services", list(params.services)],
     ["Promotional text", pick(params.promo)],
-  ] as Array<[string, string]>).filter(([, value]) => value.length > 0);
+  ] as Array<[string, string]>)
+    .filter(([, value]) => value.length > 0)
+    // A.C.E. ALREADY STATES THESE THREE AS EXACT, in stronger words than these.
+    .filter(([label]) => !(pick(params.creativeHead)
+      && ["Company name", "Phone", "Web address"].includes(label)));
 
   const vehicle = [params.vehicleYear, params.vehicleMake, params.vehicleModel]
     .map(pick).filter(Boolean).join(" ");
@@ -306,42 +316,23 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
   const out: string[] = [];
   if (head) out.push(head, "");
   out.push(SYSTEM_JOB, "", INSTALLATION_FACT, "");
-  out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
+  if (!head) out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
   if (rows.length) {
-    out.push("", "PANELS, at finished trim size, each printed with 5\" of bleed past every edge:",
+    out.push("", "THE SIX PANELS, left to right, each drawn at this shape:",
       ...rows.map((row) => `  ${row}`));
-    // THE FIGURES ARE COPIED FROM THE TEMPLATE, NEVER RECOMPUTED. Live sheet
-    // 2026-09-18 put ROOF at 45.0" in Zone 1, 43.0" in Zone 2 and 43.0 x 56.0
-    // in its own reference table, against a template that said 110.2 x 55.1 --
-    // three different answers on one document, none of them the vehicle's.
-    out.push("Print each figure under its own panel, identical in every zone and in the reference row.");
   }
-  const coverage = panelProofCoverageSqFt(rows);
-  if (coverage != null) {
-    // AND THE TOTAL IS THIS JOB'S OWN ARITHMETIC. The live sheet printed
-    // "176.26 sq ft" -- the figure off the attached reference sheet, which
-    // belongs to a different vehicle and reproduces from none of the numbers
-    // printed beside it.
-    out.push(`TOTAL COVERAGE (TRIM): ${coverage.toFixed(2)} SQ FT in the header — take no figure from the example.`);
-  }
+  // THE COVERAGE TOTAL AND THE JOB BLOCK USED TO BE ASKED FOR HERE. They are
+  // header furniture, so the compositor draws both from this same manifest --
+  // `panelProofCoverageSqFt` stays exported because the edge reports the figure
+  // on its receipt. Asking the model for a number it is told not to draw is
+  // noise in a prompt whose budget is the design's.
   if (strings.length) {
     out.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
-  const job: Array<[string, string]> = ([
-    ["Date", pick(params.proofDate)],
-    ["Order #", pick(params.orderNumber)],
-    ["Designer", pick(params.designer)],
-    ["Version", pick(params.proofVersion)],
-  ] as Array<[string, string]>).filter(([, value]) => value.length > 0);
-  if (job.length) {
-    out.push("", "JOB BLOCK, in the header, exactly as given:",
-      ...job.map(([label, value]) => `  ${label}: ${value}`));
-  }
-  out.push("", "THE THREE ZONES, in this order, each band titled exactly as written:",
+  out.push("", "THE THREE BANDS, in this order:",
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`),
-    "Zone 2 is Zone 1 drawn as if it had never carried type. Zone 3 is the marks alone, cut outlines",
-    "on empty ground.");
+    "Zone 2 is Zone 1 drawn as if it had never carried type.");
   // EVERY ZONE-3 BOX IS NAMED WITH WHAT FILLS IT. Three of five came back empty
   // under a rule that only said not to leave them empty.
   const supplied: Record<string, string> = {
