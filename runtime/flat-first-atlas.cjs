@@ -2766,6 +2766,10 @@ async function composePassengerFromDriver({
     String(input?.website || "").trim(),
   ].filter(Boolean);
   const lettersDeclared = brandStrings.length > 0;
+  // Whether Call 1 was asked for a sheet with no lettering on it at all. It
+  // changes what ZERO located bands MEANS: a blind reader when the model was
+  // asked to letter the flank, the ask being honoured when it was not.
+  const cleanBase = cleanBaseEnabled();
   // Fail towards today: a declared brand string that cannot be located keeps
   // the authored flank (a reversed company name is the one outcome the owner
   // ruled out); a brief-only design whose read is unavailable or finds nothing
@@ -2849,6 +2853,31 @@ async function composePassengerFromDriver({
           const declined = declineOrMirror("brand_bands_oversized");
           if (declined) return declined;
           letteringRead = "oversized_unbounded";
+        } else if (cleanBase) {
+          // UNDER THE CLEAN BASE, ZERO BANDS IS THE ASK BEING HONOURED, NOT A
+          // BLIND READER -- and treating it as the latter silently switched
+          // this mirror OFF for every branded design the moment v28 shipped.
+          //
+          // The decline above exists for "the brief declares a company name and
+          // the reader cannot find it", which is the cc382c3c defect. With
+          // `cleanBase` on, Call 1 is explicitly asked to author NO lettering
+          // (ATLAS_CLEAN_BASE_CONTRACT replaces the brand block), and this
+          // function runs BEFORE the element composite -- so the sheet it reads
+          // definitionally carries none yet. `lettersDeclared` is true for any
+          // commercial brief, so the decline fired every time and the flanks
+          // stopped being twins, blamed on a reader that was working perfectly.
+          //
+          // The lettering that WILL exist is composited afterwards onto BOTH
+          // flanks by `atlas-element-lockup`, which mirrors the BOX and never
+          // the artwork (`flipped: false`). Passenger type therefore reads
+          // forward by construction -- the same guarantee that makes the field
+          // topology decline this mirror outright.
+          //
+          // So the pixels are still mirrored (that is why the mirror is kept on
+          // six-surface: the model drifts between the two flanks), and only the
+          // lettering machinery stands down, because there is nothing for it to
+          // measure and nothing for it to correct.
+          letteringRead = "clean_base_no_lettering";
         } else {
           const declined = declineOrMirror("brand_bands_not_located");
           if (declined) return declined;
@@ -2873,7 +2902,29 @@ async function composePassengerFromDriver({
   };
   try {
     let mirrored = await mirrorPassengerFromDriver({ masterBytes, manifest, brandBands });
-    if (readerAvailable) {
+    // NOTHING WAS RE-DROPPED, SO THERE IS NOTHING TO VERIFY. The verify loop
+    // exists to catch a band that came out MIRRORED after the flop; with no
+    // bands located on a clean base there is no band to come out any way at
+    // all, and a flank carrying no lettering cannot carry reversed lettering.
+    //
+    // This is the whole of the latency win, measured: on the six-surface run
+    // efca5e03 the mirror cost 54.9 s of a 191.6 s Call 1 -- 29% -- and every
+    // second of it was Gemini Flash panel reads (one driver read plus up to
+    // PASSENGER_VERIFY_READS on the composed flank) at 4096-square crop each.
+    // Under the clean base those reads can only ever confirm an emptiness this
+    // pipeline created on purpose two steps earlier.
+    //
+    // It is deliberately NOT a blanket skip. If the driver read DID locate
+    // bands -- the model lettered the flank despite the clean-base ask -- the
+    // loop below runs exactly as before, because then there really is
+    // orientation-sensitive artwork on the panel and RULE 0.36 governs it.
+    const verifySkippedForCleanBase = cleanBase && !brandBands.length;
+    if (verifySkippedForCleanBase) {
+      letteringVerify.status = "clean_base_not_applicable";
+      letteringVerify.code = "clean_base_carries_no_lettering";
+      letteringVerify.reason = "Call 1 authored no lettering; the lockup is composited onto both flanks un-flipped after this step";
+    }
+    if (readerAvailable && !verifySkippedForCleanBase) {
       for (let read = 1; read <= PASSENGER_VERIFY_READS; read += 1) {
         const composedFlank = await extractFlankPanel(mirrored.bytes, manifest, "passenger");
         const verify = await readPanelLettering({ provider, panelBytes: composedFlank.bytes, surface: "passenger" });

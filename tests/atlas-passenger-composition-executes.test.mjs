@@ -677,3 +677,104 @@ test("Call 1 accounts for its own wall clock, including the two Flash stages", a
   // A resumed run must not bill itself again for work it recovered.
   assert.match(src, /if \(!recoveredState\?\.passengerMirror\) timings\.passengerMirrorMs/);
 });
+
+// ---------------------------------------------------------------------------
+// v28 SILENTLY SWITCHED THIS MIRROR OFF FOR EVERY BRANDED DESIGN.
+//
+// `lettersDeclared` is true for any commercial brief, and the clean base asks
+// Call 1 for a sheet with NO lettering on it -- so the driver read correctly
+// found zero bands and the decline built for cc382c3c ("the brief declares a
+// company name and the reader cannot find it") fired on every run. The flanks
+// stopped being twins and the receipt blamed a reader that was working.
+//
+// The mirror runs BEFORE the element composite, so the sheet it reads carries
+// no lettering yet by construction; the lockup is composited afterwards onto
+// BOTH flanks by atlas-element-lockup, which mirrors the BOX and never the
+// artwork (`flipped: false`). Passenger type reads forward by construction.
+const withCleanBase = async (value, fn) => {
+  const before = process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+  if (value === null) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+  else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = value;
+  try { return await fn(); } finally {
+    if (before === undefined) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = before;
+  }
+};
+
+test("v28: a branded design on a CLEAN BASE still mirrors, instead of declining on a reader that was right", async () => {
+  const before = await master();
+  const result = await withCleanBase("on", async () => composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: await guideBytes(),
+    input: WITH_BRAND, provider: providerReturning([], { lettering: { driver: [], passenger: [[]] } }),
+    logger: () => {},
+  }));
+
+  assert.equal(result.composed, true, "the clean base must not be read as a blind reader");
+  assert.notEqual(result.reason, "brand_bands_not_located");
+  assert.equal(result.letteringRead, "clean_base_no_lettering");
+  // And the pixels really are the twin: the gate's own comparison, not a flag.
+  assert.ok((await mirrorMae(result.bytes)) < 0.01, "the composed flank must be Driver mirrored");
+});
+
+test("v28: with no bands to re-drop, the verify loop does not run at all", async () => {
+  // This is the measured cost. On six-surface efca5e03 the mirror took 54.9s of
+  // a 191.6s Call 1 -- 29% -- and all of it was Flash panel reads. Under the
+  // clean base every one of those reads could only confirm an emptiness this
+  // pipeline created on purpose two steps earlier.
+  let driverReads = 0;
+  let verifyReads = 0;
+  const provider = providerReturning([], {
+    lettering: { driver: [], passenger: [[]] },
+    onCall: (_body, label) => {
+      if (label === DRIVER_READ_LABEL) driverReads += 1;
+      if (label === PASSENGER_VERIFY_LABEL) verifyReads += 1;
+    },
+  });
+
+  const result = await withCleanBase("on", async () => composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: WITH_BRAND, provider, logger: () => {},
+  }));
+
+  assert.equal(result.composed, true);
+  assert.equal(verifyReads, 0, "a flank carrying no lettering cannot carry reversed lettering");
+  // The DRIVER read is deliberately KEPT: it is the evidence that Call 1
+  // honoured the clean-base ask, and skipping it would assert that on faith.
+  assert.equal(driverReads, 1, "the driver read stays — it is what makes the skip evidence-based");
+  assert.equal(result.letteringVerify.status, "clean_base_not_applicable");
+  assert.equal(result.letteringVerify.reads, 0);
+});
+
+test("v28: a clean base the model lettered ANYWAY is verified exactly as before", async () => {
+  // The skip is scoped to zero located bands. If Call 1 ignored the ask and put
+  // orientation-sensitive artwork on the flank, RULE 0.36 governs it and the
+  // read-back must run -- otherwise this becomes the 8eec8162 defect with a
+  // flag in front of it.
+  let verifyReads = 0;
+  const provider = providerReturning([], {
+    lettering: { driver: [forward(WORD_BAND)], passenger: [[forward(WORD_BAND)]] },
+    onCall: (_body, label) => { if (label === PASSENGER_VERIFY_LABEL) verifyReads += 1; },
+  });
+
+  const result = await withCleanBase("on", async () => composePassengerFromDriver({
+    masterBytes: await master(), manifest, guideBytes: await guideBytes(),
+    input: WITH_BRAND, provider, logger: () => {},
+  }));
+
+  assert.equal(result.composed, true);
+  assert.ok(verifyReads >= 1, "located bands must still be read back on the composed flank");
+  assert.notEqual(result.letteringVerify.status, "clean_base_not_applicable");
+});
+
+test("v28: with the clean base OFF, the cc382c3c decline is untouched", async () => {
+  // The guard that stops a reversed company name shipping is not weakened for
+  // the contract it was written for.
+  const before = await master();
+  const result = await withCleanBase("off", async () => composePassengerFromDriver({
+    masterBytes: before, manifest, guideBytes: await guideBytes(),
+    input: WITH_BRAND, provider: providerReturning([]), logger: () => {},
+  }));
+
+  assert.equal(result.composed, false);
+  assert.equal(result.reason, "brand_bands_not_located");
+});
