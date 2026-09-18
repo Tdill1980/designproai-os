@@ -26,6 +26,27 @@
 export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
 
 /**
+ * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18).
+ *
+ * The Bright Smiles Dental three-version 2D PRODUCTION PROOF, 1536x1024,
+ * carrying every block this contract names. Pinned exactly as the Flamingo
+ * teaching proof is pinned, for the same reason: a teaching input that silently
+ * changes teaches something nobody chose (canary 33389124918). NEVER recreate,
+ * crop, relabel or re-encode it.
+ *
+ * FORMAT ONLY. It was produced by ChatGPT, not by this pipeline and not by
+ * Gemini, so it says what the document should look like and nothing about what
+ * our model will draw. Its artwork and branding are not style authority.
+ */
+export const PANEL_PROOF_FORMAT_EXAMPLE = {
+  path: "atlas-examples/panel-production-proof-three-version.png",
+  sha256: "57c07672f644a9b3a38783807fd1cf67fbdf21829905e01d8b7afed042e315db",
+  byteSize: 1793915,
+  width: 1536,
+  height: 1024,
+} as const;
+
+/**
  * ROLE AND ARTIFACT BEFORE CONTENT. Multimodal best practice: fix the object
  * class before the model reads a design word. Deliberately short -- CLAUDE.md's
  * standing measurement is that creative direction loses to format text when the

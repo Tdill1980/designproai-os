@@ -64,6 +64,36 @@
 const PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
 
 /**
+ * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18).
+ *
+ * The exact bytes she supplied: the Bright Smiles Dental three-version 2D
+ * PRODUCTION PROOF, 1536x1024. It carries every block this contract names --
+ * header job block, VERSION 1 dimensioned with measured lines, the ruled trim
+ * table, TOTAL COVERAGE, VERSION 2 artwork-only, and the cut proof with each
+ * element outlined on its own.
+ *
+ * Pinned the same way the Flamingo teaching proof is pinned, and for the same
+ * reason: a teaching input that silently changes teaches something nobody
+ * chose. Canary 33389124918 is what that costs -- an installed-vehicle proof
+ * put wheel wells and template furniture back into the source rectangles, and
+ * it took a request inspection to find out why. NEVER recreate, crop, relabel,
+ * re-encode or "improve" this file. Replacing it is an owner decision and the
+ * hash changes with it.
+ *
+ * It is a FORMAT reference and nothing else. It was produced by ChatGPT, not by
+ * this pipeline and not by Gemini, so it says nothing about what our model will
+ * draw -- it says what the document should look like. Its artwork, palette,
+ * brand and typography are not style authority (RULE 0.24).
+ */
+const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
+  path: "atlas-examples/panel-production-proof-three-version.png",
+  sha256: "57c07672f644a9b3a38783807fd1cf67fbdf21829905e01d8b7afed042e315db",
+  byteSize: 1793915,
+  width: 1536,
+  height: 1024,
+});
+
+/**
  * THE SYSTEM-LEVEL JOB STATEMENT. Multimodal best practice: state the ROLE and
  * the ARTIFACT before any content, so the model's object class is fixed before
  * it reads a single design word.
@@ -278,6 +308,7 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
 
 module.exports = {
   PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_FORMAT_EXAMPLE,
   SYSTEM_JOB,
   INSTALLATION_FACT,
   SHEET_LAYOUT,

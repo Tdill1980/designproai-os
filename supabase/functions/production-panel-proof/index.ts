@@ -49,6 +49,7 @@ import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts"
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 import {
   ATLAS_PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
 } from "../_shared/atlas-panel-proof-prompt.ts";
 
@@ -79,8 +80,8 @@ const BUCKET = "wrap-files";
  * 4/4 on the field map.
  */
 const PINNED_INPUTS = [
-  { path: "atlas-examples/panel-production-proof-three-version.png", role: "format" },
-  { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation" },
+  { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
+  { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation", sha256: null },
 ] as const;
 
 const json = (body: unknown, status = 200) =>
@@ -149,8 +150,16 @@ serve(async (req) => {
       const { data, error } = await svc.storage.from(BUCKET).download(pinned.path);
       if (error || !data) throw new Error(`panel_proof_input_missing:${pinned.path}`);
       const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = await sha256Hex(bytes);
+      // "MUST USE THIS" IS ENFORCED, NOT ASSUMED. The owner pinned the format
+      // sheet by hash; a silently different teaching input is exactly how
+      // canary 33389124918 taught wheel wells back into the source rectangles,
+      // and it took a request inspection to find out. Refuse rather than draw.
+      if (pinned.sha256 && digest !== pinned.sha256) {
+        throw new Error(`panel_proof_format_example_mismatch:${digest.slice(0, 16)}`);
+      }
       parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
-      attached.push({ role: pinned.role, path: pinned.path, sha256: await sha256Hex(bytes), byteSize: bytes.length });
+      attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
     }
 
     const t0 = Date.now();

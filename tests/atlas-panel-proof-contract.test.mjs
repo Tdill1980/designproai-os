@@ -41,6 +41,26 @@ test("the runtime and the edge carry the SAME contract words", () => {
   }
 });
 
+test("the owner's format sheet is pinned by hash, and the file on disk IS it", async () => {
+  // Owner, 2026-09-18: "Must use this." A pin that nothing checks is a wish.
+  const { createHash } = await import("node:crypto");
+  const pin = runtime.PANEL_PROOF_FORMAT_EXAMPLE;
+  const bytes = readFileSync(new URL(`../runtime/atlas-examples/${pin.path.split("/").pop()}`,
+    import.meta.url));
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), pin.sha256,
+    "the format example on disk is not the owner's sheet — never recreate, crop or re-encode it");
+  assert.equal(bytes.length, pin.byteSize);
+
+  // Both homes carry the same pin, and the EDGE refuses a mismatch rather than
+  // drawing from whatever happens to be in the bucket. canary 33389124918 is
+  // what a silently-different teaching input costs.
+  assert.ok(edgeSource.includes(pin.sha256), "the edge is missing the format-sheet hash");
+  const fn = readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  assert.match(fn, /panel_proof_format_example_mismatch/,
+    "the function must refuse a format example whose bytes are not the pinned ones");
+});
+
 test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // The object class is the whole point of this contract: every previous
   // experiment changed the ask while keeping the object a bare artboard.
