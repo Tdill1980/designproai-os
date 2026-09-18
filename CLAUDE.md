@@ -1339,14 +1339,29 @@ the view itself replays nothing. The topology test's assertion was tightened
 from the bare guard string — which passed against the blanket refusal that
 discarded every signature — to the scoped expression.
 
-**What is still NOT multi-step: the design's own elements.** The graph is
-per-SURFACE (`AUTHOR_CASCADE`), not per-element. There is no node that designs
-the logo, the company name or the contact bar as its own artifact and then
-composes it. Lettering and logo are authored INSIDE each surface's single image
-call by the persona's logo architecture, and the only element-level machinery
-downstream is extraction (Call 10 `logos.extract`, Call 11 de-logo) and the
-passenger lettering re-drop. Do not describe A.T.L.A.S. as having element-level
-design decomposition; it does not.
+**SUPERSEDED BY v28 (2026-09-18).** This paragraph read *"there is no node that
+designs the logo, the company name or the contact bar as its own artifact and
+then composes it … do not describe A.T.L.A.S. as having element-level design
+decomposition; it does not."* That is now false, and the correction matters
+because it is the first thing a session reads when asked whether the elements
+are decomposed. The element subgraph — `typeset.produce`, `contact.produce`,
+`logo.prepare` → `element.lockup` → `master.composite` — exists, compiles for
+six-surface and field through `compileElementGraph`, and is live with
+`DESIGNPRO_ATLAS_ELEMENT_GRAPH=on`.
+
+**What is and is not a DAG on the LIVE path, stated exactly, because the two
+halves differ:**
+
+| | |
+|---|---|
+| the six surfaces | **one image call.** `TOPOLOGY=six-surface` authors all six in a single request, so they are not nodes and there is no conversation between them |
+| thought signatures | `captureImageTurn` / `replayImageTurn` carry them and hood/front/rear/roof replay the driver exchange — **but only in the hero-driver cascade, which is OFF** (`HERO_FIRST=off`). A single-call topology has one turn, so there is nothing to continue |
+| the elements | **a real DAG.** Three producers with no dependencies run in parallel, fan into `element.lockup`, then `master.composite`. Deterministic: zero model calls, asserted |
+| the edge | `design-panel-ai-generate` mode `atlas-artboard`, the one Call-1 network endpoint (RULE 0.26), unchanged |
+
+So multi-turn signature passing is not absent by oversight — it is inapplicable
+to the topology the owner routed production to. Reaching it means hero-driver,
+which measured 0/3 on real vehicles and is off for that reason.
 
 ### THREE OPERATIONAL FACTS THAT COST HOURS EACH (2026-09-16)
 
