@@ -570,11 +570,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const validated = await validateWallUpload(ready);
       const asset = { ...validated, file: ready, url: retain(validated.url) };
       if (role === 'photo') {
-        setPhoto(asset); setCorners(fullFrame()); cornersOrigin.current = 'default'; setCornerSource('default'); setExclusions([]); setDetectedMask(null); setRemoveMask(null); setExcludeDraft([]); setMarking(null); setView('before');
-        // Uploading a wall photo means "find my wall": detection starts at once,
-        // in the background, and now classifies + masks automatically too
-        // (owner, 2026-09-12) -- it must not hold the form: the customer types
-        // the wall size while it runs, and the corner gate still guards Generate.
+        setPhoto(asset); setCorners([]); cornersOrigin.current = 'default'; setCornerSource('default'); setExclusions([]); setDetectedMask(null); setRemoveMask(null); setExcludeDraft([]); setView('before');
+        /**
+         * ASK FOR THE FOUR CORNERS IMMEDIATELY (owner, 2026-09-18, with a photo
+         * uploaded and the page stuck on "Detecting…": "It should ask customer
+         * to mark corners and they just touch corners").
+         *
+         * The page used to open on "Detecting…" and wait. When detection is
+         * slow — or, as on the live site tonight, when the request never leaves
+         * the browser at all — the customer is left watching a spinner with
+         * nothing to do and no idea they are allowed to proceed. Four taps take
+         * five seconds, need no network, and cannot fail.
+         *
+         * So marking mode is ON the moment the photo lands, and the instruction
+         * names the next corner by name. Detection still runs in the
+         * background and still fills the corners in if it lands FIRST and the
+         * customer has not started tapping (`markPoint` flips the origin to
+         * 'manual' on the first tap, and detectPhoto already refuses to
+         * overwrite hand-marked corners). Whichever arrives first wins; the
+         * customer is never blocked on the one that might not arrive.
+         *
+         * This is the owner's own standing ruling applied one step earlier --
+         * 2026-09-11, after auto-masks swallowed a wall: "just have people mark
+         * it."
+         */
+        setMarking('wall');
         void detectInBackground(asset, true);
       }
       if (role === 'artwork') { setArtwork(asset); setDesignMode('upload'); setView(photo && cornersValid ? 'after' : 'design'); await recordVersion('upload', asset, { note: file.name.slice(0, 200) }); }
@@ -679,10 +699,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // was thinking. A stale answer, or one that would overwrite hand-placed
     // corners, is dropped rather than applied on top of their work.
     if (photoRef.current?.url !== asset.url) return;
-    const handMarked = cornersOrigin.current === 'manual' && validWallCorners(cornersRef.current);
+    // THE CUSTOMER'S TAPS ALWAYS WIN, INCLUDING A HALF-FINISHED SET. `handMarked`
+    // only catches four VALID corners, so a detection landing mid-tap used to
+    // wipe out the two or three already placed and drop the customer back to the
+    // start with no explanation. Any tap at all now counts as theirs.
+    const started = cornersOrigin.current === 'manual' && cornersRef.current.length > 0;
+    const handMarked = started && validWallCorners(cornersRef.current);
     const cornersOk = !!found.wall && validWallCorners(found.wall);
-    if (!handMarked && cornersOk) { setCorners(found.wall!); cornersOrigin.current = 'detected'; setCornerSource('detected'); }
-    setMarking(null);
+    const applied = !started && cornersOk;
+    if (applied) { setCorners(found.wall!); cornersOrigin.current = 'detected'; setCornerSource('detected'); }
+    // Marking mode closes ONLY when detection actually placed the corners. It
+    // opened on upload so the customer can tap straight away; closing it on a
+    // detection that found nothing would leave them with no corners AND no
+    // prompt, which is the state that reads as a broken page.
+    if (applied) setMarking(null);
     // Segmentation masks follow the real outline of a bed, a drape or a shelf,
     // so the wall around them keeps the design. The coarse polygon list is only
     // the fallback when segmentation returned nothing usable.
@@ -746,7 +776,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setView(artworkRef.current ? 'after' : 'before'); setError('');
     const cornersNote = accent
       ? 'Mark the four corners of the area you are wrapping, and enter ITS size -- not the whole wall\'s.'
-      : handMarked ? 'Kept the corners you marked.' : cornersOk ? 'Wall corners placed.' : 'Using the whole photo as the wall.';
+      : started ? 'Kept the corners you marked.'
+        : applied ? 'Wall corners placed — drag any point to adjust.'
+          // NOT "using the whole photo as the wall": that was a lie the page told
+          // whenever detection found nothing, and it left the customer believing
+          // a wall had been chosen. Ask for the four taps instead.
+          : 'Tap the four corners of your wall, clockwise from the top left.';
     if (accent) setNotice(cornersNote + (removeCount ? ` Anything standing in front of it will be painted through (${[...new Set(removeLabels)].slice(0, 4).join(', ')}).` : '') + ' Nothing here is auto-protected: this zone exists to cover it.');
     else if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes for a single item, or Protect a busy area to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
     else if (maskCount || removeCount) {
@@ -761,7 +796,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * customer's typing and a signed-out session or a model failure leaves the
    * upload in place and falls back to hand marking. */
   async function detectInBackground(asset: WallAsset, applyMasks = false) {
-    setDetecting(true); setNotice(applyMasks ? 'Finding windows, drapes and furniture to protect…' : 'Finding your wall. Enter the wall size meanwhile; nothing else is needed.');
+    // NEVER ASK THE CUSTOMER TO WAIT. Detection is a convenience that may be
+    // slow, may fail, or -- as on 2026-09-18 -- may never leave the browser.
+    // The instruction is always the thing they can do right now; if detection
+    // lands first it replaces this with "Wall corners placed".
+    setDetecting(true);
+    setNotice('Tap the four corners of your wall, clockwise from the top left. We are also having a look ourselves — whichever finishes first.');
     try { await detectPhoto(asset, applyMasks); }
     catch (e) { if (photoRef.current?.url === asset.url) setNotice((e instanceof Error ? e.message : 'The wall could not be detected.') + ' Using the whole photo as the wall; drag the corners if the wall is smaller.'); }
     finally { if (photoRef.current?.url === asset.url) setDetecting(false); }
@@ -1472,7 +1512,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
-              <p className="text-xs wall-muted">{detecting ? 'Working on it. You can enter the wall size now.' : 'The wall corners were placed when you uploaded the photo; drag any point to adjust. Use the mask tools on the photo for windows, drapes and furniture, or try Auto-mask.'}</p>
+              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : 'Drag any corner to adjust. Use the mask tools on the photo for windows, drapes and furniture, or try Auto-mask.'}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
@@ -1701,8 +1741,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   guess from the picture. */}
               {artwork && !wallLocated && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
                 {detecting
-                  ? 'Still looking for your wall in this photo. "On your wall" switches on by itself the moment it is found.'
-                  : 'Your wall has not been found in this photo yet, so the design cannot be placed on it. Tap "Re-mark wall corners" and tap the four corners of the wall, clockwise from the top left.'}
+                  ? 'Tap the four corners of your wall, clockwise from the top left — "On your wall" switches on the moment they are set. We are looking too, but you do not have to wait for us.'
+                  : 'Tap "Re-mark wall corners", then tap the four corners of the wall, clockwise from the top left. It takes about five seconds and switches on the on-wall view.'}
                 {' '}Your print files do not wait for this — they are already correct.
               </p>}
               {/* Masking runs automatically now, so the page states what it
@@ -1741,7 +1781,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </div>
               <p className="mt-2 text-xs wall-muted">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
-              {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ': ' + cornerNames[corners.length] + '. Wall corners control the preview only.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
+              {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
             </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm wall-muted">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
