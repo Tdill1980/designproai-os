@@ -57,14 +57,20 @@ import {
 const BUCKET = "wrap-files";
 
 /**
- * The two pinned multimodal inputs.
+ * The two PINNED multimodal inputs. The container is a third attachment and
+ * arrives as a reference instead -- see CALL1_INPUT_PATH below.
  *
- * FORMAT, NOT STYLE. The proof sheet teaches the document's layout, captions
- * and dimension callouts; the prompt says in as many words that its artwork is
- * not a style reference. That distinction is RULE 0.24's whole subject, and
- * canary 33389124918 is what happens when a reference teaches more than it was
- * meant to -- an installed vehicle proof put wheel wells and template furniture
- * back into the source rectangles.
+ * THE SHEET IS THE STANDARD, NOT JUST THE FORMAT. This comment used to read
+ * "FORMAT, NOT STYLE ... the prompt says in as many words that its artwork is
+ * not a style reference". The owner corrected that on 2026-09-18 and the prompt
+ * was changed to match; the comment was not, so it sat here contradicting the
+ * text it describes. The layout AND the quality of the work on it are the bar.
+ *
+ * What survives of RULE 0.24's caution is narrower and about OWNERSHIP: the
+ * identity on that sheet is Bright Smiles Dental's, and a customer's proof
+ * carries only the strings in their own request. Canary 33389124918 is still
+ * why the bytes are pinned at all -- a teaching input that silently changes
+ * teaches something nobody chose.
  *
  * AND THE FORMAT EXAMPLE MUST SHOW THE FORMAT BEING ASKED FOR. It used to be
  * `panel-production-proof-example.png` -- the Arctic Air sheet, 874x717, which

@@ -70,12 +70,14 @@ export const PANEL_PROOF_FORMAT_EXAMPLE = {
  * removed from Call 1. 3:2 at 1536x1024, identical to the filled reference.
  */
 export const PANEL_PROOF_CONTAINER_TEMPLATE = {
-  path: "atlas-examples/panel-proof-container-template.png",
-  sha256: "96e82fbf03d141b5d115378a9e44a8097a623c4a9036d8117db8ac5ce1e4bc42",
-  byteSize: 112895,
+  // NO path, sha256 or byteSize. Those described one fixed Prius render and
+  // became a lie the moment the container went per-vehicle: the caller stages
+  // its own under atlas-call1-inputs/<sha256>.png and names it in the request.
+  // A constant that still advertises a stale path is how a later reader wires
+  // the wrong object with complete confidence.
+  contract: "designpro.atlas-proof-container-template.v1",
   width: 1536,
   height: 1024,
-  contract: "designpro.atlas-proof-container-template.v1",
 } as const;
 
 /**
