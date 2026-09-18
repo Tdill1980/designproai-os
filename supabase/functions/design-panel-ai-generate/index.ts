@@ -587,10 +587,16 @@ function atlasFlatMasterContract(
   //     paragraph (RULE 0.28 still holds: labels never reach the artwork);
   //   - v631's gallery-grade closing, verbatim.
   //
-  // Deleted: the poster-on-a-table restatement, "vehicle appearance ... are
-  // absent here", the whole finished-look-belongs-downstream livery paragraph,
-  // "the space between panels is sheet separation", and the duplicated
-  // flat-sheet opening. Every one of them said what the first line already says.
+  // Deleted, all of them restatements of what the first line already says: the
+  // poster-on-a-table simile, the "downstream proof projections" disclaimer, the
+  // finished-look-belongs-downstream livery paragraph, the gutter/sheet-gap
+  // sentence, and the duplicated flat-sheet opening.
+  //
+  // Deliberately PARAPHRASED rather than quoted. Several tests extract this
+  // whole function as a block and assert on it, so a comment that quoted the
+  // deleted sentences verbatim would satisfy a grep for text that is no longer
+  // in the returned template -- a lock passing on a comment is worse than no
+  // lock. Do not paste the old wording back in here.
   //
   // What this deliberately does NOT do: it does not touch the manifest, the six
   // zones, `cutCallOnePanels`, the extraction rects, the square 4K canvas, the
