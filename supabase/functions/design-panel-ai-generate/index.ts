@@ -55,7 +55,7 @@ import {
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260915.v26-map-is-read-not-drawn";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260918.v27-ask-not-spec-sheet";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -557,19 +557,56 @@ function atlasFlatMasterContract(
     "• DRIVER SIDE — the tall panel down the right",
     "• REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom",
   ].join("\n");
+  // OVER-CONSTRAINT IS THE DEFECT, AND THE REFERENCE SAYS SO IN ITS OWN WORDS
+  // (owner, 2026-09-18: "it's not acting like a pro graphic designer it's not
+  // using its Gemini brain to elevate the designs").
+  //
+  // Measured on the real assembly for a commercial F250 brief before this
+  // change: 4,931 chars total, of which THIS tail was 2,532 -- 51% of Call 1 --
+  // against a 330-char designer identity. 43% of the prompt sat in lines
+  // carrying a prohibition, and the single idea "this is flat artwork, not a
+  // picture of a vehicle" was restated SEVEN separate times.
+  //
+  // `design-panel-ai-generate` v631 (restylepro-os, the live design brain)
+  // carries the diagnosis at its own temperature line: "keep image-gen
+  // temperature at the default 1.0 -- lowering it (OR OVER-CONSTRAINING THE
+  // PROMPT, WHICH ACTS LIKE LOWERING IT) degrades quality and causes
+  // repetitive/homogeneous output." Seven restatements of one prohibition is
+  // that, and the output was exactly what it predicts: a centred, symmetric
+  // badge -- the same composition for a dental practice and a pool company.
+  //
+  // So the tail is cut to what v631's own `mode:'artboard'` branch keeps, and
+  // nothing here is a new invention -- every surviving sentence was already in
+  // this function or in that branch:
+  //   - the flat-artboard statement, ONCE, in the opening line;
+  //   - the panel placement list (the layout; load-bearing for the cut);
+  //   - the one-cohesive-design paragraph (v631's "the SAME cohesive design
+  //     flowing across every panel as one connected wrap unwrapped flat");
+  //   - ONE full-bleed sentence, because `edgeHoleRatio` convicts on it;
+  //   - the no-captions clause, folded into one sentence rather than a
+  //     paragraph (RULE 0.28 still holds: labels never reach the artwork);
+  //   - v631's gallery-grade closing, verbatim.
+  //
+  // Deleted: the poster-on-a-table restatement, "vehicle appearance ... are
+  // absent here", the whole finished-look-belongs-downstream livery paragraph,
+  // "the space between panels is sheet separation", and the duplicated
+  // flat-sheet opening. Every one of them said what the first line already says.
+  //
+  // What this deliberately does NOT do: it does not touch the manifest, the six
+  // zones, `cutCallOnePanels`, the extraction rects, the square 4K canvas, the
+  // gates, or the Call-1 node graph. v631's artboard is 16:9 and the owner is
+  // explicit that it "never produced panels ... just one ai call that was not
+  // producing print ready files" -- so the ask comes from RestylePro and the
+  // panel production stays on this repo's DAG.
   return `OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas.
-Design ONE flat vehicle-wrap A.T.L.A.S. ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet — the complete flattened panel layout of the vehicle. The output is flat print artwork on a 2D sheet.
+Design ONE flat vehicle-wrap A.T.L.A.S. ARTBOARD for this exact ${vehicle || "customer vehicle"} (${bodyClass}) — the full wrap laid out FLAT as rectangular print panels on one sheet, the way the printed vinyl looks before anything is cut or applied.
 
 Lay out these panels, the wrap artwork filling each panel edge to edge, and the SAME cohesive design flowing across every panel as ONE CONNECTED WRAP UNWRAPPED FLAT:
 ${panelLines}
 
-Fill every panel corner to corner; the space between panels is sheet separation. Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet.
+One wrap, unwrapped. The left and right flanks are the two sides of the SAME vehicle carrying the SAME design — the palette, the imagery, the motion and the branding continue from one to the other, and a person walking around the finished truck sees one design, not two. The centre panels carry that same composition across the ${bodyClass}'s top and ends. Customer-facing wording reads normally on every panel, and no panel names, surface IDs or captions are set anywhere in the artwork.
 
-One wrap, unwrapped. The left and right flanks are the two sides of the SAME vehicle carrying the SAME design — the palette, the imagery, the motion and the branding continue from one to the other, and a person walking around the finished truck sees one design, not two. The centre panels carry that same composition across the ${bodyClass}'s top and ends. Customer-facing wording reads normally on every panel.
-
-Every panel is opaque, unbroken and full-bleed to all four edges: flat printed graphic art, the same kind of image as a printed poster or a roll of printed vinyl laid flat on a table. It is the artwork by itself, before anything is cut or applied. Customer-requested photographic imagery is a photograph printed INTO that flat art. Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the seven proof projections and are absent here.
-
-When the brief describes how the finished vehicle should look — a race livery, a heritage scheme, a named reference, a style the customer admires — this sheet carries the livery that produces that look: the colour blocking, stripes, graphics, numbers, badges and lettering, drawn as flat print artwork running edge to edge through every panel, exactly the way that livery looks on the printed vinyl before it is applied. The finished look on the vehicle itself belongs to the seven proof projections downstream; on this sheet there is only the printed livery, flat.
+Every panel is opaque and full-bleed to all four edges.
 
 Gallery-grade custom artwork with real depth, movement and a wow factor — never generic AI filler, never a template. Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing.`;
 }

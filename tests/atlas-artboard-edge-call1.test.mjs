@@ -84,7 +84,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v26-map-is-read-not-drawn"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260918\.v27-ask-not-spec-sheet"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {
@@ -221,12 +221,11 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
   assert.match(flatFunction, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
   assert.match(contract, /\$\{panelLines\}/);
   assert.match(contract, /\$\{panelLines\}/);
-  assert.match(contract, /Fill every panel corner to corner/);
-  assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
-  assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
-  assert.match(contract, /the space between panels is sheet separation/);
+  assert.match(contract, /the wrap artwork filling each panel edge to edge/);
+  assert.match(contract, /no panel names, surface IDs or captions are set anywhere in the artwork/);
+  assert.match(contract, /Every panel is opaque and full-bleed to all four edges/);
   assert.match(contract, /a person walking around the finished truck sees one design, not two/);
-  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
+  assert.match(contract, /the way the printed vinyl looks before anything is cut or applied/);
 
   // ⚠️ INVERTED 2026-08-31. This used to REQUIRE the lock to name "vehicle
   // render", "vehicle photograph", "vehicle outline", "physical vehicle
@@ -252,10 +251,9 @@ test("the flat contract teaches one named vehicle atlas without leaking dimensio
     assert.ok(!contract.includes(anatomyNoun),
       `the pixel lock must not name "${anatomyNoun}" to the image model -- a refusal list of anatomy is what taught it to draw the anatomy`);
   }
-  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
-  assert.match(contract, /a printed poster or a roll of printed vinyl laid flat/);
-  assert.match(contract, /the artwork by itself, before anything is cut or applied/);
-  assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
+  assert.match(contract, /the way the printed vinyl looks before anything is cut or applied/);
+  assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
+  assert.match(contract, /Gallery-grade custom artwork with real depth, movement and a wow factor/);
   assert.match(contract, /Output ONE flat 2D artboard sheet, drawn straight-on and flat for printing/);
 
   for (const leaked of ["pixel size", "DASHED", "title band", "footer", "widthInches", "heightInches"]) {

@@ -161,8 +161,8 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
     assert.ok(!prompt.includes(bedAnatomy),
       `a pickup's Call-1 prompt must not carry "${bedAnatomy}"`);
   }
-  assert.match(prompt, /flat printed graphic art, the same kind of image as a printed poster/);
-  assert.match(prompt, /a printed poster or a roll of printed vinyl laid flat/);
+  assert.match(prompt, /the way the printed vinyl looks before anything is cut or applied/);
+  assert.match(prompt, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
   for (const anatomyNoun of ["wheels", "windows", "doors", "silhouette", "vehicle outline", "shaped openings"]) {
     assert.ok(!prompt.includes(anatomyNoun),
       `the assembled prompt must not hand the image model the noun "${anatomyNoun}"`);
@@ -170,7 +170,7 @@ test("the exact DCA brief retains vehicle-wrap intent and named topology before 
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
     assert.match(prompt, new RegExp(surface, "i"));
   }
-  assert.match(prompt, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
+  assert.match(prompt, /no panel names, surface IDs or captions are set anywhere in the artwork/);
   assert.doesNotMatch(prompt, /FIELD [A-F]|studio photograph|widthInches|heightInches/i);
 });
 
