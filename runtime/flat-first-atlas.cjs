@@ -4106,9 +4106,50 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // accepted, gated master over them would destroy a good design for no defect
   // (the blast-radius rule RULE 0.15 states about cut-outs). A composite that
   // RAN and FAILED still throws: that is real work that was supposed to happen.
+  // THE BASE IS NOT ALWAYS CLEAN, AND COMPOSITING ONTO A DIRTY ONE DOUBLES THE
+  // COMPANY NAME (live 34613569, 2026-09-18 -- the first composited sheet a
+  // human has ever looked at).
+  //
+  // `cleanBase` asks Call 1 for a sheet with NO lettering so the lockup can be
+  // placed as its own layer. On that run Call 1 drew the full lockup anyway --
+  // company name, logo mark, phone and web address, on both flanks -- and the
+  // compositor then pasted a SECOND lockup over it. Both are visible in the
+  // export: one set drawn by Call 1, one composited on top of it, clipped.
+  //
+  // The ask is a request, not a guarantee, and the reason is the prompt shape
+  // this file warns about in four other places: the customer's brief names the
+  // company ("...wrap for Precision Climate Solutions...") and is presented as
+  // "THE CONCEPT -- the heart of this design", with the no-lettering contract
+  // stacked underneath it as five negative clauses. RULE 0.1 forbids rewriting
+  // that creative framing to fix a pixel defect, so the ask is left ALONE and
+  // the compositor learns to check instead.
+  //
+  // The evidence already exists and costs nothing: the passenger mirror has
+  // just read the driver panel for lettering (RULE 0.36). If it LOCATED bands,
+  // the base carries type and Layer 1 has nothing to add -- so the composite is
+  // skipped and Call 1's own lettering ships, which is exactly what every run
+  // before v28 delivered and is a known-acceptable product. Doubling is not.
+  //
+  // This is a positive finding only. A read that resolved nothing, or could not
+  // run at all, does NOT suppress the composite -- that is the cc382c3c rule
+  // (a reader that cannot see has not found anything) applied to this decision,
+  // and it keeps the clean-base path working wherever the base really is clean.
+  const baseLetteringBands = Array.isArray(passengerMirror?.letteringBands)
+    ? passengerMirror.letteringBands.length
+    : 0;
+  const baseCarriesLettering = passengerMirror?.letteringRead === "located" && baseLetteringBands > 0;
   let elementLayer = null;
   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
-  if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
+  if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
+    && baseCarriesLettering) {
+    logger(`atlas element graph: skipped -- Call 1 authored its own lettering (${baseLetteringBands} band(s) located on the driver panel) `
+      + `despite the clean-base contract; compositing would print the company name twice`);
+    elementLayer = {
+      applied: [], changed: false,
+      skipped: "base_already_carries_lettering",
+      baseLetteringBands,
+    };
+  } else if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
     const startedAt = Date.now();
     const staged = await store.putImmutableBytes({
       storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png",

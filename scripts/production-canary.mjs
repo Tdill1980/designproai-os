@@ -982,6 +982,78 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (atlasPanelManifestHashes.size !== 1 || !atlasPanelManifestHashes.has(evidence.geniePrep?.manifestHash)) {
     throw new Error("A.T.L.A.S. did not use the GENIE manifest prepared before Call 1");
   }
+  // WHO VALIDATED THE ROW IS NOT WHICH ROW THEY PICKED (live 34613569,
+  // 2026-09-18).
+  //
+  // The assertion above proves the run used the exact operator-validated
+  // candidate prepared before Call 1. It says nothing about WHICH of the
+  // vehicle's catalogued configurations that candidate is, and for an F-series
+  // truck that is a hundred-inch question:
+  //
+  //   F250, F350, F450 Crew Cab Chassis Cab   153.0"   <- what 34613569 used
+  //   F250 Crew Cab 6.5 ft box                230.8"
+  //   F250, F350, F450 Crew Cab 6.5ft Box     242.2"
+  //   F250 Crew Cab 8 ft box                  246.8"
+  //   F250, F350, F450 Crew Cab 8ft Box       259.8"
+  //
+  // Every one of those is a real, measured catalog row, so NONE of this is a
+  // geometry defect and there is nothing to convict. 153" is correct for a
+  // chassis cab, which carries no pickup box. What the canary could not say --
+  // and now does -- is that the brief said only "F250 Crew Cab", which matches
+  // five rows spanning 106.8 inches, and the run silently took the shortest.
+  //
+  // This is status-board item 18 ("Input contract drops cab/bed configuration
+  // ... Configuration-critical for F-series"), reported from a live run instead
+  // of from the schema. Widening `designpro.calls-1-7-input.v3` is an owner
+  // decision that item explicitly defers, so the instrument REPORTS the
+  // ambiguity and does not fail on it: failing would convict a correct row.
+  //
+  // It DOES fail when the resolved flank matches no catalogued configuration of
+  // that vehicle at all -- that is the class-constant estimator answering for a
+  // vehicle the catalog knows, which is the RULE 0.28 defect.
+  const driverPanel = (atlasRow.metadata?.callOnePanels || [])
+    .find((panel) => panel?.surfaceKey === "driver");
+  const resolvedFlankIn = Number(driverPanel?.trimWidthIn);
+  if (Number.isFinite(resolvedFlankIn) && resolvedFlankIn > 0) {
+    // Make + model family, NOT year: the catalog has no row covering 2022 for
+    // this truck (status-board item 19), so a year-exact lookup checks nothing.
+    const family = String(CANARY_MODEL || "").split(/[\s,]+/).filter(Boolean)[0] || "";
+    const { data: catalogRows } = await service
+      .from("vehicle_dimensions")
+      .select("model,year_range,side_width")
+      .ilike("make", String(CANARY_MAKE || ""))
+      .ilike("model", `%${family}%`)
+      .limit(200);
+    const candidates = (catalogRows || [])
+      .map((row) => ({ model: row.model, year: row.year_range, width: Number(row.side_width) }))
+      .filter((row) => Number.isFinite(row.width) && row.width > 0);
+    if (!candidates.length) {
+      // Legitimate: grounded estimation for a vehicle the catalog has never
+      // seen. Status-board item 19 requires reporting such runs as provisional.
+      step(`GENIE geometry is GROUNDED/PROVISIONAL: no ${CANARY_MAKE} ${family} rows to compare the resolved ${resolvedFlankIn}" flank against`);
+    } else {
+      // "Matches a catalogued configuration" is within 2% -- trim differs from
+      // the catalog by rounding and the bleed, never by a body style.
+      const matched = candidates.filter((row) => Math.abs(row.width - resolvedFlankIn) <= row.width * 0.02);
+      const widths = candidates.map((row) => row.width);
+      const smallest = Math.min(...widths);
+      const largest = Math.max(...widths);
+      if (!matched.length) {
+        throw new Error(`the resolved driver flank is ${resolvedFlankIn}" but no ${CANARY_MAKE} ${family} configuration in the GENIE `
+          + `catalog is that size (${smallest}"-${largest}" across ${candidates.length} rows). A flank that matches no catalogued `
+          + `body style is a class-constant estimate for a vehicle the catalog knows — RULE 0.28.`);
+      }
+      step(`GENIE flank ${resolvedFlankIn}" matches ${matched.map((row) => `${row.model} (${row.year})`).join("; ")}`);
+      if (largest - smallest > smallest * 0.1) {
+        // The spread is the finding. Loud, and never silent, because the run
+        // otherwise looks identical whichever configuration it picked.
+        step(`WARNING: "${CANARY_MAKE} ${CANARY_MODEL}" matches ${candidates.length} catalogued configurations spanning `
+          + `${smallest}"-${largest}" (${(largest - smallest).toFixed(1)}" apart) and this run took ${resolvedFlankIn}". `
+          + `The input contract carries no cab/bed configuration, so the customer cannot say which truck they own `
+          + `— status-board item 18.`);
+      }
+    }
+  }
   for (const [field, value] of Object.entries({
     master_storage_path: atlasRow.master_storage_path,
     projection_content_hash: atlasRow.projection_content_hash,
