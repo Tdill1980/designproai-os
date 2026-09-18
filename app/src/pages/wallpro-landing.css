@@ -188,3 +188,19 @@
 .wl-light .wl-chips button:hover{background:#e6f0fa;border-color:#1685da}
 .wl-light .wl-start-facts svg{color:#1a7fd4}
 .wl-light .wl-start-example{border-color:#d0dce8}
+
+/* THE HERO PANEL HOLDS THE DRAGGABLE BEFORE/AFTER (owner, 2026-09-17).
+   The panel keeps its own shape — the inset, the height and the big bottom-left
+   radius are the hero's, not the slider's — and the band fills it. `isolate`
+   keeps the slider's absolutely-positioned halves stacking inside this box
+   rather than against the hero. The shade does not apply here: it exists to
+   fade a photograph into the copy, and fading a before/after would dim the half
+   the visitor is dragging toward. */
+.wl-hero-compare { isolate: isolate; }
+.wl-hero-compare > section { position: absolute; inset: 0; }
+@media (max-width: 800px) {
+  /* Off desktop the panel is a normal block under the copy, so the slider needs
+     a real height rather than the absolute fill. */
+  .wl-hero-compare { position: relative; inset: auto; width: 100%; height: 300px; }
+}
+@media (max-width: 480px) { .wl-hero-compare { height: 250px; } }

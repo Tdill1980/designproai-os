@@ -41,17 +41,24 @@ import {
 } from '@/lib/wallpro-proof-canvas';
 
 /**
- * THREE TOOLS, ONE CURATOR PAGE (Trish 2026-09-16: "do the admin page" -- for
- * VehiclePro and CutPro too, not just WallPro). Same table, same bucket, same
+ * FOUR TOOLS, ONE CURATOR PAGE (Trish 2026-09-16: "do the admin page" -- for
+ * VehiclePro and CutPro too, not just WallPro; then 2026-09-17, of PatternPro:
+ * "must have the draggable tool ... Both"). Same table, same bucket, same
  * publish/order/delete behaviour; only which tool's band a row belongs to
- * changes. WallPro alone has a partner skin (`brand`), because it is the only
- * tool with a page under a partner's own mark; VehiclePro and CutPro are
- * always the plain DesignProAI brand.
+ * changes.
+ *
+ * TWO tools have a partner skin (`brand`), because two have a page under a
+ * partner's own mark: WallPro (/wall-wrap) and PatternPro (/pattern-wrap).
+ * VehiclePro and CutPro are always the plain DesignProAI brand.
  */
 const TOOLS: { key: ProofBandToolKey; label: string; backTo: string; backLabel: string }[] = [
   { key: 'vehiclepro', label: 'VehiclePro', backTo: '/designpro/create', backLabel: 'The VehiclePro page' },
   { key: 'wallpro', label: 'WallPro', backTo: '/wall-wrap', backLabel: 'The WallPro landing' },
   { key: 'cutpro', label: 'CutPro', backTo: '/graphics-pro', backLabel: 'The CutPro page' },
+  // PatternPro has BOTH skins, like WallPro: /printpro/patternpro is the
+  // DesignProAI page and /pattern-wrap is the WePrintWraps storefront. The
+  // brand a row lands on follows the same rule as WallPro's below.
+  { key: 'patternpro', label: 'PatternPro', backTo: '/pattern-wrap', backLabel: 'The PatternPro page' },
 ];
 const field = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950';
 
@@ -72,7 +79,9 @@ export default function AdminWallProProofs() {
   const [toolKey, setToolKey] = useState<ProofBandToolKey>('wallpro');
   // Only WallPro has a partner skin; the other two tools are always the
   // plain DesignProAI brand, since neither has a page under a partner's mark.
-  const brand = toolKey === 'wallpro' ? 'weprintwraps' : 'designpro';
+  // The two tools with a partner skin curate against it; the rest are always
+  // the plain DesignProAI brand.
+  const brand = toolKey === 'wallpro' || toolKey === 'patternpro' ? 'weprintwraps' : 'designpro';
   const tool = TOOLS.find(t => t.key === toolKey)!;
   const [rows, setRows] = useState<WallProofRow[]>([]);
   const [busy, setBusy] = useState('');

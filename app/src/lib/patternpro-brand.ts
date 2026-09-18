@@ -80,6 +80,35 @@ const HERO = {
   swatchAlt: 'The Chameleon Camo Tan swatch the render was made from',
 };
 
+/**
+ * THE HERO IS A BEFORE AND AFTER YOU CAN DRAG (owner, 2026-09-17: "must have
+ * the draggable tool ... on the patternpro page", for "both wpw version and
+ * standard").
+ *
+ * A render of a wrapped truck is a picture of a wrapped truck. The SAME truck
+ * bare and then wrapped is what PatternPro actually sells, and the argument is
+ * made in the time it takes to drag a handle — exactly the move WallPro's
+ * landing hero makes.
+ *
+ * The pair is real and already in the bucket: the after is the hero render this
+ * page has always shown, and the before is `white-f150-side.jpg`, the stock
+ * vehicle photograph that render was MADE from (data/stock-vehicle-photos.ts).
+ * Same truck, same angle, same studio — which is what makes a wipe legible
+ * rather than two loosely related photographs.
+ *
+ * This is the FLOOR, not the ceiling: /admin/wallpro-proofs now carries a
+ * PatternPro tab, and curated rows replace this pair with no deploy.
+ */
+const STOCK_BASE = `${import.meta.env.VITE_SUPABASE_URL as string}/storage/v1/object/public/wrap-files/admin/deploy-photos`;
+
+export const PATTERN_HERO_PROOF = {
+  before: `${STOCK_BASE}/white-f150-side.jpg`,
+  after: HERO.main,
+  alt: 'A white Ford F-150 photographed in the studio, and the same truck wrapped in the Chameleon Camo Tan pattern',
+  headline: 'One truck, any pattern.',
+  caption: 'Chameleon Camo Tan, proofed on the vehicle in PatternPro. Drag to compare.',
+};
+
 export const PATTERN_BRANDS: Record<PatternBrandKey, PatternBrand> = {
   designpro: {
     logo: null,
