@@ -314,3 +314,37 @@ test("a capped artifact is logged, never dereferenced -- the courier may not kil
   // computed from the streamed bytes either way.
   assert.match(collect, /hashVerified: observedHash === artifact\.content_hash/);
 });
+
+test("the canary CONVICTS an element graph that never ran on a branded brief", () => {
+  // Declaring the brand fields made the element subgraph COMPILE. It did not
+  // make the canary notice when the subgraph then produced nothing -- so a null
+  // elementGraph would have passed silently all over again, one layer up from
+  // the defect that fix was written for.
+  //
+  // CLAUDE.md states the consequence: with the clean base on, Call 1 is asked
+  // for a sheet with NO lettering, so `elementGraph: null` is a wrap that ships
+  // with no company name. That is the state this must refuse.
+  assert.match(canary, /const elementGraph = atlasRow\.metadata\?\.elementGraph;/,
+    "the canary must read metadata.elementGraph");
+  assert.match(canary, /if \(elementGraph === null \|\| elementGraph === undefined\) \{\s*\n\s*throw new Error\("the element graph never ran/,
+    "a null element graph on a branded brief must THROW, not warn");
+
+  // The three states are not interchangeable, and only the middle one is a
+  // silent pass. A refusal back to Layer 0 is reported rather than thrown --
+  // Layer 0 survived by design and the owner judges that sheet on pixels -- but
+  // it may never go unmentioned.
+  assert.match(canary, /step\(`WARNING: the element graph ran and its sheet was refused back to Layer 0/,
+    "a refused composite must be reported, never silent");
+
+  // Both flanks or the passenger ships bare. ELEMENT_SURFACES is exactly
+  // driver and passenger, so a composite that placed on only one of them is a
+  // half-branded wrap that every receipt would still call composited.
+  assert.match(canary, /for \(const surface of \["driver", "passenger"\]\) \{/,
+    "the composite must be asserted on BOTH flanks");
+  assert.match(canary, /the element composite placed nothing on the \$\{surface\} flank/);
+
+  // The assertion is scoped to a brief that actually declares branding, so a
+  // dispatch that deliberately clears the fields still exercises the rest.
+  assert.match(canary, /const declaredBranding = Boolean\(COMPANY_NAME \|\| COMPANY_PHONE \|\| COMPANY_WEBSITE\);/,
+    "the element-graph assertion must be scoped to a branded brief");
+});

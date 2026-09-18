@@ -164,3 +164,99 @@ test("an empty plan is a sheet with no elements, not a failure", async () => {
     "with nothing to place the composited master IS Layer 0, and both hashes agree");
   assert.deepEqual(result.applied, []);
 });
+
+// THE GUARD ABOVE HAS NEVER MET THE SHAPE IT ACTUALLY GUARDS (live d8c2e779,
+// 2026-09-18 -- the FIRST run ever to reach master.composite on production).
+//
+// `ELEMENT_SURFACES` is exactly ["driver", "passenger"], and on every real
+// manifest both flanks are TALL COLUMNS carrying `rotationDegrees: ±90` -- the
+// element graph never touches an unrotated zone. Every fixture above uses the
+// default `rotationDegrees = 0`, so the outside-delta guard was only ever
+// exercised in a configuration production cannot produce.
+//
+// `sheetPlacement` returns `drawWidth`/`drawHeight` in READING space, which is
+// correct: the composite resizes to them and only THEN rotates. It knows the
+// sheet-space footprint is the transpose -- its own 90-degree branch computes
+// `left` from `trim.w - ry - dh`, using the HEIGHT as the horizontal extent.
+// `darkDeltaOutside` did not: it masked `drawWidth` across and `drawHeight`
+// down, so on both flanks the mask was the transpose of the region the
+// composite had just painted. The lockup's own ink landed outside it and was
+// counted as damage to the base.
+//
+// Live cost: element run ac8ab0a0 ran typeset, contact and lockup correctly in
+// 270ms, then refused its own correct sheet --
+//   atlas_composite_altered_base: composite changed 0.0275% of the sheet
+//   outside its own elements
+// -- and took an accepted master, six cuttable panels and the whole generation
+// down with it. Zero was always the right threshold; the mask was wrong.
+for (const rotation of [90, -90]) {
+  test(`the outside-delta mask follows the ROTATED footprint (${rotation} degrees)`, async () => {
+    const cleanMasterBytes = await baseSheet(1200, 800);
+    // A real flank: a tall column on the sheet, read sideways. Deliberately
+    // NOT square -- a square trim hides a transposed mask completely.
+    const flank = zone("driver", 150, 80, 300, 640, rotation);
+    const element = await typeset.renderLockup({
+      name: "Precision Climate Solutions",
+      lines: ["(520) 555-0192", "precisionclimate.designproai.com"],
+      width: 1200,
+      color: "#000000",
+    });
+
+    const result = await composite.compositeElementsOntoMaster({
+      cleanMasterBytes,
+      zones: [flank],
+      plan: {
+        placements: [{
+          surfaceKey: "driver", role: "typography", contentHash: element.contentHash,
+          box: { xPct: 0.08, yPct: 0.12, wPct: 0.7, hPct: 0.22 },
+        }],
+      },
+      artwork: new Map([["typography", element.bytes]]),
+    });
+
+    // The whole point: ZERO, on the shape production actually runs. Before the
+    // fix this threw atlas_composite_altered_base and never reached here.
+    assert.equal(result.outsideDelta, 0,
+      "on a rotated flank the composite must still darken nothing outside its own rectangle");
+    assert.equal(result.changed, true);
+
+    // And the recorded region must describe the SHEET, since that is what a
+    // reviewer and a later hole measurement read it as. After a +/-90 rotation
+    // the footprint is the transpose of the reading-space draw size.
+    const region = result.elementRegions[0];
+    const spot = result.applied[0].sheet;
+    assert.equal(region.sheetWidth, spot.drawHeight,
+      "a rotated element occupies drawHeight across the sheet, not drawWidth");
+    assert.equal(region.sheetHeight, spot.drawWidth,
+      "a rotated element occupies drawWidth down the sheet, not drawHeight");
+    // It stays inside the flank it belongs to -- a transposed footprint on a
+    // tall column runs straight out of the zone and over its neighbour.
+    assert.ok(region.left >= flank.trim.x && region.left + region.sheetWidth <= flank.trim.x + flank.trim.w,
+      "the placed element must stay within its own zone horizontally");
+    assert.ok(region.top >= flank.trim.y && region.top + region.sheetHeight <= flank.trim.y + flank.trim.h,
+      "the placed element must stay within its own zone vertically");
+  });
+}
+
+test("an UNROTATED zone's footprint is its draw size, unchanged", async () => {
+  // The fix must not move the case the older fixtures pin: with no rotation the
+  // sheet footprint IS the reading-space draw size.
+  const cleanMasterBytes = await baseSheet(1200, 800);
+  const element = await typeset.renderLockup({ name: "Bright Smiles", lines: [], width: 1200 });
+  const result = await composite.compositeElementsOntoMaster({
+    cleanMasterBytes,
+    zones: [zone("driver", 100, 100, 800, 400)],
+    plan: {
+      placements: [{
+        surfaceKey: "driver", role: "typography", contentHash: element.contentHash,
+        box: { xPct: 0.1, yPct: 0.2, wPct: 0.5, hPct: 0.25 },
+      }],
+    },
+    artwork: new Map([["typography", element.bytes]]),
+  });
+  const region = result.elementRegions[0];
+  const spot = result.applied[0].sheet;
+  assert.equal(region.sheetWidth, spot.drawWidth);
+  assert.equal(region.sheetHeight, spot.drawHeight);
+  assert.equal(result.outsideDelta, 0);
+});
