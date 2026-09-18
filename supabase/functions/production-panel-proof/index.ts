@@ -170,7 +170,14 @@ serve(async (req) => {
         contents: [{ role: "user", parts }],
         generationConfig: {
           responseModalities: ["TEXT", "IMAGE"],
-          imageConfig: { aspectRatio: "16:9", imageSize: "4K" },
+          // 3:2 BECAUSE THE PINNED REFERENCE IS 3:2 (1536x1024, exactly 1.5).
+          // This asked for 16:9 while showing the model a 1.5 document and
+          // telling it to match that layout -- so the one instruction and the
+          // canvas disagreed, and the model had to re-flow the thing it was
+          // being told to reproduce. Google's own list confirms 3:2 across the
+          // Gemini 3 image models. If PANEL_PROOF_FORMAT_EXAMPLE is ever
+          // replaced, this ratio follows its dimensions.
+          imageConfig: { aspectRatio: "3:2", imageSize: "4K" },
         },
       }),
     });

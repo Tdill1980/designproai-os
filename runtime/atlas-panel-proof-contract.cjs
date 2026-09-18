@@ -116,8 +116,8 @@ const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
  */
 const SYSTEM_JOB = [
   "You are a professional wide-format wrap designer producing a VEHICLE WRAP PANEL PRODUCTION PROOF:",
-  "the document a print shop receives. It shows each side's finished wrap panel as a flat rectangle,",
-  "captioned with its surface name, on a clean proof sheet.",
+  "the document a print shop receives. It shows each side's finished wrap panel as a flat rectangle",
+  "on a clean proof sheet.",
   "",
   "You are a pro-level graphic designer. Your job on this proof is to guarantee that NOTHING pertinent",
   "is lost at installation: the company name, the logo, the contact line and any face or focal subject",
@@ -158,13 +158,9 @@ const INSTALLATION_FACT = [
  * sections has never produced that failure; a coordinate table has, 4/4.
  */
 const SHEET_LAYOUT = [
-  "THE SHEET, in this order down the page:",
-  "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
-  "  the job block at the right.",
-  "  VERSION 1 across the upper half, each panel dimensioned.",
-  "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
-  "  VERSION 2 across the lower left. The cut proof fills the lower right.",
-  "  A footer band repeating the logo and tagline.",
+  "THE SHEET, in this order: a header band (logo and tagline left, 2D PRODUCTION PROOF centred, job",
+  "block right); VERSION 1 across the upper half; a TRIM SIZE REFERENCE table and TOTAL COVERAGE",
+  "beside the smaller panels; VERSION 2 lower left; the cut proof lower right; a footer band.",
   "",
   "DIMENSION IT AS A DRAFTSMAN WOULD: a measured line outside each panel, arrowheads at both ends,",
   "thin extension lines back to the edge, the figure on the line. A working shop drawing, not a poster.",
@@ -287,8 +283,10 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   out.push("", "THE DESIGN:", `"${String(creativeDirection || input.brief || "").trim()}"`);
 
   if (strings.length) {
-    out.push("", "EXACT TEXT — reproduce each of these character for character. Invent no other words,",
-      "no other numerals, no other address or web address anywhere on the proof:",
+    out.push("", "EXACT TEXT — reproduce each of these character for character, set in the typefaces the",
+      "design calls for: the company name as a confident display lockup, the contact line and service",
+      "marks in a clean sans that stays legible small. Invent no other words, no other numerals, no",
+      "other address or web address anywhere on the proof:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
 
