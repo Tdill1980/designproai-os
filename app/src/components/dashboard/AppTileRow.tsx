@@ -93,9 +93,16 @@ export const APP_TILES: AppTile[] = [
     name: 'GraphicsPro',
     promise: 'Cut-contour graphics for vehicles, walls and storefronts',
     href: '/graphics-pro',
-    image: '/wallpro/proof-studio-slat-after.jpg',
+    // The timber-slat frames this tile used were the OWNER'S OWN HOME, and she
+    // asked twice for her house off the product surfaces; 6cbfc5ff took the pair
+    // out of the WallPro proof band and the files are now deleted with it. This
+    // component is not currently mounted by anything, so nothing on screen
+    // changed -- but a dead reference to a deleted file is a broken image
+    // waiting for whoever mounts it, so it points at a WallPro install that
+    // still ships.
+    image: '/wallpro/proof-gym-after.jpg',
     objectPosition: '50% 50%',
-    alt: 'A wall finished in a warm timber-slat graphic',
+    alt: 'A gym wall finished in a full-wall printed graphic',
   },
 ];
 
