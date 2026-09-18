@@ -127,6 +127,55 @@ const MAX_ZONE_CUTOUT_COMPONENT_RATIO = 0.02;
 const MAX_ZONE_EDGE_HOLE_RATIO = 0.35;
 const MIN_CUTOUT_COMPONENT_RATIO = 0.0025;
 const CUTOUT_ALPHA_MAX = 128;
+// A SURROUND IS A SURROUND WHATEVER COLOUR IT IS. (Live efca5e03, 2026-09-18.)
+//
+// Every predicate above is a DARKNESS test: holeAt needs every channel <= 24,
+// nearBlackAt <= 40. Measured on that run's own exported panels, the surround
+// was rgb(88,88,88) -- neutral mid-grey, luma 88, 3.7x the near-black ceiling.
+// So a driver flank die-cut to a truck silhouette, wheel arches and all, scored
+// edgeHoleRatio 0.073 against a 0.35 limit, nonBlackFraction 0.939,
+// opaqueRatio 1.00000, and the output-class inspector answered flat_atlas at
+// confidence 1.0 with "no visible vehicle anatomy". Six checks, one shared
+// assumption, all wrong the same way. RULE 0.32 predicted it in words -- "a
+// missing-artwork field is a missing-artwork field whatever colour it is" --
+// and the colour-agnostic detector was deliberately NOT built, because a naive
+// one convicts the legitimate flat-colour commercial wrap.
+//
+// THE DISCRIMINATOR IS THE SHAPE OF THE FIELD, NOT ITS COLOUR, AND IT IS THE
+// ONE THIS FILE ALREADY USES FOR BLACK: "a cutout is a minority of flat black
+// inside a zone that is mostly artwork; a black wrap is mostly black". Measured
+// on the same six exported panels against that rule:
+//
+//   surface      field        share of zone   share of BORDER RING
+//   driver       rgb(88,88,88)      0.403            0.624
+//   passenger    rgb(88,88,88)      0.402            0.624
+//   roof         rgb(88,88,88)      0.386            0.759
+//   hood         rgb(88,88,88)      0.229            0.529
+//
+// The field is a MINORITY of the panel and a MAJORITY of its border: a frame of
+// plain colour around a floating island. A solid navy fleet wrap is the
+// opposite shape -- ~0.9 of both -- so it never reaches majority-artwork and
+// stays legal under the unchanged CUTOUT_BRIGHT_MAJORITY guard, exactly as a
+// black wrap does today. A full-bleed photographic wrap has a varied border and
+// never accumulates a dominant bin at all.
+//
+// Requiring the field to be over-represented at the border (ring share strictly
+// greater than zone share) is what makes "frame" the convicted shape rather
+// than "large flat area", so a white-ground livery whose flat colour genuinely
+// runs off all four edges is not convicted for being flat.
+//
+// PLAIN_SURROUND_MAX_ZONE_SHARE IS THE HALF THAT KEEPS FLAT-COLOUR WRAPS LEGAL,
+// and it was added because the fixture caught the false positive before this
+// shipped. "Over-represented at the border" alone is not enough: a solid navy
+// wrap with a logo measures ring 1.00 against zone 0.95, which satisfies
+// ring > zone and would have been convicted -- the exact outcome RULE 0.32
+// refused to accept. Requiring the field to be a strict MINORITY of the panel
+// is the sentence that separates the two: 0.403 / 0.402 / 0.386 / 0.229 on the
+// convicted surfaces, 0.95 on the navy wrap.
+const PLAIN_FIELD_CHANNEL_TOLERANCE = 12;
+const PLAIN_FIELD_QUANTISE_BITS = 3;
+const MAX_ZONE_PLAIN_SURROUND_RING_RATIO = 0.35;
+const PLAIN_SURROUND_MAX_ZONE_SHARE = 0.5;
 // A VOID IS ONE SHAPE, NOT THE SPECKS IT DECODES INTO. (Owner 2026-09-15:
 // "look at containers, fill that" / "massive nothing to edge on panels".)
 //
@@ -160,6 +209,75 @@ function nearBlackAt(data, width, height, channels, px, py) {
   const green = data[offset + 1] ?? red;
   const blue = data[offset + 2] ?? red;
   return Math.max(red, green, blue) <= NEAR_BLACK_CHANNEL_MAX;
+}
+
+/**
+ * The zone's dominant PLAIN border field, in whatever colour it happens to be.
+ *
+ * Reads the border ring into a coarse colour histogram, takes the most common
+ * bin as the candidate field, and then counts that colour -- within
+ * PLAIN_FIELD_CHANNEL_TOLERANCE, so JPEG noise and a faint vignette still count
+ * as one field -- across the whole zone and across the ring.
+ *
+ * It measures and nothing else. The verdict lives with the other zone verdicts,
+ * where the bright-majority guard that keeps flat-colour wraps legal is applied
+ * to every cut-out check alike.
+ */
+function measurePlainSurround({ data, width, height, channels, edgeDepth }) {
+  const depth = Math.max(1, Math.min(edgeDepth, Math.floor(Math.min(width, height) / 2)));
+  const onRing = (px, py) => py < depth || py >= height - depth || px < depth || px >= width - depth;
+  const shift = PLAIN_FIELD_QUANTISE_BITS;
+  const histogram = new Map();
+  let ringPixels = 0;
+  for (let py = 0; py < height; py += 1) {
+    for (let px = 0; px < width; px += 1) {
+      if (!onRing(px, py)) continue;
+      const offset = (py * width + px) * channels;
+      // Transparent border pixels are already the alpha hole case; counting
+      // them here would double-convict what edgeHoleRatio owns.
+      if (channels > 3 && data[offset + channels - 1] < CUTOUT_ALPHA_MAX) { ringPixels += 1; continue; }
+      const red = data[offset];
+      const green = data[offset + 1] ?? red;
+      const blue = data[offset + 2] ?? red;
+      const key = ((red >> shift) << 16) | ((green >> shift) << 8) | (blue >> shift);
+      histogram.set(key, (histogram.get(key) || 0) + 1);
+      ringPixels += 1;
+    }
+  }
+  if (!ringPixels || !histogram.size) {
+    return { color: null, zoneRatio: 0, ringRatio: 0 };
+  }
+  let bestKey = 0;
+  let bestCount = -1;
+  for (const [key, count] of histogram) {
+    if (count > bestCount) { bestCount = count; bestKey = key; }
+  }
+  const fieldRed = ((bestKey >> 16) & 0xff) << shift;
+  const fieldGreen = ((bestKey >> 8) & 0xff) << shift;
+  const fieldBlue = (bestKey & 0xff) << shift;
+  const tolerance = PLAIN_FIELD_CHANNEL_TOLERANCE;
+  let zoneField = 0;
+  let ringField = 0;
+  for (let py = 0; py < height; py += 1) {
+    for (let px = 0; px < width; px += 1) {
+      const offset = (py * width + px) * channels;
+      if (channels > 3 && data[offset + channels - 1] < CUTOUT_ALPHA_MAX) continue;
+      const red = data[offset];
+      const green = data[offset + 1] ?? red;
+      const blue = data[offset + 2] ?? red;
+      if (Math.abs(red - fieldRed) > tolerance) continue;
+      if (Math.abs(green - fieldGreen) > tolerance) continue;
+      if (Math.abs(blue - fieldBlue) > tolerance) continue;
+      zoneField += 1;
+      if (onRing(px, py)) ringField += 1;
+    }
+  }
+  const pixelCount = width * height;
+  return {
+    color: { red: fieldRed, green: fieldGreen, blue: fieldBlue },
+    zoneRatio: pixelCount ? zoneField / pixelCount : 0,
+    ringRatio: ringPixels ? ringField / ringPixels : 0,
+  };
 }
 
 /**
@@ -598,6 +716,9 @@ async function zonePixelMetrics(masterBytes, manifest) {
       if (size >= componentFloor) concentratedFlatBlack += size;
     }
     const voids = detectVoidBlobs({ data, width: info.width, height: info.height, channels: info.channels });
+    const plainSurround = measurePlainSurround({
+      data, width: info.width, height: info.height, channels: info.channels, edgeDepth,
+    });
     metrics.push({
       surfaceKey: String(zone.surfaceKey),
       largestVoidBlobRatio: voids.blobs.length ? voids.blobs[0].ratio : 0,
@@ -612,6 +733,9 @@ async function zonePixelMetrics(masterBytes, manifest) {
       cutoutComponentCount: componentCount,
       nonBlackFraction: brightCount / pixelCount,
       nonBlackMeanLuma: brightCount ? brightTotal / brightCount : 0,
+      plainSurroundColor: plainSurround.color,
+      plainSurroundZoneRatio: plainSurround.zoneRatio,
+      plainSurroundRingRatio: plainSurround.ringRatio,
       structuralTemplateBands,
     });
   }
@@ -847,6 +971,31 @@ async function deterministicMasterChecks(masterBytes, manifest) {
         + "on a surround, not a full-bleed printable rectangle",
       );
     }
+    // THE PLAIN-SURROUND READING IS EVIDENCE, NOT A VERDICT. DO NOT PROMOTE IT
+    // TO `blocking` WITHOUT A NEW DISCRIMINATOR. (2026-09-18, measured.)
+    //
+    // The check above is the right rule pointed at one colour, and generalising
+    // it to any colour is the obvious next move. It does not work, and the
+    // numbers say why. On the live efca5e03 flanks the plain field covered
+    // 0.403 of the panel and 0.624 of its border -- a frame around a floating
+    // truck. But this file's OWN existing full-bleed fixtures, a flat ground
+    // with graphics inset from the edge, measure a border share of 1.000 with a
+    // field covering 0.29 of the panel. They are MORE extreme than the defect
+    // on every geometric axis available here, and they are legitimate: a navy
+    // wrap with a swoosh prints navy to the edge.
+    //
+    // So no border-share threshold can separate "grey canvas showing through"
+    // from "a flat ground that is the design". RULE 0.32 anticipated exactly
+    // this when it refused to add a colour-agnostic field detector, and the
+    // refusal was right. The conviction belongs to the gate that can see what
+    // the island IS -- the output-class inspector, which failed this run for an
+    // unrelated and fixable reason (it judged the whole 4096 sheet squeezed to
+    // 1280px; it now reads each surface at its own resolution).
+    //
+    // The measurement stays because it is nearly free and it is the number a
+    // human QC can sort on: "how much of this panel's border is one flat
+    // colour" is exactly the question PanelPro's preflight asks by eye.
+
     if (zone.nonBlackFraction >= CUTOUT_BRIGHT_MAJORITY) {
       if (zone.largestCutoutComponentRatio > MAX_ZONE_CUTOUT_COMPONENT_RATIO) {
         cutout(zone.surfaceKey,
@@ -1310,9 +1459,12 @@ module.exports = {
   NEAR_BLACK_CHANNEL_MAX,
   VOID_BLOCK,
   detectVoidBlobs,
+  measurePlainSurround,
   nearBlackAt,
   paintedCheckerboardSignature,
   _test: {
+    MAX_ZONE_PLAIN_SURROUND_RING_RATIO,
+    PLAIN_FIELD_CHANNEL_TOLERANCE,
     MIN_VOID_BLOB_BBOX_FILL,
     VOID_BLOB_ASPECT_MIN,
     VOID_BLOB_ASPECT_MAX,

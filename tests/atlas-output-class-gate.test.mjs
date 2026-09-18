@@ -16,7 +16,9 @@ import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
-const { classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT, outputClassPrompt } = require("../runtime/atlas-output-class.cjs");
+const {
+  classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT, outputClassPrompt, surfaceTransports,
+} = require("../runtime/atlas-output-class.cjs");
 const runtime = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
 
@@ -126,7 +128,18 @@ test("the runtime gate refuses a vehicle-depiction candidate BEFORE canonicaliza
     runtime.indexOf("for (let attempt = 1; attempt <= maxAuthoringAttempts"),
     runtime.indexOf("const masterStoragePath"),
   );
-  assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes \}\)/);
+  // THE ZONES ARE PART OF THE CONTRACT NOW, NOT AN OPTIONAL EXTRA.
+  //
+  // Live efca5e03 (2026-09-18): the inspector judged the whole 4096-square
+  // sheet squeezed into one 1280px JPEG, which left a driver flank ~303px
+  // across its short side, and answered flat_atlas at confidence 1.0 with
+  // "no visible vehicle anatomy" about a panel that is plainly a truck --
+  // wheel arches, door seams, handles, mirror. The prompt already described
+  // that defect almost word for word, so the failure was perception, not
+  // wording. Passing the manifest zones makes the gate read each surface at
+  // its own resolution and in its reading orientation. A call site that drops
+  // them silently restores the blind reading.
+  assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes, zones: manifest\.zones \}\)/);
   assert.match(loop, /flat_atlas_master_output_class_invalid/);
   // The gate runs only after the deterministic checks pass, and its refusal
   // joins the same bounded refusal path — so nothing not-A.T.L.A.S. reaches
@@ -139,6 +152,92 @@ test("the runtime gate refuses a vehicle-depiction candidate BEFORE canonicaliza
   // The accepted revision records the receipt.
   assert.match(runtime, /masterOutputClass: outputClassReceipt/);
   assert.match(runtime, /masterOutputClassContract: OUTPUT_CLASS_CONTRACT/);
+});
+
+/**
+ * THE INSPECTOR READS PANELS, NOT A SQUEEZED SHEET. (Live efca5e03, 2026-09-18.)
+ *
+ * Measured on that run's own master: the whole-sheet transport is one 1280px
+ * JPEG carrying all six surfaces, which leaves a 971 x 3712 driver flank about
+ * 303px across its short side, lying on its side. The per-surface transport
+ * gives the same flank 419px upright, and the squarer centre surfaces their
+ * native resolution -- hood goes from ~370px to 987px.
+ */
+const sheetZones = [
+  // A tall flank column and a centre panel, the two shapes that matter.
+  { surfaceKey: "driver", x: 0, y: 0, w: 60, h: 240, extraction: { outputRotationDegrees: 90 } },
+  { surfaceKey: "hood", x: 60, y: 0, w: 120, h: 120, extraction: { outputRotationDegrees: 0 } },
+];
+
+async function sheetFixture() {
+  return sharp({ create: { width: 180, height: 240, channels: 4, background: "#3d6fb4" } })
+    .png().toBuffer();
+}
+
+test("each surface is transported on its own, in its reading orientation", async () => {
+  const parts = await surfaceTransports(await sheetFixture(), sheetZones);
+  assert.equal(parts.length, 2);
+  assert.deepEqual(parts.map((p) => p.surfaceKey), ["driver", "hood"]);
+  const driver = await sharp(parts[0].jpeg).metadata();
+  // 60x240 rotated 90 degrees reads as 240x60 -- LANDSCAPE. A flank handed to
+  // the inspector on its side is a much harder question, and the rotation is
+  // the same one cutCallOnePanels applies to the panel the customer receives.
+  assert.ok(driver.width > driver.height,
+    `the flank must arrive upright, got ${driver.width}x${driver.height}`);
+  // sharp does not apply operations in call order: chaining .rotate() straight
+  // into .resize() silently skips the rotation. This assertion is what catches
+  // that regression -- it fails against a single-pass chain.
+  assert.equal(driver.width, 240);
+  assert.equal(driver.height, 60);
+});
+
+test("a zone carrying alpha transports on white, never as a black opening", async () => {
+  // The prompt convicts "a dark or empty OPENING where a wheel would sit". A
+  // transparent zone flattened to black would manufacture exactly that verdict.
+  const transparent = await sharp({
+    create: { width: 120, height: 120, channels: 4, background: "#00000000" },
+  }).png().toBuffer();
+  const [part] = await surfaceTransports(transparent, [
+    { surfaceKey: "roof", x: 0, y: 0, w: 120, h: 120, extraction: { outputRotationDegrees: 0 } },
+  ]);
+  const { data, info } = await sharp(part.jpeg).raw().toBuffer({ resolveWithObject: true });
+  const centre = ((info.height >> 1) * info.width + (info.width >> 1)) * info.channels;
+  assert.ok(data[centre] > 200 && data[centre + 1] > 200 && data[centre + 2] > 200,
+    `transparent must flatten to white, got rgb(${data[centre]},${data[centre + 1]},${data[centre + 2]})`);
+});
+
+test("the prompt tells the inspector it is looking at panels, and names them in order", () => {
+  const perSurface = outputClassPrompt("abc123", ["driver", "passenger", "hood"]);
+  assert.match(perSurface, /You are shown 3 images/);
+  assert.match(perSurface, /driver, passenger, hood/);
+  assert.match(perSurface, /Each image is one panel's rectangle at full resolution/);
+  // Every class definition is unchanged -- only the framing moves, because the
+  // prompt already described this defect and the failure was perception.
+  assert.match(perSurface, /vehicle-shaped island/);
+  assert.match(perSurface, /CLASS map_drawn/);
+  // And the single-image wording is untouched for callers with no zones.
+  assert.match(outputClassPrompt("abc123"), /Classify this ONE image/);
+  assert.doesNotMatch(outputClassPrompt("abc123"), /You are shown/);
+});
+
+test("without zones the request is the previous single-image one", async () => {
+  const bytes = await sheetFixture();
+  let sent = null;
+  const provider = {
+    generateRaw: async ({ body }) => {
+      sent = body;
+      return { payload: { candidates: [{ content: { parts: [{
+        text: JSON.stringify({
+          inspectionId: require("node:crypto").createHash("sha256").update(bytes).digest("hex").slice(0, 16),
+          outputClass: "flat_atlas", confidence: 1, anatomyRectangles: 0, evidence: "flat",
+        }),
+      }] } }] } };
+    },
+  };
+  const receipt = await classifyAtlasCandidate({ provider, bytes });
+  const images = sent.contents[0].parts.filter((p) => p.inlineData);
+  assert.equal(images.length, 1, "no zones means exactly one whole-sheet image, as before");
+  assert.equal(receipt.inspected.mode, "sheet");
 });
 
 test("the absolute output class is acceptance logic, never Call-1 authoring conditioning", () => {

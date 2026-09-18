@@ -231,6 +231,103 @@ test("a solid panel of continuous artwork passes the cutout check", async () => 
   assert.equal(result.failures.filter((failure) => /flatBlackRatio/.test(failure)).length, 0);
 });
 
+/**
+ * A SURROUND IS A SURROUND WHATEVER COLOUR IT IS. (Live efca5e03, 2026-09-18.)
+ *
+ * Every cut-out predicate above is a darkness test -- holeAt needs every channel
+ * <= 24, nearBlackAt <= 40. The Oasis Pools run came back with both flanks
+ * die-cut to a truck silhouette, wheel arches and all, on a rgb(88,88,88)
+ * surround: luma 88, 3.7x the near-black ceiling. Measured on that run's own
+ * exported panels it scored edgeHoleRatio 0.073 against a 0.35 limit,
+ * nonBlackFraction 0.939 and opaqueRatio 1.00000, and the output-class
+ * inspector answered flat_atlas at confidence 1.0 with "no visible vehicle
+ * anatomy". Every gate said yes to a picture of a truck.
+ *
+ * These fixtures reproduce the three shapes, with the real measurements from
+ * the exported panels beside them:
+ *
+ *   surface / class              field share of zone   field share of BORDER
+ *   efca5e03 driver                    0.403                 0.624   convicted
+ *   efca5e03 passenger                 0.402                 0.624   convicted
+ *   efca5e03 roof                      0.386                 0.759   convicted
+ *   efca5e03 hood                      0.229                 0.529   convicted
+ *   5d727ea9 driver (good sheet)       0.074                 0.064   acquitted
+ *   5d727ea9 hood   (good sheet)       0.051                 0.222   acquitted
+ *
+ * 5d727ea9 is the September 8 master the owner identified as the working
+ * A.T.L.A.S. and RULE 0.32 cites as proof the system can author well. If a
+ * change to this gate ever convicts that shape, the change is wrong.
+ */
+async function surroundZoneFixture({ field, inset, logoOnly = false }) {
+  const width = 400;
+  const height = 200;
+  const layers = [];
+  if (logoOnly) {
+    // A LEGITIMATE FLAT-COLOUR COMMERCIAL WRAP: the flat field IS the design and
+    // runs off all four edges; only a compact mark sits on it. This is the
+    // false positive RULE 0.32 refused to accept, and the first draft of this
+    // gate convicted it -- ring 1.00 against zone 0.95 satisfies "the field is
+    // over-represented at the border". The minority-of-the-panel test is what
+    // separates it from a frame.
+    layers.push({
+      input: await sharp({ create: { width: 90, height: 60, channels: 3, background: "#f7c8a0" } }).png().toBuffer(),
+      left: 150, top: 70,
+    });
+  } else {
+    // A FRAME OF PLAIN COLOUR AROUND A FLOATING ISLAND: varied artwork inset
+    // from every edge, exactly the shape a die-cut silhouette produces.
+    for (let index = 0; index < 60; index += 1) {
+      layers.push({
+        input: await sharp({ create: { width: 14, height: 14, channels: 3, background: index % 2 ? "#a8d8f0" : "#f7c8a0" } }).png().toBuffer(),
+        left: inset + ((index * 29) % (width - 2 * inset - 14)),
+        top: inset + ((index * 41) % (height - 2 * inset - 14)),
+      });
+    }
+    layers.push({
+      input: await sharp({ create: { width: width - 2 * inset, height: height - 2 * inset, channels: 4, background: "#5ab4e055" } }).png().toBuffer(),
+      left: inset, top: inset,
+    });
+  }
+  return sharp({ create: { width, height, channels: 3, background: field } })
+    .composite(layers).png().toBuffer();
+}
+
+test("a plain surround is MEASURED on every zone, whatever colour it is", async () => {
+  // rgb(88,88,88) is the exact surround measured on the live efca5e03 panels.
+  const bytes = await surroundZoneFixture({ field: "#585858", inset: 26 });
+  const result = await deterministicMasterChecks(bytes, cutoutManifest);
+  const zone = result.zones[0];
+  // The defect is invisible to every darkness-based predicate, which is the
+  // whole reason the reading exists. If these ever start convicting, the
+  // fixture has drifted into being a black-surround case and proves nothing.
+  assert.ok(zone.edgeHoleRatio <= 0.35, `edgeHoleRatio must NOT see it (got ${zone.edgeHoleRatio})`);
+  assert.ok(zone.nonBlackFraction >= 0.55, "the zone is still mostly artwork");
+  assert.ok(zone.plainSurroundRingRatio > 0.35, `border is mostly field (got ${zone.plainSurroundRingRatio})`);
+  assert.ok(zone.plainSurroundZoneRatio < 0.5, `field is a minority of the panel (got ${zone.plainSurroundZoneRatio})`);
+  assert.ok(zone.plainSurroundColor, "the field colour is recorded for human QC");
+});
+
+test("the plain-surround reading never refuses a sheet on its own", async () => {
+  // THE FALSE-POSITIVE THAT KEPT THIS FROM BEING A VERDICT. A flat ground with
+  // graphics inset from the edge -- a navy wrap with a swoosh -- measures a
+  // border share of 1.000, MORE extreme than the live die-cut's 0.624, and it
+  // is legitimate: the navy prints to the edge. No border-share threshold can
+  // separate the two, so the geometry may not convict. RULE 0.32 refused a
+  // colour-agnostic field detector for exactly this reason and was right.
+  for (const fixture of [
+    await surroundZoneFixture({ field: "#1a2a5a", logoOnly: true }),
+    await surroundZoneFixture({ field: "#585858", inset: 26 }),
+    await cutoutZoneFixture({ holes: false, dark: false }),
+  ]) {
+    const result = await deterministicMasterChecks(fixture, cutoutManifest);
+    assert.equal(
+      result.failures.filter((failure) => /plainSurround/.test(failure)).length,
+      0,
+      "the plain-surround reading is evidence for human QC, never a blocking verdict",
+    );
+  }
+});
+
 test("a genuinely black wrap is not mistaken for a punched-out panel", async () => {
   const bytes = await cutoutZoneFixture({ holes: false, dark: true });
   const result = await deterministicMasterChecks(bytes, cutoutManifest);

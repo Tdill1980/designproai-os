@@ -68,6 +68,9 @@ const {
 const { readAcceptedCheckpoint, writeAcceptedCheckpoint, readAuthoringContext, writeAuthoringContext } = require("./atlas-accepted-checkpoint.cjs");
 const { createFinishingCheckpointStore } = require("./atlas-finishing-checkpoint.cjs");
 const { assembleFinishedMaster, CONTRACT: FINISHED_MASTER_CONTRACT } = require("./atlas-finished-master.cjs");
+// ARCHITECTURE_DAG.md 4.5 -- the element placement contract, recorded on the
+// revision so a later reader can tell WHICH lockup geometry produced a sheet.
+const { CONTRACT: ELEMENT_LOCKUP_CONTRACT } = require("./atlas-element-lockup.cjs");
 const { invokeAtlasAuthoring, providerFailureDetails, providerFailureSummary } = require("./atlas-authoring-transport.cjs");
 // HERO-DRIVER CASCADE (owner ruling, Trish 2026-09-11): Call 1 as one
 // multi-turn conversation -- driver first, passenger by code, the rest as
@@ -76,7 +79,7 @@ const { invokeAtlasAuthoring, providerFailureDetails, providerFailureSummary } =
 // stays the default and is the fall-over when the hero pass is refused.
 const {
   HERO_DRIVER_TOPOLOGY, HERO_DRIVER_CONTRACT, HERO_DRIVER_PROMPT_VERSION,
-  authorHeroDriverMaster, heroDriverEnabled,
+  authorHeroDriverMaster, heroDriverEnabled, cleanBaseEnabled,
 } = require("./atlas-hero-driver.cjs");
 // The durable node graph for the cascade (owner 2026-09-11: "graph
 // orchestration in parallel wherever you can improve latency"). Only the kill
@@ -105,7 +108,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260918.v27-ask-not-spec-sheet";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260918.v28-clean-base-elements";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -245,7 +248,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260918.v27-ask-not-spec-sheet";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260918.v28-clean-base-elements";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1686,6 +1689,19 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     vehicleModel: String(vehicle.model || "").trim(),
     vehicleType: String(vehicle.type || vehicle.vehicleClass || "").trim(),
     logoSupplied: Boolean(input?.logoAsset),
+    // ARCHITECTURE_DAG.md §4.1 -- Layer 0, on six-surface and field too.
+    //
+    // The clean-base contract and the element nodes have both existed and been
+    // correct since 2026-09-17, and only the hero cascade sent this flag. So
+    // DESIGNPRO_ATLAS_ELEMENT_GRAPH=on was live on the droplet and inert:
+    // production authored its lettering into the pixels exactly as before, and
+    // master.composite has completed ONCE in the system's history.
+    //
+    // cleanBaseEnabled() reads that same flag, so the ask and the compositor
+    // can never be half-on -- a clean base with no element nodes would ship a
+    // wrap with no company name on it at all. Off, this is undefined and the
+    // request is byte-identical to before.
+    cleanBase: cleanBaseEnabled() ? true : undefined,
     visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
       ? "exact_reference"
       : "style_inspiration",
@@ -3660,7 +3676,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       }
       if (!stillBlocking.length) {
         const outputClassStartedAt = Date.now();
-        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
+        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes, zones: manifest.zones });
         timings.outputClassMs += Date.now() - outputClassStartedAt;
         if (outputClassReceipt.blocking) {
           // The refusal CODE names which defect, so the ledger and its digest can
@@ -3902,7 +3918,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
     const repairedClassStartedAt = Date.now();
-    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
+    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes, zones: manifest.zones });
     timings.outputClassMs += Date.now() - repairedClassStartedAt;
     if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
@@ -3947,7 +3963,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
           "The optional finishing pass did not preserve six complete printable artwork regions: "
             + [...finishedChecks.blockingFailures, ...finishedChecks.cutoutFindings.map((item) => item.finding)].join("; "));
       }
-      const finishedClass = await classifyAtlasCandidate({ provider, bytes: assembled.bytes });
+      const finishedClass = await classifyAtlasCandidate({ provider, bytes: assembled.bytes, zones: manifest.zones });
       if (finishedClass.blocking) {
         throw new FlatAtlasError("flat_atlas_finished_master_output_class_invalid",
           "The optional finishing pass changed the sheet into a vehicle depiction; nothing was published");
@@ -4011,12 +4027,70 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // buffer, `changed` is false, and both bindings resolve to exactly the bytes
   // and hash they always did -- no extra transform, no extra hash, no new
   // storage object, and byte-identical output.
-  const acceptedMasterBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes;
-  const acceptedMasterHash = cutoutFill.changed ? panelSourceHash : masterHash;
+  let acceptedMasterBytes = cutoutFill.changed ? surfaceSourceBytes : masterBytes;
+  let acceptedMasterHash = cutoutFill.changed ? panelSourceHash : masterHash;
   const preRepairMasterHash = cutoutFill.changed ? masterHash : null;
-  const acceptedMasterStoragePath = cutoutFill.changed
+  let acceptedMasterStoragePath = cutoutFill.changed
     ? atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash })
     : masterStoragePath;
+
+  // ── LAYER 1: THE ELEMENTS THE MODEL WAS ASKED NOT TO DRAW ──────────────────
+  //
+  // With the element graph on, Call 1 authored a CLEAN BASE -- no company name,
+  // no logo, no contact bar (ATLAS_CLEAN_BASE_CONTRACT, sent from
+  // atlasEdgeRequestBody above off the same flag). Those are produced here as
+  // their own deterministic artifacts and composited at a known box, so the
+  // lettering is vector-locked type instead of diffusion paint, and so it can
+  // later be MOVED without healing anything.
+  //
+  // THE ORDER IS THE WHOLE POINT. The base must be in storage before the
+  // composite node can read it: the handoff across a node boundary is a
+  // {storagePath, contentHash, byteSize} identity, never bytes (RULE 0.39),
+  // and either worker may claim that node.
+  //
+  // FAILING SOFT IS DELIBERATE AND IS NOT THE SAME AS SWALLOWING A FAILURE.
+  // `authorElements` returns null when there is nothing to place, when the flag
+  // is off, or when the database has not received the migration -- Layer 0 is a
+  // valid finished product in every one of those cases, and refusing an
+  // accepted, gated master over them would destroy a good design for no defect
+  // (the blast-radius rule RULE 0.15 states about cut-outs). A composite that
+  // RAN and FAILED still throws: that is real work that was supposed to happen.
+  let elementLayer = null;
+  const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
+  if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
+    const startedAt = Date.now();
+    const staged = await store.putImmutableBytes({
+      storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png",
+    });
+    const composited = await elementWorker.authorElements({
+      masterRef: { storagePath: staged.storagePath, contentHash: acceptedMasterHash, byteSize: acceptedMasterBytes.length },
+      manifest, input: authoringInput, requestId, generationId, ownerId, logger,
+    });
+    if (composited?.changed) {
+      // RE-VALIDATED BEFORE PROMOTION, exactly as the cut-out repair is. A
+      // composite that no longer yields six complete printable regions is a
+      // defect in Layer 1, and Layer 0 is still the better product -- so the
+      // sheet is REFUSED as the accepted master and the base is kept, rather
+      // than publishing an invalid one or failing the whole design.
+      const revalidated = await deterministicMasterChecks(composited.bytes, manifest);
+      if (revalidated.blockingFailures.length) {
+        logger(`atlas element graph: composited sheet refused (${revalidated.blockingFailures.join("; ").slice(0, 200)}); keeping the clean base`);
+        elementLayer = { applied: composited.applied, changed: false, refused: revalidated.blockingFailures.slice(0, 6),
+          cleanMasterHash: acceptedMasterHash, elementGraphMs: Date.now() - startedAt, runId: composited.runId };
+      } else {
+        elementLayer = { applied: composited.applied, changed: true, refused: null,
+          cleanMasterHash: acceptedMasterHash, elementGraphMs: Date.now() - startedAt, runId: composited.runId };
+        acceptedMasterBytes = composited.bytes;
+        acceptedMasterHash = composited.contentHash;
+        acceptedMasterStoragePath = atlasStoragePath({ tenantKey, generationId, revisionSequence, kind: "master", contentHash: acceptedMasterHash });
+        logger(`atlas element graph: ${composited.applied.length} elements composited onto ${elementLayer.cleanMasterHash.slice(0, 12)} -> ${acceptedMasterHash.slice(0, 12)}`);
+      }
+    } else if (composited) {
+      elementLayer = { applied: composited.applied, changed: false, refused: null,
+        cleanMasterHash: acceptedMasterHash, elementGraphMs: Date.now() - startedAt, runId: composited.runId };
+    }
+    timings.elementGraphMs = (timings.elementGraphMs || 0) + (Date.now() - startedAt);
+  }
   // Persist the accepted identity BEFORE observers can start proofs. Recovery
   // resumes the same revision and accepted bytes without spending Call 1 again.
   const acceptedRecovery = acceptedCheckpoint ? {
@@ -4424,6 +4498,21 @@ async function generateOrReuseFlatAtlasResolved(options) {
       preRepairMasterHash,
       cutoutFillContract: cutoutFill.changed ? FILL_CONTRACT : null,
       cutoutFillApplied: cutoutFill.filled,
+      // LAYER 1's RECEIPT. null means the element graph did not run at all --
+      // flag off, nothing to place, or the migration absent. `changed: false`
+      // with a `refused` array means it RAN and its sheet failed re-validation,
+      // so the clean base was kept: that distinction is the difference between
+      // "we never tried" and "we tried and the result was not printable", and
+      // conflating them is how a silent regression reads as a clean run.
+      elementGraph: elementLayer ? {
+        contract: ELEMENT_LOCKUP_CONTRACT,
+        applied: elementLayer.applied,
+        changed: elementLayer.changed,
+        refused: elementLayer.refused,
+        cleanMasterHash: elementLayer.cleanMasterHash,
+        runId: elementLayer.runId,
+        elementGraphMs: elementLayer.elementGraphMs,
+      } : null,
       // The optical resolution Gemini actually delivered, before the canvas
       // resize. The master is always 4096 because it is filled to it, so
       // without these the run could never distinguish a true 4K sheet from a

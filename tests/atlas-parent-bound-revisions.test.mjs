@@ -129,7 +129,7 @@ test("revision transport requires deployment capability and exact parent, teachi
     providerCacheContract: "designpro.gemini-provider-cache.v1", providerRequestKey: "c".repeat(64),
     revisionContextHash: revision.revisionContextHash, parentAtlasRevisionId: parentId,
     parentMasterContentHash: context.parentMaster.contentHash, revisionHistoryMode: context.history.mode,
-    promptVersion: "atlas-artboard-designiq.20260918.v27-ask-not-spec-sheet",
+    promptVersion: "atlas-artboard-designiq.20260918.v28-clean-base-elements",
     topologyContract: "designpro.atlas-normalized-topology.v1", modelInputImageCount: 3,
     teachingProofIdentity: teaching };
   const calls = [];

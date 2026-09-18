@@ -64,7 +64,11 @@ test("the release gate is deterministic plus the one owner-ruled output-class re
   assert.match(loop, /flat_atlas_master_no_image/);
   assert.match(loop, /deterministicMasterChecks\(masterBytes, manifest\)/);
   assert.match(loop, /if \(!stillBlocking\.length\) \{\s*break;\s*\}/);
-  assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes \}\)/);
+  // The zones ride with the candidate (2026-09-18): the inspector reads each
+  // surface at its own resolution and orientation instead of one 1280px
+  // squeeze of the whole 4096 sheet, which is what let a die-cut truck on grey
+  // answer flat_atlas at confidence 1.0 on live efca5e03.
+  assert.match(loop, /classifyAtlasCandidate\(\{ provider, bytes: masterBytes, zones: manifest\.zones \}\)/);
   assert.match(loop, /flat_atlas_master_output_class_invalid/);
   assert.doesNotMatch(loop, /flat_atlas_master_semantic_failed/);
   assert.doesNotMatch(loop, /semanticVerdict = await semanticQc/);
