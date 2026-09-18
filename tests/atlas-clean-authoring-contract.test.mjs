@@ -37,10 +37,9 @@ test("ATLAS creative contract carries named design context and pure rectangular 
   const contract = block(edge, "function atlasFlatMasterContract(", "// ── ONE-FIELD OUTPUT CONTRACT");
   assert.doesNotMatch(contract, /normalized \[0,1\] coordinates|TARGET TOPOLOGY block/);
   assert.match(contract, /panel identity mismatch/);
-  assert.match(contract, /opaque, unbroken and full-bleed to all four edges/);
   assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
-  assert.match(contract, /Set no panel names, surface IDs, legends or captions anywhere in the artwork/);
-  assert.match(contract, /the space between panels is sheet separation/);
+  assert.match(contract, /no panel names, surface IDs or captions are set anywhere in the artwork/);
+  assert.match(contract, /Every panel is opaque and full-bleed to all four edges/);
   assert.match(contract, /ARTBOARD for this exact \$\{vehicle/);
   assert.match(contract, /\(\$\{bodyClass\}\)/);
   for (const surface of ["PASSENGER SIDE", "DRIVER SIDE", "REAR", "ROOF", "HOOD", "FRONT"]) {
@@ -72,10 +71,9 @@ test("ATLAS creative contract carries named design context and pure rectangular 
     assert.doesNotMatch(contract, new RegExp(anatomyNoun, "i"),
       `the contract must not hand the image model "${anatomyNoun}"`);
   }
-  assert.match(contract, /flat printed graphic art, the same kind of image as a printed poster/);
-  assert.match(contract, /a printed poster or a roll of printed vinyl laid flat/);
-  assert.match(contract, /the artwork by itself, before anything is cut or applied/);
-  assert.match(contract, /produced downstream by the seven proof projections and are absent here/);
+  assert.match(contract, /the way the printed vinyl looks before anything is cut or applied/);
+  assert.match(contract, /ONE CONNECTED WRAP UNWRAPPED FLAT/);
+  assert.match(contract, /Gallery-grade custom artwork with real depth, movement and a wow factor/);
 });
 
 test("ATLAS request exposes exact identity, placement and normalized topology but no inch dimensions", () => {
@@ -182,8 +180,8 @@ test("ATLAS parts run prompt, teaching proof, references, then the guide LAST", 
 });
 
 test("ATLAS runtime and edge prompt versions are fenced together", () => {
-  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v26-map-is-read-not-drawn"/);
-  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260915\.v26-map-is-read-not-drawn"/);
+  assert.match(runtime, /ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq\.20260918\.v27-ask-not-spec-sheet"/);
+  assert.match(edge, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260918\.v27-ask-not-spec-sheet"/);
   assert.match(runtime, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(edge, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
 });

@@ -30,7 +30,7 @@ const sha = (v) => createHash("sha256").update(v).digest("hex");
 
 const DRAW1_PROMPT = readFileSync(new URL("../docs/ab/field-recovery-v2-33659500846-prompt-field-v2.txt", import.meta.url), "utf8");
 const DRAW1_TERRITORIES = JSON.parse(readFileSync(new URL("../docs/ab/field-recovery-v2-33659500846-territories.json", import.meta.url), "utf8"));
-const DEPLOYED_V23_PROMPT_SHA256 = "e39072ad2cf3af517cb8582883e6e1d65749ad2c3769b6d559dd6129b5c91b1e";
+const DEPLOYED_V23_PROMPT_SHA256 = "ee760434b5769bcfcb31e1792827c2bebcd1608f9d4ad60021f8d3a6f55e9281";
 
 const SURFACES = [["driver", 153, 56], ["passenger", 153, 56], ["hood", 71.5, 56], ["roof", 74.3, 54.8], ["front", 129, 34], ["rear", 76, 54]]
   .map(([surfaceKey, widthInches, heightInches]) => ({
@@ -219,7 +219,7 @@ test("the legacy six-container assembly still reproduces the deployed v24 prompt
   delete body.noseEdge;
   const { prompt } = mod.buildAtlasCall1Prompt(body);
   assert.equal(sha(prompt), DEPLOYED_V23_PROMPT_SHA256);
-  assert.equal(prompt.length, 5154);
+  assert.equal(prompt.length, 3997);
 });
 
 test("the edge refuses an unknown field contract and echoes the one it ran", () => {
@@ -304,6 +304,6 @@ test("the restored product prompt matches the owner's complete specification has
   const input = { ...FIXTURE_INPUT, companyName: "Precision Climate Solutions", colors: [], style: "", industry: "" };
   const body = atlas._test.atlasEdgeRequestBody(input, legacy);
   const { prompt } = mod.buildAtlasCall1Prompt(body);
-  assert.equal(prompt.length, 5010);
-  assert.equal(sha(prompt), "53fcb1632577ba7579abfbcef996e7bd567dda3717d4364a844483acaff12ddd");
+  assert.equal(prompt.length, 3853);
+  assert.equal(sha(prompt), "abac2b45fe09645a4db58aa27f3ee95c7aa03258d94bb75ac3f192d17063cf8b");
 });

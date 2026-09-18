@@ -285,7 +285,7 @@ test("the solid-panel output contract lives in the edge function's flat contract
   // handler instead, stated once and positively.
   const { readFileSync } = require("node:fs");
   const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
-  assert.match(edge, /Fill every panel corner to corner/);
+  assert.match(edge, /the wrap artwork filling each panel edge to edge/);
   assert.doesNotMatch(edge, /TARGET TOPOLOGY block in this request/);
   assert.match(edge, /\$\{panelLines\}/);
   assert.match(edge, /REAR, then ROOF, then HOOD, then FRONT — the centre column, top to bottom/);
@@ -308,7 +308,7 @@ test("the prompt version fences vehicle-atlas masters from every obsolete author
   // RESTORED TO v23 (owner ruling 2026-09-08): v23 is the CURRENT contract --
   // it authored the accepted master 1564c66da0a1c482 -- so v28 and the other
   // later contracts are the obsolete ones now.
-  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260915\.v26-map-is-read-not-drawn"/);
+  assert.match(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260918\.v27-ask-not-spec-sheet"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260906\.v28-authored-topology"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260902\.v24-one-field"/);
   assert.doesNotMatch(atlasSource, /PROMPT_VERSION = "designpro-flat-first-atlas-20260831\.v16-flat-example-only"/);
