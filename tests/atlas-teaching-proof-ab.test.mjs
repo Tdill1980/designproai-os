@@ -509,10 +509,28 @@ test("the clause is present exactly once in the DEPLOYED assembly", async () => 
     vehicleYear: "2022", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab", vehicleType: "truck",
     panels, visionboard_intent: "style_inspiration",
   });
-  // If the deployed contract ever stops carrying this clause, the experiment is
-  // testing something that is no longer there and must fail rather than run.
-  assert.equal(prompt.split(objectClause.ANATOMY_CLAUSE).length - 1, 1,
-    "the deployed output contract no longer contains the anatomy clause exactly once");
+  // ⚠️ INVERTED 2026-09-18 (v27-ask-not-spec-sheet). This asserted the clause
+  // was present EXACTLY ONCE, with the note: "If the deployed contract ever
+  // stops carrying this clause, the experiment is testing something that is no
+  // longer there and must fail rather than run." It stopped carrying it, and
+  // this test did exactly what it promised -- it failed rather than ran.
+  //
+  // That is the experiment REACHING ITS CONCLUSION, not a regression. The whole
+  // A/B above measures anatomy framing ("the complete flattened panel layout of
+  // THE VEHICLE") against media framing, and v27 cut the anatomy clause out of
+  // atlasFlatMasterContract as one of six redundant restatements of the opening
+  // line. So the contract now carries the media framing only, which is the arm
+  // this file was built to evaluate.
+  //
+  // The assertion is therefore flipped rather than deleted: it still fails if
+  // anyone re-introduces vehicle-anatomy framing into the deployed output
+  // contract, which is the thing the harness actually exists to catch. The A/B
+  // fixtures above are unchanged and still exercise both arms on their own
+  // synthetic prompt (line 438), so the experiment remains reproducible.
+  assert.equal(prompt.split(objectClause.ANATOMY_CLAUSE).length - 1, 0,
+    "the deployed output contract has re-acquired vehicle-anatomy framing -- v27 removed it deliberately");
+  assert.ok(prompt.includes("the way the printed vinyl looks before anything is cut or applied"),
+    "the deployed contract must still frame the sheet as printed media");
 });
 
 // ── TEST 6's INSTRUMENT ────────────────────────────────────────────────────
