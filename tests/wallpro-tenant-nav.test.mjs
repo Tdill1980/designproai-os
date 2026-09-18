@@ -35,7 +35,7 @@ test("both WallPro pages are named in the navigation registry", () => {
   assert.ok(nav.includes('route: "/printpro/wallpro",'));
   // The WePrintWraps tenant page beside it.
   assert.ok(nav.includes('key: "wallpro_wpw",'), "the WPW tenant WallPro entry is gone");
-  assert.ok(nav.includes('route: "/wall-wrap",'), "the tenant entry no longer points at /wall-wrap");
+  assert.ok(nav.includes('route: "/wallwrap-design",'), "the tenant entry must open the WPW designer");
   assert.ok(nav.includes('label: "WPW × WallPro",'));
 });
 
@@ -91,15 +91,15 @@ test("PatternPro keeps the same pair, so the two tools stay symmetrical", () => 
  * dead click that fell through to the catch-all.
  *
  * Both partner routes resolve to the WHITE UI by construction, which is the
- * half worth pinning: /wall-wrap renders WallProLanding under `wl-light`, and
+ * half worth pinning: /wallwrap-design uses the light WallPro brand, and
  * /pattern-wrap renders PatternWrap for a brand whose `surface` is 'light'.
  * A link that went to the right product in the wrong skin would satisfy a
  * naive route assertion and still break the demo.
  */
 test("ShopFlow's product rail opens the WHITE partner pages, not the house ones", () => {
   const shopflow = read("app/src/pages/ShopFlow.tsx");
-  assert.ok(shopflow.includes('{ href: "/wall-wrap", label: "WallPro"'),
-    "the WallPro tab must open the WePrintWraps landing");
+  assert.ok(shopflow.includes('{ href: "/wallwrap-design", label: "WallPro"'),
+    "the WallPro tab must open the WePrintWraps designer");
   assert.ok(shopflow.includes('{ href: "/pattern-wrap", label: "PatternPro"'),
     "the PatternPro tab must open the WePrintWraps page");
   // The dead route and the house route must not come back anywhere on this
@@ -111,14 +111,14 @@ test("ShopFlow's product rail opens the WHITE partner pages, not the house ones"
 
   // Both targets are real routes.
   const app = read("app/src/App.tsx");
-  assert.ok(app.includes('<Route path="/wall-wrap"'), "/wall-wrap must be routed");
+  assert.ok(app.includes('<Route path="/wallwrap-design"'), "/wallwrap-design must be routed");
   assert.ok(app.includes('<Route path="/pattern-wrap"'), "/pattern-wrap must be routed");
 
   // And both are the LIGHT skin.
   assert.ok(read("app/src/lib/patternpro-brand.ts").includes("surface: 'light'"),
     "the WePrintWraps PatternPro brand must stay on the light surface");
-  assert.ok(read("app/src/pages/WallProLanding.tsx").includes("'wl-page wl-light'"),
-    "the WePrintWraps landing must stay on the light skin");
+  assert.ok(read("app/src/lib/wallpro-brand.ts").includes("surface: 'light'"),
+    "the WePrintWraps WallPro brand must stay on the light surface");
 });
 
 test("the partner landing offers the way back to ShopFlow", () => {
