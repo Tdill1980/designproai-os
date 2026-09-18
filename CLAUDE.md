@@ -92,10 +92,88 @@ It never reached a customer: the element graph had not composited once on
 production, so the first run to fire it would have been the first to ship blank
 panels.
 
+### THE COMPOSITE'S OWN GUARD WAS TRANSPOSED ON BOTH FLANKS (live d8c2e779, 2026-09-18)
+
+**The first production run ever to reach `master.composite`.** The element DAG did
+exactly what it was built to do — `typeset.produce`, `contact.produce` and
+`element.lockup` all completed, four placements across both flanks, **zero model
+calls, 270 ms** — and then the compositor refused its own correct sheet:
+
+```
+atlas_composite_altered_base: composite changed 0.0275% of the sheet
+outside its own elements
+```
+
+taking an accepted six-surface master, six cuttable panels and the entire
+generation with it (`state: failed`, `retryable: false`). **The sheet was fine.
+The instrument measuring it was not.**
+
+`sheetPlacement` returns `drawWidth`/`drawHeight` in **reading space**, which is
+correct — the compositor resizes to them and only THEN rotates, so they are what
+`.resize()` must be handed. The sheet-space footprint after a quarter turn is the
+transpose, and the function already knew that: its 90° branch derives `left` from
+`dh`, the post-rotation width. `darkDeltaOutside` did not, and masked `drawWidth`
+across by `drawHeight` down — the transpose of the region just painted.
+
+`ELEMENT_SURFACES` is exactly `["driver","passenger"]` and on every real manifest
+both flanks are tall columns at ±90°, so this was not an edge case: **every
+placement the element graph has ever made was masked with a transposed
+rectangle.** Measured on that run's own stored geometry (driver trim
+`{x:2838,y:711,w:979,h:2674}` at −90°, box from `element.lockup`'s output):
+
+| | |
+|---|---|
+| reading space | 909 × 236 |
+| sheet space | **236 × 909** |
+| old mask | x 3080..3989 — **172 px past the flank's own right edge (3817)** |
+| new mask | x 3080..3316 — inside its column |
+| lockup ink outside the old mask | **74%** |
+
+Zero was always the right threshold; the mask was wrong. `sheetPlacement` now
+also returns `sheetWidth`/`sheetHeight` (the transpose on ±90, identical on 0)
+and the guard masks with those. The resize still takes the reading pair, the
+placement algebra is byte-identical, and an unrotated zone is unchanged.
+
+**A FIXTURE LAXER THAN THE REAL THING CANNOT CATCH A DEFECT OF THE REAL THING —
+the fifth time this file has recorded that shape.** Every fixture in
+`atlas-three-tier-layers` used the default `rotationDegrees = 0`, so the guard had
+only ever been exercised in a configuration production cannot produce, on the two
+surfaces that are always rotated. Locked by the +90 and −90 cases there (both
+verified to fail against the pre-fix runtime, reproducing the live error code
+verbatim), an unrotated case pinning that the identity path did not move, and a
+**live-geometry fixture** in `tests/atlas-master-composite.test.mjs` built from
+`ac8ab0a0`'s own rows.
+
+**Two things checked and found already correct, so do not "fix" them:**
+
+1. **The ordering.** `composePassengerFromDriver` runs BEFORE the composite
+   (`flat-first-atlas.cjs` ~3855 vs ~4111), so the mirror flops the CLEAN base
+   and the lockup drops onto both flanks un-flipped afterwards. Reversing that
+   order would rebuild the reversed-passenger defect inside the new architecture.
+2. **The box algebra.** Driver `xPct 0.08` width `0.34` mirrors to
+   `1 − 0.08 − 0.34 = 0.58`, exactly the passenger placement the live run
+   recorded. "The mirror is the box, never the element" holds in the numbers.
+
+**The lettering cannot trip the hole gate.** `typeset` emits `#1f2937` (r=31)
+and `FLAT_BLACK_CHANNEL_MAX` is 24, so the composited type sits ABOVE the
+near-black predicate and the post-composite re-validation cannot convict it as a
+cut-out. That re-validation also keeps the clean base on a blocking failure
+rather than throwing, so the composite node's own guard was the only hard stop.
+
 **`metadata.elementGraph` has three states and they are NOT interchangeable:**
 `null` = never ran · `changed:true` = composited · `changed:false` with `refused`
 = ran and its sheet failed re-validation. A run with `cleanBase` on and
 `elementGraph: null` ships a wrap with NO company name — treat that as a bug.
+
+**And the canary now CONVICTS that state instead of reporting it.** `2d5a2e30`
+put `companyName`/`phone`/`website` on the canary request so the subgraph would
+COMPILE; it did not make the canary notice when the subgraph then produced
+nothing, so a null `elementGraph` would have passed silently one layer up from
+the defect that fix was written for. A null graph on a branded brief now throws,
+a refusal back to Layer 0 is reported rather than swallowed, and the composite is
+asserted on **both** flanks — a one-flank composite is a half-branded wrap that
+every receipt would still call composited. Locked in
+`tests/production-canary-contract.test.mjs`.
 
 **ROLLBACK IS ONE FLAG:** `atlas_element_graph: off`. The migration is safe to
 leave applied: `master.composite` writes the run's master columns only WHILE THEY
