@@ -141,8 +141,19 @@ deploy-production.yml → atlas_element_graph: off
 ```
 
 That restores lettering-in-pixels authoring immediately — `cleanBaseEnabled()`
-reads the same flag, so Call 1 stops asking for a clean base and the composite
-stops running, in one move. The two can never be half-on.
+reads that flag, so Call 1 stops asking for a clean base and the composite stops
+running, in one move.
+
+**`atlas_call1_graph: off` also turns the ask off, and until 2026-09-18 it did
+not.** The compositor is reached only through the Call-1 node worker, so that
+kill switch — meant for the hero cascade, silent about lettering — silenced the
+compositor while Call 1 kept asking for a sheet with no lettering: a wrap with no
+company name, one flip of an unrelated switch away, while the code comment and
+CLAUDE.md both said half-on was impossible. `cleanBaseEnabled` now returns false
+when `DESIGNPRO_ATLAS_CALL1_GRAPH=off`. The ask follows the ability; the reverse
+coupling is deliberately not done, because `authorElements` drives that worker's
+own `tick()` and would hang against a disabled one. Production runs
+`CALL1_GRAPH=on`, so no generation was affected.
 
 The migration is safe to leave applied under any flag state: `master.composite`
 only writes the run's master columns **while they are NULL**, and a runtime with

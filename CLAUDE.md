@@ -60,10 +60,24 @@ replaces the accepted master and refused back to Layer 0 if it is not printable.
 = ran and its sheet failed re-validation. A run with `cleanBase` on and
 `elementGraph: null` ships a wrap with NO company name — treat that as a bug.
 
-**ROLLBACK IS ONE FLAG:** `atlas_element_graph: off`. `cleanBaseEnabled()` reads
-the same flag, so the ask and the compositor can never be half-on. The migration
-is safe to leave applied: `master.composite` writes the run's master columns only
-WHILE THEY ARE NULL, so hero-driver provenance still records Layer 0.
+**ROLLBACK IS ONE FLAG:** `atlas_element_graph: off`. The migration is safe to
+leave applied: `master.composite` writes the run's master columns only WHILE THEY
+ARE NULL, so hero-driver provenance still records Layer 0.
+
+**BUT THE ASK AND THE COMPOSITOR ARE GOVERNED BY TWO FLAGS, NOT ONE, AND READING
+ONLY THE FIRST WAS A TRAP.** The compositor is reached solely through the Call-1
+node worker — `generateOrReuseFlatAtlas` requires `atlasCall1GraphEnabled()` as
+well before it calls `authorElements` — so `atlas_call1_graph: off`, a documented
+kill switch for the HERO CASCADE that says nothing about lettering, silenced the
+compositor while Call 1 went on asking for a sheet with no lettering on it. A
+wrap with no company name, reachable by flipping an unrelated switch, while this
+file and the code comment both claimed half-on was impossible. `cleanBaseEnabled`
+now returns false when `DESIGNPRO_ATLAS_CALL1_GRAPH=off`: **the ask follows the
+ability.** The opposite coupling is NOT done — `authorElements` drives that same
+worker's `tick()` and would hang against a disabled one. Production runs
+`CALL1_GRAPH=on`, so this was never live. Locked by the half-on case in
+`tests/atlas-clean-base-contract.test.mjs`, verified to fail against the pre-fix
+runtime.
 
 **THE MIGRATION MUST LAND BEFORE A v28 RUNTIME, and the commit message that says
 otherwise is wrong.** `authorElements` does NOT fail soft on a missing migration:

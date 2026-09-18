@@ -876,11 +876,31 @@ function heroRequestBody(input) {
 
 /**
  * The clean base is the element graph's other half: authoring surfaces without
- * lettering only makes sense when something else is going to set it. One flag
- * decides both, so they can never be half-on -- a clean base with no element
- * nodes would ship a wrap with no company name on it at all.
+ * lettering only makes sense when something else is going to set it. They can
+ * never be half-on -- a clean base with no element nodes ships a wrap with no
+ * company name on it at all.
+ *
+ * TWO FLAGS DECIDE THAT, NOT ONE, AND READING ONLY THE FIRST WAS A TRAP. The
+ * compositor runs through the Call-1 NODE WORKER, so `generateOrReuseFlatAtlas`
+ * requires `graphEnabled()` as well before it will call `authorElements`:
+ *
+ *   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? ... : null;
+ *
+ * `DESIGNPRO_ATLAS_CALL1_GRAPH=off` is a documented kill switch for the hero
+ * cascade and says nothing about lettering -- but with ELEMENT_GRAPH still `on`
+ * it silenced the compositor while Call 1 went on asking for a sheet with no
+ * lettering on it. Exactly the half-on state this comment claimed was
+ * impossible, reachable by flipping an unrelated switch.
+ *
+ * So the ASK follows the ABILITY: no compositor, no clean base, and Call 1
+ * authors its own lettering as it did before v28. The opposite coupling --
+ * letting elements run with the node graph off -- is NOT what happens instead,
+ * because `authorElements` drives that same worker's `tick()` and would hang
+ * against a disabled one. Kept mirrored on `!== "off"` so an absent or
+ * misspelled CALL1_GRAPH resolves the same way `graphEnabled` resolves it.
  */
 function cleanBaseEnabled(env = process.env) {
+  if (String(env.DESIGNPRO_ATLAS_CALL1_GRAPH || "").trim().toLowerCase() === "off") return false;
   return String(env.DESIGNPRO_ATLAS_ELEMENT_GRAPH || "").trim().toLowerCase() === "on";
 }
 
