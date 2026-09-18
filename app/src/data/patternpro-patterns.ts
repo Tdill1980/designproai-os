@@ -292,6 +292,7 @@ export const WPW_WOOCOMMERCE_IDS: Record<string, number> = {
   "Wicked & Wild": 4181,
   "Bape Camo": 42809,
   "Modern & Trippy": 52489,
+  "FadeWraps": 58391,
 };
 
 /**
