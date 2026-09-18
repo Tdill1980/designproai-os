@@ -1403,7 +1403,7 @@ export const WBTYToolUI = ({ preloadRenderId, brand = "designpro" }: { preloadRe
                             variant="outline"
                             onClick={() => setShowProofSheet(true)}
                             className="flex-1 h-auto py-2.5 flex-col items-center gap-0.5"
-                            disabled={!year || !make || !model}
+                            disabled={!year || !make || !model || isGenerating || isGeneratingAdditional}
                           >
                             <span className="flex items-center gap-2 font-semibold">
                               <ClipboardSignature className="w-4 h-4" />
