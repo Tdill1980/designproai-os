@@ -1597,7 +1597,7 @@ export const WBTYToolUI = ({ preloadRenderId, brand = "designpro" }: { preloadRe
             designName={proofContext?.design || selectedProduct?.ai_generated_name || selectedProduct?.name || 'Custom Pattern'}
             finish={proofContext?.finish || selectedFinish}
             coverageUnit="yards"
-            designProof={{ brand, yards: yardsNeeded, sourceId: visualizationId || undefined }}
+            designProof={{ brand, yards: yardsNeeded, sourceId: visualizationId || undefined, generationId: visualizationId || undefined }}
           />
         </DialogContent>
       </Dialog>

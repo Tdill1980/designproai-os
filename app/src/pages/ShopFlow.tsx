@@ -54,6 +54,7 @@ import { useWallProDesignCredits, WALLPRO_WELCOME_DESIGNS } from "@/hooks/useWal
 import { useAutoSyncWpw } from "@/hooks/useAutoSyncWpw";
 import { SignInWithWPWButton } from "@/components/SignInWithWPWButton";
 import { shopflowStageFor, SHOPFLOW_STAGES } from "@/lib/shopflowStages";
+import { DesignProofsCard } from "@/components/dashboard/DesignProofsCard";
 
 const money = (amount: number | null, currency?: string | null) => {
   if (amount == null) return "—";
@@ -342,6 +343,7 @@ function ShopflowSidebar({ credits, locked, commercialPro, points }: { credits?:
    */
   const items = [
     { href: "#orders", label: "My ShopFlow order status", icon: Package },
+    { href: "/design-proofs?brand=weprintwraps", label: "DesignProofs", icon: Grid3x3 },
     { href: "#orders", label: "All my orders", icon: Search, account: true },
     { href: "#rewards", label: "Club WPW points", icon: Gift, account: true, badge: points },
     { href: "https://weprintwraps.com/commercialpro/", label: "CommercialPro", icon: Building2, external: true,
@@ -725,6 +727,7 @@ export default function ShopFlow() {
             <JobTrackerSpine order={trackedOrder} />
 
         <div className="pt-7">
+          <DesignProofsCard brand="weprintwraps" />
           {/* THE FIRST DOOR. Shown to anyone without a session — which is almost
               every WePrintWraps customer, since they check out on WordPress and
               never create a RestylePro account.

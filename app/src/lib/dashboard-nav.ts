@@ -31,6 +31,7 @@ import {
   CreditCard,
   Grid3x3,
   Store,
+  FileCheck2,
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
@@ -227,6 +228,13 @@ const staticHomeGroup: NavGroup = {
       icon: LayoutDashboard,
       description: "Your main dashboard — design output and profit at a glance",
     },
+    {
+      type: "link",
+      label: "DesignProofs",
+      route: "/design-proofs",
+      icon: FileCheck2,
+      description: "Approval PDFs tagged by system and design reference",
+    },
   ],
 };
 
@@ -256,6 +264,13 @@ const wpwShopFlowGroup: NavGroup = {
       route: "/shopflow",
       icon: Store,
       description: "WePrintWraps orders, reorders, rewards and files",
+    },
+    {
+      type: "link",
+      label: "DesignProofs",
+      route: "/design-proofs?brand=weprintwraps",
+      icon: FileCheck2,
+      description: "Saved PatternPro and WallPro approval PDFs",
     },
     ...DASHBOARD_TOOLS.filter((tool) => WPW_TOOL_KEYS.has(tool.key)).map((tool) => ({
       type: "tool" as const,

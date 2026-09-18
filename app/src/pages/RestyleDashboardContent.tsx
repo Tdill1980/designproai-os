@@ -30,6 +30,7 @@ import { JobsListTabs } from "@/components/dashboard/JobsListTabs";
 import { TokenBalanceCard } from "@/components/dashboard/TokenBalanceCard";
 import { useIsWpwTenant } from "@/hooks/useIsWpwTenant";
 import { useQuery } from "@tanstack/react-query";
+import { DesignProofsCard } from "@/components/dashboard/DesignProofsCard";
 
 const RENDER_LIMITS: Record<string, number> = {
   free: 0,
@@ -166,6 +167,7 @@ export default function RestyleDashboardContent() {
       {tier === "agency" && <RpDesignTeamCard />}
 
       <HeroRow shopName={shopProfile?.shopName} isWpwTenant={isWpwTenant} />
+      <DesignProofsCard />
 
       <section className="grid grid-cols-2 md:grid-cols-4 items-start gap-2 sm:gap-4 xl:gap-6" id="pillars">
         {DASHBOARD_PILLARS.map((pillar, i) => (
