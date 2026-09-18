@@ -76,6 +76,7 @@ const AdminWallProLanding = lazyWithRetry(() => import("./pages/AdminWallProLand
 // customer has an account here — 8 of 809 distinct customer emails — so behind
 // a sign-in wall this page reaches nobody, which is the dead end it replaced.
 const ShopFlow = lazyWithRetry(() => import("./pages/ShopFlow"));
+const DesignProofs = lazyWithRetry(() => import("./pages/DesignProofs"));
 // The WallPro case study: one real wall, bare to installed.
 const WallProCaseStudy = lazyWithRetry(() => import("./pages/WallProCaseStudy"));
 // The WallPro FAQ: the corner/mask geometry, the panelizer pipeline, the prices.
@@ -497,6 +498,7 @@ const App = () => {
           {/* PUBLIC on purpose — the access check lives in wpw-shopflow, not the
               route. See the note on the import above. */}
           <Route path="/shopflow" element={<ShopFlow />} />
+          <Route path="/design-proofs" element={<DesignProofs />} />
           <Route path="/wallwrap-design" element={<WallPro brand="weprintwraps" />} />
           {/* The case study: one real wall, bare to installed. Its numbers and
               diagrams are computed by the tool's own libraries, so it cannot

@@ -187,7 +187,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [showMasks, setShowMasks] = useState(true);
   const [printSettings, setPrintSettings] = useState<WallPrintSettings>({ ...DEFAULT_WALL_PRINT });
   const [preview, setPreview] = useState<string | null>(null), [rendering, setRendering] = useState(false);
-  const [proof, setProof] = useState<{ views: Awaited<ReturnType<typeof captureWallProof>>; name: string; sourceId: string; wall: NonNullable<DesignProofMetadata['wall']> } | null>(null);
+  const [proof, setProof] = useState<{ views: Awaited<ReturnType<typeof captureWallProof>>; name: string; sourceId: string; designId?: string; generationId?: string; projectId: string; wall: NonNullable<DesignProofMetadata['wall']> } | null>(null);
   const [preparingProof, setPreparingProof] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [detecting, setDetecting] = useState(false);
@@ -549,6 +549,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     const version = previewVersion.current;
     const projectName = name.trim() || 'My wall design';
     const snapshot = { name: zoneLabel ? `${projectName} — ${zoneLabel}` : projectName, sourceId: currentVersionId || projectId,
+      designId: designId || undefined, generationId: currentVersionId || undefined, projectId,
       wall: { widthInches: width, heightInches: height, squareFeet: billing.wallSqFt, linearFeet: billing.linearFeet, panels: billing.panels } };
     setPreparingProof(true); setError('');
     try {
@@ -1891,7 +1892,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         <DialogTitle className="sr-only">WallPro Design Approval Proof</DialogTitle>
         <DialogDescription className="sr-only">Before, after, and a detail close-up of your wall. Print, download, share, or email the proof.</DialogDescription>
         {proof && <ProfessionalProofSheet views={proof.views} designName={proof.name} finish="Matte / Luster"
-          designProof={{ tool: 'wallpro', brand, sourceId: proof.sourceId, wall: proof.wall }} />}
+          designProof={{ tool: 'wallpro', brand, sourceId: proof.sourceId, designId: proof.designId, generationId: proof.generationId, projectId: proof.projectId, wall: proof.wall }} />}
       </DialogContent>
     </Dialog>
   </main>

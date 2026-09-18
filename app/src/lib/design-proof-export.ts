@@ -14,6 +14,9 @@ export interface DesignProofMetadata {
   quoteNumber?: string;
   orderNumber?: string;
   sourceId?: string;
+  designId?: string;
+  generationId?: string;
+  projectId?: string;
   includeTerms: boolean;
 }
 
@@ -23,7 +26,26 @@ export function proofQuantity(metadata: DesignProofMetadata) {
     : `${metadata.yards} linear yards on a 60-inch roll`;
 }
 
-export interface SavedDesignProof { path: string; pdfUrl: string }
+export interface SavedDesignProof { id?: string; path: string; pdfUrl: string }
+export interface DesignProofRecord {
+  id: string;
+  brand: DesignProofMetadata['brand'];
+  tool: NonNullable<DesignProofMetadata['tool']>;
+  storage_path: string;
+  metadata: DesignProofMetadata;
+  created_at: string;
+}
+
+export const designProofsRoute = (brand?: DesignProofMetadata['brand']) =>
+  brand === 'weprintwraps' ? '/design-proofs?brand=weprintwraps' : '/design-proofs';
+
+export async function listDesignProofs(filters: { brand?: DesignProofMetadata['brand']; tool?: DesignProofMetadata['tool']; search?: string; page?: number }): Promise<{ proofs: DesignProofRecord[]; hasMore: boolean }> {
+  return invoke({ action: 'list', ...filters });
+}
+
+export async function getDesignProofLink(path: string): Promise<SavedDesignProof> {
+  return invoke({ action: 'link', path });
+}
 
 async function invoke(body: unknown) {
   const { data, error } = await supabase.functions.invoke('design-proof-export', { body });

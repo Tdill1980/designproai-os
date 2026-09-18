@@ -34,6 +34,7 @@ export function proofMetadata(input: any) {
     vehicle, design, yards, wall, finish: field(input.finish, 40) || 'Gloss',
     customerName: field(input.customerName), quoteNumber: field(input.quoteNumber, 80),
     orderNumber: field(input.orderNumber, 80), sourceId: field(input.sourceId, 80),
+    designId: field(input.designId, 80), generationId: field(input.generationId, 80), projectId: field(input.projectId, 80),
     includeTerms: input.includeTerms === true,
   };
 }
@@ -77,6 +78,22 @@ export function createProofExportHandler({ db, fetchImpl = fetch, resendKey, fro
     const files = db.storage.from(BUCKET);
     const prefix = `proof-exports/${user.id}/`;
     try {
+      if (body.action === 'list') {
+        if (body.brand && !['designpro', 'weprintwraps'].includes(body.brand)) return json(400, { error: 'Unknown proof brand.' });
+        if (body.tool && !['patternpro', 'wallpro'].includes(body.tool)) return json(400, { error: 'Unknown proof system.' });
+        const page = Number(body.page ?? 0);
+        if (!Number.isInteger(page) || page < 0 || page > 10000) return json(400, { error: 'Invalid proof page.' });
+        let query = db.from('design_proofs').select('id,brand,tool,storage_path,metadata,created_at')
+          .eq('owner_user_id', user.id);
+        if (body.brand) query = query.eq('brand', body.brand);
+        if (body.tool) query = query.eq('tool', body.tool);
+        const search = field(body.search, 160);
+        // A single bound ilike value: punctuation cannot add PostgREST filters.
+        if (search) query = query.ilike('search_text', `%${search.replace(/[\\%_]/g, '\\$&')}%`);
+        const result = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).range(page * 24, page * 24 + 24);
+        if (result.error) throw new Error('Your saved proofs could not be loaded. Please try again.');
+        return json(200, { success: true, proofs: (result.data || []).slice(0, 24), hasMore: (result.data || []).length > 24 });
+      }
       if (body.action === 'save') {
         let metadata;
         try { metadata = proofMetadata(body.metadata); } catch (error) { return json(400, { error: (error as Error).message }); }
@@ -86,7 +103,8 @@ export function createProofExportHandler({ db, fetchImpl = fetch, resendKey, fro
         if (!binary.startsWith('%PDF-') || binary.length > MAX_PDF_BYTES) return json(400, { error: 'Invalid PDF.' });
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        const path = `${prefix}${crypto.randomUUID()}/proof.pdf`;
+        const id = crypto.randomUUID();
+        const path = `${prefix}${id}/proof.pdf`;
         const contextPath = path.replace('/proof.pdf', '/context.json');
         const uploaded = await files.upload(path, bytes, { contentType: 'application/pdf', upsert: false });
         if (uploaded.error) throw new Error('The proof PDF could not be saved.');
@@ -96,14 +114,30 @@ export function createProofExportHandler({ db, fetchImpl = fetch, resendKey, fro
           throw new Error('The proof details could not be saved.');
         }
         const signed = await files.createSignedUrl(path, LINK_SECONDS, { download: `${metadata.tool === 'wallpro' ? 'WallPro' : 'PatternPro'}-Design-Proof.pdf` });
-        if (signed.error || !signed.data?.signedUrl) throw new Error('The proof download link could not be created.');
-        return json(200, { success: true, path, pdfUrl: signed.data.signedUrl });
+        if (signed.error || !signed.data?.signedUrl) {
+          await files.remove([path, contextPath]);
+          throw new Error('The proof download link could not be created.');
+        }
+        const indexed = await db.from('design_proofs').insert({ id, owner_user_id: user.id, brand: metadata.brand, tool: metadata.tool, storage_path: path, metadata });
+        if (indexed.error) {
+          await files.remove([path, contextPath]);
+          throw new Error('The proof could not be filed in DesignProofs. Please try again.');
+        }
+        return json(200, { success: true, id, path, pdfUrl: signed.data.signedUrl });
       }
-      if (body.action !== 'email') return json(400, { error: 'Unknown proof action.' });
+      if (!['email', 'link'].includes(body.action)) return json(400, { error: 'Unknown proof action.' });
       // Only a PDF created for this authenticated owner can be emailed. The
       // sender cannot supply arbitrary attachment URLs or a different sender.
       const path = typeof body.path === 'string' ? body.path : '';
       if (!path.startsWith(prefix) || !/^[0-9a-f-]{36}\/proof\.pdf$/.test(path.slice(prefix.length))) return json(403, { error: 'This proof belongs to another account or is unavailable.' });
+      if (body.action === 'link') {
+        const existing = await files.download(path.replace('/proof.pdf', '/context.json'));
+        if (existing.error || !existing.data) return json(404, { error: 'Saved proof not found.' });
+        const metadata = proofMetadata(JSON.parse(await existing.data.text()));
+        const signed = await files.createSignedUrl(path, LINK_SECONDS, { download: `${metadata.tool === 'wallpro' ? 'WallPro' : 'PatternPro'}-Design-Proof.pdf` });
+        if (signed.error || !signed.data?.signedUrl) throw new Error('The proof download link could not be created.');
+        return json(200, { success: true, path, pdfUrl: signed.data.signedUrl });
+      }
       const to = field(body.to, 254);
       const subject = field(body.subject, 200);
       const message = field(body.message, 4000);

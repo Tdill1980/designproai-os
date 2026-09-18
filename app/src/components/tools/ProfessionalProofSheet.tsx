@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
-import { Download, Printer, Share2, Loader2, FileImage, Mail, Check, Link2, Plus } from 'lucide-react';
+import { Download, Printer, Share2, Loader2, FileImage, Mail, Check, Link2, Plus, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -29,7 +29,7 @@ import { ShopTermsOnboardingWizard } from './ShopTermsOnboardingWizard';
 import { TwoDProofSheet } from './TwoDProofSheet';
 import { EmailConfigurator } from './EmailConfigurator';
 import { DesignProofEmailDialog } from './DesignProofEmailDialog';
-import { saveDesignProof, type SavedDesignProof, type DesignProofMetadata } from '@/lib/design-proof-export';
+import { saveDesignProof, designProofsRoute, type SavedDesignProof, type DesignProofMetadata } from '@/lib/design-proof-export';
 import { designProofBrand } from '@/lib/patternpro-proof';
 import type { PatternBrandKey } from '@/lib/patternpro-brand';
 // Lazy so the proof sheet doesn't drag the entire QuickQuote estimator
@@ -110,7 +110,7 @@ interface ProfessionalProofSheetProps {
    *  the 2D Proof viewer shows it instantly instead of regenerating (30-60s). */
   initialProofUrl?: string | null;
   /** Standalone tools share this proof, with explicit tenant branding and material quantities. */
-  designProof?: { brand: PatternBrandKey; tool?: 'patternpro' | 'wallpro'; yards?: number; sourceId?: string; wall?: DesignProofMetadata['wall'] };
+  designProof?: { brand: PatternBrandKey; tool?: 'patternpro' | 'wallpro'; yards?: number; sourceId?: string; designId?: string; generationId?: string; projectId?: string; wall?: DesignProofMetadata['wall'] };
 }
 
 const SHORT_DISCLAIMER = `TERMS & CONDITIONS OF APPROVAL:
@@ -505,11 +505,22 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
       tool: designProof.tool || 'patternpro', brand: designProof.brand, ...proofBrand, vehicle: vehicleFullName,
       design: designName || colorName || 'Custom Pattern', finish: finish || 'Gloss',
       yards: designProof.yards, wall: designProof.wall, sourceId: designProof.sourceId,
+      designId: designProof.designId, generationId: designProof.generationId, projectId: designProof.projectId,
       customerName, quoteNumber, orderNumber, includeTerms: includeDisclaimer,
     };
     const saved = await saveDesignProof(pdf.output('blob'), metadata);
     setSavedProof(saved); setSavedMetadata(metadata);
     return saved;
+  };
+
+  const handleSaveToDesignProofs = async () => {
+    setIsGenerating(true);
+    try {
+      await saveStandaloneProof();
+      toast({ title: 'Saved to DesignProofs', description: 'Find this PDF by system, design reference, or customer in your proof library.' });
+    } catch (error) {
+      toast({ title: 'Proof not saved', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    } finally { setIsGenerating(false); }
   };
 
   const handleSaveAndShare = async () => {
@@ -816,6 +827,9 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
 
         {/* Action buttons — equal-width grid on mobile, inline on desktop */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+          {designProof && <Button variant="outline" onClick={handleSaveToDesignProofs} disabled={isGenerating} className="gap-1.5 text-xs sm:text-sm h-10">
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save to DesignProofs
+          </Button>}
           {/* 2D Proof — opens the flat-panel AI proof viewer in a dialog.
               Available in DesignPanelPro today; surfacing it here makes
               it available across all 6 tools that use this sheet. */}
@@ -917,6 +931,10 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           </div>
         </div>
 
+        {designProof && <p className="text-xs text-muted-foreground">
+          Save, Share, and Email file a copy in <a className="underline" href={designProofsRoute(designProof.brand)} target="_blank" rel="noreferrer">DesignProofs</a>. Sign in to save to your account.
+          {savedProof?.id && <span className="block break-all">Saved Proof ID: {savedProof.id}</span>}
+        </p>}
         {shareUrl && <div className="space-y-1"><Label htmlFor="saved-proof-link">Proof PDF link · available for seven days</Label><Input id="saved-proof-link" readOnly value={shareUrl} onFocus={e => e.target.select()} /></div>}
 
         {/* T&C Toggle */}
@@ -961,6 +979,9 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
           <div className="text-right">
             <h1 className="text-xl font-bold text-black">{vehicleFullName || 'Vehicle'}</h1>
             <p className="text-sm text-gray-600">Design Approval Proof</p>
+            {designProof?.designId && <p className="mt-1 text-[10px] text-gray-500">DesignID: {designProof.designId}</p>}
+            {designProof?.generationId && <p className="mt-1 text-[10px] text-gray-500">GenerationID: {designProof.generationId}</p>}
+            {designProof?.projectId && !designProof.generationId && <p className="mt-1 text-[10px] text-gray-500">Project ID: {designProof.projectId}</p>}
             {(quoteNumber || orderNumber) && (
               <div className="flex items-center justify-end gap-3 mt-1">
                 {quoteNumber && (
