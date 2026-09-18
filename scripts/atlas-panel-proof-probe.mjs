@@ -300,6 +300,18 @@ async function measure(bytes) {
   console.log(`proof ${payload.proofSha256.slice(0, 16)} (${payload.proofByteSize} B) in ${payload.elapsedMs} ms`);
   console.log(`prompt ${payload.promptChars} chars, ${payload.attachedInputs.length} pinned inputs, `
     + `${payload.thoughtSignatureCount} thought signature(s) returned`);
+
+  // WHICH HALF DREW THE CONTAINER, SAID OUT LOUD. The studio renders its own
+  // and falls back to the one this script staged; the two are indistinguishable
+  // in the sheet, so the only place the answer exists is the receipt. Reporting
+  // a fallback as the contract is how this seam has already been wrong twice.
+  const container = (payload.attachedInputs || []).find((a) => a.role === "container");
+  if (container?.origin === "studio") {
+    console.log(`container DRAWN BY THE EDGE for this vehicle `
+      + `(${container.sha256.slice(0, 12)}, ${container.byteSize} B, ${container.svgChars} SVG chars)`);
+  } else if (container) {
+    console.log(`container FELL BACK to the staged copy: ${container.studioRenderFailed || "no reason recorded"}`);
+  }
   console.log(`\nJUDGE THE SHEET, NOT THIS LOG. panel-proof-probe/panel-production-proof.png`);
 })().catch((error) => {
   console.error(String(error?.message || error));
