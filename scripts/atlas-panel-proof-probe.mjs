@@ -43,12 +43,18 @@ const { createClient } = require("../runtime/node_modules/@supabase/supabase-js"
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const WORKER_SECRET = process.env.WORKER_SECRET;
 const OWNER_ID = process.env.PANEL_PROOF_OWNER_ID;
 const BUCKET = "wrap-files";
 
-if (!SUPABASE_URL || !SERVICE_KEY || !WORKER_SECRET || !OWNER_ID) {
-  console.error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, WORKER_SECRET and PANEL_PROOF_OWNER_ID are required");
+// NO WORKER SECRET. This probe used to require one and send an
+// `x-designpro-worker-secret` header, and the function never reads it:
+// `resolveDesignProInternalCaller` authenticates on the `apikey` header plus
+// `x-designpro-owner-id`, by RESOLVING that owner through auth admin. That IS
+// the privilege check -- a publishable key cannot resolve a user by id. A
+// required variable nothing consumes is a blocker invented out of nothing, and
+// this one held the probe up for three exchanges.
+if (!SUPABASE_URL || !SERVICE_KEY || !OWNER_ID) {
+  console.error("SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and PANEL_PROOF_OWNER_ID are required");
   process.exit(2);
 }
 
@@ -59,7 +65,9 @@ const arg = (name, fallback) => {
 };
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
-const outDir = path.join(process.cwd(), "panel-proof-probe");
+// `--out` so the workflow can collect the evidence from a bind mount, exactly
+// as atlas-hero-driver-probe.mjs does.
+const outDir = path.resolve(arg("out", path.join(process.cwd(), "panel-proof-probe")));
 mkdirSync(outDir, { recursive: true });
 
 /**
@@ -137,7 +145,6 @@ function panelRows() {
       authorization: `Bearer ${SERVICE_KEY}`,
       apikey: SERVICE_KEY,
       "content-type": "application/json",
-      "x-designpro-worker-secret": WORKER_SECRET,
       "x-designpro-owner-id": OWNER_ID,
     },
     body: JSON.stringify(request),
