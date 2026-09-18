@@ -107,6 +107,42 @@ test("the exact block carries EVERY literal the wrap wears, not just the contact
   }), /Tagline|Services|Promotional text/);
 });
 
+test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
+  // Owner ruling 2026-09-18: the template is a system-level constant so every
+  // proof looks like one print shop's line and the croppers know where to look.
+  // Both halves of that are here, and they are deliberately in different places.
+  for (const line of runtime.SHEET_LAYOUT.split("\n").filter(Boolean)) {
+    assert.ok(edgeSource.includes(line), `the edge is missing a layout line: ${line.slice(0, 50)}`);
+  }
+
+  const prompt = runtime.buildPanelProofPrompt({
+    input: {
+      companyName: "Bright Smiles Dental", phone: "(520) 555-0192",
+      proofDate: "2026-09-18", orderNumber: "BS-2012PRIUS-01",
+      designer: "A.L.", proofVersion: "1.0",
+    },
+    manifest: { zones: [{ surfaceKey: "driver", trimInches: { widthIn: 165.7, heightIn: 49.6 } }] },
+    creativeDirection: "blue wave",
+  });
+  assert.match(prompt, /VERSION 1 across the upper half/);
+  assert.match(prompt, /TRIM SIZE REFERENCE table/);
+  assert.match(prompt, /BS-2012PRIUS-01/, "the job block must reach the header");
+
+  // THE COORDINATE TABLE MUST NEVER REACH CALL 1. atlasFieldContract emitted
+  // bare four-decimal rows and FOUR consecutive live runs painted those digits
+  // onto the customer's flanks -- 8c525565's went through Topaz onto 150-PPI
+  // print panels. That is what the map_drawn gate exists to catch.
+  for (const region of Object.keys(runtime.PROOF_REGIONS)) {
+    const rect = runtime.PROOF_REGIONS[region];
+    for (const value of [rect.x, rect.y, rect.w, rect.h]) {
+      if (value === 0 || value === 1) continue; // 0 and 1 are not coordinates a model would paint
+      assert.ok(!prompt.includes(String(value)),
+        `PROOF_REGIONS.${region} leaked the literal ${value} into the prompt`);
+    }
+  }
+  assert.doesNotMatch(prompt, /0\.\d{3}/, "no fractional coordinate may reach Call 1");
+});
+
 test("INCHES, never normalized fractions", () => {
   // RULE 0.33 removed the [0,1] topology table from Call 1 on measured
   // evidence, and the field contract's bare four-decimal rows are what FOUR

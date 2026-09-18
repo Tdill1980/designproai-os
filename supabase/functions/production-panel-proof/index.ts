@@ -64,13 +64,22 @@ const BUCKET = "wrap-files";
  * meant to -- an installed vehicle proof put wheel wells and template furniture
  * back into the source rectangles.
  *
+ * AND THE FORMAT EXAMPLE MUST SHOW THE FORMAT BEING ASKED FOR. It used to be
+ * `panel-production-proof-example.png` -- the Arctic Air sheet, 874x717, which
+ * carries ONE version. This contract asks for THREE, so the reference was
+ * teaching a different document than the one requested: the same class of
+ * defect, pointed the other way. The three-version sheet is 1536x1024 and shows
+ * every block this contract names -- header job block, VERSION 1 dimensioned,
+ * trim table and total coverage, VERSION 2 artwork-only, and the cut proof with
+ * outlined elements.
+ *
  * The installation photograph is the PHYSICAL REASON a panel is one rectangle.
  * A positive fact conditions better than "do not draw wheel arches", which is
  * the negative shape this repo warns about in four places and which has failed
  * 4/4 on the field map.
  */
 const PINNED_INPUTS = [
-  { path: "atlas-examples/panel-production-proof-example.png", role: "format" },
+  { path: "atlas-examples/panel-production-proof-three-version.png", role: "format" },
   { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation" },
 ] as const;
 
@@ -123,6 +132,10 @@ serve(async (req) => {
       vehicleYear: body?.vehicleYear,
       vehicleMake: body?.vehicleMake,
       vehicleModel: body?.vehicleModel,
+      proofDate: body?.proofDate,
+      orderNumber: body?.orderNumber,
+      designer: body?.designer,
+      proofVersion: body?.proofVersion,
       creativeDirection: body?.creativeDirection || body?.prompt,
       panelRows,
     });

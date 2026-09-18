@@ -79,7 +79,7 @@ mkdirSync(outDir, { recursive: true });
  * wheel wells back into the source rectangles.
  */
 const PINNED = [
-  { local: "runtime/atlas-examples/panel-production-proof-example.png", remote: "atlas-examples/panel-production-proof-example.png" },
+  { local: "runtime/atlas-examples/panel-production-proof-three-version.png", remote: "atlas-examples/panel-production-proof-three-version.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
 
@@ -130,6 +130,11 @@ function panelRows() {
     vehicleYear: arg("year", "2012"),
     vehicleMake: arg("make", "Toyota"),
     vehicleModel: arg("model", "Prius"),
+    // The header job block the reference sheet carries top-right.
+    proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
+    orderNumber: arg("order", "BS-2012PRIUS-01"),
+    designer: arg("designer", "A.L."),
+    proofVersion: arg("proof-version", "1.0"),
     creativeDirection: arg("brief",
       "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth logo, the tagline "
       + "HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling dental patient in a "

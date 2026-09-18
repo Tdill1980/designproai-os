@@ -59,6 +59,43 @@ export const INSTALLATION_FACT = [
   "rectangle of artwork, and the artwork continues straight through the places those openings will be.",
 ].join("\n");
 
+/**
+ * THE SHEET'S LAYOUT, STATED IN WORDS — NEVER AS COORDINATES.
+ *
+ * Owner ruling 2026-09-18: the template is a system-level constant so every
+ * proof looks like it came from the same print shop line and the downstream
+ * croppers always know where to look. The numbers live in PROOF_REGIONS, which
+ * the model never sees -- `atlasFieldContract` emitted its layout as bare
+ * four-decimal rows and four consecutive live runs painted those digits onto
+ * the customer's flanks. Prose describing a document's own sections has never
+ * done that; a coordinate table has, 4/4.
+ */
+export const SHEET_LAYOUT = [
+  "THE SHEET, in this order down the page:",
+  "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
+  "  and a job block at the right carrying the date, order number, designer and version.",
+  "  VERSION 1 across the upper half, each panel dimensioned with its width above and height beside it.",
+  "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
+  "  VERSION 2 across the lower left. The cut proof fills the lower right.",
+  "  A footer band repeating the logo and tagline.",
+].join("\n");
+
+/**
+ * The same layout as rectangles, for CODE ONLY. Never rendered into the prompt.
+ * APPROXIMATE -- read off the reference sheet's proportions, good enough to
+ * find a block and not good enough to cut a print panel from. Calibrate against
+ * a real returned sheet before anything binds to them.
+ */
+export const PROOF_REGIONS = {
+  header: { x: 0, y: 0, w: 1, h: 0.093 },
+  version1: { x: 0, y: 0.105, w: 1, h: 0.42 },
+  trimTable: { x: 0.655, y: 0.37, w: 0.2, h: 0.14 },
+  totalCoverage: { x: 0.865, y: 0.37, w: 0.125, h: 0.1 },
+  version2: { x: 0, y: 0.54, w: 0.5, h: 0.35 },
+  cutProof: { x: 0.5, y: 0.54, w: 0.5, h: 0.35 },
+  footer: { x: 0, y: 0.905, w: 1, h: 0.095 },
+} as const;
+
 /** The three artifacts, in one pass, by one designer. */
 export const VERSIONS = [
   {
@@ -94,6 +131,11 @@ export interface PanelProofParams {
   vehicleYear?: string;
   vehicleMake?: string;
   vehicleModel?: string;
+  /** Header job block — the metadata the reference sheet carries top-right. */
+  proofDate?: string;
+  orderNumber?: string;
+  designer?: string;
+  proofVersion?: string;
   creativeDirection?: string;
   /** `SURFACE: 165.7" wide x 49.6" high` rows, from the GENIE manifest. */
   panelRows?: string[];
@@ -127,8 +169,19 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
       "no other numerals, no other address or web address anywhere on the proof:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
+  const job: Array<[string, string]> = ([
+    ["Date", pick(params.proofDate)],
+    ["Order #", pick(params.orderNumber)],
+    ["Designer", pick(params.designer)],
+    ["Version", pick(params.proofVersion)],
+  ] as Array<[string, string]>).filter(([, value]) => value.length > 0);
+  if (job.length) {
+    out.push("", "JOB BLOCK — set these in the header exactly as given:",
+      ...job.map(([label, value]) => `  ${label}: ${value}`));
+  }
   out.push("", "PRODUCE THREE VERSIONS ON THE PROOF, in this order:",
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label} — ${v.instruction}`));
+  out.push("", SHEET_LAYOUT);
   out.push("",
     "The attached proof sheet is the FORMAT to follow — its layout, captions and dimension callouts.",
     "Its artwork is not a style reference and must not be copied.",

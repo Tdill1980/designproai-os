@@ -101,6 +101,55 @@ const INSTALLATION_FACT = [
   "rectangle of artwork, and the artwork continues straight through the places those openings will be.",
 ].join("\n");
 
+/**
+ * THE SHEET'S LAYOUT, STATED IN WORDS — NEVER AS COORDINATES.
+ *
+ * Owner ruling 2026-09-18: the template is a system-level constant, so every
+ * customer's proof "looks like it came from the same professional print shop
+ * line" and the downstream croppers always know where to look.
+ *
+ * It is described in PROSE, and the numbers live in PROOF_REGIONS below where
+ * the model never sees them. That split is not fussiness: `atlasFieldContract`
+ * emitted its layout as bare four-decimal rows and FOUR consecutive live runs
+ * PAINTED those digits onto the customer's flanks (455b1723, 7c7bd633,
+ * cc382c3c, 8c525565 -- one of them through Topaz onto 150-PPI print panels).
+ * The `map_drawn` gate exists because of it. Prose describing a document's own
+ * sections has never produced that failure; a coordinate table has, 4/4.
+ */
+const SHEET_LAYOUT = [
+  "THE SHEET, in this order down the page:",
+  "  A header band: the company logo and tagline at the left, the title 2D PRODUCTION PROOF centred,",
+  "  and a job block at the right carrying the date, order number, designer and version.",
+  "  VERSION 1 across the upper half, each panel dimensioned with its width above and height beside it.",
+  "  A TRIM SIZE REFERENCE table and a TOTAL COVERAGE figure beside the smaller panels.",
+  "  VERSION 2 across the lower left. The cut proof fills the lower right.",
+  "  A footer band repeating the logo and tagline.",
+].join("\n");
+
+/**
+ * The same layout as rectangles, for CODE ONLY — the extractor, the gates and
+ * PanelPro. Never rendered into the prompt.
+ *
+ * APPROXIMATE, and deliberately labelled so. They are read off the owner's
+ * reference sheet's proportions and are accurate to a percent or two; they are
+ * good enough to find a block and NOT good enough to cut a print panel from.
+ * Calibrate against a real returned sheet before anything binds to them.
+ *
+ * This is what makes the gates workable under this contract. `edgeHoleRatio`,
+ * `nonBlackFraction` and the output-class inspector all judge the WHOLE sheet
+ * today, and a correct proof is a white document -- they would convict it
+ * instantly. Under a fixed template they judge the panel cells instead.
+ */
+const PROOF_REGIONS = Object.freeze({
+  header: Object.freeze({ x: 0, y: 0, w: 1, h: 0.093 }),
+  version1: Object.freeze({ x: 0, y: 0.105, w: 1, h: 0.42 }),
+  trimTable: Object.freeze({ x: 0.655, y: 0.37, w: 0.2, h: 0.14 }),
+  totalCoverage: Object.freeze({ x: 0.865, y: 0.37, w: 0.125, h: 0.1 }),
+  version2: Object.freeze({ x: 0, y: 0.54, w: 0.5, h: 0.35 }),
+  cutProof: Object.freeze({ x: 0.5, y: 0.54, w: 0.5, h: 0.35 }),
+  footer: Object.freeze({ x: 0, y: 0.905, w: 1, h: 0.095 }),
+});
+
 /** The three artifacts, in one pass, by one designer. */
 const VERSIONS = Object.freeze([
   Object.freeze({
@@ -199,8 +248,22 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
 
+  const pick = (v) => String(v == null ? "" : v).trim();
+  const job = [
+    ["Date", pick(input.proofDate)],
+    ["Order #", pick(input.orderNumber)],
+    ["Designer", pick(input.designer)],
+    ["Version", pick(input.proofVersion)],
+  ].filter(([, value]) => value);
+  if (job.length) {
+    out.push("", "JOB BLOCK — set these in the header exactly as given:",
+      ...job.map(([label, value]) => `  ${label}: ${value}`));
+  }
+
   out.push("", "PRODUCE THREE VERSIONS ON THE PROOF, in this order:",
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label} — ${v.instruction}`));
+
+  out.push("", SHEET_LAYOUT);
 
   out.push("",
     "The attached proof sheet is the FORMAT to follow — its layout, captions and dimension callouts.",
@@ -214,6 +277,8 @@ module.exports = {
   PANEL_PROOF_CONTRACT,
   SYSTEM_JOB,
   INSTALLATION_FACT,
+  SHEET_LAYOUT,
+  PROOF_REGIONS,
   VERSIONS,
   exactStrings,
   panelTable,
