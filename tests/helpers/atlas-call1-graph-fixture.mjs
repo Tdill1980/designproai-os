@@ -21,6 +21,14 @@ export async function createAtlasCall1Database() {
     INSERT INTO auth.users VALUES('${OWNER}',now());
     INSERT INTO public.designpro_generation_requests VALUES('${REQUEST}','${GENERATION}','${OWNER}','leased','${CLAIM}',now()+interval '15 minutes');`);
   await db.exec(await readFile(new URL('../../supabase/migrations/20260911170000_designpro_atlas_call1_graph.sql', import.meta.url), 'utf8'));
+  // BOTH migrations, not just the first. The composite migration is what lets a
+  // run with NO master.assemble -- the six-surface element-only shape that
+  // production actually routes through -- reach 'completed' instead of tripping
+  // the run's own master_storage_path CHECK after the work is done. Applying
+  // only the base here would leave that branch unexecuted by every test while
+  // the suite stayed green, which is the failure shape this repo has recorded
+  // three times ("a fake door laxer than the real one").
+  await db.exec(await readFile(new URL('../../supabase/migrations/20260918030000_designpro_atlas_call1_composite_master.sql', import.meta.url), 'utf8'));
   return db;
 }
 

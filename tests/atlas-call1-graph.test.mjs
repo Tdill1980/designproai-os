@@ -688,3 +688,126 @@ test("the contact node still cannot invent a line the customer never gave", () =
   assert.deepEqual(nodes.find((n) => n.key === "contact.produce").input.lines, ["oasispools.com"]);
   assert.equal(nodes.find((n) => n.key === "typeset.produce").input.text, "Oasis Pools");
 });
+
+// ---------------------------------------------------------------------------
+// THE SIX-SURFACE DOOR, EXECUTED — not merely compiled.
+//
+// Everything above this line that RUNS the element nodes runs them through
+// `author()`, the HERO cascade. Production does not route through that door:
+// hero-driver is off, six-surface is the topology, and the door it uses is
+// `authorElements()` — the standalone shape with no master.assemble, whose base
+// arrives as the already-accepted sheet's `masterRef`. Until this test that door
+// had only ever been COMPILE-checked (`compileElementGraph` shape assertions),
+// so the code path every v28 generation takes had never once been executed.
+//
+// It also executes the only branch `20260918030000` exists for. An element-only
+// run has no master.assemble, so nothing writes the run's master columns, and
+// its final node sets state='completed' straight into
+//
+//   CHECK (state<>'completed' OR (... master_storage_path IS NOT NULL ...))
+//
+// — raising AFTER the work is done, which is the worst possible moment and the
+// exact failure `authorElements` cannot recover from (with cleanBase on, Layer 0
+// carries no company name, so neither shipping nor failing is acceptable). The
+// fixture now applies both migrations, so this test proves the branch rather
+// than assuming it.
+test("6. authorElements: the six-surface door runs end to end and the run completes on master.composite", async () => {
+  const previous = process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+  process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = "on";
+  const db = await createAtlasCall1Database();
+  const files = new Map();
+  const adapter = createAtlasCall1Adapter(db, files);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const branded = { ...INPUT, companyName: "Oasis Pools", phone: "(520) 555-0142" };
+
+  // The ALREADY-ACCEPTED sheet. Six-surface authors and accepts this before a
+  // single element node is claimed, so it enters as an identity, never bytes.
+  const acceptedBytes = await paint(manifest.canvas.widthPx, manifest.canvas.heightPx, "#1f6f4a");
+  const masterRef = {
+    storagePath: `atlas-call1/${REQUEST}/master-${sha(acceptedBytes)}.png`,
+    contentHash: sha(acceptedBytes),
+    byteSize: acceptedBytes.length,
+  };
+  files.set(masterRef.storagePath, acceptedBytes);
+
+  const worker = graph.createAtlasCall1NodeWorker({
+    supabase: adapter.supabase, workerId: "runtime-1-six-surface", callEdge: syntheticEdge(calls),
+    concurrency: 3, pollMs: 25, heartbeatMs: 200, logger: () => {},
+  });
+  try {
+    const result = await worker.authorElements({
+      masterRef, manifest, input: branded,
+      requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      logger: () => {}, pollMs: 20, timeoutMs: 60_000,
+    });
+
+    assert.ok(result, "the six-surface door must return a composited sheet, not null");
+    // NOT ONE IMAGE REQUEST. The elements are typeset and composited in code;
+    // if this ever moves, the element graph has grown a second design authority.
+    assert.equal(calls.length, 0, "the element subgraph is deterministic — zero image requests");
+
+    // Layer 0 is preserved as provenance and is NOT what came back.
+    assert.equal(result.cleanMasterHash, masterRef.contentHash,
+      "Layer 0 is the accepted sheet that entered, recorded as its own hash");
+    assert.notEqual(result.contentHash, masterRef.contentHash,
+      "the customer must not be handed back the unbranded sheet");
+    assert.equal(result.changed, true);
+    assert.equal(result.applied.length, 4);
+    assert.deepEqual([...new Set(result.applied.map((e) => e.surfaceKey))].sort(), ["driver", "passenger"]);
+    assert.deepEqual([...new Set(result.applied.map((e) => e.role))].sort(), ["contact", "typography"]);
+
+    // AND IT IS ON THE PIXELS. A receipt saying "4 applied" over an unchanged
+    // sheet is the defect CLAUDE.md names by name — do not report status from
+    // receipts — so the flank is cropped and compared.
+    const zone = manifest.zones.find((z) => z.surfaceKey === "driver");
+    const crop = async (bytes) => sharp(bytes)
+      .extract({ left: zone.trim.x, top: zone.trim.y, width: zone.trim.w, height: zone.trim.h })
+      .raw().toBuffer();
+    const baseFlank = await crop(acceptedBytes);
+    const shownFlank = await crop(result.bytes);
+    assert.notEqual(Buffer.compare(baseFlank, shownFlank), 0,
+      "the driver flank the customer sees must carry the lettering");
+    let ink = 0;
+    for (let i = 0; i + 2 < shownFlank.length; i += 3) {
+      if (shownFlank[i] < 80 && shownFlank[i + 1] < 90 && shownFlank[i + 2] < 100) ink += 1;
+    }
+    assert.ok(ink > 500, `expected real lettering on the driver flank, found ${ink} ink pixels`);
+
+    // THE MIGRATION'S OWN BRANCH. With no master.assemble in this graph, the run
+    // can only reach 'completed' because master.composite is now allowed to name
+    // the master while the columns are still NULL. Against the base migration
+    // alone this assertion fails with the run's CHECK — which is precisely what
+    // would have happened on the first live v28 generation.
+    const { rows } = await db.query(
+      "SELECT state,master_storage_path,master_content_hash,master_byte_size,completed_at FROM public.designpro_atlas_call1_runs WHERE id=$1",
+      [result.runId]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].state, "completed", "an element-only run must be able to complete");
+    assert.equal(rows[0].master_content_hash, result.contentHash,
+      "the run records the COMPOSITED sheet, because nothing else ever named a master");
+    assert.equal(Number(rows[0].master_byte_size), result.byteSize);
+    assert.ok(rows[0].completed_at);
+
+    // Every node completed, and the composite is the one that closed the run.
+    const nodes = await db.query(
+      "SELECT node_key,state FROM public.designpro_atlas_call1_nodes WHERE run_id=$1 ORDER BY node_key", [result.runId]);
+    assert.deepEqual(nodes.rows.map((n) => n.node_key).sort(),
+      ["contact.produce", "element.lockup", "master.composite", "typeset.produce"]);
+    assert.ok(nodes.rows.every((n) => n.state === "completed"), "no element node may be left behind");
+
+    // RESUME. A re-claimed generation finds the completed run and spends nothing.
+    const again = await worker.authorElements({
+      masterRef, manifest, input: branded,
+      requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      logger: () => {}, pollMs: 20, timeoutMs: 60_000,
+    });
+    assert.equal(again.runId, result.runId, "the same definition must resume, never fork a second run");
+    assert.equal(again.contentHash, result.contentHash);
+    assert.equal(calls.length, 0);
+  } finally {
+    worker.stop?.();
+    if (previous === undefined) delete process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH;
+    else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = previous;
+  }
+});
