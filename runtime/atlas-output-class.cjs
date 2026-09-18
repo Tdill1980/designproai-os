@@ -48,6 +48,7 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 // affirmative vehicle answer is treated as real. The threshold exists only so
 // the receipt records what the inspector reported.
 const MAX_TRANSPORT_DIMENSION = 1280;
+const MAX_SURFACE_TRANSPORT_DIMENSION = 1600;
 const MAX_TRANSPORT_BYTES = 4_000_000;
 
 class AtlasOutputClassError extends Error {
@@ -71,9 +72,15 @@ function cleanText(value, max = 400) {
  * question, no quality judgment, no creative direction. The inspectionId
  * binds the answer to the exact candidate bytes.
  */
-function outputClassPrompt(inspectionId) {
+function outputClassPrompt(inspectionId, surfaceKeys = null) {
+  const perSurface = Array.isArray(surfaceKeys) && surfaceKeys.length;
   return [
-    "You are a print-production inspector. Classify this ONE image by OUTPUT CLASS only. Do not judge quality, style or branding.",
+    perSurface
+      // The images ARE the rectangles, so every "rectangle" sentence below
+      // still reads correctly -- and each one now arrives large enough to
+      // judge, which is the whole point of the change.
+      ? `You are a print-production inspector. You are shown ${surfaceKeys.length} images: the individual printed panels of ONE wrap, in this order — ${surfaceKeys.join(", ")}. Each image is one panel's rectangle at full resolution. Classify the SET by OUTPUT CLASS only. Do not judge quality, style or branding.`
+      : "You are a print-production inspector. Classify this ONE image by OUTPUT CLASS only. Do not judge quality, style or branding.",
     "",
     "CLASS flat_atlas — a flat panel-layout sheet: rectangular regions of flat 2D print artwork laid out side by side on one sheet, like printed vinyl panels or posters laid flat. The sheet is EXPECTED to hold several rectangles, one per vehicle surface, and may carry printed panel names or captions (for example HOOD, ROOF, DRIVER, REAR): that is the layout, not a vehicle. Inside a rectangle the artwork may legitimately contain automotive MOTIFS drawn as graphics — racing livery stripes and numbers, sponsor lettering, a small stylised car icon as a logo element, grille or headlight graphics, tire-tread or carbon patterns — but ONLY on a field of artwork that fills the rectangle edge to edge with no vehicle anatomy visible. Artwork that fills a PANEL SHAPE rather than the rectangle is NOT flat_atlas: if the artwork stops at a die-cut contour — rounded corners, a curved or stepped edge, a trimmed body-panel outline — and a plain surround fills the rest of the rectangle, that is a layout drawing of panels, not the panels themselves. Filling the shape is not filling the rectangle.",
     "",
@@ -90,6 +97,86 @@ function outputClassPrompt(inspectionId) {
     "",
     `Respond with STRICT JSON only: {"inspectionId":"${inspectionId}","outputClass":"flat_atlas"|"vehicle_depiction"|"map_drawn","confidence":0..1,"anatomyRectangles":0..12,"evidence":"one short sentence naming what you see"}`,
   ].join("\n");
+}
+
+/**
+ * ONE TRANSPORT PER SURFACE, EACH AT ITS OWN RESOLUTION. (Live efca5e03.)
+ *
+ * The sheet-level transport below squeezes a 4096-square master into a single
+ * 1280px JPEG. Six surfaces share that budget, so a driver flank -- 971 x 3712
+ * in sheet space -- reaches the inspector about 303px across its short side,
+ * and a die-cut contour becomes a few pixels of edge noise. On efca5e03 the
+ * inspector answered flat_atlas at confidence 1.0, with evidence "no visible
+ * vehicle anatomy", about a panel that is unmistakably a truck with wheel
+ * arches, door seams, handles and a mirror. The prompt already described that
+ * defect almost word for word; the model simply could not see it.
+ *
+ * This is the same failure RULE 0.36 fixed for the lettering reader -- "The
+ * read is of the DRIVER PANEL, not the sheet... the 4096-square sheet squeezed
+ * to one 1800px JPEG, a flank a third of that" -- and the one RestylePro
+ * records for its proof sheet, where tiles at ~250px made the model invent
+ * lettering it could not resolve. The lesson was never carried here.
+ *
+ * Cropping per zone and fitting each to its OWN box gives the squarer centre
+ * surfaces their native resolution (hood 370px -> 987px, 2.7x) and the flanks a
+ * real improvement (303px -> ~420px) for the same one request.
+ */
+async function surfaceTransports(bytes, zones) {
+  const parts = [];
+  let total = 0;
+  for (const zone of zones) {
+    const width = Math.max(1, Math.round(Number(zone.w)));
+    const height = Math.max(1, Math.round(Number(zone.h)));
+    const left = Math.max(0, Math.round(Number(zone.x)));
+    const top = Math.max(0, Math.round(Number(zone.y)));
+    if (!Number.isFinite(width) || !Number.isFinite(height)) continue;
+    // READING ORIENTATION, THE SAME RULE RULE 0.36 USES FOR THE FLANK READER.
+    //
+    // A flank is a tall column in sheet space, so the raw crop hands the
+    // inspector a truck lying on its side and asks it to spot wheel arches.
+    // The manifest already carries the rotation the extractor applies to make
+    // the panel read the right way up; applying it here costs nothing and asks
+    // a much easier question.
+    // THE ROTATION IS ITS OWN PASS, or it does not happen before the resize.
+    // sharp does not apply operations in call order -- the same trap this repo
+    // already records against the passenger flop in atlas-master-qc.cjs -- so
+    // chaining .rotate() ahead of .resize() silently produced an unrotated
+    // 419x1600 crop: a truck on its side, at the wrong aspect.
+    const rotation = ((Math.round(Number(zone?.extraction?.outputRotationDegrees) || 0) % 360) + 360) % 360;
+    // extract -> rotate -> flatten, the SAME order and the same background as
+    // cutCallOnePanels, so the inspector judges the panel the customer gets
+    // rather than a differently-composed crop of the same pixels. Flattening
+    // onto white matters: a zone carrying alpha would otherwise transport as
+    // black and read as the very "dark opening" the prompt convicts.
+    const upright = await sharp(bytes, { limitInputPixels: 268_402_689 })
+      .extract({ left, top, width, height })
+      .rotate(rotation)
+      .flatten({ background: "#ffffff" })
+      .removeAlpha()
+      .png()
+      .toBuffer();
+    const jpeg = await sharp(upright)
+      .resize({
+        width: MAX_SURFACE_TRANSPORT_DIMENSION,
+        height: MAX_SURFACE_TRANSPORT_DIMENSION,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    total += jpeg.length;
+    if (total > MAX_TRANSPORT_BYTES) {
+      throw new AtlasOutputClassError(
+        "atlas_output_class_transport_too_large",
+        `Per-surface inspector transport exceeded ${MAX_TRANSPORT_BYTES} bytes at ${zone.surfaceKey}`,
+      );
+    }
+    parts.push({ surfaceKey: String(zone.surfaceKey), jpeg });
+  }
+  if (!parts.length) {
+    throw new AtlasOutputClassError("atlas_output_class_zones_invalid", "No zone produced an inspectable crop");
+  }
+  return parts;
 }
 
 async function boundedTransport(bytes) {
@@ -156,7 +243,7 @@ function parseVerdict(payload, inspectionId) {
  * `blocking === true` for an explicit verdict in BLOCKING_CLASSES; an
  * inspector outage still fails OPEN, exactly as before.
  */
-async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
+async function classifyAtlasCandidate({ provider, bytes, zones = null, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
   const candidateSha256 = sha256(bytes);
   const base = { contract: OUTPUT_CLASS_CONTRACT, candidateSha256, model };
   const unavailable = (error) => ({
@@ -175,14 +262,23 @@ async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, 
     return unavailable(new AtlasOutputClassError("atlas_output_class_model_invalid", `${model} is not an inspection model`));
   }
   try {
-    const transport = await boundedTransport(bytes);
     const inspectionId = candidateSha256.slice(0, 16);
+    // WITHOUT `zones` THIS IS BYTE-FOR-BYTE THE PREVIOUS REQUEST. The
+    // per-surface path is opt-in from the caller that holds the manifest, so a
+    // caller that has no zones -- or a zone list that fails to crop -- keeps
+    // exactly today's behaviour rather than losing the gate entirely.
+    const surfaces = Array.isArray(zones) && zones.length
+      ? await surfaceTransports(bytes, zones)
+      : null;
+    const imageParts = surfaces
+      ? surfaces.map((surface) => ({ inlineData: { mimeType: "image/jpeg", data: surface.jpeg.toString("base64") } }))
+      : [{ inlineData: { mimeType: "image/jpeg", data: (await boundedTransport(bytes)).toString("base64") } }];
     const result = await provider.generateRaw({
       model,
       body: {
         contents: [{ parts: [
-          { inlineData: { mimeType: "image/jpeg", data: transport.toString("base64") } },
-          { text: outputClassPrompt(inspectionId) },
+          ...imageParts,
+          { text: outputClassPrompt(inspectionId, surfaces ? surfaces.map((s) => s.surfaceKey) : null) },
         ] }],
         generationConfig: { temperature: 0, responseMimeType: "application/json" },
       },
@@ -198,6 +294,9 @@ async function classifyAtlasCandidate({ provider, bytes, model = DEFAULT_MODEL, 
       confidence: verdict.confidence,
       anatomyRectangles: verdict.anatomyRectangles,
       evidence: verdict.evidence,
+      // Which reading produced this verdict, so a later session can tell a
+      // squeezed-sheet answer from a per-surface one without guessing.
+      inspected: surfaces ? { mode: "per-surface", surfaces: surfaces.map((s) => s.surfaceKey) } : { mode: "sheet" },
       code: null,
       reason: null,
     };
@@ -212,4 +311,6 @@ module.exports = {
   AtlasOutputClassError,
   classifyAtlasCandidate,
   outputClassPrompt,
+  surfaceTransports,
+  _test: { MAX_SURFACE_TRANSPORT_DIMENSION, MAX_TRANSPORT_DIMENSION, MAX_TRANSPORT_BYTES },
 };

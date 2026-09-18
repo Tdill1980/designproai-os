@@ -3660,7 +3660,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       }
       if (!stillBlocking.length) {
         const outputClassStartedAt = Date.now();
-        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes });
+        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes, zones: manifest.zones });
         timings.outputClassMs += Date.now() - outputClassStartedAt;
         if (outputClassReceipt.blocking) {
           // The refusal CODE names which defect, so the ledger and its digest can
@@ -3902,7 +3902,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
     const repairedClassStartedAt = Date.now();
-    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes });
+    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes, zones: manifest.zones });
     timings.outputClassMs += Date.now() - repairedClassStartedAt;
     if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
@@ -3947,7 +3947,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
           "The optional finishing pass did not preserve six complete printable artwork regions: "
             + [...finishedChecks.blockingFailures, ...finishedChecks.cutoutFindings.map((item) => item.finding)].join("; "));
       }
-      const finishedClass = await classifyAtlasCandidate({ provider, bytes: assembled.bytes });
+      const finishedClass = await classifyAtlasCandidate({ provider, bytes: assembled.bytes, zones: manifest.zones });
       if (finishedClass.blocking) {
         throw new FlatAtlasError("flat_atlas_finished_master_output_class_invalid",
           "The optional finishing pass changed the sheet into a vehicle depiction; nothing was published");
