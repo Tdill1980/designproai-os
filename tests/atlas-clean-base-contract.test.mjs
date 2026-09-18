@@ -184,3 +184,61 @@ test("with the flag off, nothing about the brand block moved", () => {
   assert.match(EDGE, /Website \(place in the contact bar\): \$\{website\}/);
   assert.match(EDGE, /TEXT LAYER DIRECTION \(customer-authored\)/);
 });
+
+// THE ASK IS A REQUEST, NOT A GUARANTEE (live 34613569, 2026-09-18 — the first
+// composited sheet a human has ever looked at).
+//
+// Point 1 above is satisfied — the clean base REPLACES the brand block rather
+// than appending a negative to it, and that is locked. It was not sufficient.
+// Call 1 drew the full lockup anyway (company name, logo mark, phone, web
+// address, both flanks) because the customer's own brief names the company and
+// is handed over as "THE CONCEPT — the heart of this design; build everything
+// around it", with the no-lettering contract stacked underneath as five
+// negative clauses. The compositor then pasted a SECOND lockup over the first.
+//
+// RULE 0.1 forbids rewriting that creative framing to fix a pixel defect, so
+// the ASK is deliberately left alone here and the COMPOSITOR learns to check.
+// The evidence costs nothing: the passenger mirror has already read the driver
+// panel for lettering, immediately above this decision.
+const runtimeSource = readFileSync(
+  new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+
+test("the composite is SKIPPED when Call 1 already lettered the base", () => {
+  const guard = runtimeSource.slice(
+    runtimeSource.indexOf("const baseLetteringBands ="),
+    runtimeSource.indexOf("} else if (elementWorker && typeof elementWorker.authorElements"),
+  );
+  assert.ok(guard.length > 0, "the base-lettering guard must be findable");
+
+  // A POSITIVE FINDING ONLY. `located` plus at least one band. A read that
+  // resolved nothing, or could not run, must NOT suppress the composite -- that
+  // is the cc382c3c rule (a reader that cannot see has not found anything)
+  // applied here, and it is what keeps the clean-base path alive wherever the
+  // base genuinely is clean.
+  assert.match(guard, /passengerMirror\?\.letteringRead === "located" && baseLetteringBands > 0/,
+    "only a POSITIVE lettering finding may suppress the composite");
+
+  // And it must gate the call itself, not merely annotate the receipt.
+  assert.match(runtimeSource, /&& cleanBaseEnabled\(\)\s*\n\s*&& baseCarriesLettering\) \{/,
+    "the guard must sit on the authorElements branch, not after it");
+
+  // The skip is RECORDED. A composite that silently did not happen is exactly
+  // the null-elementGraph state the canary now convicts, and it would be
+  // indistinguishable from the flag being off.
+  assert.match(guard, /skipped: "base_already_carries_lettering"/,
+    "the skip must name itself on the receipt");
+  assert.match(guard, /baseLetteringBands,/,
+    "the receipt must carry how many bands were found, so the claim is checkable");
+  assert.match(guard, /changed: false/,
+    "a skipped composite is changed:false -- Layer 0 is what ships");
+});
+
+test("the clean-base ASK is not weakened to work around a dirty base", () => {
+  // The temptation is to soften the contract or strip the company name out of
+  // the brief. Both are RULE 0.1 violations -- rewriting creative framing to
+  // fix a pixel defect -- and the second also destroys the customer's own
+  // words. The guard above is the whole remedy; this pins that nothing else
+  // moved with it.
+  assert.match(runtimeSource, /cleanBase: cleanBaseEnabled\(\) \? true : undefined,/,
+    "the ask must still be sent exactly as before");
+});
