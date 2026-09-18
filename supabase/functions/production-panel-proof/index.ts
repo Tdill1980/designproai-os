@@ -53,6 +53,7 @@ import {
   PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
 } from "../_shared/atlas-panel-proof-prompt.ts";
+import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-container-render.ts";
 
 const BUCKET = "wrap-files";
 
@@ -101,21 +102,42 @@ const PINNED_INPUTS = [
 ] as const;
 
 /**
- * THE CONTAINER TEMPLATE ARRIVES AS A REFERENCE, NOT AS A PIN OR AS BYTES.
+ * THIS FUNCTION DRAWS ITS OWN CONTAINER TEMPLATE. IT IS THE PANEL STUDIO.
  *
- * It was pinned by hash beside the format sheet, and that was wrong the moment
- * it carried dimensions: the pinned PNG is drawn for the Prius's 165.7" x 49.6"
- * flanks, so an F250 request would have been shown a template dimensioned for a
- * car it is not. A hash pin proves the bytes are the ones we pinned; it cannot
- * prove they are the ones THIS request needs, and for a derived artifact that
- * is the only question worth asking.
+ * Owner, 2026-09-18, looking at a container that had been rendered elsewhere
+ * and handed in: "Wrong this is wrong just use template wired as a studio edge
+ * function."
  *
- * So the runtime renders it (Deno has no libvips; sharp lives in the runtime
- * image) and hands over `{storagePath, contentHash}` -- RULE 0.39's rule for
- * crossing a node boundary, and the same three checks `attach()` runs on the
- * hero view: the path must be content-addressed under the Call-1 input prefix,
- * the bytes must hash to the filename, and they must hash to what the caller
- * claimed. An object nobody in this request rendered satisfies none of them.
+ * THE HISTORY, because it is two corrections deep and both matter.
+ *
+ * FIRST the container was PINNED BY HASH beside the format sheet. That was
+ * wrong the moment it carried dimensions: the pinned PNG is drawn for the
+ * Prius's 165.7" x 49.6" flanks, so an F250 request would have been shown a
+ * template dimensioned for a car it is not. A hash pin proves the bytes are the
+ * ones we pinned; it cannot prove they are the ones THIS request needs, and for
+ * a derived artifact that is the only question worth asking.
+ *
+ * SECOND it was rendered on the droplet and crossed in as `{storagePath,
+ * contentHash}`, on my claim that Deno could not draw it. That claim was wrong,
+ * and narrowly so: *sharp* cannot run here, `@resvg/resvg-wasm` can, and the
+ * drawing itself is string concatenation with no dependency at all. The cost of
+ * the mistake was architectural rather than cosmetic — it meant the container
+ * could only be produced by something carrying libvips, which excludes the
+ * edge, which is where Call 1 lives (RULE 0.26). A teaching input the Call-1
+ * endpoint cannot produce is a teaching input Call 1 cannot use.
+ *
+ * So `stageProofContainer` draws this request's six rectangles from the SAME
+ * `panelRows` the prompt states them in, rasterises them here, and writes the
+ * PNG to `atlas-call1-inputs/<sha256>.png`. One parse, one geometry, one sheet.
+ *
+ * THE INBOUND REFERENCE PATH IS KEPT, AND ONLY AS A FALLBACK. A caller may
+ * still stage a container itself, and the three checks below are unchanged —
+ * the same ones `attach()` runs on the hero view: the path must be
+ * content-addressed under the Call-1 input prefix, the bytes must hash to the
+ * filename, and they must hash to what the caller claimed. It is kept because
+ * the wasm is fetched over the network on a cold isolate, and a probe that
+ * cannot draw its own container should fall back to a verified one rather than
+ * lose the image request. Which path ran is reported, never inferred.
  */
 const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
 
@@ -283,10 +305,37 @@ serve(async (req) => {
     const attached: Array<Record<string, unknown>> = [];
 
     // THE CONTAINER GOES FIRST, because the prompt names it as attachment (1).
-    const containerPath = String(body?.containerStoragePath || "").trim();
-    const containerHash = String(body?.containerContentHash || "").trim();
-    if (!containerPath || !containerHash) {
-      throw new Error("panel_proof_container_reference_required");
+    //
+    // AND THE STUDIO DRAWS IT. `panelRows` is the one place the six rectangles
+    // are stated, and the prompt above has just stated them to the model, so
+    // parsing that same array here means the sheet and the sentence cannot
+    // disagree about what this vehicle measures.
+    let containerSource: Record<string, unknown> = { origin: "studio" };
+    let containerPath = "";
+    let containerHash = "";
+    try {
+      const drawn = await stageProofContainer(svc.storage.from(BUCKET), {
+        manifest: parsePanelRows(panelRows),
+        companyName: String(body?.companyName || "").trim(),
+        vehicle: [body?.vehicleYear, body?.vehicleMake, body?.vehicleModel]
+          .map((v) => String(v || "").trim()).filter(Boolean).join(" "),
+      });
+      containerPath = drawn.storagePath;
+      containerHash = drawn.contentHash;
+      containerSource = { origin: "studio", svgChars: drawn.svgChars, byteSize: drawn.byteSize };
+    } catch (renderError) {
+      // FALL BACK TO A CALLER-STAGED CONTAINER, AND SAY SO. The reason is
+      // carried into the response rather than swallowed: a probe that silently
+      // stopped drawing its own sheet would look exactly like one that never
+      // could, and this seam has already been wrong twice for want of saying
+      // which half ran.
+      const reason = String((renderError as Error)?.message || renderError);
+      containerPath = String(body?.containerStoragePath || "").trim();
+      containerHash = String(body?.containerContentHash || "").trim();
+      if (!containerPath || !containerHash) {
+        throw new Error(`panel_proof_container_unavailable:${reason}`);
+      }
+      containerSource = { origin: "caller", studioRenderFailed: reason };
     }
     if (!CALL1_INPUT_PATH.test(containerPath)) {
       throw new Error(`panel_proof_container_path_invalid:${containerPath.slice(0, 64)}`);
@@ -309,6 +358,11 @@ serve(async (req) => {
       attached.push({
         role: "container", path: containerPath, sha256: digest, byteSize: bytes.length,
         contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract,
+        // WHO DREW IT. The checks above prove the bytes are the ones named;
+        // only this says whether the studio drew them for this vehicle or a
+        // caller supplied them, which is the difference between the contract
+        // the owner asked for and the fallback behind it.
+        ...containerSource,
       });
     }
 

@@ -294,12 +294,28 @@ test("the CONTAINER TEMPLATE is rendered per vehicle and verified, not byte-pinn
   assert.equal(renderer.HEIGHT, runtime.PANEL_PROOF_FORMAT_EXAMPLE.height);
   assert.equal(renderer.CONTAINER_CONTRACT, runtime.PANEL_PROOF_CONTAINER_TEMPLATE.contract);
 
-  // THE EDGE VERIFIES THE REFERENCE -- the three checks RULE 0.39 runs on the
-  // hero view. A container nobody in this request rendered passes none of them.
+  // THE STUDIO DRAWS ITS OWN CONTAINER -- owner, 2026-09-18: "just use template
+  // wired as a studio edge function". Asserting the IMPORT is what makes this a
+  // lock and not a comment: the function must reach the shared renderer, not
+  // describe reaching it, and it must parse the panel rows it has just stated
+  // to the model rather than deriving the geometry a second way.
   const fn = readFileSync(
     new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
-  assert.match(fn, /panel_proof_container_reference_required/,
-    "the function must require the reference rather than falling back to a fixed sheet");
+  assert.match(fn, /import \{[^}]*stageProofContainer[^}]*\} from "\.\.\/_shared\/atlas-proof-container-render\.ts"/,
+    "the studio must import the shared container renderer");
+  assert.match(fn, /stageProofContainer\(svc\.storage\.from\(BUCKET\), \{\s*\n\s*manifest: parsePanelRows\(panelRows\)/,
+    "the container must be drawn from the SAME panelRows the prompt states");
+  // The caller-staged path survives ONLY as a fallback, and it must announce
+  // itself. A probe that silently stopped drawing its own sheet would look
+  // exactly like one that never could.
+  assert.match(fn, /panel_proof_container_unavailable/,
+    "with neither a drawn nor a supplied container the request must refuse, not draw blind");
+  assert.match(fn, /origin: "studio"/, "the response must record that the studio drew it");
+  assert.match(fn, /origin: "caller", studioRenderFailed/,
+    "a fallback must carry the reason the studio render failed");
+
+  // THE EDGE STILL VERIFIES THE REFERENCE -- the three checks RULE 0.39 runs on
+  // the hero view, unchanged, and they now guard both origins.
   assert.match(fn, /CALL1_INPUT_PATH\.test\(containerPath\)/, "the path must be allowlisted");
   assert.match(fn, /panel_proof_container_not_content_addressed/,
     "the filename must be proven to be the content hash");

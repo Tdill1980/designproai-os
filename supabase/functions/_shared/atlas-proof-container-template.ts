@@ -1,40 +1,54 @@
-"use strict";
 /**
- * runtime/atlas-proof-container-template.cjs — THE BLANK CONTAINER TEMPLATE.
+ * atlas-proof-container-template.ts — THE CONTAINER TEMPLATE, DRAWN IN THE EDGE.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Owner ruling, Trish 2026-09-18: "produce a blank container template for
- * system" — it rides in the system instruction beside the FILLED reference, so
- * the model sees both the empty structure and a finished example of it.
+ * Owner ruling, Trish 2026-09-18: "just use template wired as a studio edge
+ * function" — the panel studio renders its own container; a caller does not
+ * pre-render one and hand it over.
  *
- * DRAWN BY CODE, NOT BY THE MODEL, and that is the whole point.
+ * I ARGUED FOR THREE EXCHANGES THAT THIS COULD NOT LIVE HERE, AND THAT WAS
+ * WRONG. The true statement is that *sharp* cannot live here: it is libvips,
+ * a native binding, and Deno has no loader for it. I generalised that to the
+ * whole render and concluded the container had to be drawn on the droplet and
+ * cross as a storage reference. But the DRAWING is string concatenation with
+ * no dependency at all, and `@resvg/resvg-wasm` rasterises SVG inside Deno. So
+ * the drawing moves here — this file — and only the rasteriser is swapped.
  *
- * A generated container is a container that can come back slightly different
- * every time, and the owner's own generated one came back reading "2012 TOYOTA
+ * THIS FILE IS THE PORTABLE HALF, AND IT IS PURE ON PURPOSE. No imports, no
+ * I/O, no wasm: `containerSvg()` takes a manifest and returns a string. The
+ * rasteriser is `atlas-proof-container-render.ts` beside it, so a change to the
+ * sheet never touches the wasm plumbing and a wasm failure can never change a
+ * glyph.
+ *
+ * ITS TWIN IS `runtime/atlas-proof-container-template.cjs`, and the two are
+ * locked by EXECUTION rather than by a string diff: `tests/atlas-proof-
+ * container-template.test.mjs` transpiles this file with esbuild, runs both
+ * builders over the same manifests and asserts the SVG is byte-identical. That
+ * is the precedent `tests/designpro-persona-contract.test.mjs` sets for a
+ * contract with two homes — a diff proves the text matches, executing proves
+ * the OUTPUT does, and the output is what a customer sees.
+ *
+ * WHY IT IS DRAWN BY CODE AT ALL. A generated container comes back slightly
+ * different every time, and the owner's own generated one read "2012 TOYOTA
  * PRIORS" and "5 BLEON ON ALL FOUR EDGES". A teaching input with a typo in it
- * teaches the typo. This one is sharp + SVG: same manifest in, byte-identical
- * sheet out, no glyph the code did not place.
- *
- * It is also RULE 0.27 applied to the teaching input rather than the product:
- * "Code/GENIE deterministically builds the containers ... the A.I. owns the
- * design; the code owns the geometry."
+ * teaches the typo. Same manifest in, byte-identical sheet out, no glyph the
+ * code did not place. It is RULE 0.27 — "the A.I. owns the design; the code
+ * owns the geometry" — applied to the teaching input rather than the product.
  *
  * WHY IT IS NOT A BLANK CANVAS. RULE 0.33 removed a blank neutral guide from
- * Call 1 on measured evidence -- "a blank canvas handed to an image model reads
- * as content to interpret". This is the opposite object: every region is
+ * Call 1 on measured evidence: "a blank canvas handed to an image model reads
+ * as content to interpret". This is the opposite object. Every region is
  * captioned, banded and dimensioned, so it reads as a DOCUMENT with empty
- * fields rather than as an empty picture. The zone bands say in plain words
+ * fields rather than as an empty picture, and the zone bands say in plain words
  * what belongs in each one.
  *
  * 3:2 at 1536x1024, matching the pinned filled reference exactly, so the two
  * attachments agree on geometry and the request's aspectRatio agrees with both.
  */
 
-const sharp = require("sharp");
-
-const CONTAINER_CONTRACT = "designpro.atlas-proof-container-template.v1";
-const WIDTH = 1536;
-const HEIGHT = 1024;
+export const CONTAINER_CONTRACT = "designpro.atlas-proof-container-template.v1";
+export const WIDTH = 1536;
+export const HEIGHT = 1024;
 
 const INK = "#111827";
 const MUTED = "#6b7280";
@@ -45,28 +59,55 @@ const ZONE2 = "#15803d";
 const ZONE3 = "#ea580c";
 
 /** The six surfaces, in the reading order the filled reference uses. */
-const SURFACE_ORDER = Object.freeze([
+export const SURFACE_ORDER = Object.freeze([
   "driver", "passenger", "roof", "hood", "front", "rear",
-]);
+]) as readonly string[];
 
-const LABEL = Object.freeze({
+const LABEL: Record<string, string> = {
   driver: "DRIVER SIDE", passenger: "PASSENGER SIDE", roof: "ROOF",
   hood: "HOOD", front: "FRONT", rear: "REAR",
-});
+};
 
-const esc = (v) => String(v == null ? "" : v)
+export interface ContainerSurface {
+  surfaceKey: string;
+  widthIn: number;
+  heightIn: number;
+}
+
+export interface ContainerCell extends ContainerSurface {
+  x: number; y: number; w: number; h: number;
+}
+
+export interface ContainerManifest {
+  zones?: Array<Record<string, unknown>>;
+}
+
+export interface ContainerOptions {
+  manifest?: ContainerManifest;
+  companyName?: string;
+  vehicle?: string;
+  bleedInches?: number;
+}
+
+const esc = (v: unknown) => String(v == null ? "" : v)
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
-const r1 = (n) => (Math.round(Number(n) * 10) / 10).toFixed(1);
+const r1 = (n: number) => (Math.round(Number(n) * 10) / 10).toFixed(1);
 
-function text(x, y, value, { size = 11, fill = INK, weight = 400, anchor = "start", spacing = 0 } = {}) {
+interface TextOptions {
+  size?: number; fill?: string; weight?: number;
+  anchor?: string; spacing?: number;
+}
+
+function text(x: number, y: number, value: unknown, opts: TextOptions = {}): string {
+  const { size = 11, fill = INK, weight = 400, anchor = "start", spacing = 0 } = opts;
   return `<text x="${x}" y="${y}" font-family="Helvetica, Arial, sans-serif" font-size="${size}"`
     + ` font-weight="${weight}" fill="${fill}" text-anchor="${anchor}"`
     + (spacing ? ` letter-spacing="${spacing}"` : "") + `>${esc(value)}</text>`;
 }
 
-function zoneBand(x, y, w, colour, title, note) {
+function zoneBand(x: number, y: number, w: number, colour: string, title: string, note: string): string {
   return `<rect x="${x}" y="${y}" width="${w}" height="22" fill="${colour}"/>`
     + text(x + 10, y + 15.5, title, { size: 11.5, fill: "#ffffff", weight: 700, spacing: 0.4 })
     + (note ? text(x + w - 10, y + 15.5, note, { size: 10, fill: "#ffffff", anchor: "end" }) : "");
@@ -75,11 +116,15 @@ function zoneBand(x, y, w, colour, title, note) {
 /**
  * An empty panel cell: the frame the artwork fills, plus its measured lines.
  *
- * The dimension lines are DRAWN -- arrowheads, extension lines, the figure set
- * on the line -- because that is the drafting convention the contract asks the
+ * The dimension lines are DRAWN — arrowheads, extension lines, the figure set
+ * on the line — because that is the drafting convention the contract asks the
  * model to follow, and showing it is worth more than describing it.
  */
-function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimension = true }) {
+function panelCell(
+  x: number, y: number, w: number, h: number,
+  spec: { widthIn?: number | null; heightIn?: number | null; caption: string; detail?: string[]; dimension?: boolean },
+): string {
+  const { widthIn, heightIn, caption, detail = [], dimension = true } = spec;
   const out = [`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#ffffff" stroke="${FRAME}" stroke-width="1"/>`];
   if (dimension && widthIn != null) {
     const dy = y - 12;
@@ -105,7 +150,6 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
   return out.join("");
 }
 
-/** Lay six cells across a band, each scaled to its own proportion. */
 // GAP 42, NOT 22, AND IT IS THE HEIGHT LABEL THAT SETS IT. panelCell draws the
 // height dimension at x-12 behind a knock-out box reaching x-32, so a 22px gap
 // put every label except the first one 10px INSIDE the previous panel. Measured
@@ -113,34 +157,41 @@ function panelCell(x, y, w, h, { widthIn, heightIn, caption, detail = [], dimens
 // The clearance the label needs is 32px plus air; anything below that silently
 // overprints, which on a teaching input is a sheet that teaches a collision.
 /**
- * WHERE the cells go. Pure geometry, no drawing -- and it is SEPARATE from the
+ * WHERE the cells go. Pure geometry, no drawing — and it is SEPARATE from the
  * drawing on purpose.
  *
  * The inspector gate has to judge the panel CELLS of a returned proof, not the
  * white document around them: `edgeHoleRatio`, `nonBlackFraction` and the
  * output-class inspector all measure a whole sheet today and would convict a
  * correct proof instantly, because a proof sheet IS mostly white. So the gate
- * needs the cell rectangles -- and the only thing that truly knows them is the
- * code that drew them. Deriving them a second time somewhere else is how the
- * drawing and the checking drift apart; RULE 0.27's "the code owns the
- * geometry" applied to validation rather than to authoring.
+ * needs the cell rectangles — and the only thing that truly knows them is the
+ * code that drew them.
  */
-function layoutRow(surfaces, { top, height, left = 54, right = 1482, gap = 42 }) {
+export function layoutRow(
+  surfaces: ContainerSurface[],
+  opts: { top: number; height: number; left?: number; right?: number; gap?: number },
+): ContainerCell[] {
+  const { top, height, left = 54, right = 1482, gap = 42 } = opts;
   const usable = right - left - gap * (surfaces.length - 1);
   const totalW = surfaces.reduce((sum, s) => sum + s.widthIn, 0);
   let x = left;
   return surfaces.map((s) => {
     const w = Math.max(56, Math.round((s.widthIn / totalW) * usable));
     const h = Math.min(height, Math.round(w * (s.heightIn / s.widthIn)));
-    const cell = { surfaceKey: s.surfaceKey, x, y: top + (height - h), w, h,
-      widthIn: s.widthIn, heightIn: s.heightIn };
+    const cell = {
+      surfaceKey: s.surfaceKey, x, y: top + (height - h), w, h,
+      widthIn: s.widthIn, heightIn: s.heightIn,
+    };
     x += w + gap;
     return cell;
   });
 }
 
 /** Lay six cells across a band, each scaled to its own proportion. */
-function row(surfaces, opts) {
+function row(
+  surfaces: ContainerSurface[],
+  opts: { top: number; height: number; detail?: (cell: ContainerCell) => string[] },
+): string {
   const { detail } = opts;
   return layoutRow(surfaces, opts).map((cell) => panelCell(cell.x, cell.y, cell.w, cell.h, {
     widthIn: cell.widthIn, heightIn: cell.heightIn,
@@ -150,9 +201,28 @@ function row(surfaces, opts) {
 }
 
 /** The two panel bands' geometry, for the gate. Same numbers the sheet draws. */
-const BAND = Object.freeze({ zone1: { top: 150, height: 150 }, zone2: { top: 414, height: 150 } });
+export const BAND = Object.freeze({
+  zone1: { top: 150, height: 150 },
+  zone2: { top: 414, height: 150 },
+});
 
-function containerLayout(manifest) {
+/** GENIE surfaces → the rows this sheet draws. Falls back to nothing. */
+export function surfacesFrom(manifest: ContainerManifest = {}): ContainerSurface[] {
+  const zones = Array.isArray(manifest.zones) ? manifest.zones : [];
+  const byKey = new Map<string, ContainerSurface>();
+  for (const zone of zones) {
+    const z = zone as Record<string, Record<string, unknown>> & { surfaceKey?: unknown };
+    const trim = (z?.trimInches || z?.trim || {}) as Record<string, unknown>;
+    const widthIn = Number(trim.widthIn ?? trim.w);
+    const heightIn = Number(trim.heightIn ?? trim.h);
+    if (z?.surfaceKey && Number.isFinite(widthIn) && Number.isFinite(heightIn)) {
+      byKey.set(String(z.surfaceKey), { surfaceKey: String(z.surfaceKey), widthIn, heightIn });
+    }
+  }
+  return SURFACE_ORDER.map((k) => byKey.get(k)).filter(Boolean) as ContainerSurface[];
+}
+
+export function containerLayout(manifest: ContainerManifest) {
   const surfaces = surfacesFrom(manifest);
   if (surfaces.length !== 6) {
     throw new Error(`atlas_container_template_needs_six_surfaces:${surfaces.length}`);
@@ -166,7 +236,7 @@ function containerLayout(manifest) {
 }
 
 /**
- * The contract's OWN row strings -> a manifest this renderer can draw.
+ * The contract's OWN row strings → a manifest this renderer can draw.
  *
  * `buildPanelProofPrompt` states the panels to the model as
  * `DRIVER: 165.7" wide x 49.6" high`, and the container has to draw the SAME
@@ -174,8 +244,8 @@ function containerLayout(manifest) {
  * exactly one place the two can agree or disagree, instead of a caller
  * re-deriving inches beside a caller that states them.
  */
-function parsePanelRows(rows) {
-  const zones = [];
+export function parsePanelRows(rows: unknown): ContainerManifest {
+  const zones: Array<Record<string, unknown>> = [];
   for (const raw of Array.isArray(rows) ? rows : []) {
     const m = /^\s*([A-Za-z ]+?)\s*:\s*([0-9.]+)"?\s*wide\s*x\s*([0-9.]+)"?\s*high/i.exec(String(raw || ""));
     if (!m) continue;
@@ -188,47 +258,29 @@ function parsePanelRows(rows) {
   return { zones };
 }
 
-/** GENIE surfaces → the rows this sheet draws. Falls back to nothing. */
-function surfacesFrom(manifest = {}) {
-  const zones = Array.isArray(manifest.zones) ? manifest.zones : [];
-  const byKey = new Map();
-  for (const zone of zones) {
-    const trim = zone?.trimInches || zone?.trim || {};
-    const widthIn = Number(trim.widthIn ?? trim.w);
-    const heightIn = Number(trim.heightIn ?? trim.h);
-    if (zone?.surfaceKey && Number.isFinite(widthIn) && Number.isFinite(heightIn)) {
-      byKey.set(String(zone.surfaceKey), { surfaceKey: String(zone.surfaceKey), widthIn, heightIn });
-    }
-  }
-  return SURFACE_ORDER.map((k) => byKey.get(k)).filter(Boolean);
-}
-
 /**
- * THE SVG IS BUILT PURELY, AND THE RASTERISER IS THE ONLY PART THAT IS NOT.
- *
- * Split out so the SAME drawing can run in the edge function. I said for three
- * exchanges that the container could not be rendered inside Deno; that is true
- * of sharp and I over-generalised it to the whole render. The drawing is string
- * concatenation with no dependency at all, and resvg-wasm rasterises it in
- * Deno. Separating the two makes the portable half portable.
+ * The whole sheet, as an SVG string. Deterministic and dependency-free.
  */
-function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5 } = {}) {
+export function containerSvg(options: ContainerOptions = {}): string {
+  const { manifest = {}, companyName = "", vehicle = "", bleedInches = 5 } = options;
   const surfaces = surfacesFrom(manifest);
   if (surfaces.length !== 6) {
     throw new Error(`atlas_container_template_needs_six_surfaces:${surfaces.length}`);
   }
-  // THE ROWS ARRIVE AS TRIM INCHES -- that is what the contract states and what
+  // THE ROWS ARRIVE AS TRIM INCHES — that is what the contract states and what
   // GENIE resolves. The PRINT size is trim plus the bleed on all four edges, so
   // it is trim + 2x bleed in each dimension. Stating both is the point of the
   // sheet: the shop cuts on the trim line and prints to the larger rectangle.
-  const printOf = (s) => ({ w: s.widthIn + bleedInches * 2, h: s.heightIn + bleedInches * 2 });
+  const printOf = (s: ContainerSurface) => ({
+    w: s.widthIn + bleedInches * 2, h: s.heightIn + bleedInches * 2,
+  });
 
-  // EVERY PANEL CARRIES ITS OWN TRIM / PRINT / BLEED, IN BOTH ZONES -- which is
+  // EVERY PANEL CARRIES ITS OWN TRIM / PRINT / BLEED, IN BOTH ZONES — which is
   // what the owner's filled twin does, and it is also the only place the sheet
   // states the difference between the rectangle the shop CUTS and the rectangle
   // it PRINTS. Zone 1 had the captions without it, so a reader of the blank
   // template learned the panel names and not the numbers under them.
-  const panelDetail = (s) => {
+  const panelDetail = (s: ContainerSurface) => {
     const p = printOf(s);
     return [`TRIM ${r1(s.widthIn)}" x ${r1(s.heightIn)}"`,
       `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
@@ -237,12 +289,12 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
 
   // TOTAL COVERAGE IS COMPUTED, NEVER COPIED. The owner's filled sheet carries
   // "TOTAL COVERAGE: 176.26 SQ FT" and that figure reproduces from none of the
-  // dimensions printed beside it -- its per-panel square footages do not match
+  // dimensions printed beside it — its per-panel square footages do not match
   // its own trim or print rectangles either, because a diffusion model wrote
   // them. This one is the sum of the GENIE trim areas and nothing else, so the
   // blank template can never teach arithmetic that does not close.
   const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (s.widthIn * s.heightIn) / 144, 0);
-  const m = [];
+  const m: string[] = [];
 
   // ── header ───────────────────────────────────────────────────────────────
   m.push(`<rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="#ffffff"/>`);
@@ -327,24 +379,3 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}">`
     + `<rect width="100%" height="100%" fill="#ffffff"/>${m.join("")}</svg>`;
 }
-
-/** Rasterise with sharp. The runtime half; the edge uses resvg-wasm instead. */
-async function renderContainerTemplate(options = {}) {
-  const svg = containerSvg(options);
-  return sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } } })
-    .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-}
-
-module.exports = {
-  CONTAINER_CONTRACT,
-  WIDTH,
-  HEIGHT,
-  SURFACE_ORDER,
-  containerLayout,
-  containerSvg,
-  parsePanelRows,
-  renderContainerTemplate,
-  _test: { surfacesFrom, panelCell, row, layoutRow, BAND },
-};
