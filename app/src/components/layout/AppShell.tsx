@@ -4,6 +4,9 @@ import { useIsAppRoute } from "@/hooks/useIsAppRoute";
 import { AppSidebar } from "./AppSidebar";
 import { AppBottomTabs } from "./AppBottomTabs";
 import { cn } from "@/lib/utils";
+import { useLocation } from "react-router-dom";
+import { WpwShopflowShell } from "./WpwShopflowShell";
+import { isWpwShopflowToolRoute } from "@/lib/wpw-shopflow-routes";
 
 interface AppShellProps {
   children: ReactNode;
@@ -25,6 +28,7 @@ interface AppShellProps {
  * On marketing routes this is a passthrough.
  */
 export const AppShell = ({ children }: AppShellProps) => {
+  const { pathname } = useLocation();
   const isAppRoute = useIsAppRoute();
   const [mobileOpen, setMobileOpen] = useState(false);
   // Desktop: let users hide the left nav to give tool pages (Konva canvas, etc.)
@@ -45,7 +49,15 @@ export const AppShell = ({ children }: AppShellProps) => {
   let inIframe = false;
   try { inIframe = typeof window !== "undefined" && window.self !== window.top; } catch { inIframe = true; }
 
-  if (!isAppRoute || inIframe) {
+  if (inIframe) {
+    return <>{children}</>;
+  }
+
+  if (isWpwShopflowToolRoute(pathname)) {
+    return <WpwShopflowShell>{children}</WpwShopflowShell>;
+  }
+
+  if (!isAppRoute) {
     return <>{children}</>;
   }
 
