@@ -995,7 +995,9 @@ export const ProfessionalProofSheet: React.FC<ProfessionalProofSheetProps> = ({
             </div>
           ))}
         </div>
-        <div className={`grid ${isWallProof ? 'grid-cols-1 max-w-[48%] mx-auto' : 'grid-cols-3'} gap-2 mb-4`}>
+        {/* The global desktop .mx-auto rule forces full width; keep the wall
+            detail centered without that page-layout utility. */}
+        <div className={`grid ${isWallProof ? 'grid-cols-1 w-[48%]' : 'grid-cols-3'} gap-2 mb-4`} style={isWallProof ? { marginInline: 'auto' } : undefined}>
           {bottomRow.map(({ label, view, flipped }) => (
             <div key={label} className="relative aspect-video rounded-lg overflow-hidden">
               {view?.url ? (
