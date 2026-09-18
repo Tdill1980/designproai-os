@@ -45,6 +45,11 @@ on:
         description: "Owner UUID (an operator account; the edge resolves it through auth admin)"
         required: true
         type: string
+      reuse:
+        description: "Collect an ALREADY generated sheet by its storage path instead of spending a new image request (e.g. atlas-panel-proof/<sha>.png). Leave empty to generate."
+        required: false
+        type: string
+        default: ""
       company:
         required: true
         type: string
@@ -168,6 +173,7 @@ jobs:
           P_MAKE: ${{ inputs.vehicle_make }}
           P_MODEL: ${{ inputs.vehicle_model }}
           P_PANELS: ${{ inputs.panels }}
+          P_REUSE: ${{ inputs.reuse }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -194,7 +200,7 @@ jobs:
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
+            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_REUSE='$P_REUSE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing"; exit 41; }
@@ -232,7 +238,7 @@ jobs:
               --website "${p_text[3]}" --services "${p_text[4]}" --promo "${p_text[5]}" \
               --brief "${p_text[6]}" \
               --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" \
-              --panels "$p_panels"
+              --panels "$p_panels" ${P_REUSE:+--reuse "$P_REUSE"}
           status=$?
           set -e
 

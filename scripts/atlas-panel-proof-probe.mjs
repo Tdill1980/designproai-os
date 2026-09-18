@@ -59,9 +59,20 @@ if (!SUPABASE_URL || !SERVICE_KEY || !OWNER_ID) {
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// BOTH FORMS. This accepted only `--name=value`, and the workflow passes
+// `--name value` -- so on the first successful run EVERY argument silently fell
+// back to its default, including `--out`. The payload happened to match the
+// defaults so the sheet was correct, but the evidence was written to a
+// directory the tar never collected and the cleanup trap then deleted it. A
+// 6.58 MB proof was generated and thrown away by an argument parser.
 const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
+  const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3);
+  const at = process.argv.indexOf(`--${name}`);
+  if (at !== -1 && at + 1 < process.argv.length && !process.argv[at + 1].startsWith("--")) {
+    return process.argv[at + 1];
+  }
+  return fallback;
 };
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -113,7 +124,33 @@ function panelRows() {
   return String(raw).split("|").map((s) => s.trim()).filter(Boolean);
 }
 
+async function measure(bytes) {
+  try {
+    const sharp = require("../runtime/node_modules/sharp");
+    const m = await sharp(bytes).metadata();
+    return { width: m.width, height: m.height,
+      megapixels: Number(((m.width * m.height) / 1e6).toFixed(2)),
+      aspect: Number((m.width / m.height).toFixed(3)) };
+  } catch { return null; }
+}
+
 (async () => {
+  // REUSE: collect a sheet this probe already generated instead of paying for
+  // another one. The image is the expensive part and it is already in storage.
+  const reuse = arg("reuse", "");
+  if (reuse) {
+    const { data, error } = await svc.storage.from(BUCKET).download(reuse);
+    if (error || !data) throw new Error(`could not read ${reuse}: ${error?.message || "missing"}`);
+    const bytes = Buffer.from(await data.arrayBuffer());
+    writeFileSync(path.join(outDir, "panel-production-proof.png"), bytes);
+    const returned = await measure(bytes);
+    writeFileSync(path.join(outDir, "evidence.json"), JSON.stringify(
+      { reusedFrom: reuse, proofSha256: sha256(bytes), proofByteSize: bytes.length, returned }, null, 2));
+    console.log(`reused ${reuse} (${bytes.length} B)`);
+    if (returned) console.log(`${returned.width}x${returned.height}, ${returned.megapixels} MP, aspect ${returned.aspect}`);
+    return;
+  }
+
   console.log("staging pinned multimodal inputs");
   await stagePinnedInputs();
 
