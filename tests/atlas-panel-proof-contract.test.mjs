@@ -159,9 +159,24 @@ test("INCHES, never normalized fractions", () => {
 test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   // v19: creative conditioning held at 2,490 chars through the last known-good
   // master; the 4K ceiling is the persona stack's own stated quality limit.
+  //
+  // THE FIXTURE IS THE MAXIMAL REAL PAYLOAD, and it was not always. It carried
+  // three exact strings and no job block while the probe sends SIX strings, a
+  // four-line job block and six panel rows -- so the lock passed at 3,317 while
+  // the request the probe actually sends measured 4,020. A ceiling test that
+  // exercises a thinner payload than production is not a ceiling test, and this
+  // repo has recorded that same shape five times (the +-90 rotation fixtures,
+  // the hero-view path allowlist, the two-master hash assertion, the empty
+  // verify read, the element-graph null). Every field the probe can send is set
+  // here; add a field to the contract and it belongs in this fixture too.
   const prompt = runtime.buildPanelProofPrompt({
     input: {
-      companyName: "Bright Smiles Dental", phone: "(520) 555-0192", website: "brightsmiles.com",
+      companyName: "Bright Smiles Dental", tagline: "HEALTHY SMILES BRIGHTER LIVES",
+      phone: "(520) 555-0192", website: "brightsmiles.com",
+      services: ["General Dentistry", "Cosmetic", "Implants", "Emergency Care"],
+      promo: "NEW PATIENTS WELCOME",
+      proofDate: "09/17/2025", orderNumber: "BS-2012PRIUS-01",
+      designer: "A.L.", proofVersion: "1.0",
       vehicle: { year: "2012", make: "Toyota", model: "Prius" },
     },
     manifest: {
@@ -169,8 +184,13 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
         surfaceKey, trimInches: { widthIn: 165.7, heightIn: 49.6 },
       })),
     },
-    creativeDirection: "Bright Smiles Dental — clean blue wave design with a photo of a dental patient "
-      + "in a chair on the 3/4 of each side, custom tooth logo, tagline HEALTHY SMILES BRIGHTER LIVES.",
+    // THE PROBE'S OWN DEFAULT BRIEF, VERBATIM (260 chars). The fixture used a
+    // shorter one, which is the other half of why this lock passed at 3,317
+    // against a real request of 4,020. If the probe's brief changes, change it
+    // here too -- the ceiling is only meaningful against the real payload.
+    creativeDirection: "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth "
+      + "logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling "
+      + "dental patient in a clinical chair inlaid into the rear three-quarter of each side panel.",
   });
   assert.ok(prompt.length < 4000, `assembled prompt is ${prompt.length} chars; the ceiling is 4000`);
 });

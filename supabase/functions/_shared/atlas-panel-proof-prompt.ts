@@ -79,10 +79,8 @@ export const SHEET_LAYOUT = [
   "  VERSION 2 across the lower left. The cut proof fills the lower right.",
   "  A footer band repeating the logo and tagline.",
   "",
-  "DIMENSION IT THE WAY A DRAFTSMAN WOULD: a measured line outside each panel with an arrowhead",
-  "at each end and a thin extension line running back to the edge it measures, the figure set on",
-  "the line in plain type -- width above the panel, height beside it. The trim table is ruled, one",
-  "surface per row. This is a working shop drawing, not a poster of one.",
+  "DIMENSION IT AS A DRAFTSMAN WOULD: a measured line outside each panel, arrowheads at both ends,",
+  "thin extension lines back to the edge, the figure on the line. A working shop drawing, not a poster.",
 ].join("\n");
 
 /**
