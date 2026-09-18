@@ -1593,7 +1593,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                 ...((additionalViews as any)?.hood_detail ? [{ type: 'hood_detail', url: (additionalViews as any).hood_detail, label: 'Hood' }] : []),
                 ...((additionalViews as any)?.front ? [{ type: 'front', url: (additionalViews as any).front, label: 'Front' }] : []),
                 ...(additionalViews?.rear ? [{ type: 'rear', url: additionalViews.rear, label: 'Rear View' }] : []),
-                ...(additionalViews?.closeup ? [{ type: 'close-up', url: additionalViews.closeup, label: 'Close-Up' }] : []),
+                ...((additionalViews as any)?.['close-up'] ? [{ type: 'close-up', url: (additionalViews as any)['close-up'], label: 'Close-Up' }] : []),
                 ...(generatedImageUrl ? [{ type: 'roof', url: generatedImageUrl, label: 'Roof View' }] : []),
               ]}
               vehicleYear={year}
@@ -1612,7 +1612,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
                 ...((additionalViews as any)?.hood_detail ? [{ type: 'hood_detail', url: (additionalViews as any).hood_detail, label: 'Hood' }] : []),
                 ...((additionalViews as any)?.front ? [{ type: 'front', url: (additionalViews as any).front, label: 'Front' }] : []),
                 ...(additionalViews?.rear ? [{ type: 'rear', url: additionalViews.rear, label: 'Rear View' }] : []),
-                ...(additionalViews?.closeup ? [{ type: 'close-up', url: additionalViews.closeup, label: 'Close-Up' }] : []),
+                ...((additionalViews as any)?.['close-up'] ? [{ type: 'close-up', url: (additionalViews as any)['close-up'], label: 'Close-Up' }] : []),
                 ...(generatedImageUrl ? [{ type: 'roof', url: generatedImageUrl, label: 'Roof View' }] : []),
               ]}
               vehicleYear={year}
@@ -1710,7 +1710,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
           ...((additionalViews as any)?.hood_detail ? [{ type: 'hood_detail', url: (additionalViews as any).hood_detail, label: 'Hood' }] : []),
           ...((additionalViews as any)?.front ? [{ type: 'front', url: (additionalViews as any).front, label: 'Front' }] : []),
           ...(additionalViews?.rear ? [{ type: 'rear', url: additionalViews.rear, label: 'Rear' }] : []),
-          ...(additionalViews?.closeup ? [{ type: 'close-up', url: additionalViews.closeup, label: 'Close-Up' }] : []),
+          ...((additionalViews as any)?.['close-up'] ? [{ type: 'close-up', url: (additionalViews as any)['close-up'], label: 'Close-Up' }] : []),
           ...(generatedImageUrl ? [{ type: 'roof', url: generatedImageUrl, label: 'Roof View' }] : []),
         ]}
         isOpen={showStudioProof}
