@@ -674,6 +674,36 @@ test("every routing flag the runtime honours is reachable from a deploy", () => 
   }
 });
 
+// THE WRITER'S DEFAULT AND THE RUNTIME'S DEFAULT MUST AGREE, or the code
+// default is unreachable and a change to it is a no-op on the droplet.
+//
+// This is the same class as the test above, in its other direction, and it cost
+// a live run to find. `heroFirstEnabled()` was changed to require an explicit
+// `on` (owner: Call 1 authors the flat 2D design first), the suite went green,
+// and generation 6cf8160e still compiled two `surface.*.view` nodes -- because
+// `configure-env.sh` resolved the flag with `[[ $v == "off" ]] || v=on` and
+// WROTE `on` into runtime.env on every deploy. The writer was not defaulting;
+// it was overriding, and an override always beats the code.
+//
+// The shape checked is deliberately narrow: for each flag, whatever value the
+// writer falls back to when nothing is set must be the value the runtime also
+// treats as its default. Read off the two files, not restated here, so this
+// cannot drift into its own third opinion.
+test("a routing flag's writer fallback is the same value the runtime defaults to", () => {
+  const writer = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
+  const hero = readFileSync(new URL("../../runtime/atlas-hero-driver.cjs", import.meta.url), "utf8");
+
+  // The runtime enables hero-first ONLY on an explicit "on".
+  assert.match(hero, /DESIGNPRO_ATLAS_HERO_FIRST[\s\S]{0,120}?===\s*"on"/,
+    "heroFirstEnabled must require an explicit on -- flat 2D Call 1 is the default");
+  // ...so the writer's fallback must be `off`, never `on`.
+  assert.match(writer, /\[\[ \$atlas_hero_first == "on" \]\] \|\| atlas_hero_first=off/,
+    "configure-env must fall back to off for hero-first, matching heroFirstEnabled; "
+    + "a writer that forces `on` overrides the code default and makes it unreachable");
+  assert.ok(!/\[\[ \$atlas_hero_first == "off" \]\] \|\| atlas_hero_first=on/.test(writer),
+    "the inverted form is the defect generation 6cf8160e proved: it wrote on over a runtime that defaults off");
+});
+
 test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret beside them", () => {
   const configure = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
   const banner = configure.slice(configure.indexOf("A.T.L.A.S. flags resolved for this release"));
