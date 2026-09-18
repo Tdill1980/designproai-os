@@ -41,7 +41,32 @@ const sharp = require("sharp");
 // cannot answer is `unavailable` and never blocks (RULE 0.30).
 const BLOCKING_CLASSES = new Set(["vehicle_depiction", "map_drawn"]);
 const OUTPUT_CLASS_CONTRACT = "designpro.atlas-output-class-gate.v1";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+// THE INSPECTOR'S INPUT WAS GOOD AND ITS ANSWER WAS WRONG (owner ruling,
+// Trish 2026-09-18: "Yes stronger model").
+//
+// Live 34613569 was accepted with both flanks drawn as die-cut body panels on a
+// flat grey surround. The gate's own prompt names that sheet exactly -- "a
+// vehicle-shaped island ... a hood, roof, door, bed side, tailgate, fender or
+// bumper silhouette ... vehicle_depiction EVEN WHEN the shapes are captioned" --
+// and it answered `flat_atlas` at confidence 1.0, evidence "no vehicle anatomy
+// or layout map elements".
+//
+// Every other explanation was ELIMINATED rather than assumed. The per-surface
+// transport was rebuilt byte-for-byte against that master's own zones and the
+// driver crop it produced is 1600x586, upright, quality 80, and unmistakably a
+// hood on grey. So this was not efca5e03's squeezed sheet, not the wording, and
+// not the deterministic gates (a luma-88 surround is above every darkness
+// predicate by design). What is left is the model.
+//
+// THE FALLBACK IS THE WHOLE SAFETY PROPERTY, because this gate FAILS OPEN. A
+// model the key pool cannot serve would not make the gate stricter -- it would
+// silently delete the one semantic check allowed to refuse Call 1, on every
+// generation, and look exactly like an inspector outage. So an unavailable
+// verdict from the strong model is RETRIED on the proven one before it is
+// reported, and the receipt records which model actually answered. The worst
+// case is therefore exactly today's behaviour, never worse than it.
+const DEFAULT_MODEL = "gemini-2.5-pro";
+const FALLBACK_MODEL = "gemini-2.5-flash";
 const DEFAULT_TIMEOUT_MS = 45_000;
 // An explicit vehicle verdict below this confidence is still refused — the
 // class question is binary and the inspector runs at temperature 0, so any
@@ -243,7 +268,7 @@ function parseVerdict(payload, inspectionId) {
  * `blocking === true` for an explicit verdict in BLOCKING_CLASSES; an
  * inspector outage still fails OPEN, exactly as before.
  */
-async function classifyAtlasCandidate({ provider, bytes, zones = null, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
+async function classifyOnce({ provider, bytes, zones = null, model = DEFAULT_MODEL, timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
   const candidateSha256 = sha256(bytes);
   const base = { contract: OUTPUT_CLASS_CONTRACT, candidateSha256, model };
   const unavailable = (error) => ({
@@ -305,9 +330,47 @@ async function classifyAtlasCandidate({ provider, bytes, zones = null, model = D
   }
 }
 
+/**
+ * The gate, with the strong inspector in front of the proven one.
+ *
+ * Only an `unavailable` disposition falls through -- a real verdict, including
+ * `flat_atlas`, is the answer and is never second-guessed by a second model.
+ * Asking two models and preferring the stricter would be a different gate with
+ * a different failure mode, and RULE 0.30 permits exactly ONE semantic question.
+ */
+// A CONFIG REFUSAL IS NOT AN OUTAGE, and only an outage may be retried.
+//
+// These two codes are this module rejecting the CALLER -- an image model aimed
+// at a classification question, or a provider with no transport at all. Both
+// are the guard doing its job, and retrying them on the fallback would paper
+// over a misconfiguration with a quietly different inspector. Same distinction
+// the stage lease keeper draws: a definite "no" aborts at once; only an
+// unanswered attempt is tried again.
+const CONFIG_REFUSALS = new Set([
+  "atlas_output_class_model_invalid",
+  "atlas_output_class_transport_missing",
+]);
+
+async function classifyAtlasCandidate(options = {}) {
+  const requested = options.model || DEFAULT_MODEL;
+  const first = await classifyOnce({ ...options, model: requested });
+  if (first.disposition !== "unavailable" || requested === FALLBACK_MODEL) return first;
+  if (CONFIG_REFUSALS.has(first.code)) return first;
+
+  const second = await classifyOnce({ ...options, model: FALLBACK_MODEL });
+  return {
+    ...second,
+    // Kept whichever way the second attempt went: "the strong model could not
+    // answer" is the fact that explains a flash verdict, and losing it would
+    // make a silently-downgraded gate indistinguishable from a healthy one.
+    modelFallback: { from: requested, reason: first.code, detail: first.reason },
+  };
+}
+
 module.exports = {
   OUTPUT_CLASS_CONTRACT,
   BLOCKING_CLASSES,
+  FALLBACK_MODEL,
   AtlasOutputClassError,
   classifyAtlasCandidate,
   outputClassPrompt,
