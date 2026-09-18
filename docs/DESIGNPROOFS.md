@@ -11,8 +11,10 @@ access to another customer's proofs.
   and Print remain available without saving an account copy.
 - Filter by system and search the actual DesignID, GenerationID, Project ID,
   Proof ID, customer, quote, order, or design name. PatternPro supplies its
-  render ID as GenerationID; WallPro supplies its design/version/project
-  references. An uploaded wall with no generation has a Project ID.
+  render ID as GenerationID; WallPro supplies the DesignID shown with its
+  production files and the current version's actual generation reference.
+  Version and project references remain available as source references. A wall
+  without a generation does not receive a fabricated GenerationID.
 - Catalog PDF/Share/Email actions renew the seven-day link to the existing
   PDF. Email uses the same shared composer and attachment delivery function.
 - Quote/order numbers are searchable labels, not automatic job attachments.

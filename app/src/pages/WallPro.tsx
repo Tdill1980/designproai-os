@@ -23,7 +23,7 @@ import { useStickyOffset } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, WALL_HERO_PROOF, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
-import { listWallProofs, wallProofUrl } from '@/lib/wallpro-api';
+import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -549,7 +549,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     const version = previewVersion.current;
     const projectName = name.trim() || 'My wall design';
     const snapshot = { name: zoneLabel ? `${projectName} — ${zoneLabel}` : projectName, sourceId: currentVersionId || projectId,
-      designId: designId || undefined, generationId: currentVersionId || undefined, projectId,
+      designId: currentVersion ? wallDesignId(currentVersion.id) : designId || undefined,
+      generationId: currentVersion?.generation_id || undefined, projectId,
       wall: { widthInches: width, heightInches: height, squareFeet: billing.wallSqFt, linearFeet: billing.linearFeet, panels: billing.panels } };
     setPreparingProof(true); setError('');
     try {
