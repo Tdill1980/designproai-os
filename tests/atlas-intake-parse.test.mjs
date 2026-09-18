@@ -60,6 +60,10 @@ test("the deterministic pass reads what a regex can decide, on real messages", (
   assert.deepEqual(tree, {
     phone: "(520) 555-0192", website: "cedarandstonetree.com",
     vehicleYear: "2019", vehicleMake: "Ford", vehicleModel: "Transit 250 High Roof",
+    // THE BODY CLASS, inferred from the model name. A.C.E. prints it into its
+    // own opening line, and with nothing there it reads "(vehicle)" -- the
+    // designer told nothing about the shape of what it is designing for.
+    vehicleType: "van",
   });
   // A DASH, NOT A FULL STOP, ends that model — "transit 250 high roof - company
   // is ..." would otherwise put the whole sentence on the vehicle.
@@ -79,6 +83,11 @@ test("the deterministic pass reads what a regex can decide, on real messages", (
   assert.equal(sprinter.website, "", "a message with no web address gets no web address");
 
   assert.equal(tile.vehicleMake, "Ram");
+  assert.equal(roof.vehicleType, "truck");
+  assert.equal(sprinter.vehicleType, "van");
+  // HONESTLY EMPTY when the name decides nothing. A Prius is not a van, a truck
+  // or an SUV, and guessing "car" to fill the field is a guess.
+  assert.equal(runtime.extractDeterministic("2012 toyota prius").vehicleType, "");
   assert.equal(tile.phone, "", "an honest empty string, never a plausible number");
 });
 

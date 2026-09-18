@@ -158,8 +158,11 @@ export function panelProofCreativeHead(aceAssembly: string): string {
  * which has failed 4/4 on the field map.
  */
 export const INSTALLATION_FACT = [
-  "One side is wrapped with ONE CONTINUOUS PANEL, trimmed on the vehicle afterwards — so type and",
-  "logos stay well clear of the trim line.",
+  "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
+  "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
+  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
+  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "trim line; the artwork does not.",
 ].join("\n");
 
 /**
@@ -293,7 +296,11 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     ["Web address", pick(params.website)],
     ["Services", list(params.services)],
     ["Promotional text", pick(params.promo)],
-  ] as Array<[string, string]>).filter(([, value]) => value.length > 0);
+  ] as Array<[string, string]>)
+    .filter(([, value]) => value.length > 0)
+    // A.C.E. ALREADY STATES THESE THREE AS EXACT, in stronger words than these.
+    .filter(([label]) => !(pick(params.creativeHead)
+      && ["Company name", "Phone", "Web address"].includes(label)));
 
   const vehicle = [params.vehicleYear, params.vehicleMake, params.vehicleModel]
     .map(pick).filter(Boolean).join(" ");
@@ -306,7 +313,7 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
   const out: string[] = [];
   if (head) out.push(head, "");
   out.push(SYSTEM_JOB, "", INSTALLATION_FACT, "");
-  out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
+  if (!head) out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
   if (rows.length) {
     out.push("", "PANELS, at finished trim size, each printed with 5\" of bleed past every edge:",
       ...rows.map((row) => `  ${row}`));

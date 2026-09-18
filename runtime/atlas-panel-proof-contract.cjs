@@ -222,8 +222,11 @@ function panelProofCreativeHead(aceAssembly) {
  * has failed 4/4 on the field map.
  */
 const INSTALLATION_FACT = [
-  "One side is wrapped with ONE CONTINUOUS PANEL, trimmed on the vehicle afterwards — so type and",
-  "logos stay well clear of the trim line.",
+  "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
+  "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
+  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
+  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "trim line; the artwork does not.",
 ].join("\n");
 
 /**
@@ -379,7 +382,12 @@ function panelTable(manifest = {}) {
 
 function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = "", creativeHead = "" } = {}) {
   const pick = (v) => String(v == null ? "" : v).trim();
-  const strings = exactStrings(input);
+  const strings = exactStrings(input)
+    // A.C.E. ALREADY STATES THESE THREE AS EXACT, in stronger words than these
+    // ("display this EXACT number, digit for digit"). What it does NOT carry is
+    // the tagline, the service list and the promotional line, so those are the
+    // only ones this block needs to add.
+    .filter(([label]) => !(String(creativeHead || "").trim() && ["Company name", "Phone", "Web address"].includes(label)));
   const table = panelTable(manifest);
   const vehicle = [input?.vehicle?.year, input?.vehicle?.make, input?.vehicle?.model]
     .map(pick).filter(Boolean).join(" ");
@@ -393,7 +401,7 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   if (head) out.push(head, "");
   out.push(SYSTEM_JOB, "", INSTALLATION_FACT, "");
 
-  out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
+  if (!head) out.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`);
   if (table.length) {
     // TRIM SIZE, with the bleed stated as the owner's own spec sheet states it.
     // A production proof legitimately carries a bleed callout, and these panels

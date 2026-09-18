@@ -382,7 +382,10 @@ serve(async (req) => {
     // production; `panelProofCreativeHead` then cuts its six-rectangle artboard
     // tail off and throws if that seam ever moves, rather than shipping a
     // prompt that asks for two different documents at once.
-    const vehicleType = String(body?.vehicleType || "").trim() || undefined;
+    // A.C.E. prints the body class into its own opening line, and with nothing
+    // there it reads "(vehicle)" — the designer told nothing about the shape of
+    // the thing it is designing for. Intake infers it from the model name.
+    const vehicleType = field("vehicleType") || undefined;
     const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
       mode: "commercial",
       prompt: field("creativeDirection") || String(body?.prompt || ""),

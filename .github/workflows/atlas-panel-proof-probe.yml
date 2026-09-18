@@ -193,6 +193,8 @@ jobs:
             scripts/atlas-panel-proof-probe.mjs \
             runtime/atlas-proof-container-template.cjs \
             runtime/atlas-intake-parse.cjs \
+            runtime/atlas-proof-diecut.cjs \
+            runtime/atlas-panel-proof-contract.cjs \
             runtime/atlas-examples/panel-proof-zones-filled.png \
             runtime/atlas-examples/installer-one-panel-per-side.png > "$RUNNER_TEMP/probe-payload.tgz"
           payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \

@@ -330,6 +330,7 @@ async function measure(bytes) {
     promptChars: payload.promptChars, attachedInputs: payload.attachedInputs,
     thoughtSignatureCount: payload.thoughtSignatureCount,
     elapsedMs: payload.elapsedMs, totalMs: Date.now() - started, request,
+    intake: payload.intake || null,
   }, null, 2));
 
   console.log(`proof ${payload.proofSha256.slice(0, 16)} (${payload.proofByteSize} B) in ${payload.elapsedMs} ms`);
@@ -347,6 +348,41 @@ async function measure(bytes) {
   } else if (container) {
     console.log(`container FELL BACK to the staged copy: ${container.studioRenderFailed || "no reason recorded"}`);
   }
+  // ═══════════════════════════════════════════════════════════════════════
+  // THE INSPECTOR GATE, RUN ON THE PIXELS BEFORE ANYTHING IS CALLED GOOD.
+  //
+  // Owner: the slicer must be an active enforcement gate, not a stub. This is
+  // the half that can honestly execute — it needs sharp, which lives here and
+  // not in Deno, which is why it runs on the runtime rather than in the edge.
+  //
+  // It answers ONE question, the one the last live sheet failed: did the model
+  // draw a panel as a picture of the vehicle, with the windows cut out of it?
+  // Measured 0 convicting shapes on 35387642102 and 4 on 35389031759.
+  const { detectDieCut } = require("../runtime/atlas-proof-diecut.cjs");
+  const { PROOF_REGIONS } = require("../runtime/atlas-panel-proof-contract.cjs");
+  const verdicts = {};
+  for (const zone of ["zone1", "zone2"]) {
+    try {
+      verdicts[zone] = await detectDieCut({ proofBytes: bytes, band: PROOF_REGIONS[zone] });
+    } catch (error) {
+      verdicts[zone] = { error: String(error?.message || error) };
+    }
+  }
+  writeFileSync(path.join(outDir, "diecut.json"), JSON.stringify(verdicts, null, 2));
+  const cut = Object.entries(verdicts).filter(([, v]) => v.dieCut);
+  if (cut.length) {
+    // LOUD, AND STILL EXPORTED. The sheet is the evidence; hiding it would
+    // leave the owner judging a verdict instead of pixels.
+    console.log("\n⚠️  DIE-CUT PANELS — the model drew the vehicle's shape into the print artwork.");
+    for (const [zone, v] of cut) {
+      console.log(`    ${zone}: ${v.holes.length} enclosed opening(s), largest ${v.largestHoleFraction} `
+        + `of the band, boxes ${v.holes.slice(0, 3).map((h) => `${h.w}x${h.h}`).join(" ")}`);
+    }
+    console.log("    RULE 0.32: the entire rectangular region is printable artwork.");
+  } else {
+    console.log("\ndie-cut gate: clean — no page-coloured opening enclosed by artwork in either panel zone");
+  }
+
   console.log(`\nJUDGE THE SHEET, NOT THIS LOG. panel-proof-probe/panel-production-proof.png`);
 })().catch((error) => {
   console.error(String(error?.message || error));
