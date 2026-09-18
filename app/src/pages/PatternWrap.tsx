@@ -213,7 +213,7 @@ export default function PatternWrap({ brand = 'designpro' }: { brand?: PatternBr
           no second override, and nothing to keep in sync. */}
       <section className={`${theme.surface === 'light' ? 'wpw-white' : ''} pb-16`}>
         <ToolContainer>
-          <WBTYToolUI />
+          <WBTYToolUI brand={brand} />
         </ToolContainer>
       </section>
     </div>

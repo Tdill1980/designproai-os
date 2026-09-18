@@ -6,10 +6,11 @@ import { supabase } from '@/integrations/supabase/client';
  * Returns true if they need to set up terms (no custom_terms_text in shop_profiles).
  * Only triggers once per session via sessionStorage flag.
  */
-export function useTermsOnboarding() {
+export function useTermsOnboarding(enabled = true) {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return;
     const SESSION_KEY = 'restylepro_terms_onboarded';
     if (sessionStorage.getItem(SESSION_KEY) === 'true') return;
 
@@ -37,7 +38,7 @@ export function useTermsOnboarding() {
     };
 
     check();
-  }, []);
+  }, [enabled]);
 
   const markComplete = () => {
     sessionStorage.setItem('restylepro_terms_onboarded', 'true');

@@ -62,6 +62,9 @@ export const useWBTYLogic = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [designAnchorText, setDesignAnchorText] = useState<string | null>(null);
   const [designName, setDesignName] = useState<string | null>(null);
+  // Approval captions belong to the rendered image, even if the buyer later
+  // changes a vehicle field, finish, or selected library swatch.
+  const [proofContext, setProofContext] = useState<{ year: string; make: string; model: string; design: string; finish: string } | null>(null);
   const [vehicleType, setVehicleType] = useState<VehicleType>("car");
 
   // Each call to generateRender bumps this. Async work captures the value at
@@ -80,6 +83,7 @@ export const useWBTYLogic = () => {
     setAdditionalViews(null);
     setDesignAnchorText(null);
     setDesignName(null);
+    setProofContext(null);
   };
 
   const { data: dbProducts, isLoading } = useQuery({
@@ -194,6 +198,7 @@ export const useWBTYLogic = () => {
       if (heroData?.renderUrl) {
         setGeneratedImageUrl(heroData.renderUrl);
         setVisualizationId(heroData.renderId);
+        setProofContext({ year: vehicleYear, make: vehicleMake, model: vehicleModel, design: product.ai_generated_name || product.name || 'Custom Pattern', finish });
 
         // Capture design anchor text for cross-view continuity (same as DesignPro)
         if (heroData?.designAnchorText) {
@@ -658,6 +663,7 @@ export const useWBTYLogic = () => {
     saveDesignJob,
     designAnchorText,
     designName,
+    proofContext,
     vehicleType,
     setVehicleType,
   };

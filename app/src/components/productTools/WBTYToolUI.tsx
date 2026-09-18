@@ -35,7 +35,8 @@ import { Package, Ruler, Download, X, Car, ChevronDown, RotateCw, Rotate3D, Spar
 import { useCutFiles } from "@/hooks/useCutFiles";
 import { ProductionPackDialog } from "@/components/designpanelpro/ProductionPackDialog";
 import { ProfessionalProofSheet } from "@/components/tools/ProfessionalProofSheet";
-import { MobileProofSheet } from "@/components/tools/MobileProofSheet";
+import { patternProofViews } from "@/lib/patternpro-proof";
+import type { PatternBrandKey } from "@/lib/patternpro-brand";
 import { TwoDProofSheet } from "@/components/tools/TwoDProofSheet";
 import { StudioProofLayout } from "@/components/tools/StudioProofLayout";
 import { GenerationWizard, PATTERNPRO_TIPS } from "@/components/tools/GenerationWizard";
@@ -65,7 +66,7 @@ import { findProductById } from "@/lib/quote-product-catalog";
 import { DesignProductsCompareCard } from "@/components/quote/DesignProductsCompareCard";
 import { isWpwCartUrl } from "@/lib/wpw-catalog";
 
-export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | null }) => {
+export const WBTYToolUI = ({ preloadRenderId, brand = "designpro" }: { preloadRenderId?: string | null; brand?: PatternBrandKey }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -89,6 +90,7 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
     saveDesignJob,
     designAnchorText,
     designName,
+    proofContext,
     vehicleType,
     setVehicleType,
   } = useWBTYLogic();
@@ -1582,48 +1584,21 @@ export const WBTYToolUI = ({ preloadRenderId }: { preloadRenderId?: string | nul
         onClose={() => setExpandedImage(null)}
       />
 
-      {/* Professional Proof Sheet Dialog */}
+      {/* Both tenants use the OS proof sheet on desktop and mobile. */}
       <Dialog open={showProofSheet} onOpenChange={setShowProofSheet}>
-        <DialogContent className={isMobile ? "max-w-[95vw] max-h-[95vh] overflow-y-auto p-0" : "max-w-6xl max-h-[95vh] overflow-y-auto"}>
-          {isMobile ? (
-            <MobileProofSheet
-              views={[
-                ...(additionalViews?.side ? [{ type: 'side', url: additionalViews.side, label: 'Driver Side' }] : []),
-                ...((additionalViews as any)?.['passenger-side'] ? [{ type: 'passenger-side', url: (additionalViews as any)['passenger-side'], label: 'Passenger Side' }] : []),
-                ...((additionalViews as any)?.hood_detail ? [{ type: 'hood_detail', url: (additionalViews as any).hood_detail, label: 'Hood' }] : []),
-                ...((additionalViews as any)?.front ? [{ type: 'front', url: (additionalViews as any).front, label: 'Front' }] : []),
-                ...(additionalViews?.rear ? [{ type: 'rear', url: additionalViews.rear, label: 'Rear View' }] : []),
-                ...(additionalViews?.closeup ? [{ type: 'close-up', url: additionalViews.closeup, label: 'Close-Up' }] : []),
-                ...(generatedImageUrl ? [{ type: 'roof', url: generatedImageUrl, label: 'Roof View' }] : []),
-              ]}
-              vehicleYear={year}
-              vehicleMake={make}
-              vehicleModel={model}
-              toolKey="wbty"
-              designName={selectedProduct?.name || 'Custom Pattern'}
-              finish={selectedFinish}
-              coverageUnit="yards"
-            />
-          ) : (
-            <ProfessionalProofSheet
-              views={[
-                ...(additionalViews?.side ? [{ type: 'side', url: additionalViews.side, label: 'Driver Side' }] : []),
-                ...((additionalViews as any)?.['passenger-side'] ? [{ type: 'passenger-side', url: (additionalViews as any)['passenger-side'], label: 'Passenger Side' }] : []),
-                ...((additionalViews as any)?.hood_detail ? [{ type: 'hood_detail', url: (additionalViews as any).hood_detail, label: 'Hood' }] : []),
-                ...((additionalViews as any)?.front ? [{ type: 'front', url: (additionalViews as any).front, label: 'Front' }] : []),
-                ...(additionalViews?.rear ? [{ type: 'rear', url: additionalViews.rear, label: 'Rear View' }] : []),
-                ...(additionalViews?.closeup ? [{ type: 'close-up', url: additionalViews.closeup, label: 'Close-Up' }] : []),
-                ...(generatedImageUrl ? [{ type: 'roof', url: generatedImageUrl, label: 'Roof View' }] : []),
-              ]}
-              vehicleYear={year}
-              vehicleMake={make}
-              vehicleModel={model}
-              toolName="PatternPro™"
-              designName={selectedProduct?.name || 'Custom Pattern'}
-              finish={selectedFinish}
-              coverageUnit="yards"
-            />
-          )}
+        <DialogContent className="max-w-[95vw] max-h-[95vh] overflow-y-auto p-0">
+          <DialogTitle className="sr-only">PatternPro Design Approval Proof</DialogTitle>
+          <ProfessionalProofSheet
+            views={patternProofViews(generatedImageUrl, additionalViews)}
+            vehicleYear={proofContext?.year || year}
+            vehicleMake={proofContext?.make || make}
+            vehicleModel={proofContext?.model || model}
+            toolKey="wbty"
+            designName={proofContext?.design || selectedProduct?.ai_generated_name || selectedProduct?.name || 'Custom Pattern'}
+            finish={proofContext?.finish || selectedFinish}
+            coverageUnit="yards"
+            designProof={{ brand, yards: yardsNeeded, sourceId: visualizationId || undefined }}
+          />
         </DialogContent>
       </Dialog>
 
