@@ -27,7 +27,6 @@ import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
-import { WallProSidebar } from '@/components/wallpro/WallProSidebar';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -1242,34 +1241,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     });
   }
 
-  /**
-   * The rail's steps, read from the page's own state. Every `done` here is the
-   * same fact a button is gated on -- a rail that congratulated you on a step
-   * you had not finished would be worse than no rail.
-   */
-  const wallSteps = [
-    { id: 'upload-wall', label: 'Your wall', done: width > 0 && height > 0,
-      detail: width > 0 && height > 0 ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Width and height' },
-    { id: 'choose-design', label: 'Your design', done: !!artwork,
-      detail: artwork ? WALL_DESIGN_SKUS[designMode].label : 'Five ways in' },
-    { id: 'wall-preview', label: 'Preview', done: !!artwork,
-      detail: artwork ? (photo ? 'Flat and on your wall' : 'Flat master') : 'After you generate' },
-    { id: 'print-files', label: 'Print files', done: !!approvedVersion,
-      detail: approvedVersion ? `V${approvedVersion.version_no} approved` : `${WALLPRO_PRINT_WIDTH}" panels, 150 PPI` },
-    { id: 'order-printed-film', label: 'Buy film', done: false,
-      detail: billing ? `${billing.wallSqFt} sq ft - ${formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}` : 'Priced by the square foot' },
-  ];
-
   // THE THEME SCOPE. Every WallPro surface colour resolves from the variables
   // this attribute selects (index.css), so the partner page stays light and the
   // DesignProAI page is dark WITHOUT a second component. Scoped here rather
   // than on :root because the OS shell around this page has its own palette.
-  return <div data-wall-theme={theme.surface} className={`min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
-    {theme.showPrintOffer && <WallProSidebar
-      theme={theme} steps={wallSteps} top={stickyTop + 16} busy={!!busy} freeReason={freeReason}
-      onHistory={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}
-      onStartFresh={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}
-    />}
+  return <div data-wall-theme={theme.surface} className={`min-h-screen ${WALL_PAGE_GROUND} lg:px-6`}>
     <main className="wall-ink min-w-0 flex-1 px-4 py-8 md:px-8">
     <Helmet><title>WallPro — Wall Design & Preview | DesignProAI</title></Helmet>
     <div className="mx-auto max-w-7xl space-y-5">
@@ -1299,12 +1275,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           {/* The lockup lives in WallProLockup so the case study wears the
               identical brand identity instead of a second copy of it. */}
           <WallProLockup theme={theme} />
-          {/* The rail carries these on desktop, so the header would show them
-              twice. The rail is hidden below lg (a pinned sidebar on a phone
-              eats the screen), so on a phone the header keeps them. Brands
-              without a rail keep them at every width. */}
+          {/* Keep saved designs and Start fresh available at every width. */}
           <div className="flex shrink-0 items-center gap-2">
-            <span className={`flex items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
+            <span className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
                 <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
               </Button>
