@@ -37,6 +37,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { wallEntryPaths, resolvedWallEntryMode } from '@/lib/wallpro-entry-paths';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -662,6 +663,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     }).catch(() => { if (active) setCatalog([]); });
     return () => { active = false; };
   }, []);
+  /**
+   * THE WAYS IN, MINUS ANY THAT HAS NOTHING BEHIND IT (owner, 2026-09-18,
+   * before a partner demo). The rule and the reasoning live in
+   * lib/wallpro-entry-paths.ts, where they are locked by their own test; this
+   * page only reads how many catalog rows it has. The default mode is already
+   * guarded (`rows.length &&` above), so hiding the option hides the door as
+   * well as the empty room.
+   */
+  const catalogCount = catalog === null ? null : catalog.length;
+  const designEntryPaths = useMemo(() => wallEntryPaths(catalogCount), [catalogCount]);
+  useEffect(() => {
+    const next = resolvedWallEntryMode(designMode, catalogCount);
+    if (next !== designMode) setDesignMode(next);
+  }, [designMode, catalogCount]);
   async function pickDesign(row: WallCatalogRow) {
     await run('Opening ' + row.design_id, async () => {
       const art = await storedAsset(row.master_path);
@@ -1574,13 +1589,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </span>
             </div>}
           </section>
-          <section id="choose-design" className={panelClass}><StepHeading n={2} icon={LayoutGrid}>Choose your design</StepHeading><div className="mb-4 grid gap-2">{([
-              { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
-              { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
-              { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
-              { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
-              { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'wall-edge hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs wall-muted">{option.hint}</span>
+          <section id="choose-design" className={panelClass}><StepHeading n={2} icon={LayoutGrid}>Choose your design</StepHeading><div className="mb-4 grid gap-2">{designEntryPaths.map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'wall-edge hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs wall-muted">{option.hint}</span>
               {/* The price is on the choice, not buried in a checkout. Each entry
                   path is its own SKU (owner's launch list, 2026-09-13), so the
                   customer picks knowing what it costs. */}
