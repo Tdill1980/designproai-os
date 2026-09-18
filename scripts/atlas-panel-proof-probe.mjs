@@ -59,9 +59,20 @@ if (!SUPABASE_URL || !SERVICE_KEY || !OWNER_ID) {
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// BOTH FORMS. This accepted only `--name=value`, and the workflow passes
+// `--name value` -- so on the first successful run EVERY argument silently fell
+// back to its default, including `--out`. The payload happened to match the
+// defaults so the sheet was correct, but the evidence was written to a
+// directory the tar never collected and the cleanup trap then deleted it. A
+// 6.58 MB proof was generated and thrown away by an argument parser.
 const arg = (name, fallback) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
+  const eq = process.argv.find((a) => a.startsWith(`--${name}=`));
+  if (eq) return eq.slice(name.length + 3);
+  const at = process.argv.indexOf(`--${name}`);
+  if (at !== -1 && at + 1 < process.argv.length && !process.argv[at + 1].startsWith("--")) {
+    return process.argv[at + 1];
+  }
+  return fallback;
 };
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
@@ -79,9 +90,45 @@ mkdirSync(outDir, { recursive: true });
  * wheel wells back into the source rectangles.
  */
 const PINNED = [
-  { local: "runtime/atlas-examples/panel-production-proof-three-version.png", remote: "atlas-examples/panel-production-proof-three-version.png" },
+  { local: "runtime/atlas-examples/panel-proof-zones-filled.png", remote: "atlas-examples/panel-proof-zones-filled.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
+
+/**
+ * THE CONTAINER IS RENDERED FOR THIS VEHICLE, NOT PINNED.
+ *
+ * It was a fixed PNG carrying the Prius's own 165.7" x 49.6" flanks, so every
+ * other vehicle would have been shown a template dimensioned for a car it is
+ * not -- silently, because a pinned hash verifies only that the bytes are the
+ * ones we pinned, never that they are the ones this request needs. A derived
+ * artifact cannot be pinned by hash once it legitimately varies.
+ *
+ * What replaces the byte pin is the RULE 0.39 discipline the hero view already
+ * proved: the renderer is deterministic and locked, the object is named by its
+ * own sha256 so a swapped one cannot keep its name, and the edge re-reads the
+ * bytes and checks they hash to what this caller claimed. Three checks, and
+ * none of them can be satisfied by an object nobody in this request rendered.
+ */
+async function stageContainerTemplate(rows, { companyName, vehicle }) {
+  const { parsePanelRows, renderContainerTemplate } =
+    require("../runtime/atlas-proof-container-template.cjs");
+  const manifest = parsePanelRows(rows);
+  if (manifest.zones.length !== 6) {
+    throw new Error(`container_template_rows_unparsed:${manifest.zones.length}/6`);
+  }
+  const bytes = await renderContainerTemplate({ manifest, companyName, vehicle, bleedInches: 5 });
+  const digest = sha256(bytes);
+  // The edge's own allowlist shape: a Call-1 input is named by its content.
+  const remote = `atlas-call1-inputs/${digest}.png`;
+  const { data } = await svc.storage.from(BUCKET).download(remote);
+  if (!data) {
+    const { error } = await svc.storage.from(BUCKET)
+      .upload(remote, bytes, { contentType: "image/png", upsert: false });
+    if (error && !/exists/i.test(String(error.message))) throw error;
+  }
+  console.log(`  container rendered for ${vehicle} (${digest.slice(0, 12)}, ${bytes.length} B)`);
+  return { containerStoragePath: remote, containerContentHash: digest, containerByteSize: bytes.length };
+}
 
 async function stagePinnedInputs() {
   for (const item of PINNED) {
@@ -100,48 +147,136 @@ async function stagePinnedInputs() {
   }
 }
 
-/** GENIE trim rows for the probe vehicle, in INCHES (never normalized). */
+/**
+ * GENIE trim rows for the probe vehicle, in INCHES (never normalized).
+ *
+ * A 2019 Ford Transit 250 high roof, which is a DIFFERENT SHAPE from the Prius
+ * these were written for — a tall cargo van, so the flanks are nearly square
+ * rather than long and shallow, and the roof is the largest panel on the sheet
+ * instead of one of the smallest. That matters beyond realism: the container is
+ * laid out from these proportions, so a sheet that still looks like the Prius
+ * template is a sheet that ignored its own template.
+ */
 function panelRows() {
   const raw = arg("panels", [
-    "DRIVER: 165.7\" wide x 49.6\" high",
-    "PASSENGER: 165.7\" wide x 49.6\" high",
-    "HOOD: 50\" wide x 41\" high",
-    "ROOF: 43\" wide x 56\" high",
-    "FRONT: 50\" wide x 22\" high",
-    "REAR: 58\" wide x 40\" high",
+    "DRIVER: 141.0\" wide x 78.0\" high",
+    "PASSENGER: 141.0\" wide x 78.0\" high",
+    "HOOD: 66.0\" wide x 42.0\" high",
+    "ROOF: 148.0\" wide x 68.0\" high",
+    "FRONT: 74.0\" wide x 36.0\" high",
+    "REAR: 70.0\" wide x 80.0\" high",
   ].join("|"));
   return String(raw).split("|").map((s) => s.trim()).filter(Boolean);
 }
 
+async function measure(bytes) {
+  try {
+    const sharp = require("../runtime/node_modules/sharp");
+    const m = await sharp(bytes).metadata();
+    return { width: m.width, height: m.height,
+      megapixels: Number(((m.width * m.height) / 1e6).toFixed(2)),
+      aspect: Number((m.width / m.height).toFixed(3)) };
+  } catch { return null; }
+}
+
 (async () => {
+  // REUSE: collect a sheet this probe already generated instead of paying for
+  // another one. The image is the expensive part and it is already in storage.
+  const reuse = arg("reuse", "");
+  if (reuse) {
+    const { data, error } = await svc.storage.from(BUCKET).download(reuse);
+    if (error || !data) throw new Error(`could not read ${reuse}: ${error?.message || "missing"}`);
+    const bytes = Buffer.from(await data.arrayBuffer());
+    writeFileSync(path.join(outDir, "panel-production-proof.png"), bytes);
+    const returned = await measure(bytes);
+    writeFileSync(path.join(outDir, "evidence.json"), JSON.stringify(
+      { reusedFrom: reuse, proofSha256: sha256(bytes), proofByteSize: bytes.length, returned }, null, 2));
+    console.log(`reused ${reuse} (${bytes.length} B)`);
+    if (returned) console.log(`${returned.width}x${returned.height}, ${returned.megapixels} MP, aspect ${returned.aspect}`);
+    return;
+  }
+
+  // PROMOTE: adopt a sheet this probe generated as a pinned example, by copying
+  // it inside the bucket. The owner's ruling is that the empty three-zone sheet
+  // is the CONTAINER TEMPLATE and belongs in the system instruction beside the
+  // filled one. Copying server-side keeps the original bytes exactly -- a
+  // re-encode would break the hash pin, which is the whole point of pinning.
+  const promote = arg("promote", "");
+  if (promote) {
+    const target = arg("as", "atlas-examples/panel-proof-container-template.png");
+    const { data, error } = await svc.storage.from(BUCKET).download(promote);
+    if (error || !data) throw new Error(`could not read ${promote}: ${error?.message || "missing"}`);
+    const bytes = Buffer.from(await data.arrayBuffer());
+    const digest = sha256(bytes);
+    const { error: copyErr } = await svc.storage.from(BUCKET)
+      .upload(target, bytes, { contentType: "image/png", upsert: true });
+    if (copyErr) throw copyErr;
+    const meta = await measure(bytes);
+    writeFileSync(path.join(outDir, "promoted.json"), JSON.stringify(
+      { source: promote, target, sha256: digest, byteSize: bytes.length, ...meta }, null, 2));
+    console.log(`promoted ${promote}\n  -> ${target}\n  sha256 ${digest}\n  ${bytes.length} B`
+      + (meta ? `, ${meta.width}x${meta.height}, ${meta.megapixels} MP, aspect ${meta.aspect}` : ""));
+    return;
+  }
+
   console.log("staging pinned multimodal inputs");
   await stagePinnedInputs();
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // THE PROBE SENDS A RAW CUSTOMER MESSAGE, NOT A FILLED-IN FORM.
+  //
+  // Owner ruling, Trish 2026-09-18: "you shouldn't test it by giving it the
+  // same design prompt as the example. How are we supposed to validate that it
+  // can design if it's just recreating from the system example."
+  //
+  // She is right, and the old default was worse than that. It read "Bright
+  // Smiles Dental — clean flowing blue and teal wave design, a custom tooth
+  // logo, the tagline HEALTHY SMILES BRIGHTER LIVES, and a professional
+  // photograph of a smiling dental patient in a clinical chair inlaid into the
+  // rear three-quarter of each side panel" — a DESCRIPTION OF THE PINNED
+  // EXAMPLE SHEET, which was attached to the same request as the standard to
+  // match. A model handed a picture and a description of that picture returns
+  // the picture, whether or not there is a designer behind it. That test could
+  // not fail, so it proved nothing.
+  //
+  // EVERYTHING IS DIFFERENT NOW, ON PURPOSE. A different vehicle class (a high-
+  // roof cargo van, not a compact hatchback), a different trade, a different
+  // palette, different imagery, a different promotional line. If the sheet
+  // comes back with blue waves and a tooth, the design is coming from the
+  // attachment and not from the brief — and that is now visible instead of
+  // being hidden by a brief that asked for the attachment.
+  const customerPrompt = arg("customer-prompt",
+    "need a wrap for my 2019 ford transit 250 high roof - company is Cedar & Stone Tree Care, "
+    + "we do tree removal, stump grinding and storm cleanup. want it rugged and outdoorsy, "
+    + "deep forest green with a weathered wood grain texture and a big pine silhouette down "
+    + "the side, kind of like a national park sign. phone 520-555-0192 and cedarandstonetree.com, "
+    + "put FREE ESTIMATES on there");
+
+  // NOTHING ELSE IS SENT. No companyName, no tagline, no services, no promo, no
+  // year/make/model and no creativeDirection — the edge's intake node parses
+  // all of it out of that one sentence, which is the thing being tested. A
+  // field set here would be a field intake never had to find.
   const request = {
-    companyName: arg("company", "Bright Smiles Dental"),
-    // Every literal the wrap carries rides in the exact-text block, not only the
-    // contact bar -- a string the contract does not state is a string the model
-    // invents, which is the premise this probe exists to retest.
-    tagline: arg("tagline", "HEALTHY SMILES BRIGHTER LIVES"),
-    phone: arg("phone", "(520) 555-0192"),
-    website: arg("website", "brightsmiles.com"),
-    services: arg("services", "General Dentistry|Cosmetic|Implants|Emergency Care").split("|"),
-    promo: arg("promo", "NEW PATIENTS WELCOME"),
-    vehicleYear: arg("year", "2012"),
-    vehicleMake: arg("make", "Toyota"),
-    vehicleModel: arg("model", "Prius"),
-    // The header job block the reference sheet carries top-right.
+    customerPrompt,
     proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
-    orderNumber: arg("order", "BS-2012PRIUS-01"),
+    orderNumber: arg("order", "CS-2019TRANSIT-01"),
     designer: arg("designer", "A.L."),
     proofVersion: arg("proof-version", "1.0"),
-    creativeDirection: arg("brief",
-      "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth logo, the tagline "
-      + "HEALTHY SMILES BRIGHTER LIVES, and a professional photograph of a smiling dental patient in a "
-      + "clinical chair inlaid into the rear three-quarter of each side panel."),
     panelRows: panelRows(),
   };
-  console.log(`calling production-panel-proof for the ${request.vehicleYear} ${request.vehicleMake} ${request.vehicleModel}`);
+  // THE FALLBACK CONTAINER IS DRAWN FROM THE DETERMINISTIC HALF OF INTAKE, the
+  // same parser the edge runs. The edge draws its own container from its own
+  // parse; this one exists only for a cold isolate that cannot fetch the wasm,
+  // and it must name the same vehicle or the fallback would teach a different
+  // truck than the one requested.
+  const { extractDeterministic } = require("../runtime/atlas-intake-parse.cjs");
+  const seen = extractDeterministic(customerPrompt);
+  const vehicle = [seen.vehicleYear, seen.vehicleMake, seen.vehicleModel].filter(Boolean).join(" ");
+  Object.assign(request, await stageContainerTemplate(request.panelRows, {
+    companyName: "", vehicle,
+  }));
+  console.log(`calling production-panel-proof with a RAW customer message (${customerPrompt.length} chars)`);
+  console.log(`  deterministic parse: ${vehicle} | ${seen.phone} | ${seen.website}`);
 
   const started = Date.now();
   const res = await fetch(`${SUPABASE_URL}/functions/v1/production-panel-proof`, {
@@ -200,6 +335,18 @@ function panelRows() {
   console.log(`proof ${payload.proofSha256.slice(0, 16)} (${payload.proofByteSize} B) in ${payload.elapsedMs} ms`);
   console.log(`prompt ${payload.promptChars} chars, ${payload.attachedInputs.length} pinned inputs, `
     + `${payload.thoughtSignatureCount} thought signature(s) returned`);
+
+  // WHICH HALF DREW THE CONTAINER, SAID OUT LOUD. The studio renders its own
+  // and falls back to the one this script staged; the two are indistinguishable
+  // in the sheet, so the only place the answer exists is the receipt. Reporting
+  // a fallback as the contract is how this seam has already been wrong twice.
+  const container = (payload.attachedInputs || []).find((a) => a.role === "container");
+  if (container?.origin === "studio") {
+    console.log(`container DRAWN BY THE EDGE for this vehicle `
+      + `(${container.sha256.slice(0, 12)}, ${container.byteSize} B, ${container.svgChars} SVG chars)`);
+  } else if (container) {
+    console.log(`container FELL BACK to the staged copy: ${container.studioRenderFailed || "no reason recorded"}`);
+  }
   console.log(`\nJUDGE THE SHEET, NOT THIS LOG. panel-proof-probe/panel-production-proof.png`);
 })().catch((error) => {
   console.error(String(error?.message || error));

@@ -49,40 +49,279 @@ import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts"
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 import {
   ATLAS_PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_CONTAINER_TEMPLATE,
   PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
+  panelProofCreativeHead,
 } from "../_shared/atlas-panel-proof-prompt.ts";
+import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-container-render.ts";
+/**
+ * A.C.E. ITSELF — the real `buildDesignIQPrompt` out of the deployed
+ * design-panel-ai-generate, sliced by scripts/build-designiq-shared.mjs and
+ * locked against it by tests/designiq-shared-assembly.test.mjs.
+ *
+ * Owner ruling, Trish 2026-09-18: "Must use our suite of custom design edge
+ * functions no fucking excuses!!!" This function used to carry a designer
+ * paragraph I wrote and none of the proven persona — measured on the live
+ * sheet at 3,906 prompt characters with roughly 40 of customer brief and ZERO
+ * of A.C.E. That is why it returned generic blue waves and stock photography.
+ */
+import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
+import {
+  INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
+  extractDeterministic, intakePrompt, mergeIntake,
+} from "../_shared/atlas-intake-parse.ts";
+
+/**
+ * NODE 0 — INTAKE. Raw customer text in, the structured schema out.
+ *
+ * Owner ruling, Trish 2026-09-18: "you shouldn't test it by giving it the same
+ * design prompt as the example ... the pipeline must ingest raw, unstructured
+ * customer natural language and dynamically parse it."
+ *
+ * The deterministic pass has already decided the phone, the web address and the
+ * year/make/model before this runs, and it WINS on conflict — so the one field
+ * class that must never be invented cannot be touched by a model. What this
+ * call decides is only what no regular expression can: where a company name
+ * ends, which words are services, which line is promotional, and which words
+ * are the design brief.
+ *
+ * IT FAILS SOFT, on the WallPro consultant's rule: "no answer, bad JSON or a
+ * timeout and the customer's own words go through unchanged". An intake reader
+ * that is down must not cost a design — the raw message becomes the creative
+ * direction and the deterministic fields still stand.
+ */
+async function parseCustomerIntake(text: string) {
+  const deterministic = extractDeterministic(text);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${INTAKE_MODEL}:generateContent?key=${getGeminiKey()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: intakePrompt(text) }] }],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json",
+            responseSchema: INTAKE_SCHEMA,
+          },
+        }),
+      },
+    );
+    if (!response.ok) throw new Error(`intake_http_${response.status}`);
+    const payload = await response.json();
+    const raw = payload?.candidates?.[0]?.content?.parts?.[0]?.text;
+    return { ...mergeIntake(deterministic, JSON.parse(String(raw || "{}"))), intakeRead: "ok" };
+  } catch (error) {
+    return {
+      ...mergeIntake(deterministic, { creativeDirection: text }),
+      intakeRead: `unavailable:${String((error as Error)?.message || error).slice(0, 80)}`,
+    };
+  }
+}
 
 const BUCKET = "wrap-files";
 
 /**
- * The two pinned multimodal inputs.
+ * The six named surfaces A.C.E.'s flat-master branch requires. It REFUSES a
+ * missing or mismatched surface identity (asserted in
+ * tests/designpro-persona-contract.test.mjs), which is why this is a constant
+ * and not assembled from the request: a caller that sent five would get a throw
+ * rather than a five-panel design.
+ */
+const ATLAS_PANELS = [
+  { label: "DRIVER SIDE", surfaceId: "DS", placement: "right-flank" },
+  { label: "PASSENGER SIDE", surfaceId: "PS", placement: "left-flank" },
+  { label: "HOOD", surfaceId: "HD", placement: "center-column" },
+  { label: "ROOF", surfaceId: "RF", placement: "center-column" },
+  { label: "FRONT", surfaceId: "FR", placement: "center-column" },
+  { label: "REAR", surfaceId: "RR", placement: "center-column" },
+] as const;
+
+/**
+ * The two PINNED multimodal inputs. The container is a third attachment and
+ * arrives as a reference instead -- see CALL1_INPUT_PATH below.
  *
- * FORMAT, NOT STYLE. The proof sheet teaches the document's layout, captions
- * and dimension callouts; the prompt says in as many words that its artwork is
- * not a style reference. That distinction is RULE 0.24's whole subject, and
- * canary 33389124918 is what happens when a reference teaches more than it was
- * meant to -- an installed vehicle proof put wheel wells and template furniture
- * back into the source rectangles.
+ * THE SHEET IS THE STANDARD, NOT JUST THE FORMAT. This comment used to read
+ * "FORMAT, NOT STYLE ... the prompt says in as many words that its artwork is
+ * not a style reference". The owner corrected that on 2026-09-18 and the prompt
+ * was changed to match; the comment was not, so it sat here contradicting the
+ * text it describes. The layout AND the quality of the work on it are the bar.
+ *
+ * What survives of RULE 0.24's caution is narrower and about OWNERSHIP: the
+ * identity on that sheet is Bright Smiles Dental's, and a customer's proof
+ * carries only the strings in their own request. Canary 33389124918 is still
+ * why the bytes are pinned at all -- a teaching input that silently changes
+ * teaches something nobody chose.
  *
  * AND THE FORMAT EXAMPLE MUST SHOW THE FORMAT BEING ASKED FOR. It used to be
  * `panel-production-proof-example.png` -- the Arctic Air sheet, 874x717, which
  * carries ONE version. This contract asks for THREE, so the reference was
  * teaching a different document than the one requested: the same class of
- * defect, pointed the other way. The three-version sheet is 1536x1024 and shows
- * every block this contract names -- header job block, VERSION 1 dimensioned,
- * trim table and total coverage, VERSION 2 artwork-only, and the cut proof with
- * outlined elements.
+ * defect, pointed the other way. The pinned sheet is 1536x1024 and shows every
+ * block this contract names -- header job block and total coverage, then three
+ * full-width ZONE bands (full design panels dimensioned / backgrounds only /
+ * cut graphics), the panel dimensions reference row, template notes and guide
+ * legend. It is the filled twin of the container template attached beside it.
  *
  * The installation photograph is the PHYSICAL REASON a panel is one rectangle.
  * A positive fact conditions better than "do not draw wheel arches", which is
  * the negative shape this repo warns about in four places and which has failed
  * 4/4 on the field map.
+ *
+ * THE ORDER IS THE PROMPT'S ORDER, and it is load-bearing. The tail names the
+ * attachments "in order: (1) the BLANK CONTAINER TEMPLATE ... (2) a FINISHED
+ * PROOF ... (3) an INSTALLATION PHOTOGRAPH", so reordering this array makes the
+ * text point at the wrong image. Container first is deliberate: the empty
+ * structure, then a filled example of that same structure, then the physical
+ * fact behind it. Both sheets are 1536x1024, which is also the request's
+ * aspectRatio, so nothing has to be re-flowed to be read.
  */
 const PINNED_INPUTS = [
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
   { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation", sha256: null },
 ] as const;
+
+/**
+ * THIS FUNCTION DRAWS ITS OWN CONTAINER TEMPLATE. IT IS THE PANEL STUDIO.
+ *
+ * Owner, 2026-09-18, looking at a container that had been rendered elsewhere
+ * and handed in: "Wrong this is wrong just use template wired as a studio edge
+ * function."
+ *
+ * THE HISTORY, because it is two corrections deep and both matter.
+ *
+ * FIRST the container was PINNED BY HASH beside the format sheet. That was
+ * wrong the moment it carried dimensions: the pinned PNG is drawn for the
+ * Prius's 165.7" x 49.6" flanks, so an F250 request would have been shown a
+ * template dimensioned for a car it is not. A hash pin proves the bytes are the
+ * ones we pinned; it cannot prove they are the ones THIS request needs, and for
+ * a derived artifact that is the only question worth asking.
+ *
+ * SECOND it was rendered on the droplet and crossed in as `{storagePath,
+ * contentHash}`, on my claim that Deno could not draw it. That claim was wrong,
+ * and narrowly so: *sharp* cannot run here, `@resvg/resvg-wasm` can, and the
+ * drawing itself is string concatenation with no dependency at all. The cost of
+ * the mistake was architectural rather than cosmetic — it meant the container
+ * could only be produced by something carrying libvips, which excludes the
+ * edge, which is where Call 1 lives (RULE 0.26). A teaching input the Call-1
+ * endpoint cannot produce is a teaching input Call 1 cannot use.
+ *
+ * So `stageProofContainer` draws this request's six rectangles from the SAME
+ * `panelRows` the prompt states them in, rasterises them here, and writes the
+ * PNG to `atlas-call1-inputs/<sha256>.png`. One parse, one geometry, one sheet.
+ *
+ * THE INBOUND REFERENCE PATH IS KEPT, AND ONLY AS A FALLBACK. A caller may
+ * still stage a container itself, and the three checks below are unchanged —
+ * the same ones `attach()` runs on the hero view: the path must be
+ * content-addressed under the Call-1 input prefix, the bytes must hash to the
+ * filename, and they must hash to what the caller claimed. It is kept because
+ * the wasm is fetched over the network on a cold isolate, and a probe that
+ * cannot draw its own container should fall back to a verified one rather than
+ * lose the image request. Which path ran is reported, never inferred.
+ */
+const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
+
+/**
+ * THE EDGE-SIDE INSPECTOR GATE: the sheet's SHAPE, read without decoding it.
+ *
+ * Owner: the gate must run before the payload reaches the UI, with no stubs.
+ * This is the half of that which can honestly execute inside Deno.
+ *
+ * WHY NOT PIXEL VALIDATION HERE. A returned sheet is 5056x3392 -- 17.15 MP,
+ * measured on d5314267 -- and decoding it with ImageScript costs roughly 69 MB
+ * of RGBA before a single pixel is examined. This repo has a recorded 546 OOM
+ * history with imagescript, and THIS function already died twice on a bodiless
+ * 504 from a 2.2 MB base64 request. A gate that kills the worker rejects every
+ * proof, including the good ones. Deno also cannot load sharp, which is why the
+ * container is rendered on the runtime and crosses as a reference to begin with.
+ *
+ * So the per-panel pixel gate lives on the runtime beside sharp
+ * (`runtime/atlas-proof-panel-locator.cjs`), and what runs HERE needs no decode:
+ * both formats carry their dimensions in a header near the front of the file.
+ *
+ * ⚠️ THE MODEL RETURNS JPEG, NOT PNG, AND THIS FUNCTION HAS BEEN MISLABELLING
+ * IT. The first version of this gate read the PNG IHDR at fixed offsets 16..23
+ * and threw `panel_proof_sheet_not_png` on the real artifact -- which would have
+ * refused EVERY proof the moment it deployed. The file is JFIF: the bytes begin
+ * ff d8 ff e0, and `file` reports "JPEG image data ... 5056x3392". Meanwhile the
+ * upload has always named it `.png` with `contentType: image/png`, so every
+ * stored proof is a JPEG wearing a PNG label. sharp does not care; a browser
+ * download, a RIP or anything trusting the extension does. Both are fixed here.
+ *
+ * WHAT IT ACTUALLY CATCHES, which is not nothing: a re-flowed sheet. Every
+ * coordinate any downstream slicer uses is a FRACTION of the page, so a sheet
+ * returned at a different aspect makes all of them point somewhere else. That
+ * is the single failure mode which silently corrupts every later measurement,
+ * and it is decidable from a handful of bytes.
+ */
+const SHEET_ASPECT = PANEL_PROOF_CONTAINER_TEMPLATE.width / PANEL_PROOF_CONTAINER_TEMPLATE.height;
+const MAX_SHEET_ASPECT_DRIFT = 0.02;
+const MIN_SHEET_MEGAPIXELS = 2;
+
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** PNG keeps width/height in the IHDR chunk at fixed offsets 16..23. */
+function readPngSize(bytes: Uint8Array) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+/**
+ * JPEG keeps them in a start-of-frame segment, which is NOT at a fixed offset --
+ * the encoder may write any number of APPn/DQT/DRI segments first, so the
+ * segment chain has to be walked. SOF0..SOF15 are 0xC0..0xCF except 0xC4
+ * (Huffman tables), 0xC8 (JPEG extension) and 0xCC (arithmetic conditioning),
+ * which are not frame headers and must be skipped rather than parsed.
+ */
+function readJpegSize(bytes: Uint8Array) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 2;
+  while (offset + 9 < bytes.length) {
+    if (bytes[offset] !== 0xff) { offset += 1; continue; }
+    const marker = bytes[offset + 1];
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const length = view.getUint16(offset + 2);
+    const isFrame = marker >= 0xc0 && marker <= 0xcf
+      && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isFrame) {
+      return { height: view.getUint16(offset + 5), width: view.getUint16(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  throw new Error("panel_proof_sheet_no_jpeg_frame_header");
+}
+
+function readSheet(bytes: Uint8Array) {
+  if (bytes.length > 24 && PNG_MAGIC.every((b, i) => bytes[i] === b)) {
+    return { format: "png" as const, extension: "png", mime: "image/png", ...readPngSize(bytes) };
+  }
+  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    return { format: "jpeg" as const, extension: "jpg", mime: "image/jpeg", ...readJpegSize(bytes) };
+  }
+  throw new Error("panel_proof_sheet_unrecognised_format");
+}
+
+function assertProofSheetShape(bytes: Uint8Array) {
+  const sheet = readSheet(bytes);
+  const megapixels = (sheet.width * sheet.height) / 1e6;
+  if (!Number.isFinite(sheet.width) || !Number.isFinite(sheet.height)
+    || sheet.width < 1 || sheet.height < 1) {
+    throw new Error(`panel_proof_sheet_shape_invalid:${sheet.width}x${sheet.height}`);
+  }
+  if (megapixels < MIN_SHEET_MEGAPIXELS) {
+    throw new Error(`panel_proof_sheet_too_small:${megapixels.toFixed(2)}MP`);
+  }
+  const aspect = sheet.width / sheet.height;
+  if (Math.abs(aspect - SHEET_ASPECT) / SHEET_ASPECT > MAX_SHEET_ASPECT_DRIFT) {
+    throw new Error(`panel_proof_sheet_reflowed:${aspect.toFixed(3)}!=${SHEET_ASPECT.toFixed(3)}`);
+  }
+  return { ...sheet, megapixels: Number(megapixels.toFixed(2)), aspect: Number(aspect.toFixed(3)) };
+}
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -120,24 +359,65 @@ serve(async (req) => {
   try {
     const body = await req.json();
 
+    // NODE 0 RUNS FIRST, and only when the caller sent raw text. A caller that
+    // already holds structured fields — the real order form, once it exists —
+    // skips it and spends nothing, which is why this is a branch and not a
+    // stage every request pays for.
+    const customerPrompt = String(body?.customerPrompt || "").trim();
+    const intake = customerPrompt ? await parseCustomerIntake(customerPrompt) : null;
+    // THE EXPLICIT FIELD WINS OVER THE PARSED ONE. Intake is a convenience for
+    // free text; a caller that states a value is stating it, not suggesting it.
+    const field = (name: string) => {
+      const explicit = String((body as Record<string, unknown>)?.[name] ?? "").trim();
+      return explicit || String((intake as Record<string, unknown>)?.[name] ?? "").trim();
+    };
+
     const panelRows = Array.isArray(body?.panelRows)
       ? (body.panelRows as unknown[]).map((row) => String(row || "").trim()).filter(Boolean)
       : [];
+    // THE DESIGN COMES FROM A.C.E., AND ONLY THE OUTPUT CONTRACT IS SWAPPED.
+    // `atlasFlatMaster: true` is the same branch Call 1 runs, so the persona,
+    // the concept translation, the layered build order, the logo architecture
+    // and the customer's own FINISH_SPEC all fire exactly as they do in
+    // production; `panelProofCreativeHead` then cuts its six-rectangle artboard
+    // tail off and throws if that seam ever moves, rather than shipping a
+    // prompt that asks for two different documents at once.
+    const vehicleType = String(body?.vehicleType || "").trim() || undefined;
+    const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
+      mode: "commercial",
+      prompt: field("creativeDirection") || String(body?.prompt || ""),
+      finish: String(body?.finish || "Gloss"),
+      substrate: "standard",
+      companyName: field("companyName"),
+      phone: field("phone"),
+      website: field("website"),
+      industryType: field("industryType"),
+      brandColors: body?.brandColors,
+      vehicleYear: field("vehicleYear"),
+      vehicleMake: field("vehicleMake"),
+      vehicleModel: field("vehicleModel"),
+      vehicleType,
+      viewType: "side",
+      atlasFlatMaster: true,
+      atlasPanels: ATLAS_PANELS,
+    } as Record<string, unknown>));
+
     const prompt = buildPanelProofPrompt({
-      companyName: body?.companyName,
-      tagline: body?.tagline,
-      phone: body?.phone,
-      website: body?.website,
-      services: body?.services,
-      promo: body?.promo,
-      vehicleYear: body?.vehicleYear,
-      vehicleMake: body?.vehicleMake,
-      vehicleModel: body?.vehicleModel,
+      creativeHead,
+      companyName: field("companyName"),
+      tagline: field("tagline"),
+      phone: field("phone"),
+      website: field("website"),
+      services: (body?.services ?? intake?.services),
+      promo: field("promo"),
+      vehicleYear: field("vehicleYear"),
+      vehicleMake: field("vehicleMake"),
+      vehicleModel: field("vehicleModel"),
       proofDate: body?.proofDate,
       orderNumber: body?.orderNumber,
       designer: body?.designer,
       proofVersion: body?.proofVersion,
-      creativeDirection: body?.creativeDirection || body?.prompt,
+      creativeDirection: field("creativeDirection") || String(body?.prompt || ""),
       panelRows,
     });
 
@@ -146,6 +426,68 @@ serve(async (req) => {
     // in, twice, with a bodiless 504.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const attached: Array<Record<string, unknown>> = [];
+
+    // THE CONTAINER GOES FIRST, because the prompt names it as attachment (1).
+    //
+    // AND THE STUDIO DRAWS IT. `panelRows` is the one place the six rectangles
+    // are stated, and the prompt above has just stated them to the model, so
+    // parsing that same array here means the sheet and the sentence cannot
+    // disagree about what this vehicle measures.
+    let containerSource: Record<string, unknown> = { origin: "studio" };
+    let containerPath = "";
+    let containerHash = "";
+    try {
+      const drawn = await stageProofContainer(svc.storage.from(BUCKET), {
+        manifest: parsePanelRows(panelRows),
+        companyName: field("companyName"),
+        vehicle: ["vehicleYear", "vehicleMake", "vehicleModel"].map(field).filter(Boolean).join(" "),
+      });
+      containerPath = drawn.storagePath;
+      containerHash = drawn.contentHash;
+      containerSource = { origin: "studio", svgChars: drawn.svgChars, byteSize: drawn.byteSize };
+    } catch (renderError) {
+      // FALL BACK TO A CALLER-STAGED CONTAINER, AND SAY SO. The reason is
+      // carried into the response rather than swallowed: a probe that silently
+      // stopped drawing its own sheet would look exactly like one that never
+      // could, and this seam has already been wrong twice for want of saying
+      // which half ran.
+      const reason = String((renderError as Error)?.message || renderError);
+      containerPath = String(body?.containerStoragePath || "").trim();
+      containerHash = String(body?.containerContentHash || "").trim();
+      if (!containerPath || !containerHash) {
+        throw new Error(`panel_proof_container_unavailable:${reason}`);
+      }
+      containerSource = { origin: "caller", studioRenderFailed: reason };
+    }
+    if (!CALL1_INPUT_PATH.test(containerPath)) {
+      throw new Error(`panel_proof_container_path_invalid:${containerPath.slice(0, 64)}`);
+    }
+    {
+      const { data, error } = await svc.storage.from(BUCKET).download(containerPath);
+      if (error || !data) throw new Error(`panel_proof_input_missing:${containerPath}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = await sha256Hex(bytes);
+      // The filename IS the content hash, so these two comparisons are not the
+      // same check: one catches a swapped object, the other a caller whose
+      // claim does not match what it staged.
+      if (digest !== containerPath.slice("atlas-call1-inputs/".length, -4)) {
+        throw new Error(`panel_proof_container_not_content_addressed:${digest.slice(0, 16)}`);
+      }
+      if (digest !== containerHash) {
+        throw new Error(`panel_proof_container_hash_mismatch:${digest.slice(0, 16)}`);
+      }
+      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
+      attached.push({
+        role: "container", path: containerPath, sha256: digest, byteSize: bytes.length,
+        contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract,
+        // WHO DREW IT. The checks above prove the bytes are the ones named;
+        // only this says whether the studio drew them for this vehicle or a
+        // caller supplied them, which is the difference between the contract
+        // the owner asked for and the fallback behind it.
+        ...containerSource,
+      });
+    }
+
     for (const pinned of PINNED_INPUTS) {
       const { data, error } = await svc.storage.from(BUCKET).download(pinned.path);
       if (error || !data) throw new Error(`panel_proof_input_missing:${pinned.path}`);
@@ -156,7 +498,7 @@ serve(async (req) => {
       // canary 33389124918 taught wheel wells back into the source rectangles,
       // and it took a request inspection to find out. Refuse rather than draw.
       if (pinned.sha256 && digest !== pinned.sha256) {
-        throw new Error(`panel_proof_format_example_mismatch:${digest.slice(0, 16)}`);
+        throw new Error(`panel_proof_format_example_mismatch:${pinned.role}:${digest.slice(0, 16)}`);
       }
       parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
@@ -191,10 +533,18 @@ serve(async (req) => {
       throw new Error(`panel_proof_no_image:${payload?.candidates?.[0]?.finishReason || "unknown"}`);
     }
     const bytes = decodeBase64(image.inlineData.data as string);
+
+    // THE GATE RUNS BEFORE ANYTHING IS STORED OR RETURNED. A re-flowed sheet is
+    // refused here rather than handed onward for a downstream slicer to measure
+    // confidently in the wrong places.
+    const sheetShape = assertProofSheetShape(bytes);
+
     const sha256 = await sha256Hex(bytes);
-    const storagePath = `atlas-panel-proof/${sha256}.png`;
+    // NAMED FOR WHAT IT IS. This wrote `.png` with `contentType: image/png`
+    // regardless of what the model returned, and the model returns JFIF.
+    const storagePath = `atlas-panel-proof/${sha256}.${sheetShape.extension}`;
     const { error: upErr } = await svc.storage.from(BUCKET)
-      .upload(storagePath, bytes, { contentType: "image/png", upsert: false });
+      .upload(storagePath, bytes, { contentType: sheetShape.mime, upsert: false });
     if (upErr && !/exists/i.test(String(upErr.message))) throw upErr;
 
     return json({
@@ -205,11 +555,15 @@ serve(async (req) => {
       proofStoragePath: storagePath,
       proofSha256: sha256,
       proofByteSize: bytes.length,
+      sheetShape,
       // The whole assembled ask, so a disagreement about the design is settled
       // on the REQUEST rather than on impressions of the output -- the reason
       // the designiq A/B harness exists at all.
       promptChars: prompt.length,
       prompt,
+      // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
+      // sheet just quietly carries the wrong company or the wrong truck.
+      intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
       attachedInputs: attached,
       elapsedMs: Date.now() - t0,
       // Whether the model returned reasoning alongside the image, so the
