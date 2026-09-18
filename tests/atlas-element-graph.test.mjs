@@ -240,9 +240,26 @@ test("executing the bar renders ONLY its own lines, and never the company name",
   const nameOut = await exec(name);
   assert.notEqual(barOut.element.contentHash, nameOut.element.contentHash);
 
-  // Set at the contact size, so the bar is shorter than the display lockup.
-  assert.ok(barOut.element.height < nameOut.element.height,
-    "the contact bar sets at 5% of width; the name sets at 12%");
+  // Set at the contact size, not the display size.
+  //
+  // THE HEIGHT WAS A PROXY, AND IT STOPPED HOLDING (2026-09-18). This asserted
+  // `barOut.element.height < nameOut.element.height`, which is a statement about
+  // CANVAS HEIGHT -- one line of name versus two lines of contact -- and it only
+  // ever held because the name was pinned at 12% of the canvas whatever its
+  // length. Since a name too wide for its canvas is now FITTED rather than run
+  // off the edge, a long company name draws smaller and its one-line canvas can
+  // legitimately be shorter than a two-line contact bar.
+  //
+  // The guarantee this test's own message states is about SIZES, so it is
+  // asserted on the sizes, which is what it meant all along and is stricter than
+  // the proxy: the bar sets in contact type, the name in display type, and the
+  // name is never subordinate to its own contact lines.
+  assert.equal(barOut.metrics.nominalLineSize, nameOut.metrics.nominalLineSize,
+    "both elements share one canvas width, so one reference proportion");
+  assert.ok(barOut.metrics.lineSize <= barOut.metrics.nominalLineSize,
+    "the bar sets at the contact proportion, never larger");
+  assert.ok(nameOut.metrics.nameSize > barOut.metrics.lineSize,
+    "the company name must still read larger than a contact line");
 
   // Same reference discipline as every other node.
   assert.ok(!("bytes" in barOut));

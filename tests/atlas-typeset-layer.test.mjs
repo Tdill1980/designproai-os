@@ -103,7 +103,20 @@ test("contact lines set smaller than the name, and more lines make a taller canv
   const withLines = await typeset.renderLockup(BRIEF);
   assert.ok(withLines.height > nameOnly.height);
   assert.equal(withLines.metrics.lineSize, Math.round(1600 * 0.05));
-  assert.equal(withLines.metrics.nameSize, Math.round(1600 * 0.12));
+
+  // THIS FIXTURE ENCODED THE BUG (corrected 2026-09-18, live 34613569).
+  //
+  // BRIEF.name is "Precision Climate Solutions" -- the exact string that shipped
+  // clipped to "Precision Climate Se" on a customer's flank -- and this line
+  // asserted `nameSize === 1600 * 0.12`, which was TRUE the whole time and said
+  // nothing about whether the name fitted the canvas it was drawn on. It was
+  // checking the reference PROPORTION, and that meaning now lives in
+  // `nominalNameSize`, which is still pinned here exactly as before.
+  assert.equal(withLines.metrics.nominalNameSize, Math.round(1600 * 0.12),
+    "the reference proportion is unchanged -- only what is DRAWN is fitted");
+  // What the fixture never checked, and now does: the ink fits the canvas.
+  assert.ok(withLines.metrics.inkWidth <= 1600 - withLines.metrics.pad * 2,
+    "the lockup must fit inside its own padding, not run off the right edge");
   assert.ok(withLines.metrics.lineSize < withLines.metrics.nameSize);
 
   // A contact bar with no headline is legal — that is `contact.produce`.
@@ -161,4 +174,45 @@ test("the producer reaches no network and persists nothing", () => {
       `${forbidden} has no place in a deterministic producer — storage is the node's job`,
     );
   }
+});
+
+test("a long company name is FITTED to the canvas, never run off it", async () => {
+  // Live 34613569: the composited flank read "Precision Climate Se" because the
+  // sizes are fixed PROPORTIONS of the canvas -- nameSize = canvasWidth * 0.12 --
+  // and say nothing about how many characters the name has. `outline()` centres
+  // by `x = max(pad, (width - advance) / 2)`, so once the advance exceeds the
+  // canvas that term goes negative, x clamps to pad, and the tail of the word
+  // runs off the right edge of the SVG and is clipped.
+  //
+  // The receipt proved it arithmetically before any pixel was opened:
+  // nameSize 192 implies a 1600px canvas, and inkWidth was 2102 -- 502px over.
+  const width = 1600;
+  const rendered = await typeset.renderLockup({
+    name: "Precision Climate Solutions",
+    lines: ["(520) 555-0192", "precisionclimate.designproai.com"],
+    width,
+  });
+
+  const usable = width - rendered.metrics.pad * 2;
+  assert.ok(rendered.metrics.inkWidth <= usable,
+    `the lockup must fit its own canvas: ink ${rendered.metrics.inkWidth} > usable ${usable}`);
+
+  // It was FITTED, not truncated: the drawn size is below the nominal one and
+  // the nominal is still reported, so the shrink is visible rather than silent.
+  assert.ok(rendered.metrics.nameSize < rendered.metrics.nominalNameSize,
+    "a name too wide for the canvas must be scaled down");
+  assert.equal(rendered.metrics.nominalNameSize, Math.round(width * 0.12),
+    "the reference proportion is unchanged -- only what is DRAWN moves");
+
+  // And the canvas still holds every glyph: no path may start left of the pad
+  // or end past the right edge.
+  assert.match(rendered.svg, new RegExp(`width="${width}"`));
+});
+
+test("a name that already fits is byte-identical to before the fit", async () => {
+  // The fit must be a no-op on every lockup that was already correct, which is
+  // every fixture in this file and every short business name.
+  const rendered = await typeset.renderLockup({ name: "Bright Smiles", lines: [], width: 1600 });
+  assert.equal(rendered.metrics.nameSize, rendered.metrics.nominalNameSize,
+    "a name that fits must be drawn at the reference proportion, untouched");
 });

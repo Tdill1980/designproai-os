@@ -17,7 +17,7 @@ const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
 const {
-  classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT, outputClassPrompt, surfaceTransports,
+  classifyAtlasCandidate, OUTPUT_CLASS_CONTRACT, outputClassPrompt, surfaceTransports, FALLBACK_MODEL,
 } = require("../runtime/atlas-output-class.cjs");
 const runtime = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
@@ -371,4 +371,94 @@ test("RULE 0.35's caption narrowing is NOT undone: captions alone are still flat
   assert.match(prompt, /automotive MOTIFS drawn as graphics/);
   assert.doesNotMatch(prompt, /captions are vehicle_depiction/i,
     "a caption alone may never convict a sheet -- that reversal cost two good Martini masters");
+});
+
+// THE STRONGER INSPECTOR, AND THE FALLBACK THAT MAKES IT SAFE (owner ruling,
+// Trish 2026-09-18: "Yes stronger model").
+//
+// Live 34613569 was accepted with both flanks drawn as die-cut body panels on a
+// flat grey surround. The prompt above already names that sheet exactly, and the
+// per-surface transport was rebuilt byte-for-byte against that master's own
+// zones -- the driver crop it produces is 1600x586, upright, quality 80, and
+// unmistakably a hood on grey. Wording, transport and the deterministic gates
+// were each eliminated rather than assumed; what was left was the model.
+//
+// THE FALLBACK IS THE LOAD-BEARING HALF. This gate fails OPEN, so a model the
+// key pool cannot serve would not make it stricter -- it would delete the only
+// semantic check allowed to refuse Call 1, silently, on every generation, and
+// look exactly like an inspector outage.
+async function inspectionIdFor(bytes) {
+  const { createHash } = await import("node:crypto");
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+}
+
+test("the strong inspector falls back to the proven one rather than failing open", async () => {
+  const bytes = await candidatePng();
+  const inspectionId = await inspectionIdFor(bytes);
+  const asked = [];
+  const provider = {
+    generateRaw: async ({ model }) => {
+      asked.push(model);
+      if (model !== FALLBACK_MODEL) throw new Error("model not enabled for this project");
+      return {
+        payload: { candidates: [{ content: { parts: [{ text: JSON.stringify({
+          inspectionId, outputClass: "vehicle_depiction", confidence: 1,
+          evidence: "a hood silhouette on a plain grey field",
+        }) }] } }] },
+      };
+    },
+  };
+
+  const receipt = await classifyAtlasCandidate({ provider, bytes });
+
+  assert.equal(asked.length, 2);
+  assert.notEqual(asked[0], FALLBACK_MODEL, "the strong inspector must be asked FIRST");
+  assert.equal(asked[1], FALLBACK_MODEL);
+
+  // THE GATE STILL CONVICTS -- the whole point. A strong model that cannot
+  // answer must never cost a refusal the proven one would have made.
+  assert.equal(receipt.disposition, "vehicle_depiction");
+  assert.equal(receipt.blocking, true);
+
+  // And the downgrade is ON THE RECORD, or a silently-downgraded gate is
+  // indistinguishable from a healthy one.
+  assert.equal(receipt.modelFallback.from, "gemini-2.5-pro");
+  assert.ok(receipt.modelFallback.reason, "the fallback must say why the strong model did not answer");
+  assert.equal(receipt.model, FALLBACK_MODEL, "the receipt names the model that actually answered");
+});
+
+test("a REAL verdict is never second-guessed by a second model", async () => {
+  // Only `unavailable` falls through. Asking two models and preferring the
+  // stricter would be a different gate with a different failure mode, and
+  // RULE 0.30 permits exactly ONE semantic question of Call 1.
+  const bytes = await candidatePng();
+  const inspectionId = await inspectionIdFor(bytes);
+  const asked = [];
+  const provider = {
+    generateRaw: async ({ model }) => {
+      asked.push(model);
+      return {
+        payload: { candidates: [{ content: { parts: [{ text: JSON.stringify({
+          inspectionId, outputClass: "flat_atlas", confidence: 1,
+          evidence: "six rectangles filled corner to corner",
+        }) }] } }] },
+      };
+    },
+  };
+  const receipt = await classifyAtlasCandidate({ provider, bytes });
+  assert.equal(asked.length, 1, "an answered question is asked once");
+  assert.equal(receipt.disposition, "flat_atlas");
+  assert.equal(receipt.blocking, false);
+  assert.equal(receipt.modelFallback, undefined);
+});
+
+test("the inspector is still never an image model", async () => {
+  const bytes = await candidatePng();
+  const receipt = await classifyAtlasCandidate({
+    provider: { generateRaw: async () => { throw new Error("must not be reached"); } },
+    bytes,
+    model: "gemini-3-pro-image",
+  });
+  assert.equal(receipt.disposition, "unavailable");
+  assert.equal(receipt.code, "atlas_output_class_model_invalid");
 });
