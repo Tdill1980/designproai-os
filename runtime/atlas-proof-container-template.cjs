@@ -179,6 +179,39 @@ function row(surfaces, opts) {
 /** The two panel bands' geometry, for the gate. Same numbers the sheet draws. */
 const BAND = Object.freeze({ zone1: { top: 150, height: 150 }, zone2: { top: 414, height: 150 } });
 
+/**
+ * ZONE 3'S FIVE SLOTS, IN THE ONE PLACE THAT KNOWS WHERE THEY ARE.
+ *
+ * Owner, 2026-09-18, on what the sheet is: "the three quadrants ... panels with
+ * the graphics, panels without the overlay graphic just the design, and the
+ * graphic overlays by themselves."
+ *
+ * All three are cut out of the returned sheet and shipped, so all three need
+ * their rectangles. Zones 1 and 2 already came from `layoutRow`; zone 3's were
+ * literals inside the drawing loop, which meant the cutter would have had to
+ * re-derive them and the two would drift the first time a slot width changed.
+ * The drawing now reads THIS, so there is exactly one set of numbers.
+ */
+const ZONE3_SLOTS = Object.freeze([
+  { key: "logo", w: 330, caption: "PRIMARY LOGO", note: "(Vector cut path — no background)" },
+  { key: "tagline", w: 210, caption: "TAGLINE / SLOGAN", note: "(Vector cut path)" },
+  { key: "contact", w: 210, caption: "CONTACT LINE", note: "(Vector cut path)" },
+  { key: "promo", w: 210, caption: "PROMOTIONAL TEXT", note: "(Vector cut path)" },
+  { key: "icons", w: 400, caption: "ICONS / SERVICE GRAPHICS", note: "(Vector cut paths)" },
+]);
+const ZONE3_BAND = Object.freeze({ top: 690, height: 86, left: 54, gap: 18 });
+
+/** Where each cut-graphic slot sits, in the container's own coordinates. */
+function layoutCutGraphics() {
+  let x = ZONE3_BAND.left;
+  return ZONE3_SLOTS.map((slot) => {
+    const cell = { surfaceKey: slot.key, x, y: ZONE3_BAND.top, w: slot.w, h: ZONE3_BAND.height,
+      caption: slot.caption, note: slot.note };
+    x += slot.w + ZONE3_BAND.gap;
+    return cell;
+  });
+}
+
 function containerLayout(manifest) {
   const surfaces = surfacesFrom(manifest);
   if (surfaces.length !== 6) {
@@ -189,6 +222,7 @@ function containerLayout(manifest) {
     height: HEIGHT,
     zone1: layoutRow(surfaces, BAND.zone1),
     zone2: layoutRow(surfaces, BAND.zone2),
+    zone3: layoutCutGraphics(),
   };
 }
 
@@ -366,20 +400,11 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   m.push(zoneBand(54, 648, 1428, ZONE3,
     "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
     "VECTOR CUT PATHS — NO BACKGROUND"));
-  const slots = [
-    { w: 330, caption: "PRIMARY LOGO", note: "(Vector cut path — no background)" },
-    { w: 210, caption: "TAGLINE / SLOGAN", note: "(Vector cut path)" },
-    { w: 210, caption: "CONTACT LINE", note: "(Vector cut path)" },
-    { w: 210, caption: "PROMOTIONAL TEXT", note: "(Vector cut path)" },
-    { w: 400, caption: "ICONS / SERVICE GRAPHICS", note: "(Vector cut paths)" },
-  ];
-  let sx = 54;
-  for (const slot of slots) {
-    m.push(`<rect x="${sx}" y="690" width="${slot.w}" height="86" fill="${ground}" stroke="${FRAME}"`
-      + ` stroke-width="1" stroke-dasharray="5 4"/>`);
-    m.push(text(sx + slot.w / 2, 792, slot.caption, { size: 9.5, weight: 700, anchor: "middle" }));
-    m.push(text(sx + slot.w / 2, 803, slot.note, { size: 7.5, fill: MUTED, anchor: "middle" }));
-    sx += slot.w + 18;
+  for (const slot of layoutCutGraphics()) {
+    m.push(`<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" fill="${ground}"`
+      + ` stroke="${FRAME}" stroke-width="1" stroke-dasharray="5 4"/>`);
+    m.push(text(slot.x + slot.w / 2, 792, slot.caption, { size: 9.5, weight: 700, anchor: "middle" }));
+    m.push(text(slot.x + slot.w / 2, 803, slot.note, { size: 7.5, fill: MUTED, anchor: "middle" }));
   }
 
   // ── trim table, notes, legend ────────────────────────────────────────────
@@ -429,6 +454,7 @@ async function renderContainerTemplate(options = {}) {
 }
 
 module.exports = {
+  ZONE3_SLOTS, layoutCutGraphics,
   CONTAINER_CONTRACT,
   WIDTH,
   HEIGHT,
