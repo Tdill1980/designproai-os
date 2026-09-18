@@ -131,21 +131,31 @@ fi
 # Only the exact string `off` restores six-surface; anything else keeps today's
 # routing, so a typo can never silently change the authoring contract.
 [[ $atlas_field_first == "off" ]] || atlas_field_first=on
-# HERO-FIRST DRIVER (RULE 0.37). Inside the hero-driver cascade the driver is
-# TWO nodes -- a 16:9 vehicle render, then its flatten into the flank -- because
-# a 3.6:1 flat strip is an ask this model cannot emit and the aspect gate
-# refuses every single-call tile before any artwork is judged. ON by default for
-# that reason, not out of optimism. This key was missing from the writer
-# entirely, which is exactly how DESIGNPRO_ATLAS_FIELD_FIRST spent weeks being
-# unreachable from a deploy while the runtime honoured it: unset means ON, so a
-# live surprise had no lever. It has one now. Sticky like the flags around it.
+# HERO-FIRST DRIVER. OFF by default: Call 1 authors the flat 2D design first
+# (owner, 2026-09-17), and the two-node vehicle-render-then-flatten path is
+# opt-in.
+#
+# ⚠️ THIS DEFAULT WAS INVERTED AND IT MADE A CODE DEFAULT UNREACHABLE. The
+# writer forced `on` unless the value was exactly `off`, so every deploy wrote
+# DESIGNPRO_ATLAS_HERO_FIRST=on into runtime.env and OVERRODE
+# `heroFirstEnabled()` -- which had already been changed to require an explicit
+# `on`. Live proof, generation 6cf8160e (2026-09-18 00:13Z): the run compiled
+# two `surface.*.view` nodes on a release whose runtime defaults to none.
+#
+# It is the same class of defect this file has recorded twice -- a routing flag
+# the runtime reads and the writer does not write is not a switch -- in its
+# other direction: a writer that FORCES a value is not a default, it is an
+# override, and it silently wins over the code. The rule that follows from both:
+# the writer's resolved value and the runtime's own default must agree, so
+# `unset` means the same thing at both ends.
 atlas_hero_first=${ATLAS_HERO_FIRST:-}
 if [[ -z $atlas_hero_first && -s $ROOT/shared/runtime.env ]]; then
   atlas_hero_first=$(sed -n 's/^DESIGNPRO_ATLAS_HERO_FIRST=//p' "$ROOT/shared/runtime.env" | head -n 1)
 fi
-# Only the exact string `off` restores the single-call driver; a typo keeps the
-# split, which is the configuration the aspect gate can actually pass.
-[[ $atlas_hero_first == "off" ]] || atlas_hero_first=on
+# Only the exact string `on` selects the two-stage driver, matching
+# `heroFirstEnabled()` exactly; a typo leaves the flat 2D Call 1, which is the
+# product.
+[[ $atlas_hero_first == "on" ]] || atlas_hero_first=off
 
 # ELEMENT GRAPH (owner 2026-09-17, ARCHITECTURE_DAG.md). The logo, typography and
 # contact bar as first-class deterministic nodes. OFF unless a deploy says `on`:
