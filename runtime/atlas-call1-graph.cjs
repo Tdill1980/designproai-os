@@ -208,6 +208,50 @@ function logoNodeFor(input) {
   };
 }
 
+/**
+ * The element subgraph, independent of whatever authored the sheet.
+ *
+ * typeset / contact / logo are ROOTS -- they need no master, only the brief --
+ * so the only thing that ever coupled them to the hero cascade was the graph
+ * they happened to be appended to. `masterNode` names the node the composite
+ * waits for, or null when the master is already accepted and arrives as a
+ * reference on the run definition (the six-surface case).
+ *
+ * Returns [] when the brief carries no name, no contact and no logo: there is
+ * nothing to place, and an empty manifest is not a plan.
+ */
+function elementNodes({ input, masterNode = null }) {
+  const elements = [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)].filter(Boolean);
+  if (!elements.length) return [];
+  return [
+    ...elements,
+    { key: LOCKUP_NODE, dependsOn: elements.map((e) => e.key), input: {}, maxAttempts: 3 },
+    // The element producers are already the lockup's dependencies, so naming
+    // them again would only duplicate edges.
+    { key: COMPOSITE_NODE, dependsOn: masterNode ? [masterNode, LOCKUP_NODE] : [LOCKUP_NODE], input: {}, maxAttempts: 3 },
+  ];
+}
+
+/**
+ * THE SIX-SURFACE AND FIELD DOOR. (2026-09-18.)
+ *
+ * The element nodes compiled only inside `compileHeroDriverGraph`, so with
+ * hero-driver off -- which is production -- they never ran at all. Measured on
+ * live efca5e03: zero graph runs, zero nodes; across all history 6
+ * `master.composite` rows and ONE completed, so no customer has ever received
+ * a clean base with a composited lockup, and every sheet still has its
+ * lettering painted by the diffusion model.
+ *
+ * Here the sheet is ALREADY authored and accepted, so there is no master node
+ * to wait for: the accepted master arrives on the run definition as
+ * `{storagePath, contentHash, byteSize}` and the composite reads it from
+ * there. A reference, never bytes -- RULE 0.39 across every node boundary,
+ * and the same rule that lets either worker claim this node.
+ */
+function compileElementGraph({ input = null } = {}) {
+  return validateGraph(elementNodes({ input, masterNode: null }));
+}
+
 function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = null } = {}) {
   const nodes = [];
   // HERO-FIRST SPLITS EACH ELIGIBLE SURFACE IN TWO. Node 1 draws the sheet in
@@ -240,19 +284,11 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
   // array byte-for-byte identical whether the element graph is on or off --
   // the surfaces do not wait on an element, and chunk 8's master.composite is
   // what will consume it.
+  // It depends on exactly the elements that EXIST, and the composite waits for
+  // the assembled CLEAN master as well as the plan. Same builder the standalone
+  // six-surface graph uses, so the two shapes cannot drift apart.
   if (elementGraphEnabled()) {
-    const elements = [typesetNodeFor(input), contactNodeFor(input), logoNodeFor(input)].filter(Boolean);
-    for (const element of elements) nodes.push(element);
-    // It depends on exactly the elements that EXIST. A brief with no company
-    // name and no contact details and no logo compiles no lockup either --
-    // there is nothing to place, and an empty manifest is not a plan.
-    if (elements.length) {
-      nodes.push({ key: LOCKUP_NODE, dependsOn: elements.map((e) => e.key), input: {}, maxAttempts: 3 });
-      // The sheet's last node. It depends on the assembled CLEAN master and the
-      // plan, and on nothing else -- the element producers are already the
-      // lockup's dependencies, so naming them again would only duplicate edges.
-      nodes.push({ key: COMPOSITE_NODE, dependsOn: [MASTER_NODE, LOCKUP_NODE], input: {}, maxAttempts: 3 });
-    }
+    for (const node of elementNodes({ input, masterNode: MASTER_NODE })) nodes.push(node);
   }
   return validateGraph(nodes);
 }
@@ -310,10 +346,18 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
   // duplicate, keep the original -- the same rule Call 11 follows, and the
   // reason an element can later be MOVED without healing anything.
   if (node.node_key === COMPOSITE_NODE) {
-    const masterOutput = deps.get(MASTER_NODE)?.output;
+    // TWO WAYS IN, ONE SHAPE. The hero cascade assembles the sheet as a node,
+    // so the base is that node's output. Six-surface and field author and
+    // ACCEPT the sheet before any element node is claimed, so the base is the
+    // accepted master's identity on the run definition. Either way it is a
+    // {storagePath, contentHash, byteSize} reference that `downloadVerified`
+    // re-reads and hash-checks -- never bytes across the node boundary.
+    const masterOutput = deps.get(MASTER_NODE)?.output
+      || (definition.masterRef ? { master: definition.masterRef } : null);
     const planOutput = deps.get(LOCKUP_NODE)?.output;
     if (!masterOutput?.master) {
-      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${MASTER_NODE} carries no master reference`, true);
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete",
+        `no master reference: ${MASTER_NODE} did not run and the run definition carries no masterRef`, true);
     }
     if (!planOutput?.lockup) {
       throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${LOCKUP_NODE} carries no plan`, true);
