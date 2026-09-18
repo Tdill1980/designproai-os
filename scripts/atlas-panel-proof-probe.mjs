@@ -170,12 +170,28 @@ function panelRows() {
   if (actual !== payload.proofSha256) throw new Error(`proof hash mismatch ${actual} != ${payload.proofSha256}`);
   writeFileSync(path.join(outDir, "panel-production-proof.png"), bytes);
 
+  // WHAT SIZE DID 3:2 AT 4K ACTUALLY RETURN? Google publishes the aspect-ratio
+  // list but no pixel table, so this is measured rather than assumed -- and it
+  // is what tells us whether the panel cells carry enough pixels for the
+  // lettering to be legible, which is the whole question the sheet answers.
+  let returned = null;
+  try {
+    const sharp = require("../runtime/node_modules/sharp");
+    const meta = await sharp(bytes).metadata();
+    returned = { width: meta.width, height: meta.height,
+      megapixels: Number(((meta.width * meta.height) / 1e6).toFixed(2)),
+      aspect: Number((meta.width / meta.height).toFixed(3)) };
+    console.log(`returned ${meta.width}x${meta.height} (${returned.megapixels} MP, aspect ${returned.aspect})`);
+  } catch (error) {
+    console.log(`could not measure the returned sheet: ${String(error?.message || error)}`);
+  }
+
   // The COMPLETE assembled request, so a disagreement about the design is
   // settled on the request rather than on impressions of the output.
   writeFileSync(path.join(outDir, "prompt.txt"), payload.prompt);
   writeFileSync(path.join(outDir, "evidence.json"), JSON.stringify({
     contract: payload.contract, model: payload.model,
-    proofSha256: payload.proofSha256, proofByteSize: payload.proofByteSize,
+    proofSha256: payload.proofSha256, proofByteSize: payload.proofByteSize, returned,
     promptChars: payload.promptChars, attachedInputs: payload.attachedInputs,
     thoughtSignatureCount: payload.thoughtSignatureCount,
     elapsedMs: payload.elapsedMs, totalMs: Date.now() - started, request,
