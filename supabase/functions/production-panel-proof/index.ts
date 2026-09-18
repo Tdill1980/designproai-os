@@ -165,22 +165,40 @@ const ATLAS_PANELS = [
  * cut graphics), the panel dimensions reference row, template notes and guide
  * legend. It is the filled twin of the container template attached beside it.
  *
- * The installation photograph is the PHYSICAL REASON a panel is one rectangle.
- * A positive fact conditions better than "do not draw wheel arches", which is
- * the negative shape this repo warns about in four places and which has failed
- * 4/4 on the field map.
+ * ⚠️ NO PHOTOGRAPH OF A VEHICLE IS ATTACHED. THIS IS A STANDING RULE, NOT A
+ * PREFERENCE, AND IT WAS BROKEN HERE FOR ONE DAY.
+ *
+ * `atlas-examples/installer-one-panel-per-side.png` rode in this array as the
+ * "physical reason a panel is one rectangle" -- a Wrap Institute still of an
+ * installer laying vinyl over a car, in a workshop, with its own title text and
+ * watermark. Live sheet 35402317471 answered it exactly: Zone 1 and Zone 2 came
+ * back as PICTURES OF A VAN, wheels and windows and mirrors on the flanks, hood
+ * and front drawn as body-part silhouettes, on a request whose words said SOLID
+ * RECTANGLE and whose pinned example sheet shows six plain rectangles.
+ *
+ * RULE 0.0 names this failure and its cost: "An installed/3D vehicle proof is
+ * not a Call-1 teaching input: production canary 33389124918 proved that the
+ * finished-vehicle image OVERPOWERED the flat-source instructions and leaked
+ * vehicle/template anatomy into the canonical rectangles." RULE 0.15 says the
+ * same thing from the other side: the installed proof "was the strongest visual
+ * instruction and reintroduced the anatomy that source rectangles must exclude."
+ *
+ * The physical fact is NOT lost -- INSTALLATION_FACT states it in words, which
+ * is where it belongs. An image outranks a sentence, so an image of the thing
+ * the sentence forbids drawing is the one attachment this request may never
+ * carry. Owner ruling, 2026-09-18: "there shouldn't be any shapes, just the cut
+ * logo shapes" -- Zones 1 and 2 are plain rectangles, and only Zone 3 holds
+ * shapes.
  *
  * THE ORDER IS THE PROMPT'S ORDER, and it is load-bearing. The tail names the
  * attachments "in order: (1) the BLANK CONTAINER TEMPLATE ... (2) a FINISHED
- * PROOF ... (3) an INSTALLATION PHOTOGRAPH", so reordering this array makes the
- * text point at the wrong image. Container first is deliberate: the empty
- * structure, then a filled example of that same structure, then the physical
- * fact behind it. Both sheets are 1536x1024, which is also the request's
+ * PROOF", so reordering this array makes the text point at the wrong image.
+ * Container first is deliberate: the empty structure, then a filled example of
+ * that same structure. Both sheets are 1536x1024, which is also the request's
  * aspectRatio, so nothing has to be re-flowed to be read.
  */
 const PINNED_INPUTS = [
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
-  { path: "atlas-examples/installer-one-panel-per-side.png", role: "installation", sha256: null },
 ] as const;
 
 /**

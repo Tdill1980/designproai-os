@@ -448,7 +448,8 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
 
   out.push("",
     "ATTACHED: (1) the BLANK CONTAINER TEMPLATE to fill; (2) a FINISHED PROOF — THE STANDARD TO MATCH,",
-    "its layout and the quality of its work, but another company's brand; (3) an INSTALLATION PHOTOGRAPH.");
+    "its layout and the quality of its work, but another company's brand. Every panel on it is a plain",
+    "rectangle of artwork; the only shapes on the sheet are Zone 3's cut graphics.");
 
   return out.join("\n");
 }

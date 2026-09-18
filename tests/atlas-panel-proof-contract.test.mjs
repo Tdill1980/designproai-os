@@ -447,6 +447,59 @@ test("the CONTAINER TEMPLATE is rendered per vehicle and verified, not byte-pinn
     "the probe must stage it content-addressed under the Call-1 input prefix");
 });
 
+/**
+ * NO PHOTOGRAPH OF A VEHICLE MAY REACH CALL 1. THIRD TIME THIS HAS BEEN WRITTEN
+ * DOWN; FIRST TIME IT IS A TEST.
+ *
+ * RULE 0.0, on canary 33389124918: "An installed/3D vehicle proof is not a
+ * Call-1 teaching input ... the finished-vehicle image OVERPOWERED the
+ * flat-source instructions and leaked vehicle/template anatomy into the
+ * canonical rectangles." RULE 0.15 records the same finding from the other
+ * side: the installed proof "was the strongest visual instruction".
+ *
+ * Both times it was written as prose, and both times it came back. This studio
+ * attached `installer-one-panel-per-side.png` — an installer laying vinyl over
+ * a car in a workshop — as "the physical reason a panel is one rectangle", and
+ * live sheet 35402317471 returned Zone 1 and Zone 2 as pictures of a van while
+ * the prompt said SOLID RECTANGLE and the pinned example showed six plain
+ * rectangles. An image outranks a sentence. The sentence keeps the physical
+ * fact; the picture does not get to come back.
+ *
+ * Owner ruling, 2026-09-18: "there shouldn't be any shapes, just the cut logo
+ * shapes" — Zones 1 and 2 are plain rectangles and only Zone 3 holds shapes.
+ */
+test("no photograph of a vehicle is attached to Call 1", () => {
+  const fn = readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  const pinnedBlock = fn.slice(fn.indexOf("const PINNED_INPUTS"),
+    fn.indexOf("] as const;", fn.indexOf("const PINNED_INPUTS")));
+
+  // THE ASSERTION IS ON THE ATTACHED SET, not on one filename — renaming the
+  // file would otherwise walk straight through this lock.
+  for (const banned of ["installer", "installed", "photo", "vehicle", "truck", "van", "car"]) {
+    assert.ok(!new RegExp(banned, "i").test(pinnedBlock),
+      `PINNED_INPUTS names "${banned}" — a photograph of a vehicle is the one attachment `
+      + "this request may never carry (RULE 0.0, canary 33389124918)");
+  }
+  // Exactly one pinned image, and it is the owner's flat format sheet.
+  const paths = [...pinnedBlock.matchAll(/path:\s*([^,]+),/g)].map((m) => m[1].trim());
+  assert.deepEqual(paths, ["PANEL_PROOF_FORMAT_EXAMPLE.path"],
+    "the only pinned attachment is the owner's flat proof sheet");
+
+  // AND THE PROMPT MUST NOT ADVERTISE ONE EITHER. A tail that names an
+  // attachment the request does not carry is the defect CLAUDE.md records under
+  // "a prompt may not cite attachments the request does not carry".
+  const prompt = runtime.buildPanelProofPrompt({
+    input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
+  });
+  assert.doesNotMatch(prompt, /INSTALLATION PHOTOGRAPH/,
+    "the prompt still names a photograph the request no longer sends");
+
+  // The physical fact survives in WORDS, which is where it belongs.
+  assert.match(runtime.INSTALLATION_FACT, /ONE CONTINUOUS PANEL/);
+  assert.match(runtime.INSTALLATION_FACT, /SOLID RECTANGLE of artwork/);
+});
+
 test("the prompt names the attachments in the order the function sends them", () => {
   // THE ORDER IS LOAD-BEARING AND NOTHING ELSE CHECKS IT. The tail says
   // "ATTACHED: (1) ... (2) ... (3) ...", so a reordered PINNED_INPUTS
@@ -467,7 +520,7 @@ test("the prompt names the attachments in the order the function sends them", ()
   const pinnedBlock = fn.slice(fn.indexOf("const PINNED_INPUTS"),
     fn.indexOf("] as const;", fn.indexOf("const PINNED_INPUTS")));
   const roles = ["container", ...[...pinnedBlock.matchAll(/role:\s*"([a-z]+)"/g)].map((m) => m[1])];
-  assert.deepEqual(roles, ["container", "format", "installation"],
+  assert.deepEqual(roles, ["container", "format"],
     "attachment order changed; the prompt's numbered list must change with it");
 
   const prompt = runtime.buildPanelProofPrompt({
@@ -478,7 +531,6 @@ test("the prompt names the attachments in the order the function sends them", ()
   const named = [
     ["container", tail.indexOf("BLANK CONTAINER TEMPLATE")],
     ["format", tail.indexOf("FINISHED PROOF")],
-    ["installation", tail.indexOf("INSTALLATION PHOTOGRAPH")],
   ];
   for (const [role, at] of named) assert.ok(at >= 0, `the prompt never names the ${role} attachment`);
   assert.deepEqual(named.sort((a, b) => a[1] - b[1]).map(([role]) => role), roles,
