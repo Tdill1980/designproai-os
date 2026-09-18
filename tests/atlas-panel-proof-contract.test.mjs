@@ -59,6 +59,22 @@ test("the owner's format sheet is pinned by hash, and the file on disk IS it", a
     new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
   assert.match(fn, /panel_proof_format_example_mismatch/,
     "the function must refuse a format example whose bytes are not the pinned ones");
+
+  // AND THE WORKFLOW MUST ACTUALLY SHIP IT. The probe's first live run died on
+  // `ENOENT: runtime/atlas-examples/panel-production-proof-three-version.png`
+  // because the workflow's payload tar was written against the OLD example
+  // filename and never updated when the pin changed. The pin, the function and
+  // the probe all agreed; the one place that puts the bytes on the droplet did
+  // not, and nothing compared them.
+  const workflow = readFileSync(
+    new URL("../.github/workflows/atlas-panel-proof-probe.yml", import.meta.url), "utf8");
+  const basename = pin.path.split("/").pop();
+  assert.ok(workflow.includes(`runtime/atlas-examples/${basename}`),
+    `the probe workflow does not ship ${basename} to the droplet, so the probe cannot stage it`);
+  const probe = readFileSync(
+    new URL("../scripts/atlas-panel-proof-probe.mjs", import.meta.url), "utf8");
+  assert.ok(probe.includes(pin.path),
+    "the probe stages a different remote path than the contract pins");
 });
 
 test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
