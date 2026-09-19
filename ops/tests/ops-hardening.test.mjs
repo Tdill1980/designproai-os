@@ -24,8 +24,18 @@ test("one canonical policy includes every required runtime file and five deploy 
   // atlas-typeset-layer.cjs reads fonts.json at REQUIRE time, so the faces and
   // their licences are release files, not test fixtures), and the logo
   // preparer (chunk 5), the placement planner (chunk 6) and the Layer 0 +
-  // Layer 1 compositor (chunk 8).
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 128);
+  // Layer 1 compositor (chunk 8), plus the panel-production-proof Call-1 route
+  // (owner 2026-09-19) — its topology, the container template it draws the
+  // cells from, and the cutter that turns the returned sheet into the three
+  // quadrants. All three are required at REQUIRE time by flat-first-atlas, so
+  // they are release files whether or not the routing flag is on.
+  //
+  // THIS COUNT IS THE TRIPWIRE, AND IT FIRED. The push gate on 69b55e9 failed
+  // `131 !== 128` because those three were added to the manifest by the closure
+  // test and not here — which is the point: the manifest cannot grow silently,
+  // in either direction. Update the number WITH the sentence above saying what
+  // joined it, never on its own.
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 131);
   for (const name of [
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",
