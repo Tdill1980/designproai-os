@@ -279,3 +279,74 @@ test('generateContent final-image selection excludes thought images/text and rej
   twoFinals.candidates[0].content.parts.push(twoFinals.candidates[0].content.parts[2]);
   assert.throws(() => selectFinalGenerateContentImage(twoFinals, 'atlas_panel'), /atlas_panel_ambiguous_final_images/);
 });
+
+// ABSENT IS NOT AN ERROR, AND THE FIXTURE WAS LAXER THAN THE REAL CLIENT.
+//
+// The bucket fixture above models exactly ONE miss shape --
+// `{statusCode:'400', message:'Object not found'}` -- which the old anchored
+// regex happened to match. Live canary 35470167524 died on the FIRST read of
+// claim.json with `provider_cache_read_failed`, and the one measurable
+// difference at that seam was the storage client version
+// (production-panel-proof pinned @2.57.4; the two functions that work import
+// @2). Which shape a caller sees depends on that version, so the predicate has
+// to recognise absence in every one of them -- including the whole error body
+// JSON-encoded INTO the message, which carries no top-level status at all and
+// which no anchored match could ever have caught.
+//
+// A fixture laxer than the real thing cannot catch a defect of the real thing.
+const MISS_SHAPES = [
+  ['numeric status', { status: 404, message: 'Object not found' }],
+  ['string statusCode', { statusCode: '404', message: 'Object not found' }],
+  ['legacy 400 with a plain message', { statusCode: '400', message: 'Object not found' }],
+  ['S3 NoSuchKey', { code: 'NoSuchKey', message: 'The specified key does not exist.' }],
+  ['not_found code', { code: 'not_found', message: 'whatever the gateway says' }],
+  ['resource-not-found wording', { message: 'The resource was not found' }],
+  // The one that slipped through: no status anywhere, the body stringified.
+  ['JSON body in the message', { message: '{"statusCode":"404","error":"not_found","message":"Object not found"}' }],
+];
+for (const [label, missError] of MISS_SHAPES) {
+  test(`a first read that misses as "${label}" reserves a claim instead of failing the request`, async () => {
+    const bucket = bucketFixture();
+    bucket.download = async (path) => (bucket.files.has(path)
+      ? { data: new Blob([bucket.files.get(path)]), error: null }
+      : { data: null, error: missError });
+    let calls = 0;
+    const result = await runDurableImageProviderRequest(options(bucket, async () => {
+      calls += 1;
+      return { status: 200, payload: nativePayload };
+    }));
+    assert.equal(calls, 1, 'an absent claim must be reserved and the provider called exactly once');
+    assert.equal(result.providerCacheHit, false);
+    assert.ok([...bucket.files.keys()].some((path) => path.endsWith('/claim.json')));
+  });
+}
+
+// NARROW ON PURPOSE. Treating "you may not read this" or "the store is down" as
+// "there is nothing here" would let a second worker reserve the same claim and
+// mint a duplicate PAID image. Only 404/not-found is absence.
+for (const [label, hardError] of [
+  ['forbidden', { statusCode: '403', message: 'new row violates row-level security policy' }],
+  ['unauthorized', { status: 401, message: 'Invalid JWT' }],
+  ['rate limited', { statusCode: '429', message: 'Too Many Requests' }],
+  ['store unavailable', { status: 503, message: 'Service Unavailable' }],
+  ['bucket absent is NOT object absent', { statusCode: '400', message: 'Bucket not found' }],
+]) {
+  test(`a first read that fails as "${label}" is a failure, never an absent claim`, async () => {
+    const bucket = bucketFixture();
+    bucket.download = async () => ({ data: null, error: hardError });
+    await assert.rejects(
+      runDurableImageProviderRequest(options(bucket, async () => assert.fail('an unreadable cache is never authority to call the provider'))),
+      (error) => {
+        assert.equal(error.code, 'provider_cache_read_failed');
+        assert.equal(error.status, 503);
+        // The cause rides the error now: the whole point of the 09-19 change is
+        // that the next failure is diagnosable from its own receipt instead of
+        // from another live run.
+        assert.match(error.cacheReadPath, /\/claim\.json$/);
+        assert.ok(error.cacheReadReason.length > 0, 'the storage reason must survive');
+        return true;
+      },
+    );
+    assert.equal(bucket.files.size, 0, 'nothing may be reserved when the cache could not be read');
+  });
+}

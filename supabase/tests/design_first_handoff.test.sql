@@ -694,7 +694,7 @@ from (values
     jsonb_build_object('authorizedAssetManifest',jsonb_build_object(
       'products',jsonb_build_array('print_pack_entitlement'),
       'productionPackAuthorized',true,'logoPackAuthorized',false,
-      'requiredOutputFiles',18,'zipIncludesSourceViews',true))),
+      'requiredOutputFiles',24,'zipIncludesSourceViews',true))),
   ('46000000-0000-4000-8000-000000000002'::uuid,'source.verify',10,
     jsonb_build_object('call8',(select call8 from production_call8)))
 ) s(id,stage_key,sequence,output);

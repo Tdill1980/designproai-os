@@ -6,7 +6,13 @@ const { constants: zlibConstants, deflateSync, inflateSync } = require("node:zli
 const sharp = require("sharp");
 
 const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-const FORMATS = Object.freeze(["png", "tiff", "eps"]);
+// Four files per surface. PDF joined the paid set on 2026-09-19: the writer had
+// existed in the PanelProFileOutput renderer since 09-08 and no DesignPro
+// production pack could reach it, so a shop whose RIP wants a PDF received
+// none. It is a REAL format here, not a soft extra -- the count assertion below
+// is exact, so a run that cannot write one fails closed rather than delivering
+// a quietly smaller pack.
+const FORMATS = Object.freeze(["png", "tiff", "eps", "pdf"]);
 const FULL_SCALE_PIXELS_PER_INCH = 150;
 const FILE_DPI = 1500;
 const OUTPUT_SCALE = 0.1;
@@ -534,6 +540,120 @@ function nearlyEqual(left, right) {
   return Math.abs(left - right) <= 0.000001;
 }
 
+const PDF_BLEED_POINTS = BLEED_INCHES_PER_EDGE * OUTPUT_SCALE * 72;
+
+/** The same six-decimals-then-JSON rounding buildDeterministicRasterPdf writes. */
+function pdfNumber(value) {
+  return String(Number(Number(value).toFixed(6)));
+}
+
+/**
+ * The PDF is checked the way the EPS is: against its own declarations AND
+ * against the pixels, because a container that merely parses can still hold a
+ * page of the wrong physical size or an image of the wrong geometry. This reads
+ * the cross-reference table rather than searching for strings, so an offset that
+ * does not point at the object it claims is a failure -- that is what makes a
+ * RIP able to open the file, and a substring search would not notice.
+ */
+function verifyPdf(bytes, geometry) {
+  if (bytes.length < 64 || bytes.toString("latin1", 0, 8) !== "%PDF-1.7") fail("output_pdf_magic_invalid", "PDF header must be exactly %PDF-1.7");
+  const eof = Buffer.from("%%EOF\n", "ascii");
+  if (!bytes.subarray(bytes.length - eof.length).equals(eof)) fail("output_pdf_eof_invalid", "PDF must end exactly with %%EOF and one newline");
+
+  const startxrefAt = bytes.lastIndexOf(Buffer.from("startxref\n", "ascii"));
+  if (startxrefAt < 0) fail("output_pdf_xref_invalid", "PDF startxref is missing");
+  const trailerTail = bytes.toString("latin1", startxrefAt);
+  const startxref = Number((trailerTail.match(/^startxref\n(\d+)\n%%EOF\n$/) || [])[1]);
+  if (!Number.isSafeInteger(startxref) || startxref <= 0 || startxref >= bytes.length) fail("output_pdf_xref_invalid", "PDF startxref does not address the cross-reference table");
+
+  const xrefText = bytes.toString("latin1", startxref, startxref + 4096);
+  const xrefHeader = xrefText.match(/^xref\n0 (\d+)\n0000000000 65535 f \n/);
+  if (!xrefHeader) fail("output_pdf_xref_invalid", "PDF cross-reference table header is invalid");
+  const objectCount = Number(xrefHeader[1]) - 1;
+  // Catalog, Pages, Page, Image, ICC, Contents, Info -- exactly the document
+  // buildDeterministicRasterPdf emits. A different object count is a different
+  // document, and this verifier only makes claims about that one.
+  if (objectCount !== 7) fail("output_pdf_object_set_invalid", "PDF must contain exactly the seven-object single-image print document");
+  const entriesAt = startxref + xrefHeader[0].length;
+  const entries = bytes.toString("latin1", entriesAt, entriesAt + objectCount * 20);
+  if (entries.length !== objectCount * 20 || !/^(?:\d{10} 00000 n \n){7}$/.test(entries)) fail("output_pdf_xref_invalid", "PDF cross-reference entries are malformed");
+  const offsets = [];
+  for (let index = 0; index < objectCount; index += 1) {
+    const offset = Number(entries.slice(index * 20, index * 20 + 10));
+    if (!Number.isSafeInteger(offset) || offset <= 0 || offset >= startxref) fail("output_pdf_xref_invalid", `PDF object ${index + 1} offset is out of range`);
+    if (bytes.toString("latin1", offset, offset + 8).trimEnd() !== `${index + 1} 0 obj`) fail("output_pdf_xref_invalid", `PDF object ${index + 1} is not at its declared offset`);
+    offsets.push(offset);
+  }
+  const trailer = bytes.toString("latin1", entriesAt + objectCount * 20, startxrefAt);
+  if (trailer !== `trailer\n<< /Size 8 /Root 1 0 R /Info 7 0 R >>\n`) fail("output_pdf_trailer_invalid", "PDF trailer is not the exact deterministic trailer");
+
+  const objectBody = (number) => {
+    const start = offsets[number - 1] + `${number} 0 obj\n`.length;
+    const end = number === objectCount ? startxref : offsets[number];
+    return bytes.subarray(start, end);
+  };
+
+  const page = objectBody(3).toString("latin1");
+  const width = pdfNumber(geometry.outputWidthPoints);
+  const height = pdfNumber(geometry.outputHeightPoints);
+  const bleed = pdfNumber(PDF_BLEED_POINTS);
+  const trimHigh = [pdfNumber(Number(Number(geometry.outputWidthPoints).toFixed(6)) - PDF_BLEED_POINTS), pdfNumber(Number(Number(geometry.outputHeightPoints).toFixed(6)) - PDF_BLEED_POINTS)];
+  if (!page.includes(`/MediaBox [0 0 ${width} ${height}]`) || !page.includes(`/BleedBox [0 0 ${width} ${height}]`)) {
+    fail("output_pdf_media_box_invalid", "PDF MediaBox is not the exact 1:10 point geometry including bleed", { expected: [width, height] });
+  }
+  if (!page.includes(`/TrimBox [${bleed} ${bleed} ${trimHigh[0]} ${trimHigh[1]}]`)) {
+    fail("output_pdf_trim_box_invalid", "PDF TrimBox is not the trim rectangle inset by the 1:10 bleed", { expected: [bleed, bleed, ...trimHigh] });
+  }
+  if (!page.includes("/Contents 6 0 R") || !page.includes("/XObject << /Art 4 0 R >>")) fail("output_pdf_page_invalid", "PDF page does not place the single print image");
+
+  const image = objectBody(4);
+  const imageDict = image.toString("latin1", 0, Math.min(image.length, 1024));
+  const declaredLength = Number((imageDict.match(/\/Length (\d+) >>\nstream\n/) || [])[1]);
+  if (!imageDict.includes(`/Width ${geometry.widthPixels} /Height ${geometry.heightPixels}`)) {
+    fail("output_pdf_raster_geometry_invalid", "PDF image geometry is not the exact print pixel rectangle", { expected: [geometry.widthPixels, geometry.heightPixels] });
+  }
+  if (!imageDict.includes("/ColorSpace [/ICCBased 5 0 R]") || !imageDict.includes("/BitsPerComponent 8")
+    || !imageDict.includes(`/DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${geometry.widthPixels} >>`)) {
+    fail("output_pdf_color_contract_invalid", "PDF image must be 8-bit ICC-based RGB with the exact PNG predictor parameters");
+  }
+  if (!Number.isSafeInteger(declaredLength) || declaredLength <= 0) fail("output_pdf_stream_invalid", "PDF image stream length declaration is invalid");
+  const streamStart = imageDict.indexOf("stream\n") + "stream\n".length;
+  const compressed = image.subarray(streamStart, streamStart + declaredLength);
+  if (compressed.length !== declaredLength || !image.subarray(streamStart + declaredLength).equals(Buffer.from("\nendstream\nendobj\n", "ascii"))) {
+    fail("output_pdf_stream_invalid", "PDF image stream is truncated or is not exactly delimited");
+  }
+  // /Predictor 15 is PNG filtering, so each row carries one filter byte ahead of
+  // its RGB triples. Inflating to that exact bound proves the embedded bytes are
+  // the whole raster and not a prefix of one.
+  const expectedBytes = geometry.heightPixels * (1 + geometry.widthPixels * 3);
+  if (expectedBytes > MAX_EPS_RAW_BYTES) fail("output_pdf_resource_limit", "PDF decoded raster exceeds the verified resource envelope");
+  let raster;
+  try {
+    raster = inflateSync(compressed, { maxOutputLength: expectedBytes });
+  } catch (error) {
+    fail("output_pdf_raster_decode_failed", "PDF Flate raster could not be decoded inside its exact bound", { cause: error.message });
+  }
+  if (raster.length !== expectedBytes) fail("output_pdf_raster_decode_failed", "PDF raster is not the exact predictor-filtered print rectangle", { expected: expectedBytes, observed: raster.length });
+
+  const iccDict = objectBody(5).toString("latin1", 0, 256);
+  const iccLength = Number((iccDict.match(/\/N 3 \/Alternate \/DeviceRGB \/Length (\d+) >>\nstream\n/) || [])[1]);
+  if (!Number.isSafeInteger(iccLength) || iccLength <= 0) fail("output_pdf_icc_invalid", "PDF must embed a three-component RGB ICC profile");
+
+  const content = objectBody(6).toString("latin1");
+  if (!content.includes(`q\n${width} 0 0 ${height} 0 0 cm\n/Art Do\nQ\n`)) fail("output_pdf_content_invalid", "PDF content stream does not place the image across the whole page");
+
+  return {
+    widthPixels: geometry.widthPixels,
+    heightPixels: geometry.heightPixels,
+    dpi: FILE_DPI,
+    colorSpace: "sRGB",
+    pageWidthPoints: Number(width),
+    pageHeightPoints: Number(height),
+    trimBoxPoints: [Number(bleed), Number(bleed), Number(trimHigh[0]), Number(trimHigh[1])],
+    iccByteSize: iccLength,
+  };
+}
+
 function verifyEps(bytes, geometry) {
   if (bytes.length < 32 || bytes.toString("ascii", 0, 23) !== "%!PS-Adobe-3.0 EPSF-3.0") fail("output_eps_magic_invalid", "EPS magic/header is invalid");
   for (const byte of bytes) if (byte > 0x7f || byte === 0) fail("output_eps_binary_invalid", "EPS must be deterministic Clean7Bit ASCII");
@@ -648,7 +768,9 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
       if (bytes.length !== artifact.byteSize) fail("output_artifact_byte_size_mismatch", `${artifact.storagePath} byte size changed`, { expected: artifact.byteSize, observed: bytes.length });
       const observedHash = sha256(bytes);
       if (observedHash !== artifact.contentHash) fail("output_artifact_content_hash_mismatch", `${artifact.storagePath} content hash changed`, { expected: artifact.contentHash, observed: observedHash });
-      const decoded = format === "eps" ? verifyEps(bytes, geometry) : await verifyRaster(bytes, format, geometry);
+      const decoded = format === "eps" ? verifyEps(bytes, geometry)
+        : format === "pdf" ? verifyPdf(bytes, geometry)
+        : await verifyRaster(bytes, format, geometry);
       files.push(Object.freeze({
         surfaceKey,
         format,
@@ -940,7 +1062,9 @@ module.exports = Object.freeze({
   buildDeterministicZip,
   createDeterministicZip64Stream,
   crc32,
+  PDF_BLEED_POINTS,
   planEpsResources,
   sha256,
+  verifyPdf,
   verifyProductionOutputSet,
 });

@@ -326,7 +326,7 @@ test("heavy output, lease-loss abort, structural output QC, deterministic stamp 
   // that did not buy it must not be asked to prove it, and one that did still
   // fails closed without the complete set.
   assert.match(claimantSource, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
-  assert.match(claimantSource, /requiredOutputFiles: production \? 18 : 0/);
+  assert.match(claimantSource, /requiredOutputFiles: production \? 24 : 0/);
   assert.match(claimantSource, /createDeterministicZip64Stream/);
   assert.match(claimantSource, /uploadSpoolWithTus/);
   assert.match(claimantSource, /stamped-call8-proof\.png/);

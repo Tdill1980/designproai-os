@@ -25,6 +25,7 @@ const {
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
 const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources } = require("./output-qc.cjs");
+const { buildDeterministicRasterPdf } = require("./print-pdf.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
@@ -891,10 +892,11 @@ function authorizedAssetManifest(paidProducts) {
     // or completes as inapplicable.
     upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
     output: Object.freeze(production ? ["upscaled-panel"] : []),
-    // The complete production output set is six sides x three formats. A run
-    // that did not buy it must not be asked to prove it; a run that did must
-    // fail closed without it.
-    requiredOutputFiles: production ? 18 : 0,
+    // The complete production output set is six sides x FOUR formats -- PNG,
+    // TIFF, EPS and PDF. A run that did not buy it must not be asked to prove
+    // it; a run that did must fail closed without it, which is why this is an
+    // exact count and not a floor.
+    requiredOutputFiles: production ? 24 : 0,
     // What the humans are asked to check. QC validates the purchased asset
     // classes and is never handed a class the customer did not buy.
     qcScope: Object.freeze([
@@ -1772,6 +1774,28 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     const eps = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.eps`, epsBytes, "application/postscript");
     if (eps.spool) spools.push(eps.spool);
     produced.push(artifact("output", eps.storagePath, eps.hash, eps.bytes, panel.surface_key, { format: "eps", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", rasterSha256: hashBytes(rgb), physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    // The PDF embeds THIS surface's own PNG deflate stream, so the four files a
+    // shop receives are provably one artwork rather than four encodes that could
+    // drift. Its page is the same 1:10 point geometry the EPS declares, with the
+    // TrimBox inset by the bleed so a RIP knows where the vehicle edge is.
+    const pngIcc = (await sharp(raster).metadata()).icc;
+    if (!pngIcc?.length) throw new StageError("output_pdf_icc_missing", `${panel.surface_key} print PNG carries no ICC profile to embed`, false);
+    const pdfBytes = buildDeterministicRasterPdf({
+      png: raster,
+      icc: pngIcc,
+      widthPixels: width,
+      heightPixels: height,
+      pageWidthPoints: (Number(dims.widthInches) + 10) * 0.1 * 72,
+      pageHeightPoints: (Number(dims.heightInches) + 10) * 0.1 * 72,
+      bleedPoints: 5 * 0.1 * 72,
+      title: `${String(panel.surface_key).toUpperCase()} - TENTH SCALE`,
+      subject: `1:10 drawing scale; enlarge to 1000 percent. Full-size print ${Number(dims.widthInches) + 10} x ${Number(dims.heightInches) + 10} inches including 5 inch bleed per edge.`,
+      creator: "DesignProAI",
+      codes: { pngInvalid: "output_pdf_png_invalid", rgbRequired: "output_pdf_rgb_required", iccRequired: "output_pdf_icc_missing", geometryInvalid: "output_pdf_geometry_invalid" },
+    });
+    const pdf = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.pdf`, pdfBytes, "application/pdf");
+    if (pdf.spool) spools.push(pdf.spool);
+    produced.push(artifact("output", pdf.storagePath, pdf.hash, pdf.bytes, panel.surface_key, { format: "pdf", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", drawingScaleRatio: "1:10", printAtPercent: 1000, physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
   }
   return { produced, spools };
 }

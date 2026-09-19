@@ -10,6 +10,7 @@ const { join } = require('node:path');
 const sharp = require('sharp');
 const { buildPanelProFileOutputHandoff } = require('./panelpro-file-output-contract.cjs');
 const { buildPanelProFileOutputPlan } = require('./panelpro-file-output-plan.cjs');
+const { buildDeterministicRasterPdf } = require('./print-pdf.cjs');
 
 const RENDER_CONTRACT = 'designpro.panelpro-file-output-render.v1';
 const GEOMETRY_CONTRACT = 'designpro.panelpro-file-output-geometry.v1';
@@ -232,41 +233,33 @@ async function relocatedLayer(bytes, asset, element, placement, box, ppi, limits
   return { input: image, left: x, top: y };
 }
 
-// Embed PNG's existing lossless RGB deflate stream directly into a simple
-// deterministic PDF. No JPEG recompression, JavaScript, wall-clock timestamp,
-// fonts from customer files, or hard-coded approval stamp enters the output.
+// The deterministic single-image PDF writer lives in runtime/print-pdf.cjs and
+// is EXECUTED here, not re-typed: the paid six-surface output set needs the same
+// document, and a second producer of one artifact class is what RULE 0.21
+// forbids by name. This function keeps the panelprofile geometry and the
+// scale-label wording, which are its own; the structure is shared.
 function productionPdf(png, metadata, section, policy) {
-  const signature = '89504e470d0a1a0a';
-  if (png.subarray(0, 8).toString('hex') !== signature) stop('panelprofile_pdf_png_invalid');
-  const idat = [];
-  for (let offset = 8; offset + 12 <= png.length;) {
-    const length = png.readUInt32BE(offset), type = png.toString('ascii', offset + 4, offset + 8);
-    if (offset + length + 12 > png.length) stop('panelprofile_pdf_png_invalid');
-    if (type === 'IHDR' && (png[offset + 16] !== 8 || png[offset + 17] !== 2 || png[offset + 20] !== 0)) stop('panelprofile_pdf_rgb_required');
-    if (type === 'IDAT') idat.push(png.subarray(offset + 8, offset + 8 + length));
-    offset += length + 12;
-  }
-  if (!idat.length || !metadata.icc?.length) stop('panelprofile_pdf_icc_required');
   const box = outputBox(section), rotate = section.rollRotationDegrees === 90;
-  const width = n((rotate ? box.height : box.width) * 72 * policy.outputScale);
-  const height = n((rotate ? box.width : box.height) * 72 * policy.outputScale);
-  const bleed = n(5 * 72 * policy.outputScale);
-  const stream = (dictionary, bytes) => Buffer.concat([Buffer.from(`<< ${dictionary} /Length ${bytes.length} >>\nstream\n`), bytes, Buffer.from('\nendstream')]);
-  const objects = [Buffer.from('<< /Type /Catalog /Pages 2 0 R >>'), Buffer.from('<< /Type /Pages /Kids [3 0 R] /Count 1 >>'),
-    Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] /BleedBox [0 0 ${width} ${height}] /TrimBox [${bleed} ${bleed} ${n(width - bleed)} ${n(height - bleed)}] /Resources << /XObject << /Art 4 0 R >> >> /Contents 6 0 R >>`),
-    stream(`/Type /XObject /Subtype /Image /Width ${metadata.width} /Height ${metadata.height} /BitsPerComponent 8 /ColorSpace [/ICCBased 5 0 R] /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${metadata.width} >>`, Buffer.concat(idat)),
-    stream('/N 3 /Alternate /DeviceRGB', metadata.icc),
-    stream('', Buffer.from(`q\n${width} 0 0 ${height} 0 0 cm\n/Art Do\nQ\n`)),
-    Buffer.from(`<< /Title (${section.sectionId} - TENTH SCALE) /Subject (1:10 drawing scale; enlarge to 1000 percent. Full-size print ${n(rotate ? box.height : box.width)} x ${n(rotate ? box.width : box.height)} inches including 5 inch bleed per edge.) /Creator (DesignProAI PanelProFileOutput) >>`),
-  ];
-  const parts = [Buffer.from('%PDF-1.7\n%\xE2\xE3\xCF\xD3\n', 'binary')], offsets = [0];
-  let offset = parts[0].length;
-  objects.forEach((body, i) => {
-    const object = Buffer.concat([Buffer.from(`${i + 1} 0 obj\n`), body, Buffer.from('\nendobj\n')]);
-    offsets.push(offset); parts.push(object); offset += object.length;
+  const fullWidth = n(rotate ? box.height : box.width);
+  const fullHeight = n(rotate ? box.width : box.height);
+  return buildDeterministicRasterPdf({
+    png,
+    icc: metadata.icc,
+    widthPixels: metadata.width,
+    heightPixels: metadata.height,
+    pageWidthPoints: fullWidth * 72 * policy.outputScale,
+    pageHeightPoints: fullHeight * 72 * policy.outputScale,
+    bleedPoints: 5 * 72 * policy.outputScale,
+    title: `${section.sectionId} - TENTH SCALE`,
+    subject: `1:10 drawing scale; enlarge to 1000 percent. Full-size print ${fullWidth} x ${fullHeight} inches including 5 inch bleed per edge.`,
+    creator: "DesignProAI PanelProFileOutput",
+    codes: {
+      pngInvalid: "panelprofile_pdf_png_invalid",
+      rgbRequired: "panelprofile_pdf_rgb_required",
+      iccRequired: "panelprofile_pdf_icc_required",
+      geometryInvalid: "panelprofile_pdf_geometry_invalid",
+    },
   });
-  parts.push(Buffer.from(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((value) => `${String(value).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 7 0 R >>\nstartxref\n${offset}\n%%EOF\n`));
-  return Buffer.concat(parts);
 }
 
 async function writeArtifact(options, request, name, bytes, mimeType, role, pieceId, metadata = {}) {

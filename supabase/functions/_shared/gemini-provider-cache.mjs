@@ -207,20 +207,71 @@ export async function authorizeAtlasProviderRequest(supabase, providerRequest, o
   return { ...identity, parentAtlasRevisionId: data.parent_atlas_revision_id ?? null, revisionContextHash: data.revision_context_hash ?? null };
 }
 
+// ABSENT IS NOT AN ERROR, AND EVERY FIRST REQUEST DEPENDS ON THAT (2026-09-19).
+//
+// The first thing runDurableImageProviderRequest does is read `claim.json`,
+// which on a fresh request does not exist. If that read is read as a FAILURE
+// rather than as "nothing there yet", the very first attempt of every request
+// dies -- which is what `provider_cache_read_failed` on canary 35470167524 looks
+// like from the outside.
+//
+// The shapes below are the same fact reported differently, and which one a caller
+// sees depends on the storage-js version it happens to import: a numeric
+// `status`, a string `statusCode`, an S3 `NoSuchKey`, a bare message, or -- the
+// one that slipped through -- the whole error body JSON-encoded INTO the message
+// (`{"statusCode":"404","error":"not_found","message":"Object not found"}`),
+// which carries no top-level status at all and which the old anchored regex could
+// never have matched.
+//
+// It stays a NARROW predicate: only 404/not-found is absence. A 401, 403, 429 or
+// 5xx must still throw, because silently reading "you may not read this" as
+// "there is nothing here" would let a second worker reserve the same claim and
+// mint a duplicate PAID image.
 function isMissing(error) {
-  return Number(error?.statusCode ?? error?.status) === 404
-    || ['NoSuchKey', 'not_found'].includes(error?.code)
-    || /^(?:Object not found|The resource was not found|Not found)$/i.test(String(error?.message || ''));
+  if (!error) return false;
+  const embedded = (() => {
+    const text = String(error.message || '');
+    if (!text.trim().startsWith('{')) return null;
+    try { return JSON.parse(text); } catch { return null; }
+  })();
+  const statuses = [error.statusCode, error.status, embedded?.statusCode, embedded?.status]
+    .map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  if (statuses.includes(404)) return true;
+  if (['NoSuchKey', 'not_found'].includes(error.code) || ['NoSuchKey', 'not_found'].includes(embedded?.error)) return true;
+  // OBJECT-absence wording only, matched as a substring because clients wrap it
+  // in surrounding prose. A bare "not found" is deliberately NOT here: "Bucket
+  // not found" is a configuration failure, and reading it as "there is nothing
+  // at this path" would let a misconfigured worker reserve a claim and buy an
+  // image. Every genuine object miss carries a 404, a not_found/NoSuchKey code,
+  // or one of these three phrases.
+  const message = String(embedded?.message || error.message || '');
+  return /Object not found|The resource was not found|The specified key does not exist/i.test(message);
+}
+
+// A READ THAT FAILS MUST SAY WHAT FAILED (2026-09-19, live canary 35470167524).
+// `production-panel-proof` returned `provider_cache_read_failed` on the very
+// first read of claim.json and the whole three-zone route failed over to
+// six-surface. The code names the symptom and the cause was discarded by a bare
+// `catch {}`, so the only way to learn anything was another live run. The
+// message stays EXACTLY the code -- every caller and test matches on it -- and
+// the reason rides alongside, so the next failure is diagnosable from its own
+// receipt. It carries a storage error string and an object path, never a
+// credential.
+function withCacheReason(error, path, cause) {
+  error.cacheReadPath = String(path || '');
+  error.cacheReadReason = String(cause?.message || cause?.error || cause || '').slice(0, 300);
+  error.cacheReadStatus = cause?.statusCode ?? cause?.status ?? null;
+  return error;
 }
 
 async function readBytes(bucket, path, maximum = MAX_RESPONSE_BYTES) {
   let downloaded;
   try { downloaded = await bucket.download(path); }
-  catch { throw new GeminiProviderError('provider_cache_read_failed', 503); }
+  catch (cause) { throw withCacheReason(new GeminiProviderError('provider_cache_read_failed', 503), path, cause); }
   const { data, error } = downloaded;
   if (error) {
     if (isMissing(error)) return null;
-    throw new GeminiProviderError('provider_cache_read_failed', 503);
+    throw withCacheReason(new GeminiProviderError('provider_cache_read_failed', 503), path, error);
   }
   if (!data || (Number.isFinite(data.size) && data.size > maximum)) throw new GeminiProviderError('provider_cache_invalid', 409);
   const bytes = new Uint8Array(await data.arrayBuffer());

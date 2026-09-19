@@ -4785,14 +4785,27 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // so the clean base was kept: that distinction is the difference between
       // "we never tried" and "we tried and the result was not printable", and
       // conflating them is how a silent regression reads as a clean run.
+      //
+      // `skipped` IS THE FOURTH STATE, AND LEAVING IT OFF MADE A CORRECT RUN
+      // READ AS A BROKEN ONE (live canary 35470167524). Call 1 authored its own
+      // lettering, so the composite was deliberately skipped -- compositing
+      // would print the company name twice -- and the skip reason was set on
+      // `elementLayer` and then NOT projected here. JSONB drops undefined keys,
+      // so the stored receipt was `{applied: [], changed: false}`: no `refused`,
+      // no explanation, and indistinguishable from an unexplained no-op. The
+      // canary duly reported a healthy run as "refused back to Layer 0 -- null".
+      // A receipt that cannot say why it did nothing is the exact failure this
+      // block's own comment warns about.
       elementGraph: elementLayer ? {
         contract: ELEMENT_LOCKUP_CONTRACT,
         applied: elementLayer.applied,
         changed: elementLayer.changed,
-        refused: elementLayer.refused,
-        cleanMasterHash: elementLayer.cleanMasterHash,
-        runId: elementLayer.runId,
-        elementGraphMs: elementLayer.elementGraphMs,
+        refused: elementLayer.refused ?? null,
+        skipped: elementLayer.skipped ?? null,
+        baseLetteringBands: elementLayer.baseLetteringBands ?? null,
+        cleanMasterHash: elementLayer.cleanMasterHash ?? null,
+        runId: elementLayer.runId ?? null,
+        elementGraphMs: elementLayer.elementGraphMs ?? null,
       } : null,
       // The optical resolution Gemini actually delivered, before the canvas
       // resize. The master is always 4096 because it is filled to it, so

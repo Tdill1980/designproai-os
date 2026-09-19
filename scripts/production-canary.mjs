@@ -517,7 +517,7 @@ async function waitForProduction(operator, operatorId, runId, designId) {
 //
 // The remote step tars the output directory, base64s it to a single line and
 // the runner decodes that line. A finished production run is ~5 GB -- six
-// Topaz masters at 130-343 MB each, eighteen print outputs, and the pack ZIP
+// Topaz masters at 130-343 MB each, twenty-four print outputs, and the pack ZIP
 // -- and pushing that through one base64 line is what produced
 // "canary failed: data is too long". The run had succeeded; only the courier
 // failed.
@@ -724,7 +724,8 @@ function assertOutputSet() {
       && verifiedCount("entice", "panel") === 6
       && verifiedCount("production", "flat-proof") === 1
       && verifiedCount("production", "upscaled-panel") === 6
-      && verifiedCount("production", "output") === 18
+      // Six surfaces x FOUR formats. PDF joined the paid set on 2026-09-19.
+      && verifiedCount("production", "output") === 24
       && verifiedCount("production", "zip") === 1
       && verifiedCount("production", "wrapbox-manifest") === 1,
     productionFlatProofExactCopy,
@@ -734,7 +735,7 @@ function assertOutputSet() {
     checks.enticePanels === 6 &&
     checks.productionFlatProofs === 1 &&
     checks.productionUpscaledPanels === 6 &&
-    checks.productionOutputs === 18 &&
+    checks.productionOutputs === 24 &&
     checks.productionZip === 1 &&
     checks.productionWrapboxManifest === 1 &&
     checks.requiredHashesVerified &&
@@ -1047,9 +1048,19 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   //   null          = never ran            -> a BUG on a branded brief
   //   changed:true  = composited           -> what we are proving
   //   changed:false + refused              -> ran, its sheet failed re-validation
+  //   changed:false + skipped              -> Call 1 authored its own lettering
   //
-  // `refused` is reported rather than thrown: Layer 0 survived by design and the
-  // owner judges that sheet on pixels. Silence is what is forbidden.
+  // THE FOURTH STATE COST A CANARY ROUND-TRIP (35470167524). `skipped` is set
+  // when the lettering reader LOCATED bands on the driver panel, so compositing
+  // would print the company name twice -- a correct, wanted decision. This
+  // canary had no branch for it and reported the healthy run as "refused back to
+  // Layer 0 -- null", because the receipt projection dropped the reason too.
+  //
+  // `refused` and `skipped` are both reported rather than thrown: Layer 0 carries
+  // the branding in the skip case, and survived by design in the refusal case,
+  // and the owner judges that sheet on pixels. What IS thrown is `changed: false`
+  // with NEITHER -- nothing placed, no reason given, on a brief that names the
+  // company. That is the silent no-op the whole block exists to convict.
   const elementGraph = atlasRow.metadata?.elementGraph;
   const declaredBranding = Boolean(COMPANY_NAME || COMPANY_PHONE || COMPANY_WEBSITE);
   if (declaredBranding) {
@@ -1071,9 +1082,20 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
             + `surfaces = ${JSON.stringify([...surfaces])}`);
         }
       }
-    } else {
+    } else if (elementGraph.refused) {
       step(`WARNING: the element graph ran and its sheet was refused back to Layer 0 -- `
-        + `${JSON.stringify(elementGraph.refused || null).slice(0, 300)}`);
+        + `${JSON.stringify(elementGraph.refused).slice(0, 300)}`);
+    } else if (elementGraph.skipped) {
+      // Not a defect: the base already carries the lettering, so Layer 1 would
+      // double it. Reported, never silent, because "no composite" and "no
+      // company name" look identical from a slot count.
+      step(`the element composite was skipped (${elementGraph.skipped}); Call 1 authored the lettering itself `
+        + `(${elementGraph.baseLetteringBands ?? "?"} band(s) located on the driver panel), so Layer 0 already carries the company name`);
+    } else {
+      throw new Error("the element graph placed nothing and gave no reason on a brief that declares a company name: "
+        + `metadata.elementGraph = ${JSON.stringify(elementGraph).slice(0, 300)}. `
+        + "changed:false with neither `refused` nor `skipped` is the silent no-op -- "
+        + "with the clean base on it means this wrap carries no company name.");
     }
   }
   const geometryAuthority = atlasRow.metadata?.geometryAuthority || {};
@@ -1122,11 +1144,11 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (Number.isFinite(resolvedFlankIn) && resolvedFlankIn > 0) {
     // Make + model family, NOT year: the catalog has no row covering 2022 for
     // this truck (status-board item 19), so a year-exact lookup checks nothing.
-    const family = String(CANARY_MODEL || "").split(/[\s,]+/).filter(Boolean)[0] || "";
+    const family = String(VEHICLE.model || "").split(/[\s,]+/).filter(Boolean)[0] || "";
     const { data: catalogRows } = await service
       .from("vehicle_dimensions")
       .select("model,year_range,side_width")
-      .ilike("make", String(CANARY_MAKE || ""))
+      .ilike("make", String(VEHICLE.make || ""))
       .ilike("model", `%${family}%`)
       .limit(200);
     const candidates = (catalogRows || [])
@@ -1135,7 +1157,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     if (!candidates.length) {
       // Legitimate: grounded estimation for a vehicle the catalog has never
       // seen. Status-board item 19 requires reporting such runs as provisional.
-      step(`GENIE geometry is GROUNDED/PROVISIONAL: no ${CANARY_MAKE} ${family} rows to compare the resolved ${resolvedFlankIn}" flank against`);
+      step(`GENIE geometry is GROUNDED/PROVISIONAL: no ${VEHICLE.make} ${family} rows to compare the resolved ${resolvedFlankIn}" flank against`);
     } else {
       // "Matches a catalogued configuration" is within 2% -- trim differs from
       // the catalog by rounding and the bleed, never by a body style.
@@ -1144,7 +1166,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
       const smallest = Math.min(...widths);
       const largest = Math.max(...widths);
       if (!matched.length) {
-        throw new Error(`the resolved driver flank is ${resolvedFlankIn}" but no ${CANARY_MAKE} ${family} configuration in the GENIE `
+        throw new Error(`the resolved driver flank is ${resolvedFlankIn}" but no ${VEHICLE.make} ${family} configuration in the GENIE `
           + `catalog is that size (${smallest}"-${largest}" across ${candidates.length} rows). A flank that matches no catalogued `
           + `body style is a class-constant estimate for a vehicle the catalog knows — RULE 0.28.`);
       }
@@ -1152,7 +1174,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
       if (largest - smallest > smallest * 0.1) {
         // The spread is the finding. Loud, and never silent, because the run
         // otherwise looks identical whichever configuration it picked.
-        step(`WARNING: "${CANARY_MAKE} ${CANARY_MODEL}" matches ${candidates.length} catalogued configurations spanning `
+        step(`WARNING: "${VEHICLE.make} ${VEHICLE.model}" matches ${candidates.length} catalogued configurations spanning `
           + `${smallest}"-${largest}" (${(largest - smallest).toFixed(1)}" apart) and this run took ${resolvedFlankIn}". `
           + `The input contract carries no cab/bed configuration, so the customer cannot say which truck they own `
           + `— status-board item 18.`);

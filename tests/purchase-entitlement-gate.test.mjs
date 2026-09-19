@@ -206,7 +206,8 @@ test("QC scope per purchase state", () => {
 });
 
 test("output.verify proves the purchased set and only that", () => {
-  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 18);
+  // Six surfaces x FOUR formats. PDF joined the paid set on 2026-09-19.
+  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 24);
   assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
   assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
   assert.match(claimant, /output_unpurchased_present/,

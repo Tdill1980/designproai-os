@@ -37,10 +37,113 @@ work: *"Finish crop correctness, durable DAG execution, and immediate three-zone
 display."* — *"Keep the three-zone route off for customers until the repaired
 path passes a controlled real-generation test."*
 
-**FLAG STATE: `atlas_panel_proof: off` on the droplet** (contained at `e540012`,
-run 35460623843, `VERIFIED_WORKING`). Everything below is built and locked; none
-of it is on a customer's critical path until a controlled real generation with
-uploaded assets has passed.
+**FLAG STATE: `atlas_panel_proof: off` on the droplet.** Turned ON for the
+controlled test on `cc38d10` (deploy 35469741457) and turned back OFF the same
+hour (deploy 35470718826; flag banner read back off the deploy log:
+`DESIGNPRO_ATLAS_PANEL_PROOF=off`, `FLAGS_APPLIED`), because the controlled test
+FAILED. Everything below is built and locked; none of it is on a customer's
+critical path.
+
+### THE CONTROLLED REAL GENERATION RAN, AND THE THREE-ZONE ROUTE FAILED (canary 35470167524, 2026-09-19)
+
+Generation `774eabe2`, request `dcd2b710`, revision `58d63fde`, on the validated
+2022 F250 Crew Cab with a real uploaded customer logo. **The edge refused the one
+image request and the route never produced a sheet:**
+
+```
+proof.sheet     failed   flat_atlas_panel_proof_refused
+                         production-panel-proof failed (HTTP 500): provider_cache_read_failed
+proof.assemble  pending  never claimed
+run             failed   flat_atlas_panel_proof_refused
+```
+
+**Everything AROUND the failure behaved exactly as built, and that is the one
+real result of the run.** The DAG failed its billable node non-retryably, left
+the deterministic node unclaimed rather than running it against nothing, failed
+the run once, and threw `PanelProofRefusal` — so RULE 0.38's fail-over carried the
+request to six-surface and **the customer got a finished design** rather than
+nothing (`authoringTopology: six-surface`, `authoringFailover.from: panel-proof`,
+`attempts: 1`). The logo staged and validated at
+`users/<owner>/revisions/<gen>/inputs/logo/<sha256>.png`. One contract's budget,
+then the other's; nothing double-charged.
+
+**The cause was NOT located from that run, because the error threw its cause
+away.** `readBytes` in `gemini-provider-cache.mjs` was `catch { throw new
+GeminiProviderError('provider_cache_read_failed', 503); }` — a bare catch over
+the FIRST read of `claim.json`, so a live run yielded only the label. Three
+changes, and the first two are the durable ones:
+
+1. **A read that fails now says what failed.** `cacheReadPath`,
+   `cacheReadReason` and `cacheReadStatus` ride the error; the function's outer
+   catch prints them and keeps the `GeminiProviderError`'s own status instead of
+   flattening 503 to 500 (503 is retryable, 500 is not, and the runtime reads
+   that distinction). The message stays EXACTLY the code, because every caller
+   and lock matches on it.
+2. **`isMissing` recognises absence in every shape a storage client reports it.**
+   The first thing `runDurableImageProviderRequest` does is read a `claim.json`
+   that on a fresh request does not exist, so reading that miss as a FAILURE
+   kills the first attempt of every request. The shape that slipped through has
+   no top-level status at all — the whole error body JSON-encoded INTO the
+   message — and the old predicate anchored its regex, so it could never match.
+   It stays NARROW: a 401/403/429/5xx still throws, because reading "you may not
+   read this" as "there is nothing here" would let a second worker reserve the
+   same claim and mint a duplicate PAID image, and "Bucket not found" is a
+   configuration failure rather than an absent object.
+3. **`production-panel-proof` pinned `@supabase/supabase-js@2.57.4` while the two
+   functions that use this module successfully — `design-panel-ai-generate` and
+   `persona-photographer-render` — both import `@2`.** That is the single
+   difference at the seam that failed, and it matters precisely because the cache
+   reasons about the error SHAPE storage-js returns. Aligned. **Keep those three
+   imports together.**
+
+**THE FIXTURE WAS LAXER THAN THE REAL CLIENT — the sixth time in this file.**
+`bucketFixture` modelled exactly one miss shape, the one the old regex happened
+to match. `tests/gemini-provider-cache.test.mjs` now drives the real seam against
+seven observed miss shapes and five hard-failure shapes (12 new cases).
+
+Do not turn the flag back on without a canary that reaches `proof.assemble`.
+
+### THE ELEMENT-GRAPH RECEIPT HAD A FOURTH STATE AND DROPPED IT, SO A HEALTHY RUN READ AS A BROKEN ONE
+
+The same canary reported *"WARNING: the element graph ran and its sheet was
+refused back to Layer 0 -- null"*. **That was false.** The stored receipt was
+`{applied: [], changed: false}` and the run was correct: the lettering reader
+LOCATED bands on the driver panel, so `authorElements` deliberately skipped the
+composite — compositing would have printed the company name twice — and set
+`skipped: "base_already_carries_lettering"` plus `baseLetteringBands` on
+`elementLayer`. **`metadata.elementGraph` projected neither field, and JSONB drops
+undefined keys**, so the receipt came out with no `refused` and no reason: byte
+for byte the shape this file called impossible.
+
+`metadata.elementGraph` therefore has FOUR states, and the projection now carries
+all of them:
+
+| | |
+|---|---|
+| `null` | never ran — flag off, migration absent, worker without `authorElements`. **A BUG on a branded brief** |
+| `changed: true` | composited |
+| `changed: false` + `refused` | ran, its sheet failed re-validation, clean base kept |
+| `changed: false` + `skipped` | **Call 1 authored its own lettering; Layer 0 already carries the company name** |
+
+The canary reports the skip as a skip and now THROWS on `changed: false` with
+neither — nothing placed, no reason given, on a brief that names the company.
+That is the silent no-op the convict exists for, and it was the one state the
+convict could not see.
+
+**A receipt that cannot say why it did nothing is the same defect as a receipt
+that claims what it never established** (RULE 0.36's `cc382c3c`). Add a state to
+`elementLayer` without adding it to the projection and the next session reads a
+good run as a regression — which is exactly what happened.
+
+### THE CANARY'S GENIE-AMBIGUITY BLOCK COULD NEVER HAVE RUN
+
+`CANARY_MODEL` and `CANARY_MAKE` are the workflow's env var names, not
+identifiers in `scripts/production-canary.mjs` — which reads `VEHICLE.make` /
+`VEHICLE.model`. The F-series configuration-spread block added on 2026-09-18
+referenced the env names, so the first run to reach it died on
+`ReferenceError: CANARY_MODEL is not defined` **after** Calls 1-7 had completed,
+throwing away a finished generation at the reporting step. A plain ReferenceError
+cannot ever have passed: the block had never executed once.
 
 ### Five defects, all of them live, all found by measurement
 
@@ -171,11 +274,74 @@ production pack, which is where the cut-contour builder actually lives.
   `logos.extract` (Call 10).** Today Zone 2 replaces a white-box paint and Zone 3
   a keyed-out lift; the model draws them, which is better than either, but the
   two Calls still own those artifacts downstream.
-- **PDF delivery is still absent from the paid contract.** `output-qc.cjs`'s
-  `FORMATS` is `["png","tiff","eps"]`; `runtime/panelpro-file-output-contract.cjs`
-  exists and is not wired in.
+- ~~PDF delivery is absent from the paid contract.~~ **DONE 2026-09-19 — see below.**
 - **`parseCustomerIntake` is a SECOND Flash call on the customer's critical path**
   inside Call 1. It is not timed separately and it is the next latency lever.
+
+### PDF IS THE FOURTH PAID FORMAT: SIX SURFACES x FOUR FILES = 24 (2026-09-19)
+
+**What was measured.** The delivered production pack carried PNG, TIFF and EPS
+and **no PDF at all** — `output-qc.cjs`'s `FORMATS` was `["png","tiff","eps"]`,
+`complete_designpro_stage` asserted eighteen files, and the ZIP allowlist admitted
+only those three extensions under `outputs/`. Meanwhile a proven deterministic
+print-PDF writer had existed since 2026-09-08 (`productionPdf`, in
+`runtime/panelpro-file-output-render.cjs`) and was reachable **only** through the
+manual PanelProFileOutput attachment flow: a separate reviewed run that a QC
+member with `can_preflight` attaches by hand, which no DesignPro production pack
+ever starts. So a shop whose RIP wants a PDF received none, and the writer that
+could have made one sat unreachable from the paid path.
+
+**ONE writer, not two.** The structure moved to `runtime/print-pdf.cjs`
+(`buildDeterministicRasterPdf`) and BOTH callers execute it — RULE 0.21 forbids a
+second producer of an artifact class by name, and the two documents are the same
+shape: one page at an exact printed size in points, MediaBox == BleedBox, TrimBox
+inset by the bleed, and one image whose bytes are **the PNG's own lossless RGB
+deflate stream lifted out of its IDAT chunks**. No recompression, so the four
+files a shop receives are provably one artwork rather than four encodes that can
+drift. The panelprofile caller keeps its own geometry and its scale-label wording;
+its 13 tests pass unchanged.
+
+**It is a REAL format, not a soft extra.** Every count is exact — `FORMATS`,
+`requiredOutputFiles` (18 → 24), and the six sites in the live
+`complete_designpro_stage` output arm — so a run that cannot write a PDF fails
+closed rather than delivering a quietly smaller pack. `verifyPdf` reads the
+cross-reference table rather than searching for strings (an offset that does not
+point at the object it claims is a failure, which is what lets a RIP open the
+file and what a substring search would never notice), checks the page against
+THIS surface's 1:10 point geometry, and inflates the image stream to
+`height x (1 + width x 3)` — `/Predictor 15` is PNG filtering, so one filter byte
+per row — proving the embedded bytes are the whole raster and not a prefix.
+
+**SHIP ORDER: `20260919230000` lands before the runtime that emits 24.** There is
+no soft path. A 24-file receipt against an 18-file gate raises
+`verified_output_artifact_ledger_mismatch` AFTER `output.build` has rendered,
+uploaded and hashed twenty-four files — the same "the nodes did all the work and
+then could not be finished" shape this file records for `authorElements` and
+`proof.assemble`. The reverse order is safe: an 18-file receipt against a 24-file
+gate also raises, but before any bytes exist.
+
+**`POSITION(x IN y)` CANNOT BE SCHEMA-QUALIFIED — the `pg_catalog.coalesce`
+lesson, one migration later.** The patched-body self-check was first written as
+`pg_catalog.position($chk$...$chk$ IN v_definition)`. POSITION is SQL *grammar*,
+like COALESCE and NULLIF, so the parser rejects a qualifier: `syntax error at or
+near "v_definition"`. `strpos(string, substring)` IS a function, qualifies
+normally, and takes its arguments the other way round. **PGlite caught it** —
+`tests/designpro-final-proof-join-db.test.mjs` replays every
+`complete_designpro_stage` patch in order, so a new patch must be added to its
+`precedentFiles` or the fixture keeps proving a gate production no longer has.
+Add `strpos`/`position` to the grep in the PL/pgSQL section of this file.
+
+Locked by `tests/output-pdf-format.test.mjs` (nine cases: the exact 24-file
+count, the IDAT-passthrough identity, the accepted document, a forged MediaBox, a
+wrong TrimBox, a corrupted xref offset, and the writer's own two refusals),
+`source-tests/runtime/output-qc.test.mjs` (the real verifier over a 24-artifact
+set) and `tests/designpro-final-proof-join-db.test.mjs` (the migration on
+PGlite). `runtime/print-pdf.cjs` is in `ops/release-files.txt` — both callers
+require it, so omitting it kills the claimant at require time.
+
+**Still not proven:** no paid run has produced 24 files on production. The
+canary's PASS note and its two output-count assertions now say twenty-four and
+will be exercised the first time a paid lane runs.
 
 ## 🅰️ v28 — THE CLEAN BASE IS LIVE ON SIX-SURFACE (deployed 2026-09-18, NOT yet judged on pixels)
 

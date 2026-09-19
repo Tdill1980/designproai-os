@@ -11,6 +11,8 @@ const {
   FIXED_ZIP_DATE,
   FIXED_ZIP_MODE,
   FORMATS,
+  OUTPUT_SCALE,
+  PDF_BLEED_POINTS,
   SURFACES,
   buildDeterministicRasterEps,
   buildDeterministicZip,
@@ -20,6 +22,7 @@ const {
   sha256,
   verifyProductionOutputSet,
 } = require("../../runtime/output-qc.cjs");
+const { buildDeterministicRasterPdf } = require("../../runtime/print-pdf.cjs");
 
 const trimWidthInches = 0.02;
 const trimHeightInches = 0.04;
@@ -102,17 +105,29 @@ before(async () => {
     rgb[offset + 2] = 194;
   }
   const eps = buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidthInches, trimHeightInches });
-  formatBytes = { png, tiff, eps };
+  // The fourth paid format. Built from the SAME print PNG, because that is what
+  // output.build does -- the PDF embeds that PNG's own deflate stream, so a
+  // fixture that re-encoded the pixels would not be exercising the real seam.
+  const pdf = buildDeterministicRasterPdf({
+    png,
+    icc: (await sharp(png).metadata()).icc,
+    widthPixels, heightPixels,
+    pageWidthPoints: (trimWidthInches + 10) * OUTPUT_SCALE * 72,
+    pageHeightPoints: (trimHeightInches + 10) * OUTPUT_SCALE * 72,
+    bleedPoints: PDF_BLEED_POINTS,
+    title: "FIXTURE - TENTH SCALE", subject: "1:10 drawing scale.", creator: "DesignProAI",
+  });
+  formatBytes = { png, tiff, eps, pdf };
   validArtifacts = SURFACES.flatMap((surfaceKey) => FORMATS.map((format) => artifact(surfaceKey, format, formatBytes[format])));
 });
 
-test("accepts exactly six surfaces times PNG/TIFF/EPS and returns a canonical stable receipt", async () => {
+test("accepts exactly six surfaces times PNG/TIFF/EPS/PDF and returns a canonical stable receipt", async () => {
   const first = await verifyProductionOutputSet({ artifacts: validArtifacts, dimensionManifest });
   const second = await verifyProductionOutputSet({ artifacts: [...validArtifacts].reverse(), dimensionManifest });
   assert.equal(first.verified, true);
-  assert.equal(first.fileCount, 18);
+  assert.equal(first.fileCount, 24);
   assert.deepEqual(first.exactSurfaceSet, ["driver", "passenger", "hood", "roof", "front", "rear"]);
-  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps"]);
+  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps", "pdf"]);
   assert.equal(first.outputSetHash, second.outputSetHash);
   assert.deepEqual(first.files.map(({ surfaceKey, format }) => `${surfaceKey}:${format}`), SURFACES.flatMap((surface) => FORMATS.map((format) => `${surface}:${format}`)));
   assert.ok(first.files.every((file) => file.widthPixels === widthPixels && file.heightPixels === heightPixels && file.dpi === 1500 && file.colorSpace === "sRGB"));
@@ -122,7 +137,7 @@ test("supports server-side byte loading without trusting artifact metadata", asy
   const rows = validArtifacts.map(({ bytes, ...row }) => row);
   const byPath = new Map(validArtifacts.map((row) => [row.storagePath, row.bytes]));
   const receipt = await verifyProductionOutputSet({ artifacts: rows, dimensionManifest, readBytes: async (row) => byPath.get(row.storagePath) });
-  assert.equal(receipt.fileCount, 18);
+  assert.equal(receipt.fileCount, 24);
 });
 
 test("rejects missing and duplicate surface/format identities", async () => {

@@ -28,6 +28,11 @@ const precedentFiles=[
   '20260829010000_designpro_call8_proof_uses_design_time_geometry.sql',
   '20260906121000_designpro_persist_call12_receipt.sql',
   '20260906143000_designpro_stamp_certificate_and_late_fulfillment.sql',
+  // PDF is the fourth paid format: the output arm now counts 24, not 18. This
+  // file replays every complete_designpro_stage patch in order, so the new
+  // migration has to be here or the fixture proves an eighteen-file gate that no
+  // longer exists on production.
+  '20260919230000_designpro_output_pdf_is_a_paid_format.sql',
 ];
 const precedentBlocks=[];
 for(const file of precedentFiles) {
@@ -111,7 +116,7 @@ async function fixture(db,{logoOnly=false,seventh='closeup'}={}) {
     callOnePanels:panels,renderAssets:Object.fromEntries(views.map(({viewKey,...value})=>[viewKey,value]))};
   const fulfillment={contractVersion:'designpro.fulfillment-binding.v1',revisionId,bindingHash:hash('fulfillment'),orderNumber:'ORDER-1',delivery:{orderNumber:'ORDER-1'}};
   const authorized={products:logoOnly?['logo_pack']:['print_pack_entitlement'],productionPackAuthorized:!logoOnly,
-    logoPackAuthorized:logoOnly,requiredOutputFiles:logoOnly?0:18,zipIncludesSourceViews:!logoOnly};
+    logoPackAuthorized:logoOnly,requiredOutputFiles:logoOnly?0:24,zipIncludesSourceViews:!logoOnly};
   const dimensionManifest={contract:'designpro.genie-dimension-manifest.v1',genieVerified:true,totalSqFt:213.54,
     expectedSurfaces:panels.map(p=>({surfaceKey:p.surfaceKey,widthInches:p.trimWidthIn,heightInches:p.trimHeightIn}))};
   for(const [id,type] of [[runId,'designpro.production_pack'],[enticeId,'designpro.entice_pack']]) {
@@ -145,7 +150,7 @@ async function fixture(db,{logoOnly=false,seventh='closeup'}={}) {
     manifestHash,sourceViews:views,sourceViewSetHash:hashJson(views),sevenViewsVerified:true,
     viewBinding:{contract:'designpro.frozen-proof-join.v1',sourceReceiptHash:hashJson(frozen)}};
   const files=[];
-  if(!logoOnly)for(const surfaceKey of surfaces)for(const format of ['png','tiff','eps']) {
+  if(!logoOnly)for(const surfaceKey of surfaces)for(const format of ['png','tiff','eps','pdf']) {
     const file={surfaceKey,format,contentHash:hash(`output-${surfaceKey}-${format}`),byteSize:456,
       storagePath:`designpro/${tenant}/${runId}/output/${surfaceKey}.${format}`,dpi:1500,outputScale:0.1,
       fullScaleBleedInches:5,colorSpace:'sRGB',widthPixels:16500,heightPixels:9000};
@@ -153,7 +158,7 @@ async function fixture(db,{logoOnly=false,seventh='closeup'}={}) {
   }
   const output=logoOnly?{verified:true,receiptKind:'output.verified',authorizedAssetManifest:authorized,exactSurfaceFormatCount:0,notApplicable:['output'],proofJoin:null}
     :{verified:true,receiptKind:'output.verified',authorizedAssetManifest:authorized,proofJoin:join,contract:'designpro.output-verification.v1',
-      exactSurfaceSet:surfaces,exactFormatSet:['png','tiff','eps'],fileCount:18,fullScalePixelsPerInch:150,fileDpi:1500,outputScale:0.1,
+      exactSurfaceSet:surfaces,exactFormatSet:['png','tiff','eps','pdf'],fileCount:24,fullScalePixelsPerInch:150,fileDpi:1500,outputScale:0.1,
       fullScaleBleedInchesPerEdge:5,files,outputHashes:files.map(f=>f.contentHash)};
   const identity={workflowRunId:runId,revisionId,enticePackId:enticeId,dimensionManifestId:manifestId,
     sourceContractHash:hash('source'),manifestHash,artifactSetHash:hash('artifacts')};

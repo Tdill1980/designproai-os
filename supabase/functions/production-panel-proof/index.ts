@@ -42,7 +42,14 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+// The SAME client the other two provider-cache callers use
+// (design-panel-ai-generate, persona-photographer-render). This was pinned to
+// 2.57.4 and those two are not, which made it the one difference at the seam
+// that failed on canary 35470167524: a storage download whose miss the cache
+// module must read as "absent" rather than as an error. Keep these three
+// aligned -- gemini-provider-cache.mjs reasons about the error SHAPE storage-js
+// returns.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { getGeminiKey, hasGeminiKey } from "../_shared/gemini-key-pool.ts";
 import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts";
@@ -692,7 +699,18 @@ serve(async (req) => {
         .filter((p: Record<string, unknown>) => typeof p?.thoughtSignature === "string").length,
     });
   } catch (error) {
-    return json({ error: String((error as Error)?.message || error), requestId }, 500);
+    // The code alone sent one canary round-trip to learn nothing (35470167524:
+    // `provider_cache_read_failed`, cause discarded). A provider-cache read
+    // failure now reports the storage reason and the path it was reading, so the
+    // runtime's failover receipt records a diagnosable sentence rather than a
+    // label. A GeminiProviderError also keeps its own status instead of being
+    // flattened to 500, because 503 is retryable and 500 is not.
+    const cause = error as Error & { code?: string; status?: number; cacheReadPath?: string; cacheReadReason?: string; cacheReadStatus?: unknown };
+    const detail = cause?.cacheReadReason
+      ? `${cause.message}: ${cause.cacheReadReason} (status ${String(cause.cacheReadStatus ?? "?")}, path ${cause.cacheReadPath})`
+      : String(cause?.message || error);
+    const status = Number.isInteger(cause?.status) && cause.status! >= 400 && cause.status! < 600 ? cause.status! : 500;
+    return json({ error: detail, code: cause?.code ?? null, requestId }, status);
   }
 });
 
