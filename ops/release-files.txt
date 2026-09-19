@@ -103,6 +103,8 @@ runtime/atlas-call1-graph.cjs
 runtime/atlas-panel-proof-topology.cjs
 runtime/atlas-proof-container-template.cjs
 runtime/atlas-proof-panels.cjs
+runtime/atlas-panel-proof-contract.cjs
+runtime/atlas-proof-panel-locator.cjs
 runtime/atlas-typeset-layer.cjs
 runtime/atlas-logo-prepare.cjs
 runtime/atlas-element-lockup.cjs

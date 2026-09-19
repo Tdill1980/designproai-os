@@ -15,8 +15,7 @@
  *   1. the DAG runs in order and the cut spends ZERO model calls;
  *   2. the sheet crosses the node boundary as an IDENTITY (path + hash + size),
  *      never as bytes — RULE 0.39;
- *   3. a refusal is TYPED, so flat-first-atlas fails over to six-surface rather
- *      than leaving the customer with nothing — RULE 0.38;
+ *   3. a refusal is typed, recorded, and terminal; no substitute generation;
  *   4. an unfilled panel cell is a refusal, because white is not dark and every
  *      hole predicate in this repo is a darkness test (the efca5e03 lesson);
  *   5. the PASSENGER IS NOT MIRRORED. Its cell is authored, and mirroring an
@@ -124,7 +123,7 @@ function memoryStore() {
 }
 
 const AUTHOR_ARGS = {
-  manifest: MANIFEST, sharp, assembleFinishedMaster,
+  manifest: MANIFEST, sharp, assembleFinishedMaster, store: memoryStore(),
   input: {
     companyName: "Bright Smiles Dental", phone: "(520) 555-0192", website: "brightsmiles.com",
     brief: "a clean blue wave wrap for a dental practice",
@@ -253,56 +252,27 @@ test("an UNFILLED panel cell is refused, because white is not dark", async () =>
     () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge }),
     (error) => {
       assert.equal(error.code, "flat_atlas_panel_proof_refused");
-      assert.match(error.reason, /unfilled panel cells: rear=/);
+      assert.match(error.reason, /atlas_proof_panels_zone1:panel_count:5!=6/);
       return true;
     });
 });
 
-test("a refusal is TYPED, and flat-first-atlas fails it over to six-surface — RULE 0.38", () => {
+test("panel-proof refusals are recorded and terminal, without a substitute authoring route", () => {
   const error = new proof.PanelProofRefusal("the proof edge returned no sheet");
   assert.equal(error.code, "flat_atlas_panel_proof_refused");
-  // THE FAIL-OVER IS THE REASON THE FLAG IS SAFE TO FLIP. RULE 0.38 was written
-  // after field-first routing left a refused request with nothing behind it,
-  // because its fail-over was one-directional.
-  const branch = atlasSrc.slice(atlasSrc.indexOf("} else if (panelProof) {"));
-  assert.match(branch, /if \(cause\?\.code !== "flat_atlas_panel_proof_refused"\) throw cause;/,
-    "a FAULT must propagate; only a creative refusal changes contract");
-  assert.match(branch, /failOverToSixSurface\(\{[\s\S]{0,200}from: PANEL_PROOF_TOPOLOGY, to: "six-surface"/);
-
-  // AND THE REFUSAL IS RECORDED BEFORE IT HANDS OVER.
-  //
-  // Live 5772fcd5 (the first customer generation on this route): the sheet came
-  // back in 40 s, this branch refused it, failed over, and wrote NO ledger row —
-  // so the run read as four legacy refusals and the new engine's own verdict was
-  // invisible. The ledger exists because thirteen refused sheets once piled up
-  // that nobody could see while the gates refusing them were tuned blind, and
-  // returning before the shared refusal tail rebuilt that blind spot for the
-  // newest contract. ORDER MATTERS: the row has to be written before the
-  // hand-over returns, or the fail-over carries the request away from it.
+  const start = atlasSrc.indexOf("} else if (panelProof) {");
+  const end = atlasSrc.indexOf("generated = { bytes: proof.bytes", start);
+  const branch = atlasSrc.slice(start, end);
+  assert.doesNotMatch(branch, /failOverToSixSurface|authorPanelProofMaster\(/);
+  assert.match(branch, /designpro_atlas_call1_graph_unavailable/);
   const recordAt = branch.indexOf("recordAtlasRefusal(supabase, {");
-  const handOverAt = branch.indexOf("return failOverToSixSurface({");
-  assert.ok(recordAt > 0, "a panel-proof refusal must write a designpro_atlas_refusals row");
-  assert.ok(recordAt < handOverAt,
-    "the ledger row is written BEFORE the fail-over returns, or the refusal is lost");
-  // The row must name the sheet, or the verdict exists with no artifact to open —
-  // which is the state the ledger was built to end.
-  const rowBlock = branch.slice(recordAt, handOverAt);
-  assert.match(rowBlock, /topology: PANEL_PROOF_TOPOLOGY/);
+  const stopAt = branch.indexOf("throw refusal;");
+  assert.ok(recordAt > 0 && stopAt > recordAt);
+  assert.match(branch, /refusal\.retryable = false/);
   for (const field of ["storagePath", "sha256", "byteSize"]) {
-    assert.match(rowBlock, new RegExp(`${field}: cause\\.details`),
-      `the ledger row must carry the sheet's ${field} so the pixels can be judged`);
+    assert.ok(branch.slice(recordAt, stopAt).includes(`${field}: cause?.details?.sheet?`));
   }
-
-  // The refusal itself carries that identity — asserted on the real throw, not
-  // on the caller's hope that it is there.
-  const thrown = (() => {
-    try { proof.panelRowsFromManifest({ zones: [] }); } catch { /* not this one */ }
-    return new proof.PanelProofRefusal("x", { sheet: { storagePath: "p", contentHash: "h", byteSize: 1 } });
-  })();
-  assert.equal(thrown.details.sheet.storagePath, "p");
-  // And a gate refusal on the assembled sheet fails over too, rather than
-  // re-rolling a document that has already been asked for once.
-  assert.match(atlasSrc, /if \(heroDriver \|\| panelProof\) \{/);
+  assert.match(atlasSrc, /if \(panelProof\) \{[\s\S]{0,400}refusal\.retryable = false;[\s\S]{0,50}throw refusal;/);
 });
 
 test("THE PASSENGER IS NOT MIRRORED — its cell is authored", async () => {
@@ -346,14 +316,15 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // panels, and the blank panels are what PanelPro lays on a vehicle template.
   assert.equal(q.branded.length, 6);
   assert.equal(q.clean.length, 6);
-  assert.equal(q.cutGraphics.length, 5, "five cut-graphic slots, the container's own");
+  assert.equal(q.cutGraphics.length, 2, "original outlined brand and contact assets");
+  assert.ok(q.cutGraphics.every(a => a.vector && a.contentType === "image/svg+xml"));
   for (const panel of [...q.branded, ...q.clean]) {
     assert.ok(panel.rect && Number.isFinite(panel.fit), `${panel.surfaceKey} must carry its rect and fit`);
   }
   // The proof sheet's own identity is on the receipt, so "which sheet produced
   // this master" is a query rather than a storage-timestamp guess.
-  assert.equal(out.provenance.proofSha256, "a".repeat(64));
-  assert.equal(out.provenance.proofStoragePath, "atlas-panel-proof/a.jpg");
+  assert.notEqual(out.provenance.proofSha256, "a".repeat(64));
+  assert.equal(out.provenance.proofStoragePath, `atlas-panel-proof/quadrants/${out.provenance.proofSha256}.png`);
   // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
   // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
   // production's six from the assembled master and a second set nobody reads
@@ -393,7 +364,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
     // OUTPUTS; `atlas-call1-inputs/` is the allowlist the flatten reads from,
     // and a product artifact sitting there is one refactor away from being
     // attached to a customer's own generation as a teaching input.
-    assert.equal(panel.storagePath, `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
+    assert.equal(panel.storagePath, panel.vector ? `atlas-elements/${panel.contentHash}.svg` : `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
       `${where} must be addressed by its own hash`);
     assert.doesNotMatch(panel.storagePath, /^atlas-call1-inputs\//,
       `${where} is an output and must not live in the edge's input prefix`);
@@ -407,7 +378,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
       `${where}: the stored object does not hash to the hash on the receipt`);
     assert.equal(stored.bytes.length, panel.byteSize,
       `${where}: the receipt's byteSize is not the stored object's length`);
-    assert.equal(stored.contentType, "image/png");
+    assert.equal(stored.contentType, panel.vector ? "image/svg+xml" : "image/png");
   }
 
   // ELEVEN RECEIPT ENTRIES — six clean panels and five cut graphics — and one
@@ -424,7 +395,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
   // refuses a content-addressed path that already holds different bytes, exactly
   // as generation-store.cjs does.
   const entries = [...q.clean, ...q.cutGraphics];
-  assert.equal(entries.length, 11);
+  assert.equal(entries.length, 8);
   assert.equal(new Set(entries.map((p) => p.storagePath)).size,
     new Set(entries.map((p) => p.contentHash)).size,
     "one stored object per distinct content hash");
@@ -438,38 +409,26 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
   assert.ok(Number.isFinite(out.timings.quadrantStoreMs));
 });
 
-test("a quadrant that cannot be stored fails SOFT and never claims a path", async () => {
-  // RULE 0.15's blast radius: by this point Zone 1 is an accepted master with
-  // six cuttable panels. An optional quadrant may not destroy it — that is the
-  // same lesson as "Finishing is optional; it may never kill a generation",
-  // where one interrupted roof edit failed a whole recovered request.
-  //
-  // But it may not lie either. Both consumers (Call 11's de-logo, Call 10's
-  // logo extract) keep their existing behaviour, so a soft failure costs the old
-  // path and nothing more — which is only true if the receipt SAYS so.
-  const sheet = await paintedSheet();
-  const { callProofEdge } = edgeStub(sheet);
-
-  for (const [label, store] of [
-    ["no store at all", undefined],
-    ["a store that throws", { putImmutableBytes: async () => { throw new Error("bucket exploded"); } }],
-  ]) {
-    const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge });
-    assert.ok(out.contentHash, `${label}: the master must still be produced`);
-    const q = out.provenance.quadrants;
-    assert.equal(q.clean.length, 6);
-    assert.equal(q.cutGraphics.length, 5);
-    for (const panel of [...q.clean, ...q.cutGraphics]) {
-      assert.equal(panel.persisted, false, `${label}: must not report stored`);
-      assert.ok(panel.reason, `${label}: must say why`);
-      assert.equal(panel.storagePath, undefined,
-        `${label}: a path that was never written must not appear on the receipt`);
-      assert.equal(panel.contentHash, undefined,
-        `${label}: a content hash addresses stored bytes — there are none`);
-      // The measurements survive, because they are honest: the cut did happen.
-      assert.ok(panel.rect && Number.isFinite(panel.fit));
-    }
+test("mandatory quadrants refuse instead of publishing a partial proof", async () => {
+  const { callProofEdge } = edgeStub(await paintedSheet());
+  for (const store of [undefined, {
+    putImmutableBytes: async () => { throw new Error("bucket unavailable"); },
+  }]) {
+    await assert.rejects(
+      () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge }),
+      (error) => error.code === "flat_atlas_panel_proof_refused"
+        && /mandatory/.test(error.reason));
   }
+});
+
+test("a blank generated graphics band is replaced with original outlined assets", async () => {
+  const layout = container.containerLayout(container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)));
+  const { callProofEdge } = edgeStub(await paintedSheet({
+    empty: layout.zone3.map((cell) => `zone3:${cell.surfaceKey}`),
+  }));
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge });
+  assert.equal(out.provenance.quadrants.cutGraphics.length, 2);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "vector-originals");
 });
 
 test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {
@@ -832,4 +791,28 @@ test("a crop whose aspect disagrees with its zone is REFUSED, not stretched into
     () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge }),
     (err) => err.code === "flat_atlas_panel_proof_refused",
     "a sheet of the wrong shape must refuse rather than be stretched into the zones");
+});
+
+
+test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () => {
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><path fill="red" d="M0 0H60V40H0Z"/><path fill="blue" d="M60 0H120V40H60Z"/></svg>');
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const logoAsset = {storagePath:`users/test/revisions/test/inputs/logo/${contentHash}.svg`,contentHash,
+    byteSize:bytes.length,contentType:"image/svg+xml"};
+  const store = memoryStore();
+  const {callProofEdge,calls} = edgeStub(await paintedSheet());
+  const result = await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge,
+    input:{...AUTHOR_ARGS.input,logoAsset},downloadAsset:async identity => {
+      assert.equal(identity.contentHash,contentHash); return bytes;
+    }});
+  const original = result.provenance.quadrants.cutGraphics.find(a => a.role === "logo");
+  assert.equal(original.contentHash,contentHash);
+  assert.equal(original.storagePath,logoAsset.storagePath);
+  assert.equal(original.byteSize,bytes.length);
+  assert.equal(calls[0].separatedArtwork,true);
+  assert.equal(calls[0].customerAssets.length,0);
+  assert.ok(result.provenance.composition.placements.filter(p => p.role === "logo").length === 5);
+  const roof = MANIFEST.zones.find(z => z.surfaceKey === "roof").extraction;
+  const pixel = await sharp(result.bytes).extract({left:roof.x+Math.floor(roof.w/2),top:roof.y+Math.floor(roof.h/2),width:1,height:1}).removeAlpha().raw().toBuffer();
+  assert.deepEqual([...pixel],[15,118,110],"Zone 1 derives from green Zone 2, never blue generated Zone 1");
 });

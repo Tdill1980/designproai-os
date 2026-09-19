@@ -99,7 +99,8 @@ test("the head it feeds the proof is the persona, and the artboard tail is gone"
 
   // THE PERSONA SURVIVES THE CUT — these are the exact blocks that were missing
   // from the proof entirely, each measured in CLAUDE.md as proven direction.
-  assert.match(head, /senior vehicle-wrap designer/, "the persona identity");
+  assert.match(head, /senior graphic designer and vehicle-wrap specialist/, "the persona identity");
+  assert.match(head, /native Gemini 3 Pro Image design knowledge/, "native model design knowledge");
   assert.match(head, /built from layered elements/, "COMMERCIAL_DEPTH's build order");
   assert.match(head, /Translate anything the brief names into concrete design/, "the translation block");
   assert.match(head, /clean modern dental wrap, teal and white/, "the customer's own brief");

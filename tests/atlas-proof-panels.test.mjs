@@ -47,10 +47,15 @@ const F250 = parsePanelRows([
   'FRONT: 80" wide x 34" high', 'REAR: 78" wide x 44" high',
 ]);
 
-/** A sheet at the container's aspect, any size. */
-const sheet = (w, h) =>
-  sharp({ create: { width: w, height: h, channels: 3, background: { r: 30, g: 90, b: 50 } } })
-    .png().toBuffer();
+/** Distinct artwork rectangles on a page; a solid image has no panel boundaries. */
+async function sheet(w, h, manifest = TRANSIT, { shift = 0, missing = null } = {}) {
+  const layout = containerLayout(manifest);
+  const sx = w / layout.width, sy = h / layout.height;
+  const rects = ["zone1", "zone2", "zone3"].flatMap((zone) => layout[zone]
+    .filter((cell) => `${zone}:${cell.surfaceKey}` !== missing)
+    .map((cell) => `<rect x="${(cell.x + shift) * sx}" y="${cell.y * sy}" width="${cell.w * sx}" height="${cell.h * sy}" fill="#235a89"/>`));
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="white"/>${rects.join("")}</svg>`)).png().toBuffer();
+}
 
 test("all three quadrants come out: 6 branded, 6 clean, 5 cut graphics", async () => {
   const out = await cutProofPanels({ proofBytes: await sheet(3072, 2048), manifest: TRANSIT, sharp });
@@ -77,22 +82,27 @@ test("all three quadrants come out: 6 branded, 6 clean, 5 cut graphics", async (
   }
 });
 
-test("the rectangles are the container's OWN cells, scaled to the returned sheet", async () => {
-  // THE WHOLE POINT. If these ever disagree, the cutter has its own geometry
-  // and the drawing and the cut will drift apart silently.
+test("detected bounds follow shifted artwork; identity is not assigned from array order", async () => {
   const layout = containerLayout(TRANSIT);
-  const out = await cutProofPanels({ proofBytes: await sheet(3072, 2048), manifest: TRANSIT, sharp });
-
-  for (const zone of ["zone1", "zone2", "zone3"]) {
-    const cells = layout[zone];
-    const panels = out.panels.filter((p) => p.zone === zone);
-    assert.equal(panels.length, cells.length);
-    panels.forEach((panel, i) => {
-      assert.equal(panel.surfaceKey, cells[i].surfaceKey);
-      assert.deepEqual(panel.rect, scaleCell(cells[i], layout, { width: 3072, height: 2048 }),
-        `${zone}/${panel.surfaceKey} was not cut at its own drawn cell`);
-    });
+  const out = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { shift: 6 }), manifest: TRANSIT, sharp });
+  assert.equal(out.refused, null);
+  for (const panel of out.panels.filter((p) => p.zone !== "zone3")) {
+    const cell = layout[panel.zone].find((c) => c.surfaceKey === panel.surfaceKey);
+    const expected = scaleCell({ ...cell, x: cell.x + 6 }, layout, out.sheet);
+    assert.ok(Math.abs(panel.rect.left - expected.left) <= 5);
+    assert.ok(Math.abs(panel.rect.width - expected.width) <= 5);
+    assert.equal(panel.positionalPremiseVerified, true);
+    assert.equal(panel.productionApproved, false);
   }
+});
+
+test("reflowed equal-aspect flanks and missing panels refuse instead of guessing", async () => {
+  const shifted = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { shift: 60 }), manifest: TRANSIT, sharp });
+  assert.match(shifted.refused, /panel_identity_ambiguous/);
+  assert.deepEqual(shifted.panels, []);
+  const missing = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { missing: "zone1:rear" }), manifest: TRANSIT, sharp });
+  assert.match(missing.refused, /panel_count:5!=6/);
+  assert.deepEqual(missing.panels, []);
 });
 
 test("a bigger sheet moves every rectangle proportionally — nothing is absolute", async () => {
@@ -100,14 +110,16 @@ test("a bigger sheet moves every rectangle proportionally — nothing is absolut
   // perfectly sensible against the 1536px container it was written for.
   const small = await cutProofPanels({ proofBytes: await sheet(1536, 1024), manifest: TRANSIT, sharp });
   const large = await cutProofPanels({ proofBytes: await sheet(5056, 3371), manifest: TRANSIT, sharp });
+  assert.equal(small.refused, null);
+  assert.equal(large.refused, null);
   const k = 5056 / 1536;
 
   for (let i = 0; i < small.panels.length; i += 1) {
     const a = small.panels[i].rect;
-    const b = large.panels[i].rect;
-    assert.ok(Math.abs(b.left - a.left * k) <= 2,
+    const b = large.panels.find((p) => p.zone === small.panels[i].zone && p.surfaceKey === small.panels[i].surfaceKey).rect;
+    assert.ok(Math.abs(b.left - a.left * k) <= 9,
       `${small.panels[i].surfaceKey} left did not scale: ${a.left}*${k.toFixed(2)} vs ${b.left}`);
-    assert.ok(Math.abs(b.width - a.width * k) <= 3,
+    assert.ok(Math.abs(b.width - a.width * k) <= 9,
       `${small.panels[i].surfaceKey} width did not scale`);
   }
 });
@@ -117,7 +129,7 @@ test("each vehicle gets DIFFERENT rectangles — the template is not pinned to o
   // type." An F250 flank is 4.19:1 against a Transit's 3.25, and its roof is
   // landscape where the Transit's is portrait — so the cut must differ too.
   const t = await cutProofPanels({ proofBytes: await sheet(3072, 2048), manifest: TRANSIT, sharp });
-  const f = await cutProofPanels({ proofBytes: await sheet(3072, 2048), manifest: F250, sharp });
+  const f = await cutProofPanels({ proofBytes: await sheet(3072, 2048, F250), manifest: F250, sharp });
 
   const roofOf = (r) => r.panels.find((p) => p.zone === "zone1" && p.surfaceKey === "roof").rect;
   const tRoof = roofOf(t);
@@ -162,7 +174,7 @@ test("a sheet of the wrong SHAPE is refused, never cut into plausible wrong regi
   );
 });
 
-test("the positional premise is reported UNPROVEN on every panel", async () => {
+test("geometric evidence is recorded for located panels; Zone 3 remains unverified", async () => {
   // atlas-proof-zone-gate recorded it falsified on live sheet d5314267: the
   // model keeps the bands and the identities and arranges the panels itself.
   // Four live sheets have held the order; four is not a law. A consumer that
@@ -170,7 +182,7 @@ test("the positional premise is reported UNPROVEN on every panel", async () => {
   // panel says so rather than looking authoritative.
   const out = await cutProofPanels({ proofBytes: await sheet(3072, 2048), manifest: TRANSIT, sharp });
   for (const panel of out.panels) {
-    assert.equal(panel.positionalPremiseVerified, false,
+    assert.equal(panel.positionalPremiseVerified, panel.zone !== "zone3",
       `${panel.zone}/${panel.surfaceKey} claims a placement nothing has proven`);
     assert.equal(typeof panel.fit, "number", "every panel reports how much of its cell is painted");
   }

@@ -1032,7 +1032,7 @@ ${commercialScene}
 ${studioEnvironment}`;
 
     const commercialIdentity = atlasFlatMaster
-      ? `You are the senior vehicle-wrap designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`
+      ? `You are the senior graphic designer and vehicle-wrap specialist at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid. Use your native Gemini 3 Pro Image design knowledge.`
       : `You are the senior graphic designer at a sign and wrap company — 20 years of $5,000-per-vehicle commercial fleet graphics, printed on vinyl and installed on real trucks and vans. You amplify each brief into an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid.`;
 
     let assembled = `${commercialIdentity}

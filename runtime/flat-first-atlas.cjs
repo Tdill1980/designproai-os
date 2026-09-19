@@ -3511,7 +3511,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
   ]);
   const customerImageParts = [
-    ...(await verifiedCustomerLogoPart(supabase, input)),
+    ...(panelProof ? [] : await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
   // Both pinned image inputs are still built, stored and OFFERED. They remain
@@ -3707,96 +3707,41 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // forbids; this earns acceptance through the existing gates instead.
       let proof;
       try {
-        const proofArgs = {
-          manifest, input: authoringInput, store, logger, startedAt: authoringStartedAt,
-          // THE CUSTOMER'S OWN LOGO AND REFERENCES, WHICH THIS ROUTE DROPPED.
-          //
-          // `customerImageParts` is built above from `verifiedCustomerLogoPart`
-          // (immutable Storage identity, byte-length and sha256 re-verified, a
-          // URL refused outright) and `verifiedCustomerReferenceParts`. The
-          // six-surface and field contracts send them as
-          // `edgeExtras.referenceImagesBase64`; this branch sent nothing, so a
-          // customer who uploaded their logo or a reference photo got a design
-          // that never saw either -- RULE 0.24 names those CREATIVE authority,
-          // artwork authority under `exact_reference`, and no gate convicts
-          // their absence.
-          //
-          // They are handed over ALREADY VERIFIED rather than re-verified
-          // inside the pass, so ownership and hash checking stay in exactly one
-          // place (RULE 1: reuse the proven path, do not write a second one).
-          customerImageParts,
-          providerRequest: { requestId, generationId, claimToken,
-            ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
-          callProofEdge: options.callProofEdge
-            || createPanelProofTransport({ supabase, ownerId, logger }),
-          assembleFinishedMaster,
-        };
-        // THE GRAPH RUNS CALL 1 (owner: "Connect Call 1 to the existing durable
-        // DAG"), behind the SAME kill switch the cascade uses: `proof.sheet` is
-        // the one image request and `proof.assemble` is the deterministic
-        // cut-and-place, as two durable node rows with the stored sheet's
-        // identity as the edge between them. A lost lease then re-runs ONE
-        // node, and a re-claim of a completed sheet spends nothing at all.
-        //
-        // It does NOT shorten Call 1 — the critical path is still that one
-        // image request. The in-process pass remains for the kill switch and
-        // for a database that has not received the graph migration, and that
-        // case is logged and recorded in provenance, never silent. Both routes
-        // execute the SAME two functions, so there is one producer either way.
+        // The existing durable graph owns both proof.sheet and proof.assemble.
+        // Missing graph support is a refusal, not an in-process escape hatch.
         const proofGraph = options.atlasCall1Graph && atlasCall1GraphEnabled()
           && typeof options.atlasCall1Graph.authorPanelProof === "function"
           ? options.atlasCall1Graph : null;
-        if (proofGraph) {
-          try {
-            proof = await proofGraph.authorPanelProof({
-              manifest, input: authoringInput, requestId, generationId, ownerId,
-              customerImageParts,
-              providerRequest: { requestId, generationId, claimToken,
-                ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
-              logger,
-            });
-          } catch (graphCause) {
-            if (graphCause?.code !== "designpro_atlas_call1_graph_unavailable") throw graphCause;
-            logger(`atlas call 1: node graph unavailable (${String(graphCause.message || "").slice(0, 160)}); running the panel proof in-process`);
-            proof = await authorPanelProofMaster(proofArgs);
-            proof.provenance.graph = { unavailable: true, code: graphCause.code };
-          }
-        } else {
-          proof = await authorPanelProofMaster(proofArgs);
+        if (!proofGraph) {
+          throw new FlatAtlasError("designpro_atlas_call1_graph_unavailable",
+            "Panel proof requires the durable Call 1 graph");
         }
+        proof = await proofGraph.authorPanelProof({
+          manifest, input: authoringInput, requestId, generationId, ownerId,
+          customerImageParts,
+          providerRequest: { requestId, generationId, claimToken,
+            ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+          logger,
+        });
       } catch (cause) {
-        if (cause?.code !== "flat_atlas_panel_proof_refused") throw cause;
         timings.authoringMs += Date.now() - authoringStartedAt;
-        logger(`atlas call 1: panel proof refused (${cause.reason}); failing over to the six-surface contract`);
-        // THE REFUSAL GOES IN THE LEDGER, AND THIS BRANCH USED TO SKIP IT.
-        //
-        // Live 5772fcd5 (2026-09-19, the first customer generation on this
-        // route): the sheet came back in 40 s, this branch refused it, failed
-        // over, and left NO row — so the run read as four legacy refusals and
-        // the new engine's own verdict was invisible. The ledger exists because
-        // thirteen refused sheets once accumulated that nobody could see while
-        // the gates refusing them were tuned blind; returning before the shared
-        // refusal tail rebuilt that blind spot for the newest contract.
-        //
-        // The sheet is named here too (`cause.details.sheet`), because a refusal
-        // with no artifact to open is a verdict nobody can check.
+        const code = cause?.code || "flat_atlas_panel_proof_failed";
+        const reason = String(cause?.reason || cause?.message || cause).slice(0, 1000);
+        logger(`atlas call 1: panel proof stopped (${code}): ${reason}`);
         await recordAtlasRefusal(supabase, {
           requestId, generationId, ownerId, tenantKey,
           authoringTopology: PANEL_PROOF_TOPOLOGY, topology: PANEL_PROOF_TOPOLOGY,
-          attempt, code: cause.code, reason: String(cause.reason || "").slice(0, 1000),
-          storagePath: cause.details?.sheet?.storagePath || cause.details?.storagePath || null,
-          sha256: cause.details?.sheet?.contentHash || cause.details?.contentHash || null,
-          byteSize: cause.details?.sheet?.byteSize || null,
-          contentType: cause.details?.sheet?.contentType || null,
-          model: cause.details?.sheet?.model || null,
+          attempt, code, reason,
+          storagePath: cause?.details?.sheet?.storagePath || cause?.details?.storagePath || null,
+          sha256: cause?.details?.sheet?.contentHash || cause?.details?.contentHash || null,
+          byteSize: cause?.details?.sheet?.byteSize || cause?.details?.byteSize || null,
+          contentType: cause?.details?.sheet?.contentType || cause?.details?.contentType || null,
+          model: cause?.details?.sheet?.model || null,
         }, logger);
-        // RULE 0.38 — every Call-1 routing gets a second contract. Turning this
-        // on can cost latency on a bad run; it cannot cost a design.
-        return failOverToSixSurface({
-          contract: AUTHORING_FAILOVER_CONTRACT, from: PANEL_PROOF_TOPOLOGY, to: "six-surface",
-          code: cause.code, reason: String(cause.reason || "").slice(0, 400),
-          attempts: attempt, rawCandidates: [],
-        }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+        const refusal = new FlatAtlasError(code, reason);
+        refusal.retryable = false;
+        refusal.cause = cause;
+        throw refusal;
       }
       generated = { bytes: proof.bytes, model: proof.model, provenance: proof.provenance, panelProof: proof.provenance };
       timings.panelProofMs = (timings.panelProofMs || 0) + Number(proof.timings?.panelProofMs || 0);
@@ -3941,6 +3886,13 @@ async function generateOrReuseFlatAtlasResolved(options) {
       contentType: generated?.provenance?.masterContentType || generated?.contentType,
       model: generated?.model,
     }, logger);
+    if (panelProof) {
+      // A later master gate may refuse an assembled proof too. Do not reroll
+      // or enter the legacy fallback after the refusal has been recorded.
+      const refusal = new FlatAtlasError(refusalCode, refusalReason);
+      refusal.retryable = false;
+      throw refusal;
+    }
     if (attempt === maxAuthoringAttempts) {
       const refusal = new FlatAtlasError(
         refusalCode,
@@ -4305,7 +4257,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const baseCarriesLettering = passengerMirror?.letteringRead === "located" && baseLetteringBands > 0;
   let elementLayer = null;
   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
-  if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
+  if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
     && baseCarriesLettering) {
     logger(`atlas element graph: skipped -- Call 1 authored its own lettering (${baseLetteringBands} band(s) located on the driver panel) `
       + `despite the clean-base contract; compositing would print the company name twice`);
@@ -4314,7 +4266,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       skipped: "base_already_carries_lettering",
       baseLetteringBands,
     };
-  } else if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
+  } else if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
     const startedAt = Date.now();
     const staged = await store.putImmutableBytes({
       storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png",

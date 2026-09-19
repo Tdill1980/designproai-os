@@ -209,7 +209,7 @@ function panelProofCreativeHead(aceAssembly) {
   // commercial assembly is the senior-designer identity; if a refactor ever
   // drops it, the proof silently goes back to having no designer at all, which
   // is the exact defect this function exists to end.
-  if (!/senior vehicle-wrap designer/.test(head)) {
+  if (!/senior graphic designer and vehicle-wrap specialist/.test(head)) {
     throw new Error("panel_proof_ace_persona_missing");
   }
   return head;
