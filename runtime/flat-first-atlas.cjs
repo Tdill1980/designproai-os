@@ -3719,6 +3719,28 @@ async function generateOrReuseFlatAtlasResolved(options) {
         if (cause?.code !== "flat_atlas_panel_proof_refused") throw cause;
         timings.authoringMs += Date.now() - authoringStartedAt;
         logger(`atlas call 1: panel proof refused (${cause.reason}); failing over to the six-surface contract`);
+        // THE REFUSAL GOES IN THE LEDGER, AND THIS BRANCH USED TO SKIP IT.
+        //
+        // Live 5772fcd5 (2026-09-19, the first customer generation on this
+        // route): the sheet came back in 40 s, this branch refused it, failed
+        // over, and left NO row — so the run read as four legacy refusals and
+        // the new engine's own verdict was invisible. The ledger exists because
+        // thirteen refused sheets once accumulated that nobody could see while
+        // the gates refusing them were tuned blind; returning before the shared
+        // refusal tail rebuilt that blind spot for the newest contract.
+        //
+        // The sheet is named here too (`cause.details.sheet`), because a refusal
+        // with no artifact to open is a verdict nobody can check.
+        await recordAtlasRefusal(supabase, {
+          requestId, generationId, ownerId, tenantKey,
+          authoringTopology: PANEL_PROOF_TOPOLOGY, topology: PANEL_PROOF_TOPOLOGY,
+          attempt, code: cause.code, reason: String(cause.reason || "").slice(0, 1000),
+          storagePath: cause.details?.sheet?.storagePath || cause.details?.storagePath || null,
+          sha256: cause.details?.sheet?.contentHash || cause.details?.contentHash || null,
+          byteSize: cause.details?.sheet?.byteSize || null,
+          contentType: cause.details?.sheet?.contentType || null,
+          model: cause.details?.sheet?.model || null,
+        }, logger);
         // RULE 0.38 — every Call-1 routing gets a second contract. Turning this
         // on can cost latency on a bad run; it cannot cost a design.
         return failOverToSixSurface({

@@ -198,6 +198,38 @@ test("a refusal is TYPED, and flat-first-atlas fails it over to six-surface — 
   assert.match(branch, /if \(cause\?\.code !== "flat_atlas_panel_proof_refused"\) throw cause;/,
     "a FAULT must propagate; only a creative refusal changes contract");
   assert.match(branch, /failOverToSixSurface\(\{[\s\S]{0,200}from: PANEL_PROOF_TOPOLOGY, to: "six-surface"/);
+
+  // AND THE REFUSAL IS RECORDED BEFORE IT HANDS OVER.
+  //
+  // Live 5772fcd5 (the first customer generation on this route): the sheet came
+  // back in 40 s, this branch refused it, failed over, and wrote NO ledger row —
+  // so the run read as four legacy refusals and the new engine's own verdict was
+  // invisible. The ledger exists because thirteen refused sheets once piled up
+  // that nobody could see while the gates refusing them were tuned blind, and
+  // returning before the shared refusal tail rebuilt that blind spot for the
+  // newest contract. ORDER MATTERS: the row has to be written before the
+  // hand-over returns, or the fail-over carries the request away from it.
+  const recordAt = branch.indexOf("recordAtlasRefusal(supabase, {");
+  const handOverAt = branch.indexOf("return failOverToSixSurface({");
+  assert.ok(recordAt > 0, "a panel-proof refusal must write a designpro_atlas_refusals row");
+  assert.ok(recordAt < handOverAt,
+    "the ledger row is written BEFORE the fail-over returns, or the refusal is lost");
+  // The row must name the sheet, or the verdict exists with no artifact to open —
+  // which is the state the ledger was built to end.
+  const rowBlock = branch.slice(recordAt, handOverAt);
+  assert.match(rowBlock, /topology: PANEL_PROOF_TOPOLOGY/);
+  for (const field of ["storagePath", "sha256", "byteSize"]) {
+    assert.match(rowBlock, new RegExp(`${field}: cause\\.details`),
+      `the ledger row must carry the sheet's ${field} so the pixels can be judged`);
+  }
+
+  // The refusal itself carries that identity — asserted on the real throw, not
+  // on the caller's hope that it is there.
+  const thrown = (() => {
+    try { proof.panelRowsFromManifest({ zones: [] }); } catch { /* not this one */ }
+    return new proof.PanelProofRefusal("x", { sheet: { storagePath: "p", contentHash: "h", byteSize: 1 } });
+  })();
+  assert.equal(thrown.details.sheet.storagePath, "p");
   // And a gate refusal on the assembled sheet fails over too, rather than
   // re-rolling a document that has already been asked for once.
   assert.match(atlasSrc, /if \(heroDriver \|\| panelProof\) \{/);

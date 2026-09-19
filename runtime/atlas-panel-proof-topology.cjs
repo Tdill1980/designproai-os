@@ -293,17 +293,41 @@ async function authorPanelProofMaster({
   mark("proof.sheet", sheetAt);
   logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
 
+  /**
+   * EVERY REFUSAL PAST THIS POINT NAMES THE SHEET IT JUDGED.
+   *
+   * Live 5772fcd5: the sheet came back, this pass refused it, and the ledger row
+   * the caller writes had nothing to point at -- so the verdict existed and the
+   * artifact behind it could not be opened. A refusal whose evidence cannot be
+   * retrieved is the state the refusal ledger was built to end: judge the gates
+   * from the pixels, which requires knowing which pixels.
+   *
+   * The sheet is already persisted by the edge and hash-verified by the
+   * transport, so this carries its IDENTITY (RULE 0.39) and never its bytes.
+   */
+  const refuse = (reason, extra = {}) => new PanelProofRefusal(reason, {
+    ...extra,
+    sheet: {
+      storagePath: sheet.storagePath || null,
+      contentHash: sheet.contentHash || null,
+      byteSize: sheet.byteSize || sheet.bytes?.length || null,
+      contentType: sheet.sheetShape?.mime || null,
+      model: sheet.model || null,
+      ...(extra.sheet || {}),
+    },
+  });
+
   // ── node 2: the cut. Deterministic, zero model calls. ──────────────────
   const cutAt = Date.now();
   const cut = await cutProofPanels({
     proofBytes: sheet.bytes, manifest: parsePanelRows(panelRows), sharp,
   });
-  if (cut.refused) throw new PanelProofRefusal(cut.refused, { sheet: cut.sheet });
+  if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
 
   const zone1 = cut.panels.filter((p) => p.zone === "zone1");
   if (zone1.length !== 6) {
-    throw new PanelProofRefusal(`the cut yielded ${zone1.length}/6 branded panels`);
+    throw refuse(`the cut yielded ${zone1.length}/6 branded panels`);
   }
   // A CELL THE MODEL LEFT EMPTY IS A BLANK PRINT PANEL. `fit` is the share of
   // the cell that carries paint; an unfilled box sails through every hole
@@ -311,8 +335,15 @@ async function authorPanelProofMaster({
   // white is not dark (the efca5e03 lesson, pointed at the cells).
   const empty = zone1.filter((p) => p.fit < 0.5);
   if (empty.length) {
-    throw new PanelProofRefusal(
-      `unfilled panel cells: ${empty.map((p) => `${p.surfaceKey}=${p.fit}`).join(", ")}`);
+    // EVERY CELL'S FIT IS REPORTED, not only the ones that failed. "rear=0.04"
+    // alone cannot distinguish a model that left one box empty from a model that
+    // arranged the panels itself and missed every cell -- and the second is the
+    // positional premise this cutter rests on, recorded as FALSIFIED on live
+    // sheet d5314267. The numbers are what settle which happened.
+    throw refuse(
+      `unfilled panel cells: ${empty.map((p) => `${p.surfaceKey}=${p.fit}`).join(", ")}`
+      + ` (all zone-1 fits: ${zone1.map((p) => `${p.surfaceKey}=${p.fit}`).join(" ")})`,
+      { fits: Object.fromEntries(cut.panels.map((p) => [`${p.zone}:${p.surfaceKey}`, p.fit])) });
   }
 
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
@@ -332,7 +363,7 @@ async function authorPanelProofMaster({
   const placed = [];
   for (const zone of manifest.zones) {
     const panel = byKey.get(zone.surfaceKey);
-    if (!panel) throw new PanelProofRefusal(`${zone.surfaceKey}: no cut panel to assemble`);
+    if (!panel) throw refuse(`${zone.surfaceKey}: no cut panel to assemble`);
     const { pixelWidth, pixelHeight } = zonePixelSize(zone);
     const bytes = await sharp(panel.bytes)
       .resize(pixelWidth, pixelHeight, { fit: "fill" }).png().toBuffer();
