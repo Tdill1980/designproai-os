@@ -142,6 +142,29 @@ const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
  */
 const QUADRANT_PREFIX = "atlas-panel-proof/quadrants";
 
+/**
+ * How far a cut crop's aspect may sit from the zone it is resized into.
+ *
+ * `fit: "fill"` cannot refuse anything, so this is the guard that stops a crop
+ * from the wrong region being reshaped into a valid-looking print panel. A
+ * legitimate crop drifts by rounding only (the cut is integer-rounded off a
+ * scaled sheet); a crop of the wrong region on a real sheet drifts by tens of
+ * percent. 1.05 sits far above the former and far below the latter.
+ *
+ * It is the same shape of guard as `MAX_ASPECT_DRIFT_RATIO` in the hero
+ * cascade, which exists for the same reason: a resize that silently reshapes is
+ * a defect no downstream measurement can see.
+ */
+const MAX_PANEL_ASPECT_DRIFT = 1.05;
+
+/**
+ * No vehicle panel is this long. The largest surface this catalog carries is a
+ * 251" flank, so 400 leaves room for anything real while convicting a pixel
+ * rectangle read as inches — the defect `panelRowsFromManifest` shipped, where
+ * the driver arrived as 979" x 2674".
+ */
+const MAX_PLAUSIBLE_PANEL_INCHES = 400;
+
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 /** A creative refusal. Typed so flat-first-atlas can tell it from a fault. */
@@ -166,16 +189,82 @@ function panelProofEnabled(env = process.env) {
 }
 
 /** GENIE trim rows in the contract's own wording. Inches, never fractions. */
+/**
+ * THE SIX PANEL ROWS, IN REAL INCHES, FROM THE FIELDS THAT ACTUALLY EXIST.
+ *
+ * ⚠️ THIS EMITTED PIXELS LABELLED AS INCHES, TRANSPOSED, ON EVERY REAL RUN.
+ *
+ * It read `zone.trimInches || zone.trim`. **`trimInches` does not exist on a
+ * GENIE zone** -- the real fields are `trimWidthIn`/`trimHeightIn` and
+ * `printWidthIn`/`printHeightIn` -- so every call fell through to `zone.trim`,
+ * which is the PIXEL rectangle of the surface on the 4096 master. Measured on
+ * the ordinary six-surface manifest:
+ *
+ *     emitted   DRIVER: 979" wide x 2674" high     <- pixels, and portrait
+ *     real      DRIVER: 163" wide x  66" high      <- print inches, landscape
+ *
+ * The flank is a tall rotated column on the master, so the numbers were not
+ * merely in the wrong unit: they were the wrong way round. Three consequences,
+ * all of which were live:
+ *
+ *   1. the prompt told the model the driver panel was 81 FEET TALL and portrait,
+ *      so the sheet it drew was answering a different question;
+ *   2. the container template draws its cells from these same rows, so the
+ *      driver cell came out at 1.160:1 against a true 2.470:1 -- and, being
+ *      clamped to the band height, could not have been right at any scale;
+ *   3. `fit: "fill"` in the assembler then stretched that cell into the true
+ *      zone, so EVERY driver and passenger panel this route produced was
+ *      horizontally stretched by a factor of about 2.1.
+ *
+ * The probe never saw it because the probe PASSES its own `panels` input by
+ * hand, already correct. Production derives them here. A fixture laxer than the
+ * real thing, for the sixth time in this repo.
+ *
+ * ═══ WHY PRINT INCHES AND NOT TRIM ═══
+ *
+ * The rectangle the model fills, the cutter cuts and `assembleFinishedMaster`
+ * places is the FULL zone -- trim plus the 5" bleed on all four sides -- and
+ * measured on every surface `printWidthIn/printHeightIn` reproduces that zone's
+ * aspect exactly (driver 2.470 = 2.470, hood 1.235 = 1.235, and so on). Stating
+ * trim instead would leave the cell ~5% off its zone AND describe a rectangle
+ * with no bleed in it, which is the artwork the installer wraps around the edge.
+ * Trim stays in the copy as a callout; the GEOMETRY is the print rectangle.
+ *
+ * IT REFUSES RATHER THAN FALLS BACK. A fallback is what produced the defect: a
+ * missing field silently became a pixel rectangle that every consumer believed.
+ */
 function panelRowsFromManifest(manifest) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   return zones.map((zone) => {
-    const trim = zone?.trimInches || zone?.trim || {};
-    const w = Number(trim.widthIn ?? trim.w);
-    const h = Number(trim.heightIn ?? trim.h);
     const name = String(zone?.surfaceKey || "").toUpperCase();
-    if (!name || !Number.isFinite(w) || !Number.isFinite(h)) return null;
-    return `${name}: ${w}" wide x ${h}" high`;
-  }).filter(Boolean);
+    // The print rectangle, or trim plus its own bleed when a manifest states
+    // only trim. Never `zone.trim`, which is pixels.
+    const bleed = zone?.bleedIn || {};
+    const trimW = Number(zone?.trimWidthIn);
+    const trimH = Number(zone?.trimHeightIn);
+    const w = Number.isFinite(Number(zone?.printWidthIn)) ? Number(zone.printWidthIn)
+      : (Number.isFinite(trimW) ? trimW + Number(bleed.left || 0) + Number(bleed.right || 0) : NaN);
+    const h = Number.isFinite(Number(zone?.printHeightIn)) ? Number(zone.printHeightIn)
+      : (Number.isFinite(trimH) ? trimH + Number(bleed.top || 0) + Number(bleed.bottom || 0) : NaN);
+    if (!name || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+      throw new PanelProofRefusal(
+        `${name || "a surface"} has no usable print dimensions `
+        + `(printWidthIn/printHeightIn or trimWidthIn/trimHeightIn + bleedIn)`);
+    }
+    // A PLAUSIBILITY FLOOR, because this is the exact defect class that shipped:
+    // no vehicle panel is a thousand inches. A pixel rectangle read as inches
+    // trips this immediately instead of reaching the prompt.
+    if (w > MAX_PLAUSIBLE_PANEL_INCHES || h > MAX_PLAUSIBLE_PANEL_INCHES) {
+      throw new PanelProofRefusal(
+        `${name}: ${w}" x ${h}" is not a vehicle panel — these look like pixels, not inches`);
+    }
+    return `${name}: ${round1(w)}" wide x ${round1(h)}" high`;
+  });
+}
+
+/** One decimal, and no trailing ".0" — the owner's own spec-sheet form. */
+function round1(value) {
+  return String(Math.round(Number(value) * 10) / 10);
 }
 
 /**
@@ -482,6 +571,43 @@ async function authorPanelProofMaster({
     const panel = byKey.get(zone.surfaceKey);
     if (!panel) throw refuse(`${zone.surfaceKey}: no cut panel to assemble`);
     const { pixelWidth, pixelHeight } = zonePixelSize(zone);
+
+    // ═══ A WRONG CROP MAY NOT BE STRETCHED INTO A RIGHT-SHAPED ZONE ═══
+    //
+    // `fit: "fill"` ignores aspect ratio. Combined with
+    // `positionalPremiseVerified: false` -- the cutter reads the container's own
+    // cells, and live sheet d5314267 proved the model keeps the BANDS and the
+    // panel identities and then arranges the panels itself -- that meant a crop
+    // taken from the wrong place could be distorted to the exact pixel size the
+    // assembler demands, pass both of its assertions, and become a print panel.
+    // An independent review named this the sharpest technical point in the
+    // route, and it was right: `fit` only proves a cell is not blank.
+    //
+    // The resize STAYS -- the assembler requires the zone's exact pixel size and
+    // that is not negotiable (twelve stages read it) -- but the aspect it is
+    // handed is now checked first, so the resize can only ever be a rescale, not
+    // a reshape. A crop of the right REGION already has the cell's aspect,
+    // because the cell was cut from the container's own geometry; a crop whose
+    // aspect disagrees came from somewhere else, and that is a refusal, not
+    // something to squash.
+    //
+    // The bound is deliberately generous. The cut is integer-rounded off a
+    // scaled sheet, so a legitimate panel drifts by a fraction of a percent; a
+    // crop from the wrong region on a real sheet drifts by tens of percent
+    // (d5314267's stacked flanks against a one-row container). Anything between
+    // is reported rather than guessed at.
+    const cropAspect = panel.rect.width / panel.rect.height;
+    const zoneAspect = pixelWidth / pixelHeight;
+    const drift = Math.max(cropAspect / zoneAspect, zoneAspect / cropAspect);
+    if (!Number.isFinite(drift) || drift > MAX_PANEL_ASPECT_DRIFT) {
+      throw refuse(
+        `${zone.surfaceKey}: the cut crop is ${cropAspect.toFixed(3)}:1 and its zone is `
+        + `${zoneAspect.toFixed(3)}:1 (drift ${drift.toFixed(3)}, limit ${MAX_PANEL_ASPECT_DRIFT}) `
+        + `— resizing it would distort the artwork rather than place it`,
+        { aspect: { surfaceKey: zone.surfaceKey, cropAspect: Number(cropAspect.toFixed(4)),
+          zoneAspect: Number(zoneAspect.toFixed(4)), drift: Number(drift.toFixed(4)) } });
+    }
+
     const bytes = await sharp(panel.bytes)
       .resize(pixelWidth, pixelHeight, { fit: "fill" }).png().toBuffer();
     placed.push({

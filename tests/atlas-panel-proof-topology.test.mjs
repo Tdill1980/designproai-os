@@ -41,6 +41,7 @@ const proof = require("../runtime/atlas-panel-proof-topology.cjs");
 const atlas = require("../runtime/flat-first-atlas.cjs");
 const container = require("../runtime/atlas-proof-container-template.cjs");
 const { assembleFinishedMaster } = require("../runtime/atlas-finished-master.cjs");
+const { zonePixelSize } = require("../runtime/atlas-hero-driver.cjs");
 
 const topologySrc = fs.readFileSync(
   new URL("../runtime/atlas-panel-proof-topology.cjs", import.meta.url), "utf8");
@@ -670,4 +671,153 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
     "the attempt key must be stable across recoveries of the same candidate");
   assert.match(calls[0].attemptKey, /^[a-z][a-z0-9:._-]{0,119}$/,
     "the key must satisfy the provider module's own identity pattern");
+});
+
+test("two customers can NEVER share a cached sheet, even on identical ids", async () => {
+  // Owner's question, and it is the right one to ask of any cache on a paid
+  // path: `attemptKey: "panel-proof:1"` is a CONSTANT, so if it were the whole
+  // key every customer would collide on it.
+  //
+  // It is one of five components. `normalizeIdentity` requires
+  // {ownerId, requestId, generationId, mode, attemptKey}, the key is a sha256
+  // over all of them, and the storage prefix is
+  // `designpro-provider-private/v1/<ownerId>/<generationId>/<key>` — so the
+  // owner is in the key AND in the path. The three ids are UUID-validated, so a
+  // missing one throws rather than degrading to a shared key.
+  //
+  // This EXECUTES the real module against the worst case — two owners with the
+  // same generationId, requestId and attemptKey — rather than asserting the
+  // shape of its source.
+  const { runDurableImageProviderRequest } = await import(
+    "../supabase/functions/_shared/gemini-provider-cache.mjs");
+
+  const objects = new Map();
+  const bucket = {
+    async upload(path, bytes, opts) {
+      if (opts?.upsert === false && objects.has(path)) return { error: { message: "exists" } };
+      objects.set(path, Buffer.from(bytes));
+      return { error: null };
+    },
+    async download(path) {
+      if (!objects.has(path)) return { data: null, error: { message: "not found" } };
+      const b = objects.get(path);
+      return { data: {
+        arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength),
+        text: async () => b.toString("utf8"),
+      }, error: null };
+    },
+  };
+
+  const OWNER_A = "11111111-1111-4111-8111-111111111111";
+  const OWNER_B = "22222222-2222-4222-8222-222222222222";
+  const GENERATION = "33333333-3333-4333-8333-333333333333";
+  const REQUEST = "44444444-4444-4444-8444-444444444444";
+  let invocations = 0;
+  const run = (ownerId) => runDurableImageProviderRequest({
+    bucket,
+    identity: { ownerId, generationId: GENERATION, requestId: REQUEST,
+      mode: "atlas-panel-proof", attemptKey: "panel-proof:1" },
+    requestHash: "a".repeat(64),
+    outputRequestId: "55555555-5555-4555-8555-555555555555",
+    authorize: async () => {},
+    invoke: async () => { invocations += 1; return { status: 200, payload: { owner: ownerId } }; },
+  });
+
+  const a1 = await run(OWNER_A);
+  const b1 = await run(OWNER_B);
+  const a2 = await run(OWNER_A);
+
+  assert.equal(invocations, 2, "each owner must spend its OWN generation; a shared cache would be 1");
+  assert.notEqual(a1.providerRequestKey, b1.providerRequestKey, "the cache key must include the owner");
+  assert.equal(a1.providerCacheHit, false);
+  assert.equal(b1.providerCacheHit, false, "owner B must not hit owner A's entry");
+  assert.equal(a1.payload.owner, OWNER_A);
+  assert.equal(b1.payload.owner, OWNER_B, "owner B received owner A's artwork — cross-customer leak");
+  // And a recovery reads back its OWN result, which is the point of the contract.
+  assert.equal(a2.providerCacheHit, true);
+  assert.equal(a2.payload.owner, OWNER_A);
+
+  // The path is namespaced by owner as well, so a bucket listing cannot cross.
+  const claims = [...objects.keys()].filter((k) => k.endsWith("claim.json"));
+  assert.equal(claims.length, 2);
+  assert.ok(claims.some((k) => k.startsWith(`designpro-provider-private/v1/${OWNER_A}/${GENERATION}/`)));
+  assert.ok(claims.some((k) => k.startsWith(`designpro-provider-private/v1/${OWNER_B}/${GENERATION}/`)));
+
+  // A missing identity FAILS CLOSED rather than sharing a degenerate key.
+  await assert.rejects(() => runDurableImageProviderRequest({
+    bucket, identity: { ownerId: "", generationId: GENERATION, requestId: REQUEST,
+      mode: "atlas-panel-proof", attemptKey: "panel-proof:1" },
+    requestHash: "a".repeat(64), outputRequestId: "55555555-5555-4555-8555-555555555555",
+    authorize: async () => {}, invoke: async () => ({ status: 200, payload: {} }),
+  }), /provider_request_identity_invalid/);
+});
+
+test("the panel rows are REAL INCHES from the fields that exist — not pixels, not transposed", () => {
+  // THE DEFECT THAT MADE EVERY FLANK STRETCH 2.1x, and nothing in this repo saw
+  // it because the probe passes its `panels` input by hand, already correct.
+  //
+  // `panelRowsFromManifest` read `zone.trimInches || zone.trim`. A GENIE zone has
+  // NO `trimInches` — the fields are trimWidthIn/trimHeightIn and
+  // printWidthIn/printHeightIn — so every real call fell through to `zone.trim`,
+  // the surface's PIXEL rectangle on the 4096 master. The flank is a tall rotated
+  // column there, so the rows were in the wrong unit AND the wrong orientation:
+  //
+  //     emitted   DRIVER: 979" wide x 2674" high
+  //     real      DRIVER: 163" wide x  66" high
+  const rows = proof.panelRowsFromManifest(MANIFEST);
+  assert.equal(rows.length, 6);
+  assert.equal(rows[0], 'DRIVER: 163" wide x 66" high',
+    "the driver flank is landscape and 163 inches, not a portrait 979");
+  for (const row of rows) {
+    const [, w, h] = /: ([\d.]+)" wide x ([\d.]+)" high$/.exec(row) || [];
+    assert.ok(w && h, `unparseable row: ${row}`);
+    // A plausibility floor, because a pixel rectangle read as inches is exactly
+    // what shipped. No vehicle panel is a thousand inches.
+    assert.ok(Number(w) <= 400 && Number(h) <= 400, `${row} is not a vehicle panel`);
+  }
+  // The flanks are the WIDE panels. Transposition is the half of the defect a
+  // unit check alone would miss.
+  const driver = /: ([\d.]+)" wide x ([\d.]+)" high$/.exec(rows[0]);
+  assert.ok(Number(driver[1]) > Number(driver[2]), "a driver flank is wider than it is tall");
+
+  // AND IT REFUSES rather than falling back. The fallback IS the defect: a
+  // missing field silently became a pixel rectangle every consumer believed.
+  assert.throws(() => proof.panelRowsFromManifest({ zones: [{ surfaceKey: "driver" }] }),
+    /no usable print dimensions/);
+  assert.throws(() => proof.panelRowsFromManifest({
+    zones: [{ surfaceKey: "driver", printWidthIn: 979, printHeightIn: 2674 }],
+  }), /these look like pixels, not inches/);
+});
+
+test("a crop whose aspect disagrees with its zone is REFUSED, not stretched into it", async () => {
+  // `fit: "fill"` cannot refuse anything, and the cutter records
+  // `positionalPremiseVerified: false` — so without this guard a crop from the
+  // wrong region is reshaped to the exact pixel size the assembler demands,
+  // passes both of its assertions, and becomes a print panel.
+  //
+  // The geometry now agrees to within rounding, which is the real fix; this is
+  // the guard that keeps it that way. Measured on the real manifest and the real
+  // container: worst drift 1.0032 against a limit of 1.05.
+  const layout = container.containerLayout(container.parsePanelRows(
+    proof.panelRowsFromManifest(MANIFEST)));
+  for (const zone of MANIFEST.zones) {
+    const cell = layout.zone1.find((c) => c.surfaceKey === zone.surfaceKey);
+    const { pixelWidth, pixelHeight } = zonePixelSize(zone);
+    const drift = Math.max((cell.w / cell.h) / (pixelWidth / pixelHeight),
+      (pixelWidth / pixelHeight) / (cell.w / cell.h));
+    assert.ok(drift <= 1.05,
+      `${zone.surfaceKey}: container cell ${(cell.w / cell.h).toFixed(3)} vs zone `
+      + `${(pixelWidth / pixelHeight).toFixed(3)} drifts ${drift.toFixed(4)} — the resize would reshape it`);
+    // Tighter than the guard, because rounding is all that should remain. If this
+    // ever needs loosening, the geometry has drifted and that is the bug.
+    assert.ok(drift <= 1.01, `${zone.surfaceKey} drift ${drift.toFixed(4)} is beyond integer rounding`);
+  }
+
+  // And the refusal is reachable: a sheet whose cells are a different shape than
+  // the zones cannot be assembled into them.
+  const { callProofEdge } = edgeStub(await paintedSheet({ width: 3072, height: 512 }));
+  await assert.rejects(
+    () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge }),
+    (err) => err.code === "flat_atlas_panel_proof_refused",
+    "a sheet of the wrong shape must refuse rather than be stretched into the zones");
 });
