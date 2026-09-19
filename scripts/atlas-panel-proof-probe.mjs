@@ -425,6 +425,54 @@ async function measure(bytes) {
     console.log("\ndie-cut gate: clean — no page-coloured opening enclosed by artwork in either panel zone");
   }
 
+  // THE CUTTER, ON THE SHEET THE MODEL ACTUALLY RETURNED.
+  //
+  // This is now the live Call-1 route (DESIGNPRO_ATLAS_PANEL_PROOF=on), and the
+  // cut is what turns the document into the artifacts production consumes — so
+  // the probe is the only place it faces real returned pixels rather than a
+  // fixture. A fixture laxer than the real thing cannot catch a defect of the
+  // real thing, which this file's own history records five times over.
+  //
+  // `fit` is the share of each cell that carries paint. It is the number the
+  // topology pass refuses on, because an EMPTY cell is a blank print panel and
+  // every hole predicate in this repo is a darkness test — white is not dark.
+  try {
+    const { cutProofPanels, QUADRANTS } = require("../runtime/atlas-proof-panels.cjs");
+    const { parsePanelRows } = require("../runtime/atlas-proof-container-template.cjs");
+    const panels = await cutProofPanels({
+      proofBytes: bytes, manifest: parsePanelRows(request.panelRows),
+      sharp: require("../runtime/node_modules/sharp"),
+    });
+    if (panels.refused) {
+      console.log(`\n⚠️  THE CUTTER REFUSED THE SHEET: ${panels.refused}`);
+    } else {
+      const cutDir = path.join(outDir, "panels");
+      mkdirSync(cutDir, { recursive: true });
+      for (const panel of panels.panels) {
+        writeFileSync(path.join(cutDir, `${panel.zone}-${panel.surfaceKey}.png`), panel.bytes);
+      }
+      writeFileSync(path.join(outDir, "panels.json"), JSON.stringify({
+        contract: panels.contract, sheet: panels.sheet, quadrants: QUADRANTS,
+        panels: panels.panels.map(({ bytes: _b, ...receipt }) => receipt),
+      }, null, 2));
+      const fitOf = (zone) => panels.panels.filter((p) => p.zone === zone)
+        .map((p) => `${p.surfaceKey}=${p.fit}`).join(" ");
+      console.log(`\ncut ${panels.panels.length} artifacts from the returned sheet`);
+      console.log(`  zone 1 (branded): ${fitOf("zone1")}`);
+      console.log(`  zone 2 (clean):   ${fitOf("zone2")}`);
+      console.log(`  zone 3 (cut):     ${fitOf("zone3")}`);
+      const unfilled = panels.panels.filter((p) => p.zone !== "zone3" && p.fit < 0.5);
+      if (unfilled.length) {
+        console.log(`  ⚠️  UNFILLED CELLS — the live route refuses this sheet: `
+          + unfilled.map((p) => `${p.zone}:${p.surfaceKey}`).join(" "));
+      }
+    }
+  } catch (error) {
+    // The cut is evidence, not the probe's purpose: a failure here must not
+    // discard the sheet the owner is here to look at.
+    console.log(`\ncutter did not run: ${String(error?.message || error).slice(0, 200)}`);
+  }
+
   // AND NAME THE COMPOSITED ONE FIRST, because it is the deliverable. The raw
   // sheet stays beside it: it is what the model actually drew, which is the only
   // thing that answers "is the design good" — and it is what the die-cut gate

@@ -86,6 +86,14 @@ const {
 // switch is read here; the worker itself is injected by index.js so this module
 // never owns a poller.
 const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
+// CALL 1 AS THE PANEL PRODUCTION PROOF. Its own edge function, its own DAG
+// (sheet -> cut -> assemble), and the same authoring seam as the cascade: one
+// function returning {bytes, contentHash, model, provenance} and throwing a
+// typed refusal, so everything downstream of acceptance is untouched.
+const {
+  PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
+  authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
+} = require("./atlas-panel-proof-topology.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
 const MANIFEST_CONTRACT = "designpro.flat-first-atlas-manifest.v1";
@@ -2709,6 +2717,11 @@ function assertAtlasReuseContract(atlas, {
  */
 async function composePassengerFromDriver({
   masterBytes, manifest, guideBytes, input, provider, logger = () => {},
+  // TRUE when this Call-1 contract drew the passenger as its own region. It is
+  // passed rather than inferred from the manifest because the panel-proof pass
+  // authors on the ORDINARY six-surface manifest -- so a topology test would
+  // have said "mirror it" about a passenger the model had just drawn.
+  passengerAuthored = false,
 }) {
   const decline = (reason) => ({ composed: false, reason, bandsApplied: 0 });
   // THE FIELD PASSENGER IS ITS OWN AUTHORED TERRITORY. DO NOT MIRROR IT.
@@ -2738,8 +2751,18 @@ async function composePassengerFromDriver({
   // flanks come off one composition and the model has measurably drifted or
   // reversed them (canaries 6c1bfae6, cad013e1). It is not deleted; it is
   // stopped from overwriting a passenger that was authored in its own right.
+  //
+  // THE PANEL PRODUCTION PROOF IS THE SAME CASE, for the same reason. Its sheet
+  // carries six named panel cells and the model draws PASSENGER into its own
+  // cell, left to right, beside DRIVER. Mirroring there would discard an
+  // authored panel to solve a problem that contract does not have -- and it
+  // would do it on the six-surface manifest, where the topology test above
+  // cannot see it. That is why the caller states it.
   if (manifest?.topology === FIELD_TOPOLOGY) {
     return decline("field_passenger_is_its_own_territory");
+  }
+  if (passengerAuthored) {
+    return decline("passenger_is_its_own_authored_panel");
   }
   const driver = (manifest?.zones || []).find((zone) => zone.surfaceKey === "driver");
   const passenger = (manifest?.zones || []).find((zone) => zone.surfaceKey === "passenger");
@@ -3116,6 +3139,19 @@ async function recordAtlasRefusal(supabase, row, logger = () => {}) {
  * does.
  */
 async function generateOrReuseFlatAtlas(options) {
+  // THE PANEL PRODUCTION PROOF IS FIRST WHEN THE DEPLOY SAYS SO (owner,
+  // 2026-09-19: "wire production-panel-proof directly into the live customer
+  // production route as the active Call 1 engine — no more probe-only
+  // execution"). It is ahead of hero-driver deliberately: hero-driver measured
+  // 0/3 on real vehicles and is off, and reading the flags in this order means
+  // one flag decides one thing.
+  //
+  // First authoring only, like both other routings: a revision edit keeps its
+  // parent's topology, and the pass refuses one outright.
+  if (options?.authoringTopology === undefined && panelProofEnabled()
+    && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
+    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: PANEL_PROOF_TOPOLOGY });
+  }
   if (options?.authoringTopology === undefined && heroDriverEnabled()
     && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
     return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
@@ -3193,10 +3229,20 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // -- was authored on the LEGACY six-container manifest, not on field
   // territories. Field territories stay in the tree and stay tested; they are
   // simply not what produced the accepted design.
-  if (!["six-surface", "field", HERO_DRIVER_TOPOLOGY].includes(authoringTopology)) {
+  if (!["six-surface", "field", HERO_DRIVER_TOPOLOGY, PANEL_PROOF_TOPOLOGY].includes(authoringTopology)) {
     throw new FlatAtlasError("flat_atlas_authoring_topology_invalid", `Unknown authoring topology ${String(authoringTopology).slice(0, 40)}`);
   }
   const heroDriver = authoringTopology === HERO_DRIVER_TOPOLOGY;
+  // CALL 1 AS THE PANEL PRODUCTION PROOF (owner, 2026-09-19: wire
+  // production-panel-proof "into the live customer production route as the
+  // active Call 1 engine"). Like the cascade it authors the six surfaces and
+  // hands back one assembled master; unlike it, one image call does all six and
+  // the cut is deterministic.
+  const panelProof = authoringTopology === PANEL_PROOF_TOPOLOGY;
+  if (panelProof && parentManifest) {
+    throw new FlatAtlasError("flat_atlas_panel_proof_edit_unsupported",
+      "A revision edit keeps its parent's topology; the panel-proof pass is for first authoring only");
+  }
   if (heroDriver && parentManifest) {
     throw new FlatAtlasError("flat_atlas_hero_edit_unsupported",
       "A revision edit keeps its parent's topology; the hero-driver cascade is for first authoring only");
@@ -3270,6 +3316,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // pass never runs on it -- and its checkpoint can never be mistaken for a
     // six-surface acceptance of the same request.
     finishingMode: heroDriver ? HERO_DRIVER_TOPOLOGY
+      : panelProof ? PANEL_PROOF_TOPOLOGY
       : String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() === "on" ? "on" : "off",
     checkpointKind: "accepted",
     revisionSequence, parentRevisionId, revisionContextHash,
@@ -3319,7 +3366,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // creative inputs changed.
   const stableEdgeBody = atlasEdgeRequestBody(authoringInput, manifest, { revisionContextHash });
   const promptHash = sha256(Buffer.from(
-    `${heroDriver ? HERO_DRIVER_PROMPT_VERSION : ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
+    `${heroDriver ? HERO_DRIVER_PROMPT_VERSION
+      : panelProof ? PANEL_PROOF_TOPOLOGY_CONTRACT
+      : ATLAS_ARTBOARD_EDGE_PROMPT_VERSION}\n${JSON.stringify(stableEdgeBody)}`,
     "utf8",
   ));
   // Fence the restored teaching input and topology against one-field reuse.
@@ -3330,7 +3379,8 @@ async function generateOrReuseFlatAtlasResolved(options) {
     topology: manifest.topology,
     // `undefined` on every other topology: canonical() drops it, so existing
     // six-surface and field revisions hash exactly as before.
-    authoring: heroDriver ? HERO_DRIVER_CONTRACT : undefined,
+    authoring: heroDriver ? HERO_DRIVER_CONTRACT
+      : panelProof ? PANEL_PROOF_TOPOLOGY_CONTRACT : undefined,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
   if (existing && fieldResumable && existing.manifest?.topology === FIELD_TOPOLOGY) {
@@ -3583,7 +3633,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
     attemptBody.providerRequest = { requestId, generationId, claimToken,
       attemptKey: authoringTopology === "field" ? `master:field:${attempt}` : `master:${attempt}`,
       ...(providerRecoveryOnly ? { cacheOnly: true } : {}) };
-    masterRequestByteSize = heroDriver ? 0 : Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
+    // NEITHER OF THE TWO AUTHORING PASSES SENDS THIS BODY, so measuring it would
+    // fail a request against a cap that governs a request nobody made.
+    masterRequestByteSize = (heroDriver || panelProof) ? 0
+      : Buffer.byteLength(JSON.stringify(attemptBody), "utf8");
     if (masterRequestByteSize > masterRequestMaxBytes) {
       throw new FlatAtlasError(
         "flat_atlas_master_request_too_large",
@@ -3639,6 +3692,43 @@ async function generateOrReuseFlatAtlasResolved(options) {
       }
       generated = { bytes: hero.bytes, model: hero.model, provenance: hero.provenance, heroDriver: hero.provenance };
       timings.heroCascadeMs = (timings.heroCascadeMs || 0) + Number(hero.timings?.heroCascadeMs || 0);
+    } else if (panelProof) {
+      // THE PANEL PRODUCTION PROOF. ONE image call to `production-panel-proof`
+      // returns a three-band document; the cut is deterministic; the six Zone-1
+      // panels are assembled into the GENIE manifest zones by the SAME
+      // assembler the cascade uses, so what leaves here is an ordinary master
+      // and the gates below judge it exactly as they judge any other.
+      //
+      // WHY IT ASSEMBLES RATHER THAN REPLACING THE MASTER: everything after
+      // Call 1 — the gates, `cutCallOnePanels`, the seven proof authorities,
+      // Call 8's geometry, Call 9's promotion, the revision row, both UIs —
+      // reads a square six-zone master addressed by `manifest.zones`. Teaching
+      // twelve proven stages a second shape is the greenfield move RULE 0
+      // forbids; this earns acceptance through the existing gates instead.
+      let proof;
+      try {
+        proof = await authorPanelProofMaster({
+          manifest, input: authoringInput, store, logger, startedAt: authoringStartedAt,
+          providerRequest: { requestId, generationId, claimToken,
+            ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+          callProofEdge: options.callProofEdge
+            || createPanelProofTransport({ supabase, ownerId, logger }),
+          assembleFinishedMaster,
+        });
+      } catch (cause) {
+        if (cause?.code !== "flat_atlas_panel_proof_refused") throw cause;
+        timings.authoringMs += Date.now() - authoringStartedAt;
+        logger(`atlas call 1: panel proof refused (${cause.reason}); failing over to the six-surface contract`);
+        // RULE 0.38 — every Call-1 routing gets a second contract. Turning this
+        // on can cost latency on a bad run; it cannot cost a design.
+        return failOverToSixSurface({
+          contract: AUTHORING_FAILOVER_CONTRACT, from: PANEL_PROOF_TOPOLOGY, to: "six-surface",
+          code: cause.code, reason: String(cause.reason || "").slice(0, 400),
+          attempts: attempt, rawCandidates: [],
+        }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
+      }
+      generated = { bytes: proof.bytes, model: proof.model, provenance: proof.provenance, panelProof: proof.provenance };
+      timings.panelProofMs = (timings.panelProofMs || 0) + Number(proof.timings?.panelProofMs || 0);
     } else {
       try {
         generated = await callEdge(attemptBody, { logger, ownerId, supabase, revisionContext });
@@ -3750,13 +3840,16 @@ async function generateOrReuseFlatAtlasResolved(options) {
     if (!stillBlocking.length) {
       break;
     }
-    if (heroDriver) {
-      // The hero pass spends ONE assembled candidate: the cascade already
-      // bounded every surface. A gate refusal here hands the request to the
-      // unchanged six-surface contract rather than re-rolling five sheets.
-      logger(`atlas call 1: hero-driver sheet refused by the master gates (${refusalCode}); failing over to the six-surface contract`);
+    if (heroDriver || panelProof) {
+      // BOTH AUTHORING PASSES SPEND ONE ASSEMBLED CANDIDATE. The cascade already
+      // bounded every surface; the panel proof already spent its one image call
+      // on a document, and re-rolling that document is the same ask again. A
+      // gate refusal here hands the request to the unchanged six-surface
+      // contract rather than re-rolling.
+      const from = heroDriver ? HERO_DRIVER_TOPOLOGY : PANEL_PROOF_TOPOLOGY;
+      logger(`atlas call 1: ${from} sheet refused by the master gates (${refusalCode}); failing over to the six-surface contract`);
       return failOverToSixSurface({
-        contract: AUTHORING_FAILOVER_CONTRACT, from: HERO_DRIVER_TOPOLOGY, to: "six-surface",
+        contract: AUTHORING_FAILOVER_CONTRACT, from, to: "six-surface",
         code: refusalCode, reason: refusalReason, attempts: attempt, rawCandidates: [],
       }, { authoringFenceState: providerRecoveryOnly ? "spent" : "held" });
     }
@@ -3859,6 +3952,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     input: authoringInput,
     provider,
     logger,
+    passengerAuthored: panelProof,
   });
   if (!recoveredState?.passengerMirror) timings.passengerMirrorMs += Date.now() - passengerMirrorStartedAt;
   // HERO-DRIVER: the passenger zone holds a plain flop of the driver sheet
@@ -4512,6 +4606,11 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // The hero-driver cascade receipt: per-surface method, attempts, image
       // requests, signatures replayed, stage timings. Null on every other topology.
       heroDriverAuthoring: generated?.heroDriver || null,
+      // The panel-proof receipt: the three quadrants the sheet carried, each
+      // cut cell's fit, the stage timings, and the proof sheet's own identity.
+      // Null on every other topology. A reader that cannot see the clean panels
+      // and the cut graphics here would assume the sheet carried only panels.
+      panelProofAuthoring: generated?.panelProof || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.
@@ -4753,6 +4852,8 @@ This crop is full-bleed print artwork: it intentionally continues behind windows
 
 module.exports = {
   HERO_DRIVER_TOPOLOGY,
+  PANEL_PROOF_TOPOLOGY,
+  PANEL_PROOF_TOPOLOGY_CONTRACT,
   callAtlasAuthorEdge,
   createAtlasAuthorTransport,
   CALL_ONE_PANEL_CONTRACT,

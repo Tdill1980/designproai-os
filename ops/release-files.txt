@@ -92,6 +92,17 @@ runtime/atlas-hero-driver.cjs
 # The cascade as a durable node graph (owner 2026-09-11, "graph orchestration
 # in parallel"). index.js and flat-first-atlas.cjs require it at module load.
 runtime/atlas-call1-graph.cjs
+# CALL 1 AS THE PANEL PRODUCTION PROOF (owner 2026-09-19: wire
+# production-panel-proof into the live customer route as the active Call 1
+# engine). flat-first-atlas.cjs requires the topology at module load, and it
+# requires the container template and the cutter in turn: the container because
+# the same code that DREW the cells is the only honest source of where they are,
+# and the cutter because that is what turns the returned document into the three
+# quadrants. All three are load-bearing whether or not the flag is on, because
+# the require happens at load and not behind it.
+runtime/atlas-panel-proof-topology.cjs
+runtime/atlas-proof-container-template.cjs
+runtime/atlas-proof-panels.cjs
 runtime/atlas-typeset-layer.cjs
 runtime/atlas-logo-prepare.cjs
 runtime/atlas-element-lockup.cjs

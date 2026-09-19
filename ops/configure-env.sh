@@ -162,6 +162,20 @@ fi
 # unlike the flags above, this one has never run live, and the flag that
 # defaulted the other way is the weeks of invisible field-first routing recorded
 # in CLAUDE.md. Sticky like the rest.
+# CALL 1 AS THE PANEL PRODUCTION PROOF (owner, 2026-09-19: "wire
+# production-panel-proof directly into the live customer production route as the
+# active Call 1 engine"). OFF unless a deploy says `on`, and the writer's
+# resolved value AGREES with `panelProofEnabled()` -- the hero-first lesson
+# directly above: a writer that forces a value is not a default, it is an
+# override, and it silently wins over the code. Sticky like the rest.
+atlas_panel_proof=${ATLAS_PANEL_PROOF:-}
+if [[ -z $atlas_panel_proof && -s $ROOT/shared/runtime.env ]]; then
+  atlas_panel_proof=$(sed -n 's/^DESIGNPRO_ATLAS_PANEL_PROOF=//p' "$ROOT/shared/runtime.env" | head -n 1)
+fi
+# Only the exact string `on` routes Call 1 through the proof; a typo leaves
+# today's contract, which is the safe side for a routing with four probe sheets.
+[[ $atlas_panel_proof == "on" ]] || atlas_panel_proof=off
+
 atlas_element_graph=${ATLAS_ELEMENT_GRAPH:-}
 if [[ -z $atlas_element_graph && -s $ROOT/shared/runtime.env ]]; then
   atlas_element_graph=$(sed -n 's/^DESIGNPRO_ATLAS_ELEMENT_GRAPH=//p' "$ROOT/shared/runtime.env" | head -n 1)
@@ -232,6 +246,10 @@ trap cleanup EXIT
   printf 'DESIGNPRO_ATLAS_HERO_FIRST=%s\n' "$atlas_hero_first"
   # ELEMENT GRAPH. `off` (default) or `on`. Sticky. With `off` the compiled
   # graph is byte-for-byte the one without it.
+  # CALL 1 AS THE PANEL PRODUCTION PROOF. `off` (default) or `on`. Sticky. With
+  # `on` Call 1 is `production-panel-proof` and a refusal fails over to
+  # six-surface, so this can cost latency on a bad run but never a design.
+  printf 'DESIGNPRO_ATLAS_PANEL_PROOF=%s\n' "$atlas_panel_proof"
   printf 'DESIGNPRO_ATLAS_ELEMENT_GRAPH=%s\n' "$atlas_element_graph"
   printf 'DESIGNPRO_PANELPROFILEOUTPUT_ENABLED=%s\n' "$panelprofileoutput_enabled"
   printf 'DESIGNPRO_PANELPROFILE_TEMPLATE_RECREATE_ENABLED=%s\n' "$template_recreate_enabled"
@@ -276,10 +294,11 @@ trap - EXIT
 # between "the flag reset" and "I set it wrong" could not be settled from any
 # log, because neither the deploy nor the runtime ever stated the value.
 #
-# These six are routing selectors, not secrets: no key, token or URL is
+# These seven are routing selectors, not secrets: no key, token or URL is
 # printed here, and the block sits after every secret has been consumed.
-printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
+printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
   DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
+  DESIGNPRO_ATLAS_PANEL_PROOF "$atlas_panel_proof" \
   DESIGNPRO_ATLAS_FIELD_FIRST "$atlas_field_first" \
   DESIGNPRO_ATLAS_HERO_FIRST "$atlas_hero_first" \
   DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph" \

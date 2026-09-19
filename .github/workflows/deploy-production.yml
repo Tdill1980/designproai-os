@@ -74,6 +74,23 @@ on:
           - unchanged
           - "on"
           - "off"
+      atlas_panel_proof:
+        description: >-
+          Call 1 as the PANEL PRODUCTION PROOF (owner, 2026-09-19). "on" routes
+          first authoring through production-panel-proof -- one image call
+          returning a three-band sheet, cut deterministically into the branded
+          panels, the clean panels and the cut graphics, then assembled into the
+          GENIE zones and judged by the same master gates. A refusal fails over
+          to six-surface (RULE 0.38), so this can cost latency on a bad run but
+          never a design. "unchanged" keeps whatever the droplet has (off).
+          Sticky across later deploys.
+        required: false
+        type: choice
+        default: unchanged
+        options:
+          - unchanged
+          - "on"
+          - "off"
       atlas_element_graph:
         description: >-
           Element-level design graph (ARCHITECTURE_DAG.md). "unchanged" keeps
@@ -602,6 +619,7 @@ jobs:
           ATLAS_HERO_FIRST: ${{ inputs.atlas_hero_first != 'unchanged' && inputs.atlas_hero_first || '' }}
           ATLAS_CALL1_GRAPH: ${{ inputs.atlas_call1_graph != 'unchanged' && inputs.atlas_call1_graph || '' }}
           ATLAS_ELEMENT_GRAPH: ${{ inputs.atlas_element_graph != 'unchanged' && inputs.atlas_element_graph || '' }}
+          ATLAS_PANEL_PROOF: ${{ inputs.atlas_panel_proof != 'unchanged' && inputs.atlas_panel_proof || '' }}
         shell: bash
         run: |
           set +x
@@ -619,7 +637,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' ATLAS_ELEMENT_GRAPH='$ATLAS_ELEMENT_GRAPH' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' ATLAS_ELEMENT_GRAPH='$ATLAS_ELEMENT_GRAPH' ATLAS_PANEL_PROOF='$ATLAS_PANEL_PROOF' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in
