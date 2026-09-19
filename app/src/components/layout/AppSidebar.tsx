@@ -1,3 +1,4 @@
+import { WpwShopflowNavLink } from "./WpwShopflowNavLink";
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
@@ -115,6 +116,7 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
   return (
     <TooltipProvider delayDuration={150}>
     <nav className="flex flex-col gap-5 px-3 py-4 text-sm font-inter h-full">
+      <WpwShopflowNavLink onNavigate={onNavigate} />
       {/* ── Compact tier pill (replaces Current Plan KPI) ── */}
       <SidebarTooltip
         title={`Current plan: ${TIER_LABELS[userTier] || "Free"}`}
