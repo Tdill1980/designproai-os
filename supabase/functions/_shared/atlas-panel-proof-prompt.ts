@@ -330,9 +330,19 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     out.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
+  // SMALL PANELS CARRY FEWER WORDS, LARGER. Live sheet 35404195565 returned the
+  // rear reading "(520J SSS-0192" and its sub-tagline as "Boo nsanoxst caung
+  // gflahog" -- the flanks were perfect on the same sheet. RestylePro measured
+  // this exact failure and its cause: a tile that gives the lettering ~2-3px of
+  // OUTPUT cannot draw a phone number, so the model draws a plausible one. The
+  // remedy there was more pixels per tile; here the panel's size is the GENIE
+  // geometry and cannot move, so the remedy is fewer glyphs across it.
+  // Positive instruction, stated as what a wrap designer does anyway.
+  out.push("", "THE SMALL PANELS (hood, front, rear) carry the logo and ONE line at most, set LARGE.",
+    "The longer copy belongs on the flanks, which have the room to read it.");
+
   out.push("", "THE THREE BANDS, in this order:",
-    ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`),
-    "Zone 2 is Zone 1 drawn as if it had never carried type.");
+    ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`));
   // EVERY ZONE-3 BOX IS NAMED WITH WHAT FILLS IT. Three of five came back empty
   // under a rule that only said not to leave them empty.
   const supplied: Record<string, string> = {
@@ -352,6 +362,6 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     "ATTACHED: (1) the BLANK CONTAINER TEMPLATE — it is drawn for THIS vehicle, so every panel's",
     "shape and position comes from it; (2) a FINISHED PROOF — the standard for the QUALITY of the",
     "work, on a different vehicle and another company's brand, so take no shape or figure from it.",
-    "Every panel on both is a plain rectangle of artwork; the only shapes are Zone 3's cut graphics.");
+    "The only shapes anywhere are Zone 3's cut graphics.");
   return out.join("\n");
 }

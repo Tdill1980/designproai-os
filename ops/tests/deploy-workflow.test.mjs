@@ -630,7 +630,7 @@ test("a flag dispatch of the release already running rewrites the environment an
   const end = remote.indexOf('"$control/backup.sh"');
   assert.ok(start > 0 && end > start);
   const accepted = remote.slice(start, end);
-  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\}\$\{ATLAS_HERO_FIRST:-\}\$\{ATLAS_ELEMENT_GRAPH:-\} \]\]; then/,
+  assert.match(accepted, /if \[\[ -n \$\{ATLAS_PANEL_FINISH:-\}\$\{ATLAS_TOPOLOGY:-\}\$\{ATLAS_CALL1_GRAPH:-\}\$\{ATLAS_FIELD_FIRST:-\}\$\{ATLAS_HERO_FIRST:-\}\$\{ATLAS_ELEMENT_GRAPH:-\}\$\{ATLAS_PANEL_PROOF:-\} \]\]; then/,
     "EVERY routing flag opens the reconfigure branch; one missing from this test is one that silently no-ops on a dispatch");
   const flagged = accepted.slice(accepted.indexOf("if [[ -n"), accepted.indexOf("FLAGS_APPLIED"));
   assert.match(flagged, /configure-env\.sh" CONFIGURE_DESIGNPRO_SECRETS_ONLY[\s\S]*systemctl restart designproai-os\.service[\s\S]*acceptance\.sh" "\$EXACT_SHA"/,
@@ -662,6 +662,7 @@ test("every routing flag the runtime honours is reachable from a deploy", () => 
     ["DESIGNPRO_ATLAS_CALL1_GRAPH", "runtime/atlas-call1-graph.cjs"],
     ["DESIGNPRO_ATLAS_FIELD_FIRST", "runtime/flat-first-atlas.cjs"],
     ["DESIGNPRO_ATLAS_ELEMENT_GRAPH", "runtime/atlas-call1-graph.cjs"],
+    ["DESIGNPRO_ATLAS_PANEL_PROOF", "runtime/atlas-panel-proof-topology.cjs"],
   ];
   const writer = readFileSync(new URL("../configure-env.sh", import.meta.url), "utf8");
   const validator = readFileSync(new URL("../validate-env.py", import.meta.url), "utf8");
@@ -702,6 +703,17 @@ test("a routing flag's writer fallback is the same value the runtime defaults to
     + "a writer that forces `on` overrides the code default and makes it unreachable");
   assert.ok(!/\[\[ \$atlas_hero_first == "off" \]\] \|\| atlas_hero_first=on/.test(writer),
     "the inverted form is the defect generation 6cf8160e proved: it wrote on over a runtime that defaults off");
+
+  // THE SAME PAIR FOR THE PANEL PROOF, written the same day the lesson above
+  // was. `panelProofEnabled()` requires an explicit "on" because the routing has
+  // four probe sheets behind it and none on a customer generation, so OFF is the
+  // safe side -- and the writer must agree or that choice is unreachable.
+  const proof = readFileSync(
+    new URL("../../runtime/atlas-panel-proof-topology.cjs", import.meta.url), "utf8");
+  assert.match(proof, /DESIGNPRO_ATLAS_PANEL_PROOF[\s\S]{0,160}?===\s*"on"/,
+    "panelProofEnabled must require an explicit on");
+  assert.match(writer, /\[\[ \$atlas_panel_proof == "on" \]\] \|\| atlas_panel_proof=off/,
+    "configure-env must fall back to off for the panel proof, matching panelProofEnabled");
 });
 
 test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret beside them", () => {
@@ -710,7 +722,7 @@ test("configure-env states the resolved A.T.L.A.S. routing flags, and no secret 
   assert.ok(banner, "the deploy must state which routing the release will run");
   for (const flag of ["DESIGNPRO_ATLAS_TOPOLOGY", "DESIGNPRO_ATLAS_FIELD_FIRST",
     "DESIGNPRO_ATLAS_HERO_FIRST", "DESIGNPRO_ATLAS_CALL1_GRAPH", "DESIGNPRO_ATLAS_PANEL_FINISH",
-    "DESIGNPRO_ATLAS_ELEMENT_GRAPH"]) {
+    "DESIGNPRO_ATLAS_ELEMENT_GRAPH", "DESIGNPRO_ATLAS_PANEL_PROOF"]) {
     assert.ok(banner.includes(flag), `${flag} decides routing and must be stated`);
   }
   // Scope the secret check to the printf statement itself, not the rest of the
@@ -859,6 +871,7 @@ test('a deploy that says "unchanged" must send the droplet NOTHING for that flag
     ["ATLAS_FIELD_FIRST", "atlas_field_first", ["on", "off"]],
     ["ATLAS_CALL1_GRAPH", "atlas_call1_graph", ["on", "off"]],
     ["ATLAS_HERO_FIRST", "atlas_hero_first", ["on", "off"]],
+    ["ATLAS_PANEL_PROOF", "atlas_panel_proof", ["on", "off"]],
     ["ATLAS_ELEMENT_GRAPH", "atlas_element_graph", ["on", "off"]],
   ];
   for (const [envName, inputName, choices] of flags) {
