@@ -3709,6 +3709,22 @@ async function generateOrReuseFlatAtlasResolved(options) {
       try {
         proof = await authorPanelProofMaster({
           manifest, input: authoringInput, store, logger, startedAt: authoringStartedAt,
+          // THE CUSTOMER'S OWN LOGO AND REFERENCES, WHICH THIS ROUTE DROPPED.
+          //
+          // `customerImageParts` is built above from `verifiedCustomerLogoPart`
+          // (immutable Storage identity, byte-length and sha256 re-verified, a
+          // URL refused outright) and `verifiedCustomerReferenceParts`. The
+          // six-surface and field contracts send them as
+          // `edgeExtras.referenceImagesBase64`; this branch sent nothing, so a
+          // customer who uploaded their logo or a reference photo got a design
+          // that never saw either -- RULE 0.24 names those CREATIVE authority,
+          // artwork authority under `exact_reference`, and no gate convicts
+          // their absence.
+          //
+          // They are handed over ALREADY VERIFIED rather than re-verified
+          // inside the pass, so ownership and hash checking stay in exactly one
+          // place (RULE 1: reuse the proven path, do not write a second one).
+          customerImageParts,
           providerRequest: { requestId, generationId, claimToken,
             ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
           callProofEdge: options.callProofEdge

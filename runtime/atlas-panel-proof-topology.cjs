@@ -186,13 +186,76 @@ function panelRowsFromManifest(manifest) {
  * topologies keep calling the one endpoint they always called (RULE 0.26) no
  * matter what this one returns.
  */
-async function requestProofSheet({ manifest, input, providerRequest, callProofEdge }) {
+/**
+ * THE CUSTOMER'S OWN ASSETS, STAGED AS REFERENCES RATHER THAN INLINED.
+ *
+ * Their absence was this route's worst defect: `requestProofSheet` forwarded
+ * text and vehicle fields only, so a customer who uploaded a logo or a
+ * reference photo received a design that never saw either, while the
+ * six-surface and field contracts carried both. RULE 0.24 calls those CREATIVE
+ * authority -- artwork authority under `exact_reference` -- and nothing
+ * downstream can detect that they were dropped.
+ *
+ * THEY ARE NOT SENT AS BASE64, DELIBERATELY. The obvious fix is to copy
+ * `edgeExtras.referenceImagesBase64`, and this edge's own header records why
+ * that is the wrong door: it "already died twice on a bodiless 504 from a
+ * 2.2 MB base64 request". A customer logo is conditioned to 1600px and a
+ * VisionBoard set can be several images, so inlining them walks straight back
+ * into a failure mode this function has already suffered.
+ *
+ * So each asset is written to `atlas-call1-inputs/<sha256>.png` -- the one shape
+ * `attach()` admits -- and crosses as `{storagePath, contentHash, byteSize}`
+ * (RULE 0.39). The edge then re-reads and hash-verifies each one itself, so the
+ * runtime cannot name bytes the far side did not check. `CALL1_INPUT_PATH` is
+ * asserted here too, so a path the edge would refuse never leaves (the 2099d17d
+ * lesson, applied before it costs a run).
+ *
+ * VERIFICATION IS NOT REPEATED HERE. `verifiedCustomerLogoPart` and
+ * `verifiedCustomerReferenceParts` already refused a URL, re-downloaded the
+ * bytes and re-checked length and sha256 against the request identity; these
+ * parts arrive from that. Re-implementing those checks would be the second
+ * ownership path RULE 1 exists to prevent.
+ */
+async function stageCustomerAssets({ store, customerImageParts = [], logger = () => {} }) {
+  const inline = (Array.isArray(customerImageParts) ? customerImageParts : [])
+    .filter((part) => typeof part?.inlineData?.data === "string" && part.inlineData.data.length);
+  if (!inline.length) return [];
+  if (typeof store?.putImmutableBytes !== "function") {
+    // Honest and non-fatal: the sheet is still worth drawing from the brief, and
+    // the receipt records that the assets could not be staged rather than
+    // implying the model saw them.
+    logger("atlas call 1: customer assets could not be staged (no store); the proof will not see them");
+    return [];
+  }
+  const staged = [];
+  for (const part of inline) {
+    const bytes = Buffer.from(part.inlineData.data, "base64");
+    if (!bytes.length) continue;
+    // PNG in, PNG out: these parts are already conditioned PNG (the logo is
+    // resized and re-encoded by `verifiedCustomerLogoPart`), so the filename
+    // hash is the hash of exactly what is written.
+    const digest = sha256(bytes);
+    const storagePath = `atlas-call1-inputs/${digest}.png`;
+    if (!CALL1_INPUT_PATH.test(storagePath)) {
+      throw new PanelProofRefusal(`customer asset path the edge would refuse: ${storagePath}`);
+    }
+    staged.push(await store.putImmutableBytes({ storagePath, bytes, contentType: "image/png" }));
+  }
+  logger(`atlas call 1: staged ${staged.length} customer asset(s) for the proof`);
+  return staged;
+}
+
+async function requestProofSheet({ manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger }) {
   const panelRows = panelRowsFromManifest(manifest);
   if (panelRows.length !== 6) {
     throw new PanelProofRefusal(`manifest yielded ${panelRows.length}/6 panel rows`);
   }
   const vehicle = input?.vehicle || {};
+  const customerAssets = await stageCustomerAssets({ store, customerImageParts, logger });
   const sheet = await callProofEdge({
+    // The customer's own logo and references, by identity. Empty when they
+    // uploaded none — never omitted silently when they did.
+    customerAssets,
     // The customer's own words. The edge's intake node parses vehicle, contact
     // and brand out of them; a field set here is a field intake never had to
     // find, and the raw text is what production actually carries.
@@ -208,10 +271,20 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     vehicleMake: vehicle.make || null,
     vehicleModel: vehicle.model || null,
     panelRows,
+    // THE OPERATION IDENTITY, STABLE ACROSS A RECOVERY.
+    //
+    // The edge now runs its image request through the durable provider module,
+    // which keys the claim on {ownerId, requestId, generationId, mode,
+    // attemptKey}. This contract has ONE bounded candidate, so the key is
+    // constant -- which is the point: a re-claimed worker sending the same
+    // identity reads its own earlier request instead of buying the sheet twice.
+    // Before this, the edge minted a fresh uuid per invocation and `cacheOnly`
+    // could not mean anything.
+    attemptKey: "panel-proof:1",
     ...providerRequest,
   });
   if (!sheet?.bytes) throw new PanelProofRefusal("the proof edge returned no sheet");
-  return { sheet, panelRows };
+  return { sheet, panelRows, customerAssets };
 }
 
 /**
@@ -321,7 +394,7 @@ function createPanelProofTransport({
  *   there would be a second contract nobody asked for.
  */
 async function authorPanelProofMaster({
-  manifest, input, store, logger = () => {},
+  manifest, input, store, logger = () => {}, customerImageParts = [],
   providerRequest = {}, callProofEdge,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(),
@@ -331,8 +404,8 @@ async function authorPanelProofMaster({
 
   // ── node 1: the sheet ──────────────────────────────────────────────────
   const sheetAt = Date.now();
-  const { sheet, panelRows } = await requestProofSheet({
-    manifest, input, providerRequest, callProofEdge,
+  const { sheet, panelRows, customerAssets } = await requestProofSheet({
+    manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
   });
   mark("proof.sheet", sheetAt);
   logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);

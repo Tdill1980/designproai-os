@@ -67,6 +67,13 @@ import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-cont
  * of A.C.E. That is why it returned generic blue waves and stock photography.
  */
 import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
+// THE PROVEN DURABLE-PROVIDER MODULE, not a second implementation of it
+// (RULE 1). `design-panel-ai-generate` already routes every Call-1 image
+// request through this; a bare fetch here is what made `cacheOnly` a no-op.
+import {
+  runDurableImageProviderRequest, authorizeAtlasProviderRequest,
+  captureGeminiHttpExchange, providerSha256,
+} from "../_shared/gemini-provider-cache.mjs";
 import {
   INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
   extractDeterministic, intakePrompt, mergeIntake,
@@ -373,7 +380,11 @@ serve(async (req) => {
   }
   if (!hasGeminiKey()) return json({ error: "production_panel_proof_no_key" }, 503);
 
-  const requestId = crypto.randomUUID();
+  // Reassigned by `runDurableImageProviderRequest` to the claim's own output
+  // id, so a recovered attempt reports the request it is recovering rather
+  // than a fresh one. A new uuid per invocation is exactly what made the
+  // recovery contract unobservable.
+  let requestId = crypto.randomUUID();
   try {
     const body = await req.json();
 
@@ -455,6 +466,13 @@ serve(async (req) => {
     // parsing that same array here means the sheet and the sentence cannot
     // disagree about what this vehicle measures.
     let containerSource: Record<string, unknown> = { origin: "studio" };
+    // The customer's verified assets, by identity. Bounded so a malformed or
+    // hostile body cannot turn one request into an unbounded read loop; the
+    // runtime sends a logo plus a VisionBoard set, which is well inside this.
+    const customerAssets = (Array.isArray(body?.customerAssets) ? body.customerAssets : [])
+      .filter((a: unknown) => a && typeof (a as { storagePath?: unknown }).storagePath === "string")
+      .slice(0, 8);
+
     let containerPath = "";
     let containerHash = "";
     try {
@@ -525,29 +543,110 @@ serve(async (req) => {
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
     }
 
-    const t0 = Date.now();
-    const response = await fetch(geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          // 3:2 BECAUSE THE PINNED REFERENCE IS 3:2 (1536x1024, exactly 1.5).
-          // This asked for 16:9 while showing the model a 1.5 document and
-          // telling it to match that layout -- so the one instruction and the
-          // canvas disagreed, and the model had to re-flow the thing it was
-          // being told to reproduce. Google's own list confirms 3:2 across the
-          // Gemini 3 image models. If PANEL_PROOF_FORMAT_EXAMPLE is ever
-          // replaced, this ratio follows its dimensions.
-          imageConfig: { aspectRatio: "3:2", imageSize: "4K" },
-        },
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`panel_proof_provider_http_${response.status}:${(await response.text()).slice(0, 300)}`);
+    // THE CUSTOMER'S OWN LOGO AND REFERENCES.
+    //
+    // Their absence was this route's worst defect: the runtime forwarded text
+    // and vehicle fields only, so a customer who uploaded a logo or a reference
+    // photo received a design that never saw either, while the six-surface and
+    // field contracts carried both. RULE 0.24 calls those CREATIVE authority.
+    //
+    // They arrive as REFERENCES, not base64, and that is deliberate: this
+    // function has already died twice on a bodiless 504 from a 2.2 MB base64
+    // request (see the header), and a logo plus a VisionBoard set is larger than
+    // that. The runtime stages each one to the Call-1 input prefix and sends the
+    // identity; the three checks below are the SAME ones the container gets, so
+    // a caller cannot name bytes this side did not verify.
+    //
+    // They are attached AFTER the container and the pinned format sheet, so the
+    // structural inputs still condition the layout first and the customer's
+    // assets are read as brand content rather than as the sheet's shape.
+    for (const asset of customerAssets) {
+      const path = String(asset?.storagePath || "");
+      const claimed = String(asset?.contentHash || "").toLowerCase();
+      if (!CALL1_INPUT_PATH.test(path)) {
+        throw new Error(`panel_proof_customer_asset_path_invalid:${path.slice(0, 64)}`);
+      }
+      const { data, error } = await svc.storage.from(BUCKET).download(path);
+      if (error || !data) throw new Error(`panel_proof_customer_asset_missing:${path}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = await sha256Hex(bytes);
+      if (digest !== path.slice("atlas-call1-inputs/".length, -4)) {
+        throw new Error(`panel_proof_customer_asset_not_content_addressed:${digest.slice(0, 16)}`);
+      }
+      if (claimed && digest !== claimed) {
+        throw new Error(`panel_proof_customer_asset_hash_mismatch:${digest.slice(0, 16)}`);
+      }
+      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
+      attached.push({ role: "customer-asset", path, sha256: digest, byteSize: bytes.length });
     }
-    const payload = await response.json();
+
+    const t0 = Date.now();
+    const modelRequest = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        // 3:2 BECAUSE THE PINNED REFERENCE IS 3:2 (1536x1024, exactly 1.5).
+        // This asked for 16:9 while showing the model a 1.5 document and
+        // telling it to match that layout -- so the one instruction and the
+        // canvas disagreed, and the model had to re-flow the thing it was
+        // being told to reproduce. Google's own list confirms 3:2 across the
+        // Gemini 3 image models. If PANEL_PROOF_FORMAT_EXAMPLE is ever
+        // replaced, this ratio follows its dimensions.
+        imageConfig: { aspectRatio: "3:2", imageSize: "4K" },
+      },
+    });
+
+    // ═══ THE RECOVERY CONTRACT IS HONOURED, NOT IGNORED ═══
+    //
+    // This used to be a bare `fetch` with its own `crypto.randomUUID()`, and the
+    // caller's `cacheOnly` meant nothing: the runtime sends `cacheOnly: true`
+    // when it is RECOVERING an interrupted attempt, and this function answered
+    // by spending a fresh paid image generation. So a lost worker, a lost lease
+    // or an unanswered provider call could each buy the same sheet twice, and
+    // the second one was invisible -- a new request id every time.
+    //
+    // `runDurableImageProviderRequest` is the proven module the other Call-1
+    // endpoint already uses for exactly this (RULE 1: recover before you
+    // invent). It gives, in one call:
+    //
+    //   · a STABLE operation identity -- {ownerId, requestId, generationId,
+    //     mode, attemptKey} -- so a re-run addresses its own earlier request;
+    //   · an atomic claim, so two workers racing the same attempt cannot both
+    //     call Gemini (an uncertain claim write is never authority to call);
+    //   · `cacheOnly` -> `provider_cache_miss` (404) instead of a generation;
+    //   · `provider_outcome_unknown` (409) on an interrupted exchange, with the
+    //     diagnostic banked, so the runtime re-reads rather than re-spends;
+    //   · the exchange stored, so recovery returns the SAME sheet.
+    //
+    // `attemptKey` is the caller's, defaulting to the one bounded attempt this
+    // contract has. It is part of the identity, so candidate 2 is a different
+    // operation and is still allowed to spend -- that is the bounded budget
+    // working, not a cache miss.
+    const providerRequest = {
+      ...(body?.providerRequest && typeof body.providerRequest === "object" ? body.providerRequest : {}),
+      requestId: String(body?.requestId || body?.providerRequest?.requestId || ""),
+      generationId: String(body?.generationId || body?.providerRequest?.generationId || ""),
+      claimToken: body?.claimToken ?? body?.providerRequest?.claimToken,
+      attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
+      cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
+    };
+    const cached = await runDurableImageProviderRequest({
+      bucket: svc.storage.from(BUCKET),
+      identity: { ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof" },
+      requestHash: await providerSha256(JSON.stringify({
+        model: PRIMARY_IMAGE_MODEL, promptVersion: ATLAS_PANEL_PROOF_CONTRACT, modelRequest,
+      })),
+      privateRequest: modelRequest,
+      outputRequestId: requestId,
+      cacheOnly: providerRequest.cacheOnly === true,
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, caller.userId),
+      invoke: () => captureGeminiHttpExchange(async () => await fetch(
+        geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: modelRequest },
+      )),
+    });
+    requestId = cached.requestId;
+    const payload = cached.payload;
     const candidateParts = payload?.candidates?.[0]?.content?.parts ?? [];
     const image = candidateParts.find((p: Record<string, unknown>) => (p as { inlineData?: unknown }).inlineData);
     if (!image) {

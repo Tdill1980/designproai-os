@@ -155,19 +155,61 @@ test("the DAG runs sheet -> cut -> assemble, and only the sheet spends a model c
   assert.equal(meta.height, 4096);
 });
 
-test("the sheet crosses the boundary as an IDENTITY, never as bytes — RULE 0.39", () => {
+test("the sheet crosses the boundary as an IDENTITY, never as bytes — RULE 0.39", async () => {
+  // The real body, from a real pass with real customer assets staged, so the
+  // blob check below measures what production actually sends.
+  const { callProofEdge, calls } = edgeStub(await paintedSheet());
+  const png = await sharp({ create: { width: 24, height: 24, channels: 4, background: { r: 9, g: 9, b: 9, alpha: 1 } } })
+    .png().toBuffer();
+  await proof.authorPanelProofMaster({
+    ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
+    customerImageParts: [{ inlineData: { mimeType: "image/png", data: png.toString("base64") } }],
+  });
+  const lastEdgeBody = calls[0];
+
   // The edge answers {proofStoragePath, proofSha256, proofByteSize} and the
   // transport verifies BOTH halves before the pixels are used: a swapped object
   // and a caller whose claim does not match what it wrote are two failures.
   assert.match(topologySrc, /payload\.proofStoragePath/);
   assert.match(topologySrc, /bytes\.length !== Number\(payload\.proofByteSize\) \|\| sha256\(bytes\) !== payload\.proofSha256/);
-  // And nothing may travel as a blob across it.
-  const code = topologySrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  for (const banned of ["base64", "inlineData", "data:image"]) {
-    assert.ok(!code.includes(banned),
-      `a node boundary carries an identity, never a blob — found "${banned}"`);
+  // AND NOTHING TRAVELS AS A BLOB ACROSS IT — asserted on the BODY THAT LEAVES,
+  // not on a substring of the source.
+  //
+  // This used to grep the source for "base64" / "inlineData" / "data:image".
+  // That proxy was wider than the defect and it convicted the RIGHT behaviour:
+  // `stageCustomerAssets` DECODES an in-memory `inlineData` part precisely in
+  // order to write it to storage and send a reference, which is what RULE 0.39
+  // asks for. A source grep cannot tell "decoded here, then staged" from
+  // "shipped across the boundary".
+  //
+  // So the lock reads every value in the real request body instead. A blob is
+  // only a violation when it CROSSES, and that is now what is measured —
+  // the same "locked as arriving, not as sent" move the hero-flatten signature
+  // lock already makes.
+  const body = deepValues(lastEdgeBody);
+  for (const [path, value] of body) {
+    if (typeof value !== "string") continue;
+    assert.ok(value.length < 512,
+      `the edge request carries a ${value.length}-char string at ${path} — a blob, not an identity`);
+    assert.ok(!/^data:image/.test(value), `${path} carries a data: URI`);
+  }
+  for (const [path] of body) {
+    assert.ok(!/inlineData|\.data$/.test(path),
+      `the edge request carries pixel data at ${path}; it must carry {storagePath, contentHash, byteSize}`);
   }
 });
+
+/** Every leaf of an object, as [dottedPath, value]. */
+function deepValues(node, prefix = "", out = []) {
+  if (Array.isArray(node)) {
+    node.forEach((v, i) => deepValues(v, `${prefix}[${i}]`, out));
+  } else if (node && typeof node === "object" && !Buffer.isBuffer(node)) {
+    for (const [k, v] of Object.entries(node)) deepValues(v, prefix ? `${prefix}.${k}` : k, out);
+  } else {
+    out.push([prefix, node]);
+  }
+  return out;
+}
 
 test("the container is staged only where the edge would accept it", async () => {
   // THE 2099d17d LESSON, APPLIED BEFORE IT COSTS A RUN. `attach()` admits a
@@ -493,4 +535,139 @@ test("CALL 2 AND THE QC->WRAPBOX CHAIN ARE THE ORCHESTRATION THAT ALREADY EXISTE
   for (const stage of ["await_panelpro_preflight_qc", "enhance.upscale", "output.build"]) {
     assert.ok(claimant.includes(stage), `the QC -> WrapBox chain still owns ${stage}`);
   }
+});
+
+test("the customer's logo and references REACH the proof, staged where the edge admits them", async () => {
+  // THE WORST DEFECT THIS ROUTE HAD, and the one an independent review found
+  // rather than any test here. `requestProofSheet` forwarded text and vehicle
+  // fields only, so a customer who uploaded a logo or a reference photo got a
+  // design that never saw either -- while the six-surface and field contracts
+  // carried both through `edgeExtras.referenceImagesBase64`. RULE 0.24 calls
+  // those CREATIVE authority, artwork authority under `exact_reference`, and
+  // NOTHING downstream can detect that they were dropped: the sheet is a
+  // perfectly good design, just not the customer's brand.
+  //
+  // The fixture is the SHAPE flat-first-atlas actually hands over --
+  // `customerImageParts`, the array of Gemini parts built by
+  // `verifiedCustomerLogoPart` + `verifiedCustomerReferenceParts`, text parts
+  // and all -- so a change to that hand-off breaks this rather than passing.
+  const sheet = await paintedSheet();
+  const { callProofEdge, calls } = edgeStub(sheet);
+  const store = memoryStore();
+  const logo = await sharp({ create: { width: 40, height: 40, channels: 4, background: { r: 200, g: 30, b: 30, alpha: 1 } } })
+    .png().toBuffer();
+  const reference = await sharp({ create: { width: 48, height: 32, channels: 4, background: { r: 20, g: 90, b: 180, alpha: 1 } } })
+    .png().toBuffer();
+  const customerImageParts = [
+    { text: "VERIFIED CUSTOMER-OWNED LOGO. This is a customer style/identity source." },
+    { inlineData: { mimeType: "image/png", data: logo.toString("base64") } },
+    { inlineData: { mimeType: "image/png", data: reference.toString("base64") } },
+  ];
+
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge, customerImageParts });
+  assert.ok(out.contentHash, "the master must still be produced");
+
+  const assets = calls[0]?.customerAssets;
+  assert.ok(Array.isArray(assets), "the proof edge must be sent customerAssets");
+  assert.equal(assets.length, 2, "both image parts reach the edge; the text part is not an asset");
+
+  for (const [i, bytes] of [logo, reference].entries()) {
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const asset = assets[i];
+    // THE EDGE'S OWN ALLOWLIST, asserted here so a path the far side would
+    // refuse cannot leave the runtime -- the 2099d17d lesson, where node 1
+    // spent a whole live generation discovering `attach()` rejects its path.
+    assert.equal(asset.storagePath, `atlas-call1-inputs/${digest}.png`);
+    assert.match(asset.storagePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/);
+    assert.equal(asset.contentHash, digest);
+    assert.equal(asset.byteSize, bytes.length);
+    // NOT BASE64. The edge has died twice on a bodiless 504 from a 2.2 MB
+    // base64 request; a logo plus a reference set is bigger than that.
+    assert.equal(asset.data, undefined, "an asset must cross as an identity, never as bytes (RULE 0.39)");
+    assert.equal(asset.inlineData, undefined);
+    // AND THE BYTES ARE REALLY THERE, under that exact path.
+    const stored = store.objects.get(asset.storagePath);
+    assert.ok(stored, `nothing was written to ${asset.storagePath}`);
+    assert.equal(createHash("sha256").update(stored.bytes).digest("hex"), digest);
+  }
+});
+
+test("a customer with no uploads sends an empty asset list, never a fabricated one", async () => {
+  // The honest empty case. `customerAssets: []` says "this customer uploaded
+  // nothing"; omitting the field entirely is what the defect looked like, and a
+  // reader could not tell that from "they uploaded nothing".
+  const sheet = await paintedSheet();
+  const { callProofEdge, calls } = edgeStub(sheet);
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge });
+  assert.ok(out.contentHash);
+  assert.deepEqual(calls[0].customerAssets, []);
+});
+
+test("the proof EDGE verifies every customer asset it is handed", async () => {
+  // A runtime that names bytes the far side never checked is the shape RULE
+  // 0.39 exists to prevent, so the edge repeats all three checks the container
+  // already gets: the Call-1 prefix, filename-hash == bytes-hash, and
+  // claimed-hash == bytes-hash. Read from the edge source, because that is the
+  // file the deploy ships.
+  const edge = fs.readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /panel_proof_customer_asset_path_invalid/);
+  assert.match(edge, /panel_proof_customer_asset_not_content_addressed/);
+  assert.match(edge, /panel_proof_customer_asset_hash_mismatch/);
+  assert.match(edge, /panel_proof_customer_asset_missing/);
+  // Bounded: a malformed body cannot turn one request into an unbounded read loop.
+  assert.match(edge, /\.slice\(0, 8\)/);
+  // Attached AFTER the structural inputs, so the container still conditions the
+  // layout first and the customer's assets read as brand content.
+  assert.ok(edge.indexOf("for (const pinned of PINNED_INPUTS)") < edge.indexOf("for (const asset of customerAssets)"),
+    "customer assets must attach after the container and the pinned format sheet");
+});
+
+test("a RECOVERY cannot buy a second paid generation — the edge honours cacheOnly", async () => {
+  // F02, found by an independent review. The runtime sends `cacheOnly: true`
+  // when it is RECOVERING an interrupted attempt; the proof edge answered with a
+  // bare `fetch` and its own `crypto.randomUUID()`, so the flag meant nothing
+  // and a lost worker, a lost lease or an unanswered provider call could each
+  // buy the same sheet again — invisibly, under a new request id every time.
+  //
+  // The fix is the module the other Call-1 endpoint already uses, so this
+  // asserts the SEAM rather than re-testing that module: identity, claim,
+  // cacheOnly, and the unknown-outcome path all belong to it.
+  const edge = fs.readFileSync(
+    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+
+  assert.match(edge, /from "\.\.\/_shared\/gemini-provider-cache\.mjs"/,
+    "the proof edge must use the proven durable-provider module, not a second implementation");
+  assert.match(edge, /runDurableImageProviderRequest\(\{/);
+  assert.match(edge, /cacheOnly: providerRequest\.cacheOnly === true/,
+    "the caller's cacheOnly must reach the module that can honour it");
+  assert.match(edge, /authorize: \(\) => authorizeAtlasProviderRequest\(/,
+    "the lease must still authorise the provider request (RULE 0.26)");
+  assert.match(edge, /identity: \{ \.\.\.providerRequest, ownerId: caller\.userId, mode: "atlas-panel-proof" \}/);
+  // THE BARE IMAGE FETCH IS GONE. A second, uncached path to the PAID model is
+  // how the contract got bypassed; the only one left is inside `invoke`.
+  //
+  // Scoped to `geminiImageUrl` on purpose: the other `fetch` in this file is
+  // `parseCustomerIntake`, a Flash TEXT call, and counting every fetch convicted
+  // it. The contract here is about the billed image generation.
+  const imageCalls = [...edge.matchAll(/await fetch\(\s*\n?\s*geminiImageUrl\(/g)].length;
+  assert.equal(imageCalls, 1,
+    `exactly one image-provider fetch, inside invoke(); found ${imageCalls}`);
+  const invokeAt = edge.indexOf("invoke: () => captureGeminiHttpExchange");
+  assert.ok(invokeAt > 0 && invokeAt < edge.indexOf("geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),\n"),
+    "the image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
+  // A FRESH UUID PER INVOCATION IS THE DEFECT. It must be reassignable from the
+  // claim, so a recovered attempt reports the request it recovered.
+  assert.match(edge, /let requestId = crypto\.randomUUID\(\)/);
+  assert.match(edge, /requestId = cached\.requestId/);
+
+  // AND THE RUNTIME SENDS A STABLE OPERATION KEY, or every recovery is a fresh
+  // identity and the claim can never be found.
+  const sheet = await paintedSheet();
+  const { callProofEdge, calls } = edgeStub(sheet);
+  await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge });
+  assert.equal(calls[0].attemptKey, "panel-proof:1",
+    "the attempt key must be stable across recoveries of the same candidate");
+  assert.match(calls[0].attemptKey, /^[a-z][a-z0-9:._-]{0,119}$/,
+    "the key must satisfy the provider module's own identity pattern");
 });
