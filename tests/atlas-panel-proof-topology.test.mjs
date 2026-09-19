@@ -32,6 +32,8 @@ import fs from "node:fs";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
+import { createHash } from "node:crypto";
+
 const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
 const sharp = runtimeRequire("sharp");
@@ -91,6 +93,31 @@ function edgeStub(sheetBytes, overrides = {}) {
         byteSize: sheetBytes.length, model: "gemini-3-pro-image",
         contract: "designpro.atlas-panel-proof.v1", ...overrides,
       };
+    },
+  };
+}
+
+/**
+ * A store that behaves like the REAL `putImmutableBytes`, because a fixture
+ * laxer than the real thing cannot catch a defect of the real thing — this repo
+ * has now recorded that shape five times, twice on this very contract.
+ *
+ * So it mirrors `generation-store.cjs`: it hashes the bytes itself, returns
+ * `{storagePath, contentHash, byteSize}`, and REFUSES a content-addressed path
+ * that already holds different bytes rather than silently overwriting.
+ */
+function memoryStore() {
+  const objects = new Map();
+  return {
+    objects,
+    async putImmutableBytes({ storagePath, bytes, contentType }) {
+      const contentHash = createHash("sha256").update(bytes).digest("hex");
+      const existing = objects.get(storagePath);
+      if (existing && createHash("sha256").update(existing.bytes).digest("hex") !== contentHash) {
+        throw new Error("content-addressed path already holds different bytes");
+      }
+      objects.set(storagePath, { bytes, contentType });
+      return { storagePath, contentHash, byteSize: bytes.length };
     },
   };
 }
@@ -290,6 +317,116 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // answers "which panels does production buy" twice.
   assert.equal(out.panels, undefined,
     "the chain cuts its own panels; returning a rival set is the second producer RULE 0.21 forbids");
+});
+
+test("the clean panels and the cut graphics are STORED, and the receipt addresses real bytes", async () => {
+  // Owner, 2026-09-19: "Production panel proof is source it has the 3 zones /
+  // For panels, panels with seperated and logos and text."
+  //
+  // THIS IS THE LOCK THAT WOULD HAVE CAUGHT THE DEFECT. `sibling()` recorded
+  // surfaceKey, role, byteSize, fit and rect — no path, no hash — so eleven
+  // panels of authored artwork were cut, measured and dropped on the floor when
+  // the function returned, while the module header claimed they "ride on the
+  // provenance as content-addressed siblings". The previous test asserted
+  // `rect` and `fit` on the clean band and passed throughout, because a
+  // measurement is exactly what a discarded buffer still has.
+  //
+  // A byteSize for bytes nobody can fetch is a receipt claiming what was never
+  // established. So this asserts the IDENTITY, and then goes to the store and
+  // proves the bytes are really there under the hash the receipt names.
+  const sheet = await paintedSheet();
+  const { callProofEdge } = edgeStub(sheet);
+  const store = memoryStore();
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge });
+  const q = out.provenance.quadrants;
+
+  for (const panel of [...q.clean, ...q.cutGraphics]) {
+    const where = `${panel.role}:${panel.surfaceKey}`;
+    assert.equal(panel.persisted, true, `${where} was not stored`);
+    assert.match(panel.contentHash, /^[0-9a-f]{64}$/, `${where} has no content hash`);
+    assert.ok(Number.isFinite(panel.byteSize) && panel.byteSize > 0, `${where} has no byte size`);
+
+    // CONTENT-ADDRESSED, AND NOT IN THE EDGE'S INPUT DOORWAY. These are Call-1
+    // OUTPUTS; `atlas-call1-inputs/` is the allowlist the flatten reads from,
+    // and a product artifact sitting there is one refactor away from being
+    // attached to a customer's own generation as a teaching input.
+    assert.equal(panel.storagePath, `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
+      `${where} must be addressed by its own hash`);
+    assert.doesNotMatch(panel.storagePath, /^atlas-call1-inputs\//,
+      `${where} is an output and must not live in the edge's input prefix`);
+
+    // THE BYTES ARE ACTUALLY THERE, under that exact path, hashing to that
+    // exact hash, at that exact length. This is the assertion the old receipt
+    // could never have satisfied.
+    const stored = store.objects.get(panel.storagePath);
+    assert.ok(stored, `${where}: nothing was written to ${panel.storagePath}`);
+    assert.equal(createHash("sha256").update(stored.bytes).digest("hex"), panel.contentHash,
+      `${where}: the stored object does not hash to the hash on the receipt`);
+    assert.equal(stored.bytes.length, panel.byteSize,
+      `${where}: the receipt's byteSize is not the stored object's length`);
+    assert.equal(stored.contentType, "image/png");
+  }
+
+  // ELEVEN RECEIPT ENTRIES — six clean panels and five cut graphics — and one
+  // object per DISTINCT content hash, not per entry.
+  //
+  // Content addressing deduplicates by design, and this fixture proves it does:
+  // its synthetic cells are uniformly painted, so several crops are byte-identical
+  // and 11 entries land in 8 objects. That is the store behaving correctly, and
+  // asserting 11 objects here was my error, not the runtime's — a real sheet's
+  // panels differ, and either way every entry above was verified to address the
+  // bytes actually stored under its own hash.
+  //
+  // The "wrote one buffer under every path" failure is caught anyway: the store
+  // refuses a content-addressed path that already holds different bytes, exactly
+  // as generation-store.cjs does.
+  const entries = [...q.clean, ...q.cutGraphics];
+  assert.equal(entries.length, 11);
+  assert.equal(new Set(entries.map((p) => p.storagePath)).size,
+    new Set(entries.map((p) => p.contentHash)).size,
+    "one stored object per distinct content hash");
+
+  // ZONE 1 IS NOT STORED AGAIN. It became the master; a second copy addressed
+  // separately is the rival panel set RULE 0.21 forbids, one layer down.
+  for (const panel of q.branded) {
+    assert.equal(panel.storagePath, undefined,
+      "zone 1 became the master — storing it again creates a second panel set");
+  }
+  assert.ok(Number.isFinite(out.timings.quadrantStoreMs));
+});
+
+test("a quadrant that cannot be stored fails SOFT and never claims a path", async () => {
+  // RULE 0.15's blast radius: by this point Zone 1 is an accepted master with
+  // six cuttable panels. An optional quadrant may not destroy it — that is the
+  // same lesson as "Finishing is optional; it may never kill a generation",
+  // where one interrupted roof edit failed a whole recovered request.
+  //
+  // But it may not lie either. Both consumers (Call 11's de-logo, Call 10's
+  // logo extract) keep their existing behaviour, so a soft failure costs the old
+  // path and nothing more — which is only true if the receipt SAYS so.
+  const sheet = await paintedSheet();
+  const { callProofEdge } = edgeStub(sheet);
+
+  for (const [label, store] of [
+    ["no store at all", undefined],
+    ["a store that throws", { putImmutableBytes: async () => { throw new Error("bucket exploded"); } }],
+  ]) {
+    const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge });
+    assert.ok(out.contentHash, `${label}: the master must still be produced`);
+    const q = out.provenance.quadrants;
+    assert.equal(q.clean.length, 6);
+    assert.equal(q.cutGraphics.length, 5);
+    for (const panel of [...q.clean, ...q.cutGraphics]) {
+      assert.equal(panel.persisted, false, `${label}: must not report stored`);
+      assert.ok(panel.reason, `${label}: must say why`);
+      assert.equal(panel.storagePath, undefined,
+        `${label}: a path that was never written must not appear on the receipt`);
+      assert.equal(panel.contentHash, undefined,
+        `${label}: a content hash addresses stored bytes — there are none`);
+      // The measurements survive, because they are honest: the cut did happen.
+      assert.ok(panel.rect && Number.isFinite(panel.fit));
+    }
+  }
 });
 
 test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {

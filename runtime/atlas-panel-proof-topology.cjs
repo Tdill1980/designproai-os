@@ -55,10 +55,44 @@
  * nothing routes to still costs the next reader an hour deciding which one is
  * real. Do not add another one here.
  *
- * ZONE 2 AND ZONE 3 ARE NOT DISCARDED. The clean panels and the cut graphics
- * ride on the provenance as content-addressed siblings, which is what the
- * owner's three-quadrant contract is for: the blank panels go to PanelPro for
- * template QC, and the cut graphics are the Logo Pack.
+ * ZONE 2 AND ZONE 3 ARE STORED, NOT MEASURED AND DROPPED.
+ *
+ * Owner, 2026-09-19: "Production panel proof is source it has the 3 zones / For
+ * panels, panels with seperated and logos and text." All three quadrants are
+ * the deliverable, and only Zone 1 was reaching anything.
+ *
+ * This comment used to claim they "ride on the provenance as content-addressed
+ * siblings" and that was FALSE: `sibling()` recorded `surfaceKey, role,
+ * byteSize, fit, rect` and no storage path and no content hash, so the pixels
+ * were cut, measured and garbage-collected when this function returned. A
+ * receipt that names a byte count for bytes nobody can fetch is the
+ * claiming-what-was-never-established shape this repo has now recorded five
+ * times, and this instance was in a comment asserting the opposite.
+ *
+ * Each panel of both quadrants is now written through `store.putImmutableBytes`
+ * — the seam `store` was already passed here for and ignored, so this is no new
+ * door — and crosses the boundary as `{storagePath, contentHash, byteSize}`
+ * (RULE 0.39). Content-addressed, so a re-run re-uploads nothing.
+ *
+ * WHY IT MATTERS MORE THAN A RECEIPT: both quadrants have a downstream consumer
+ * already, and each one currently reconstructs what this sheet authored:
+ *
+ *   Zone 2 → `panels.delogo` (Call 11), which today duplicates a BRANDED panel,
+ *            AI-locates the logo boxes and paints white rectangles over them.
+ *   Zone 3 → `logos.extract` (Call 10), which keys marks out of finished art.
+ *
+ * An authored clean base beats a stripped one — RestylePro's own words, after
+ * it shipped the smear: "Never re-introduce a strip/heal to make a clean logo
+ * removal — it smears. The clean base is AUTHORED, not stripped." Wiring those
+ * two stages onto these bytes is the next step and is NOT done here; storing
+ * them is what makes it possible at all.
+ *
+ * FAIL SOFT, STATE WHY. A quadrant that cannot be stored records
+ * `persisted: false` with its reason and never a path it does not have. It may
+ * not throw: Zone 1 is already an accepted master by this point, and RULE 0.15's
+ * blast-radius lesson — "a defect that only exists in an optional edit must not
+ * destroy the design" — applies exactly. Both consumers keep their existing
+ * behaviour, so the cost of a soft failure is the old path, not a dead run.
  *
  * ═══ IT FAILS OVER, LIKE EVERY OTHER ROUTING ═══
  *
@@ -97,6 +131,16 @@ const CANVAS_PX = 4096;
  * refused.
  */
 const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
+
+/**
+ * Where the clean panels and the cut graphics live.
+ *
+ * Content-addressed and deliberately NOT under `atlas-call1-inputs/`: these are
+ * OUTPUTS of Call 1, and that prefix is the edge's input allowlist. Putting a
+ * product artifact in the doorway the flatten reads from is how a later change
+ * ends up attaching a customer's own clean panel as a teaching input.
+ */
+const QUADRANT_PREFIX = "atlas-panel-proof/quadrants";
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -277,7 +321,7 @@ function createPanelProofTransport({
  *   there would be a second contract nobody asked for.
  */
 async function authorPanelProofMaster({
-  manifest, input, store: _store, logger = () => {},
+  manifest, input, store, logger = () => {},
   providerRequest = {}, callProofEdge,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(),
@@ -375,10 +419,52 @@ async function authorPanelProofMaster({
   const assembled = await assembleFinishedMaster(canvas, manifest, placed);
   mark("master.assemble", assembleAt);
 
-  // The other two quadrants, carried as receipts rather than thrown away.
-  const sibling = (zone) => cut.panels.filter((p) => p.zone === zone).map((p) => ({
-    surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
-  }));
+  // ── the other two quadrants: STORED, then described. ───────────────────
+  //
+  // See the header. These bytes are the clean base and the Logo Pack; they were
+  // being cut, measured and dropped while a comment here claimed otherwise.
+  // One content-addressed write each, through the store seam the caller already
+  // hands this function.
+  const quadrantAt = Date.now();
+  const sibling = async (zone) => {
+    const panels = cut.panels.filter((p) => p.zone === zone);
+    const out = [];
+    for (const p of panels) {
+      const described = {
+        surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+        widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
+      };
+      if (typeof store?.putImmutableBytes !== "function") {
+        // Honest, and never a path: a caller with no store gets the measurements
+        // and an explicit reason, so a reader cannot mistake this for stored.
+        out.push({ ...described, persisted: false, reason: "store_unavailable" });
+        continue;
+      }
+      try {
+        const stored = await store.putImmutableBytes({
+          storagePath: `${QUADRANT_PREFIX}/${sha256(p.bytes)}.png`,
+          bytes: p.bytes, contentType: "image/png",
+        });
+        out.push({ ...described, persisted: true, ...stored });
+      } catch (cause) {
+        // FAIL SOFT. Zone 1 is an accepted master by now; an optional quadrant
+        // may not take it down (RULE 0.15's blast radius).
+        out.push({ ...described, persisted: false,
+          reason: String(cause?.message || cause).slice(0, 200) });
+      }
+    }
+    return out;
+  };
+  const [cleanQuadrant, cutGraphicsQuadrant] = await Promise.all([sibling("zone2"), sibling("zone3")]);
+  // NOT A `mark()`. `stageTimings` is the DAG's node list and its order is
+  // locked as such; this is persistence of node 2's output, not a fourth node,
+  // so it is timed on `timings` where a reader will not read it as one. The
+  // order lock caught me putting it there.
+  const quadrantMs = Date.now() - quadrantAt;
+  const storedCount = [...cleanQuadrant, ...cutGraphicsQuadrant].filter((p) => p.persisted).length;
+  logger(`atlas call 1: quadrants stored ${storedCount}/${cleanQuadrant.length + cutGraphicsQuadrant.length}`
+    + ` (clean ${cleanQuadrant.filter((p) => p.persisted).length}, cut graphics `
+    + `${cutGraphicsQuadrant.filter((p) => p.persisted).length})`);
 
   return {
     bytes: assembled.bytes,
@@ -415,11 +501,19 @@ async function authorPanelProofMaster({
       // THE THREE QUADRANTS, NAMED. Zone 1 became the master; these two are
       // the clean base and the Logo Pack, and a reader that cannot see them
       // here would assume the sheet carried only panels.
-      quadrants: { branded: sibling("zone1"), clean: sibling("zone2"), cutGraphics: sibling("zone3") },
+      // Zone 1 became the master, so it is described from the placement above
+      // rather than stored twice; the other two carry their own identities.
+      quadrants: {
+        branded: zone1.map((p) => ({
+          surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+        })),
+        clean: cleanQuadrant,
+        cutGraphics: cutGraphicsQuadrant,
+      },
       stageTimings,
       totalMs: Date.now() - startedAt,
     },
-    timings: { panelProofMs: Date.now() - startedAt, stages: stageTimings },
+    timings: { panelProofMs: Date.now() - startedAt, quadrantStoreMs: quadrantMs, stages: stageTimings },
   };
 }
 
