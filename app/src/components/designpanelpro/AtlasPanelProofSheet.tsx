@@ -160,7 +160,7 @@ export function AtlasPanelProofSheet({
   );
 }
 
-export function AtlasPanelProofSheetLoader({ requestId }: { requestId: string }) {
+export function AtlasPanelProofSheetLoader({ requestId, revisionId }: { requestId: string; revisionId?: string }) {
   const query = useQuery({
     queryKey: ["designpro-atlas-panel-proof", requestId],
     // Loaded on demand: the API module builds the Supabase client at import
@@ -169,5 +169,8 @@ export function AtlasPanelProofSheetLoader({ requestId }: { requestId: string })
     staleTime: 60_000,
     retry: false,
   });
+  if (revisionId && query.data?.revisionId && query.data.revisionId !== revisionId) {
+    return <p className="text-xs text-gray-500">The production proof belongs to a different revision.</p>;
+  }
   return <AtlasPanelProofSheet proof={query.data} status={query.status} />;
 }

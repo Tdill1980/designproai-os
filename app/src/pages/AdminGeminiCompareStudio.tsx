@@ -1,3 +1,4 @@
+import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -809,6 +810,7 @@ function AtlasProgressCard({
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
+      {atlas?.requestId && <AtlasPanelProofSheetLoader requestId={atlas.requestId} revisionId={atlas.id} />}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
           A.T.L.A.S.

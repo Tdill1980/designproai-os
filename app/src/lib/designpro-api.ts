@@ -287,6 +287,7 @@ export type AtlasPanelProof = {
 
 export type FlatAtlasRevision = {
   id: string;
+  requestId?: string;
   generationId: string;
   revisionSequence: number;
   parentRevisionId: string | null;
