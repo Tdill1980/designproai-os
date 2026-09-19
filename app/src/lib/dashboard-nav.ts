@@ -30,7 +30,6 @@ import {
   LayoutDashboard,
   CreditCard,
   Grid3x3,
-  Store,
   FileCheck2,
   type LucideIcon,
 } from "lucide-react";
@@ -256,31 +255,6 @@ const WPW_TOOL_KEYS = new Set(["patternpro_wpw", "wallpro_wpw"]);
 
 export const WPW_SHOPFLOW_URL = "https://www.restyleproai.com/shopflow";
 
-const wpwShopFlowGroup: NavGroup = {
-  id: "wpw",
-  label: "WPW ShopFlow",
-  items: [
-    {
-      type: "link",
-      label: "WPW ShopFlow dashboard",
-      route: WPW_SHOPFLOW_URL,
-      icon: Store,
-      description: "WePrintWraps orders, reorders, rewards and files",
-    },
-    {
-      type: "link",
-      label: "DesignProofs",
-      route: "/design-proofs?brand=weprintwraps",
-      icon: FileCheck2,
-      description: "Saved PatternPro and WallPro approval PDFs",
-    },
-    ...DASHBOARD_TOOLS.filter((tool) => WPW_TOOL_KEYS.has(tool.key)).map((tool) => ({
-      type: "tool" as const,
-      tool,
-    })),
-  ],
-};
-
 const buildToolGroup = (id: Pillar, label: string): NavGroup => ({
   id,
   label,
@@ -295,7 +269,6 @@ export const NAV_GROUPS: NavGroup[] = [
   buildToolGroup("design", "Design"),
   buildToolGroup("output", "Output"),
   buildToolGroup("profit", "Profit"),
-  wpwShopFlowGroup,
   staticAccountGroup,
 ];
 
