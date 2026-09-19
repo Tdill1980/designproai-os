@@ -229,7 +229,8 @@ const INSTALLATION_FACT = [
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
   "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
   "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
-  "trim line; the artwork does not.",
+  "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
+  "all four sides.",
 ].join("\n");
 
 /**
