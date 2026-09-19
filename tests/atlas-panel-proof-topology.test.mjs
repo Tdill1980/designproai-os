@@ -591,17 +591,29 @@ test("the customer's logo and references REACH the proof, staged where the edge 
     assert.ok(stored, `nothing was written to ${asset.storagePath}`);
     assert.equal(createHash("sha256").update(stored.bytes).digest("hex"), digest);
   }
+
+  // AND THE RECEIPT SAYS SO. The assets were staged, hash-verified and sent,
+  // and then recorded NOWHERE -- so "did the customer's logo reach Call 1" was
+  // unanswerable from the run itself, which is precisely the state that let this
+  // route ship forwarding neither the logo nor the reference while every receipt
+  // read green. Identities only, never bytes.
+  assert.deepEqual(out.provenance.customerAssets, assets.map((a) => ({
+    storagePath: a.storagePath, contentHash: a.contentHash, byteSize: a.byteSize,
+  })), "the receipt must record which customer assets reached Call 1");
 });
 
 test("a customer with no uploads sends an empty asset list, never a fabricated one", async () => {
   // The honest empty case. `customerAssets: []` says "this customer uploaded
   // nothing"; omitting the field entirely is what the defect looked like, and a
-  // reader could not tell that from "they uploaded nothing".
+  // reader could not tell that from "they uploaded nothing". The RECEIPT keeps
+  // the same distinction: an empty array, never a missing field.
   const sheet = await paintedSheet();
   const { callProofEdge, calls } = edgeStub(sheet);
   const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge });
   assert.ok(out.contentHash);
   assert.deepEqual(calls[0].customerAssets, []);
+  assert.deepEqual(out.provenance.customerAssets, [],
+    "an empty array on the receipt too — a MISSING field is what the defect looked like");
 });
 
 test("the proof EDGE verifies every customer asset it is handed", async () => {

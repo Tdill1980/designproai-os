@@ -709,6 +709,19 @@ async function assemblePanelProofMaster({
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
+      // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.
+      //
+      // They were staged, hash-verified and sent, and then recorded NOWHERE --
+      // so "did the customer's logo reach Call 1" was unanswerable from the run,
+      // which is the state that let this route ship forwarding neither the logo
+      // nor the VisionBoard reference while every receipt read green. An empty
+      // array is a real answer (the customer uploaded nothing); absence of the
+      // field is not.
+      customerAssets: (Array.isArray(customerAssets) ? customerAssets : []).map((asset) => ({
+        storagePath: asset?.storagePath || null,
+        contentHash: asset?.contentHash || null,
+        byteSize: Number(asset?.byteSize || 0) || null,
+      })),
       sheet: cut.sheet,
       // THE THREE QUADRANTS, NAMED. Zone 1 became the master; these two are
       // the clean base and the Logo Pack, and a reader that cannot see them
