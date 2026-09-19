@@ -94,13 +94,8 @@
  * destroy the design" — applies exactly. Both consumers keep their existing
  * behaviour, so the cost of a soft failure is the old path, not a dead run.
  *
- * ═══ IT FAILS OVER, LIKE EVERY OTHER ROUTING ═══
- *
- * RULE 0.38: "every Call-1 routing gets a second contract", written after
- * field-first routing left a refused request with nothing because its
- * fail-over was one-directional. A refusal here throws `PanelProofRefusal` and
- * flat-first-atlas falls back to six-surface with the reason recorded. Turning
- * this on can therefore cost latency on a bad run; it cannot cost a design.
+ * A failed panel-proof node is recorded and terminal. The caller does not
+ * substitute another authoring topology or bypass the durable graph.
  *
  * KILL SWITCH: `DESIGNPRO_ATLAS_PANEL_PROOF=off`. Threaded through the runtime
  * reader, `configure-env.sh`, `validate-env.py` and the deploy-workflow lock —
@@ -548,22 +543,12 @@ async function assemblePanelProofMaster({
   if (zone1.length !== 6) {
     throw refuse(`the cut yielded ${zone1.length}/6 branded panels`);
   }
-  // A CELL THE MODEL LEFT EMPTY IS A BLANK PRINT PANEL. `fit` is the share of
-  // the cell that carries paint; an unfilled box sails through every hole
-  // predicate in this repo, because every one of them is a darkness test and
-  // white is not dark (the efca5e03 lesson, pointed at the cells).
-  const empty = zone1.filter((p) => p.fit < 0.5);
-  if (empty.length) {
-    // EVERY CELL'S FIT IS REPORTED, not only the ones that failed. "rear=0.04"
-    // alone cannot distinguish a model that left one box empty from a model that
-    // arranged the panels itself and missed every cell -- and the second is the
-    // positional premise this cutter rests on, recorded as FALSIFIED on live
-    // sheet d5314267. The numbers are what settle which happened.
-    throw refuse(
-      `unfilled panel cells: ${empty.map((p) => `${p.surfaceKey}=${p.fit}`).join(", ")}`
-      + ` (all zone-1 fits: ${zone1.map((p) => `${p.surfaceKey}=${p.fit}`).join(" ")})`,
-      { fits: Object.fromEntries(cut.panels.map((p) => [`${p.zone}:${p.surfaceKey}`, p.fit])) });
+  const unverified = cut.panels.filter((p) =>
+    (p.zone === "zone1" || p.zone === "zone2") && (!p.positionalPremiseVerified || !p.identity));
+  if (unverified.length) {
+    throw refuse(`unverified panel identities: ${unverified.map((p) => `${p.zone}:${p.surfaceKey}`).join(", ")}`);
   }
+  // Paint density remains a receipt metric, not evidence of surface identity.
 
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
   //
@@ -585,30 +570,9 @@ async function assemblePanelProofMaster({
     if (!panel) throw refuse(`${zone.surfaceKey}: no cut panel to assemble`);
     const { pixelWidth, pixelHeight } = zonePixelSize(zone);
 
-    // ═══ A WRONG CROP MAY NOT BE STRETCHED INTO A RIGHT-SHAPED ZONE ═══
-    //
-    // `fit: "fill"` ignores aspect ratio. Combined with
-    // `positionalPremiseVerified: false` -- the cutter reads the container's own
-    // cells, and live sheet d5314267 proved the model keeps the BANDS and the
-    // panel identities and then arranges the panels itself -- that meant a crop
-    // taken from the wrong place could be distorted to the exact pixel size the
-    // assembler demands, pass both of its assertions, and become a print panel.
-    // An independent review named this the sharpest technical point in the
-    // route, and it was right: `fit` only proves a cell is not blank.
-    //
-    // The resize STAYS -- the assembler requires the zone's exact pixel size and
-    // that is not negotiable (twelve stages read it) -- but the aspect it is
-    // handed is now checked first, so the resize can only ever be a rescale, not
-    // a reshape. A crop of the right REGION already has the cell's aspect,
-    // because the cell was cut from the container's own geometry; a crop whose
-    // aspect disagrees came from somewhere else, and that is a refusal, not
-    // something to squash.
-    //
-    // The bound is deliberately generous. The cut is integer-rounded off a
-    // scaled sheet, so a legitimate panel drifts by a fraction of a percent; a
-    // crop from the wrong region on a real sheet drifts by tens of percent
-    // (d5314267's stacked flanks against a one-row container). Anything between
-    // is reported rather than guessed at.
+    // Detected bounds and surface identity are checked before this step.
+    // Reject incompatible proportions; small accepted differences are padded
+    // transparently, never stretched or cropped to manufacture a fit.
     const cropAspect = panel.rect.width / panel.rect.height;
     const zoneAspect = pixelWidth / pixelHeight;
     const drift = Math.max(cropAspect / zoneAspect, zoneAspect / cropAspect);
@@ -622,7 +586,9 @@ async function assemblePanelProofMaster({
     }
 
     const bytes = await sharp(panel.bytes)
-      .resize(pixelWidth, pixelHeight, { fit: "fill" }).png().toBuffer();
+      .resize(pixelWidth, pixelHeight, {
+        fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 },
+      }).png().toBuffer();
     placed.push({
       surfaceKey: zone.surfaceKey,
       finish: { applied: true, bytes, contentHash: sha256(bytes) },
@@ -644,6 +610,7 @@ async function assemblePanelProofMaster({
     for (const p of panels) {
       const described = {
         surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+        identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
       };
       if (typeof store?.putImmutableBytes !== "function") {
@@ -731,6 +698,7 @@ async function assemblePanelProofMaster({
       quadrants: {
         branded: zone1.map((p) => ({
           surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+          identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         })),
         clean: cleanQuadrant,
         cutGraphics: cutGraphicsQuadrant,
