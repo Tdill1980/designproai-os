@@ -38,11 +38,22 @@
  *   ONE image call   17 artifacts   the 4096² master
  *   (three zones)    zero AI        (zone 1 placed)
  *
- * and then, unchanged, the existing per-surface fan-out the worker already
- * owns: each cut panel releases and `launchAtlasProof` sends it to the pinned
- * photographer. CALL 2 IS ALREADY WIRED — it has always been driven by panel
- * releases, so feeding it these panels required no new producer and no new
- * edge function (RULE 0.29).
+ * and then NOTHING NEW. An assembled master is where this file stops. The
+ * orchestration that takes it from there was already engineered and is not
+ * touched: `cutCallOnePanels` cuts the six print panels, each release calls
+ * `launchAtlasProof` (generation-worker.cjs), that reaches the pinned
+ * `persona-photographer-render` in `mode: "atlas-proof"` for all seven views,
+ * and the stage chain carries it through `await_panelpro_preflight_qc` ->
+ * `enhance.upscale` -> `output.build` -> ZIP -> WrapBox.
+ *
+ * ⚠️ AN EARLIER DRAFT OF THIS WORK WROTE A SECOND CALL-2 CALLER
+ * (`runtime/atlas-proof-3d.cjs`) BESIDE `launchAtlasProof`, and nothing ever
+ * required it — the owner spotted it: "we had the graph engineered
+ * orchestration for the 3d proofs and the QC - wrapbox checks." She was right.
+ * It is deleted. RULE 0.29 says feed the deployed photographer, and the worker
+ * already did; RULE 1 says recover before you invent. A duplicate caller that
+ * nothing routes to still costs the next reader an hour deciding which one is
+ * real. Do not add another one here.
  *
  * ZONE 2 AND ZONE 3 ARE NOT DISCARDED. The clean panels and the cut graphics
  * ride on the provenance as content-addressed siblings, which is what the
@@ -349,9 +360,16 @@ async function authorPanelProofMaster({
       widthIn: p.widthIn, heightIn: p.heightIn, byteSize: p.byteSize,
       imageRequestCount: 0, attempts: 1,
     })),
-    // The cut panels themselves, so flat-first-atlas can release them without
-    // re-cutting the assembled master and losing the model's own rectangles.
-    panels: zone1,
+    // NO PANELS ARE RETURNED, DELIBERATELY. An earlier draft handed the six cut
+    // Zone-1 panels back "so flat-first-atlas can release them without
+    // re-cutting the assembled master", and nothing ever read them: the live
+    // path cuts its own six with `cutCallOnePanels` from the assembled master
+    // and releases each to `launchAtlasProof`, which is the orchestration that
+    // has always driven Call 2 and the QC -> Topaz -> ZIP -> WrapBox chain.
+    //
+    // Returning a second set alongside it is the second-producer shape RULE 0.21
+    // forbids by name, and a field nobody reads is worse than absent: the next
+    // reader has to work out which of two panel sets production actually buys.
     provenance: {
       contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
       topology: PANEL_PROOF_TOPOLOGY,
