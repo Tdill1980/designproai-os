@@ -29,6 +29,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -251,9 +252,12 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // this master" is a query rather than a storage-timestamp guess.
   assert.equal(out.provenance.proofSha256, "a".repeat(64));
   assert.equal(out.provenance.proofStoragePath, "atlas-panel-proof/a.jpg");
-  // AND THE SIX CUT PANELS COME BACK, so flat-first-atlas can release them
-  // without re-cutting the assembled master and losing the model's rectangles.
-  assert.equal(out.panels.length, 6);
+  // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
+  // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
+  // production's six from the assembled master and a second set nobody reads
+  // answers "which panels does production buy" twice.
+  assert.equal(out.panels, undefined,
+    "the chain cuts its own panels; returning a rival set is the second producer RULE 0.21 forbids");
 });
 
 test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {
@@ -274,17 +278,50 @@ test("the flag is OFF unless a deploy says on, and the routing is first-authorin
   assert.match(atlasSrc, /flat_atlas_panel_proof_edit_unsupported/);
 });
 
-test("Call 2 is fed by the SAME panels, through the deployed photographer only", () => {
-  // Owner: "2nd call is 3d proofs using our native design edge functions
-  // suites. Feed the productionpanelproof." RULE 0.29: "DO NOT CREATE ANOTHER 3D
-  // EDGE FUNCTION." The panel-proof pass hands back its six cut panels, and the
-  // existing per-surface release drives Call 2 — no new producer, no new edge.
-  const call2 = require("../runtime/atlas-proof-3d.cjs");
-  assert.deepEqual(Object.keys(call2.SHOT_SURFACES).length, 7);
-  const code = fs.readFileSync(new URL("../runtime/atlas-proof-3d.cjs", import.meta.url), "utf8")
+test("CALL 2 AND THE QC->WRAPBOX CHAIN ARE THE ORCHESTRATION THAT ALREADY EXISTED", () => {
+  // Owner, 2026-09-19: "I dont understand why they are new we had the graph
+  // engineered orchestration for the 3d proofs and the QC - wrapbox checks."
+  //
+  // She was right, and an earlier draft of this work had written a SECOND Call-2
+  // caller (runtime/atlas-proof-3d.cjs) beside the one the worker already owns.
+  // Nothing required it — a duplicate producer that nothing routes to, which is
+  // what RULE 0.29 ("DO NOT CREATE ANOTHER 3D EDGE FUNCTION") and RULE 1
+  // ("recover before you invent") both forbid. It is deleted.
+  //
+  // So this asserts the NEGATIVE, which is the property that actually matters:
+  // the panel-proof pass stops at an assembled master, and every stage after it
+  // is the existing chain, reached by the existing seams.
+  assert.ok(!existsSync(new URL("../runtime/atlas-proof-3d.cjs", import.meta.url)),
+    "the duplicate Call-2 caller must stay deleted; launchAtlasProof is the one that runs");
+
+  // Call 1 renders no proof and names no photographer. COMMENTS ARE STRIPPED
+  // FIRST: this file's header QUOTES the deleted module and the photographer to
+  // record why they are forbidden, and a lock that trips on its own explanation
+  // cannot be satisfied without deleting the reason.
+  const topologyCode = topologySrc
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.match(code, /persona-photographer-render/);
-  // Nothing in this topology module may reach a second 3D producer either.
-  assert.ok(!/persona-photographer|generate-color-render/.test(topologySrc),
+  assert.ok(!/persona-photographer|generate-color-render|atlas-proof-3d/.test(topologyCode),
     "Call 1 does not render proofs; the existing panel release does");
+
+  // It also hands back no panels. The chain cuts its own six from the assembled
+  // master, and a second set nobody reads is the question "which panels does
+  // production buy" with two answers.
+  assert.ok(!/^\s*panels: zone1,/m.test(topologyCode),
+    "the topology must not return a second panel set beside cutCallOnePanels'");
+
+  // AND THE REAL SEAMS ARE READ FROM THE FILES THAT OWN THEM, so a rename or a
+  // deletion there fails here rather than silently orphaning this route.
+  const worker = fs.readFileSync(
+    new URL("../runtime/generation-worker.cjs", import.meta.url), "utf8");
+  assert.match(worker, /const launchAtlasProof = \(\{ atlas, sourceViewType/,
+    "the per-surface 3D release the panel proof feeds into");
+  const provider = fs.readFileSync(
+    new URL("../runtime/designpanel-server-provider.cjs", import.meta.url), "utf8");
+  assert.match(provider, /ATLAS_PROOF_STAGE = "persona-photographer-render"/,
+    "RULE 0.29: the proof producer is the deployed photographer, not a new renderer");
+  const claimant = fs.readFileSync(
+    new URL("../runtime/designpro-standalone-claimant.cjs", import.meta.url), "utf8");
+  for (const stage of ["await_panelpro_preflight_qc", "enhance.upscale", "output.build"]) {
+    assert.ok(claimant.includes(stage), `the QC -> WrapBox chain still owns ${stage}`);
+  }
 });
