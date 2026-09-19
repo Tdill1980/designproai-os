@@ -41,6 +41,16 @@ on:
         required: false
         default: ""
         type: string
+      atlas_proof_sheet_path:
+        description: "panel-proof sheet storage path to export AND re-cut, e.g. atlas-panel-proof/<sha256>.jpg (needs atlas_panel_rows)"
+        required: false
+        default: ""
+        type: string
+      atlas_panel_rows:
+        description: "the six GENIE trim rows the sheet was drawn for, | separated: 'DRIVER: 141\" wide x 78\" high|PASSENGER: ...'"
+        required: false
+        default: ""
+        type: string
       atlas_refusal_digest_days:
         description: "counts only, no images: summarise the Call 1 refusal ledger over this many days"
         required: false
@@ -72,6 +82,8 @@ jobs:
       ATLAS_GENERATION_ID: ${{ inputs.atlas_generation_id }}
       ATLAS_REFUSAL_REQUEST_ID: ${{ inputs.atlas_refusal_request_id }}
       ATLAS_REFUSAL_DIGEST_DAYS: ${{ inputs.atlas_refusal_digest_days }}
+      ATLAS_PROOF_SHEET_PATH: ${{ inputs.atlas_proof_sheet_path }}
+      ATLAS_PANEL_ROWS: ${{ inputs.atlas_panel_rows }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -94,18 +106,31 @@ jobs:
           [[ -z $ATLAS_GENERATION_ID ]] || selectors=$((selectors + 1))
           [[ -z $ATLAS_REFUSAL_REQUEST_ID ]] || selectors=$((selectors + 1))
           [[ -z $ATLAS_REFUSAL_DIGEST_DAYS ]] || selectors=$((selectors + 1))
+          [[ -z $ATLAS_PROOF_SHEET_PATH ]] || selectors=$((selectors + 1))
           if [[ $selectors -gt 1 ]]; then
-            printf '::error title=Ambiguous selector::pass exactly one of run_id, atlas_generation_id, atlas_refusal_request_id, atlas_refusal_digest_days.\n' >&2
+            printf '::error title=Ambiguous selector::pass exactly one of run_id, atlas_generation_id, atlas_refusal_request_id, atlas_refusal_digest_days, atlas_proof_sheet_path.\n' >&2
             exit 43
           fi
           if [[ $selectors -eq 0 ]]; then
-            printf '::error title=No selector::pass run_id, atlas_generation_id, atlas_refusal_request_id or atlas_refusal_digest_days.\n' >&2
+            printf '::error title=No selector::pass run_id, atlas_generation_id, atlas_refusal_request_id, atlas_refusal_digest_days or atlas_proof_sheet_path.\n' >&2
             exit 44
           fi
           [[ -z $RUN_ID ]] || [[ $RUN_ID =~ $uuid ]]
           [[ -z $ATLAS_GENERATION_ID ]] || [[ $ATLAS_GENERATION_ID =~ $uuid ]]
           [[ -z $ATLAS_REFUSAL_REQUEST_ID ]] || [[ $ATLAS_REFUSAL_REQUEST_ID =~ $uuid ]]
           [[ -z $ATLAS_REFUSAL_DIGEST_DAYS ]] || [[ $ATLAS_REFUSAL_DIGEST_DAYS =~ ^[0-9]{1,3}$ ]]
+          # THE PATH IS CONSTRAINED TO THE PANEL-PROOF PREFIX, so this read-only
+          # export cannot be pointed at an arbitrary object in a private bucket.
+          [[ -z $ATLAS_PROOF_SHEET_PATH ]] || [[ $ATLAS_PROOF_SHEET_PATH =~ ^atlas-panel-proof/[0-9a-f]{64}\.(jpg|png)$ ]]
+          # And the rows it will be cut against must be the six the sheet was
+          # drawn for: cutting one vehicle's sheet on another's geometry measures
+          # nothing, and a silent zero-row default would read as a real verdict.
+          if [[ -n $ATLAS_PROOF_SHEET_PATH ]]; then
+            [[ $(awk -F'|' '{print NF}' <<<"$ATLAS_PANEL_ROWS") -eq 6 ]] || {
+              printf '::error title=Panel rows required::atlas_panel_rows must carry the six GENIE trim rows, | separated.\n' >&2
+              exit 45
+            }
+          fi
 
       - name: Pin the droplet SSH identity
         id: ssh
@@ -170,6 +195,9 @@ jobs:
             selector=(--refusals "$ATLAS_REFUSAL_REQUEST_ID")
           else
             selector=(--refusal-digest "$ATLAS_REFUSAL_DIGEST_DAYS")
+          fi
+          if [[ -n ${ATLAS_PROOF_SHEET_PATH:-} ]]; then
+            selector=(--proof-sheet "$ATLAS_PROOF_SHEET_PATH" --panel-rows "$ATLAS_PANEL_ROWS")
           fi
 
           docker run --rm --network host \

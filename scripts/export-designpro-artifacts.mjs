@@ -34,20 +34,93 @@ const refusalRequestId = flag("--refusals");
 // anecdotes from whichever run someone last looked at. No images, no bucket
 // read -- counts and verdict strings only.
 const refusalDigestDays = flag("--refusal-digest");
+/**
+ * PROOF-SHEET mode: one stored panel-proof sheet, exported AND re-cut.
+ *
+ * Live 5772fcd5 (2026-09-19): the panel-proof engine returned a sheet in 40 s,
+ * the cutter refused it, and the fail-over carried the run away with no ledger
+ * row -- so the sheet sat in a private bucket, named in no table, while the
+ * question it answers ("did the model fill the container's cells, or arrange the
+ * panels itself?") decides whether that routing can ever go back on.
+ *
+ * `atlas-proof-panels.cjs` is deterministic, so re-cutting the STORED bytes
+ * reproduces the exact verdict the live run reached. It prints every cell's
+ * `fit` -- the share of the cell carrying paint -- which is the measurement that
+ * separates "one empty box" from "the positional premise does not hold". That
+ * premise is recorded as FALSIFIED on live sheet d5314267, and every panel this
+ * cutter emits carries `positionalPremiseVerified: false` for that reason.
+ *
+ * Read-only: one download, one geometric cut, no row written and no model call.
+ */
+const proofSheetPath = flag("--proof-sheet");
 const outDir = flag("--out") || "/out";
-const selectors = [runId, generationId, refusalRequestId, refusalDigestDays].filter(Boolean);
+const selectors = [runId, generationId, refusalRequestId, refusalDigestDays, proofSheetPath].filter(Boolean);
 if (selectors.length === 0) {
-  console.error("--run <uuid>, --generation <uuid>, --refusals <requestId> or --refusal-digest <days> is required");
+  console.error("--run <uuid>, --generation <uuid>, --refusals <requestId>, --refusal-digest <days> or --proof-sheet <storagePath> is required");
   process.exit(2);
 }
 if (selectors.length > 1) {
-  console.error("pass exactly one of --run, --generation, --refusals, --refusal-digest");
+  console.error("pass exactly one of --run, --generation, --refusals, --refusal-digest, --proof-sheet");
   process.exit(2);
 }
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
+
+if (proofSheetPath) {
+  // THE PANEL ROWS ARE REQUIRED, because the cells are laid out FROM them: the
+  // container is drawn per vehicle, so cutting one vehicle's sheet on another's
+  // geometry measures nothing. They are passed exactly as the contract states
+  // them, which is how the live run passed them too.
+  const rowsArg = flag("--panel-rows");
+  if (!rowsArg) {
+    console.error('--proof-sheet needs --panel-rows \'DRIVER: 141" wide x 78" high|PASSENGER: ...\' (6 rows, | separated)');
+    process.exit(2);
+  }
+  const panelRows = rowsArg.split("|").map((r) => r.trim()).filter(Boolean);
+  // THESE PATHS ARE THE IMAGE'S, NOT THE REPO'S. `ops/Dockerfile.runtime` does
+  // `COPY runtime/ ./` with WORKDIR /app, and the workflow mounts this script at
+  // /app/export.mjs -- so the cutter sits BESIDE it and `sharp` resolves from
+  // /app/node_modules, exactly as the bare `@supabase/supabase-js` import above
+  // already does. A repo-relative `../runtime/...` resolves to /runtime and
+  // would fail only at run time, on the droplet, after the download.
+  const { cutProofPanels, QUADRANTS } = await import("./atlas-proof-panels.cjs");
+  const { parsePanelRows } = await import("./atlas-proof-container-template.cjs");
+  const sharp = (await import("sharp")).default;
+
+  const { data, error: dlErr } = await supabase.storage.from("wrap-files").download(proofSheetPath);
+  if (dlErr || !data) {
+    console.error(`MISSING ${proofSheetPath}: ${dlErr?.message || "empty object"}`);
+    process.exit(3);
+  }
+  const bytes = Buffer.from(await data.arrayBuffer());
+  const sha = createHash("sha256").update(bytes).digest("hex");
+  writeFileSync(`${outDir}/panel-proof-sheet.jpg`, bytes);
+  const meta = await sharp(bytes).metadata();
+  console.error(`sheet ${sha.slice(0, 12)} ${bytes.length}B ${meta.width}x${meta.height} aspect ${(meta.width / meta.height).toFixed(4)}`);
+
+  const cut = await cutProofPanels({ proofBytes: bytes, manifest: parsePanelRows(panelRows), sharp });
+  if (cut.refused) {
+    // A REFUSAL IS THE ANSWER, NOT AN ERROR. It is what the live run did, and
+    // the exit code stays 0 so the evidence is still collected and read.
+    console.error(`the cutter REFUSES this sheet: ${cut.refused}`);
+  } else {
+    for (const panel of cut.panels) {
+      writeFileSync(`${outDir}/${panel.zone}-${panel.surfaceKey}.png`, panel.bytes);
+    }
+  }
+  const fits = (cut.panels || []).map((p) => `${p.zone}:${p.surfaceKey}=${p.fit}`);
+  console.error(`FITS ${fits.join(" ")}`);
+  writeFileSync(`${outDir}/manifest.json`, JSON.stringify({
+    mode: "proof-sheet", storagePath: proofSheetPath, sha256: sha, byteSize: bytes.length,
+    returned: { width: meta.width, height: meta.height },
+    panelRows, quadrants: QUADRANTS, refused: cut.refused || null, sheet: cut.sheet || null,
+    panels: (cut.panels || []).map(({ bytes: _b, ...receipt }) => receipt),
+  }, null, 2));
+  await writePreviews([{ file: "panel-proof-sheet.jpg" }]);
+  process.exit(0);
+}
 
 // Download one private object and prove the bytes are the ones the row
 // recorded. Same guarantee the run export gives: what is looked at is what
