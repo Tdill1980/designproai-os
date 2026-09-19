@@ -3327,3 +3327,32 @@ test("refused Atlas candidates answer 404 for a request the caller does not own,
   assert.equal(response.status, 404);
   assert.equal(calls.some((item) => item.url.includes("/storage/v1/object/sign/")), false);
 });
+
+
+test("three-zone handoff signs original vector graphics separately from clean panels", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000021";
+  const answer = panelProofRpcAnswer(requestId);
+  answer.quadrants.cutGraphics = [{surfaceKey:"typography",role:"cut-graphic",persisted:true,
+    storagePath:`atlas-elements/${"4".repeat(64)}.svg`,contentHash:"4".repeat(64),byteSize:300,
+    contentType:"image/svg+xml",vector:true}];
+  const server = createGateway({env,fetchImpl:async url => {
+    const value = String(url);
+    if (value.endsWith("/auth/v1/user")) return Response.json({id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"});
+    if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) return Response.json(answer);
+    if (value.includes("/storage/v1/object/sign/wrap-files/")) {
+      const path = decodeURIComponent(value.split("/storage/v1/object/sign/wrap-files/")[1]);
+      return Response.json({signedURL:`/object/sign/wrap-files/${path}?token=t`});
+    }
+    throw new Error(`unexpected ${url}`);
+  }});
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`,{headers:{cookie:"dp_session=test-token"}});
+  assert.equal(response.status,200);
+  const result = await response.json();
+  assert.equal(result.quadrants.clean.length,6);
+  assert.equal(result.quadrants.branded.length,6);
+  assert.equal(result.quadrants.cutGraphics[0].vector,true);
+  assert.equal(result.quadrants.cutGraphics[0].contentType,"image/svg+xml");
+  assert.match(result.quadrants.cutGraphics[0].signedUrl,/atlas-elements.*\.svg/);
+});
