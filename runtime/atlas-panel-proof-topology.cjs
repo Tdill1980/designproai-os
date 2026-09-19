@@ -571,8 +571,9 @@ async function assemblePanelProofMaster({
     const { pixelWidth, pixelHeight } = zonePixelSize(zone);
 
     // Detected bounds and surface identity are checked before this step.
-    // Reject incompatible proportions; small accepted differences are padded
-    // transparently, never stretched or cropped to manufacture a fit.
+    // Reject incompatible proportions. Preserve all source artwork with a
+    // proportional resize, then copy only the boundary pixels into the bounded
+    // remainder. This adapter padding is not production bleed.
     const cropAspect = panel.rect.width / panel.rect.height;
     const zoneAspect = pixelWidth / pixelHeight;
     const drift = Math.max(cropAspect / zoneAspect, zoneAspect / cropAspect);
@@ -585,10 +586,21 @@ async function assemblePanelProofMaster({
           zoneAspect: Number(zoneAspect.toFixed(4)), drift: Number(drift.toFixed(4)) } });
     }
 
-    const bytes = await sharp(panel.bytes)
-      .resize(pixelWidth, pixelHeight, {
-        fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 },
-      }).png().toBuffer();
+    const resized = await sharp(panel.bytes)
+      .resize(pixelWidth, pixelHeight, { fit: "inside" })
+      .png().toBuffer({ resolveWithObject: true });
+    const padX = pixelWidth - resized.info.width;
+    const padY = pixelHeight - resized.info.height;
+    if (padX < 0 || padY < 0
+      || padX > Math.ceil(pixelWidth * (1 - 1 / MAX_PANEL_ASPECT_DRIFT)) + 1
+      || padY > Math.ceil(pixelHeight * (1 - 1 / MAX_PANEL_ASPECT_DRIFT)) + 1) {
+      throw refuse(`${zone.surfaceKey}: edge extension exceeds the aspect budget`);
+    }
+    const left = Math.floor(padX / 2);
+    const top = Math.floor(padY / 2);
+    const bytes = await sharp(resized.data).extend({
+      left, right: padX - left, top, bottom: padY - top, extendWith: "copy",
+    }).png().toBuffer();
     placed.push({
       surfaceKey: zone.surfaceKey,
       finish: { applied: true, bytes, contentHash: sha256(bytes) },
