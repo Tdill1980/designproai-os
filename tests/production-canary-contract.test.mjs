@@ -397,8 +397,11 @@ test("the canary uploads a real customer logo and convicts a Call 1 that did not
   // `users/<owner>/revisions/.../inputs/` for a browser-supplied file; a
   // service-role client could write anywhere, and writing elsewhere would make
   // this a fixture rather than a rehearsal of the real upload.
-  assert.match(canary, /users\/\$\{operatorId\}\/revisions\/\$\{generationId\}\/inputs\//,
-    "the staged logo must sit on the customer-upload prefix");
+  // The `logo/` segment is REQUIRED, not decorative: calls_1_7_asset_identity_valid
+  // cross-checks segment 6 against the asset kind, so omitting it fails the whole
+  // request closed as generation_request_invalid (measured, canary 35468878776).
+  assert.match(canary, /users\/\$\{operatorId\}\/revisions\/\$\{generationId\}\/inputs\/logo\/\$\{contentHash\}\.png/,
+    "the staged logo must sit on the exact validated customer-upload path, including the logo/ segment");
   // Identity, never a URL: the runtime refuses a URL outright
   // (flat_atlas_logo_identity_invalid), and the upload is re-read and
   // hash-verified because verifiedCustomerLogoPart will.
