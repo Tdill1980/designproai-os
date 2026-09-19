@@ -225,6 +225,66 @@ export type AtlasRefusal = {
   expiresIn?: number;
 };
 
+/**
+ * ONE PANEL OF THE THREE-ZONE PRODUCTION PANEL PROOF.
+ *
+ * `persisted: false` is a real answer, not an error. The quadrant write fails
+ * soft on purpose — Zone 1 is an accepted master by the time Zones 2 and 3 are
+ * stored, and an optional sibling may not take a good design down — so a panel
+ * can legitimately arrive measured-but-unstored, with the reason. Render the
+ * reason; never render a gap and never invent a URL.
+ *
+ * `widthIn`/`heightIn` are null for every Zone 3 slot BY CONTRACT: a cut
+ * graphic is sized at the plotter, not on the sheet. Null means "no dimension
+ * exists", which is not the same as zero and must never be printed as one.
+ */
+export type PanelProofPanel = {
+  surfaceKey: string;
+  role: "branded" | "clean" | "cut-graphic";
+  byteSize: number | null;
+  /** Share of the cell that is not the page. Zone 3 reads low, correctly. */
+  fit: number | null;
+  widthIn: number | null;
+  heightIn: number | null;
+  persisted?: boolean;
+  reason?: string;
+  contentHash?: string;
+  signedUrl?: string;
+  expiresIn?: number;
+};
+
+/**
+ * The three-zone production panel proof: the sheet Call 1 drew, plus the
+ * panels cut from each zone.
+ *
+ * Owner, on the architecture: "Production panel proof is source it has the 3
+ * zones / For panels, panels with seperated and logos and text."
+ *
+ * `panelProof: false` means this request exists and its latest revision was
+ * authored on a topology with no three-zone document (six-surface, field,
+ * hero-driver). That is NOT an error and NOT a missing design — the master and
+ * its proofs are read through the existing surfaces.
+ */
+export type AtlasPanelProof = {
+  requestId: string;
+  revisionId: string | null;
+  panelProof: boolean;
+  revisionSequence?: number | null;
+  contract?: string | null;
+  topology?: string | null;
+  promptVersion?: string | null;
+  masterContentHash?: string | null;
+  sheet?: { contentHash: string; signedUrl?: string; expiresIn?: number };
+  quadrants?: {
+    /** Zone 1 — described only: it became the accepted master, read via /atlas. */
+    branded: PanelProofPanel[];
+    /** Zone 2 — the same six panels with no type or logos. */
+    clean: PanelProofPanel[];
+    /** Zone 3 — the five cut graphics (logo, tagline, contact, promo, icons). */
+    cutGraphics: PanelProofPanel[];
+  };
+};
+
 export type FlatAtlasRevision = {
   id: string;
   generationId: string;
@@ -1174,6 +1234,14 @@ export const dpApi = {
   /** The Call-1 candidates the gates refused on this request, signed for the owner. */
   listAtlasRefusals: (requestId: string) =>
     request<AtlasRefusal[]>(`/generation/requests/${encodeURIComponent(requestId)}/atlas-refusals`),
+  /**
+   * The three-zone production panel proof, signed for the owner: the sheet
+   * Call 1 drew plus the Zone 2 (clean) and Zone 3 (cut graphics) panels. A
+   * request authored on any other topology answers `panelProof: false`, which
+   * is a state, not a failure.
+   */
+  getAtlasPanelProof: (requestId: string) =>
+    request<AtlasPanelProof>(`/generation/requests/${encodeURIComponent(requestId)}/panel-proof`),
   /**
    * "Generate this angle again." The old view is superseded, never mutated, so
    * anything Calls 8+ already hashed stays trustworthy.

@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-109), [
+  assert.deepEqual(names.slice(-110), [
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
     "20260814050000_designpro_generation_slot_leases.sql",
@@ -326,6 +326,14 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260917234500_wallpro_proofs_patternpro.sql",
     "20260918030000_designpro_atlas_call1_composite_master.sql",
     "20260918040915_design_proofs_catalog.sql",
+    // The three-zone production panel proof becomes READABLE. The sheet Call 1
+    // draws, and the Zone 2 / Zone 3 panels cut from it, live in
+    // metadata.panelProofAuthoring rather than in a column, so nothing could
+    // resolve or sign them: the product showed the assembled master (Zone 1)
+    // and none of the document it came from. Owner-scoped resolver plus a
+    // membership storage policy -- never a prefix, because atlas-panel-proof
+    // objects are content-addressed and therefore shared across owners.
+    "20260919180000_designpro_atlas_panel_proof_paths.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
