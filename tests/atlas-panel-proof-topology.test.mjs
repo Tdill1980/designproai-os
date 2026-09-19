@@ -15,8 +15,7 @@
  *   1. the DAG runs in order and the cut spends ZERO model calls;
  *   2. the sheet crosses the node boundary as an IDENTITY (path + hash + size),
  *      never as bytes — RULE 0.39;
- *   3. a refusal is TYPED, so flat-first-atlas fails over to six-surface rather
- *      than leaving the customer with nothing — RULE 0.38;
+ *   3. a refusal is typed, recorded, and terminal; no substitute generation;
  *   4. an unfilled panel cell is a refusal, because white is not dark and every
  *      hole predicate in this repo is a darkness test (the efca5e03 lesson);
  *   5. the PASSENGER IS NOT MIRRORED. Its cell is authored, and mirroring an
@@ -124,7 +123,7 @@ function memoryStore() {
 }
 
 const AUTHOR_ARGS = {
-  manifest: MANIFEST, sharp, assembleFinishedMaster,
+  manifest: MANIFEST, sharp, assembleFinishedMaster, store: memoryStore(),
   input: {
     companyName: "Bright Smiles Dental", phone: "(520) 555-0192", website: "brightsmiles.com",
     brief: "a clean blue wave wrap for a dental practice",
@@ -409,38 +408,26 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
   assert.ok(Number.isFinite(out.timings.quadrantStoreMs));
 });
 
-test("a quadrant that cannot be stored fails SOFT and never claims a path", async () => {
-  // RULE 0.15's blast radius: by this point Zone 1 is an accepted master with
-  // six cuttable panels. An optional quadrant may not destroy it — that is the
-  // same lesson as "Finishing is optional; it may never kill a generation",
-  // where one interrupted roof edit failed a whole recovered request.
-  //
-  // But it may not lie either. Both consumers (Call 11's de-logo, Call 10's
-  // logo extract) keep their existing behaviour, so a soft failure costs the old
-  // path and nothing more — which is only true if the receipt SAYS so.
-  const sheet = await paintedSheet();
-  const { callProofEdge } = edgeStub(sheet);
-
-  for (const [label, store] of [
-    ["no store at all", undefined],
-    ["a store that throws", { putImmutableBytes: async () => { throw new Error("bucket exploded"); } }],
-  ]) {
-    const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge });
-    assert.ok(out.contentHash, `${label}: the master must still be produced`);
-    const q = out.provenance.quadrants;
-    assert.equal(q.clean.length, 6);
-    assert.equal(q.cutGraphics.length, 5);
-    for (const panel of [...q.clean, ...q.cutGraphics]) {
-      assert.equal(panel.persisted, false, `${label}: must not report stored`);
-      assert.ok(panel.reason, `${label}: must say why`);
-      assert.equal(panel.storagePath, undefined,
-        `${label}: a path that was never written must not appear on the receipt`);
-      assert.equal(panel.contentHash, undefined,
-        `${label}: a content hash addresses stored bytes — there are none`);
-      // The measurements survive, because they are honest: the cut did happen.
-      assert.ok(panel.rect && Number.isFinite(panel.fit));
-    }
+test("mandatory quadrants refuse instead of publishing a partial proof", async () => {
+  const { callProofEdge } = edgeStub(await paintedSheet());
+  for (const store of [undefined, {
+    putImmutableBytes: async () => { throw new Error("bucket unavailable"); },
+  }]) {
+    await assert.rejects(
+      () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge }),
+      (error) => error.code === "flat_atlas_panel_proof_refused"
+        && /mandatory/.test(error.reason));
   }
+});
+
+test("an absent graphics band refuses the mandatory three-zone proof", async () => {
+  const layout = container.containerLayout(container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)));
+  const { callProofEdge } = edgeStub(await paintedSheet({
+    empty: layout.zone3.map((cell) => `zone3:${cell.surfaceKey}`),
+  }));
+  await assert.rejects(
+    () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge }),
+    /mandatory three-zone proof is incomplete/);
 });
 
 test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {

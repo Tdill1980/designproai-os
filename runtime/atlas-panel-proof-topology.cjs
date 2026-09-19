@@ -87,12 +87,9 @@
  * two stages onto these bytes is the next step and is NOT done here; storing
  * them is what makes it possible at all.
  *
- * FAIL SOFT, STATE WHY. A quadrant that cannot be stored records
- * `persisted: false` with its reason and never a path it does not have. It may
- * not throw: Zone 1 is already an accepted master by this point, and RULE 0.15's
- * blast-radius lesson — "a defect that only exists in an optional edit must not
- * destroy the design" — applies exactly. Both consumers keep their existing
- * behaviour, so the cost of a soft failure is the old path, not a dead run.
+ * All three zones are mandatory. Missing geometry, blank graphics, or failed
+ * artifact persistence refuses the node before it can publish a ready master.
+ * Zone 3 remains a raster preview; it is not a vector cut file or QC approval.
  *
  * A failed panel-proof node is recorded and terminal. The caller does not
  * substitute another authoring topology or bypass the durable graph.
@@ -534,7 +531,8 @@ async function assemblePanelProofMaster({
   // ── node 2: the cut. Deterministic, zero model calls. ──────────────────
   const cutAt = Date.now();
   const cut = await cutProofPanels({
-    proofBytes: sheet.bytes, manifest: parsePanelRows(panelRows), sharp,
+    proofBytes: sheet.bytes, manifest: parsePanelRows(panelRows),
+    zones: ["zone1", "zone2", "zone3"], sharp,
   });
   if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
@@ -542,6 +540,16 @@ async function assemblePanelProofMaster({
   const zone1 = cut.panels.filter((p) => p.zone === "zone1");
   if (zone1.length !== 6) {
     throw refuse(`the cut yielded ${zone1.length}/6 branded panels`);
+  }
+  const zone2 = cut.panels.filter((p) => p.zone === "zone2");
+  const zone3 = cut.panels.filter((p) => p.zone === "zone3");
+  if (zone2.length !== 6 || !zone3.length || !zone3.some((p) => p.fit > 0)) {
+    throw refuse("the mandatory three-zone proof is incomplete", {
+      zones: { branded: zone1.length, backgrounds: zone2.length, graphics: zone3.length },
+    });
+  }
+  if (typeof store?.putImmutableBytes !== "function") {
+    throw refuse("the mandatory three-zone proof has no artifact store");
   }
   const unverified = cut.panels.filter((p) =>
     (p.zone === "zone1" || p.zone === "zone2") && (!p.positionalPremiseVerified || !p.identity));
@@ -625,12 +633,6 @@ async function assemblePanelProofMaster({
         identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
       };
-      if (typeof store?.putImmutableBytes !== "function") {
-        // Honest, and never a path: a caller with no store gets the measurements
-        // and an explicit reason, so a reader cannot mistake this for stored.
-        out.push({ ...described, persisted: false, reason: "store_unavailable" });
-        continue;
-      }
       try {
         const stored = await store.putImmutableBytes({
           storagePath: `${QUADRANT_PREFIX}/${sha256(p.bytes)}.png`,
@@ -638,10 +640,9 @@ async function assemblePanelProofMaster({
         });
         out.push({ ...described, persisted: true, ...stored });
       } catch (cause) {
-        // FAIL SOFT. Zone 1 is an accepted master by now; an optional quadrant
-        // may not take it down (RULE 0.15's blast radius).
-        out.push({ ...described, persisted: false,
-          reason: String(cause?.message || cause).slice(0, 200) });
+        throw refuse(`${zone}:${p.surfaceKey}: mandatory proof artifact could not be stored`, {
+          cause: String(cause?.message || cause).slice(0, 200),
+        });
       }
     }
     return out;
@@ -685,6 +686,10 @@ async function assemblePanelProofMaster({
       proofContract: sheet.contract || null,
       proofSha256: sheet.contentHash || null,
       proofStoragePath: sheet.storagePath || null,
+      proofByteSize: sheet.byteSize || sheet.bytes.length,
+      threeZoneLayout: { required: true, branded: zone1.length,
+        backgrounds: zone2.length, graphics: zone3.length,
+        graphicsFormat: "raster-preview", productionApproved: false },
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
