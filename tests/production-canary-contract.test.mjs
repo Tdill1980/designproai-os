@@ -366,8 +366,23 @@ test("the canary reports WHICH configuration GENIE resolved, and convicts one th
     "a flank matching NO catalogued configuration must throw -- that is the RULE 0.28 class-constant estimate");
   assert.match(canary, /step\(`GENIE flank \$\{resolvedFlankIn\}" matches \$\{matched/,
     "the matched configuration must be named, not merely accepted");
-  assert.match(canary, /WARNING: "\$\{CANARY_MAKE\} \$\{CANARY_MODEL\}" matches \$\{candidates\.length\} catalogued configurations spanning/,
+  // THE IDENTIFIERS ARE `VEHICLE.*`, AND THIS ASSERTION ONCE PINNED THE BUG.
+  //
+  // It used to require the literal `${CANARY_MAKE} ${CANARY_MODEL}`. Those are
+  // the names the WORKFLOW exports into the remote shell; inside the script the
+  // only declared binding is the frozen `VEHICLE`, so this whole block threw
+  // `CANARY_MODEL is not defined` on every live run that reached it (canary
+  // 35470167524). A source-text assertion cannot see that -- it never executes
+  // the line -- so this test stayed GREEN while the canary died at this exact
+  // step and everything past Call 7 went unproven.
+  //
+  // Pinning a bare identifier is what made that possible, so this now pins the
+  // DECLARED one, and the guard below is the real defence: it fails on any
+  // `CANARY_*` used as a JS binding anywhere in the script.
+  assert.match(canary, /WARNING: "\$\{VEHICLE\.make\} \$\{VEHICLE\.model\}" matches \$\{candidates\.length\} catalogued configurations spanning/,
     "an ambiguous model string must be reported loudly -- status-board item 18");
+  assert.doesNotMatch(canary, /\$\{\s*CANARY_[A-Z_]+/,
+    "CANARY_* are shell env names, not JS bindings -- the script reads them once into VEHICLE");
 
   // Matched on make + model family, never on year: the catalog has no row
   // covering 2022 for this truck, so a year-exact lookup would find nothing and
