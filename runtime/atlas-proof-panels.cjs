@@ -30,7 +30,7 @@ const PANELS_CONTRACT = "designpro.atlas-proof-panels.v2";
 
 const { containerLayout } = require("./atlas-proof-container-template.cjs");
 const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
-const { locatePanels } = require("./atlas-proof-panel-locator.cjs");
+const { locatePanels, COARSE_WIDTH, ERODE_PASSES } = require("./atlas-proof-panel-locator.cjs");
 
 const MAX_IDENTITY_ASPECT_DRIFT = 1.05;
 const MIN_POSITION_OVERLAP = 0.8;
@@ -174,7 +174,17 @@ async function cutProofPanels({
     let assignments;
     if (zone === "zone1" || zone === "zone2") {
       const located = await locatePanels({ proofBytes, band: PROOF_REGIONS[zone], sharp });
-      const identified = identifyPanels(located.panels, cells, layout, sheet);
+      // The locator returns components after erosion at COARSE_WIDTH. Restore
+      // that known inset before measuring aspect or extracting source artwork.
+      const inset = Math.ceil(ERODE_PASSES * located.region.width / COARSE_WIDTH);
+      const bounds = located.panels.map((p) => {
+        const x = Math.max(located.region.left, p.x - inset);
+        const y = Math.max(located.region.top, p.y - inset);
+        const right = Math.min(located.region.left + located.region.width, p.x + p.w + inset);
+        const bottom = Math.min(located.region.top + located.region.height, p.y + p.h + inset);
+        return { ...p, x, y, w: right - x, h: bottom - y };
+      });
+      const identified = identifyPanels(bounds, cells, layout, sheet);
       if (identified.refused) {
         return { contract: PANELS_CONTRACT, sheet, panels: [],
           refused: `atlas_proof_panels_${zone}:${identified.refused}` };
