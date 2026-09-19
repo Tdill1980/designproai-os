@@ -762,6 +762,58 @@ function assertLatencySlo() {
  * get_designpro_generation_request deliberately does not return it -- that is a
  * read; the revision itself is still saved by the operator's own JWT.
  */
+/**
+ * A REAL UPLOADED CUSTOMER LOGO, BECAUSE NO CANARY HAD EVER CARRIED ONE.
+ *
+ * Measured on the live route (2026-09-19): the panel-proof Call 1 forwarded NO
+ * customer logo and NO VisionBoard reference at all, while the six-surface and
+ * field contracts carry both as `edgeExtras.referenceImagesBase64`. RULE 0.24
+ * names those CREATIVE authority -- artwork authority under `exact_reference` --
+ * and NO GATE CONVICTS THEIR ABSENCE, so a customer who uploaded their logo got
+ * a design that had never seen it and every receipt still read green.
+ *
+ * The canary could not have caught that, because its input carried no
+ * `logoAsset`: `verifiedCustomerLogoPart` returns [] for a request with none, so
+ * a route that drops the logo and a route that was given none are
+ * indistinguishable from every assertion the canary made. That is the same shape
+ * as the element-graph blindness recorded above -- a guard keyed on a field the
+ * canary never populated.
+ *
+ * So it uploads one. It is DRAWN here rather than committed, and drawn as a
+ * shape no design would produce by accident -- a magenta ring on transparency --
+ * so "did the model see the logo" is answerable by looking at the sheet.
+ *
+ * IT GOES WHERE A CUSTOMER'S UPLOAD GOES: `users/<owner>/revisions/<id>/inputs/`,
+ * the one prefix the gateway's `authorizedArtifactPath` admits for a
+ * browser-supplied file and the one the storage-identity trigger permits. A
+ * service-role client could write anywhere; writing somewhere else would make
+ * this a fixture rather than a rehearsal of the real upload.
+ */
+async function stageCustomerLogo({ operatorId, generationId }) {
+  const size = 512;
+  const svg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
+    + `<circle cx="256" cy="256" r="190" fill="none" stroke="#d6009a" stroke-width="64"/>`
+    + `<circle cx="256" cy="256" r="72" fill="#d6009a"/></svg>`);
+  // sharp lives in the deployed runtime image, which is where this script runs.
+  const { default: sharp } = await import("sharp");
+  const bytes = await sharp(svg).png().toBuffer();
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const storagePath = `users/${operatorId}/revisions/${generationId}/inputs/${contentHash}.png`;
+  const { error } = await service.storage.from(BUCKET)
+    .upload(storagePath, bytes, { contentType: "image/png", upsert: true });
+  if (error) throw new Error(`the canary could not stage its customer logo: ${error.message}`);
+  // Re-read and hash-verify, because `verifiedCustomerLogoPart` will and a
+  // mismatch there fails the whole generation with flat_atlas_logo_hash_mismatch.
+  const { data, error: readError } = await service.storage.from(BUCKET).download(storagePath);
+  if (readError || !data) throw new Error(`the staged logo could not be read back: ${readError?.message || "missing"}`);
+  const readBack = Buffer.from(await data.arrayBuffer());
+  if (createHash("sha256").update(readBack).digest("hex") !== contentHash) {
+    throw new Error("the staged logo does not hash to what was uploaded");
+  }
+  return { storagePath, contentHash, byteSize: bytes.length, contentType: "image/png" };
+}
+
 async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRequestId = "" }) {
   // THE CANARY RUNS A.T.L.A.S., BECAUSE THAT IS WHAT PRODUCTION RUNS.
   //
@@ -781,6 +833,8 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   // (calls_1_7_input_v3_valid) forbids `orderNumber` and `delivery` on the
   // input. Calls 1-7 and the Entice pack are fulfillment-unbound by design;
   // recipient registration happens only after the purchase entitlement.
+  const customerLogo = await stageCustomerLogo({ operatorId, generationId });
+  step(`staged the customer logo ${customerLogo.contentHash.slice(0, 12)} (${customerLogo.byteSize} B) at ${customerLogo.storagePath}`);
   const input = {
     contractVersion: "designpro.calls-1-7-input.v3",
     pipelineMode: "flat-first-atlas-v1",
@@ -794,6 +848,12 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     phone: COMPANY_PHONE,
     website: COMPANY_WEBSITE,
     mode: "commercial",
+    // THE UPLOADED LOGO, by immutable Storage identity and never a URL (the
+    // runtime refuses a URL outright). Without this the canary cannot tell a
+    // route that DROPS the customer's logo from one that was never given one --
+    // which is exactly how the panel-proof route shipped forwarding neither the
+    // logo nor the VisionBoard reference while every receipt read green.
+    logoAsset: customerLogo,
     industry: "HVAC and climate control",
     colors: ["deep blue", "sunrise orange"],
     style: "modern commercial",
@@ -929,6 +989,44 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (Number(atlasRow.metadata?.masterAuthoringAttempts) > 2) {
     throw new Error(`A.T.L.A.S. spent ${atlasRow.metadata.masterAuthoringAttempts} candidates on one contract; the per-contract budget is two`);
   }
+  // THE CUSTOMER'S UPLOADED LOGO MUST HAVE REACHED CALL 1, and until now
+  // nothing checked it on any route.
+  //
+  // Measured on the live panel-proof route (2026-09-19): it forwarded NO logo
+  // and NO VisionBoard reference at all, while six-surface and field carry both.
+  // RULE 0.24 names those CREATIVE authority and no gate convicts their absence,
+  // so the sheet comes back a perfectly good design that is simply not the
+  // customer's brand -- and every receipt reads green.
+  //
+  // The canary now uploads one (see stageCustomerLogo) and convicts a run that
+  // did not carry it. WHICH RECEIPT holds that answer depends on the routing, so
+  // both are read: the panel-proof pass records `customerAssets` identities on
+  // `panelProofAuthoring`, and six-surface/field record the reference count.
+  // A route that records NEITHER while a logo was uploaded is the defect.
+  const panelProofAssets = atlasRow.metadata?.panelProofAuthoring?.customerAssets;
+  const referenceCount = Number(atlasRow.metadata?.verifiedCustomerReferenceCount);
+  const logoOnPanelProof = Array.isArray(panelProofAssets) && panelProofAssets.length > 0;
+  const loggedIdentity = atlasRow.metadata?.brandIdentity?.logo || atlasRow.metadata?.logoAsset || null;
+  if (atlasRow.metadata?.panelProofAuthoring) {
+    // The panel-proof route: the receipt names exactly which assets went.
+    if (!logoOnPanelProof) {
+      throw new Error("the panel-proof Call 1 recorded NO customer assets although the request carried an uploaded logo: "
+        + JSON.stringify(panelProofAssets ?? null)
+        + " — this is the F12 defect (the customer's brand never reached the design)");
+    }
+    step(`the customer's logo reached Call 1: ${panelProofAssets.length} asset(s), `
+      + `${panelProofAssets.map((a) => String(a.contentHash || "").slice(0, 12)).join(", ")}`);
+  } else {
+    // Six-surface / field: the logo rides as an inline part, so the observable
+    // is that the request was BUILT with it. `flat_atlas_logo_*` would have
+    // failed the generation outright if it had not verified, so reaching here
+    // with a logo on the frozen snapshot is the evidence this route offers.
+    if (!loggedIdentity && !(Number.isFinite(referenceCount) && referenceCount > 0)) {
+      step("NOTE: this routing records no per-asset receipt for the uploaded logo; "
+        + "the logo verified (or the generation would have failed closed) but the run does not say it was sent");
+    }
+  }
+
   // DECLARING THE BRAND FIELDS IS NOT THE SAME AS PROVING THE GRAPH RAN.
   //
   // The fix above put companyName/phone/website on the request so the element

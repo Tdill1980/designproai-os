@@ -142,6 +142,29 @@ const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
  */
 const QUADRANT_PREFIX = "atlas-panel-proof/quadrants";
 
+/**
+ * How far a cut crop's aspect may sit from the zone it is resized into.
+ *
+ * `fit: "fill"` cannot refuse anything, so this is the guard that stops a crop
+ * from the wrong region being reshaped into a valid-looking print panel. A
+ * legitimate crop drifts by rounding only (the cut is integer-rounded off a
+ * scaled sheet); a crop of the wrong region on a real sheet drifts by tens of
+ * percent. 1.05 sits far above the former and far below the latter.
+ *
+ * It is the same shape of guard as `MAX_ASPECT_DRIFT_RATIO` in the hero
+ * cascade, which exists for the same reason: a resize that silently reshapes is
+ * a defect no downstream measurement can see.
+ */
+const MAX_PANEL_ASPECT_DRIFT = 1.05;
+
+/**
+ * No vehicle panel is this long. The largest surface this catalog carries is a
+ * 251" flank, so 400 leaves room for anything real while convicting a pixel
+ * rectangle read as inches — the defect `panelRowsFromManifest` shipped, where
+ * the driver arrived as 979" x 2674".
+ */
+const MAX_PLAUSIBLE_PANEL_INCHES = 400;
+
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 /** A creative refusal. Typed so flat-first-atlas can tell it from a fault. */
@@ -166,16 +189,82 @@ function panelProofEnabled(env = process.env) {
 }
 
 /** GENIE trim rows in the contract's own wording. Inches, never fractions. */
+/**
+ * THE SIX PANEL ROWS, IN REAL INCHES, FROM THE FIELDS THAT ACTUALLY EXIST.
+ *
+ * ⚠️ THIS EMITTED PIXELS LABELLED AS INCHES, TRANSPOSED, ON EVERY REAL RUN.
+ *
+ * It read `zone.trimInches || zone.trim`. **`trimInches` does not exist on a
+ * GENIE zone** -- the real fields are `trimWidthIn`/`trimHeightIn` and
+ * `printWidthIn`/`printHeightIn` -- so every call fell through to `zone.trim`,
+ * which is the PIXEL rectangle of the surface on the 4096 master. Measured on
+ * the ordinary six-surface manifest:
+ *
+ *     emitted   DRIVER: 979" wide x 2674" high     <- pixels, and portrait
+ *     real      DRIVER: 163" wide x  66" high      <- print inches, landscape
+ *
+ * The flank is a tall rotated column on the master, so the numbers were not
+ * merely in the wrong unit: they were the wrong way round. Three consequences,
+ * all of which were live:
+ *
+ *   1. the prompt told the model the driver panel was 81 FEET TALL and portrait,
+ *      so the sheet it drew was answering a different question;
+ *   2. the container template draws its cells from these same rows, so the
+ *      driver cell came out at 1.160:1 against a true 2.470:1 -- and, being
+ *      clamped to the band height, could not have been right at any scale;
+ *   3. `fit: "fill"` in the assembler then stretched that cell into the true
+ *      zone, so EVERY driver and passenger panel this route produced was
+ *      horizontally stretched by a factor of about 2.1.
+ *
+ * The probe never saw it because the probe PASSES its own `panels` input by
+ * hand, already correct. Production derives them here. A fixture laxer than the
+ * real thing, for the sixth time in this repo.
+ *
+ * ═══ WHY PRINT INCHES AND NOT TRIM ═══
+ *
+ * The rectangle the model fills, the cutter cuts and `assembleFinishedMaster`
+ * places is the FULL zone -- trim plus the 5" bleed on all four sides -- and
+ * measured on every surface `printWidthIn/printHeightIn` reproduces that zone's
+ * aspect exactly (driver 2.470 = 2.470, hood 1.235 = 1.235, and so on). Stating
+ * trim instead would leave the cell ~5% off its zone AND describe a rectangle
+ * with no bleed in it, which is the artwork the installer wraps around the edge.
+ * Trim stays in the copy as a callout; the GEOMETRY is the print rectangle.
+ *
+ * IT REFUSES RATHER THAN FALLS BACK. A fallback is what produced the defect: a
+ * missing field silently became a pixel rectangle that every consumer believed.
+ */
 function panelRowsFromManifest(manifest) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   return zones.map((zone) => {
-    const trim = zone?.trimInches || zone?.trim || {};
-    const w = Number(trim.widthIn ?? trim.w);
-    const h = Number(trim.heightIn ?? trim.h);
     const name = String(zone?.surfaceKey || "").toUpperCase();
-    if (!name || !Number.isFinite(w) || !Number.isFinite(h)) return null;
-    return `${name}: ${w}" wide x ${h}" high`;
-  }).filter(Boolean);
+    // The print rectangle, or trim plus its own bleed when a manifest states
+    // only trim. Never `zone.trim`, which is pixels.
+    const bleed = zone?.bleedIn || {};
+    const trimW = Number(zone?.trimWidthIn);
+    const trimH = Number(zone?.trimHeightIn);
+    const w = Number.isFinite(Number(zone?.printWidthIn)) ? Number(zone.printWidthIn)
+      : (Number.isFinite(trimW) ? trimW + Number(bleed.left || 0) + Number(bleed.right || 0) : NaN);
+    const h = Number.isFinite(Number(zone?.printHeightIn)) ? Number(zone.printHeightIn)
+      : (Number.isFinite(trimH) ? trimH + Number(bleed.top || 0) + Number(bleed.bottom || 0) : NaN);
+    if (!name || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+      throw new PanelProofRefusal(
+        `${name || "a surface"} has no usable print dimensions `
+        + `(printWidthIn/printHeightIn or trimWidthIn/trimHeightIn + bleedIn)`);
+    }
+    // A PLAUSIBILITY FLOOR, because this is the exact defect class that shipped:
+    // no vehicle panel is a thousand inches. A pixel rectangle read as inches
+    // trips this immediately instead of reaching the prompt.
+    if (w > MAX_PLAUSIBLE_PANEL_INCHES || h > MAX_PLAUSIBLE_PANEL_INCHES) {
+      throw new PanelProofRefusal(
+        `${name}: ${w}" x ${h}" is not a vehicle panel — these look like pixels, not inches`);
+    }
+    return `${name}: ${round1(w)}" wide x ${round1(h)}" high`;
+  });
+}
+
+/** One decimal, and no trailing ".0" — the owner's own spec-sheet form. */
+function round1(value) {
+  return String(Math.round(Number(value) * 10) / 10);
 }
 
 /**
@@ -186,13 +275,76 @@ function panelRowsFromManifest(manifest) {
  * topologies keep calling the one endpoint they always called (RULE 0.26) no
  * matter what this one returns.
  */
-async function requestProofSheet({ manifest, input, providerRequest, callProofEdge }) {
+/**
+ * THE CUSTOMER'S OWN ASSETS, STAGED AS REFERENCES RATHER THAN INLINED.
+ *
+ * Their absence was this route's worst defect: `requestProofSheet` forwarded
+ * text and vehicle fields only, so a customer who uploaded a logo or a
+ * reference photo received a design that never saw either, while the
+ * six-surface and field contracts carried both. RULE 0.24 calls those CREATIVE
+ * authority -- artwork authority under `exact_reference` -- and nothing
+ * downstream can detect that they were dropped.
+ *
+ * THEY ARE NOT SENT AS BASE64, DELIBERATELY. The obvious fix is to copy
+ * `edgeExtras.referenceImagesBase64`, and this edge's own header records why
+ * that is the wrong door: it "already died twice on a bodiless 504 from a
+ * 2.2 MB base64 request". A customer logo is conditioned to 1600px and a
+ * VisionBoard set can be several images, so inlining them walks straight back
+ * into a failure mode this function has already suffered.
+ *
+ * So each asset is written to `atlas-call1-inputs/<sha256>.png` -- the one shape
+ * `attach()` admits -- and crosses as `{storagePath, contentHash, byteSize}`
+ * (RULE 0.39). The edge then re-reads and hash-verifies each one itself, so the
+ * runtime cannot name bytes the far side did not check. `CALL1_INPUT_PATH` is
+ * asserted here too, so a path the edge would refuse never leaves (the 2099d17d
+ * lesson, applied before it costs a run).
+ *
+ * VERIFICATION IS NOT REPEATED HERE. `verifiedCustomerLogoPart` and
+ * `verifiedCustomerReferenceParts` already refused a URL, re-downloaded the
+ * bytes and re-checked length and sha256 against the request identity; these
+ * parts arrive from that. Re-implementing those checks would be the second
+ * ownership path RULE 1 exists to prevent.
+ */
+async function stageCustomerAssets({ store, customerImageParts = [], logger = () => {} }) {
+  const inline = (Array.isArray(customerImageParts) ? customerImageParts : [])
+    .filter((part) => typeof part?.inlineData?.data === "string" && part.inlineData.data.length);
+  if (!inline.length) return [];
+  if (typeof store?.putImmutableBytes !== "function") {
+    // Honest and non-fatal: the sheet is still worth drawing from the brief, and
+    // the receipt records that the assets could not be staged rather than
+    // implying the model saw them.
+    logger("atlas call 1: customer assets could not be staged (no store); the proof will not see them");
+    return [];
+  }
+  const staged = [];
+  for (const part of inline) {
+    const bytes = Buffer.from(part.inlineData.data, "base64");
+    if (!bytes.length) continue;
+    // PNG in, PNG out: these parts are already conditioned PNG (the logo is
+    // resized and re-encoded by `verifiedCustomerLogoPart`), so the filename
+    // hash is the hash of exactly what is written.
+    const digest = sha256(bytes);
+    const storagePath = `atlas-call1-inputs/${digest}.png`;
+    if (!CALL1_INPUT_PATH.test(storagePath)) {
+      throw new PanelProofRefusal(`customer asset path the edge would refuse: ${storagePath}`);
+    }
+    staged.push(await store.putImmutableBytes({ storagePath, bytes, contentType: "image/png" }));
+  }
+  logger(`atlas call 1: staged ${staged.length} customer asset(s) for the proof`);
+  return staged;
+}
+
+async function requestProofSheet({ manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger }) {
   const panelRows = panelRowsFromManifest(manifest);
   if (panelRows.length !== 6) {
     throw new PanelProofRefusal(`manifest yielded ${panelRows.length}/6 panel rows`);
   }
   const vehicle = input?.vehicle || {};
+  const customerAssets = await stageCustomerAssets({ store, customerImageParts, logger });
   const sheet = await callProofEdge({
+    // The customer's own logo and references, by identity. Empty when they
+    // uploaded none — never omitted silently when they did.
+    customerAssets,
     // The customer's own words. The edge's intake node parses vehicle, contact
     // and brand out of them; a field set here is a field intake never had to
     // find, and the raw text is what production actually carries.
@@ -208,10 +360,20 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     vehicleMake: vehicle.make || null,
     vehicleModel: vehicle.model || null,
     panelRows,
+    // THE OPERATION IDENTITY, STABLE ACROSS A RECOVERY.
+    //
+    // The edge now runs its image request through the durable provider module,
+    // which keys the claim on {ownerId, requestId, generationId, mode,
+    // attemptKey}. This contract has ONE bounded candidate, so the key is
+    // constant -- which is the point: a re-claimed worker sending the same
+    // identity reads its own earlier request instead of buying the sheet twice.
+    // Before this, the edge minted a fresh uuid per invocation and `cacheOnly`
+    // could not mean anything.
+    attemptKey: "panel-proof:1",
     ...providerRequest,
   });
   if (!sheet?.bytes) throw new PanelProofRefusal("the proof edge returned no sheet");
-  return { sheet, panelRows };
+  return { sheet, panelRows, customerAssets };
 }
 
 /**
@@ -262,7 +424,16 @@ function createPanelProofTransport({
   supabase, ownerId = null, fetchImpl = fetch, logger = () => {},
 } = {}) {
   if (!supabase) throw new PanelProofRefusal("the panel-proof transport requires Supabase");
-  return async (body) => {
+  // THE OWNER ARRIVES PER CALL, NOT ONLY AT CONSTRUCTION — the same shape
+  // `createAtlasAuthorTransport` already uses, and for the same reason. Both
+  // runtime processes build ONE transport at start-up and then serve panel-proof
+  // nodes of ANY customer's run, so a construction-time owner would send an
+  // EMPTY `x-designpro-owner-id` for every graph-claimed node. The edge fails
+  // that closed with 403 (`production_panel_proof_internal_only`) rather than
+  // proceeding, which is correct — but it would have made every durable
+  // panel-proof run fail, and the owner id is also the provider cache's own
+  // isolation key, so getting it from the claimed run is the whole point.
+  return async (body, { ownerId: callOwnerId = ownerId } = {}) => {
     const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
     const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
     if (!supabaseUrl || serviceRoleKey.length < 32) {
@@ -280,7 +451,7 @@ function createPanelProofTransport({
         authorization: `Bearer ${serviceRoleKey}`,
         apikey: serviceRoleKey,
         "content-type": "application/json",
-        "x-designpro-owner-id": String(ownerId || ""),
+        "x-designpro-owner-id": String(callOwnerId || ""),
       },
       body: JSON.stringify({ ...body, ...staged }),
     });
@@ -314,28 +485,32 @@ function createPanelProofTransport({
 }
 
 /**
- * The whole pass: sheet → cut → assemble.
+ * THE SECOND HALF: cut → gate → place → assemble → store the siblings.
  *
- * @returns the same shape `authorHeroDriverMaster` returns, because
- *   flat-first-atlas consumes both through one code path and a second shape
- *   there would be a second contract nobody asked for.
+ * Split out from `authorPanelProofMaster` so the durable graph and the
+ * in-process pass execute THE SAME CODE rather than two implementations of it.
+ * That is the whole point of the split and the reason it is not a copy: a
+ * second producer of the panels is exactly what RULE 0.21 forbids by name, and
+ * the drift it produces is what RULE 0.29 spent a session measuring.
+ *
+ * It takes the sheet as `{ bytes, contentHash, storagePath, byteSize, ... }`.
+ * The graph's node reads those bytes back from the sheet's stored IDENTITY and
+ * hash-verifies them before calling this (RULE 0.39 across the node boundary);
+ * the in-process caller already holds them. Either way this function is handed
+ * the same object and cannot tell which path it is on — deliberately, because a
+ * function that behaves differently per caller is two functions.
+ *
+ * `stageTimings` is passed IN so a graph run can carry the sheet node's own
+ * timing into the same list the in-process run produces, and the receipt keeps
+ * one shape on both paths.
  */
-async function authorPanelProofMaster({
-  manifest, input, store, logger = () => {},
-  providerRequest = {}, callProofEdge,
+async function assemblePanelProofMaster({
+  sheet, panelRows, customerAssets = [], manifest, store, logger = () => {},
   assembleFinishedMaster, sharp = require("sharp"),
-  startedAt = Date.now(),
+  startedAt = Date.now(), stageTimings = [],
 } = {}) {
-  const stageTimings = [];
   const mark = (stage, at) => stageTimings.push({ stage, ms: Date.now() - at });
-
-  // ── node 1: the sheet ──────────────────────────────────────────────────
-  const sheetAt = Date.now();
-  const { sheet, panelRows } = await requestProofSheet({
-    manifest, input, providerRequest, callProofEdge,
-  });
-  mark("proof.sheet", sheetAt);
-  logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
+  if (!sheet?.bytes) throw new PanelProofRefusal("the assemble stage was handed no sheet bytes");
 
   /**
    * EVERY REFUSAL PAST THIS POINT NAMES THE SHEET IT JUDGED.
@@ -409,6 +584,43 @@ async function authorPanelProofMaster({
     const panel = byKey.get(zone.surfaceKey);
     if (!panel) throw refuse(`${zone.surfaceKey}: no cut panel to assemble`);
     const { pixelWidth, pixelHeight } = zonePixelSize(zone);
+
+    // ═══ A WRONG CROP MAY NOT BE STRETCHED INTO A RIGHT-SHAPED ZONE ═══
+    //
+    // `fit: "fill"` ignores aspect ratio. Combined with
+    // `positionalPremiseVerified: false` -- the cutter reads the container's own
+    // cells, and live sheet d5314267 proved the model keeps the BANDS and the
+    // panel identities and then arranges the panels itself -- that meant a crop
+    // taken from the wrong place could be distorted to the exact pixel size the
+    // assembler demands, pass both of its assertions, and become a print panel.
+    // An independent review named this the sharpest technical point in the
+    // route, and it was right: `fit` only proves a cell is not blank.
+    //
+    // The resize STAYS -- the assembler requires the zone's exact pixel size and
+    // that is not negotiable (twelve stages read it) -- but the aspect it is
+    // handed is now checked first, so the resize can only ever be a rescale, not
+    // a reshape. A crop of the right REGION already has the cell's aspect,
+    // because the cell was cut from the container's own geometry; a crop whose
+    // aspect disagrees came from somewhere else, and that is a refusal, not
+    // something to squash.
+    //
+    // The bound is deliberately generous. The cut is integer-rounded off a
+    // scaled sheet, so a legitimate panel drifts by a fraction of a percent; a
+    // crop from the wrong region on a real sheet drifts by tens of percent
+    // (d5314267's stacked flanks against a one-row container). Anything between
+    // is reported rather than guessed at.
+    const cropAspect = panel.rect.width / panel.rect.height;
+    const zoneAspect = pixelWidth / pixelHeight;
+    const drift = Math.max(cropAspect / zoneAspect, zoneAspect / cropAspect);
+    if (!Number.isFinite(drift) || drift > MAX_PANEL_ASPECT_DRIFT) {
+      throw refuse(
+        `${zone.surfaceKey}: the cut crop is ${cropAspect.toFixed(3)}:1 and its zone is `
+        + `${zoneAspect.toFixed(3)}:1 (drift ${drift.toFixed(3)}, limit ${MAX_PANEL_ASPECT_DRIFT}) `
+        + `— resizing it would distort the artwork rather than place it`,
+        { aspect: { surfaceKey: zone.surfaceKey, cropAspect: Number(cropAspect.toFixed(4)),
+          zoneAspect: Number(zoneAspect.toFixed(4)), drift: Number(drift.toFixed(4)) } });
+    }
+
     const bytes = await sharp(panel.bytes)
       .resize(pixelWidth, pixelHeight, { fit: "fill" }).png().toBuffer();
     placed.push({
@@ -497,6 +709,19 @@ async function authorPanelProofMaster({
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
+      // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.
+      //
+      // They were staged, hash-verified and sent, and then recorded NOWHERE --
+      // so "did the customer's logo reach Call 1" was unanswerable from the run,
+      // which is the state that let this route ship forwarding neither the logo
+      // nor the VisionBoard reference while every receipt read green. An empty
+      // array is a real answer (the customer uploaded nothing); absence of the
+      // field is not.
+      customerAssets: (Array.isArray(customerAssets) ? customerAssets : []).map((asset) => ({
+        storagePath: asset?.storagePath || null,
+        contentHash: asset?.contentHash || null,
+        byteSize: Number(asset?.byteSize || 0) || null,
+      })),
       sheet: cut.sheet,
       // THE THREE QUADRANTS, NAMED. Zone 1 became the master; these two are
       // the clean base and the Logo Pack, and a reader that cannot see them
@@ -517,6 +742,38 @@ async function authorPanelProofMaster({
   };
 }
 
+/**
+ * The whole pass, in one process: sheet → cut → assemble.
+ *
+ * This is now a two-line composition of the two halves above, and it stays
+ * because it is the door the in-process path and every existing caller already
+ * use. The durable graph claims the same two halves as two node rows; both
+ * routes run the SAME functions, so there is exactly one producer of these
+ * panels however Call 1 was dispatched.
+ *
+ * @returns the same shape `authorHeroDriverMaster` returns, because
+ *   flat-first-atlas consumes both through one code path and a second shape
+ *   there would be a second contract nobody asked for.
+ */
+async function authorPanelProofMaster({
+  manifest, input, store, logger = () => {}, customerImageParts = [],
+  providerRequest = {}, callProofEdge,
+  assembleFinishedMaster, sharp = require("sharp"),
+  startedAt = Date.now(),
+} = {}) {
+  const stageTimings = [];
+  const sheetAt = Date.now();
+  const { sheet, panelRows, customerAssets } = await requestProofSheet({
+    manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
+  });
+  stageTimings.push({ stage: "proof.sheet", ms: Date.now() - sheetAt });
+  logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
+  return assemblePanelProofMaster({
+    sheet, panelRows, customerAssets, manifest, store, logger,
+    assembleFinishedMaster, sharp, startedAt, stageTimings,
+  });
+}
+
 module.exports = {
   PANEL_PROOF_TOPOLOGY,
   PANEL_PROOF_TOPOLOGY_CONTRACT,
@@ -527,5 +784,7 @@ module.exports = {
   panelRowsFromManifest,
   stageProofContainer,
   createPanelProofTransport,
+  requestProofSheet,
+  assemblePanelProofMaster,
   authorPanelProofMaster,
 };

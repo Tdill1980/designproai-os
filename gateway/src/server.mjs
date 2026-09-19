@@ -948,6 +948,145 @@ function validatedCallOnePanels(value, ownerId, generationId, revisionSequence, 
  * behaviour for every owner-read.
  */
 const ATLAS_REFUSAL_TOPOLOGIES = new Set(["six-surface", "field", "hero-driver"]);
+
+// ── THE THREE-ZONE PRODUCTION PANEL PROOF ─────────────────────────────────
+//
+// Zone 1 = the six branded print panels (cut and placed, this IS the master).
+// Zone 2 = the same six with no type or logos.  Zone 3 = the five cut graphics.
+// Zone 3's slots are not vehicle surfaces and never gain inches: a cut graphic
+// is sized at the plotter, which is why its widthIn/heightIn are null by
+// contract rather than by omission.
+const PANEL_PROOF_SURFACES = new Set(["driver", "passenger", "hood", "roof", "front", "rear"]);
+const PANEL_PROOF_CUT_SLOTS = new Set(["logo", "tagline", "contact", "promo", "icons"]);
+const PANEL_PROOF_ROLES = new Set(["branded", "clean", "cut-graphic"]);
+// Both families are content-addressed under one prefix. Validated so a drifted
+// or hostile RPC answer cannot talk this gateway into signing an arbitrary
+// object, which is the whole reason the paths never leave it.
+const PANEL_PROOF_SHEET_PATH = /^atlas-panel-proof\/[0-9a-f]{64}\.(png|jpg|jpeg|webp)$/;
+const PANEL_PROOF_QUADRANT_PATH = /^atlas-panel-proof\/quadrants\/[0-9a-f]{64}\.png$/;
+
+/**
+ * A measurement, or an honest null — never a fabricated zero.
+ *
+ * `Number(null)` is 0 and `Number.isFinite(0)` is true, so the usual
+ * `Number.isFinite(Number(x)) ? Number(x) : null` shape silently turns an
+ * ABSENT dimension into `0`. A cut graphic carries no inches by contract (it is
+ * sized at the plotter), so that shape reported every Zone 3 slot as 0" wide —
+ * a number a UI would print as a real dimension. Absence has to survive.
+ */
+function measuredNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * One quadrant panel as the browser may see it.
+ *
+ * `persisted:false` is a first-class answer, not an error: the quadrant write
+ * fails SOFT by design (RULE 0.15's blast radius — Zone 1 is an accepted master
+ * by the time these are stored, and an optional sibling may not take it down),
+ * so a panel can legitimately arrive measured-but-unstored with a reason. The
+ * UI must be able to say "cut, not stored, because X" rather than show a gap.
+ */
+function validatedPanelProofQuadrantPanel(row, { keys, role }) {
+  const surfaceKey = String(row?.surfaceKey || "");
+  const rowRole = String(row?.role || "");
+  if (!keys.has(surfaceKey) || rowRole !== role || !PANEL_PROOF_ROLES.has(rowRole)) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  const base = {
+    surfaceKey,
+    role: rowRole,
+    byteSize: measuredNumber(row?.byteSize),
+    // The share of the cell that is not the page. Zone 3 reads low on purpose:
+    // a cut graphic is marks on a ground, not a full-bleed panel.
+    fit: measuredNumber(row?.fit),
+    widthIn: measuredNumber(row?.widthIn),
+    heightIn: measuredNumber(row?.heightIn),
+  };
+  if (row?.persisted !== true) {
+    return { ...base, persisted: false, reason: String(row?.reason || "unknown").slice(0, 200) };
+  }
+  const storagePath = String(row?.storagePath || "");
+  const contentHash = String(row?.contentHash || "").toLowerCase();
+  if (!PANEL_PROOF_QUADRANT_PATH.test(storagePath) || !SHA256_PATTERN.test(contentHash)) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  return { ...base, persisted: true, contentHash, storagePath };
+}
+
+/**
+ * The three-zone proof as the browser may see it: identities and measurements,
+ * with the storage paths kept for signing and stripped before the response.
+ *
+ * NULL means "no such request, or not yours" and becomes a 404. `panelProof:
+ * false` means the request exists and its latest revision was authored on a
+ * topology with no three-zone document (six-surface, field, hero-driver) — a
+ * different answer, and the UI has to tell them apart.
+ */
+function validatedAtlasPanelProof(value, requestId) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  if (String(value.requestId || "") !== requestId) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  const revisionId = value.revisionId == null ? null : String(value.revisionId);
+  if (revisionId !== null && !UUID_PATTERN.test(revisionId)) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  if (value.panelProof !== true) {
+    return { requestId, revisionId, panelProof: false };
+  }
+  const sheetPath = String(value.sheet?.storagePath || "");
+  const sheetHash = String(value.sheet?.contentHash || "").toLowerCase();
+  if (!PANEL_PROOF_SHEET_PATH.test(sheetPath) || !SHA256_PATTERN.test(sheetHash)) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  const quadrants = value.quadrants && typeof value.quadrants === "object" ? value.quadrants : {};
+  const branded = Array.isArray(quadrants.branded) ? quadrants.branded : [];
+  const clean = Array.isArray(quadrants.clean) ? quadrants.clean : [];
+  const cutGraphics = Array.isArray(quadrants.cutGraphics) ? quadrants.cutGraphics : [];
+  if (branded.length > 6 || clean.length > 6 || cutGraphics.length > 5) {
+    throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+  }
+  return {
+    requestId,
+    revisionId,
+    revisionSequence: measuredNumber(value.revisionSequence),
+    panelProof: true,
+    contract: value.contract ? String(value.contract).slice(0, 200) : null,
+    topology: value.topology ? String(value.topology).slice(0, 120) : null,
+    promptVersion: value.promptVersion ? String(value.promptVersion).slice(0, 200) : null,
+    masterContentHash: SHA256_PATTERN.test(String(value.masterContentHash || "").toLowerCase())
+      ? String(value.masterContentHash).toLowerCase() : null,
+    sheet: { contentHash: sheetHash, storagePath: sheetPath },
+    quadrants: {
+      // Zone 1 is described, not stored twice: it became the accepted master,
+      // which /atlas already signs. Publishing a second copy here would be the
+      // two-master shape the 2026-08-31 ruling retired by name.
+      branded: branded.map((row) => {
+        const surfaceKey = String(row?.surfaceKey || "");
+        if (!PANEL_PROOF_SURFACES.has(surfaceKey) || String(row?.role || "") !== "branded") {
+          throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
+        }
+        return {
+          surfaceKey,
+          role: "branded",
+          byteSize: measuredNumber(row?.byteSize),
+          fit: measuredNumber(row?.fit),
+        };
+      }),
+      clean: clean.map((row) => validatedPanelProofQuadrantPanel(row,
+        { keys: PANEL_PROOF_SURFACES, role: "clean" })),
+      cutGraphics: cutGraphics.map((row) => validatedPanelProofQuadrantPanel(row,
+        { keys: PANEL_PROOF_CUT_SLOTS, role: "cut-graphic" })),
+    },
+  };
+}
+
 /** The refusal ledger as the browser may see it: verdict, identity, never a storage path. */
 function validatedAtlasRefusals(value, requestId) {
   if (!Array.isArray(value) || value.length > 100) {
@@ -2674,6 +2813,52 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           return { ...base, ...(signedUrl ? { signedUrl, expiresIn: 300 } : {}) };
         }));
         return json(res, 200, publicRefusals);
+      }
+
+      // THE THREE-ZONE PRODUCTION PANEL PROOF, SIGNED FOR ITS OWNER.
+      //
+      // Owner, on the architecture: "Production panel proof is source it has
+      // the 3 zones / For panels, panels with seperated and logos and text."
+      // The sheet is the document Call 1 drew and every zone is cut from it;
+      // Zone 2 is the six clean panels and Zone 3 the five cut graphics. All
+      // three were being produced and none of them could be read, because the
+      // sheet is not a column on the revision — it lives in
+      // metadata.panelProofAuthoring, which nothing signed.
+      //
+      // Same fence as /atlas and /atlas-refusals: the RPC answers NULL for a
+      // request that is not the caller's so this returns 404 without confirming
+      // the id, the storage policy admits signing only the exact objects a
+      // revision names (membership, never prefix — these objects are
+      // content-addressed and therefore shared across owners), and no storage
+      // path leaves the gateway. A panel that cannot be signed is still listed
+      // with its identity, and a panel the runtime never stored is listed with
+      // `persisted:false` and its reason rather than silently dropped.
+      const generationPanelProofMatch = url.pathname.match(/^\/api\/generation\/requests\/([0-9a-f-]{36})\/panel-proof$/);
+      if (req.method === "GET" && generationPanelProofMatch) {
+        const requestId = generationPanelProofMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(requestId)) return json(res, 400, { error: "generation_request_id_invalid" });
+        const located = await rpc(fetchImpl, token, cfg, "designpro_atlas_panel_proof_paths", {
+          p_request_id: requestId,
+        });
+        const proof = validatedAtlasPanelProof(located, requestId);
+        if (proof === null) return json(res, 404, { error: "generation_request_not_found" });
+        if (proof.panelProof !== true) return json(res, 200, proof);
+        const signPanel = async ({ storagePath, ...panel }) => {
+          if (!storagePath) return panel;
+          const signedUrl = await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null);
+          return { ...panel, ...(signedUrl ? { signedUrl, expiresIn: 300 } : {}) };
+        };
+        const { storagePath: sheetPath, ...sheetBase } = proof.sheet;
+        const [sheetUrl, clean, cutGraphics] = await Promise.all([
+          signedArtifactUrl(fetchImpl, token, cfg, sheetPath).catch(() => null),
+          Promise.all(proof.quadrants.clean.map(signPanel)),
+          Promise.all(proof.quadrants.cutGraphics.map(signPanel)),
+        ]);
+        return json(res, 200, {
+          ...proof,
+          sheet: { ...sheetBase, ...(sheetUrl ? { signedUrl: sheetUrl, expiresIn: 300 } : {}) },
+          quadrants: { branded: proof.quadrants.branded, clean, cutGraphics },
+        });
       }
 
       // "Generate this angle again" — the per-view regenerate and failed-shot

@@ -29,6 +29,14 @@ export async function createAtlasCall1Database() {
   // the suite stayed green, which is the failure shape this repo has recorded
   // three times ("a fake door laxer than the real one").
   await db.exec(await readFile(new URL('../../supabase/migrations/20260918030000_designpro_atlas_call1_composite_master.sql', import.meta.url), 'utf8'));
+  // THE THIRD ONE, for the same reason. `proof.assemble` is the terminal node of
+  // a panel-proof run and it has no master.assemble either, so without this it
+  // does all of its work -- the sheet cut, eleven sibling panels stored, the
+  // master assembled -- and THEN cannot be finished, because the finish RPC
+  // would not let it name the run's master. Measured exactly that way before
+  // this migration existed: node stuck `running`, lease expired, work repeated,
+  // caller timed out.
+  await db.exec(await readFile(new URL('../../supabase/migrations/20260919190000_designpro_atlas_call1_proof_assemble_master.sql', import.meta.url), 'utf8'));
   return db;
 }
 

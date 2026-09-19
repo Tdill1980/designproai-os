@@ -380,3 +380,40 @@ test("the canary reports WHICH configuration GENIE resolved, and convicts one th
   assert.match(canary, /GENIE geometry is GROUNDED\/PROVISIONAL/,
     "an uncatalogued vehicle must be reported as provisional rather than failed");
 });
+
+test("the canary uploads a real customer logo and convicts a Call 1 that did not carry it", () => {
+  // THE DEFECT THE CANARY COULD NOT SEE. The panel-proof route forwarded NO
+  // customer logo and NO VisionBoard reference at all, while six-surface and
+  // field carry both -- and the canary's input had no `logoAsset`, so
+  // `verifiedCustomerLogoPart` returned [] and a route that DROPS the logo was
+  // indistinguishable from one that was never given one. Every assertion passed
+  // over a design that had never seen the customer's brand.
+  //
+  // Same shape as the element-graph blindness this file already locks: a guard
+  // keyed on a field the canary never populated.
+  assert.match(canary, /async function stageCustomerLogo\(\{ operatorId, generationId \}\)/,
+    "the canary must upload a real customer logo, not assume one");
+  // IT GOES WHERE A CUSTOMER'S UPLOAD GOES. `authorizedArtifactPath` admits only
+  // `users/<owner>/revisions/.../inputs/` for a browser-supplied file; a
+  // service-role client could write anywhere, and writing elsewhere would make
+  // this a fixture rather than a rehearsal of the real upload.
+  assert.match(canary, /users\/\$\{operatorId\}\/revisions\/\$\{generationId\}\/inputs\//,
+    "the staged logo must sit on the customer-upload prefix");
+  // Identity, never a URL: the runtime refuses a URL outright
+  // (flat_atlas_logo_identity_invalid), and the upload is re-read and
+  // hash-verified because verifiedCustomerLogoPart will.
+  assert.match(canary, /logoAsset: customerLogo,/, "the logo must reach the request as an identity");
+  assert.match(canary, /the staged logo does not hash to what was uploaded/,
+    "the canary must verify its own upload the way the runtime will");
+
+  // AND IT CONVICTS A RUN THAT DID NOT CARRY IT. Reporting is not enough on the
+  // route whose receipt can answer the question.
+  assert.match(canary, /const panelProofAssets = atlasRow\.metadata\?\.panelProofAuthoring\?\.customerAssets;/,
+    "the panel-proof receipt is where 'did the logo reach Call 1' is answerable");
+  assert.match(canary, /the panel-proof Call 1 recorded NO customer assets although the request carried an uploaded logo/,
+    "a panel-proof run with no recorded customer assets must FAIL, not warn");
+  // On a routing with no per-asset receipt the honest answer is to say so rather
+  // than to claim proof it does not have.
+  assert.match(canary, /this routing records no per-asset receipt for the uploaded logo/,
+    "a routing that cannot answer must say so instead of passing silently");
+});

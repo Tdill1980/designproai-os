@@ -811,3 +811,259 @@ test("6. authorElements: the six-surface door runs end to end and the run comple
     else process.env.DESIGNPRO_ATLAS_ELEMENT_GRAPH = previous;
   }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE PANEL-PROOF PAIR — Call 1's own two durable nodes.
+//
+// Owner: "Connect Call 1 to the existing durable DAG." These cases run the REAL
+// migration on PGlite, the REAL `requestProofSheet` and `assemblePanelProofMaster`,
+// and the REAL master assembler, across TWO workers, so what is proven is that
+// the durable route produces the same master the in-process route does and that
+// the expensive half is never bought twice.
+// ════════════════════════════════════════════════════════════════════════════
+
+const panelProof = require("../runtime/atlas-panel-proof-topology.cjs");
+const containerTemplate = require("../runtime/atlas-proof-container-template.cjs");
+const { assembleFinishedMaster } = require("../runtime/atlas-finished-master.cjs");
+
+/**
+ * A sheet with every cell painted, at the container's own geometry — the same
+ * fixture shape `atlas-panel-proof-topology.test.mjs` uses, because a sheet with
+ * empty cells exercises the refusal and nothing else.
+ */
+async function paintedProofSheet(manifest, { width = 3072, height = 2048 } = {}) {
+  const layout = containerTemplate.containerLayout(containerTemplate.parsePanelRows(
+    panelProof.panelRowsFromManifest(manifest)));
+  const sx = width / layout.width;
+  const sy = height / layout.height;
+  const rects = [];
+  for (const [zone, colour] of [["zone1", "#1d4ed8"], ["zone2", "#0f766e"], ["zone3", "#b91c1c"]]) {
+    for (const cell of layout[zone] || []) {
+      rects.push(`<rect x="${Math.round(cell.x * sx)}" y="${Math.round(cell.y * sy)}" `
+        + `width="${Math.round(cell.w * sx)}" height="${Math.round(cell.h * sy)}" fill="${colour}"/>`);
+    }
+  }
+  return sharp(Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+    + `<rect width="${width}" height="${height}" fill="#ffffff"/>${rects.join("")}</svg>`,
+  )).png().toBuffer();
+}
+
+/**
+ * A stand-in for `production-panel-proof` that stores its sheet the way the real
+ * edge does — content-addressed under `atlas-panel-proof/` — and records the
+ * owner id it was handed.
+ *
+ * IT RECORDS THE OWNER BECAUSE THAT WAS A REAL DEFECT. Both runtime processes
+ * build ONE transport at start-up and then serve panel-proof nodes of ANY
+ * customer's run, so a construction-time-only owner sends an EMPTY
+ * `x-designpro-owner-id` on every graph-claimed node — which the live edge
+ * rejects 403, and which is also the provider cache's isolation key.
+ */
+function proofEdgeStub(files, calls, { sheetBytes, refuse = false } = {}) {
+  return async (body, meta = {}) => {
+    calls.push({ body, ownerId: meta.ownerId ?? null });
+    if (refuse) {
+      throw new panelProof.PanelProofRefusal("the model drew a vehicle", { status: 200 });
+    }
+    const contentHash = sha(sheetBytes);
+    const storagePath = `atlas-panel-proof/${contentHash}.png`;
+    files.set(storagePath, sheetBytes);
+    return {
+      bytes: sheetBytes, contentHash, storagePath, byteSize: sheetBytes.length,
+      model: "gemini-3-pro-image", contract: "designpro.atlas-panel-proof.v1",
+      promptChars: 2400, sheetShape: { mime: "image/png", extension: "png" },
+    };
+  };
+}
+
+test("P1. the panel-proof graph is exactly two nodes: the image request, then the deterministic cut", () => {
+  const nodes = graph.compilePanelProofGraph();
+  assert.deepEqual(nodes.map((n) => n.key), [graph.PROOF_SHEET_NODE, graph.PROOF_ASSEMBLE_NODE]);
+  // The sheet is a ROOT: nothing orders it, so it starts the instant it is claimable.
+  assert.deepEqual(nodes[0].dependsOn, []);
+  // And the assemble waits on exactly ONE thing — its own sheet. An extra edge
+  // here would be an ordering nobody's data requires, which is the shape RULE
+  // 0.5's amendment tells sessions to remove rather than add.
+  assert.deepEqual(nodes[1].dependsOn, [graph.PROOF_SHEET_NODE]);
+});
+
+test("P2. authorPanelProof runs end to end across two workers, and a resume buys no second sheet", async () => {
+  const db = await createAtlasCall1Database();
+  const files = new Map();
+  const adapter = createAtlasCall1Adapter(db, files);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const sheetBytes = await paintedProofSheet(manifest);
+  const calls = [];
+  const callProofEdge = proofEdgeStub(files, calls, { sheetBytes });
+
+  // TWO WORKERS, as production runs them. The one that owns the request ticks
+  // inline while it awaits; the other polls. Either may claim either node, which
+  // is the entire reason the sheet crosses as an identity and not as bytes.
+  const shared = {
+    supabase: adapter.supabase, callEdge: syntheticEdge([]), callProofEdge,
+    assembleFinishedMaster, heartbeatMs: 200, logger: () => {},
+  };
+  const owner = graph.createAtlasCall1NodeWorker({ ...shared, workerId: "runtime-1-call1-graph", concurrency: 1, pollMs: 10_000 });
+  const other = graph.createAtlasCall1NodeWorker({ ...shared, workerId: "runtime-2-call1-graph", concurrency: 2, pollMs: 25 });
+  try {
+    other.start();
+    const result = await owner.authorPanelProof({
+      manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      providerRequest: { requestId: REQUEST, generationId: GENERATION },
+      logger: () => {}, pollMs: 20, timeoutMs: 90_000,
+    });
+
+    // ONE IMAGE REQUEST FOR THE WHOLE OF CALL 1. This is the claim the
+    // three-quadrant contract rests on, and the graph must not change it.
+    assert.equal(calls.length, 1, "the panel-proof contract is ONE image request");
+    assert.equal(result.imageRequestCount, 1);
+    // THE OWNER ID REACHED THE EDGE. A construction-time-only owner would send
+    // "" here, the live edge answers 403, and the provider cache would lose the
+    // key that keeps two customers' sheets apart.
+    assert.equal(calls[0].ownerId, OWNER, "the claimed run's owner must reach the proof edge");
+
+    // AN ORDINARY MASTER LEAVES, at the manifest's own canvas, so every gate
+    // and every stage after Call 1 judges it exactly as before.
+    const meta = await sharp(result.bytes).metadata();
+    assert.equal(meta.width, manifest.canvas.widthPx);
+    assert.equal(meta.height, manifest.canvas.heightPx);
+    assert.equal(result.contentHash, sha(result.bytes));
+
+    // THE RECEIPT KEEPS ONE SHAPE ON BOTH ROUTES. The sheet node's timing
+    // travels forward, so the stage list reads as the in-process pass's does.
+    assert.deepEqual(result.provenance.stageTimings.map((s) => s.stage),
+      [graph.PROOF_SHEET_NODE, "panel.cut", "master.assemble"]);
+    // ALL THREE QUADRANTS ARE ON THE RECEIPT, and the two siblings are stored.
+    assert.equal(result.provenance.quadrants.branded.length, 6);
+    assert.equal(result.provenance.quadrants.clean.length, 6);
+    assert.equal(result.provenance.quadrants.cutGraphics.length, 5);
+    for (const panel of [...result.provenance.quadrants.clean, ...result.provenance.quadrants.cutGraphics]) {
+      assert.equal(panel.persisted, true, `${panel.role}:${panel.surfaceKey} must be stored, not described`);
+      assert.match(panel.storagePath, /^atlas-panel-proof\/quadrants\/[0-9a-f]{64}\.png$/);
+    }
+    // THE CUT SPENDS NO MODEL CALL, per surface.
+    assert.equal(result.surfaces.length, 6);
+    for (const surface of result.surfaces) assert.equal(surface.imageRequestCount, 0);
+
+    // THE LEDGER ANSWERS "WHAT HAPPENED", which is the durability this buys.
+    assert.equal(result.provenance.execution, "graph");
+    assert.equal(result.provenance.graph.runId, (await db.query(
+      "SELECT id FROM public.designpro_atlas_call1_runs ORDER BY created_at DESC LIMIT 1")).rows[0].id);
+    const nodes = await db.query(
+      "SELECT node_key,state,attempt,lease_owner FROM public.designpro_atlas_call1_nodes WHERE run_id=$1 ORDER BY node_key",
+      [result.provenance.graph.runId]);
+    assert.deepEqual(nodes.rows.map((n) => n.node_key), [graph.PROOF_ASSEMBLE_NODE, graph.PROOF_SHEET_NODE]);
+    assert.ok(nodes.rows.every((n) => n.state === "completed"), "both nodes must complete");
+    assert.ok(nodes.rows.every((n) => n.lease_owner), "every node records the worker that held it");
+    // AND THE RECEIPT SAYS SO. "Which worker drew the sheet, on which try" is
+    // the queryable timeline this graph exists to buy; a receipt that records
+    // `null` for it has bought nothing. (`readNode` did not select those two
+    // columns, so the provenance claimed not to know what the row plainly said.)
+    for (const entry of result.provenance.graph.nodes) {
+      assert.ok(entry.leaseOwner, `${entry.nodeKey} must record the worker that held it`);
+      assert.ok(Number(entry.attempt) >= 1, `${entry.nodeKey} must record its attempt`);
+    }
+
+    // NO PIXELS CROSSED THE BOUNDARY — RULE 0.39. The sheet node's stored output
+    // carries an identity and paperwork; a base64 blob in a node row is the
+    // exact thing that rule forbids.
+    const sheetRow = await db.query(
+      "SELECT output FROM public.designpro_atlas_call1_nodes WHERE run_id=$1 AND node_key=$2",
+      [result.provenance.graph.runId, graph.PROOF_SHEET_NODE]);
+    const output = sheetRow.rows[0].output;
+    assert.match(output.sheet.storagePath, /^atlas-panel-proof\/[0-9a-f]{64}\.png$/);
+    assert.equal(output.sheet.contentHash, sha(sheetBytes));
+    assert.equal(Number(output.sheet.byteSize), sheetBytes.length);
+    const flat = JSON.stringify(output);
+    assert.equal(flat.includes("base64"), false);
+    assert.ok(flat.length < 20_000, `a node output carrying pixels would be far larger (${flat.length} B)`);
+
+    // RESUME. A re-claimed generation finds the completed run and spends NOTHING
+    // — not a second sheet, and not even the cache-read round trip the durable
+    // provider module would otherwise make, because the node row already has it.
+    const again = await owner.authorPanelProof({
+      manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      providerRequest: { requestId: REQUEST, generationId: GENERATION },
+      logger: () => {}, pollMs: 20, timeoutMs: 90_000,
+    });
+    assert.equal(calls.length, 1, "a resumed run must not touch the proof edge again");
+    assert.equal(again.contentHash, result.contentHash, "and it must return the same master");
+    assert.equal(again.provenance.graph.runId, result.provenance.graph.runId,
+      "the same definition resumes; it never forks a second run");
+  } finally {
+    owner.stop?.();
+    other.stop?.();
+  }
+});
+
+test("P3. a refused sheet arrives as a PanelProofRefusal, so the fail-over still happens", async () => {
+  // RULE 0.38 — every Call-1 routing gets a second contract, and
+  // flat-first-atlas decides that on the refusal's TYPE. A refused sheet that
+  // reached the caller as a generic graph error would silently disable the
+  // recovery and leave the customer with nothing, which is the exact defect
+  // that rule was written for.
+  const db = await createAtlasCall1Database();
+  const files = new Map();
+  const adapter = createAtlasCall1Adapter(db, files);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const worker = graph.createAtlasCall1NodeWorker({
+    supabase: adapter.supabase, workerId: "solo", callEdge: syntheticEdge([]),
+    callProofEdge: proofEdgeStub(files, calls, { refuse: true }),
+    assembleFinishedMaster, concurrency: 2, pollMs: 25, heartbeatMs: 200, logger: () => {},
+  });
+  try {
+    await assert.rejects(
+      worker.authorPanelProof({
+        manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+        logger: () => {}, pollMs: 20, timeoutMs: 60_000,
+      }),
+      (error) => {
+        assert.equal(error.code, "flat_atlas_panel_proof_refused",
+          "the refusal must keep the code flat-first-atlas's fail-over branches on");
+        assert.ok(error instanceof panelProof.PanelProofRefusal);
+        // And it must say it ONCE. `failurePayload` stores the already-prefixed
+        // message, so reconstructing from `message` would read "panel proof
+        // refused: panel proof refused: ...".
+        assert.equal(error.message, "panel proof refused: the model drew a vehicle");
+        return true;
+      });
+
+    // AND THE DEFECT'S EXACT SHAPE IS LOCKED. The refusal is on `proof.sheet`,
+    // so `proof.assemble` NEVER BECAME READY and its row is still pending — which
+    // is why waiting on the terminal node's own row timed out after the full
+    // budget instead of raising the refusal. Watching the RUN is what fixes it,
+    // and this is the state that proves the difference.
+    const rows = await db.query(
+      "SELECT node_key,state FROM public.designpro_atlas_call1_nodes ORDER BY node_key");
+    const byKey = Object.fromEntries(rows.rows.map((r) => [r.node_key, r.state]));
+    assert.equal(byKey[graph.PROOF_SHEET_NODE], "failed", "the sheet is what the model refused");
+    assert.equal(byKey[graph.PROOF_ASSEMBLE_NODE], "pending",
+      "the terminal node never became ready — so its own row could never have reported the refusal");
+    const runRows = await db.query("SELECT state,error_code FROM public.designpro_atlas_call1_runs");
+    assert.equal(runRows.rows[0].state, "failed", "the RUN is what carries the failure to the caller");
+  } finally {
+    worker.stop?.();
+  }
+});
+
+test("P4. a worker built without the panel-proof seams fails the node by name, never half-executes", () => {
+  // The two seams are optional so the cascade and the element subgraph are
+  // unchanged by their existence. A worker without them must therefore REFUSE a
+  // panel-proof node rather than run half of it — and both runtime processes are
+  // given them in index.js, which is asserted below.
+  const indexSrc = fs.readFileSync(new URL("../runtime/index.js", import.meta.url), "utf8");
+  assert.match(indexSrc, /callProofEdge: createPanelProofTransport\(\{ supabase/);
+  assert.match(indexSrc, /^\s*assembleFinishedMaster,$/m);
+  const graphSrc = fs.readFileSync(new URL("../runtime/atlas-call1-graph.cjs", import.meta.url), "utf8");
+  assert.match(graphSrc, /designpro_atlas_call1_transport_missing/);
+  // AND THE CALLER ROUTES THROUGH IT, behind the same kill switch as the cascade.
+  const atlasSrc = fs.readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  assert.match(atlasSrc, /authorPanelProof\(\{/);
+  assert.match(atlasSrc, /typeof options\.atlasCall1Graph\.authorPanelProof === "function"/);
+  // The in-process pass stays reachable for the kill switch and for a database
+  // without the migration; the unavailable case is recorded, never silent.
+  assert.match(atlasSrc, /running the panel proof in-process/);
+  assert.match(atlasSrc, /proof\.provenance\.graph = \{ unavailable: true/);
+});

@@ -45,6 +45,7 @@ const typeset = require("./atlas-typeset-layer.cjs");
 const logo = require("./atlas-logo-prepare.cjs");
 const lockup = require("./atlas-element-lockup.cjs");
 const composite = require("./atlas-master-composite.cjs");
+const panelProof = require("./atlas-panel-proof-topology.cjs");
 const { createGenerationStore, BUCKET } = require("./generation-store.cjs");
 
 const GRAPH_CONTRACT = "designpro.atlas-call1-graph.v1";
@@ -75,6 +76,23 @@ const LOCKUP_NODE = "element.lockup";
 // ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. The ONLY element node that
 // consumes the assembled sheet, and the only one after master.assemble.
 const COMPOSITE_NODE = "master.composite";
+// THE PANEL-PROOF PAIR. Call 1 on the panel-proof contract is one image request
+// followed by a wholly deterministic cut-and-place, and the boundary is drawn
+// exactly where the fallible, billable work is -- the same reasoning RULE 0.39
+// gives for splitting surface.driver.view from surface.driver ("a refused
+// flatten re-spent the 3D render on every attempt").
+//
+// `proof.sheet` is the ONE image request. Its row is what a re-claimed worker
+// reads instead of asking the edge again -- not even a cache-read round trip.
+// `proof.assemble` is cut -> gate -> place -> assemble -> store the two sibling
+// quadrants: ~17 sharp operations, zero model calls, and the reason it is ONE
+// node rather than three is that a split would force six extra stores of the
+// Zone-1 panels across a boundary purely to make a second-long deterministic
+// step independently retryable. Honest statement of value: these two nodes buy
+// durability, a per-node retry of the expensive half, and a queryable timeline.
+// They do not shorten Call 1 -- the critical path is still one image call.
+const PROOF_SHEET_NODE = "proof.sheet";
+const PROOF_ASSEMBLE_NODE = "proof.assemble";
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -248,6 +266,33 @@ function elementNodes({ input, masterNode = null }) {
  * there. A reference, never bytes -- RULE 0.39 across every node boundary,
  * and the same rule that lets either worker claim this node.
  */
+/**
+ * THE PANEL-PROOF DOOR — Call 1's own two nodes.
+ *
+ * Owner: "Connect Call 1 to the existing durable DAG." This is that, for the
+ * contract Call 1 actually runs on the panel-proof route, and it lands in the
+ * SAME `designpro_atlas_call1_runs` / `_nodes` tables the cascade and the
+ * element subgraph already use — no new tables and no migration, because
+ * `node_key`'s CHECK is a regex that already admits a dotted key.
+ *
+ * Two nodes, one edge, and the handoff is the stored sheet's IDENTITY:
+ * `proof.sheet` completes with `{storagePath, contentHash, byteSize}` and
+ * nothing else, and `proof.assemble` re-reads and hash-verifies those bytes
+ * before it cuts them. RULE 0.39 across the boundary, which is also what lets
+ * either runtime process claim the assemble half of a sheet the other one drew.
+ */
+function compilePanelProofGraph() {
+  return validateGraph([
+    { key: PROOF_SHEET_NODE, dependsOn: [], input: {}, maxAttempts: 2 },
+    // maxAttempts 2, not 3. An assemble failure is a REFUSAL of the sheet in
+    // all but the storage cases — a blank cell, a transposed crop, a cut that
+    // did not yield six panels — and a deterministic function re-run against
+    // the same bytes reaches the same verdict. Retrying it three times only
+    // delays the fail-over that RULE 0.38 says is the actual recovery.
+    { key: PROOF_ASSEMBLE_NODE, dependsOn: [PROOF_SHEET_NODE], input: {}, maxAttempts: 2 },
+  ]);
+}
+
 function compileElementGraph({ input = null } = {}) {
   const nodes = elementNodes({ input, masterNode: null });
   // EMPTY IS AN ANSWER, NOT AN ERROR. `validateGraph` refuses a zero-node graph
@@ -325,7 +370,7 @@ function zoneOf(manifest, surfaceKey) {
  * surface against the already-completed dependency sheets; master.assemble
  * composes the six into the manifest zones. Returns the finish payload.
  */
-async function executeNode({ claim, supabase, store, callEdge, logger = () => {}, signal }) {
+async function executeNode({ claim, supabase, store, callEdge, callProofEdge, assembleFinishedMaster, logger = () => {}, signal }) {
   const { node, run, claimToken } = claim;
   const definition = run.definition || {};
   const manifest = definition.manifest;
@@ -346,6 +391,84 @@ async function executeNode({ claim, supabase, store, callEdge, logger = () => {}
     return surface;
   };
   const abortIf = () => { if (signal?.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true); };
+
+  // ── THE PANEL-PROOF PAIR ────────────────────────────────────────────────
+  //
+  // `proof.sheet` is the ONE image request of this contract. A re-claimed run
+  // finds this row COMPLETED and reads the sheet's identity off it, so the
+  // recovery costs nothing at all -- not a second sheet, and not even the
+  // cache-read round trip the durable provider module would otherwise make.
+  if (node.node_key === PROOF_SHEET_NODE) {
+    if (typeof callProofEdge !== "function") {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_transport_missing",
+        `${PROOF_SHEET_NODE} needs the panel-proof transport; this worker was built without one`);
+    }
+    abortIf();
+    // THE SAME FUNCTION THE IN-PROCESS PASS CALLS. Not a re-implementation of
+    // it: a second producer of this sheet is what RULE 0.21 forbids by name,
+    // and the drift it causes is what RULE 0.29 spent a session measuring.
+    const { sheet, panelRows, customerAssets } = await panelProof.requestProofSheet({
+      manifest, input: definition.input, store, logger,
+      customerImageParts: definition.customerImageParts || [],
+      providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : {},
+      callProofEdge: (body, meta) => callProofEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
+    });
+    if (!sheet?.storagePath || !sheet?.contentHash) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_proof_sheet_unaddressed",
+        `${PROOF_SHEET_NODE} produced a sheet with no stored identity to hand across the node boundary`);
+    }
+    logger(`atlas call 1 graph ${run.id}: ${PROOF_SHEET_NODE} ${sheet.contentHash.slice(0, 12)} (${sheet.byteSize || sheet.bytes?.length} B)`);
+    // THE OUTPUT CARRIES NO PIXELS. An identity plus the paperwork the assemble
+    // half needs; the bytes are re-read from storage and hash-verified there.
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, stage: "proof-sheet",
+      sheet: {
+        storagePath: sheet.storagePath, contentHash: sheet.contentHash,
+        byteSize: Number(sheet.byteSize || sheet.bytes?.length || 0),
+        model: sheet.model || null, proofContract: sheet.contract || null,
+        promptChars: Number(sheet.promptChars || 0), sheetShape: sheet.sheetShape || null,
+        intake: sheet.intake || null, containerSource: sheet.containerSource || null,
+      },
+      panelRows, customerAssets,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
+  // `proof.assemble` is cut -> gate -> place -> assemble -> store the two
+  // sibling quadrants. Deterministic, zero model calls, and it reads its
+  // dependency's sheet as a REFERENCE that `downloadVerified` hash-checks --
+  // which is exactly what lets the other runtime process claim this half of a
+  // sheet this one did not draw.
+  if (node.node_key === PROOF_ASSEMBLE_NODE) {
+    if (typeof assembleFinishedMaster !== "function") {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_transport_missing",
+        `${PROOF_ASSEMBLE_NODE} needs the master assembler; this worker was built without one`);
+    }
+    const sheetOutput = deps.get(PROOF_SHEET_NODE)?.output;
+    if (!sheetOutput?.sheet?.storagePath || !sheetOutput?.sheet?.contentHash) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete",
+        `${PROOF_SHEET_NODE} carries no sheet reference`, true);
+    }
+    abortIf();
+    const bytes = await downloadVerified(supabase, sheetOutput.sheet);
+    const assembled = await panelProof.assemblePanelProofMaster({
+      sheet: { ...sheetOutput.sheet, bytes, contract: sheetOutput.sheet.proofContract },
+      panelRows: sheetOutput.panelRows, customerAssets: sheetOutput.customerAssets || [],
+      manifest, store, logger, assembleFinishedMaster,
+      startedAt: Date.parse(run.created_at) || startedAt,
+      // The sheet node's own timing travels forward, so the receipt keeps ONE
+      // shape whether Call 1 ran as a graph or in process.
+      stageTimings: [{ stage: PROOF_SHEET_NODE, ms: Number(sheetOutput.durationMs || 0) }],
+    });
+    const stored = await store.putImmutableBytes({
+      storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/panel-proof-master-${assembled.contentHash}.png`,
+      bytes: assembled.bytes, contentType: "image/png",
+    });
+    const { bytes: _pixels, ...receipt } = assembled;
+    receipt.provenance.masterStoragePath = stored.storagePath;
+    logger(`atlas call 1 graph ${run.id}: ${PROOF_ASSEMBLE_NODE} -> master ${assembled.contentHash.slice(0, 12)}`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, stage: "proof-assemble",
+      master: stored, ...receipt,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
 
   // ARCHITECTURE_DAG.md §4.6 -- Layer 0 + Layer 1. Zero model calls. The CLEAN
   // master is preserved byte for byte as cleanMasterHash: duplicate, modify the
@@ -631,6 +754,13 @@ function rpcError(name, error) {
 function createAtlasCall1NodeWorker({
   supabase, workerId, callEdge, concurrency = DEFAULT_CONCURRENCY, pollMs = POLL_MS,
   leaseSeconds = NODE_LEASE_SECONDS, heartbeatMs = HEARTBEAT_MS, logger = () => {}, enabled = true, store = null,
+  // The panel-proof pair's two seams. OPTIONAL on purpose: a worker built
+  // without them still runs the cascade and the element subgraph exactly as
+  // before, and a panel-proof node claimed by such a worker fails with a named
+  // reason rather than half-executing. They are NOT defaulted to a require()
+  // here -- the transport needs the same Supabase client this worker was handed,
+  // and the assembler lives in flat-first-atlas, which requires this module.
+  callProofEdge = null, assembleFinishedMaster = null,
 }) {
   if (!supabase) throw new Error("atlas call 1 node worker requires a Supabase client");
   if (typeof callEdge !== "function") throw new Error("atlas call 1 node worker requires the atlas-author edge transport");
@@ -656,7 +786,7 @@ function createAtlasCall1NodeWorker({
     heartbeat.unref?.();
     let result;
     try {
-      result = await executeNode({ claim, supabase, store: nodeStore, callEdge, logger, signal: controller.signal });
+      result = await executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, assembleFinishedMaster, logger, signal: controller.signal });
       if (controller.signal.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true);
     } catch (error) {
       result = failurePayload(error);
@@ -819,6 +949,138 @@ function createAtlasCall1NodeWorker({
   }
 
   /**
+   * THE PANEL-PROOF DOOR — Call 1's two nodes, durably.
+   *
+   * Owner: "Connect Call 1 to the existing durable DAG." Same tables, same
+   * claim RPC, same lease and heartbeat as the cascade; two nodes with one
+   * reference edge between them.
+   *
+   * It returns exactly what `authorPanelProofMaster` returns, so
+   * flat-first-atlas consumes one shape however Call 1 was dispatched — and it
+   * throws the SAME `PanelProofRefusal` on a creative refusal, so RULE 0.38's
+   * fail-over into the other contracts is untouched by the graph existing.
+   *
+   * WHAT IT DOES NOT DO: shorten Call 1. The critical path is still the one
+   * image request, and no arrangement of nodes changes that. What it buys is
+   * durability (a lost lease re-runs ONE node, and a re-claim of a completed
+   * sheet costs nothing), per-node retry of the half that can actually fail,
+   * and a queryable timeline — "what happened to the sheet" becomes a row
+   * rather than a stopwatch held against a browser tab.
+   */
+  async function authorPanelProof({
+    manifest, input, requestId, generationId, ownerId, providerRequest = null,
+    customerImageParts = [],
+    logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
+  }) {
+    if (!manifest?.zones || !requestId || !generationId || !ownerId) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_author_invalid",
+        "panel-proof graph authoring requires the manifest and the request identity");
+    }
+    const { claimToken: _never, ...providerBase } = providerRequest || {};
+    // The definition hash keys the run, so the panel-proof CONTRACT belongs in
+    // it: a prompt change must not resume a run whose sheet the previous
+    // contract drew. The customer's own assets are in `input`, and the staged
+    // parts ride the definition so whichever worker claims proof.sheet sends
+    // the same references — never the pixels, which is why only their
+    // identities are ever put in a node's input or output.
+    const definition = {
+      contract: GRAPH_CONTRACT, role: "panel-proof", manifest, input,
+      providerRequest: providerRequest ? providerBase : null,
+      customerImageParts,
+      panelProofContract: panelProof.PANEL_PROOF_TOPOLOGY_CONTRACT,
+    };
+    const definitionHash = hashJson(definition);
+    const created = await rpc("create_designpro_atlas_call1_run", {
+      p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
+      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compilePanelProofGraph(),
+    });
+    let run = created?.run;
+    if (!run?.id) throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", "create returned no panel-proof run", true);
+    log(`atlas panel-proof graph: ${created.created ? "created" : "resumed"} run ${run.id} for request ${requestId}`);
+    if (run.state === "failed") run = await rpc("resume_designpro_atlas_call1_run", { p_run_id: run.id });
+
+    // WATCH THE RUN, NOT ONLY THE TERMINAL NODE.
+    //
+    // Waiting on `proof.assemble`'s own row looks equivalent -- it is the last
+    // node and the one that carries the master -- and it is WRONG on the most
+    // common failure there is. A refused SHEET fails `proof.sheet`, so
+    // `proof.assemble` can never become ready and its row sits `pending`
+    // forever: the caller would time out after the full budget and raise a
+    // generic graph error instead of the typed refusal. flat-first-atlas
+    // branches the fail-over on that type, so RULE 0.38's second contract would
+    // have been silently disabled for the commonest case it exists to serve --
+    // and the customer would get nothing after a twenty-minute wait.
+    //
+    // Measured exactly that way before this loop watched the run: a refusing
+    // edge produced `designpro_atlas_call1_timeout` in 61.8 s of a test budget
+    // rather than `flat_atlas_panel_proof_refused`.
+    const startedAt = Date.now();
+    const readRun = async () => {
+      const { data, error } = await supabase.from("designpro_atlas_call1_runs").select("*").eq("id", run.id).single();
+      if (error || !data) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", `run read failed: ${error?.message || "missing"}`, true);
+      }
+      return data;
+    };
+    while (run.state !== "completed" && run.state !== "failed") {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_timeout",
+          `panel-proof run ${run.id} did not finish in time`, true);
+      }
+      await tick();
+      await sleep(awaitPollMs);
+      run = await readRun();
+    }
+    if (run.state === "failed") {
+      // A CREATIVE REFUSAL MUST ARRIVE AS ONE, from WHICHEVER node carried it.
+      const { data: failedNodes } = await supabase.from("designpro_atlas_call1_nodes")
+        .select("node_key,state,output,error_code,attempt").eq("run_id", run.id).eq("state", "failed");
+      const failedRow = (failedNodes || [])[0] || null;
+      const failure = failedRow?.output || {};
+      const nodeKey = failedRow?.node_key || "(unknown node)";
+      const message = failure.message || failure.errorCode || failedRow?.error_code || run.error_code || "unknown";
+      if (String(failure.errorCode || failedRow?.error_code || "").startsWith("flat_atlas_panel_proof")) {
+        // `reason`, not `message`: PanelProofRefusal's constructor prefixes
+        // "panel proof refused: " itself, and `failurePayload` already stored
+        // the prefixed message -- reconstructing from it says it twice. The
+        // `details` it carries are the sheet's identity, which is what the
+        // refusal ledger points a human at.
+        throw new panelProof.PanelProofRefusal(String(failure.reason || message), failure.details || {});
+      }
+      throw new AtlasCall1GraphError(failure.errorCode || failedRow?.error_code || run.error_code || "designpro_atlas_call1_panel_proof_failed",
+        `panel-proof run ${run.id}: ${nodeKey} failed: ${message}`,
+        failure.retryable === true, { runId: run.id, nodeKey });
+    }
+    const assembleRow = await readNode(run.id, PROOF_ASSEMBLE_NODE);
+    const assembled = assembleRow?.output;
+    if (!assembled?.master?.storagePath) {
+      throw new AtlasCall1GraphError("designpro_atlas_call1_master_missing",
+        `panel-proof run ${run.id} completed without a master`);
+    }
+    const sheetRow = await readNode(run.id, PROOF_SHEET_NODE);
+    const bytes = await downloadVerified(supabase, assembled.master);
+    const { master: _ref, contract: _c, stage: _s, retryable: _r, leaseOwner, attempt, durationMs: _d, ...receipt } = assembled;
+    log(`atlas panel-proof graph ${run.id}: master ${assembled.master.contentHash.slice(0, 12)} (sheet on ${sheetRow?.lease_owner || "?"}, assemble on ${leaseOwner || "?"})`);
+    return {
+      ...receipt,
+      bytes,
+      contentHash: assembled.master.contentHash,
+      provenance: {
+        ...(receipt.provenance || {}),
+        execution: "graph",
+        graph: {
+          contract: GRAPH_CONTRACT, runId: run.id,
+          nodes: [
+            { nodeKey: PROOF_SHEET_NODE, leaseOwner: sheetRow?.lease_owner || null, attempt: sheetRow?.attempt || null },
+            { nodeKey: PROOF_ASSEMBLE_NODE, leaseOwner: leaseOwner || null, attempt: attempt || null },
+          ],
+        },
+      },
+      timings: { ...(receipt.timings || {}), panelProofGraphMs: Date.now() - startedAt },
+    };
+  }
+
+  /**
    * THE GENERATION WORKER'S DOOR. Same argument shape as authorHeroDriverMaster
    * plus the request identity; same return shape; same refusal class on a
    * creative refusal, so flat-first-atlas's fail-over is untouched.
@@ -919,8 +1181,12 @@ function createAtlasCall1NodeWorker({
 
   /** One node row by key, or null when the compiled graph never had it. */
   async function readNode(runId, nodeKey) {
+    // `lease_owner` and `attempt` are selected because the whole point of the
+    // graph is that "which worker drew this, on which try" is a QUERY. Without
+    // them the panel-proof receipt records `null` for the sheet's own worker and
+    // the provenance claims not to know something the row plainly says.
     const { data } = await supabase.from("designpro_atlas_call1_nodes")
-      .select("node_key,state,output,error_code").eq("run_id", runId).eq("node_key", nodeKey).maybeSingle();
+      .select("node_key,state,output,error_code,attempt,lease_owner").eq("run_id", runId).eq("node_key", nodeKey).maybeSingle();
     return data || null;
   }
 
@@ -937,11 +1203,13 @@ function createAtlasCall1NodeWorker({
       output.retryable === true || node?.error_code === "attempts_exhausted", { runId: run.id, nodeKey: node?.node_key || null });
   }
 
-  return { start, stop, tick, health, author, authorElements, executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, logger, ...extra }), workerId };
+  return { start, stop, tick, health, author, authorElements, authorPanelProof,
+    executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, assembleFinishedMaster, logger, ...extra }), workerId };
 }
 
 module.exports = {
   GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, viewNode, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
-  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, elementNodes, readyNodes, hashJson,
+  PROOF_SHEET_NODE, PROOF_ASSEMBLE_NODE,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, compilePanelProofGraph, elementNodes, readyNodes, hashJson,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };

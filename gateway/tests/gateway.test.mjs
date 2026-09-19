@@ -3096,6 +3096,216 @@ test("refused Atlas candidates are listed with their verdicts and signed for the
   assert.equal(calls.filter((item) => item.url.includes("/storage/v1/object/sign/")).length, 2);
 });
 
+// ── THE THREE-ZONE PRODUCTION PANEL PROOF ─────────────────────────────────
+//
+// The whole point of the route: the sheet Call 1 drew plus the Zone 2 (clean)
+// and Zone 3 (cut graphics) panels cut from it reach the browser as signed
+// previews, and no storage path ever does. Zone 1 is described only — it became
+// the accepted master, which /atlas already signs, and publishing a second copy
+// here is the two-master shape the 2026-08-31 ruling retired by name.
+const PANEL_PROOF_SHEET = `atlas-panel-proof/${"1".repeat(64)}.png`;
+const PANEL_PROOF_CLEAN = (n) => `atlas-panel-proof/quadrants/${String(n).repeat(64)}.png`;
+
+function panelProofRpcAnswer(requestId, { cleanStored = true } = {}) {
+  return {
+    requestId,
+    revisionId: "70000000-0000-4000-8000-000000000001",
+    revisionSequence: 1,
+    panelProof: true,
+    contract: "designpro.atlas-panel-proof-topology.v1",
+    topology: "panel-proof",
+    promptVersion: "atlas-panel-proof.20260919.v1",
+    masterContentHash: "f".repeat(64),
+    sheet: {
+      storagePath: PANEL_PROOF_SHEET,
+      contentHash: "1".repeat(64),
+      contract: "designpro.atlas-panel-proof.v1",
+      geometry: { width: 5056, height: 3392 },
+    },
+    quadrants: {
+      branded: ["driver", "passenger", "hood", "roof", "front", "rear"].map((surfaceKey, i) => ({
+        surfaceKey, role: "branded", byteSize: 100000 + i, fit: 0.97, rect: { x: 0, y: 0, width: 10, height: 10 },
+      })),
+      clean: ["driver", "passenger", "hood", "roof", "front", "rear"].map((surfaceKey, i) => (
+        cleanStored || i > 0
+          ? { surfaceKey, role: "clean", byteSize: 90000 + i, fit: 0.99,
+              widthIn: 163.2, heightIn: 66.1, persisted: true,
+              storagePath: PANEL_PROOF_CLEAN(2), contentHash: "2".repeat(64) }
+          // The quadrant write fails SOFT by contract: Zone 1 is already an
+          // accepted master, so an unstored sibling is reported, never fatal.
+          : { surfaceKey, role: "clean", byteSize: 90000, fit: 0.99,
+              widthIn: 163.2, heightIn: 66.1, persisted: false, reason: "store_unavailable" }
+      )),
+      cutGraphics: ["logo", "tagline", "contact", "promo", "icons"].map((surfaceKey) => ({
+        // A cut graphic is marks on a ground, so a low fit is correct here, and
+        // it is sized at the plotter, so it carries no inches by contract.
+        surfaceKey, role: "cut-graphic", byteSize: 40000, fit: 0.24,
+        widthIn: null, heightIn: null, persisted: true,
+        storagePath: PANEL_PROOF_CLEAN(3), contentHash: "3".repeat(64),
+      })),
+    },
+  };
+}
+
+test("the three-zone panel proof reaches the browser as signed previews, and never as storage paths", async (t) => {
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000021";
+  const signed = [];
+  const server = createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) {
+        assert.deepEqual(JSON.parse(init.body), { p_request_id: requestId });
+        return Response.json(panelProofRpcAnswer(requestId, { cleanStored: false }));
+      }
+      if (value.includes("/storage/v1/object/sign/wrap-files/")) {
+        const path = decodeURIComponent(value.split("/storage/v1/object/sign/wrap-files/")[1]);
+        signed.push(path);
+        return Response.json({ signedURL: `/object/sign/wrap-files/${path}?token=t` });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const proof = await response.json();
+
+  assert.equal(proof.panelProof, true);
+  assert.equal(proof.revisionId, "70000000-0000-4000-8000-000000000001");
+  assert.equal(proof.masterContentHash, "f".repeat(64));
+
+  // THE SHEET IS SIGNED. This is the document the owner calls the production
+  // panel proof and the source every zone is cut from; before this route it
+  // could not be reached at all.
+  assert.match(proof.sheet.signedUrl, /^https:\/\/.*\/storage\/v1\/object\/sign\/wrap-files\/atlas-panel-proof\/1{64}\.png\?token=t$/);
+  assert.equal(proof.sheet.contentHash, "1".repeat(64));
+  assert.equal(proof.sheet.expiresIn, 300);
+
+  // ALL THREE ZONES ARE PRESENT AND DISTINGUISHABLE.
+  assert.equal(proof.quadrants.branded.length, 6);
+  assert.equal(proof.quadrants.clean.length, 6);
+  assert.equal(proof.quadrants.cutGraphics.length, 5);
+  assert.deepEqual(proof.quadrants.cutGraphics.map((p) => p.surfaceKey),
+    ["logo", "tagline", "contact", "promo", "icons"]);
+  // Zone 1 is described, never re-signed: exactly one master exists.
+  for (const panel of proof.quadrants.branded) {
+    assert.equal("signedUrl" in panel, false);
+    assert.equal("storagePath" in panel, false);
+  }
+  // Zone 2/3 are signed where stored, and honest where not.
+  assert.equal(proof.quadrants.clean[0].persisted, false);
+  assert.equal(proof.quadrants.clean[0].reason, "store_unavailable");
+  assert.equal("signedUrl" in proof.quadrants.clean[0], false);
+  for (const panel of [...proof.quadrants.clean.slice(1), ...proof.quadrants.cutGraphics]) {
+    assert.equal(panel.persisted, true);
+    assert.match(panel.signedUrl, /\/storage\/v1\/object\/sign\/wrap-files\/atlas-panel-proof\/quadrants\//);
+    assert.equal(panel.expiresIn, 300);
+  }
+  // A cut graphic carries no inches, by contract — it is sized at the plotter.
+  for (const panel of proof.quadrants.cutGraphics) {
+    assert.equal(panel.widthIn, null);
+    assert.equal(panel.heightIn, null);
+  }
+
+  // NOT ONE STORAGE PATH LEAVES THE GATEWAY, anywhere in the payload.
+  const body = JSON.stringify(proof);
+  assert.equal(body.includes("\"storagePath\""), false);
+  assert.equal(body.includes("atlas-panel-proof/quadrants/" + "2".repeat(64) + ".png\""), false,
+    "a quadrant path must only ever appear inside a signed URL");
+  // One sign per stored object: the sheet, five clean panels, five cut graphics.
+  assert.equal(signed.length, 11);
+});
+
+test("a request whose revision has no three-zone document answers 200 with panelProof false, not 404", async (t) => {
+  // The distinction is load-bearing: NULL from the RPC means "no such request,
+  // or not yours" and must 404, while a six-surface / field / hero-driver
+  // revision is a real request that simply has no panel proof. A UI that
+  // cannot tell them apart shows "not found" for a perfectly good design.
+  const requestId = "10000000-0000-4000-8000-000000000022";
+  let signAttempted = false;
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) {
+        return Response.json({ requestId, revisionId: "70000000-0000-4000-8000-000000000002", panelProof: false });
+      }
+      if (value.includes("/storage/v1/object/sign/")) { signAttempted = true; return Response.json({ message: "no" }, { status: 400 }); }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    requestId, revisionId: "70000000-0000-4000-8000-000000000002", panelProof: false,
+  });
+  assert.equal(signAttempted, false);
+});
+
+test("the panel proof answers 404 for a request the caller does not own, before any signing", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000023";
+  let signAttempted = false;
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) return Response.json(null);
+      if (value.includes("/storage/v1/object/sign/")) { signAttempted = true; return Response.json({ message: "no" }, { status: 400 }); }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 404);
+  assert.equal(signAttempted, false);
+});
+
+test("the panel proof route refuses an RPC answer naming an object outside the panel-proof namespace", async (t) => {
+  // The paths never leave the gateway, so the gateway is the only thing that
+  // decides WHICH object it will ask storage to sign. A drifted resolver, or a
+  // row someone wrote by hand, must not be able to talk it into signing an
+  // arbitrary name — the storage policy is the second fence, not the first.
+  const requestId = "10000000-0000-4000-8000-000000000024";
+  let signAttempted = false;
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) {
+        const answer = panelProofRpcAnswer(requestId);
+        answer.quadrants.clean[0].storagePath = "designpro/user_someone-else/run/panels/driver.png";
+        return Response.json(answer);
+      }
+      if (value.includes("/storage/v1/object/sign/")) { signAttempted = true; return Response.json({ message: "no" }, { status: 400 }); }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error, "atlas_panel_proof_response_invalid");
+  assert.equal(signAttempted, false, "nothing is signed once the answer is refused");
+});
+
 test("refused Atlas candidates answer 404 for a request the caller does not own, before any signing", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000013";
   const calls = [];

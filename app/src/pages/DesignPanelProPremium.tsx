@@ -8,6 +8,7 @@ import { FolderOpen, ListChecks } from "lucide-react";
 import { Link as ToolHeaderLink } from "react-router-dom";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
 import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
+import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
@@ -2707,6 +2708,19 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         current="design"
                         className="w-full rounded-lg border"
                       />
+                    )}
+                    {/* THE THREE-ZONE PRODUCTION PANEL PROOF, IMMEDIATELY.
+                        It sits ABOVE "See All Views" and is not gated on it, on
+                        purpose: the sheet, its six print panels, the six clean
+                        panels and the five cut graphics all exist the moment
+                        Call 1 is accepted, so making the customer press a button
+                        for more 3D camera angles before they can see what they
+                        actually bought had the order backwards. The component
+                        renders nothing at all when this run was authored on a
+                        topology that has no three-zone document, so a
+                        six-surface or field run is byte-identical to before. */}
+                    {mainDisplayUrl && generationRequestState?.requestId && (
+                      <AtlasPanelProofSheetLoader requestId={generationRequestState.requestId} />
                     )}
                     {mainDisplayUrl && !allViewsRevealed && (
                       <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
