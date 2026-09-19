@@ -581,7 +581,7 @@ async function assemblePanelProofMaster({
     assets.push({...identity,bytes,role:"logo",width:meta.width,height:meta.height,
       contentType:input.logoAsset.contentType,vector:input.logoAsset.contentType === "image/svg+xml"});
   }
-  const brand = {...(sheet.intake || {}), ...input};
+  const brand = {...(sheet.intake || {}), ...Object.fromEntries(Object.entries(input).filter(([,v]) => v != null && v !== "" && (!Array.isArray(v) || v.length)))};
   const services = Array.isArray(brand.services) ? brand.services : [];
   const textJobs = [
     {role:"typography",name:brand.companyName || brand.businessName || "",lines:[brand.tagline || ""]},
@@ -610,7 +610,7 @@ async function assemblePanelProofMaster({
   const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
   const originalCells = new Map(zone1.map(p => [p.surfaceKey,p]));
   zone1 = composed.panels.map(p => ({...p,displayRect:originalCells.get(p.surfaceKey).rect}));
-  zone3 = assets.map(({bytes,...ref}) => ({...ref,surfaceKey:ref.role,persisted:true,productionApproved:false}));
+  zone3 = assets.map(({bytes,...ref}) => ({...ref,surfaceKey:ref.role,assetRole:ref.role,role:"cut-graphic",persisted:true,productionApproved:false}));
 
   // Replace the model's provisional Zone 1 and Zone 3 in the displayed proof.
   // The customer sees the SAME composed panels the master consumes.
@@ -633,7 +633,7 @@ async function assemblePanelProofMaster({
       left:i*slotWidth+10,top:bandTop+headingHeight+10});
   }
   const proofBytes = await sharp(sheet.bytes).composite(proofLayers).png().toBuffer();
-  const storedProof = await persist({storagePath:`${QUADRANT_PREFIX}/${sha256(proofBytes)}.png`,
+  const storedProof = await persist({storagePath:`atlas-panel-proof/${sha256(proofBytes)}.png`,
     bytes:proofBytes,contentType:"image/png"});
   sheet = {...sheet,...storedProof,bytes:proofBytes,byteSize:proofBytes.length,contentHash:sha256(proofBytes)};
 
@@ -795,7 +795,7 @@ async function assemblePanelProofMaster({
       // rather than stored twice; the other two carry their own identities.
       quadrants: {
         branded: zone1.map((p) => ({
-          surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+          surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.displayRect, backgroundRect: p.rect,
           identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         })),
         clean: cleanQuadrant,

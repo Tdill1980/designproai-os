@@ -324,7 +324,7 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // The proof sheet's own identity is on the receipt, so "which sheet produced
   // this master" is a query rather than a storage-timestamp guess.
   assert.notEqual(out.provenance.proofSha256, "a".repeat(64));
-  assert.equal(out.provenance.proofStoragePath, `atlas-panel-proof/quadrants/${out.provenance.proofSha256}.png`);
+  assert.equal(out.provenance.proofStoragePath, `atlas-panel-proof/${out.provenance.proofSha256}.png`);
   // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
   // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
   // production's six from the assembled master and a second set nobody reads
@@ -805,7 +805,7 @@ test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () =
     input:{...AUTHOR_ARGS.input,logoAsset},downloadAsset:async identity => {
       assert.equal(identity.contentHash,contentHash); return bytes;
     }});
-  const original = result.provenance.quadrants.cutGraphics.find(a => a.role === "logo");
+  const original = result.provenance.quadrants.cutGraphics.find(a => a.surfaceKey === "logo");
   assert.equal(original.contentHash,contentHash);
   assert.equal(original.storagePath,logoAsset.storagePath);
   assert.equal(original.byteSize,bytes.length);

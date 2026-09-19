@@ -46,12 +46,13 @@ const ZONES: Array<{
   {
     key: "cutGraphics",
     title: "Zone 3 — logo, text and graphic elements",
-    blurb: "Each brand element drawn on its own so it can be cut separately. Plotter-ready contours are produced in the production pack.",
+    blurb: "Original brand assets and outlined text are kept separate from the backgrounds. Plotter-ready contours are validated in the production pack.",
   },
 ];
 
 const CUT_SLOT_LABEL: Record<string, string> = {
   logo: "Primary logo",
+  typography: "Outlined brand text",
   tagline: "Tagline / slogan",
   contact: "Contact line",
   promo: "Promotional text",

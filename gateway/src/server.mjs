@@ -957,7 +957,7 @@ const ATLAS_REFUSAL_TOPOLOGIES = new Set(["six-surface", "field", "hero-driver"]
 // is sized at the plotter, which is why its widthIn/heightIn are null by
 // contract rather than by omission.
 const PANEL_PROOF_SURFACES = new Set(["driver", "passenger", "hood", "roof", "front", "rear"]);
-const PANEL_PROOF_CUT_SLOTS = new Set(["logo", "tagline", "contact", "promo", "icons"]);
+const PANEL_PROOF_CUT_SLOTS = new Set(["logo", "typography", "tagline", "contact", "promo", "icons"]);
 const PANEL_PROOF_ROLES = new Set(["branded", "clean", "cut-graphic"]);
 // Both families are content-addressed under one prefix. Validated so a drifted
 // or hostile RPC answer cannot talk this gateway into signing an arbitrary
@@ -1010,10 +1010,17 @@ function validatedPanelProofQuadrantPanel(row, { keys, role }) {
   }
   const storagePath = String(row?.storagePath || "");
   const contentHash = String(row?.contentHash || "").toLowerCase();
-  if (!PANEL_PROOF_QUADRANT_PATH.test(storagePath) || !SHA256_PATTERN.test(contentHash)) {
+  // The owner-scoped RPC supplies membership; storage RLS checks it again when signing.
+  // Original Zone 3 files are not raster quadrant crops.
+  const originalPath = role === "cut-graphic" && (
+    /^atlas-elements\/[0-9a-f]{64}\.svg$/.test(storagePath)
+    || /^users\/[0-9a-f-]{36}\/revisions\/[0-9a-f-]{36}\/inputs\/logo\/[0-9a-f]{64}\.(svg|png|jpg|jpeg|webp)$/.test(storagePath)
+  ) && storagePath.split("/").pop().split(".")[0] === contentHash;
+  if ((!PANEL_PROOF_QUADRANT_PATH.test(storagePath) && !originalPath) || !SHA256_PATTERN.test(contentHash)) {
     throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
   }
-  return { ...base, persisted: true, contentHash, storagePath };
+  return { ...base, persisted: true, contentHash, storagePath,
+    ...(originalPath ? { contentType: row.contentType, vector: row.vector === true } : {}) };
 }
 
 /**
