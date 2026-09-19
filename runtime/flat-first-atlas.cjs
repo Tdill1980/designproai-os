@@ -3707,7 +3707,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // forbids; this earns acceptance through the existing gates instead.
       let proof;
       try {
-        proof = await authorPanelProofMaster({
+        const proofArgs = {
           manifest, input: authoringInput, store, logger, startedAt: authoringStartedAt,
           // THE CUSTOMER'S OWN LOGO AND REFERENCES, WHICH THIS ROUTE DROPPED.
           //
@@ -3730,7 +3730,40 @@ async function generateOrReuseFlatAtlasResolved(options) {
           callProofEdge: options.callProofEdge
             || createPanelProofTransport({ supabase, ownerId, logger }),
           assembleFinishedMaster,
-        });
+        };
+        // THE GRAPH RUNS CALL 1 (owner: "Connect Call 1 to the existing durable
+        // DAG"), behind the SAME kill switch the cascade uses: `proof.sheet` is
+        // the one image request and `proof.assemble` is the deterministic
+        // cut-and-place, as two durable node rows with the stored sheet's
+        // identity as the edge between them. A lost lease then re-runs ONE
+        // node, and a re-claim of a completed sheet spends nothing at all.
+        //
+        // It does NOT shorten Call 1 — the critical path is still that one
+        // image request. The in-process pass remains for the kill switch and
+        // for a database that has not received the graph migration, and that
+        // case is logged and recorded in provenance, never silent. Both routes
+        // execute the SAME two functions, so there is one producer either way.
+        const proofGraph = options.atlasCall1Graph && atlasCall1GraphEnabled()
+          && typeof options.atlasCall1Graph.authorPanelProof === "function"
+          ? options.atlasCall1Graph : null;
+        if (proofGraph) {
+          try {
+            proof = await proofGraph.authorPanelProof({
+              manifest, input: authoringInput, requestId, generationId, ownerId,
+              customerImageParts,
+              providerRequest: { requestId, generationId, claimToken,
+                ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+              logger,
+            });
+          } catch (graphCause) {
+            if (graphCause?.code !== "designpro_atlas_call1_graph_unavailable") throw graphCause;
+            logger(`atlas call 1: node graph unavailable (${String(graphCause.message || "").slice(0, 160)}); running the panel proof in-process`);
+            proof = await authorPanelProofMaster(proofArgs);
+            proof.provenance.graph = { unavailable: true, code: graphCause.code };
+          }
+        } else {
+          proof = await authorPanelProofMaster(proofArgs);
+        }
       } catch (cause) {
         if (cause?.code !== "flat_atlas_panel_proof_refused") throw cause;
         timings.authoringMs += Date.now() - authoringStartedAt;

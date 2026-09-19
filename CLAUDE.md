@@ -29,6 +29,154 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
+## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND OFF FOR CUSTOMERS (2026-09-19)
+
+Owner, on the architecture: *"Production panel proof is source it has the 3
+zones / For panels, panels with seperated and logos and text."* Then, on the
+work: *"Finish crop correctness, durable DAG execution, and immediate three-zone
+display."* — *"Keep the three-zone route off for customers until the repaired
+path passes a controlled real-generation test."*
+
+**FLAG STATE: `atlas_panel_proof: off` on the droplet** (contained at `e540012`,
+run 35460623843, `VERIFIED_WORKING`). Everything below is built and locked; none
+of it is on a customer's critical path until a controlled real generation with
+uploaded assets has passed.
+
+### Five defects, all of them live, all found by measurement
+
+| # | what was wrong | how it was found |
+|---|---|---|
+| F12 | **the route forwarded NO customer logo or VisionBoard reference at all**, while six-surface and field carry both as `edgeExtras.referenceImagesBase64`. RULE 0.24 names those CREATIVE authority and no gate convicts their absence | read the branch against the other two |
+| F02 | **`cacheOnly` was a no-op**, so a recovery could buy a SECOND paid sheet. The edge minted a fresh uuid per invocation, so the identity could not mean anything | traced the edge's provider request |
+| — | **`panelRowsFromManifest` emitted PIXELS labelled as inches, transposed.** `DRIVER: 979" wide x 2674" high` instead of `163" x 66"`, so the prompt described an 81-foot portrait panel, the container drew a 1.160:1 cell against a true 2.470:1 zone, and `fit: "fill"` stretched every flank ~2.1x | the new aspect guard fired on a legitimate fixture |
+| — | **the whole three-zone proof was unreadable.** The sheet is not a column — it lives in `metadata.panelProofAuthoring` — so nothing could resolve or sign it. The product showed the assembled master (Zone 1) and none of the document it came from | looked for the read path and there was none |
+| — | **`proof.assemble` could not be FINISHED.** See below |
+
+The fill rule was the earlier one: `INSTALLATION_FACT` never carried RULE 0.28 §3
+("artwork runs off all four sides"), and adding it took branded fits from
+0.61–0.86 to 0.92–1.00 on a live probe (35454079732). Clean 0.98–1.00; cut
+graphics 0.19–0.29, which is **correct** — Zone 3 is marks on a ground.
+
+### THE NODES DID ALL THE WORK AND THEN COULD NOT BE FINISHED — the trap this file already names
+
+CLAUDE.md's own v28 section says it: *"authorElements does NOT fail soft on a
+missing migration: the nodes run and the LAST one trips the
+`master_storage_path IS NOT NULL` CHECK after doing the work."* The panel-proof
+pair reproduced that exactly, measured on the real migration on PGlite:
+
+```
+proof.sheet  completed
+proof.assemble  -> 11/11 sibling panels stored, master 22690d52eee3 assembled
+finishing proof.assemble failed (designpro_atlas_call1_rpc_failed)
+  -> node stuck `running`, lease expired, the node re-ran, caller timed out
+```
+
+`finish_designpro_atlas_call1_node` let only `master.assemble` and
+`master.composite` write the run's master columns, and the run's
+`CHECK (state<>'completed' OR ... master_storage_path IS NOT NULL ...)` therefore
+refused to complete. `20260919190000` adds `proof.assemble` beside
+`master.composite` **with the same `IS NULL` guard**, so it can name a master
+only when nothing else has. **SHIP ORDER: that migration lands before any runtime
+that emits `proof.assemble`** — there is no soft path, which is the worst shape a
+missing migration can have.
+
+### The DAG, and an honest statement of what it buys
+
+```
+proof.sheet ──(storagePath, contentHash, byteSize)──▶ proof.assemble
+```
+
+Two nodes in the EXISTING `designpro_atlas_call1_runs` / `_nodes` tables (no new
+tables; `node_key`'s CHECK is a regex that already admits a dotted key), behind
+the SAME `atlas_call1_graph` kill switch as the cascade.
+
+The boundary is drawn where the fallible, billable work is — the same reasoning
+RULE 0.39 gives for splitting `surface.driver.view` from `surface.driver`.
+`proof.sheet` is the ONE image request; a re-claimed run reads its completed row
+and spends **nothing**, not even the cache-read round trip. `proof.assemble` is
+cut → gate → place → assemble → store the two sibling quadrants: ~17 sharp
+operations, zero model calls.
+
+**It is ONE node and not three on purpose.** Splitting the cut from the assemble
+would force six extra stores of the Zone-1 panels across a boundary purely to
+make a second-long deterministic step independently retryable.
+
+**IT DOES NOT SHORTEN CALL 1.** The critical path is still that one image
+request. What it buys is durability, per-node retry of the half that can fail,
+and a queryable timeline. Do not describe it as a latency improvement.
+
+`authorPanelProofMaster` was split into `requestProofSheet` +
+`assemblePanelProofMaster` and is now a two-line composition of them, so the
+graph and the in-process pass **execute the same functions** — a second producer
+of these panels is what RULE 0.21 forbids by name.
+
+### Two seams that had to move with it
+
+- **The panel-proof transport takes its owner PER CALL**, like
+  `createAtlasAuthorTransport` already does. Both runtime processes build ONE
+  transport at start-up and then serve panel-proof nodes of ANY customer's run,
+  so a construction-time-only owner sends an EMPTY `x-designpro-owner-id` on
+  every graph-claimed node. The edge fails that closed with 403, correctly — but
+  it would have made every durable run fail, and the owner id is also the
+  provider cache's own isolation key.
+- **`readNode` now selects `lease_owner` and `attempt`.** Without them the
+  receipt records `null` for the sheet's own worker, so the provenance claims not
+  to know something the row plainly says — and a queryable timeline is the whole
+  thing the graph buys.
+
+### The read path: `GET /api/generation/requests/:id/panel-proof`
+
+`designpro_atlas_panel_proof_paths` (owner-scoped, NULL for absent and
+other-owner alike) → the gateway signs a five-minute preview per object and
+strips every path, exactly as `/atlas` and `/atlas-refusals` do.
+
+- **Zone 1 is DESCRIBED, never re-signed.** It became the accepted master, which
+  `/atlas` already signs; a second copy here is the two-master shape the
+  2026-08-31 ruling retired by name.
+- **The storage policy matches EXACT NAMES, never the prefix.** Both families are
+  content-addressed (`atlas-panel-proof/<sha>.png`,
+  `.../quadrants/<sha>.png`), and content addressing is deliberately NOT
+  owner-scoped — a prefix predicate would let any authenticated caller sign any
+  other customer's sheet by replaying a hash. Membership: the object must be
+  named by a panel-proof revision THIS caller owns.
+- **`{panelProof:false}` is a STATE, not a failure.** A six-surface / field /
+  hero-driver revision is a real design with no three-zone document, and a UI
+  that cannot tell it from NULL shows "not found" for a perfectly good run.
+
+**The sheet now shows IMMEDIATELY**, above "See All Views" and not gated on it:
+all of these artifacts exist the moment Call 1 is accepted, so making the
+customer press a button for more 3D camera angles first had the order backwards.
+On any other topology the component renders nothing, so a six-surface run is
+byte-identical.
+
+### `Number(null)` IS `0`, AND THAT PRINTED A FABRICATED DIMENSION
+
+`Number.isFinite(Number(x)) ? Number(x) : null` turns an ABSENT value into a real
+one. A Zone 3 slot has no inches **by contract** — it is sized at the plotter —
+so every cut graphic was reported as `0" wide`, which a UI prints as fact.
+`measuredNumber` keeps absence absent. Locked both in the gateway and in the
+component (`never prints 0" × 0"`).
+
+**And per the owner's instruction — do not represent raster crops as editable
+layers or vector cut files** — the component is asserted to contain no "editable
+layer" and no "vector file", and says plotter-ready contours are produced in the
+production pack, which is where the cut-contour builder actually lives.
+
+### What is NOT done, and must not be claimed
+
+- **No controlled real generation has run on the repaired path.** Every measurement
+  above is a probe, a fixture, or a read of a live row. The owner's own standard:
+  a real test, not source greps or synthetic fill tests.
+- **Zone 2 is not yet wired to `panels.delogo` (Call 11) and Zone 3 not to
+  `logos.extract` (Call 10).** Today Zone 2 replaces a white-box paint and Zone 3
+  a keyed-out lift; the model draws them, which is better than either, but the
+  two Calls still own those artifacts downstream.
+- **PDF delivery is still absent from the paid contract.** `output-qc.cjs`'s
+  `FORMATS` is `["png","tiff","eps"]`; `runtime/panelpro-file-output-contract.cjs`
+  exists and is not wired in.
+- **`parseCustomerIntake` is a SECOND Flash call on the customer's critical path**
+  inside Call 1. It is not timed separately and it is the next latency lever.
+
 ## 🅰️ v28 — THE CLEAN BASE IS LIVE ON SIX-SURFACE (deployed 2026-09-18, NOT yet judged on pixels)
 
 Full record: `docs/ATLAS-V28-CLEAN-BASE-ELEMENTS.md`. Read it before touching the

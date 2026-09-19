@@ -424,7 +424,16 @@ function createPanelProofTransport({
   supabase, ownerId = null, fetchImpl = fetch, logger = () => {},
 } = {}) {
   if (!supabase) throw new PanelProofRefusal("the panel-proof transport requires Supabase");
-  return async (body) => {
+  // THE OWNER ARRIVES PER CALL, NOT ONLY AT CONSTRUCTION — the same shape
+  // `createAtlasAuthorTransport` already uses, and for the same reason. Both
+  // runtime processes build ONE transport at start-up and then serve panel-proof
+  // nodes of ANY customer's run, so a construction-time owner would send an
+  // EMPTY `x-designpro-owner-id` for every graph-claimed node. The edge fails
+  // that closed with 403 (`production_panel_proof_internal_only`) rather than
+  // proceeding, which is correct — but it would have made every durable
+  // panel-proof run fail, and the owner id is also the provider cache's own
+  // isolation key, so getting it from the claimed run is the whole point.
+  return async (body, { ownerId: callOwnerId = ownerId } = {}) => {
     const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
     const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
     if (!supabaseUrl || serviceRoleKey.length < 32) {
@@ -442,7 +451,7 @@ function createPanelProofTransport({
         authorization: `Bearer ${serviceRoleKey}`,
         apikey: serviceRoleKey,
         "content-type": "application/json",
-        "x-designpro-owner-id": String(ownerId || ""),
+        "x-designpro-owner-id": String(callOwnerId || ""),
       },
       body: JSON.stringify({ ...body, ...staged }),
     });
@@ -476,28 +485,32 @@ function createPanelProofTransport({
 }
 
 /**
- * The whole pass: sheet → cut → assemble.
+ * THE SECOND HALF: cut → gate → place → assemble → store the siblings.
  *
- * @returns the same shape `authorHeroDriverMaster` returns, because
- *   flat-first-atlas consumes both through one code path and a second shape
- *   there would be a second contract nobody asked for.
+ * Split out from `authorPanelProofMaster` so the durable graph and the
+ * in-process pass execute THE SAME CODE rather than two implementations of it.
+ * That is the whole point of the split and the reason it is not a copy: a
+ * second producer of the panels is exactly what RULE 0.21 forbids by name, and
+ * the drift it produces is what RULE 0.29 spent a session measuring.
+ *
+ * It takes the sheet as `{ bytes, contentHash, storagePath, byteSize, ... }`.
+ * The graph's node reads those bytes back from the sheet's stored IDENTITY and
+ * hash-verifies them before calling this (RULE 0.39 across the node boundary);
+ * the in-process caller already holds them. Either way this function is handed
+ * the same object and cannot tell which path it is on — deliberately, because a
+ * function that behaves differently per caller is two functions.
+ *
+ * `stageTimings` is passed IN so a graph run can carry the sheet node's own
+ * timing into the same list the in-process run produces, and the receipt keeps
+ * one shape on both paths.
  */
-async function authorPanelProofMaster({
-  manifest, input, store, logger = () => {}, customerImageParts = [],
-  providerRequest = {}, callProofEdge,
+async function assemblePanelProofMaster({
+  sheet, panelRows, customerAssets = [], manifest, store, logger = () => {},
   assembleFinishedMaster, sharp = require("sharp"),
-  startedAt = Date.now(),
+  startedAt = Date.now(), stageTimings = [],
 } = {}) {
-  const stageTimings = [];
   const mark = (stage, at) => stageTimings.push({ stage, ms: Date.now() - at });
-
-  // ── node 1: the sheet ──────────────────────────────────────────────────
-  const sheetAt = Date.now();
-  const { sheet, panelRows, customerAssets } = await requestProofSheet({
-    manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
-  });
-  mark("proof.sheet", sheetAt);
-  logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
+  if (!sheet?.bytes) throw new PanelProofRefusal("the assemble stage was handed no sheet bytes");
 
   /**
    * EVERY REFUSAL PAST THIS POINT NAMES THE SHEET IT JUDGED.
@@ -716,6 +729,38 @@ async function authorPanelProofMaster({
   };
 }
 
+/**
+ * The whole pass, in one process: sheet → cut → assemble.
+ *
+ * This is now a two-line composition of the two halves above, and it stays
+ * because it is the door the in-process path and every existing caller already
+ * use. The durable graph claims the same two halves as two node rows; both
+ * routes run the SAME functions, so there is exactly one producer of these
+ * panels however Call 1 was dispatched.
+ *
+ * @returns the same shape `authorHeroDriverMaster` returns, because
+ *   flat-first-atlas consumes both through one code path and a second shape
+ *   there would be a second contract nobody asked for.
+ */
+async function authorPanelProofMaster({
+  manifest, input, store, logger = () => {}, customerImageParts = [],
+  providerRequest = {}, callProofEdge,
+  assembleFinishedMaster, sharp = require("sharp"),
+  startedAt = Date.now(),
+} = {}) {
+  const stageTimings = [];
+  const sheetAt = Date.now();
+  const { sheet, panelRows, customerAssets } = await requestProofSheet({
+    manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
+  });
+  stageTimings.push({ stage: "proof.sheet", ms: Date.now() - sheetAt });
+  logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
+  return assemblePanelProofMaster({
+    sheet, panelRows, customerAssets, manifest, store, logger,
+    assembleFinishedMaster, sharp, startedAt, stageTimings,
+  });
+}
+
 module.exports = {
   PANEL_PROOF_TOPOLOGY,
   PANEL_PROOF_TOPOLOGY_CONTRACT,
@@ -726,5 +771,7 @@ module.exports = {
   panelRowsFromManifest,
   stageProofContainer,
   createPanelProofTransport,
+  requestProofSheet,
+  assemblePanelProofMaster,
   authorPanelProofMaster,
 };

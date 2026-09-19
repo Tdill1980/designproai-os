@@ -34,6 +34,8 @@ const { createGenerationWorker } = require("./generation-worker.cjs");
 const { createPanelProFileOutputService } = require("./panelpro-file-output-service.cjs");
 const { createAtlasCall1NodeWorker, graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
 const { createAtlasAuthorTransport } = require("./flat-first-atlas.cjs");
+const { createPanelProofTransport } = require("./atlas-panel-proof-topology.cjs");
+const { assembleFinishedMaster } = require("./atlas-finished-master.cjs");
 const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
 const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
 const { erasePanelRegions, MAX_ERASE_FRACTION } = require("./atlas-cutout-fill.cjs");
@@ -140,6 +142,14 @@ const atlasCall1Graph = createAtlasCall1NodeWorker({
   supabase, workerId: `${WORKER_ID}-call1-graph`, enabled: atlasCall1GraphEnabled(),
   concurrency: Math.max(1, Math.min(6, Number(process.env.DESIGNPRO_ATLAS_CALL1_NODE_CONCURRENCY) || 3)),
   callEdge: createAtlasAuthorTransport({ supabase }),
+  // THE PANEL-PROOF PAIR'S TWO SEAMS. `proof.sheet` needs the panel-proof
+  // transport and `proof.assemble` needs the master assembler, and BOTH runtime
+  // processes get them -- the point of the graph is that either worker can claim
+  // either half of a run the other one created. A worker without them fails a
+  // panel-proof node with a named reason rather than half-executing it, which is
+  // why they are passed rather than defaulted inside the graph module.
+  callProofEdge: createPanelProofTransport({ supabase, logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`) }),
+  assembleFinishedMaster,
   logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`),
 });
 // WallPro 150 PPI print panels: per-panel Topaz jobs requested by the owner for
