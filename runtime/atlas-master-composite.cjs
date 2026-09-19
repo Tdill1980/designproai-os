@@ -255,8 +255,69 @@ async function darkDeltaOutside(beforeBytes, afterBytes, applied) {
   return considered ? changed / considered : 0;
 }
 
+/** Compose the production panels from clean pixels and immutable overlay assets.
+ * Source assets remain separate; only this display/print derivative is rasterized.
+ * No provider call, inferred logo, background removal, or artwork mirroring.
+ */
+async function compositeProductionPanels({ backgrounds, assets, placements } = {}) {
+  const expected = ["driver", "passenger", "hood", "roof", "front", "rear"];
+  if (!Array.isArray(backgrounds) || backgrounds.length !== 6
+    || expected.some(key => backgrounds.filter(p => p.surfaceKey === key).length !== 1)) {
+    throw new AtlasCompositeError("atlas_composite_surface_set_invalid", "six identified backgrounds are required");
+  }
+  const originals = new Map();
+  for (const asset of assets || []) {
+    if (!asset.role || originals.has(asset.role) || !Buffer.isBuffer(asset.bytes)
+      || asset.bytes.length !== asset.byteSize || sha256(asset.bytes) !== asset.contentHash) {
+      throw new AtlasCompositeError("atlas_composite_asset_identity_mismatch", "overlay identity does not match original bytes");
+    }
+    originals.set(asset.role, asset);
+  }
+  if (!originals.size) throw new AtlasCompositeError("atlas_composite_assets_missing", "Zone 3 has no original artwork");
+  if (!Array.isArray(placements) || !placements.length) {
+    throw new AtlasCompositeError("atlas_composite_placements_missing", "overlay placement plan is required");
+  }
+  for (const p of placements) {
+    if (!expected.includes(p.surfaceKey) || !originals.has(p.role)
+      || p.contentHash !== originals.get(p.role).contentHash) {
+      throw new AtlasCompositeError("atlas_composite_placement_identity_mismatch", "placement references unknown artwork or surface");
+    }
+  }
+  const panels = [];
+  for (const base of backgrounds) {
+    const meta = await sharp(base.bytes).metadata();
+    const layers = [], applied = [];
+    for (const p of placements.filter(item => item.surfaceKey === base.surfaceKey)) {
+      const b = p.box;
+      if (!b || ![b.xPct,b.yPct,b.wPct,b.hPct].every(Number.isFinite)
+        || b.xPct < 0 || b.yPct < 0 || b.wPct <= 0 || b.hPct <= 0
+        || b.xPct+b.wPct > 1 || b.yPct+b.hPct > 1 || p.flipped === true) {
+        throw new AtlasCompositeError("atlas_composite_bounds_invalid", "overlay leaves its panel or requests a mirror");
+      }
+      const asset = originals.get(p.role);
+      const width = Math.max(1, Math.round(b.wPct * meta.width));
+      const height = Math.max(1, Math.round(b.hPct * meta.height));
+      const raster = await sharp(asset.bytes, { density: 300, limitInputPixels: 40000000 })
+        .rotate().resize(width, height, { fit: "contain", background: {r:0,g:0,b:0,alpha:0} })
+        .png().toBuffer();
+      const left = Math.round(b.xPct*meta.width), top = Math.round(b.yPct*meta.height);
+      if (left+width > meta.width || top+height > meta.height) {
+        throw new AtlasCompositeError("atlas_composite_bounds_invalid", "rounded overlay leaves its panel");
+      }
+      layers.push({input:raster,left,top});
+      applied.push({role:p.role,contentHash:asset.contentHash,box:b,flipped:false});
+    }
+    const bytes = layers.length ? await sharp(base.bytes).composite(layers).png().toBuffer() : base.bytes;
+    panels.push({...base, bytes, byteSize:bytes.length, contentHash:sha256(bytes),
+      backgroundContentHash:sha256(base.bytes), applied, zone:"zone1", role:"branded"});
+  }
+  return {contract:"designpro.production-zone-composite.v1", panels,
+    placements, deterministic:true, sourceAssetsPreserved:true};
+}
+
 module.exports = {
   CONTRACT,
+  compositeProductionPanels,
   AtlasCompositeError,
   readingSize,
   sheetPlacement,

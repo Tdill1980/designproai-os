@@ -452,6 +452,7 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, as
     const assembled = await panelProof.assemblePanelProofMaster({
       sheet: { ...sheetOutput.sheet, bytes, contract: sheetOutput.sheet.proofContract },
       panelRows: sheetOutput.panelRows, customerAssets: sheetOutput.customerAssets || [],
+      input: definition.input, downloadAsset: identity => downloadVerified(supabase, identity),
       manifest, store, logger, assembleFinishedMaster,
       startedAt: Date.parse(run.created_at) || startedAt,
       // The sheet node's own timing travels forward, so the receipt keeps ONE

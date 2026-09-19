@@ -316,14 +316,15 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // panels, and the blank panels are what PanelPro lays on a vehicle template.
   assert.equal(q.branded.length, 6);
   assert.equal(q.clean.length, 6);
-  assert.equal(q.cutGraphics.length, 5, "five cut-graphic slots, the container's own");
+  assert.equal(q.cutGraphics.length, 2, "original outlined brand and contact assets");
+  assert.ok(q.cutGraphics.every(a => a.vector && a.contentType === "image/svg+xml"));
   for (const panel of [...q.branded, ...q.clean]) {
     assert.ok(panel.rect && Number.isFinite(panel.fit), `${panel.surfaceKey} must carry its rect and fit`);
   }
   // The proof sheet's own identity is on the receipt, so "which sheet produced
   // this master" is a query rather than a storage-timestamp guess.
-  assert.equal(out.provenance.proofSha256, "a".repeat(64));
-  assert.equal(out.provenance.proofStoragePath, "atlas-panel-proof/a.jpg");
+  assert.notEqual(out.provenance.proofSha256, "a".repeat(64));
+  assert.equal(out.provenance.proofStoragePath, `atlas-panel-proof/quadrants/${out.provenance.proofSha256}.png`);
   // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
   // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
   // production's six from the assembled master and a second set nobody reads
@@ -363,7 +364,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
     // OUTPUTS; `atlas-call1-inputs/` is the allowlist the flatten reads from,
     // and a product artifact sitting there is one refactor away from being
     // attached to a customer's own generation as a teaching input.
-    assert.equal(panel.storagePath, `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
+    assert.equal(panel.storagePath, panel.vector ? `atlas-elements/${panel.contentHash}.svg` : `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
       `${where} must be addressed by its own hash`);
     assert.doesNotMatch(panel.storagePath, /^atlas-call1-inputs\//,
       `${where} is an output and must not live in the edge's input prefix`);
@@ -377,7 +378,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
       `${where}: the stored object does not hash to the hash on the receipt`);
     assert.equal(stored.bytes.length, panel.byteSize,
       `${where}: the receipt's byteSize is not the stored object's length`);
-    assert.equal(stored.contentType, "image/png");
+    assert.equal(stored.contentType, panel.vector ? "image/svg+xml" : "image/png");
   }
 
   // ELEVEN RECEIPT ENTRIES — six clean panels and five cut graphics — and one
@@ -394,7 +395,7 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
   // refuses a content-addressed path that already holds different bytes, exactly
   // as generation-store.cjs does.
   const entries = [...q.clean, ...q.cutGraphics];
-  assert.equal(entries.length, 11);
+  assert.equal(entries.length, 8);
   assert.equal(new Set(entries.map((p) => p.storagePath)).size,
     new Set(entries.map((p) => p.contentHash)).size,
     "one stored object per distinct content hash");
@@ -420,14 +421,14 @@ test("mandatory quadrants refuse instead of publishing a partial proof", async (
   }
 });
 
-test("an absent graphics band refuses the mandatory three-zone proof", async () => {
+test("a blank generated graphics band is replaced with original outlined assets", async () => {
   const layout = container.containerLayout(container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)));
   const { callProofEdge } = edgeStub(await paintedSheet({
     empty: layout.zone3.map((cell) => `zone3:${cell.surfaceKey}`),
   }));
-  await assert.rejects(
-    () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge }),
-    /mandatory three-zone proof is incomplete/);
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge });
+  assert.equal(out.provenance.quadrants.cutGraphics.length, 2);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "vector-originals");
 });
 
 test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {
@@ -790,4 +791,28 @@ test("a crop whose aspect disagrees with its zone is REFUSED, not stretched into
     () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge }),
     (err) => err.code === "flat_atlas_panel_proof_refused",
     "a sheet of the wrong shape must refuse rather than be stretched into the zones");
+});
+
+
+test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () => {
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><path fill="red" d="M0 0H60V40H0Z"/><path fill="blue" d="M60 0H120V40H60Z"/></svg>');
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const logoAsset = {storagePath:`users/test/revisions/test/inputs/logo/${contentHash}.svg`,contentHash,
+    byteSize:bytes.length,contentType:"image/svg+xml"};
+  const store = memoryStore();
+  const {callProofEdge,calls} = edgeStub(await paintedSheet());
+  const result = await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge,
+    input:{...AUTHOR_ARGS.input,logoAsset},downloadAsset:async identity => {
+      assert.equal(identity.contentHash,contentHash); return bytes;
+    }});
+  const original = result.provenance.quadrants.cutGraphics.find(a => a.role === "logo");
+  assert.equal(original.contentHash,contentHash);
+  assert.equal(original.storagePath,logoAsset.storagePath);
+  assert.equal(original.byteSize,bytes.length);
+  assert.equal(calls[0].separatedArtwork,true);
+  assert.equal(calls[0].customerAssets.length,0);
+  assert.ok(result.provenance.composition.placements.filter(p => p.role === "logo").length === 5);
+  const roof = MANIFEST.zones.find(z => z.surfaceKey === "roof").extraction;
+  const pixel = await sharp(result.bytes).extract({left:roof.x+Math.floor(roof.w/2),top:roof.y+Math.floor(roof.h/2),width:1,height:1}).removeAlpha().raw().toBuffer();
+  assert.deepEqual([...pixel],[15,118,110],"Zone 1 derives from green Zone 2, never blue generated Zone 1");
 });

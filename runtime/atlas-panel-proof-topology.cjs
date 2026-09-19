@@ -101,10 +101,15 @@
  */
 
 const PANEL_PROOF_TOPOLOGY = "panel-proof";
-const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v1";
+const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v2";
 /** Its OWN Call-1 endpoint. It cannot reach design-panel-ai-generate at all. */
 const PROOF_EDGE_FUNCTION = "production-panel-proof";
 
+const { compositeProductionPanels } = require("./atlas-master-composite.cjs");
+const { planElementLockup } = require("./atlas-element-lockup.cjs");
+const typeset = require("./atlas-typeset-layer.cjs");
+const { verifyLogoIdentity } = require("./atlas-logo-prepare.cjs");
+const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
 const { cutProofPanels } = require("./atlas-proof-panels.cjs");
 const {
   parsePanelRows, renderContainerTemplate,
@@ -337,6 +342,7 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     // The customer's own logo and references, by identity. Empty when they
     // uploaded none — never omitted silently when they did.
     customerAssets,
+    separatedArtwork: true,
     // The customer's own words. The edge's intake node parses vehicle, contact
     // and brand out of them; a field set here is a field intake never had to
     // find, and the raw text is what production actually carries.
@@ -497,7 +503,7 @@ function createPanelProofTransport({
  * one shape on both paths.
  */
 async function assemblePanelProofMaster({
-  sheet, panelRows, customerAssets = [], manifest, store, logger = () => {},
+  sheet, panelRows, customerAssets = [], input = {}, downloadAsset, manifest, store, logger = () => {},
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(), stageTimings = [],
 } = {}) {
@@ -537,13 +543,13 @@ async function assemblePanelProofMaster({
   if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
 
-  const zone1 = cut.panels.filter((p) => p.zone === "zone1");
+  let zone1 = cut.panels.filter((p) => p.zone === "zone1");
   if (zone1.length !== 6) {
     throw refuse(`the cut yielded ${zone1.length}/6 branded panels`);
   }
   const zone2 = cut.panels.filter((p) => p.zone === "zone2");
-  const zone3 = cut.panels.filter((p) => p.zone === "zone3");
-  if (zone2.length !== 6 || !zone3.length || !zone3.some((p) => p.fit > 0)) {
+  let zone3 = [];
+  if (zone2.length !== 6) {
     throw refuse("the mandatory three-zone proof is incomplete", {
       zones: { branded: zone1.length, backgrounds: zone2.length, graphics: zone3.length },
     });
@@ -551,12 +557,85 @@ async function assemblePanelProofMaster({
   if (typeof store?.putImmutableBytes !== "function") {
     throw refuse("the mandatory three-zone proof has no artifact store");
   }
+  const persist = async (object) => {
+    try { return await store.putImmutableBytes(object); }
+    catch (cause) { throw refuse("mandatory proof artifact could not be stored", {cause:String(cause?.message || cause)}); }
+  };
   const unverified = cut.panels.filter((p) =>
     (p.zone === "zone1" || p.zone === "zone2") && (!p.positionalPremiseVerified || !p.identity));
   if (unverified.length) {
     throw refuse(`unverified panel identities: ${unverified.map((p) => `${p.zone}:${p.surfaceKey}`).join(", ")}`);
   }
   // Paint density remains a receipt metric, not evidence of surface identity.
+
+  // Zone 3 comes from original files and outlined typography, NEVER sheet crops.
+  const assets = [];
+  if (input.logoAsset) {
+    const identity = verifyLogoIdentity(input.logoAsset);
+    if (typeof downloadAsset !== "function") throw refuse("original logo reader missing");
+    const bytes = await downloadAsset(identity);
+    if (bytes.length !== identity.byteSize || sha256(bytes) !== identity.contentHash) {
+      throw refuse("original logo identity mismatch");
+    }
+    const meta = await sharp(bytes, {density:300,limitInputPixels:40000000}).metadata();
+    assets.push({...identity,bytes,role:"logo",width:meta.width,height:meta.height,
+      contentType:input.logoAsset.contentType,vector:input.logoAsset.contentType === "image/svg+xml"});
+  }
+  const brand = {...(sheet.intake || {}), ...input};
+  const services = Array.isArray(brand.services) ? brand.services : [];
+  const textJobs = [
+    {role:"typography",name:brand.companyName || brand.businessName || "",lines:[brand.tagline || ""]},
+    {role:"contact",name:"",lines:[brand.phone,brand.website,...services,brand.promo].filter(Boolean)},
+  ];
+  for (const job of textJobs) {
+    if (!job.name && !job.lines.some(Boolean)) continue;
+    const rendered = await typeset.renderLockup({...job,width:1600});
+    const bytes = Buffer.from(rendered.svg);
+    const stored = await persist({storagePath:typeset.elementStoragePath(sha256(bytes),"svg"),
+      bytes,contentType:"image/svg+xml"});
+    assets.push({...stored,bytes,byteSize:bytes.length,contentHash:sha256(bytes),role:job.role,
+      width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true});
+  }
+  if (!assets.length) throw refuse("Zone 3 requires original assets or customer text");
+  const placements = [];
+  for (const panel of zone2) {
+    if (panel.surfaceKey === "roof") continue;
+    // Reuse the lockup planner in each panel's own reading coordinates.
+    const plan = planElementLockup({zones:[{surfaceKey:"driver",rotationDegrees:0,
+      trim:{x:0,y:0,w:panel.rect.width,h:panel.rect.height}}],elements:assets});
+    const side = panel.surfaceKey === "passenger" ? "passenger" : "driver";
+    placements.push(...plan.placements.filter(p => p.surfaceKey === side)
+      .map(p => ({...p,surfaceKey:panel.surfaceKey})));
+  }
+  const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
+  const originalCells = new Map(zone1.map(p => [p.surfaceKey,p]));
+  zone1 = composed.panels.map(p => ({...p,displayRect:originalCells.get(p.surfaceKey).rect}));
+  zone3 = assets.map(({bytes,...ref}) => ({...ref,surfaceKey:ref.role,persisted:true,productionApproved:false}));
+
+  // Replace the model's provisional Zone 1 and Zone 3 in the displayed proof.
+  // The customer sees the SAME composed panels the master consumes.
+  const proofLayers = [];
+  for (const p of zone1) {
+    const r = p.displayRect;
+    proofLayers.push({input:await sharp(p.bytes).resize(r.width,r.height,{fit:"contain",background:"white"})
+      .png().toBuffer(),left:r.left,top:r.top});
+  }
+  const band = PROOF_REGIONS.zone3;
+  const bandTop = Math.round(cut.sheet.height*band.y), bandHeight = Math.floor(cut.sheet.height*band.h);
+  proofLayers.push({input:await sharp({create:{width:cut.sheet.width,height:bandHeight,channels:3,background:"white"}})
+    .png().toBuffer(),left:0,top:bandTop});
+  const headingHeight = Math.max(24,Math.round(bandHeight*0.16));
+  proofLayers.push({input:Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${cut.sheet.width}" height="${headingHeight}"><rect width="100%" height="100%" fill="#e96900"/><text x="16" y="${headingHeight*0.7}" font-size="${headingHeight*0.6}" font-family="sans-serif" fill="white">ZONE 3 — ORIGINAL GRAPHICS + OUTLINED TEXT</text></svg>`),left:0,top:bandTop});
+  const slotWidth = Math.floor(cut.sheet.width/assets.length);
+  for (let i=0;i<assets.length;i++) {
+    proofLayers.push({input:await sharp(assets[i].bytes,{density:300,limitInputPixels:40000000})
+      .resize(slotWidth-20,bandHeight-headingHeight-20,{fit:"contain",background:"white"}).png().toBuffer(),
+      left:i*slotWidth+10,top:bandTop+headingHeight+10});
+  }
+  const proofBytes = await sharp(sheet.bytes).composite(proofLayers).png().toBuffer();
+  const storedProof = await persist({storagePath:`${QUADRANT_PREFIX}/${sha256(proofBytes)}.png`,
+    bytes:proofBytes,contentType:"image/png"});
+  sheet = {...sheet,...storedProof,bytes:proofBytes,byteSize:proofBytes.length,contentHash:sha256(proofBytes)};
 
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
   //
@@ -634,7 +713,7 @@ async function assemblePanelProofMaster({
         widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
       };
       try {
-        const stored = await store.putImmutableBytes({
+        const stored = await persist({
           storagePath: `${QUADRANT_PREFIX}/${sha256(p.bytes)}.png`,
           bytes: p.bytes, contentType: "image/png",
         });
@@ -647,7 +726,8 @@ async function assemblePanelProofMaster({
     }
     return out;
   };
-  const [cleanQuadrant, cutGraphicsQuadrant] = await Promise.all([sibling("zone2"), sibling("zone3")]);
+  const cleanQuadrant = await sibling("zone2");
+  const cutGraphicsQuadrant = zone3;
   // NOT A `mark()`. `stageTimings` is the DAG's node list and its order is
   // locked as such; this is persistence of node 2's output, not a fourth node,
   // so it is timed on `timings` where a reader will not read it as one. The
@@ -689,7 +769,8 @@ async function assemblePanelProofMaster({
       proofByteSize: sheet.byteSize || sheet.bytes.length,
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
-        graphicsFormat: "raster-preview", productionApproved: false },
+        graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
+      composition: {contract:composed.contract,placements,sourceAssetsPreserved:true},
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
@@ -742,7 +823,7 @@ async function assemblePanelProofMaster({
  */
 async function authorPanelProofMaster({
   manifest, input, store, logger = () => {}, customerImageParts = [],
-  providerRequest = {}, callProofEdge,
+  providerRequest = {}, callProofEdge, downloadAsset,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(),
 } = {}) {
@@ -754,7 +835,7 @@ async function authorPanelProofMaster({
   stageTimings.push({ stage: "proof.sheet", ms: Date.now() - sheetAt });
   logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
   return assemblePanelProofMaster({
-    sheet, panelRows, customerAssets, manifest, store, logger,
+    sheet, panelRows, customerAssets, input, downloadAsset, manifest, store, logger,
     assembleFinishedMaster, sharp, startedAt, stageTimings,
   });
 }

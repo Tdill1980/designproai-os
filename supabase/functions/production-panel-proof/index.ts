@@ -434,7 +434,7 @@ serve(async (req) => {
       atlasPanels: ATLAS_PANELS,
     } as Record<string, unknown>));
 
-    const prompt = buildPanelProofPrompt({
+    let prompt = buildPanelProofPrompt({
       creativeHead,
       companyName: field("companyName"),
       tagline: field("tagline"),
@@ -452,6 +452,10 @@ serve(async (req) => {
       creativeDirection: field("creativeDirection") || String(body?.prompt || ""),
       panelRows,
     });
+
+    if (body.separatedArtwork === true) {
+      prompt += "\nSEPARATED PRODUCTION ARTWORK: Zone 2 is the authoritative full-bleed background including requested photography and design, with NO lettering, logos, icons or brand marks. Zone 1 is a provisional copy of those same backgrounds; the operating system will composite the original customer logo and outlined customer text onto it after generation. Zone 3 is reserved for original vector assets added by the operating system. Never invent, trace, imitate or redraw the customer's protected assets. Preserve all six panel rectangles and the mandatory three-band layout.";
+    }
 
     // THE BIG INPUTS TRAVEL BY STORAGE PATH, NOT INSIDE THE JSON BODY.
     // Live 2026-08-27: a 2.2MB request as inline base64 killed the worker 25s

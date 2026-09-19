@@ -3511,7 +3511,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
   ]);
   const customerImageParts = [
-    ...(await verifiedCustomerLogoPart(supabase, input)),
+    ...(panelProof ? [] : await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
   ].filter((part) => part?.inlineData?.data);
   // Both pinned image inputs are still built, stored and OFFERED. They remain
@@ -4257,7 +4257,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const baseCarriesLettering = passengerMirror?.letteringRead === "located" && baseLetteringBands > 0;
   let elementLayer = null;
   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
-  if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
+  if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
     && baseCarriesLettering) {
     logger(`atlas element graph: skipped -- Call 1 authored its own lettering (${baseLetteringBands} band(s) located on the driver panel) `
       + `despite the clean-base contract; compositing would print the company name twice`);
@@ -4266,7 +4266,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       skipped: "base_already_carries_lettering",
       baseLetteringBands,
     };
-  } else if (elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
+  } else if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
     const startedAt = Date.now();
     const staged = await store.putImmutableBytes({
       storagePath: acceptedMasterStoragePath, bytes: acceptedMasterBytes, contentType: "image/png",
