@@ -111,6 +111,20 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   assert.match(runtime.INSTALLATION_FACT, /SOLID RECTANGLE of artwork/);
   assert.match(runtime.INSTALLATION_FACT, /no holes and no vehicle-shaped outline/);
   assert.match(runtime.INSTALLATION_FACT, /artwork runs straight through the places those openings will be/);
+
+  // AND THE OTHER HALF OF RULE 0.28 §3: "Filled edge to edge. Artwork runs off
+  // all four sides of its rectangle." That sentence was absent from this
+  // contract entirely -- the prompt said a panel is a solid rectangle and never
+  // said its artwork must REACH the cell's four edges, so probe 35430383420
+  // measured the branded band at fits of 0.61-0.86 with white inside every
+  // cell. A solid rectangle inset in its box is still a solid rectangle; it is
+  // just the wrong size, and the cutter then crops white.
+  //
+  // It is stated as the bleed's own physics and joined to the trim-line
+  // sentence, because the frame line is the thing the model was composing
+  // inside of.
+  assert.match(runtime.INSTALLATION_FACT, /fills its cell corner to corner/);
+  assert.match(runtime.INSTALLATION_FACT, /out past the frame line on\nall four sides/);
   assert.doesNotMatch(runtime.INSTALLATION_FACT, /\bdo not\b/i,
     "the installation fact must state what IS, never what is forbidden");
 });
@@ -307,8 +321,19 @@ test("it stays inside the prompt budget that CLAUDE.md measured", () => {
   const prompt = runtime.buildPanelProofPrompt(FIXTURE_ARGS);
   // WITHOUT THE A.C.E. HEAD this is the document contract alone, and it must
   // stay small — it is packaging, and the budget belongs to the design.
-  assert.ok(prompt.length < 2600,
-    `the document contract alone is ${prompt.length} chars; it must stay under 2600`);
+  //
+  // 2600 -> 2700, and the 70 characters that bought it are RULE 0.28 §3's
+  // fill-the-cell rule (measured: 2670). That is deliberately the opposite of
+  // what happened last time this bound bit: the acceptance contract was the
+  // first thing cut for budget, and the next live sheet came back die-cut. This
+  // file's own reasoning twenty lines down is that a FIXED TOTAL is the wrong
+  // lock -- the meaningful ones are `added <= 1200` and designer-outweighs-
+  // paperwork below, and BOTH still pass unchanged at the new value. So the
+  // number moved and neither ratio did.
+  //
+  // Cut packaging to get under it. Never cut the acceptance contract.
+  assert.ok(prompt.length < 2700,
+    `the document contract alone is ${prompt.length} chars; it must stay under 2700`);
 
   // ⚠️ THE CEILING IS NOT A FIXED TOTAL, AND WRITING IT AS ONE WAS THE MISTAKE
   // BEHIND EVERY OTHER MISTAKE IN THIS FILE.
