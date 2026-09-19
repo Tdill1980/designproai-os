@@ -434,7 +434,12 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // model is told to ignore, and deleting it without drawing them here would
   // have silently dropped a supplied order number off the sheet.
   ([["DATE:", job.date], ["ORDER #:", job.order], ["DESIGNER:", job.designer],
-    ["VERSION:", job.version]] as Array<[string, string | undefined]>).forEach(([k, v], i) => {
+    // VERSION DEFAULTS TO 1.0. The owner's structural specification names the
+    // value ("Version (1.0)"), so a ruled blank there is a field the sheet
+    // declined to state rather than one nobody supplied. Every other job field
+    // stays a rule when absent, because a date or an order number cannot be
+    // defaulted without inventing it.
+    ["VERSION:", job.version || "1.0"]] as Array<[string, string | undefined]>).forEach(([k, v], i) => {
     m.push(text(1192, 38 + i * 14, k, { size: 8.5, fill: MUTED }));
     if (v) m.push(text(1262, 38 + i * 14, v, { size: 8.5 }));
     else m.push(`<line x1="1258" y1="${41 + i * 14}" x2="1470" y2="${41 + i * 14}" stroke="${RULE}" stroke-width="0.7"/>`);
@@ -480,6 +485,10 @@ export function containerSvg(options: ContainerOptions = {}): string {
     "3. Zone 1: full artwork with photo, design, text and logo.",
     "4. Zone 2: backgrounds only — no text or logo.",
     "5. Zone 3: vector cut graphics only — no background.",
+    // The owner's structural specification asks for a test-print reminder here.
+    // It belongs on the sheet rather than in a process document: the person who
+    // reads this sheet is the person at the press.
+    "6. Test print one panel at size before committing the full run.",
   ].forEach((line, i) => m.push(text(838, 862 + i * 12, line, { size: 8, fill: MUTED })));
   m.push(`<rect x="1204" y="836" width="278" height="74" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   m.push(text(1216, 851, "GUIDE (FOR REFERENCE ONLY)", { size: 8.5, weight: 700 }));
