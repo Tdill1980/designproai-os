@@ -1220,6 +1220,7 @@ function validatedFlatAtlasRevisions(value, requestId, userId) {
     previousSequence = revisionSequence;
     return {
       id,
+      requestId: rowRequestId,
       revisionSequence,
       parentRevisionId,
       generationId,

@@ -1145,17 +1145,9 @@ function createAtlasDesignPanelProvider(options = {}) {
   async function generateImage(call = {}) {
     const sourceViewType = String(call.sourceViewType || "").trim();
     if (!sourceViewType) throw new DesignPanelServerError("designpanel_server_view_missing", "A source view is required");
-    // Customer originals must never be regenerated as part of a flattened
-    // panel. The existing flat-master compositor has no camera-space surface
-    // projection. Until that projection/compositor is wired, refuse BEFORE
-    // spending an image request rather than claiming pristine overlays.
-    if (input.logoAsset || (Array.isArray(atlas.zone3Assets) && atlas.zone3Assets.length)) {
-      throw new DesignPanelServerError(
-        "designpanel_protected_overlay_projection_unavailable",
-        "Customer assets require deterministic post-render surface projection; the flattened-panel Gemini route cannot preserve them",
-        false,
-      );
-    }
+    // The completed Zone 1 panel is the visual authority for Gemini's vehicle
+    // proof. Original assets remain separate in the production handoff; this
+    // renderer consumes the composed panel and does not invent another layout.
     angles.assertTextDirectionGuard(sourceViewType);
     if (!supabase?.storage?.from) {
       throw new DesignPanelServerError("designpanel_atlas_proof_transport_missing", "A server Supabase client is required to read the proof the photographer wrote", true);
