@@ -48,6 +48,13 @@ select policies_are(
   ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs',
         'designpro_owner_read_flat_atlas_previews','designpro_owner_read_generation_views',
         'designpro_owner_read_wrap_files','designpro_owner_sign_atlas_refusals',
+        -- The three-zone production panel proof (20260919180000). Signing only,
+        -- and MEMBERSHIP rather than prefix: atlas-panel-proof objects are
+        -- content-addressed and therefore NOT owner-scoped, so a prefix
+        -- predicate would let any authenticated caller sign another customer's
+        -- sheet by replaying a hash. The object must be named by a panel-proof
+        -- revision that caller owns.
+        'designpro_owner_sign_atlas_panel_proof',
         'wallpro_file_read','wallpro_file_upload',
         'wallpro_catalog_read','wallpro_catalog_write','wallpro_team_read',
         'graphicspro_files_public_read','graphicspro_files_owner_upload',
