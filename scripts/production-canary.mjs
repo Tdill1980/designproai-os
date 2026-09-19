@@ -799,7 +799,14 @@ async function stageCustomerLogo({ operatorId, generationId }) {
   const { default: sharp } = await import("sharp");
   const bytes = await sharp(svg).png().toBuffer();
   const contentHash = createHash("sha256").update(bytes).digest("hex");
-  const storagePath = `users/${operatorId}/revisions/${generationId}/inputs/${contentHash}.png`;
+  // THE PATH SHAPE IS VALIDATED, AND THE `logo/` SEGMENT IS NOT OPTIONAL.
+  // `designpro_private.calls_1_7_asset_identity_valid` requires exactly
+  //   users/<uuid>/revisions/<uuid>/inputs/(logo|attachment)/<sha256>.<ext>
+  // and cross-checks segment 6 against the asset KIND and segment 7 against the
+  // hash plus the extension implied by contentType. Omitting `logo/` makes the
+  // whole request fail closed as `generation_request_invalid` -- which is the
+  // validator doing its job, and is exactly what it did on canary 35468878776.
+  const storagePath = `users/${operatorId}/revisions/${generationId}/inputs/logo/${contentHash}.png`;
   const { error } = await service.storage.from(BUCKET)
     .upload(storagePath, bytes, { contentType: "image/png", upsert: true });
   if (error) throw new Error(`the canary could not stage its customer logo: ${error.message}`);
