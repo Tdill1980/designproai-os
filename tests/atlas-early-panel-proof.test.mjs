@@ -53,7 +53,7 @@ test('completed composed graph proof is readable before revision, with owner/sig
   assert.equal(early.panelProof,true);assert.equal(early.revisionId,null);assert.equal(early.source,'call1_graph');assert.equal(early.graphRunId,RUN);
   assert.equal(early.masterContentHash,MASTER);assert.deepEqual(early.quadrants,proof.quadrants);
   for(const path of [proof.proofStoragePath,...proof.quadrants.clean.map(p=>p.storagePath),proof.quadrants.cutGraphics[0].storagePath])assert.equal(await maySign(db,path),true);
-  assert.equal((await db.query('SELECT name FROM storage.objects')).rows.length,3,'sign-only storage policy grants exactly composed sheet, clean layer and original asset');
+  assert.equal((await db.query('SELECT name FROM storage.objects')).rows.length,4,'sign-only storage policy grants raw Call-1 sheet plus composed sheet, clean layer and original asset');
   assert.equal(await maySign(db,`atlas-panel-proof/${RAW}.png`),true);
   assert.equal(await maySign(db,'provider-cache/secret.png'),false);
   assert.equal(await maySign(db,`atlas-panel-proof/${MASTER}.png`),false);
