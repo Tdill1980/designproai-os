@@ -214,6 +214,53 @@ function memoryDb({ tables = {}, bytes = new Map() } = {}) {
   return sb;
 }
 
+test("Call 11 reuses the frozen six Zone 2 backgrounds without detection or pixel changes", async () => {
+  const { panels, assets } = await panelFixture();
+  const bytes = new Map(assets.map((asset) => [asset.storagePath, panels[asset.surfaceKey]]));
+  const clean = [];
+  for (const [index, asset] of assets.entries()) {
+    const background = await sharp({ create: { width: 320 + index, height: 180, channels: 3,
+      background: { r: 10 + index * 20, g: 90, b: 140 } } }).png().toBuffer();
+    const contentHash = hash(background), storagePath = `atlas-panel-proof/quadrants/${contentHash}.png`;
+    bytes.set(storagePath, background);
+    clean.push({ surfaceKey: asset.surfaceKey, role: "clean", persisted: true, positionalPremiseVerified: true,
+      storagePath, contentHash, byteSize: background.length, rect: { left: 0, top: 0, width: 320 + index, height: 180 },
+      widthIn: asset.trimWidthIn, heightIn: asset.trimHeightIn });
+  }
+  const originalHashes = new Map([...bytes].map(([path, body]) => [path, hash(body)]));
+  const panelHashes = Object.fromEntries(assets.map((asset) => [asset.surfaceKey, asset.contentHash]));
+  const run = { id: runId, revision_id: revisionId, revision_snapshot_hash: "b".repeat(64), tenant_key: tenant, input: {} };
+  const snapshot = { panelProofAuthoring: { contract: "designpro.atlas-panel-proof-topology.v2", masterSha256: "a".repeat(64),
+    composition: { sourceAssetsPreserved: true }, quadrants: { clean } } };
+  const sb = memoryDb({ bytes, tables: {
+    designpro_revision_sources: [{ revision_id: revisionId, snapshot_hash: run.revision_snapshot_hash, snapshot }],
+    designpro_workflow_stages: [{ run_id: runId, stage_key: "panels.build", status: "completed", verification: { verified: true }, output: { panelHashes } }],
+    designpro_artifacts: assets.map((asset) => ({ run_id: runId, artifact_kind: "panel", surface_key: asset.surfaceKey,
+      storage_path: asset.storagePath, content_hash: asset.contentHash, byte_size: asset.byteSize, metadata: { sourceMasterHash: asset.sourceMasterHash } })),
+  } });
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("Zone 2 reuse must not invoke a generative or detection provider"); };
+  try {
+    await worker.executeEntice(sb, null, null, null, { id: "fixture-zone2", stage_key: "panels.delogo", lease_token: "fixture-lease" }, run, {});
+    const result = sb.calls.at(-1).args;
+    assert.equal(result.p_receipt.backgroundsReused, true);
+    assert.equal(result.p_receipt.imageRequestCount, 0);
+    assert.equal(result.p_artifacts.length, 6);
+    for (const artifact of result.p_artifacts) {
+      const background = clean.find((item) => item.surfaceKey === artifact.surfaceKey);
+      assert.equal(artifact.contentHash, background.contentHash);
+      assert.deepEqual(sb.bytes.get(artifact.storagePath), sb.bytes.get(background.storagePath));
+      assert.equal(artifact.metadata.sourcePanelHash, panelHashes[artifact.surfaceKey]);
+      assert.equal(artifact.metadata.sourceMasterHash, "a".repeat(64));
+      assert.equal(artifact.metadata.printable, false);
+      assert.equal(artifact.metadata.bleed, null);
+    }
+    for (const [path, contentHash] of originalHashes) assert.equal(hash(sb.bytes.get(path)), contentHash);
+    bytes.set(clean[0].storagePath, Buffer.from("changed background"));
+    await assert.rejects(worker.executeEntice(sb, null, null, null, { id: "fixture-zone2-changed", stage_key: "panels.delogo", lease_token: "fixture-lease" }, run, {}), { code: "call11_zone2_bytes_changed" });
+  } finally { globalThis.fetch = savedFetch; }
+});
+
 async function lateProofFixture() {
   const release = await releaseFixture(); const { assets } = await panelFixture();
   const ownerId = tenant.slice(5); const requestId = "8d029269-d68d-4d07-814b-5e3d6f8b0b7c";

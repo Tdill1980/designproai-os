@@ -479,6 +479,58 @@ async function listRuns(fetchImpl, token, cfg) {
   return response.json();
 }
 
+// Checkout freezes the revision being viewed, never whichever run is newest
+// when Stripe eventually delivers its webhook. All reads use the caller's RLS.
+async function checkoutRevision(fetchImpl, token, cfg, userId, generationId, atlasRevisionId) {
+  if (!UUID_PATTERN.test(generationId) || !UUID_PATTERN.test(atlasRevisionId)) {
+    throw Object.assign(new Error("checkout_revision_required"), { status: 400 });
+  }
+  const workspace = await rpc(fetchImpl, token, cfg, "designpro_atlas_revision_workspace", {
+    p_generation_id: generationId, p_atlas_revision_id: atlasRevisionId,
+  });
+  if (workspace?.generationId !== generationId || workspace.atlasRevisionId !== atlasRevisionId
+    || workspace.ownerId !== userId || !UUID_PATTERN.test(workspace.requestId)
+    || workspace.viewsSuperseded === true || workspace.state !== "outputs_ready") {
+    throw Object.assign(new Error("checkout_revision_not_ready"), { status: 409 });
+  }
+  const response = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_revision_sources?select=revision_id,snapshot_hash,generation_id,owner_id,visualization_id&visualization_id=eq.${workspace.requestId}&generation_id=eq.${generationId}&owner_id=eq.${userId}&limit=2`,
+    { method: "GET" }, token, cfg);
+  if (!response.ok) throw Object.assign(new Error("checkout_revision_unavailable"), { status: 503 });
+  const sources = await response.json();
+  const source = Array.isArray(sources) && sources.length === 1 ? sources[0] : null;
+  if (!source || source.generation_id !== generationId || source.owner_id !== userId
+    || source.visualization_id !== workspace.requestId || !UUID_PATTERN.test(source.revision_id)
+    || !SHA256_PATTERN.test(source.snapshot_hash)) {
+    throw Object.assign(new Error("checkout_revision_not_ready"), { status: 409 });
+  }
+  const runsResponse = await upstream(fetchImpl,
+    `${cfg.supabaseUrl}/rest/v1/designpro_workflow_runs?select=id,owner_id,generation_id,revision_id,revision_snapshot_hash,workflow_type,status&revision_id=eq.${source.revision_id}&revision_snapshot_hash=eq.${source.snapshot_hash}&workflow_type=eq.designpro.entice_pack&status=eq.completed&limit=2`,
+    { method: "GET" }, token, cfg);
+  if (!runsResponse.ok) throw Object.assign(new Error("checkout_revision_unavailable"), { status: 503 });
+  const runs = await runsResponse.json();
+  const run = Array.isArray(runs) && runs.length === 1 ? runs[0] : null;
+  if (!run || !UUID_PATTERN.test(run.id) || run.generation_id !== generationId || run.owner_id !== userId
+    || run.revision_id !== source.revision_id || run.revision_snapshot_hash !== source.snapshot_hash
+    || run.workflow_type !== "designpro.entice_pack" || run.status !== "completed") {
+    throw Object.assign(new Error("checkout_revision_not_ready"), { status: 409 });
+  }
+  return { atlasRevisionId, revisionId: source.revision_id, revisionSnapshotHash: source.snapshot_hash,
+    enticeRunId: run.id, ownerId: userId };
+}
+
+function checkoutRevisionFromMetadata(metadata) {
+  const revision = { atlasRevisionId: String(metadata.atlas_revision_id || ""),
+    revisionId: String(metadata.revision_id || ""), revisionSnapshotHash: String(metadata.revision_snapshot_hash || ""),
+    enticeRunId: String(metadata.entice_run_id || ""), ownerId: String(metadata.user_id || "") };
+  if (!UUID_PATTERN.test(String(metadata.generation_id || ""))
+    || !SHA256_PATTERN.test(revision.revisionSnapshotHash)
+    || [revision.atlasRevisionId, revision.revisionId, revision.enticeRunId, revision.ownerId].some(id => !UUID_PATTERN.test(id))) {
+    throw Object.assign(new Error("checkout_revision_metadata_invalid"), { status: 400 });
+  }
+  return revision;
+}
+
 // AN UNBOUND DESIGN STILL HAS AN IDENTITY. (2026-08-28)
 //
 // A design-first (v2) handoff freezes an explicitly UNBOUND revision source:
@@ -2572,6 +2624,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         if (!PURCHASE_PRODUCTS[productType]) {
           return json(res, 200, { received: true, skipped: "not_a_designpro_product" });
         }
+        const revision = checkoutRevisionFromMetadata(metadata);
         const discountCents = Number(object.total_details?.amount_discount || 0);
         const promotionCode = await resolveStripePromotionCode(fetchImpl, cfg, object);
         const confirmed = await purchaseThroughRuntime(fetchImpl, cfg, "confirm", {
@@ -2579,6 +2632,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           paymentIntentId: object.payment_intent ? String(object.payment_intent) : null,
           productType,
           generationId: String(metadata.generation_id || ""),
+          revision,
           amountCents,
           userEmail,
           promotionCode,
@@ -3404,11 +3458,16 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // The price is ours, never the caller's. A product the server does not
         // sell is refused rather than defaulted to the cheaper one.
         if (!spec) return json(res, 400, { error: "unknown_product" });
-        const runs = await listRuns(fetchImpl, token, cfg);
-        const run = requestedRun(runs, String(body.generationId || ""));
-        if (!run) return json(res, 404, { error: "job_not_found" });
+        const generationId = String(body.generationId || "");
+        const revision = await checkoutRevision(fetchImpl, token, cfg, user.id, generationId, String(body.atlasRevisionId || ""));
         const returnPath = typeof body.returnPath === "string" && body.returnPath.startsWith("/")
           ? body.returnPath : "/designpro/jobs";
+        const checkoutReturnUrl = (purchase) => {
+          const target = new URL(`${cfg.appOrigin}${returnPath}`);
+          if (target.origin !== new URL(cfg.appOrigin).origin) throw Object.assign(new Error("checkout_return_origin_invalid"), { status: 400 });
+          target.searchParams.set("purchase", purchase);
+          return target.href;
+        };
         const stripeSession = await stripeCall(fetchImpl, cfg, "checkout/sessions", stripeForm({
           mode: "payment",
           "line_items[0][quantity]": 1,
@@ -3421,12 +3480,16 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           // also how an owner runs the pipeline end to end without paying. The
           // codes live in Stripe; nothing here prices anything.
           allow_promotion_codes: true,
-          success_url: `${cfg.appOrigin}${returnPath}?purchase=${spec.productType}`,
-          cancel_url: `${cfg.appOrigin}${returnPath}?purchase=cancelled`,
-          // The proven metadata, unchanged. This is what reconnects a payment
-          // to the design it was made for.
+          success_url: checkoutReturnUrl(spec.productType),
+          cancel_url: checkoutReturnUrl("cancelled"),
+          // Freeze the exact prepared pack; webhook delivery may occur after
+          // the customer has already authored another revision.
           "metadata[product_type]": spec.productType,
-          "metadata[generation_id]": String(run.generation_id || ""),
+          "metadata[generation_id]": generationId,
+          "metadata[atlas_revision_id]": revision.atlasRevisionId,
+          "metadata[revision_id]": revision.revisionId,
+          "metadata[revision_snapshot_hash]": revision.revisionSnapshotHash,
+          "metadata[entice_run_id]": revision.enticeRunId,
           "metadata[user_id]": user.id,
           "metadata[user_email]": user.email || "",
           "metadata[amount_cents]": String(spec.amountCents),

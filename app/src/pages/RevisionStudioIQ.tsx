@@ -2292,10 +2292,16 @@ export default function RevisionStudioIQ() {
   const [orderingPack, setOrderingPack] = useState(false);
   const orderProductionPack = useCallback(async () => {
     if (!selectedRender?.id) { toast.error("Open a design first."); return; }
+    const atlasRevisionId = selectedVersionTimelineKey?.startsWith("commit:")
+      ? selectedVersionTimelineKey.slice(7) : selectedRender.atlas_revision_id;
+    if (!atlasRevisionId || selectedRender._revisionRequest) {
+      toast.error("Wait for this design revision to finish before ordering."); return;
+    }
     setOrderingPack(true);
     try {
       const session = await dpApi.createCheckoutSession({
         generationId: String(selectedRender.id),
+        atlasRevisionId,
         product: "print_pack_entitlement",
         returnPath: "/revision-studio",
       });
@@ -2304,7 +2310,7 @@ export default function RevisionStudioIQ() {
       toast.error(`Checkout could not be opened: ${error?.message || error}`);
       setOrderingPack(false);
     }
-  }, [selectedRender?.id]);
+  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedRender?._revisionRequest, selectedVersionTimelineKey]);
 
   // ── Cut Production Sheet ──────────────────────────────────────────────────
   // The dimensioned cut sheet: every graphic specced FLAT at its real cut size

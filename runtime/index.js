@@ -404,7 +404,9 @@ app.post("/internal/genie/dimensions/preview", authMiddleware, async (req, res) 
 app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(["amountCents", "checkoutSessionId", "discountCents", "generationId", "paymentIntentId", "productType", "promotionCode", "userEmail"])) {
+    const purchaseKeys = ["amountCents", "checkoutSessionId", "discountCents", "generationId", "paymentIntentId", "productType", "promotionCode", "userEmail"];
+    if (Object.hasOwn(body, "revision")) purchaseKeys.push("revision");
+    if (JSON.stringify(Object.keys(body).sort()) !== JSON.stringify(purchaseKeys.sort())) {
       return res.status(400).json({ error: "purchase_confirm_request_invalid" });
     }
     // The two products the system sells. Anything else is refused rather than
@@ -430,7 +432,22 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
     if ((body.discountCents > 0) !== Boolean(promotionCode)) {
       return res.status(400).json({ error: "purchase_discount_invalid" });
     }
-    const { data, error } = await supabase.rpc("confirm_designpro_purchase", {
+    let revisionParams = null;
+    if (Object.hasOwn(body, "revision")) {
+      const revision = body.revision;
+      if (!revision || JSON.stringify(Object.keys(revision).sort()) !== JSON.stringify(["atlasRevisionId", "enticeRunId", "ownerId", "revisionId", "revisionSnapshotHash"])
+        || !/^[0-9a-f]{64}$/.test(revision.revisionSnapshotHash)) {
+        return res.status(400).json({ error: "purchase_revision_invalid" });
+      }
+      revisionParams = {
+        p_atlas_revision_id: canonicalUuid(revision.atlasRevisionId, "atlasRevisionId"),
+        p_revision_id: canonicalUuid(revision.revisionId, "revisionId"),
+        p_revision_snapshot_hash: revision.revisionSnapshotHash,
+        p_entice_run_id: canonicalUuid(revision.enticeRunId, "enticeRunId"),
+        p_owner_id: canonicalUuid(revision.ownerId, "ownerId"),
+      };
+    }
+    const { data, error } = await supabase.rpc(revisionParams ? "confirm_designpro_revision_purchase" : "confirm_designpro_purchase", {
       p_checkout_session_id: String(body.checkoutSessionId || ""),
       p_payment_intent_id: body.paymentIntentId == null ? null : String(body.paymentIntentId),
       p_product_type: String(body.productType),
@@ -439,6 +456,7 @@ app.post("/internal/purchases/confirm", authMiddleware, async (req, res) => {
       p_user_email: body.userEmail ? String(body.userEmail) : null,
       p_promotion_code: promotionCode || null,
       p_discount_cents: Number(body.discountCents),
+      ...(revisionParams || {}),
     });
     if (error) return res.status(400).json({ error: error.message });
     // Recording the entitlement is the whole of it. The worker's reconciler
