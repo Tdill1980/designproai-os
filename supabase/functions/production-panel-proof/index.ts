@@ -515,7 +515,9 @@ serve(async (req) => {
       nativeGeminiImageKnowledgeInjected:
         /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
       flatPanelProductionProofInjected:
-        /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt),
+        /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
+        || (/flat, print-ready background panels for Zone 2/.test(prompt)
+          && /ZONE 2 — Authoritative backgrounds only/.test(prompt)),
       templateLayoutLocked:
         /Fill the attached template; do not re-flow it\./.test(prompt)
         || /MANDATORY THREE-BAND PRODUCTION LAYOUT/.test(prompt),
