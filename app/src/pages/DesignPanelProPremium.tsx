@@ -2509,6 +2509,11 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             errorCode={generationErrorCode}
                             generationId={generationRequestState?.generationId || visualizationId || generationIdRef.current}
                             requestId={generationRequestState?.requestId || null}
+                            onReturnToBrief={() => {
+                              setRenderError(false);
+                              clearGenerationError();
+                              setLeftColOpen(true);
+                            }}
                             onStartNew={() => {
                               setRenderError(false);
                               clearGenerationError();

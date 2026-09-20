@@ -1138,6 +1138,12 @@ function atlasProofRequestBody({ options, input, sourceViewType, authority, revi
     sourcePanelContentType: authority.contentType,
     sourceAuthorityRole: authority.role,
     sourceAuthorityContract: authority.contract,
+    ...(authority.role === "three-zone-production-proof" ? {
+      targetPanelStoragePath: authority.panel.storagePath,
+      targetPanelHash: authority.panel.contentHash,
+      targetPanelContentType: authority.panel.contentType || "image/png",
+      targetPanelSurfaceKey: authority.panel.surfaceKey,
+    } : {}),
     sourceMasterHash: authority.role === "three-zone-production-proof"
       ? authority.contentHash
       : (authority.panel?.sourceMasterHash || ""),
@@ -1161,6 +1167,12 @@ function atlasProofRequestBody({ options, input, sourceViewType, authority, revi
 async function prefetchAtlasProofsFromPanelProof(options = {}) {
   const sheet = options.sheet;
   if (!sheet?.storagePath || !/^[0-9a-f]{64}$/.test(String(sheet.contentHash || ""))) return [];
+  // Full-sheet context alone lets the renderer borrow a neighbouring panel's
+  // artwork. Wait for canonical persisted panel refs; normal panel-ready
+  // fan-out proceeds independently as each exact crop becomes durable.
+  const panelRefs = options.expectedPanelRefs;
+  if (!panelRefs || Object.values(ATLAS_VIEW_SURFACES).some(surface => !panelRefs[surface]?.storagePath
+    || !/^[0-9a-f]{64}$/.test(String(panelRefs[surface]?.contentHash || "")))) return [];
   const input = options.input && typeof options.input === "object" ? options.input : {};
   const supabaseUrl = String(options.supabaseUrl || process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const serviceRoleKey = String(options.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -1176,7 +1188,7 @@ async function prefetchAtlasProofsFromPanelProof(options = {}) {
   return Promise.allSettled(Object.keys(ATLAS_VIEW_SURFACES).map(async (sourceViewType) => {
     const surfaceKey = ATLAS_VIEW_SURFACES[sourceViewType] || "driver";
     const authority = { ...base, surfaceKey, surfaceSelection: sourceViewType === "close-up" ? "default-driver-detail" : "fixed-by-surface",
-      panel: { surfaceKey, contentHash: String(options.expectedPanelHashes?.[surfaceKey] || "") } };
+      panel: { ...panelRefs[surfaceKey], surfaceKey } };
     const body = atlasProofRequestBody({
       options, input, sourceViewType, authority, revisionId: options.revisionId,
     });

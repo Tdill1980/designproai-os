@@ -50,6 +50,21 @@ describe("AtlasPanelProofSheet", () => {
     expect(panelProofRefreshInterval(undefined, false)).toBe(false);
   });
 
+  it("shows branded panels using bounded regions of their own composed sheet", () => {
+    const p = proof();
+    p.sheet!.geometry = { width: 1536, height: 1024 };
+    p.quadrants!.branded = SURFACES.map((surfaceKey) => panel({ surfaceKey, role: "branded", signedUrl: undefined,
+      sheetRect: { left: 30, top: 140, width: 250, height: 90 } }));
+    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
+    expect((html.match(/viewBox="30 140 250 90"/g) || [])).toHaveLength(6);
+    expect((html.match(/<image href="https:\/\/signed.example\/sheet"/g) || [])).toHaveLength(6);
+    expect(html).not.toContain("Shown on the master sheet above");
+    p.quadrants!.branded[0].sheetRect!.left = 1500;
+    const invalid = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
+    expect((invalid.match(/<image href=/g) || [])).toHaveLength(5);
+    expect(invalid).toContain("Shown on the master sheet above");
+  });
+
   it("shows all three zones from the one sheet, with the sheet itself", () => {
     const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
     expect(html).toContain("https://signed.example/sheet");

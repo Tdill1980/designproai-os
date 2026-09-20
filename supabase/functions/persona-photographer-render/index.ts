@@ -33,6 +33,7 @@ import { Buffer } from "node:buffer";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
 import { authorizeAtlasProviderRequest, putImmutableProviderArtifact } from "../_shared/gemini-provider-cache.mjs";
 import { ATLAS_PROOF_RECOVERY_CONTRACT, runAtlasProofProvider } from "../_shared/atlas-proof-provider.mjs";
+import { targetPanelPart } from "../_shared/atlas-proof-target-panel.mjs";
 
 
 const corsHeaders = {
@@ -538,14 +539,16 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
     // separated production layers. Dimensions/labels/arrows are document
     // annotations and must NEVER be painted onto the vehicle.
     const threeZoneAuthority = String(body.sourceAuthorityRole || "") === "three-zone-production-proof";
+    const targetPart = await targetPanelPart({ body, surfaceKey, bucket: svc.storage.from("wrap-files") });
     const authorityInstruction = threeZoneAuthority ? {
       text: `IMAGE 1 is the exact THREE-ZONE PRODUCTION PANEL PROOF for this vehicle.
 Use ZONE 1 — FULL DESIGN PANELS as the finished wrap-design authority for the requested ${surfaceKey} surface.
 Use Zones 2 and 3 only to understand background/graphic separation and design continuity.
+IMAGE 2 is the exact isolated finished ${surfaceKey} panel from Zone 1, verified against its stored hash. It is the PRIMARY artwork authority for this vehicle surface. Copy this panel's imagery, layout and colors exactly. Do not borrow logos, gears, motifs or scenes from other panels in IMAGE 1. IMAGE 1 remains the full production context; IMAGE 2 resolves which artwork belongs on this surface.
 The printed dimensions, zone headings, panel labels, arrows, borders, guides and document chrome are annotations only. NEVER render those annotations on the vehicle.
 Do not redesign the wrap. Photograph the Zone-1 design on the exact vehicle and requested camera view.`,
     } : null;
-    const parts = [panelPart, ...(authorityInstruction ? [authorityInstruction] : []), { text: prompt }];
+    const parts = [panelPart, ...(targetPart ? [targetPart] : []), ...(authorityInstruction ? [authorityInstruction] : []), { text: prompt }];
 
     let imageBase64: string | null = null;
     let imageMimeType = "image/png";
@@ -557,6 +560,7 @@ Do not redesign the wrap. Photograph the Zone-1 design on the exact vehicle and 
         supabase: svc, ownerId, providerRequest, shotKey, parts, deadlineAt,
         promptContract: ATLAS_PROOF_PROMPT_CONTRACT,
         authority: { panelPath, panelHash, sourceMasterHash: body.sourceMasterHash,
+          targetPanelHash: body.targetPanelHash || null, targetPanelSurfaceKey: body.targetPanelSurfaceKey || null,
           atlasRevisionId: body.atlasRevisionId, generationId: body.generationId, shotKey, surfaceKey },
         // STAY ON PRO FOR EVERY ATTEMPT. FALLBACK_IMAGE_MODEL is Gemini 3.1
         // FLASH -- a weaker image model, not Gemini 3 Pro Image -- and the

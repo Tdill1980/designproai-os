@@ -51,8 +51,14 @@ function inches(panel: PanelProofPanel): string | null {
   return `${panel.widthIn}" × ${panel.heightIn}"`;
 }
 
-function PanelCard({ panel }: { panel: PanelProofPanel }) {
+function PanelCard({ panel, sheet }: { panel: PanelProofPanel; sheet?: AtlasPanelProof["sheet"] }) {
   const size = inches(panel);
+  const rect = panel.sheetRect;
+  const geometry = sheet?.geometry;
+  const sheetCrop = panel.role === "branded" && sheet?.signedUrl && rect && geometry
+    && [rect.left, rect.top, rect.width, rect.height, geometry.width, geometry.height].every(Number.isFinite)
+    && rect.left >= 0 && rect.top >= 0 && rect.width > 0 && rect.height > 0
+    && rect.left + rect.width <= geometry.width && rect.top + rect.height <= geometry.height;
   return (
     <li className="rounded-lg border border-gray-200 bg-white p-2 flex flex-col gap-1">
       {panel.signedUrl ? (
@@ -63,6 +69,14 @@ function PanelCard({ panel }: { panel: PanelProofPanel }) {
             className="w-full max-h-40 object-contain bg-gray-50 rounded"
             loading="lazy"
           />
+        </a>
+      ) : sheetCrop ? (
+        <a href={sheet.signedUrl} target="_blank" rel="noreferrer" className="block">
+          <svg role="img" aria-label={panelLabel(panel)}
+            viewBox={`${rect.left} ${rect.top} ${rect.width} ${rect.height}`}
+            className="w-full max-h-40 rounded bg-gray-50" overflow="hidden">
+            <image href={sheet.signedUrl} width={geometry.width} height={geometry.height} />
+          </svg>
         </a>
       ) : (
         <div className="w-full h-20 flex items-center justify-center rounded bg-gray-50 text-[11px] text-gray-500 text-center px-2">
@@ -135,7 +149,7 @@ export function AtlasPanelProofSheet({
             <p className="text-[11px] text-gray-600 mt-0.5 max-w-2xl">{zone.blurb}</p>
             <ul className="mt-2 grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
               {panels.map((panel) => (
-                <PanelCard key={`${zone.key}:${panel.surfaceKey}`} panel={panel} />
+                <PanelCard key={`${zone.key}:${panel.surfaceKey}`} panel={panel} sheet={proof.sheet} />
               ))}
             </ul>
           </div>

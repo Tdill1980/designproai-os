@@ -6,7 +6,13 @@ export function proofLogoRequested(input) {
   if (input.generateLogo === true) return true;
   const brief = String(input.customerPrompt || '');
   if (/\b(?:no logo|without (?:a )?logo|(?:do not|don't|never)\b[^.!?\n]{0,60}\blogo)\b/i.test(brief)) return false;
-  return /\b(?:create|design|generate|need|want)\s+(?:(?:me|a|an|new|custom|brand|business|company|professional)\s+)*logo\b/i.test(brief);
+  const requests = brief.matchAll(/\b(?:create|design|generate|need|want)\s+([^.!?\n]{0,100}?)\blogo\b/gi);
+  for (const [, modifiers] of requests) {
+    // Descriptive subjects (bicycle-chain, paw-and-floral, sun/lightning) are
+    // valid logo requests. A request for a wrap USING a logo is not one.
+    if (!/\b(?:wrap|vehicle|panel|artwork|using|with|existing|supplied|uploaded|my)\b/i.test(modifiers)) return true;
+  }
+  return false;
 }
 
 // The existing text-layer designer authors a missing brand mark. Its operation

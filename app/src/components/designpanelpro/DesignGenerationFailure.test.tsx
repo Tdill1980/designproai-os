@@ -24,6 +24,15 @@ const render = (props: Partial<React.ComponentProps<typeof DesignGenerationFailu
 };
 
 describe("DesignPro ATLAS failure UI", () => {
+  it("treats an active request limit as waiting before admission, without a new-run action", () => {
+    const onReturnToBrief = vi.fn();
+    const { html, onStartNew } = render({ errorCode: "generation_active_request_limit", error: "generation_active_request_limit", onReturnToBrief });
+    expect(html).toContain("Another design is still generating");
+    expect(html).toContain("Your brief is still here; this design has not started");
+    expect(html).toContain("Return to your brief");
+    expect(html).not.toMatch(/ATLAS generation did not complete|Start New ATLAS Run|Let&#x27;s try|generation_active_request_limit|refused candidates/);
+    expect(onStartNew).not.toHaveBeenCalled();
+  });
   it("offers only saved-record navigation for an unconfirmed provider outcome", () => {
     const { html, onStartNew } = render();
     expect(html).toContain("ATLAS generation did not complete.");

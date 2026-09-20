@@ -3186,6 +3186,8 @@ test("the three-zone panel proof reaches the browser as signed previews, and nev
   assert.match(proof.sheet.signedUrl, /^https:\/\/.*\/storage\/v1\/object\/sign\/wrap-files\/atlas-panel-proof\/1{64}\.png\?token=t$/);
   assert.equal(proof.sheet.contentHash, "1".repeat(64));
   assert.equal(proof.sheet.expiresIn, 300);
+  assert.deepEqual(proof.sheet.geometry, { width: 5056, height: 3392 });
+  assert.deepEqual(proof.quadrants.branded[0].sheetRect, { left: 0, top: 0, width: 10, height: 10 });
 
   // ALL THREE ZONES ARE PRESENT AND DISTINGUISHABLE.
   assert.equal(proof.quadrants.branded.length, 6);

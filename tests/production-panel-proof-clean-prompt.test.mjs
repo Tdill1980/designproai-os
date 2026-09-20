@@ -69,6 +69,21 @@ test('customer direction containing a negative preference survives the scope fil
   assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
 });
 
+test('requested photoreal hero subjects survive the real prompt assembly with priority over patterns',async()=>{
+  for(const direction of [
+    'Include a large photorealistic hero scene of a skilled bicycle mechanic repairing a mountain bike, integrated naturally with the desert-inspired graphics.',
+    'Feature a large photoreal well-groomed dog with a friendly professional groomer on the side panels.',
+    'Feature a large photoreal solar-panel installation scene across the rear three quarters of both sides.',
+  ]) {
+    const {prompt}=await assemble({creativeDirection:direction});
+    assert.ok(prompt.includes(direction));
+    assert.match(prompt,/REQUIRED SUBJECT HIERARCHY:/);
+    assert.match(prompt,/Textures and patterns support the requested subject; they must not replace it/);
+    assert.doesNotMatch(prompt,/wrap pattern artwork only/);
+    assert.match(prompt,/Strictly forbid document frames, headers, text labels/);
+  }
+});
+
 test('legacy non-separated probe retains the existing branded prompt contract',async()=>{
   const {prompt}=await assemble({separatedArtwork:false});
   assert.match(prompt,/Spell the business name exactly/);

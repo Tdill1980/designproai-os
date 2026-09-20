@@ -6,6 +6,8 @@ import { toUuidOrNull } from "@/lib/utils";
 import {
   ATLAS_UNCONFIRMED_OUTCOME_CODE,
   ATLAS_UNCONFIRMED_OUTCOME_MESSAGE,
+  GENERATION_ACTIVE_LIMIT_CODE,
+  GENERATION_ACTIVE_LIMIT_MESSAGE,
   isUnconfirmedProviderOutcome,
 } from "@/lib/designpro-generation-error";
 
@@ -19,10 +21,12 @@ type Props = {
   /** The failed request: when known, the refused Call-1 candidates are shown under the retry. */
   requestId?: string | null;
   onStartNew: () => void;
+  onReturnToBrief?: () => void;
 };
 
 /** Only navigation is available when a paid image request has an unknown outcome. */
-export function DesignGenerationFailure({ isAtlas, error, errorCode, generationId, requestId, onStartNew }: Props) {
+export function DesignGenerationFailure({ isAtlas, error, errorCode, generationId, requestId, onStartNew, onReturnToBrief }: Props) {
+  const waitingForCapacity = errorCode === GENERATION_ACTIVE_LIMIT_CODE || error === GENERATION_ACTIVE_LIMIT_CODE;
   const unconfirmed = isAtlas && isUnconfirmedProviderOutcome(errorCode);
   const savedGenerationId = toUuidOrNull(generationId);
   const refusalRequestId = isAtlas && !unconfirmed ? toUuidOrNull(requestId) : null;
@@ -31,15 +35,20 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
       <div className="my-auto flex shrink-0 flex-col items-center gap-4">
         <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
         <p className="text-white text-base font-semibold text-center">
-          {isAtlas ? "ATLAS generation did not complete." : "Something went wrong."}
+          {waitingForCapacity ? "Another design is still generating" : isAtlas ? "ATLAS generation did not complete." : "Something went wrong."}
         </p>
         {(error || unconfirmed) && (
           <p className="text-sm text-red-300 text-center max-w-md">
-            {unconfirmed && (!error || isUnconfirmedProviderOutcome(error))
+            {waitingForCapacity ? GENERATION_ACTIVE_LIMIT_MESSAGE : unconfirmed && (!error || isUnconfirmedProviderOutcome(error))
               ? ATLAS_UNCONFIRMED_OUTCOME_MESSAGE : error}
           </p>
         )}
-        {unconfirmed ? (
+        {waitingForCapacity ? (
+          <>
+            {onReturnToBrief && <Button onClick={onReturnToBrief} size="sm">Return to your brief</Button>}
+            <Link className="text-sm text-cyan-300 underline underline-offset-4" to="/revision-studio">View your designs</Link>
+          </>
+        ) : unconfirmed ? (
           <>
             <p className="text-sm text-gray-400 text-center max-w-md">
               Opening the saved record does not start another generation.

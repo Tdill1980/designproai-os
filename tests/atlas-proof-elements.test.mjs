@@ -40,3 +40,15 @@ test('only explicit logo requests opt in and negative requests or originals take
   }
   assert.equal(proofLogoRequested({generateLogo:true,hasCustomerLogo:true}),false);
 });
+
+test('live test briefs opt in with descriptive logo subjects',()=>{
+  for (const customerPrompt of [
+    'Generate a new custom bicycle-chain logo: an original copper chain-link emblem forming a bicycle wheel with a small wrench motif; do not use stock clip art or an existing brand.',
+    'Create an original friendly paw-and-floral logo for Desert Bloom Mobile Pet Grooming.',
+    'Create a bold original custom geometric sun-and-lightning logo.',
+    'Design a custom sun/lightning logo.',
+  ]) assert.equal(proofLogoRequested({customerPrompt}),true,customerPrompt);
+  for (const customerPrompt of ['Create a complete wrap with a paw-and-floral logo','Generate artwork using the existing bicycle-chain logo']) {
+    assert.equal(proofLogoRequested({customerPrompt}),false,customerPrompt);
+  }
+});

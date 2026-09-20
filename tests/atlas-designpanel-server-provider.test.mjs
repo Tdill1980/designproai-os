@@ -11,6 +11,7 @@ const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_SERVER_PROVIDER_CONTRACT,
   createAtlasDesignPanelProvider,
+  prefetchAtlasProofsFromPanelProof,
   _test,
 } = require("../runtime/designpanel-server-provider.cjs");
 
@@ -172,6 +173,26 @@ function transportFixture({ proofBytes, panelPaths }) {
   };
   return { posts, atlas, supabase, fetchImpl, surfaces };
 }
+
+test("three-zone proof transport carries the exact target panel as well as the full sheet",async()=>{
+  const proofBytes=await sharp({create:{width:64,height:48,channels:3,background:"#123456"}}).png().toBuffer();
+  const panelPaths=Object.fromEntries(["driver","passenger","hood","roof","front","rear"].map(s=>[s,`panels/${s}.png`]));
+  const f=transportFixture({proofBytes,panelPaths});
+  f.atlas.proofSheet={storagePath:"atlas-panel-proof/full.png",contentHash:"d".repeat(64),contentType:"image/png"};
+  const provider=createAtlasDesignPanelProvider({supabase:f.supabase,supabaseUrl:"https://example.supabase.co",
+    serviceRoleKey:"s".repeat(64),fetchImpl:f.fetchImpl,requestId:REQUEST_ID,generationId:GENERATION_ID,
+    provider:{models:["gemini-3-pro-image"],keyCount:1,generateImage:async()=>assert.fail("transport must not generate locally")},
+    tenantKey:TENANT_KEY,input:{vehicle:{year:"2012",make:"Toyota",model:"Prius"}},atlas:f.atlas});
+  await provider.generateImage({sourceViewType:"rear",attempt:1});
+  const body=f.posts[0].body;
+  assert.equal(body.sourcePanelStoragePath,f.atlas.proofSheet.storagePath);
+  assert.equal(body.sourcePanelHash,f.atlas.proofSheet.contentHash);
+  assert.equal(body.targetPanelStoragePath,panelPaths.rear);
+  assert.equal(body.targetPanelHash,hash(Buffer.from("rear")));
+  assert.equal(body.targetPanelSurfaceKey,"rear");
+  assert.deepEqual(await prefetchAtlasProofsFromPanelProof({sheet:f.atlas.proofSheet,
+    fetchImpl:()=>assert.fail("do not spend a full-sheet-only speculative call")}),[]);
+});
 
 test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver dependency", async () => {
   const proofBytes = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#1565c0" } })

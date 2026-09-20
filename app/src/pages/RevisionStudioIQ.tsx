@@ -4354,6 +4354,9 @@ export default function RevisionStudioIQ() {
     ? { ...selectedRender, render_urls: selectedVersionPresentation?.currentUrls || {},
       atlas_revision_id: historyRevisionId, _revisionRequest: undefined }
     : selectedRender;
+  const productionMissingViews = selectedInspectionRender ? getMissingViews(selectedInspectionRender) : [];
+  const productionProofsReady = selectedViews.length > 0 && productionMissingViews.length === 0
+    && !selectedInspectionRender?._revisionRequest;
   const immutableHistoryHero = useMemo(() => {
     if (!isViewingImmutableVersion || !selectedVersionPresentation) return null;
     // The seven angle controls inspect the selected saved version, too.
@@ -6285,12 +6288,18 @@ export default function RevisionStudioIQ() {
                 <Button
                   className="w-full bg-blue-600 hover:bg-blue-700 h-11"
                   onClick={() => { void orderProductionPack(); }}
-                  disabled={!selectedRender || orderingPack}
+                  disabled={!selectedRender || orderingPack || !productionProofsReady}
                 >
                   {orderingPack
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Opening checkout…</>
                     : <><Package className="w-4 h-4 mr-2" /> Order Production Files</>}
                 </Button>
+
+                {selectedViews.length > 0 && productionMissingViews.length > 0 && (
+                  <p className="text-xs text-amber-300" role="status">
+                    {productionMissingViews.length} missing view{productionMissingViews.length === 1 ? "" : "s"}: {productionMissingViews.map(key => VIEW_LABELS[key] || key).join(", ")}. Complete the missing view before ordering production files. Use Generate Missing Views above.
+                  </p>
+                )}
 
                 {/* CUT GRAPHICS PACK — upsell enticement under the print panels.
                     A DesignPro / RecreatePro PRINTED wrap doesn't produce cut vinyl

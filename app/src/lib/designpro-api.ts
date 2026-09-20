@@ -239,6 +239,8 @@ export type AtlasRefusal = {
  * exists", which is not the same as zero and must never be printed as one.
  */
 export type PanelProofPanel = {
+  /** Exact Zone 1 image region of this response’s composed sheet. */
+  sheetRect?: { left: number; top: number; width: number; height: number };
   surfaceKey: string;
   role: "branded" | "clean" | "cut-graphic";
   byteSize: number | null;
@@ -274,7 +276,7 @@ export type AtlasPanelProof = {
   topology?: string | null;
   promptVersion?: string | null;
   masterContentHash?: string | null;
-  sheet?: { contentHash: string; signedUrl?: string; expiresIn?: number };
+  sheet?: { contentHash: string; signedUrl?: string; expiresIn?: number; geometry?: { width: number; height: number } };
   quadrants?: {
     /** Zone 1 — described only: it became the accepted master, read via /atlas. */
     branded: PanelProofPanel[];

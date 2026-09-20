@@ -78,7 +78,9 @@ async function gateway(t,{runtime,changeWorkspace,changeSource,changeRun}={}) {
     if(url.endsWith('/auth/v1/user'))return Response.json({id:OWNER,email:'checkout@example.test'});
     if(url.endsWith('/rest/v1/rpc/designpro_atlas_revision_workspace')) {
       assert.deepEqual(JSON.parse(init.body),{p_generation_id:GENERATION,p_atlas_revision_id:ATLAS});
-      const row={generationId:GENERATION,atlasRevisionId:ATLAS,ownerId:OWNER,requestId:REQUEST,state:'outputs_ready',viewsSuperseded:false};
+      const pairs=[['side','driver'],['passenger-side','passenger'],['hood_detail','hood'],['roof','roof'],['front','front'],['rear','rear'],['close-up','closeup']];
+      const row={generationId:GENERATION,atlasRevisionId:ATLAS,ownerId:OWNER,requestId:REQUEST,state:'outputs_ready',viewsSuperseded:false,masterContentHash:HASH,
+        views:pairs.map(([sourceViewType,consumerRole],i)=>({sourceViewType,consumerRole,atlasRevisionId:ATLAS,atlasMasterContentHash:HASH,contentHash:'b'.repeat(64),byteSize:100,storagePath:`designpro/user_${OWNER}/${GENERATION}/calls-1-7/${i}.png`}))};
       return Response.json(changeWorkspace?changeWorkspace(row):row);
     }
     if(url.includes('/rest/v1/designpro_revision_sources?')) {
@@ -204,4 +206,14 @@ test('runtime and SQL refuse absent revision fields, non-service callers and une
   const response=await runtime(basePayload);assert.equal(response.status,400);
   assert.equal((await response.json()).error,'service_role_required');
   assert.equal((await db.query('SELECT count(*)::int n FROM public.designpro_purchase_entitlements')).rows[0].n,0);
+});
+
+for(const [name,change]of [
+  ['missing rear',row=>({...row,views:row.views.filter(view=>view.consumerRole!=='rear')})],
+  ['different master',row=>({...row,views:row.views.map(view=>({...view,atlasMasterContentHash:'c'.repeat(64)}))})],
+  ['duplicate view',row=>({...row,views:[...row.views.slice(0,6),row.views[0]]})],
+])test(`production checkout refuses ${name} before Stripe`,async t=>{
+  const g=await gateway(t,{changeWorkspace:change}),response=await checkout(g.base);
+  assert.equal(response.status,409);assert.match((await response.json()).error,/checkout_proofs_incomplete/);
+  assert.equal(g.stripeForms.length,0);
 });

@@ -29,6 +29,8 @@ import { classifyDesignIqCombinedContact } from "@/lib/designpro-input-normaliza
 import {
   ATLAS_UNCONFIRMED_OUTCOME_CODE,
   ATLAS_UNCONFIRMED_OUTCOME_MESSAGE,
+  GENERATION_ACTIVE_LIMIT_CODE,
+  GENERATION_ACTIVE_LIMIT_MESSAGE,
   isUnconfirmedProviderOutcome,
 } from "@/lib/designpro-generation-error";
 
@@ -830,7 +832,13 @@ export const useDesignPanelProLogic = (
             || (!atlasNewRunRequired(error) && (recoveryStatus === 401 || recoveryStatus === 403))) {
             effectiveError = recoveryError;
           }
-          recoveredViews = atlasNewRunRequired(effectiveError) ? [] : latestObservedViews;
+          // Keep already displayed review evidence for a completed partial set.
+          // This never accepts it for production or overrides auth/identity denial.
+          const partialReviewEvidence = latestRequestState?.state === "outputs_ready"
+            && (latestRequestState.failedShots?.length || 0) > 0
+            && String(effectiveError?.code || effectiveError?.message || "") === "flat_first_atlas_new_run_required"
+            && recoveryStatus !== 401 && recoveryStatus !== 403;
+          recoveredViews = atlasNewRunRequired(effectiveError) && !partialReviewEvidence ? [] : latestObservedViews;
         }
       }
       const usableViews = recoveredViews.filter((view) => view.signedUrl);
@@ -889,6 +897,8 @@ export const useDesignPanelProLogic = (
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
           ? "The new ATLAS master was rejected during visual quality inspection. No proof set was saved. Start a new ATLAS run."
+          : code === GENERATION_ACTIVE_LIMIT_CODE
+          ? GENERATION_ACTIVE_LIMIT_MESSAGE
           : code === "generation_pipeline_mode_mismatch"
           ? "This design mode is temporarily unavailable. No production order was created."
           : code === "generation_input_conflict"

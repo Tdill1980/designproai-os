@@ -79,6 +79,21 @@ async function observeThenRecover(originalError: Error, recoveryError: Error, sh
 }
 
 describe("DesignPro recovery respects the latest owner-read refusal", () => {
+  it("keeps a rejected admission distinct from a failed paid generation", async () => {
+    vi.mocked(startStandaloneGeneration).mockRejectedValueOnce(new ApiError(409, "generation_active_request_limit"));
+    const result = await renderHook().generateFromPrompt(
+      { generationId: "northline-test", prompt: "Northline Solar & Battery" } as DesignIQParams,
+      { year: "2024", make: "Ford", model: "F-150" },
+      FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    );
+    expect(result.generationId).toBeNull();
+    expect(result.error).toContain("this design has not started");
+    expect(renderHook().generationErrorCode).toBe("generation_active_request_limit");
+    expect(startStandaloneGeneration).toHaveBeenCalledTimes(1);
+    expect(waitForGeneration).not.toHaveBeenCalled();
+    expect(handoffGeneration).not.toHaveBeenCalled();
+    expect(listDesignPanelViews).not.toHaveBeenCalled();
+  });
   it.each([false, true])("keeps an unconfirmed Call 1 addressable with recovery lineage refusal=%s and blocks another model submission", async (lineageRefused) => {
     const failed: GenerationRequestState = { ...accepted, state: "failed", shotsComplete: 0, views: [], failureCode: "provider_outcome_unknown" };
     vi.mocked(waitForGeneration).mockImplementationOnce(async (_requestId, options) => {
@@ -119,6 +134,28 @@ describe("DesignPro recovery respects the latest owner-read refusal", () => {
     expect(startStandaloneGeneration).toHaveBeenCalledTimes(1);
     expect(waitForGeneration).toHaveBeenCalledTimes(1);
     expect(handoffGeneration).not.toHaveBeenCalled();
+  });
+
+  it("retains completed partial proofs and Call 1 identity when production reuse requires seven views", async () => {
+    const partial = { ...accepted, state: "outputs_ready" as const, shotsComplete: 6,
+      failedShots: [{ sourceViewType: "rear", reason: "semantic_review_required" }] };
+    vi.mocked(waitForGeneration).mockImplementationOnce(async (_id, options) => {
+      options?.onState?.(partial);
+      await options?.onViews?.([driver]);
+      throw new ApiError(409, "flat_first_atlas_new_run_required");
+    });
+    vi.mocked(listDesignPanelViews).mockRejectedValueOnce(new ApiError(409, "flat_first_atlas_new_run_required"));
+    const result = await renderHook().generateFromPrompt(
+      { generationId: accepted.generationId, prompt: "Copper Canyon Coffee" } as DesignIQParams,
+      { year: "2012", make: "Toyota", model: "Prius" }, FLAT_FIRST_ATLAS_PIPELINE_MODE,
+    );
+    const display = renderHook();
+    expect(result.error).toBeTruthy();
+    expect(display.generatedImageUrl).toBe(driver.signedUrl);
+    expect(display.generationRequestState?.requestId).toBe(accepted.requestId);
+    expect(display.visualizationId).toBe(accepted.generationId);
+    expect(handoffGeneration).not.toHaveBeenCalled();
+    expect(startStandaloneGeneration).toHaveBeenCalledTimes(1);
   });
 
   it.each(["flat_first_atlas_new_run_required", "generation_atlas_lineage_invalid"])(

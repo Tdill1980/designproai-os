@@ -483,7 +483,7 @@ async function listRuns(fetchImpl, token, cfg, revisionId = null) {
 
 // Checkout freezes the revision being viewed, never whichever run is newest
 // when Stripe eventually delivers its webhook. All reads use the caller's RLS.
-async function checkoutRevision(fetchImpl, token, cfg, userId, generationId, atlasRevisionId) {
+async function checkoutRevision(fetchImpl, token, cfg, userId, generationId, atlasRevisionId, requireCompleteProofs = false) {
   if (!UUID_PATTERN.test(generationId) || !UUID_PATTERN.test(atlasRevisionId)) {
     throw Object.assign(new Error("checkout_revision_required"), { status: 400 });
   }
@@ -492,8 +492,29 @@ async function checkoutRevision(fetchImpl, token, cfg, userId, generationId, atl
   });
   if (workspace?.generationId !== generationId || workspace.atlasRevisionId !== atlasRevisionId
     || workspace.ownerId !== userId || !UUID_PATTERN.test(workspace.requestId)
-    || workspace.viewsSuperseded === true || workspace.state !== "outputs_ready") {
+    || workspace.viewsSuperseded === true) {
     throw Object.assign(new Error("checkout_revision_not_ready"), { status: 409 });
+  }
+  if (workspace.state !== "outputs_ready") {
+    throw Object.assign(new Error(["queued", "leased", "retryable", "processing"].includes(workspace.state)
+      ? "checkout_revision_not_ready: This design is still generating. Wait for its proof views before ordering."
+      : "checkout_revision_not_ready"), { status: 409 });
+  }
+  if (requireCompleteProofs) {
+    const views = (Array.isArray(workspace.views) ? workspace.views : []).filter(view =>
+      GENERATION_VIEW_ROLE.get(view.sourceViewType) === view.consumerRole
+      && view.atlasRevisionId === atlasRevisionId
+      && SHA256_PATTERN.test(String(workspace.masterContentHash || ""))
+      && view.atlasMasterContentHash === workspace.masterContentHash
+      && SHA256_PATTERN.test(String(view.contentHash || ""))
+      && Number.isSafeInteger(view.byteSize) && view.byteSize > 0
+      && authorizedGenerationViewPath(String(view.storagePath || ""), userId, generationId));
+    if (!compatibleGenerationViewSet(views, true)) {
+      const present = new Set(views.map(view => view.sourceViewType));
+      const missing = CORE_GENERATION_VIEW_TYPES.filter(type => !present.has(type)).map(type => GENERATION_VIEW_ROLE.get(type));
+      if (!present.has("close-up") && !present.has("hero-3d")) missing.push("closeup");
+      throw Object.assign(new Error(`checkout_proofs_incomplete: ${missing.join(", ") || "invalid proof set"}. Complete the missing proof views before ordering production files.`), { status: 409 });
+    }
   }
   const response = await upstream(fetchImpl,
     `${cfg.supabaseUrl}/rest/v1/designpro_revision_sources?select=revision_id,snapshot_hash,generation_id,owner_id,visualization_id&visualization_id=eq.${workspace.requestId}&generation_id=eq.${generationId}&owner_id=eq.${userId}&limit=2`,
@@ -1106,6 +1127,10 @@ function validatedAtlasPanelProof(value, requestId) {
   if (!PANEL_PROOF_SHEET_PATH.test(sheetPath) || !SHA256_PATTERN.test(sheetHash)) {
     throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
   }
+  const geometry = value.sheet?.geometry;
+  const sheetWidth = measuredNumber(geometry?.width);
+  const sheetHeight = measuredNumber(geometry?.height);
+  const sheetGeometry = sheetWidth > 0 && sheetHeight > 0 ? { width: sheetWidth, height: sheetHeight } : null;
   const quadrants = value.quadrants && typeof value.quadrants === "object" ? value.quadrants : {};
   const branded = Array.isArray(quadrants.branded) ? quadrants.branded : [];
   const clean = Array.isArray(quadrants.clean) ? quadrants.clean : [];
@@ -1123,7 +1148,7 @@ function validatedAtlasPanelProof(value, requestId) {
     promptVersion: value.promptVersion ? String(value.promptVersion).slice(0, 200) : null,
     masterContentHash: SHA256_PATTERN.test(String(value.masterContentHash || "").toLowerCase())
       ? String(value.masterContentHash).toLowerCase() : null,
-    sheet: { contentHash: sheetHash, storagePath: sheetPath },
+    sheet: { contentHash: sheetHash, storagePath: sheetPath, ...(sheetGeometry ? { geometry: sheetGeometry } : {}) },
     quadrants: {
       // Zone 1 is described, not stored twice: it became the accepted master,
       // which /atlas already signs. Publishing a second copy here would be the
@@ -1133,11 +1158,22 @@ function validatedAtlasPanelProof(value, requestId) {
         if (!PANEL_PROOF_SURFACES.has(surfaceKey) || String(row?.role || "") !== "branded") {
           throw Object.assign(new Error("atlas_panel_proof_response_invalid"), { status: 502 });
         }
+        const rect = row?.rect;
+        const left = measuredNumber(rect?.left ?? rect?.x);
+        const top = measuredNumber(rect?.top ?? rect?.y);
+        const width = measuredNumber(rect?.width);
+        const height = measuredNumber(rect?.height);
+        const bounded = sheetGeometry && left !== null && top !== null
+          && left >= 0 && top >= 0 && width > 0 && height > 0
+          && left + width <= sheetGeometry.width && top + height <= sheetGeometry.height;
         return {
           surfaceKey,
           role: "branded",
           byteSize: measuredNumber(row?.byteSize),
           fit: measuredNumber(row?.fit),
+          widthIn: measuredNumber(row?.widthIn),
+          heightIn: measuredNumber(row?.heightIn),
+          ...(bounded ? { sheetRect: { left, top, width, height } } : {}),
         };
       }),
       clean: clean.map((row) => validatedPanelProofQuadrantPanel(row,
@@ -3487,7 +3523,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         // sell is refused rather than defaulted to the cheaper one.
         if (!spec) return json(res, 400, { error: "unknown_product" });
         const generationId = String(body.generationId || "");
-        const revision = await checkoutRevision(fetchImpl, token, cfg, user.id, generationId, String(body.atlasRevisionId || ""));
+        const revision = await checkoutRevision(fetchImpl, token, cfg, user.id, generationId, String(body.atlasRevisionId || ""), spec.productType === "print_pack_entitlement");
         const returnPath = typeof body.returnPath === "string" && body.returnPath.startsWith("/")
           ? body.returnPath : "/designpro/jobs";
         const checkoutReturnUrl = (purchase) => {
