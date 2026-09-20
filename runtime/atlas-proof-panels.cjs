@@ -39,12 +39,37 @@ const MIN_POSITION_OVERLAP = 0.8;
 // near-equal aspect surfaces require a unique spatial anchor in the template.
 // Reflowed identical flanks therefore refuse rather than being guessed.
 function identifyPanels(detected, cells, layout, sheet) {
-  if (detected.length !== cells.length) {
-    return { refused: `panel_count:${detected.length}!=${cells.length}` };
+  if (detected.length < cells.length) {
+    return { refused: `panel_count:${detected.length}<${cells.length}` };
   }
+
+  // The locator can legitimately see one extra document component (for
+  // example a rule, caption block, or border) inside a proof band. Ignore only
+  // components that cannot match ANY of the six physical panel aspect ratios.
+  // If more than six plausible panels remain, fail closed exactly as before.
+  const plausible = [];
+  for (const panel of detected) {
+    const { x, y, w, h } = panel;
+    if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0
+      || w <= 0 || h <= 0 || x + w > sheet.width || y + h > sheet.height) {
+      return { refused: "panel_bounds_invalid" };
+    }
+    const aspect = w / h;
+    const candidates = cells.filter((cell) => {
+      const expected = cell.widthIn / cell.heightIn;
+      return Number.isFinite(expected) && expected > 0
+        && Math.max(aspect / expected, expected / aspect) <= MAX_IDENTITY_ASPECT_DRIFT;
+    });
+    if (candidates.length === 0 && detected.length > cells.length) continue;
+    plausible.push(panel);
+  }
+  if (plausible.length !== cells.length) {
+    return { refused: `panel_count:${detected.length}->${plausible.length}!=${cells.length}` };
+  }
+
   const assignments = [];
   const used = new Set();
-  for (const panel of detected) {
+  for (const panel of plausible) {
     const { x, y, w, h } = panel;
     if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0
       || w <= 0 || h <= 0 || x + w > sheet.width || y + h > sheet.height) {
