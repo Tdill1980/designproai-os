@@ -617,50 +617,76 @@ async function assemblePanelProofMaster({
   const displayCells = new Map(displayLayout.zone1.map(cell => [cell.surfaceKey,
     scaleCell(cell,displayLayout,cut.sheet)]));
   zone1 = composed.panels.map(p => ({...p,displayRect:displayCells.get(p.surfaceKey)}));
-  zone3 = assets.map(({bytes,...ref}) => ({...ref,surfaceKey:ref.role,assetRole:ref.role,role:"cut-graphic",persisted:true,productionApproved:false}));
 
-  // Replace the model's provisional Zone 1 and Zone 3 in the displayed proof.
-  // The customer sees the SAME composed panels the master consumes.
-  const proofLayers = [];
-  const zone1Top = Math.round(cut.sheet.height*PROOF_REGIONS.zone1.y);
-  const zone1Bottom = Math.round(cut.sheet.height*PROOF_REGIONS.zone2.y);
-  const blankTemplate = await renderContainerTemplate({manifest:proofManifest});
-  // Only document chrome is scaled to the sheet here. Artwork retains its
-  // aspect through contain below, and source Zone 2 bytes remain unchanged.
-  const cleanZone1Band = await sharp(blankTemplate)
+  // THE CUSTOMER-VISIBLE CALL 1 IS BUILT BY CODE, NEVER BY GEMINI.
+  // Gemini's returned canvas is only an internal background-art staging source.
+  // Start from the deterministic Studio template so every header, dimension,
+  // zone bar, caption, note and footer is exact; then place the exact clean
+  // backgrounds, the deterministic branded composites, and the original assets.
+  const vehicle = input?.vehicle || {};
+  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model]
+    .map(v => String(v || "").trim()).filter(Boolean).join(" ");
+  const blankTemplate = await renderContainerTemplate({
+    manifest: proofManifest,
+    companyName: input?.companyName || input?.businessName || "",
+    vehicle: vehicleLabel,
+    bleedInches: 5,
+    job: {
+      date: input?.proofDate || "",
+      order: input?.orderNumber || "",
+      designer: input?.designer || "",
+      version: input?.proofVersion || "",
+    },
+  });
+  const proofBase = await sharp(blankTemplate)
     .resize(cut.sheet.width,cut.sheet.height,{fit:"fill"})
-    .extract({left:0,top:zone1Top,width:cut.sheet.width,height:zone1Bottom-zone1Top})
     .png().toBuffer();
-  proofLayers.push({input:cleanZone1Band,left:0,top:zone1Top});
+  const proofLayers = [];
+
+  // Zone 2: the exact clean backgrounds Gemini authored. No redraw.
+  for (const p of zone2) {
+    proofLayers.push({
+      input: await sharp(p.bytes).resize(p.rect.width,p.rect.height,{fit:"fill"}).png().toBuffer(),
+      left: p.rect.left, top: p.rect.top,
+    });
+  }
+
+  // Zone 1: those SAME backgrounds plus protected customer assets, composited
+  // deterministically by compositeProductionPanels().
   for (const p of zone1) {
     const r = p.displayRect;
-    proofLayers.push({input:await sharp(p.bytes).resize(r.width,r.height,{fit:"contain",background:"white"})
-      .png().toBuffer(),left:r.left,top:r.top});
+    proofLayers.push({
+      input: await sharp(p.bytes).resize(r.width,r.height,{fit:"fill"}).png().toBuffer(),
+      left: r.left, top: r.top,
+    });
   }
-  const band = PROOF_REGIONS.zone3;
-  const bandTop = Math.round(cut.sheet.height*band.y), bandHeight = Math.floor(cut.sheet.height*band.h);
-  proofLayers.push({input:await sharp({create:{width:cut.sheet.width,height:bandHeight,channels:3,background:"white"}})
-    .png().toBuffer(),left:0,top:bandTop});
-  const headingHeight = Math.max(24,Math.round(bandHeight*0.16));
-  proofLayers.push({input:Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${cut.sheet.width}" height="${headingHeight}"><rect width="100%" height="100%" fill="#e96900"/><text x="16" y="${headingHeight*0.7}" font-size="${headingHeight*0.6}" font-family="sans-serif" fill="white">ZONE 3 — ORIGINAL GRAPHICS + OUTLINED TEXT</text></svg>`),left:0,top:bandTop});
-  const slotWidth = Math.floor(cut.sheet.width/assets.length);
-  for (let i=0;i<assets.length;i++) {
-    proofLayers.push({input:await sharp(assets[i].bytes,{density:300,limitInputPixels:40000000})
-      .resize(slotWidth-20,bandHeight-headingHeight-20,{fit:"contain",background:"white"}).png().toBuffer(),
-      left:i*slotWidth+10,top:bandTop+headingHeight+10});
+
+  // Zone 3: original logo / outlined type / contact assets, placed into the
+  // code-drawn slots. The template captions remain code-owned and untouched.
+  const slotIndex = { logo: 0, typography: 1, contact: 2, promo: 3, icons: 4 };
+  const zone3Cells = displayLayout.zone3.map(cell => scaleCell(cell,displayLayout,cut.sheet));
+  for (const asset of assets) {
+    const index = Number.isInteger(slotIndex[asset.role]) ? slotIndex[asset.role] : -1;
+    if (index < 0 || !zone3Cells[index]) continue;
+    const r = zone3Cells[index];
+    const pad = Math.max(6, Math.round(Math.min(r.width,r.height)*0.08));
+    proofLayers.push({
+      input: await sharp(asset.bytes,{density:300,limitInputPixels:40000000})
+        .resize(Math.max(1,r.width-pad*2),Math.max(1,r.height-pad*2),{fit:"contain",background:"white"})
+        .png().toBuffer(),
+      left:r.left+pad, top:r.top+pad,
+    });
   }
-  const proofBytes = await sharp(sheet.bytes).composite(proofLayers).png().toBuffer();
+
+  const proofBytes = await sharp(proofBase).composite(proofLayers).png().toBuffer();
   const storedComposedProof = await persist({storagePath:`atlas-panel-proof/${sha256(proofBytes)}.png`,
     bytes:proofBytes,contentType:"image/png"});
-  // CUSTOMER CALL 1 IS THE GEMINI THREE-ZONE SHEET. Do not replace its identity
-  // with the deterministic production composition. The composition remains a
-  // production artifact for PanelPro/QC, while the exact sheet the customer saw
-  // is also the exact multimodal authority Call 2 photographs.
   const composedProof = {
     storagePath: storedComposedProof.storagePath,
     contentHash: storedComposedProof.contentHash,
     byteSize: proofBytes.length,
     contentType: "image/png",
+    contract: "designpro.code-owned-three-zone-production-proof.v1",
   };
 
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
@@ -789,11 +815,19 @@ async function assemblePanelProofMaster({
       contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
       topology: PANEL_PROOF_TOPOLOGY,
       promptVersion: sheet.promptVersion || null,
-      proofContract: sheet.contract || null,
-      proofSha256: sheet.contentHash || null,
-      proofStoragePath: sheet.storagePath || null,
-      proofByteSize: sheet.byteSize || sheet.bytes.length,
-      proofContentType: sheet.sheetShape?.mime || "image/png",
+      proofContract: composedProof.contract,
+      proofSha256: composedProof.contentHash,
+      proofStoragePath: composedProof.storagePath,
+      proofByteSize: composedProof.byteSize,
+      proofContentType: composedProof.contentType,
+      sourceArtwork: {
+        storagePath: sheet.storagePath || null,
+        contentHash: sheet.contentHash || null,
+        byteSize: sheet.byteSize || sheet.bytes.length,
+        contentType: sheet.sheetShape?.mime || null,
+        model: sheet.model || null,
+        role: "internal-background-artwork-staging",
+      },
       productionComposedProof: composedProof,
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
