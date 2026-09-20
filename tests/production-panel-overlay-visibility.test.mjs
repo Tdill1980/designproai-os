@@ -25,9 +25,11 @@ test('missing typography or duplicate placements refuse rather than succeed',asy
  await assert.rejects(compositeProductionPanels(f),{code:'atlas_composite_asset_coverage_invalid'});
  const g=await fixture();g.placements.push(g.placements[0]);await assert.rejects(compositeProductionPanels(g),{code:'atlas_composite_asset_coverage_invalid'});
 });
-test('off-panel, empty and unreadably small overlays refuse',async()=>{
+test('off-panel and empty overlays refuse; tiny text is omitted while readable branding survives',async()=>{
  const f=await fixture();f.placements[1].box.xPct=.9;await assert.rejects(compositeProductionPanels(f),{code:'atlas_composite_bounds_invalid'});
- const g=await fixture();g.placements[1].box.hPct=.01;await assert.rejects(compositeProductionPanels(g),{code:'atlas_composite_text_unreadable'});
+ const g=await fixture();g.placements[1].box.hPct=.01;const tiny=await compositeProductionPanels(g);
+ assert.equal(tiny.panels.find(p=>p.surfaceKey===g.placements[1].surfaceKey).applied.some(a=>a.role===g.placements[1].role),false);
+ assert.ok(tiny.panels.find(p=>p.surfaceKey===g.placements[1].surfaceKey).applied.length>0);
  const h=await fixture();const a=h.assets[1];a.bytes=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"></svg>');a.byteSize=a.bytes.length;a.contentHash=hash(a.bytes);h.placements.filter(p=>p.role===a.role).forEach(p=>p.contentHash=a.contentHash);
  await assert.rejects(compositeProductionPanels(h),{code:'atlas_composite_overlay_empty'});
 });
