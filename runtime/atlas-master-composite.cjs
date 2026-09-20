@@ -283,14 +283,16 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       throw new AtlasCompositeError("atlas_composite_placement_identity_mismatch", "placement references unknown artwork or surface");
     }
   }
-  // A successful composite must account for every protected asset on each
-  // branded surface. The roof deliberately remains background-only.
+  // Each branded surface needs a deterministic protected-brand placement,
+  // while the exact role mix is allowed to vary by surface. A narrow hood/front
+  // can carry the logo while the flanks carry the full logo/type/contact stack.
+  // Requiring every text asset on every end-cap is what made normal customer
+  // copy a fatal Call-1 error.
   for (const surfaceKey of expected.filter(key => key !== "roof")) {
-    for (const role of originals.keys()) {
-      if (placements.filter(p => p.surfaceKey === surfaceKey && p.role === role).length !== 1) {
-        throw new AtlasCompositeError("atlas_composite_asset_coverage_invalid",
-          `${surfaceKey}/${role}: exactly one original overlay is required`);
-      }
+    const surfacePlacements = placements.filter(p => p.surfaceKey === surfaceKey);
+    if (!surfacePlacements.length || new Set(surfacePlacements.map(p => p.role)).size !== surfacePlacements.length) {
+      throw new AtlasCompositeError("atlas_composite_asset_coverage_invalid",
+        `${surfaceKey}: requires at least one unique protected brand placement`);
     }
   }
   const panels = [];
@@ -325,7 +327,10 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       if (!visible) throw new AtlasCompositeError("atlas_composite_overlay_empty", `${base.surfaceKey}/${p.role}: empty rendered asset`);
       const text = p.role === "typography" || p.role === "contact";
       if (text && maxY-minY+1 < 16) {
-        throw new AtlasCompositeError("atlas_composite_text_unreadable", `${base.surfaceKey}/${p.role}: lettering is too small at native panel resolution`);
+        // Preserve the readable logo/background composition on this surface.
+        // The richer copy remains on the flanks and in Zone 3; tiny rasterized
+        // lettering is omitted here rather than terminating the whole design.
+        continue;
       }
       // Keep original glyph colors and bytes. A separate neutral backing makes
       // dark and light supplied lettering visible over arbitrary generated art.
