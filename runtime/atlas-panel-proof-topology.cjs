@@ -339,8 +339,8 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
   const vehicle = input?.vehicle || {};
   const customerAssets = await stageCustomerAssets({ store, customerImageParts, logger });
   const sheet = await callProofEdge({
-    // The customer's own logo and references, by identity. Empty when they
-    // uploaded none — never omitted silently when they did.
+    // Verified VisionBoard references, by identity. Protected Zone-3 originals
+    // are retained by the compositor, outside this image-generation request.
     customerAssets,
     separatedArtwork: true,
     // The customer's own words. The edge's intake node parses vehicle, contact
@@ -354,9 +354,18 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     services: input?.services || input?.bulletPoints || [],
     promo: input?.promo || input?.promotionalText || "",
     finish: input?.finish || "Gloss",
+    brandColors: String(input?.brandColors || "").trim()
+      || (Array.isArray(input?.colors) ? input.colors.map(String).filter(Boolean).join(", ") : String(input?.colors || "").trim()),
+    style: String(input?.style || "").trim(),
+    fontStyle: String(input?.fontStyle || "").trim(),
+    industryType: String(input?.industryType || input?.industry || "").trim(),
+    styleDescriptors: String(input?.styleDescriptors || "").trim(),
+    visionboard_intent: ["exact_reference", "artboard_projection"].includes(String(input?.visionboardIntent || "").trim())
+      ? "exact_reference" : "style_inspiration",
     vehicleYear: vehicle.year || null,
     vehicleMake: vehicle.make || null,
     vehicleModel: vehicle.model || null,
+    vehicleType: vehicle.type || vehicle.vehicleClass || null,
     panelRows,
     // THE OPERATION IDENTITY, STABLE ACROSS A RECOVERY.
     //

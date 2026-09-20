@@ -156,3 +156,38 @@ test("the live 35212228736 evidence shape passes, and it is the reconciled one",
   assert.equal(production.metadata.proofReconciledForProduction, true);
   assert.equal(run(production), true);
 });
+
+
+test("automatic canary approvals reject another owner, revision, or run", async () => {
+  const body = src.slice(src.indexOf("async function assertCanaryRun("), src.indexOf("async function confirmOwnerPromotionEntitlement("));
+  const verify = new Function("fetchRun", "evidence", "CUSTOMER_EMAIL", "DESIGNATED_CUSTOMER_EMAIL",
+    `${body}; return assertCanaryRun;`);
+  const evidence = {operator:{id:"operator"},generationId:"gen",revisionId:"rev",enticeRunId:"entice",productionRunId:"prod"};
+  const run = {owner_id:"operator",revision_id:"rev"};
+  await verify(async()=>run,evidence,"test","test")("prod","gen");
+  for (const row of [{...run,owner_id:"customer"},{...run,revision_id:"other"}]) {
+    await assert.rejects(verify(async()=>row,evidence,"test","test")("prod","gen"),/outside the designated/);
+  }
+  await assert.rejects(verify(async()=>run,evidence,"test","test")("other","gen"),/outside the designated/);
+  await assert.rejects(verify(async()=>run,evidence,"real-customer","test")("prod","gen"),/outside the designated/);
+});
+
+test("three-zone canary proves pristine composition and rejects missing logo or panel identity", () => {
+  const body = src.slice(src.indexOf("  const panelProof = atlasRow.metadata?.panelProofAuthoring;"),
+    src.indexOf("  // DECLARING THE BRAND FIELDS IS NOT THE SAME AS PROVING THE GRAPH RAN."));
+  const verify = new Function("atlasRow","customerLogo","CALL_ONE_SURFACES","COMPANY_NAME","COMPANY_PHONE","COMPANY_WEBSITE","evidence","step",body);
+  const logo = {assetRole:"logo",storagePath:"original.png",contentHash:"f".repeat(64),byteSize:100,contentType:"image/png",persisted:true};
+  const panel = surfaceKey => ({surfaceKey,positionalPremiseVerified:true,persisted:true,storagePath:surfaceKey,contentHash:"a".repeat(64)});
+  const proof = {composition:{contract:"designpro.production-zone-composite.v1",sourceAssetsPreserved:true,
+    placements:SURFACES.filter(s=>s!=="roof").map(surfaceKey=>({...logo,role:"logo",surfaceKey,flipped:false}))},
+    threeZoneLayout:{required:true},proofStoragePath:"proof.png",proofSha256:"e".repeat(64),
+    quadrants:{branded:SURFACES.map(panel),clean:SURFACES.map(panel),cutGraphics:[logo]}};
+  const check = p => verify({metadata:{panelProofAuthoring:p}},logo,SURFACES,"","","",{},()=>{});
+  check(proof);
+  const missingLogo = structuredClone(proof); missingLogo.quadrants.cutGraphics=[];
+  assert.throws(()=>check(missingLogo),/preserve the exact uploaded/);
+  const melted = structuredClone(proof); melted.composition.placements[0].contentHash="x".repeat(64);
+  assert.throws(()=>check(melted),/did not receive pristine/);
+  const unverified = structuredClone(proof); unverified.quadrants.clean[0].positionalPremiseVerified=false;
+  assert.throws(()=>check(unverified),/unverified panel identities/);
+});

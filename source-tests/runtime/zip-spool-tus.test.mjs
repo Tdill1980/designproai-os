@@ -149,6 +149,21 @@ test("configured TUS endpoint cannot leave the direct Supabase Storage origin", 
   assert.throws(() => directTusEndpoint("https://wozyamlnygaddievzuwn.supabase.co", "https://example.com/upload"), (error) => error.code === "tus_endpoint_invalid");
 });
 
+test("the existing resumable output transport admits paid PDFs with their exact MIME identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "designpro-pdf-tus-"));
+  try {
+    const body = Buffer.from("%PDF-1.7\nverified-existing-output");
+    const spool = await spoolImmutableBuffer({ spoolDir: root, runId, materialHash: "c".repeat(64), bytes: body });
+    const target = `designpro/user_11111111-1111-4111-8111-111111111111/${runId}/outputs/driver.pdf`;
+    const fixture = storageFixture(new Map([[target, body]]));
+    const args = { supabase: fixture.supabase, supabaseUrl: "https://wozyamlnygaddievzuwn.supabase.co",
+      serviceRoleKey: "s".repeat(40), spoolDir: root, spool, storagePath: target,
+      contentType: "application/pdf", Upload: class { constructor() { throw new Error("verified immutable object must be reused"); } }, FileUrlStorage: class {} };
+    assert.equal((await uploadSpoolWithTus(args)).contentHash, sha(body));
+    await assert.rejects(uploadSpoolWithTus({ ...args, contentType: "image/png" }), (error) => error.code === "tus_content_type_invalid");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("an output larger than the standard-upload threshold is persistently spooled and sent through create-only TUS", async () => {
   const root = await mkdtemp(join(tmpdir(), "designpro-output-tus-"));
   try {

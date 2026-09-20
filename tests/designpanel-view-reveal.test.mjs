@@ -12,7 +12,7 @@ test("See All Views is available as soon as Driver Side exists", () => {
   const label = source.lastIndexOf("See All Views");
   assert.ok(label > 0, "the See All Views action is missing");
   const button = source.slice(label - 2500, label + 2200);
-  assert.match(button, /mainDisplayUrl\s*&&\s*!allViewsRevealed/);
+  assert.match(button, /mainDisplayUrl\s*&&\s*!viewsVisible/);
   // And the customer can say no there, without waiting out six more proofs.
   // THAT DECISION is what RULE 0.23 protects, and it is unchanged. The label
   // was "Revise This Design" until 2026-08-29, when the owner renamed it to
@@ -32,9 +32,10 @@ test("See All Views is available as soon as Driver Side exists", () => {
   );
 });
 
-test("later sides stay hidden until the existing reveal action is clicked", () => {
-  assert.match(source, /const displayedAllViews = allViewsRevealed \? sortedAllViews : \[\]/);
-  assert.match(source, /allViewsRevealed && \(displayedAllViews\.length > 0 \|\| failedViews\.length > 0\)/);
+test("ATLAS reveals completed views automatically while legacy keeps its reveal action", () => {
+  assert.match(source, /const viewsVisible = isFlatFirstDiagnostic \|\| allViewsRevealed/);
+  assert.match(source, /const displayedAllViews = viewsVisible \? sortedAllViews : \[\]/);
+  assert.match(source, /viewsVisible && \(displayedAllViews\.length > 0 \|\| failedViews\.length > 0\)/);
   assert.match(source, /const savedDriverDisplayUrl = findViewByType\('side'\)\?\.url \|\| null/);
   assert.match(source, /const driverDisplayUrl = savedDriverDisplayUrl \|\| \(!isFlatFirstDiagnostic \? baseDisplayUrl : null\)/);
   // The canonical master no longer stands in for a missing Driver while the
@@ -49,4 +50,15 @@ test("the reveal state never controls production completion", () => {
   );
   assert.match(completion, /requiredViewTypes\.every/);
   assert.doesNotMatch(completion, /allViewsRevealed|displayedAllViews/);
+});
+
+
+test("completed Call 1 proof mounts before the 3D window and never waits for its image", () => {
+  const loader = source.indexOf("<AtlasPanelProofSheetLoader");
+  const window = source.indexOf('id="preview-section"');
+  assert.ok(loader > 0 && loader < window);
+  const before = source.slice(loader - 140, loader);
+  assert.match(before, /generationRequestState\?\.requestId/);
+  assert.doesNotMatch(before, /mainDisplayUrl|allViewsRevealed|viewsVisible/);
+  assert.match(source.slice(loader, loader + 600), /pollWhilePending=/);
 });

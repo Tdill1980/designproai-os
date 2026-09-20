@@ -24,7 +24,8 @@ const {
 // served -- see `buildCall8Proof` and the fail-closed arm in `panels.build`.
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
-const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources } = require("./output-qc.cjs");
+const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources, FORMATS: OUTPUT_FORMATS, LEGACY_FORMATS, OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT } = require("./output-qc.cjs");
+const { buildPanelProProductionPdf } = require("./panelpro-file-output-render.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
 const { TOPAZ_CONTRACT, enhancePanel, topazReadiness } = require("./topaz-upscale.cjs");
@@ -891,10 +892,11 @@ function authorizedAssetManifest(paidProducts) {
     // or completes as inapplicable.
     upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
     output: Object.freeze(production ? ["upscaled-panel"] : []),
-    // The complete production output set is six sides x three formats. A run
+    // The complete production output set is six sides x four formats. A run
     // that did not buy it must not be asked to prove it; a run that did must
     // fail closed without it.
-    requiredOutputFiles: production ? 18 : 0,
+    requiredOutputFiles: production ? SURFACE_KEYS.length * OUTPUT_FORMATS.length : 0,
+    ...(production ? { outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS } : {}),
     // What the humans are asked to check. QC validates the purchased asset
     // classes and is never handed a class the customer did not buy.
     qcScope: Object.freeze([
@@ -932,7 +934,32 @@ function authorizedAssetManifest(paidProducts) {
  */
 async function readAuthorizedAssets(sb, runId) {
   const gate = await stageOutput(sb, runId, "await_purchase");
-  return requiredObject(gate.authorizedAssetManifest, "authorized asset manifest");
+  const authorized = requiredObject(gate.authorizedAssetManifest, "authorized asset manifest");
+  if (!authorized.productionPackAuthorized) return authorized;
+  // Purchase scope remains frozen. The completed builder binds the format
+  // contract so old finished packages survive while every new build adds PDF.
+  const { data, error } = await sb.from("designpro_workflow_stages")
+    .select("status,output,verification,output_hash").eq("run_id", runId).eq("stage_key", "output.build").maybeSingle();
+  if (error) throw new StageError("output_build_receipt_unavailable", error.message, true);
+  if (!data || data.status !== "completed") return authorized;
+  if (data.verification?.verified !== true || data.output_hash !== hashJson(data.output)) {
+    throw new StageError("output_build_receipt_invalid", "Completed output build identity changed", false);
+  }
+  return authorizedOutputFormats(authorized, data.output);
+}
+
+function authorizedOutputFormats(authorized, built) {
+  const legacy = built?.outputFormatContract == null && authorized.outputFormatContract == null
+    && authorized.requiredOutputFiles === 18 && built?.outputCount === 18;
+  const current = built?.outputFormatContract === OUTPUT_FORMAT_CONTRACT
+    && built.outputCount === SURFACE_KEYS.length * OUTPUT_FORMATS.length
+    && JSON.stringify(built.outputFormats) === JSON.stringify(OUTPUT_FORMATS);
+  if (built?.verified !== true || !HASH_RE.test(String(built?.outputSetHash || "")) || (!legacy && !current)) {
+    throw new StageError("output_build_format_contract_invalid", "Output formats require the immutable completed build receipt", false);
+  }
+  const outputFormats = legacy ? LEGACY_FORMATS : OUTPUT_FORMATS;
+  return { ...authorized, outputFormatContract: legacy ? LEGACY_OUTPUT_FORMAT_CONTRACT : OUTPUT_FORMAT_CONTRACT,
+    outputFormats, requiredOutputFiles: SURFACE_KEYS.length * outputFormats.length };
 }
 
 async function ensureAutomaticProduction(sb, enticeRunId) {
@@ -1756,6 +1783,17 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     const png = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.png`, raster, "image/png");
     if (png.spool) spools.push(png.spool);
     produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, { format: "png", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    const pdfBytes = await buildPanelProProductionPdf({ png: raster, surfaceKey: panel.surface_key,
+      trimWidthInches: Number(dims.widthInches), trimHeightInches: Number(dims.heightInches) });
+    const pdf = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.pdf`, pdfBytes, "application/pdf");
+    if (pdf.spool) spools.push(pdf.spool);
+    produced.push(artifact("output", pdf.storagePath, pdf.hash, pdf.bytes, panel.surface_key, {
+      format: "pdf", width, height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
+      sourcePngHash: png.hash, sourceEnhancedHash: panel.content_hash, renderer: "PanelProFileOutput",
+      physicalWidthInches: width / 1500, physicalHeightInches: height / 1500,
+      productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
+      drawingScaleRatio: "1:10", printAtPercent: 1000,
+    }));
     const tiffBytes = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb").tiff({ compression: "lzw", predictor: "horizontal", bitdepth: 8 }).withMetadata({ density: 1500 }).toBuffer();
     const tiff = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.tiff`, tiffBytes, "image/tiff");
     if (tiff.spool) spools.push(tiff.spool);
@@ -1896,7 +1934,8 @@ function ringCaption(text, centre, radius, size, fill, arc = "top", span = 170) 
   }).join("");
 }
 
-function stampSvg(verifiedBy, designId, orderNumber, date) {
+function stampSvg(verifiedBy, designId, orderNumber, date, approvalRef = "") {
+  const automatedTest = /^CANARY-FINAL-/.test(approvalRef);
   const escape = (text) => String(text).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character]);
   // The DesignProAI Quality Approval Check seal, drawn to the owner's stamp:
   // a scalloped teal rosette, DesignProAI arced over the top, QUALITY APPROVAL
@@ -1931,14 +1970,14 @@ function stampSvg(verifiedBy, designId, orderNumber, date) {
     + `<circle cx="500" cy="500" r="432" fill="none" stroke="${paper}" stroke-width="9"/>`
     + `<circle cx="500" cy="500" r="404" fill="none" stroke="${paper}" stroke-width="4" stroke-dasharray="14 12"/>`
     + ringCaption("DesignProAI", 500, 392, 72, paper, "top", 76)
-    + ringCaption("QUALITY APPROVAL CHECK", 500, 392, 47, paper, "bottom", 150)
+    + ringCaption(automatedTest ? "AUTOMATED TEST ONLY" : "QUALITY APPROVAL CHECK", 500, 392, 47, paper, "bottom", 150)
     + star(500, 336, 34) + star(500, 754, 30)
     + `<rect x="196" y="392" width="608" height="176" fill="none" stroke="${paper}" stroke-width="7"/>`
     + `<text x="500" y="472" text-anchor="middle" font-family="Arial" font-size="66" font-weight="700" fill="${paper}">DesignProAI</text>`
-    + `<text x="500" y="528" text-anchor="middle" font-family="Arial" font-size="36" font-weight="700" fill="${paper}">Quality Approval Check</text>`
+    + `<text x="500" y="528" text-anchor="middle" font-family="Arial" font-size="36" font-weight="700" fill="${paper}">${automatedTest ? "NOT DESIGNER APPROVED" : "Quality Approval Check"}</text>`
     + `<text x="500" y="624" text-anchor="middle" font-family="Arial" font-size="44" font-weight="700" fill="${paper}">${escape(designId)}</text>`
     + `<text x="500" y="668" text-anchor="middle" font-family="Arial" font-size="32" font-weight="700" fill="${paper}">Order #${escape(orderNumber)}</text>`
-    + `<text x="500" y="706" text-anchor="middle" font-family="Arial" font-size="25" fill="${paper}">Approved by ${escape(verifiedBy).slice(0, 90)} · ${escape(date)}</text>`
+    + `<text x="500" y="706" text-anchor="middle" font-family="Arial" font-size="25" fill="${paper}">${automatedTest ? "Test run by" : "Approved by"} ${escape(verifiedBy).slice(0, 90)} · ${escape(date)}</text>`
     + `</svg>`);
 }
 
@@ -2788,7 +2827,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     return completed;
   }
   if (stage.stage_key === "output.build") {
-    // PNG/TIFF/EPS are the Production Pack's deliverable. A run that bought only
+    // PNG/TIFF/EPS/PDF are the Production Pack's deliverable. A run that bought only
     // the Logo Pack builds none of them -- and says so, rather than producing an
     // empty set that reads as a failure.
     const authorized = await readAuthorizedAssets(sb, run.id);
@@ -2799,19 +2838,19 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       });
     }
     const built = await withHeavyOutputLease(sb, stage, () => buildPrintOutputs(sb, run, input, stage, runtimeConfig));
-    const completed = await complete(sb, stage, run, { verified: true, outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))) }, null, built.produced);
+    const completed = await complete(sb, stage, run, { verified: true, outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS, outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))) }, null, built.produced);
     for (const spool of built.spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed output spool cleanup failed: ${error.message}`));
     return completed;
   }
   if (stage.stage_key === "output.verify") {
     // Prove the purchased output set and no other. A Production Pack still
-    // fails closed without its complete eighteen; a Logo Pack is never asked
+    // fails closed without its complete twenty-four; a Logo Pack is never asked
     // for panel outputs it did not buy.
     const authorized = await readAuthorizedAssets(sb, run.id);
     const rows = await artifacts(sb, run.id, ["output"]);
     // Check the required proof join before the heavy file reread. Seven-view
     // rendering may still be finishing; waiting must not repeatedly decode
-    // eighteen completed manufacturing files. This receipt becomes immutable
+    // twenty-four completed manufacturing files. This receipt becomes immutable
     // only when the same stage also verifies every output below.
     const panelProfileAttachments = authorized.productionPackAuthorized
       ? await loadPanelProfileAttachments(sb, run) : [];
@@ -2832,6 +2871,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       verified = await withHeavyOutputLease(sb, stage, () => verifyProductionOutputSet({
           artifacts: rows,
           dimensionManifest,
+          outputFormatContract: authorized.outputFormatContract,
           readBytes: async (row) => storageBytes(sb, row.storage_path ?? row.storagePath),
         }));
     } catch (error) {
@@ -2860,6 +2900,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const panelProfileAttachments = authorized.productionPackAuthorized ? await approvedProductionAttachments(sb, run) : [];
     const verifiedBy = requiredString(finalQc.receipt?.verifiedBy, "final QC verifiedBy");
     const approvalRef = requiredString(finalQc.receipt?.approvalRef, "final QC approvalRef");
+    const testApproval = /^CANARY-FINAL-/.test(approvalRef) ? { automatedTest: true, designerApproved: false, approvalScope: "automated-backend-diagnostic" } : {};
     const approvedAt = requiredString(finalQc.receipt?.approvedAt, "final QC approvedAt");
     const approvalDate = new Date(approvedAt);
     if (!Number.isFinite(approvalDate.getTime())) throw new StageError("final_qc_time_invalid", "final QC approvedAt is invalid", false);
@@ -2869,7 +2910,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     if (finalQc.receipt?.qc?.designId !== designId || finalQc.receipt?.qc?.orderNumber !== orderNumber) {
       throw new StageError("final_qc_business_identity_drift", "Final QC did not approve this immutable DesignID and Order #", false);
     }
-    const svg = stampSvg(verifiedBy, designId, orderNumber, approvalDate.toISOString().slice(0, 10));
+    const svg = stampSvg(verifiedBy, designId, orderNumber, approvalDate.toISOString().slice(0, 10), approvalRef);
     const png = await sharp(svg).png().toBuffer();
     const sealStored = await upload(sb, `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-approval-stamp.png`, png, "image/png");
     // THE PAGE THAT SAYS WHAT WAS CHECKED. The seal proves a permitted human
@@ -2899,6 +2940,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       designName: revisionSource.snapshot?.designName || "",
       vehicle: revisionSource.snapshot?.vehicle || {},
       verifiedBy,
+      approvalRef,
       approvedAtIso: approvalDate.toISOString(),
       preflightQc: preflightReceipt.receipt?.qc || {},
       finalQc: finalQc.receipt?.qc || {},
@@ -2912,9 +2954,9 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     // Preserve the receipt's exact timestamp string as identity evidence. A
     // Date round-trip truncates PostgreSQL microseconds and makes an otherwise
     // identical final-QC receipt fail the database's exact stamp binding.
-    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt, source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
-    const certificate = artifact("stamp", certificateStored.storagePath, certificateStored.hash, certificateStored.bytes, "certificate", { contract: CERTIFICATE_CONTRACT, designId, orderNumber, verifiedBy, approvalRef, approvedAt, preflightQc: preflightReceipt.receipt?.qc || {}, finalQc: finalQc.receipt?.qc || {}, surfaces: certificateSurfaces, approvedProducts: authorized.products });
-    const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt, sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
+    const seal = artifact("stamp", sealStored.storagePath, sealStored.hash, sealStored.bytes, "seal", { designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, source: "server-svg-port-of-frozen-canvas-stamp", approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables });
+    const certificate = artifact("stamp", certificateStored.storagePath, certificateStored.hash, certificateStored.bytes, "certificate", { contract: CERTIFICATE_CONTRACT, designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, preflightQc: preflightReceipt.receipt?.qc || {}, finalQc: finalQc.receipt?.qc || {}, surfaces: certificateSurfaces, approvedProducts: authorized.products });
+    const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
     const stampArtifacts = [seal, stamped, certificate];
     const stampedViews = [];
     const viewSpools = [];
@@ -2931,13 +2973,13 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       const entry = { viewKey: view.viewKey, storagePath: stored.storagePath, contentHash: stored.hash, byteSize: stored.bytes, sourceProofHash: view.contentHash, sourceProofPath: view.storagePath };
       stampedViews.push(entry);
       stampArtifacts.push(artifact("stamp", stored.storagePath, stored.hash, stored.bytes, `stamped-view-${view.viewKey}`, {
-        role: "qc-approved-3d-proof", designId, orderNumber, verifiedBy, approvalRef, approvedAt,
+        role: "qc-approved-3d-proof", designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval,
         sourceViewKey: view.viewKey, sourceProofHash: view.contentHash, sourceProofPath: view.storagePath,
         sealHash: sealStored.hash, sourceViewSetHash: proofJoin.sourceViewSetHash,
         widthPx: derived.width, heightPx: derived.height, composition: derived.composition,
       }));
     }
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt, stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables, proofJoin, stampedViews, panelProfileAttachments }, stampedStored.hash, stampArtifacts);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables, proofJoin, stampedViews, panelProfileAttachments }, stampedStored.hash, stampArtifacts);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     for (const spool of viewSpools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-view spool cleanup failed: ${error.message}`));
     return completed;
@@ -3523,4 +3565,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
 
 // Shared deterministic proof rendering. Approval and its stored timestamp are
 // supplied by the authorized workflow; these helpers do not approve a run.
-module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { leaseKeeper, HEAVY_LEASE_SECONDS, CLAIM_SECONDS, HEARTBEAT_MS, tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction } };
+module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { leaseKeeper, HEAVY_LEASE_SECONDS, CLAIM_SECONDS, HEARTBEAT_MS, tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, authorizedOutputFormats, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction } };

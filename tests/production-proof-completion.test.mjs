@@ -8,6 +8,7 @@ const sharp = require("../runtime/node_modules/sharp");
 const { _test: worker, renderStampedProof, stampSvg } = require("../runtime/designpro-standalone-claimant.cjs");
 const { renderProofSheet, _test: proof } = require("../runtime/proof-sheet.cjs");
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("../runtime/call8-proof-material.cjs");
+const { _test: certificate } = require("../runtime/qc-certificate.cjs");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const canonical = (value) => Array.isArray(value) ? value.map(canonical) : value && typeof value === "object"
   ? Object.fromEntries(Object.keys(value).sort().filter((key) => value[key] !== undefined).map((key) => [key, canonical(value[key])])) : value;
@@ -363,6 +364,28 @@ test("Production Pack stage execution stamps Call 8 and all seven pinned proofs 
   assert.equal(worker.assertStampedViewSet({ sourceViews: release.sourceViews, rows: sb.tables.designpro_artifacts, stampReceipt: stamped.p_receipt }).length, 7);
   for (const [path, contentHash] of originalHashes) assert.equal(hash(sb.bytes.get(path)), contentHash);
   for (const item of stamped.p_artifacts) assert.equal(hash(sb.bytes.get(item.storagePath)), item.contentHash);
+});
+
+test("automatic canary QC is visibly unapproved and cannot look like a designer signature", async () => {
+  const approvalRef = `CANARY-FINAL-${runId}`;
+  const testSeal = stampSvg("Canary runner", "DID-12345678", "CANARY-TEST", "2026-09-20", approvalRef).toString();
+  assert.ok(testSeal.includes("NOT DESIGNER APPROVED"));
+  assert.ok(!testSeal.includes("Quality Approval Check"));
+  assert.ok(!testSeal.includes("Approved by"));
+  const normalSeal = stampSvg("Designer", "DID-12345678", "CUSTOMER-1", "2026-09-20").toString();
+  assert.ok(normalSeal.includes("Quality Approval Check"));
+  assert.ok(!normalSeal.includes("NOT DESIGNER APPROVED"));
+  const cert = certificate.certificateSvg({ designId: "DID-12345678", orderNumber: "CANARY-TEST",
+    verifiedBy: "Canary runner", approvalRef, approvedAtIso: "2026-09-20", preflightQc: {}, finalQc: {}, surfaces: [] }).toString();
+  assert.ok(cert.includes("AUTOMATED TEST — NOT DESIGNER APPROVED"));
+  assert.ok(!cert.includes("★ APPROVED ★"));
+  const { sb, run } = await logoOnlyExecutionFixture();
+  sb.tables.designpro_stage_receipts.find((row) => row.receipt_kind === "final.human-qc").receipt.approvalRef = approvalRef;
+  await worker.executeProduction(sb, { id: "fixture:stamp-canary", stage_key: "stamp.build", lease_token: "fixture-lease", run_id: runId }, run, {});
+  const result = sb.calls.at(-1).args;
+  assert.equal(result.p_receipt.automatedTest, true);
+  assert.equal(result.p_receipt.designerApproved, false);
+  assert.ok(result.p_artifacts.every((row) => row.metadata.automatedTest === true && row.metadata.designerApproved === false));
 });
 
 test("the final human gate refuses a six-view pinned set before requesting an approval", async () => {

@@ -4,9 +4,13 @@ const { createHash } = require("node:crypto");
 const { Readable } = require("node:stream");
 const { constants: zlibConstants, deflateSync, inflateSync } = require("node:zlib");
 const sharp = require("sharp");
+const { buildPanelProProductionPdf } = require("./panelpro-file-output-render.cjs");
 
 const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-const FORMATS = Object.freeze(["png", "tiff", "eps"]);
+const FORMATS = Object.freeze(["png", "tiff", "eps", "pdf"]);
+const LEGACY_FORMATS = Object.freeze(["png", "tiff", "eps"]);
+const OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v2";
+const LEGACY_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v1";
 const FULL_SCALE_PIXELS_PER_INCH = 150;
 const FILE_DPI = 1500;
 const OUTPUT_SCALE = 0.1;
@@ -620,9 +624,11 @@ async function artifactBytes(artifact, readBytes) {
   return Buffer.isBuffer(loaded) ? loaded : Buffer.from(loaded.buffer, loaded.byteOffset, loaded.byteLength);
 }
 
-async function verifyProductionOutputSet({ artifacts, dimensionManifest, readBytes } = {}) {
-  if (!Array.isArray(artifacts) || artifacts.length !== SURFACES.length * FORMATS.length) {
-    fail("output_artifact_count_invalid", `Exactly ${SURFACES.length * FORMATS.length} output artifacts are required`);
+async function verifyProductionOutputSet({ artifacts, dimensionManifest, readBytes, outputFormatContract = OUTPUT_FORMAT_CONTRACT } = {}) {
+  if (![OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT].includes(outputFormatContract)) fail("output_format_contract_invalid", "Unknown production output format contract");
+  const formats = outputFormatContract === OUTPUT_FORMAT_CONTRACT ? FORMATS : LEGACY_FORMATS;
+  if (!Array.isArray(artifacts) || artifacts.length !== SURFACES.length * formats.length) {
+    fail("output_artifact_count_invalid", `Exactly ${SURFACES.length * formats.length} output artifacts are required`);
   }
   const manifest = parseManifest(dimensionManifest);
   const normalized = artifacts.map(normalizeArtifact);
@@ -638,7 +644,9 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
   const files = [];
   for (const surfaceKey of SURFACES) {
     const geometry = manifest.get(surfaceKey);
-    for (const format of FORMATS) {
+    let expectedPdfHash;
+    let sourcePngHash;
+    for (const format of formats) {
       const artifact = identities.get(`${surfaceKey}:${format}`);
       if (!artifact) fail("output_artifact_missing", `Missing output artifact: ${surfaceKey}:${format}`);
       if (Number(artifact.metadata.width) !== geometry.widthPixels || Number(artifact.metadata.height) !== geometry.heightPixels) {
@@ -648,7 +656,24 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
       if (bytes.length !== artifact.byteSize) fail("output_artifact_byte_size_mismatch", `${artifact.storagePath} byte size changed`, { expected: artifact.byteSize, observed: bytes.length });
       const observedHash = sha256(bytes);
       if (observedHash !== artifact.contentHash) fail("output_artifact_content_hash_mismatch", `${artifact.storagePath} content hash changed`, { expected: artifact.contentHash, observed: observedHash });
-      const decoded = format === "eps" ? verifyEps(bytes, geometry) : await verifyRaster(bytes, format, geometry);
+      let decoded;
+      if (format === "pdf") {
+        // Equality to the existing lossless encoder proves page/trim/bleed
+        // geometry, embedded ICC, and the exact verified PNG image stream. A
+        // PDF header or a caller-supplied checksum alone proves none of these.
+        if (!bytes.subarray(0, 9).equals(Buffer.from("%PDF-1.7\n"))) fail("output_pdf_magic_invalid", `${artifact.storagePath} is not the production PDF format`);
+        if (!expectedPdfHash || observedHash !== expectedPdfHash || artifact.metadata.sourcePngHash !== sourcePngHash) {
+          fail("output_pdf_source_or_geometry_mismatch", `${artifact.storagePath} differs from its verified PNG or physical geometry`);
+        }
+        decoded = { colorSpace: "sRGB" };
+      } else {
+        decoded = format === "eps" ? verifyEps(bytes, geometry) : await verifyRaster(bytes, format, geometry);
+        if (format === "png" && formats.includes("pdf")) {
+          sourcePngHash = observedHash;
+          expectedPdfHash = sha256(await buildPanelProProductionPdf({ png: bytes, surfaceKey,
+            trimWidthInches: geometry.widthInches, trimHeightInches: geometry.heightInches }));
+        }
+      }
       files.push(Object.freeze({
         surfaceKey,
         format,
@@ -672,7 +697,7 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
   const receiptBody = {
     contract: "designpro.output-verification.v1",
     exactSurfaceSet: SURFACES,
-    exactFormatSet: FORMATS,
+    exactFormatSet: formats,
     fileCount: files.length,
     fullScalePixelsPerInch: FULL_SCALE_PIXELS_PER_INCH,
     fileDpi: FILE_DPI,
@@ -930,6 +955,9 @@ module.exports = Object.freeze({
   FIXED_ZIP_DATE,
   FIXED_ZIP_MODE,
   FORMATS,
+  LEGACY_FORMATS,
+  OUTPUT_FORMAT_CONTRACT,
+  LEGACY_OUTPUT_FORMAT_CONTRACT,
   FULL_SCALE_PIXELS_PER_INCH,
   MAX_EPS_ENCODED_BYTES,
   MAX_EPS_RAW_BYTES,

@@ -414,10 +414,19 @@ serve(async (req) => {
     // A.C.E. prints the body class into its own opening line, and with nothing
     // there it reads "(vehicle)" — the designer told nothing about the shape of
     // the thing it is designing for. Intake infers it from the model name.
+    // Only references actually attached below activate the shared VisionBoard
+    // instructions. Original Zone-3 logo assets remain in the compositor.
+    const customerAssets = (Array.isArray(body?.customerAssets) ? body.customerAssets : [])
+      .filter((a: unknown) => a && typeof (a as { storagePath?: unknown }).storagePath === "string")
+      .slice(0, 8);
+    const creativeDirection = [
+      field("creativeDirection") || String(body?.prompt || "") || customerPrompt,
+      field("style") ? `Style direction: ${field("style")}.` : "",
+    ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
     const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
       mode: "commercial",
-      prompt: field("creativeDirection") || String(body?.prompt || ""),
+      prompt: creativeDirection,
       finish: String(body?.finish || "Gloss"),
       substrate: "standard",
       companyName: field("companyName"),
@@ -425,6 +434,12 @@ serve(async (req) => {
       website: field("website"),
       industryType: field("industryType"),
       brandColors: body?.brandColors,
+      fontStyle: field("fontStyle"),
+      styleDescriptors: field("styleDescriptors"),
+      visionboard_intent: body?.visionboard_intent,
+      visionBoardImages: customerAssets.map((asset: { storagePath: string }, index: number) => ({
+        slotLabel: `Customer reference ${index + 1}`, storageUrl: asset.storagePath,
+      })),
       vehicleYear: field("vehicleYear"),
       vehicleMake: field("vehicleMake"),
       vehicleModel: field("vehicleModel"),
@@ -449,7 +464,7 @@ serve(async (req) => {
       orderNumber: body?.orderNumber,
       designer: body?.designer,
       proofVersion: body?.proofVersion,
-      creativeDirection: field("creativeDirection") || String(body?.prompt || ""),
+      creativeDirection,
       panelRows,
     });
 
@@ -470,13 +485,6 @@ serve(async (req) => {
     // parsing that same array here means the sheet and the sentence cannot
     // disagree about what this vehicle measures.
     let containerSource: Record<string, unknown> = { origin: "studio" };
-    // The customer's verified assets, by identity. Bounded so a malformed or
-    // hostile body cannot turn one request into an unbounded read loop; the
-    // runtime sends a logo plus a VisionBoard set, which is well inside this.
-    const customerAssets = (Array.isArray(body?.customerAssets) ? body.customerAssets : [])
-      .filter((a: unknown) => a && typeof (a as { storagePath?: unknown }).storagePath === "string")
-      .slice(0, 8);
-
     let containerPath = "";
     let containerHash = "";
     try {

@@ -1,31 +1,12 @@
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
 
 /**
- * THE THREE-ZONE PRODUCTION PANEL PROOF, SHOWN AS SOON AS IT EXISTS.
- *
- * Owner, on the architecture: "Production panel proof is source it has the 3
- * zones / For panels, panels with seperated and logos and text."
- *
- * The sheet Call 1 draws IS the source: Zone 1 is cut and placed into the GENIE
- * manifest and becomes the accepted master, Zone 2 is the same six panels with
- * no type or logos, Zone 3 is the five cut graphics. All three were being
- * produced and stored and none of them could be seen — the product showed the
- * assembled master and nothing of the document it came from.
- *
- * Three things this component deliberately does NOT do:
- *
- * 1. It never calls a raster crop an editable layer or a vector cut file. Zone
- *    3 is a raster of drawn marks; the plotter-ready contour is produced by the
- *    cut-contour builder downstream, and saying otherwise here would promise a
- *    file that does not exist yet.
- * 2. It never shows a gap for an unstored panel. The quadrant write fails soft
- *    by contract (Zone 1 is already an accepted master, and an optional sibling
- *    may not take a good design down), so a measured-but-unstored panel is
- *    labelled with its reason.
- * 3. It never prints a dimension that does not exist. A Zone 3 slot has no
- *    inches — it is sized at the plotter — so null stays blank rather than
- *    becoming 0".
+ * Display the completed three-zone document independently of 3D views.
+ * Zone 1 contains composed panels; Zone 2 retains background artwork;
+ * Zone 3 retains original assets and outlined text. Preview availability
+ * never confers production approval or creates another generation.
  */
 
 const ZONES: Array<{
@@ -36,7 +17,7 @@ const ZONES: Array<{
   {
     key: "branded",
     title: "Zone 1 — print panels",
-    blurb: "Cut to your vehicle's GENIE dimensions with the 5\" bleed and placed into the master. These are what get printed.",
+    blurb: "Full design panels for your vehicle proofs and production review.",
   },
   {
     key: "clean",
@@ -102,9 +83,11 @@ function PanelCard({ panel }: { panel: PanelProofPanel }) {
 export function AtlasPanelProofSheet({
   proof,
   status,
+  onSheetLoad,
 }: {
   proof: AtlasPanelProof | undefined;
   status: "pending" | "error" | "success";
+  onSheetLoad?: () => void;
 }) {
   if (status === "pending") {
     return <p className="text-xs text-gray-500 text-center">Loading your production panel proof…</p>;
@@ -118,7 +101,7 @@ export function AtlasPanelProofSheet({
 
   const quadrants = proof.quadrants;
   return (
-    <section aria-label="Production panel proof" className="mt-4 w-full max-w-5xl">
+    <section aria-label="Production panel proof" className="w-full max-w-5xl rounded-lg border border-gray-200 bg-white p-4">
       <h3 className="text-base font-semibold text-gray-900 text-center">Your production panel proof</h3>
       <p className="text-xs text-gray-600 text-center mt-1 max-w-2xl mx-auto">
         One sheet, three zones: full design panels, background artwork, and original brand assets.
@@ -130,6 +113,8 @@ export function AtlasPanelProofSheet({
           <img
             src={proof.sheet.signedUrl}
             alt="The three-zone production panel proof"
+            loading="eager"
+            onLoad={onSheetLoad}
             className="w-full rounded-lg border border-gray-200 bg-gray-50"
           />
         </a>
@@ -160,17 +145,39 @@ export function AtlasPanelProofSheet({
   );
 }
 
-export function AtlasPanelProofSheetLoader({ requestId, revisionId }: { requestId: string; revisionId?: string }) {
+/** Poll only while a live request is waiting, then refresh expiring preview URLs. */
+export function panelProofRefreshInterval(proof: AtlasPanelProof | undefined, pollWhilePending: boolean): number | false {
+  if (proof?.panelProof && proof.sheet?.signedUrl) return 240_000;
+  return pollWhilePending ? 1_000 : false;
+}
+
+export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePending = false, submittedAt }: {
+  requestId: string; revisionId?: string; pollWhilePending?: boolean; submittedAt?: number | null;
+}) {
+  const measured = useRef<string | null>(null);
   const query = useQuery({
     queryKey: ["designpro-atlas-panel-proof", requestId],
-    // Loaded on demand: the API module builds the Supabase client at import
-    // time, and this strip must stay mountable (and testable) without it.
     queryFn: async () => (await import("@/lib/designpro-api")).dpApi.getAtlasPanelProof(requestId),
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchInterval: q => panelProofRefreshInterval(q.state.data, pollWhilePending),
+    refetchIntervalInBackground: false,
     retry: false,
   });
-  if (revisionId && query.data?.revisionId && query.data.revisionId !== revisionId) {
+  // An operator inspecting a pinned revision must not see an unbound preview.
+  if (revisionId && query.data?.panelProof && query.data.revisionId !== revisionId) {
     return <p className="text-xs text-gray-500">The production proof belongs to a different revision.</p>;
   }
-  return <AtlasPanelProofSheet proof={query.data} status={query.status} />;
+  const recordVisible = () => {
+    if (measured.current === requestId || submittedAt == null || !Number.isFinite(submittedAt)) return;
+    measured.current = requestId;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      performance.measure(`designpro:production-proof-visible:${requestId}`, {
+        start: submittedAt,
+        end: performance.now(),
+        detail: { requestId, contentHash: query.data?.sheet?.contentHash },
+      });
+    }));
+  };
+  return <AtlasPanelProofSheet proof={query.data} status={query.status} onSheetLoad={recordVisible} />;
 }

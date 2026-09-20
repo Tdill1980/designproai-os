@@ -206,12 +206,28 @@ test("QC scope per purchase state", () => {
 });
 
 test("output.verify proves the purchased set and only that", () => {
-  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 18);
+  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 24);
   assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
   assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
   assert.match(claimant, /output_unpurchased_present/,
     "outputs on a run that did not buy them is a fault, not something to verify");
   assert.match(claimant, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
+});
+
+test("new paid builds require PDF while immutable completed legacy builds stay readable", () => {
+  const current = manifestFor(["print_pack_entitlement"]);
+  const legacy = { ...current, requiredOutputFiles: 18 };
+  delete legacy.outputFormatContract;
+  delete legacy.outputFormats;
+  const built = { verified: true, outputCount: 18, outputSetHash: "a".repeat(64) };
+  assert.equal(_test.authorizedOutputFormats(legacy, built).requiredOutputFiles, 18);
+  assert.throws(() => _test.authorizedOutputFormats(current, built), /immutable completed build receipt/);
+  const upgraded = { ...built, outputCount: 24, outputFormatContract: "designpro.production-formats.v2", outputFormats: ["png", "tiff", "eps", "pdf"] };
+  assert.equal(_test.authorizedOutputFormats(legacy, upgraded).requiredOutputFiles, 24,
+    "a previously purchased but unbuilt run receives PDF from the new builder");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...upgraded, outputCount: 18 }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, verified: false }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, outputSetHash: null }), /immutable completed build receipt/);
 });
 
 test("the certificate names what was actually approved", () => {

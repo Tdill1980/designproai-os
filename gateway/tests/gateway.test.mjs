@@ -3356,3 +3356,33 @@ test("three-zone handoff signs original vector graphics separately from clean pa
   assert.equal(result.quadrants.cutGraphics[0].contentType,"image/svg+xml");
   assert.match(result.quadrants.cutGraphics[0].signedUrl,/atlas-elements.*\.svg/);
 });
+
+
+test("completed three-zone proof is signed before an atlas revision or a 3D view exists", async (t) => {
+  const requestId = "10000000-0000-4000-8000-000000000021";
+  const answer = panelProofRpcAnswer(requestId);
+  answer.revisionId = null;
+  answer.revisionSequence = null;
+  const server = createGateway({env, fetchImpl: async (url) => {
+    const value = String(url);
+    if (value.endsWith("/auth/v1/user")) return Response.json({id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"});
+    if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) return Response.json(answer);
+    if (value.includes("/storage/v1/object/sign/wrap-files/")) {
+      const path = decodeURIComponent(value.split("/storage/v1/object/sign/wrap-files/")[1]);
+      return Response.json({signedURL:`/object/sign/wrap-files/${path}?token=t`});
+    }
+    throw new Error(`unexpected ${url}`);
+  }});
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/panel-proof`, {
+    headers:{cookie:"dp_session=test-token"},
+  });
+  assert.equal(response.status,200);
+  const proof = await response.json();
+  assert.equal(proof.revisionId,null);
+  assert.equal(proof.panelProof,true);
+  assert.ok(proof.sheet.signedUrl);
+  assert.equal(proof.quadrants.branded.length,6);
+  assert.equal(proof.quadrants.clean.length,6);
+});
