@@ -650,9 +650,18 @@ async function assemblePanelProofMaster({
       left:i*slotWidth+10,top:bandTop+headingHeight+10});
   }
   const proofBytes = await sharp(sheet.bytes).composite(proofLayers).png().toBuffer();
-  const storedProof = await persist({storagePath:`atlas-panel-proof/${sha256(proofBytes)}.png`,
+  const storedComposedProof = await persist({storagePath:`atlas-panel-proof/${sha256(proofBytes)}.png`,
     bytes:proofBytes,contentType:"image/png"});
-  sheet = {...sheet,...storedProof,bytes:proofBytes,byteSize:proofBytes.length,contentHash:sha256(proofBytes)};
+  // CUSTOMER CALL 1 IS THE GEMINI THREE-ZONE SHEET. Do not replace its identity
+  // with the deterministic production composition. The composition remains a
+  // production artifact for PanelPro/QC, while the exact sheet the customer saw
+  // is also the exact multimodal authority Call 2 photographs.
+  const composedProof = {
+    storagePath: storedComposedProof.storagePath,
+    contentHash: storedComposedProof.contentHash,
+    byteSize: proofBytes.length,
+    contentType: "image/png",
+  };
 
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
   //
@@ -784,6 +793,8 @@ async function assemblePanelProofMaster({
       proofSha256: sheet.contentHash || null,
       proofStoragePath: sheet.storagePath || null,
       proofByteSize: sheet.byteSize || sheet.bytes.length,
+      proofContentType: sheet.sheetShape?.mime || "image/png",
+      productionComposedProof: composedProof,
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
         graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
