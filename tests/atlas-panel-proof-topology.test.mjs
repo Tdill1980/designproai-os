@@ -181,7 +181,9 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
   assert.ok(exact.includes(input.brief), "failed intake cannot erase the customer's creative brief");
   assert.match(exact, /Brand colors: #123456, #fedcba/);
   assert.match(exact, /Style direction: geometric racing stripes/);
-  assert.match(exact, /Typography preference: bold condensed/);
+  assert.doesNotMatch(exact, /Typography preference:|Spell the business name|Contact info \(place in the contact bar\)/,
+    "clean-background generation leaves typography to the compositor");
+  assert.match(exact, /BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND/);
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
   assert.doesNotMatch(exact, /STYLE INSPIRATION:/);
   const inspired = assemble({ ...body, visionboard_intent: "style_inspiration" });

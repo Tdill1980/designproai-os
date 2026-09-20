@@ -418,13 +418,23 @@ serve(async (req) => {
     // instructions. Original Zone-3 logo assets remain in the compositor.
     const customerAssets = (Array.isArray(body?.customerAssets) ? body.customerAssets : [])
       .filter((a: unknown) => a && typeof (a as { storagePath?: unknown }).storagePath === "string")
+      .filter((a: { storagePath: string; role?: string; assetRole?: string; contentType?: string; contentHash?: string }) => {
+        if (body.separatedArtwork !== true) return true;
+        // Zone-3 originals belong to the deterministic compositor, never the
+        // image model. Untagged staged PNGs are verified VisionBoard references.
+        return ![a.role, a.assetRole].some(role => ["logo", "typography", "contact", "cut-graphic", "vector"].includes(String(role || "")))
+          && !["image/svg+xml", "application/pdf"].includes(String(a.contentType || ""))
+          && !/\/inputs\/(logo|typography|contact)\//.test(a.storagePath)
+          && a.storagePath !== body?.logoAsset?.storagePath
+          && (!body?.logoAsset?.contentHash || a.contentHash !== body.logoAsset.contentHash);
+      })
       .slice(0, 8);
     const creativeDirection = [
       field("creativeDirection") || String(body?.prompt || "") || customerPrompt,
       field("style") ? `Style direction: ${field("style")}.` : "",
     ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
-    const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
+    let creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
       mode: "commercial",
       prompt: creativeDirection,
       finish: String(body?.finish || "Gloss"),
@@ -434,7 +444,7 @@ serve(async (req) => {
       website: field("website"),
       industryType: field("industryType"),
       brandColors: body?.brandColors,
-      fontStyle: field("fontStyle"),
+      fontStyle: body.separatedArtwork === true ? undefined : field("fontStyle"),
       styleDescriptors: field("styleDescriptors"),
       visionboard_intent: body?.visionboard_intent,
       visionBoardImages: customerAssets.map((asset: { storagePath: string }, index: number) => ({
@@ -446,8 +456,19 @@ serve(async (req) => {
       vehicleType,
       viewType: "side",
       atlasFlatMaster: true,
+      atlasCleanBase: body.separatedArtwork === true,
       atlasPanels: ATLAS_PANELS,
     } as Record<string, unknown>));
+    if (body.separatedArtwork === true) {
+      // The shared clean-base branch omits customer copy. Its presentation and
+      // exact-reference sentences still mention branding; adapt only those
+      // two clauses for this background-only output.
+      creativeHead = creativeHead
+        .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
+          "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
+        .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
+          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully; exclude every logo and all lettering");
+    }
 
     let prompt = buildPanelProofPrompt({
       creativeHead,
@@ -469,7 +490,18 @@ serve(async (req) => {
     });
 
     if (body.separatedArtwork === true) {
-      prompt += "\nSEPARATED PRODUCTION ARTWORK: Zone 2 is the authoritative full-bleed background including requested photography and design, with NO lettering, logos, icons or brand marks. Zone 1 is a provisional copy of those same backgrounds; the operating system will composite the original customer logo and outlined customer text onto it after generation. Zone 3 is reserved for original vector assets added by the operating system. Never invent, trace, imitate or redraw the customer's protected assets. Preserve all six panel rectangles and the mandatory three-band layout.";
+      // Replace the branded proof tail: appending a prohibition after instructions
+      // to draw exact customer text and fill five logo boxes was contradictory.
+      prompt = [
+        "You are an expert commercial graphic designer. Generate a high-fidelity, photorealistic vehicle wrap background layout. DO NOT generate text, logos, or typography of any kind. Leave negative space for vector asset placement.",
+        "Using the provided 2D production-proof examples as your structural guide, generate the flat, print-ready background panels for Zone 2. DO NOT generate typography, logos, or 3D vehicle perspectives. Output only the flat background art, leaving the correct negative space for later vector placement.",
+        creativeHead,
+        "MANDATORY THREE-BAND PRODUCTION LAYOUT: Preserve the attached blank template's panel positions, aspect ratios and six surface identities. Fill each rectangular panel edge to edge with uninterrupted flat printed artwork; no wheel openings, vehicle silhouettes, photographs of vehicles, panel labels, dimensions or captions.",
+        "ZONE 1 — Background copies reserved for full-design composition. Draw the same six clean backgrounds as Zone 2. The operating system will add the protected customer assets after generation to build the finished full-design panels.",
+        "ZONE 2 — Authoritative backgrounds only. Create rich photographic artwork, gradients and design detail from the brief, with no lettering, logos, icons or brand marks. Keep calm negative space for the separate vector overlay layer; the background itself remains full bleed.",
+        "ZONE 3 — Reserved for original vector cut graphics. Leave this entire band plain white. The operating system supplies the customer's original assets here. Never invent, trace, imitate or redraw them.",
+        "ATTACHMENTS: (1) the blank container defines exact panel geometry; (2) the finished proof demonstrates artwork quality only. Do not reproduce any lettering, logos, captions or brand marks from either attachment or the customer references. All sheet furniture and customer typography are rendered by code afterwards.",
+      ].join("\n\n");
     }
 
     // THE BIG INPUTS TRAVEL BY STORAGE PATH, NOT INSIDE THE JSON BODY.
@@ -555,7 +587,7 @@ serve(async (req) => {
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
     }
 
-    // THE CUSTOMER'S OWN LOGO AND REFERENCES.
+    // THE CUSTOMER'S VERIFIED CREATIVE REFERENCES.
     //
     // Their absence was this route's worst defect: the runtime forwarded text
     // and vehicle fields only, so a customer who uploaded a logo or a reference
@@ -569,9 +601,9 @@ serve(async (req) => {
     // identity; the three checks below are the SAME ones the container gets, so
     // a caller cannot name bytes this side did not verify.
     //
-    // They are attached AFTER the container and the pinned format sheet, so the
-    // structural inputs still condition the layout first and the customer's
-    // assets are read as brand content rather than as the sheet's shape.
+    // They are attached AFTER the container and the pinned format sheet. On the
+    // separated route, protected originals were removed above and remain solely
+    // in the compositor; only background/style references reach the model.
     for (const asset of customerAssets) {
       const path = String(asset?.storagePath || "");
       const claimed = String(asset?.contentHash || "").toLowerCase();

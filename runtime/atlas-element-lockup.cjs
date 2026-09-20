@@ -187,6 +187,81 @@ function planElementLockup({ zones = [], elements = [] } = {}) {
   };
 }
 
+/**
+ * Production-panel composition uses the actual detected crop, not the rotated
+ * Atlas cell. A square logo has its own column; it cannot shrink the company
+ * name and contact stack. The legacy two-flank planner above stays unchanged.
+ */
+function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
+  const surfaces = ["driver", "passenger", "roof", "hood", "front", "rear"];
+  if (!Array.isArray(panels) || panels.length !== surfaces.length
+    || new Set(panels.map(p => p?.surfaceKey)).size !== surfaces.length
+    || panels.some(p => !surfaces.includes(p?.surfaceKey)
+      || !Number.isFinite(p?.rect?.width) || !Number.isFinite(p?.rect?.height)
+      || p.rect.width < 1 || p.rect.height < 1)) {
+    throw new AtlasLockupError("atlas_lockup_zone_invalid", "production composition requires six distinct, measured panel crops");
+  }
+  if (!Array.isArray(elements) || !elements.length
+    || new Set(elements.map(e => e?.role)).size !== elements.length
+    || elements.some(e => !STACK_ORDER.includes(e?.role)
+      || !Number.isFinite(e?.width) || !Number.isFinite(e?.height)
+      || e.width <= 0 || e.height <= 0)) {
+    throw new AtlasLockupError("atlas_lockup_element_invalid", "production assets require distinct logo/typography/contact roles and finite dimensions");
+  }
+  const present = STACK_ORDER.map(role => elements.find(e => e.role === role)).filter(Boolean);
+  const logo = present.find(e => e.role === "logo");
+  const text = present.filter(e => e.role !== "logo");
+  const margin = SAFE_MARGIN_PCT;
+  const available = 1 - 2 * margin;
+  const logoColumn = 0.18;
+  const columnGap = 0.04;
+  const textGap = 0.03;
+  const placements = [];
+  for (const surfaceKey of surfaces.filter(key => key !== "roof")) {
+    const panel = panels.find(p => p.surfaceKey === surfaceKey);
+    const aspect = panel.rect.width / panel.rect.height;
+    const add = (element, x, y, w, h) => {
+      const box = { xPct: round(x), yPct: round(y), wPct: round(w), hPct: round(h) };
+      if (Object.values(box).some(value => !Number.isFinite(value))
+        || box.wPct <= 0 || box.hPct <= 0
+        || box.xPct < margin || box.yPct < margin
+        || box.xPct + box.wPct > 1 - margin || box.yPct + box.hPct > 1 - margin) {
+        throw new AtlasLockupError("atlas_lockup_out_of_bounds", `${surfaceKey}/${element.role} leaves the safe panel area`);
+      }
+      placements.push({ surfaceKey, role: element.role, storagePath: element.storagePath || null,
+        contentHash: element.contentHash || null, byteSize: Number(element.byteSize) || null,
+        box, mirroredFrom: null, flipped: false });
+    };
+    if (logo) {
+      const columnWidth = text.length ? logoColumn : Math.min(0.5, available);
+      const maxHeight = 0.64;
+      const w = Math.min(columnWidth, maxHeight / ((logo.height / logo.width) * aspect));
+      const h = w * (logo.height / logo.width) * aspect;
+      const x = text.length ? margin + (logoColumn - w) / 2 : (1 - w) / 2;
+      add(logo, x, (1 - h) / 2, w, h);
+    }
+    if (text.length) {
+      const maxWidth = logo ? available - logoColumn - columnGap : available;
+      const gaps = textGap * (text.length - 1);
+      const heightPerWidth = text.reduce((sum, element) => sum + element.height / element.width * aspect, 0);
+      // Scale only text when its own aspect requires it, independently of logo.
+      const w = Math.min(maxWidth, (available - gaps) / heightPerWidth);
+      if (w < 0.42) {
+        throw new AtlasLockupError("atlas_lockup_text_unreadable", `${surfaceKey}: supplied text cannot fit at a readable panel width`);
+      }
+      const heights = text.map(element => w * element.height / element.width * aspect);
+      const x = (logo ? margin + logoColumn + columnGap : margin) + (maxWidth - w) / 2;
+      let y = (1 - heights.reduce((sum, h) => sum + h, 0) - gaps) / 2;
+      for (let i = 0; i < text.length; i++) {
+        add(text[i], x, y, w, heights[i]);
+        y += heights[i] + textGap;
+      }
+    }
+  }
+  return { contract: "designpro.production-panel-lockup.v1", surfaces: surfaces.filter(key => key !== "roof"),
+    safeMarginPct: margin, placements, deterministic: true };
+}
+
 module.exports = {
   CONTRACT,
   AtlasLockupError,
@@ -198,4 +273,5 @@ module.exports = {
   STACK_ORDER,
   readingTrimSize,
   planElementLockup,
+  planProductionPanelLockup,
 };
