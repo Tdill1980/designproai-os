@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { completeGenerationWithSources, generationIdentity } = require("../runtime/generation-worker.cjs");
+const { completeGenerationWithSources, generationIdentity, placeRevisionLogo } = require("../runtime/generation-worker.cjs");
 
 const ownerId = "11111111-1111-4111-8111-111111111111";
 const revisionId = "22222222-2222-4222-8222-222222222222";
@@ -17,12 +17,19 @@ const views = ["driver", "passenger", "hood", "roof", "front", "rear", "closeup"
 });
 const destination = (view, targetRevision = revisionId) => `users/${ownerId}/revisions/${targetRevision}/inputs/${view.consumerRole}/${view.contentHash}.${extensions[view.contentType]}`;
 
-function harness(identity = null) {
+function harness(identity = null, logoAsset = null) {
   const targetRevision = identity?.handoffRevisionId || revisionId;
   const files = new Map(views.map(view => [view.storagePath, Buffer.from(`accepted-${view.consumerRole}-proof-bytes`)]));
   const events = [];
   let failRole = null, failRead = false, completions = 0;
   const bucket = {
+    async upload(target, bytes, options) {
+      assert.equal(options.upsert, false);
+      events.push(`upload:${target}`);
+      if (files.has(target)) return { error: { statusCode: "409" } };
+      files.set(target, Buffer.from(bytes));
+      return { error: null };
+    },
     async copy(source, target) {
       events.push(`copy:${target}`);
       if (target.includes(`/inputs/${failRole}/`)) throw new Error("temporary storage interruption");
@@ -49,7 +56,8 @@ function harness(identity = null) {
       return { data: { handoffReady: true }, error: null };
     } };
   return { files, events,
-    run: () => completeGenerationWithSources({ supabase, ownerId, revisionId: targetRevision, views, completionArgs }),
+    run: () => completeGenerationWithSources({ supabase, ownerId, revisionId: targetRevision, views, logoAsset, completionArgs }),
+    stageLogo: (asset = logoAsset) => placeRevisionLogo({ supabase, ownerId, revisionId: targetRevision, logoAsset: asset }),
     get completions() { return completions; },
     set failRole(value) { failRole = value; }, set failRead(value) { failRead = value; } };
 }
@@ -97,4 +105,38 @@ test("an unavailable duplicate readback cannot be reported as verified completio
   const h = harness(); h.files.set(destination(views[0]), h.files.get(views[0].storagePath)); h.failRead = true;
   await assert.rejects(h.run(), error => error.code === "handoff_copy_readback_failed" && error.retryable === true);
   assert.equal(h.completions, 0);
+});
+
+const originalLogoBytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L20 20"/></svg>');
+const originalLogo = {
+  storagePath: `users/${ownerId}/revisions/77777777-7777-4777-8777-777777777777/inputs/logo/${sha(originalLogoBytes)}.svg`,
+  contentHash: sha(originalLogoBytes), byteSize: originalLogoBytes.length, contentType: 'image/svg+xml',
+};
+const logoTarget = `users/${ownerId}/revisions/${revisionId}/inputs/logo/${originalLogo.contentHash}.svg`;
+
+test('the original vector is verified and copied before completion, preserving the upload and idempotent retries', async () => {
+  const h = harness(null, originalLogo);
+  h.files.set(originalLogo.storagePath, originalLogoBytes);
+  await h.run();
+  assert.deepEqual(h.files.get(logoTarget), originalLogoBytes);
+  assert.deepEqual(h.files.get(originalLogo.storagePath), originalLogoBytes);
+  assert.ok(h.events.indexOf(`upload:${logoTarget}`) < h.events.indexOf('outputs_ready'));
+  const again = await h.stageLogo();
+  assert.equal(again.idempotent, true);
+  assert.equal(again.originalStoragePath, originalLogo.storagePath);
+  assert.equal(again.contentHash, originalLogo.contentHash);
+  assert.equal(again.contentType, 'image/svg+xml');
+});
+
+test('corrupt original, corrupt duplicate and another owner cannot enter logo handoff', async () => {
+  const h = harness(null, originalLogo);
+  h.files.set(originalLogo.storagePath, Buffer.alloc(originalLogo.byteSize, 1));
+  await assert.rejects(h.run(), error => error.code === 'handoff_logo_identity_mismatch');
+  assert.equal(h.completions, 0);
+  assert.equal(h.files.has(logoTarget), false);
+  h.files.set(originalLogo.storagePath, originalLogoBytes);
+  h.files.set(logoTarget, Buffer.alloc(originalLogo.byteSize, 2));
+  await assert.rejects(h.run(), /different bytes/);
+  assert.equal(h.completions, 0);
+  await assert.rejects(h.stageLogo({ ...originalLogo, storagePath: originalLogo.storagePath.replace(ownerId, revisionId) }), /owner\/revision/);
 });

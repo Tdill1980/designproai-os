@@ -1374,6 +1374,20 @@ async function main() {
   });
   evidence.revisionId = revisionId;
   evidence.renderAssets = renderAssets;
+  // The same verified copy used by generation completion repairs this seam
+  // when resuming an accepted request created before logo handoff was wired.
+  const { data: handoffInput, error: handoffInputError } = await service
+    .from("designpro_generation_requests").select("owner_id,request_input")
+    .eq("id", requestId).maybeSingle();
+  if (handoffInputError || handoffInput?.owner_id !== operatorId) {
+    throw new Error("canary logo handoff owner mismatch");
+  }
+  const { placeRevisionLogo } = (() => {
+    try { return require("./generation-worker.cjs"); }
+    catch { return require("../runtime/generation-worker.cjs"); }
+  })();
+  evidence.logoHandoffAsset = await placeRevisionLogo({ supabase: service, ownerId: operatorId,
+    revisionId, logoAsset: handoffInput.request_input?.logoAsset || null });
   step("handing the unbound A.T.L.A.S. design to Entice");
   const handoff = await rpc(operator, "handoff_designpro_generation_to_production", {
     p_request_id: requestId,

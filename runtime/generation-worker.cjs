@@ -65,7 +65,7 @@ const {
   createAtlasProofValidator,
 } = require("./atlas-proof-qc.cjs");
 const { BUCKET, createGenerationStore } = require("./generation-store.cjs");
-const { verifySourceBytes } = require("./runtime-contract.cjs");
+const { verifySourceBytes, normalizeLogoAsset, canonicalUuid, immutableStorageUpload } = require("./runtime-contract.cjs");
 const {
   STUDIO_CONTRACT_VERSION,
   STUDIO_ENVIRONMENT,
@@ -447,11 +447,38 @@ async function placeRevisionSources({ supabase, ownerId, revisionId, views }) {
   return placed;
 }
 
-async function completeGenerationWithSources({ supabase, ownerId, revisionId, views, completionArgs }) {
+/** Preserve the original logo bytes in the manufacturing revision's namespace.
+ * This same idempotent operation also repairs a completed request's handoff;
+ * it never invokes an image provider or changes the original upload. */
+async function placeRevisionLogo({ supabase, ownerId, revisionId, logoAsset }) {
+  if (!logoAsset) return null;
+  const sourceRevision = String(logoAsset.storagePath || "").split("/")[3];
+  const original = normalizeLogoAsset(logoAsset, `user_${ownerId}`, sourceRevision);
+  const targetRevision = canonicalUuid(revisionId, "handoff revision");
+  const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp",
+    "image/svg+xml": "svg", "application/pdf": "pdf" }[original.contentType];
+  const destination = `users/${ownerId}/revisions/${targetRevision}/inputs/logo/${original.contentHash}.${extension}`;
+  const { data, error } = await supabase.storage.from(BUCKET).download(original.storagePath);
+  if (error || !data) throw Object.assign(new Error("handoff_logo_read_failed"), {
+    code: "handoff_logo_read_failed", retryable: true,
+  });
+  let bytes;
+  try { bytes = verifySourceBytes(original, Buffer.from(await data.arrayBuffer())); }
+  catch (cause) { throw Object.assign(new Error(`handoff_logo_identity_mismatch: ${cause.message}`), {
+    code: "handoff_logo_identity_mismatch", retryable: false,
+  }); }
+  const stored = await immutableStorageUpload(supabase.storage, BUCKET, destination, bytes, original.contentType);
+  return { ...stored, contentType: original.contentType, originalStoragePath: original.storagePath };
+}
+
+async function completeGenerationWithSources({ supabase, ownerId, revisionId, views, logoAsset = null, completionArgs }) {
   // A durable handoff consumer can observe outputs_ready immediately after
   // this RPC commits. Every referenced input must exist before that boundary.
   // Incomplete ATLAS proof sets remain partial and cannot trigger a handoff.
-  if (views.length === 7) await placeRevisionSources({ supabase, ownerId, revisionId, views });
+  if (views.length === 7) {
+    await placeRevisionSources({ supabase, ownerId, revisionId, views });
+    await placeRevisionLogo({ supabase, ownerId, revisionId, logoAsset });
+  }
   const { data, error } = await supabase.rpc("complete_designpro_generation_request", completionArgs);
   if (error) throw new Error(`complete_designpro_generation_request failed: ${error.message}`);
   return data;
@@ -1356,6 +1383,7 @@ function createGenerationWorker({
 
       const completion = await completeGenerationWithSources({
         supabase, ownerId, revisionId, views,
+        logoAsset: executionInput?.logoAsset || null,
         completionArgs: {
           p_request_id: requestId,
           p_claim_token: claimToken,
@@ -1483,6 +1511,7 @@ module.exports = {
   assertAtlasViewLineage,
   createGenerationWorker,
   completeGenerationWithSources,
+  placeRevisionLogo,
   handOffToProduction,
   conditionedPromptPartsFor,
   designBrief,
