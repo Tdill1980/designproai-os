@@ -101,7 +101,7 @@ test("reflowed equal-aspect flanks and missing panels refuse instead of guessing
   assert.match(shifted.refused, /panel_identity_ambiguous/);
   assert.deepEqual(shifted.panels, []);
   const missing = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { missing: "zone1:rear" }), manifest: TRANSIT, sharp });
-  assert.match(missing.refused, /panel_count:5!=6/);
+  assert.match(missing.refused, /panel_count:5<6/);
   assert.deepEqual(missing.panels, []);
 });
 
