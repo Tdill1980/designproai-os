@@ -295,6 +295,7 @@ test("the container is staged only where the edge would accept it", async () => 
   };
   const staged = await proof.stageProofContainer({
     supabase, manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)),
+    dimensionManifest: MANIFEST,
     companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius",
   });
   assert.equal(uploads.length, 1);
@@ -353,6 +354,7 @@ test("composed proof header preserves brand and vehicle parsed from the customer
   const actual = store.objects.get(out.provenance.proofStoragePath).bytes;
   const expected = await container.renderContainerTemplate({
     manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)),
+    dimensionManifest: MANIFEST,
     companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5,
   });
   const header = async bytes => sharp(bytes).resize(3072,2048,{fit:"fill"})

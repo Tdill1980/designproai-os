@@ -280,3 +280,27 @@ test("artwork conditioning contains only six unlabelled destinations at the exac
     }
   }
 });
+
+test("Call 1 labels GENIE trim and print once without changing print artwork geometry", async () => {
+  const { panelRowsFromManifest } = await import("../runtime/atlas-panel-proof-topology.cjs");
+  const dimensions = {
+    driver: [222.7, 54.43], passenger: [222.7, 54.43], roof: [63.92, 65.43],
+    hood: [67.92, 47.47], front: [122.25, 34], rear: [67.92, 34.02],
+  };
+  const dimensionManifest = { zones: Object.entries(dimensions).map(([surfaceKey, [w, h]]) => ({
+    surfaceKey, trimWidthIn: w, trimHeightIn: h, printWidthIn: w + 10, printHeightIn: h + 10,
+    bleedIn: { left: 5, right: 5, top: 5, bottom: 5 },
+  })) };
+  const manifest = runtimeTemplate.parsePanelRows(panelRowsFromManifest(dimensionManifest));
+  const options = { manifest, dimensionManifest, bleedInches: 5, companyName: "Northline Solar & Battery" };
+  const actual = runtimeTemplate.containerSvg(options);
+  assert.equal(actual, (await edge()).containerSvg(options), "runtime and edge must label the same inches");
+  assert.match(actual, /TRIM 222\.7&quot; x 54\.4&quot;/);
+  assert.match(actual, /PRINT 232\.7&quot; x 64\.4&quot;/);
+  assert.doesNotMatch(actual, /PRINT 242\.7&quot; x 74\.4&quot;/);
+  const sqft = Object.values(dimensions).reduce((sum, [w, h]) => sum + w * h / 144, 0).toFixed(2);
+  assert.ok(actual.includes(`TOTAL COVERAGE (TRIM): ${sqft} SQ FT`));
+  // Only document labels change: both versions retain identical artwork boxes.
+  assert.equal(runtimeTemplate.containerSvg({ ...options, mode: "artwork" }),
+    runtimeTemplate.containerSvg({ manifest, mode: "artwork" }));
+});

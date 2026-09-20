@@ -303,7 +303,7 @@ function surfacesFrom(manifest = {}) {
  * Deno. Separating the two makes the portable half portable.
  */
 function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5,
-  mode = "template", job = {} } = {}) {
+  mode = "template", job = {}, dimensionManifest } = {}) {
   const chrome = mode === "chrome";
   const ground = chrome ? "none" : "#ffffff";
   const surfaces = surfacesFrom(manifest);
@@ -318,11 +318,19 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
       + cells.map(cell => `<rect x="${cell.x}" y="${cell.y}" width="${cell.w}" height="${cell.h}" fill="#d1d5db"/>`).join("")
       + `</svg>`;
   }
-  // THE ROWS ARRIVE AS TRIM INCHES -- that is what the contract states and what
-  // GENIE resolves. The PRINT size is trim plus the bleed on all four edges, so
-  // it is trim + 2x bleed in each dimension. Stating both is the point of the
-  // sheet: the shop cuts on the trim line and prints to the larger rectangle.
-  const printOf = (s) => ({ w: s.widthIn + bleedInches * 2, h: s.heightIn + bleedInches * 2 });
+  // Artwork rows can describe print rectangles. Use authoritative GENIE
+  // dimensions for labels without changing those rectangles or adding bleed twice.
+  const dimensions = new Map((dimensionManifest?.zones || []).map(zone => [String(zone.surfaceKey), zone]));
+  const trimOf = (s) => {
+    const zone = dimensions.get(s.surfaceKey);
+    return { w: Number(zone?.trimWidthIn ?? s.widthIn), h: Number(zone?.trimHeightIn ?? s.heightIn) };
+  };
+  const printOf = (s) => {
+    const zone = dimensions.get(s.surfaceKey);
+    const trim = trimOf(s);
+    return { w: Number(zone?.printWidthIn ?? trim.w + bleedInches * 2),
+      h: Number(zone?.printHeightIn ?? trim.h + bleedInches * 2) };
+  };
 
   // EVERY PANEL CARRIES ITS OWN TRIM / PRINT / BLEED, IN BOTH ZONES -- which is
   // what the owner's filled twin does, and it is also the only place the sheet
@@ -331,7 +339,7 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // template learned the panel names and not the numbers under them.
   const panelDetail = (s) => {
     const p = printOf(s);
-    return [`TRIM ${r1(s.widthIn)}" x ${r1(s.heightIn)}"`,
+    return [`TRIM ${r1(trimOf(s).w)}" x ${r1(trimOf(s).h)}"`,
       `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
       `${bleedInches}" bleed all edges`];
   };
@@ -342,7 +350,7 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // its own trim or print rectangles either, because a diffusion model wrote
   // them. This one is the sum of the GENIE trim areas and nothing else, so the
   // blank template can never teach arithmetic that does not close.
-  const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (s.widthIn * s.heightIn) / 144, 0);
+  const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (trimOf(s).w * trimOf(s).h) / 144, 0);
   const m = [];
 
   // ── the knock-out, in chrome mode only ──────────────────────────────────
@@ -421,7 +429,7 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   let cx = 54;
   for (const s of surfaces) {
     m.push(text(cx, 864, LABEL[s.surfaceKey] || s.surfaceKey.toUpperCase(), { size: 8, fill: MUTED }));
-    m.push(text(cx, 877, `${r1(s.widthIn)}" x ${r1(s.heightIn)}"`, { size: 9 }));
+    m.push(text(cx, 877, `${r1(trimOf(s).w)}" x ${r1(trimOf(s).h)}"`, { size: 9 }));
     cx += 118;
   }
   m.push(text(838, 846, "TEMPLATE NOTES:", { size: 9.5, weight: 700 }));

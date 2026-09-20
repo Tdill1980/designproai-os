@@ -682,6 +682,7 @@ async function assemblePanelProofMaster({
     .map(v => String(v || "").trim()).filter(Boolean).join(" ");
   const blankTemplate = await renderContainerTemplate({
     manifest: proofManifest,
+    dimensionManifest: manifest,
     companyName: brand.companyName || brand.businessName || "",
     vehicle: vehicleLabel,
     bleedInches: 5,
