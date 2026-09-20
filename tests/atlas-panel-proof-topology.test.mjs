@@ -241,20 +241,46 @@ test("the container is staged only where the edge would accept it", async () => 
     "the filename IS the content hash — the edge checks that separately from the claim");
 });
 
-test("an UNFILLED panel cell is refused, because white is not dark", async () => {
+test("an unfilled authoritative Zone 2 panel is refused", async () => {
   // Every hole predicate in this repo is a darkness test (holeAt <= 24,
   // nearBlackAt <= 40), which is exactly how live efca5e03 shipped a die-cut
   // sheet on an rgb(88,88,88) surround past every gate. An empty CELL is a blank
   // print panel and would sail through all of them, so `fit` convicts it here.
-  const sheet = await paintedSheet({ empty: ["zone1:rear"] });
+  const sheet = await paintedSheet({ empty: ["zone2:rear"] });
   const { callProofEdge } = edgeStub(sheet);
   await assert.rejects(
     () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge }),
     (error) => {
       assert.equal(error.code, "flat_atlas_panel_proof_refused");
-      assert.match(error.reason, /atlas_proof_panels_zone1:panel_count:5!=6/);
+      assert.match(error.reason, /atlas_proof_panels_zone2:panel_count:5!=6/);
       return true;
     });
+});
+
+test("provisional AI Zone 1 geometry is discarded and the complete band is composed from Zone 2", async () => {
+  const width = 3072, height = 2048;
+  const top = Math.round(height*0.105), bottom = Math.round(height*0.363);
+  // One wrong-shaped magenta slab cannot be mistaken for six brand panels.
+  // It must be completely replaced, not retained around the composed cells.
+  const sheet = await sharp(await paintedSheet()).composite([{
+    input: await sharp({create:{width,height:bottom-top,channels:3,background:"#ff00ff"}}).png().toBuffer(),
+    left:0,top,
+  }]).png().toBuffer();
+  const store = memoryStore();
+  const {callProofEdge} = edgeStub(sheet);
+  const out = await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge});
+  assert.equal(out.provenance.threeZoneLayout.branded,6);
+  assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
+  assert.ok(out.provenance.threeZoneLayout.graphics > 0);
+  assert.ok(out.provenance.quadrants.branded.every(panel => panel.positionalPremiseVerified && panel.identity));
+  const finalProof = store.objects.get(out.provenance.proofStoragePath).bytes;
+  const outsidePanel = await sharp(finalProof).extract({left:2,top:top+50,width:1,height:1})
+    .removeAlpha().raw().toBuffer();
+  assert.deepEqual([...outsidePanel],[255,255,255],"discarded provisional pixels cannot remain behind the final panels");
+  for (const panel of out.provenance.quadrants.clean) {
+    const stored = store.objects.get(panel.storagePath);
+    assert.equal(createHash("sha256").update(stored.bytes).digest("hex"),panel.contentHash);
+  }
 });
 
 test("panel-proof refusals are recorded and terminal, without a substitute authoring route", () => {

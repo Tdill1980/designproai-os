@@ -72,7 +72,7 @@ import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
 // request through this; a bare fetch here is what made `cacheOnly` a no-op.
 import {
   runDurableImageProviderRequest, authorizeAtlasProviderRequest,
-  captureGeminiHttpExchange, providerSha256,
+  captureGeminiHttpExchange, providerSha256, GeminiProviderError,
 } from "../_shared/gemini-provider-cache.mjs";
 import {
   INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
@@ -696,7 +696,20 @@ serve(async (req) => {
         .filter((p: Record<string, unknown>) => typeof p?.thoughtSignature === "string").length,
     });
   } catch (error) {
-    return json({ error: String((error as Error)?.message || error), requestId }, 500);
+    const providerError = error instanceof GeminiProviderError ? error : null;
+    const storageDiagnostic = providerError ? (providerError as any).storageDiagnostic || null : null;
+    const diagnosticSuffix = storageDiagnostic
+      ? ` [storage ${storageDiagnostic.exceptionClass} status=${storageDiagnostic.httpStatus ?? "unknown"} code=${storageDiagnostic.code ?? "unknown"}]`
+      : "";
+    return json({
+      error: `${String((error as Error)?.message || error)}${diagnosticSuffix}`,
+      requestId,
+      imageRequestCount: providerError?.imageRequestCount ?? null,
+      providerOutcome: providerError?.providerOutcome ?? null,
+      retryable: providerError?.retryable === true,
+      providerRetryDisposition: providerError?.providerRetryDisposition ?? "operator_required",
+      storageDiagnostic,
+    }, providerError?.status || 500);
   }
 });
 
