@@ -186,15 +186,9 @@ test("the default topology is unchanged; hero-driver is opt-in by deploy flag an
   assert.match(runtimeSrc, /authoringTopology = "six-surface"/, "the destructured default stays six-surface");
   assert.match(runtimeSrc, /options\?\.authoringTopology === undefined && heroDriverEnabled\(\)\s*\n\s*&& options\?\.parentManifest == null && \(options\?\.revisionSequence \?\? 1\) === 1/);
   assert.match(runtimeSrc, /\["six-surface", "field", HERO_DRIVER_TOPOLOGY, PANEL_PROOF_TOPOLOGY\]\.includes\(authoringTopology\)/);
-  // SEVEN fail-over doors, all to six-surface, all recorded as provenance:
-  // three from a refused hero pass, three added 2026-09-16 for the field-first
-  // routing -- a spent field budget, plus the two resume paths that have to
-  // recognise a six-surface tail that was accepted before its revision landed --
-  // and one added 2026-09-19 for the panel production proof. RULE 0.38 is why
-  // the count is a lock rather than a note: EVERY Call-1 routing gets a second
-  // contract, and field-first shipped without one.
+  // Six legacy hero/field fallback doors remain. Panel proof now refuses loudly.
   const seam = runtimeSrc.slice(runtimeSrc.indexOf("async function generateOrReuseFlatAtlasResolved("));
-  assert.equal((seam.match(/return failOverToSixSurface\(/g) || []).length, 7);
+  assert.equal((seam.match(/return failOverToSixSurface\(/g) || []).length, 6);
   assert.ok(seam.includes("field-first budget refused"), "the spent field-first budget hands over");
   assert.ok(seam.includes("resuming the accepted six-surface tail for"), "the checkpoint resume mirror exists");
   assert.match(seam, /existing && fieldFirstRouted && existing\.manifest\?\.topology !== FIELD_TOPOLOGY/);

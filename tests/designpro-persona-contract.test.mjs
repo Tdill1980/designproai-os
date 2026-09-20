@@ -87,7 +87,8 @@ test("persona, depth, translation and professional judgment fire on every commer
   ]) {
     const prompt = authored(input);
     // PERSONA — DPAG's proven vehicle-wrap designer identity.
-    assert.match(prompt, /senior vehicle-wrap designer at a sign and wrap company/);
+    assert.match(prompt, /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/);
+    assert.match(prompt, /Use your native Gemini 3 Pro Image design knowledge\./);
     assert.match(prompt, /an original design built for this one business — premium, readable at a glance from across a parking lot, and worth what the customer paid/);
     // COMMERCIAL_DEPTH survives in the one cohesive vehicle atlas.
     assert.match(prompt, /background color and texture flowing across the panels, mid-ground graphic motion, and foreground accent detail/);
@@ -183,7 +184,8 @@ test("references never turn the persona or the auto-logo off", () => {
     { visionboardIntent: "exact_reference", visionBoardImages: [{}] },
   ]) {
     const prompt = authored({ ...base, ...extra });
-    assert.match(prompt, /senior vehicle-wrap designer at a sign and wrap company/);
+    assert.match(prompt, /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/);
+    assert.match(prompt, /Use your native Gemini 3 Pro Image design knowledge\./);
     assert.match(prompt, /This business needs its own logo/);
   }
   const inspiration = authored({ ...base, visionBoardImages: [{}], visionboardIntent: "style_inspiration", styleDescriptors: "ART STYLE: bold" });

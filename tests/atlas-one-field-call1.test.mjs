@@ -28,6 +28,14 @@ const atlas = require("../runtime/flat-first-atlas.cjs");
 const territories = require("../runtime/atlas-field-territories.cjs");
 const sha = (v) => createHash("sha256").update(v).digest("hex");
 
+// Preserve the historical pins while allowing exactly the owner-requested persona change.
+function historicalPersona(prompt) {
+  assert.ok(prompt.includes("senior graphic designer and vehicle-wrap specialist at a sign and wrap company"));
+  assert.ok(prompt.includes(" Use your native Gemini 3 Pro Image design knowledge."));
+  return prompt.replace("senior graphic designer and vehicle-wrap specialist", "senior vehicle-wrap designer")
+    .replace(" Use your native Gemini 3 Pro Image design knowledge.", "");
+}
+
 const DRAW1_PROMPT = readFileSync(new URL("../docs/ab/field-recovery-v2-33659500846-prompt-field-v2.txt", import.meta.url), "utf8");
 const DRAW1_TERRITORIES = JSON.parse(readFileSync(new URL("../docs/ab/field-recovery-v2-33659500846-territories.json", import.meta.url), "utf8"));
 const DEPLOYED_V23_PROMPT_SHA256 = "ee760434b5769bcfcb31e1792827c2bebcd1608f9d4ad60021f8d3a6f55e9281";
@@ -151,7 +159,7 @@ test("the DEPLOYED edge assembly reproduces Draw 1's creative half byte for byte
   assert.equal(references.length, 0);
   const split = prompt.indexOf(TAIL_MARK);
   assert.ok(split > 0, "the assembled prompt must carry the field tail");
-  const head = prompt.slice(0, split);
+  const head = historicalPersona(prompt.slice(0, split));
   assert.equal(head.length, DRAW1_HEAD.length);
   assert.equal(sha(head), sha(DRAW1_HEAD));
   assert.equal(head, DRAW1_HEAD);
@@ -218,8 +226,8 @@ test("the legacy six-container assembly still reproduces the deployed v24 prompt
   delete body.fieldContract;
   delete body.noseEdge;
   const { prompt } = mod.buildAtlasCall1Prompt(body);
-  assert.equal(sha(prompt), DEPLOYED_V23_PROMPT_SHA256);
-  assert.equal(prompt.length, 3997);
+  assert.equal(sha(historicalPersona(prompt)), DEPLOYED_V23_PROMPT_SHA256);
+  assert.equal(historicalPersona(prompt).length, 3997);
 });
 
 test("the edge refuses an unknown field contract and echoes the one it ran", () => {
@@ -304,6 +312,6 @@ test("the restored product prompt matches the owner's complete specification has
   const input = { ...FIXTURE_INPUT, companyName: "Precision Climate Solutions", colors: [], style: "", industry: "" };
   const body = atlas._test.atlasEdgeRequestBody(input, legacy);
   const { prompt } = mod.buildAtlasCall1Prompt(body);
-  assert.equal(prompt.length, 3853);
-  assert.equal(sha(prompt), "abac2b45fe09645a4db58aa27f3ee95c7aa03258d94bb75ac3f192d17063cf8b");
+  assert.equal(historicalPersona(prompt).length, 3853);
+  assert.equal(sha(historicalPersona(prompt)), "abac2b45fe09645a4db58aa27f3ee95c7aa03258d94bb75ac3f192d17063cf8b");
 });
