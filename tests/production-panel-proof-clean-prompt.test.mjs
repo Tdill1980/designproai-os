@@ -31,6 +31,7 @@ async function assemble(body={}) {
 test('active separated Call 1 injects exact persona and omits contradictory branded generation directions',async()=>{
   const {prompt}=await assemble();
   assert.ok(prompt.startsWith(PERSONA+'\n\n'));
+  assert.ok(prompt.includes('Using the provided 2D production-proof examples as your structural guide, generate the flat, print-ready background panels for Zone 2. DO NOT generate typography, logos, or 3D vehicle perspectives. Output only the flat background art, leaving the correct negative space for later vector placement.'));
   assert.match(prompt,/native Gemini 3 Pro Image design knowledge/);
   assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
   assert.match(prompt,/rich landscape photography/);

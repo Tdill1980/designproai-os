@@ -494,6 +494,7 @@ serve(async (req) => {
       // to draw exact customer text and fill five logo boxes was contradictory.
       prompt = [
         "You are an expert commercial graphic designer. Generate a high-fidelity, photorealistic vehicle wrap background layout. DO NOT generate text, logos, or typography of any kind. Leave negative space for vector asset placement.",
+        "Using the provided 2D production-proof examples as your structural guide, generate the flat, print-ready background panels for Zone 2. DO NOT generate typography, logos, or 3D vehicle perspectives. Output only the flat background art, leaving the correct negative space for later vector placement.",
         creativeHead,
         "MANDATORY THREE-BAND PRODUCTION LAYOUT: Preserve the attached blank template's panel positions, aspect ratios and six surface identities. Fill each rectangular panel edge to edge with uninterrupted flat printed artwork; no wheel openings, vehicle silhouettes, photographs of vehicles, panel labels, dimensions or captions.",
         "ZONE 1 — Background copies reserved for full-design composition. Draw the same six clean backgrounds as Zone 2. The operating system will add the protected customer assets after generation to build the finished full-design panels.",
