@@ -2481,6 +2481,16 @@ async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, proje
     // Read off the immutable row so a resumed run projects the same sizes it
     // cut with, rather than re-deriving them.
     callOnePanels: Array.isArray(row.metadata?.callOnePanels) ? row.metadata.callOnePanels : [],
+    proofSheet: row.metadata?.panelProofAuthoring?.proofStoragePath
+      && /^[0-9a-f]{64}$/.test(String(row.metadata?.panelProofAuthoring?.proofSha256 || ""))
+      ? {
+          storagePath: row.metadata.panelProofAuthoring.proofStoragePath,
+          contentHash: row.metadata.panelProofAuthoring.proofSha256,
+          byteSize: Number(row.metadata.panelProofAuthoring.proofByteSize || 0),
+          contentType: row.metadata.panelProofAuthoring.proofContentType || "image/png",
+          contract: row.metadata.panelProofAuthoring.proofContract || null,
+        }
+      : null,
     guide: {
       storagePath: row.guide_storage_path,
       contentHash: row.guide_content_hash,
@@ -3721,6 +3731,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
           customerImageParts,
           providerRequest: { requestId, generationId, claimToken,
             ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+          onProofSheetReady: typeof options.onProofSheetReady === "function"
+            ? (payload) => options.onProofSheetReady({ ...payload, revisionId: mintedRevisionId })
+            : null,
           logger,
         });
       } catch (cause) {
@@ -4381,6 +4394,16 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // object exists to not wait for.
     projection: null,
     metadata: { panelSourceHash },
+    proofSheet: generated?.panelProof?.proofStoragePath
+      && /^[0-9a-f]{64}$/.test(String(generated?.panelProof?.proofSha256 || ""))
+      ? {
+          storagePath: generated.panelProof.proofStoragePath,
+          contentHash: generated.panelProof.proofSha256,
+          byteSize: Number(generated.panelProof.proofByteSize || 0),
+          contentType: generated.panelProof.proofContentType || "image/png",
+          contract: generated.panelProof.proofContract || null,
+        }
+      : null,
     callOnePanels: [],
     viewAuthorities: {},
   };
