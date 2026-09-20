@@ -540,8 +540,33 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
     // annotations and must NEVER be painted onto the vehicle.
     const threeZoneAuthority = String(body.sourceAuthorityRole || "") === "three-zone-production-proof";
     const targetPart = await targetPanelPart({ body, surfaceKey, bucket: svc.storage.from("wrap-files") });
+    /**
+     * THE PANEL'S PRINTED SIZE, STATED (owner ruling, Trish 2026-09-20: the
+     * dimensions belong at Call 2, where the artwork is wrapped onto a
+     * photoreal vehicle).
+     *
+     * Zone 1's six rectangles are wildly different proportions -- a driver
+     * flank near 3.3:1, a front fascia near 2.3:1 -- and until now this
+     * renderer was shown them with no statement of which is which size. It had
+     * to infer the mapping from the picture, and a wrong inference is exactly
+     * what `atlasContinuityContract=fail` convicts.
+     *
+     * It is a PROPORTION statement, not a new creative instruction: the aspect
+     * ratio is what decides whether the artwork stretches, crops or sits
+     * correctly on the body. Absent dimensions emit nothing at all rather than
+     * a fabricated `0"`.
+     */
+    const panelW = Number(body.panelPrintWidthIn);
+    const panelH = Number(body.panelPrintHeightIn);
+    const panelDimensionLine = Number.isFinite(panelW) && panelW > 0 && Number.isFinite(panelH) && panelH > 0
+      ? `\nThis ${surfaceKey} panel prints ${panelW}" wide x ${panelH}" high`
+        + `${Number(body.panelBleedIn) > 0 ? ` including ${Number(body.panelBleedIn)}" bleed on all four edges` : ""}`
+        + ` — an aspect ratio of ${(panelW / panelH).toFixed(2)}:1. Map the artwork onto the vehicle at that true proportion:`
+        + ` do not stretch, squeeze, crop or re-scale it to fit the body differently.`
+        + ` The bleed is trimmed at installation and is never visible on the finished vehicle.`
+      : "";
     const authorityInstruction = threeZoneAuthority ? {
-      text: `IMAGE 1 is the exact THREE-ZONE PRODUCTION PANEL PROOF for this vehicle.
+      text: `IMAGE 1 is the exact THREE-ZONE PRODUCTION PANEL PROOF for this vehicle.${panelDimensionLine}
 Use ZONE 1 — FULL DESIGN PANELS as the finished wrap-design authority for the requested ${surfaceKey} surface.
 Use Zones 2 and 3 only to understand background/graphic separation and design continuity.
 IMAGE 2 is the exact isolated finished ${surfaceKey} panel from Zone 1, verified against its stored hash. It is the PRIMARY artwork authority for this vehicle surface. Copy this panel's imagery, layout and colors exactly. Do not borrow logos, gears, motifs or scenes from other panels in IMAGE 1. IMAGE 1 remains the full production context; IMAGE 2 resolves which artwork belongs on this surface.

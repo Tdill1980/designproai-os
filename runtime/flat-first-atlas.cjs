@@ -1584,7 +1584,40 @@ function atlasPanelForProofView(atlas, sourceViewType) {
     contentHash: String(panel.contentHash).toLowerCase(),
     contentType: String(panel.contentType || "image/png"),
     sourceMasterHash: String(panel.sourceMasterHash || atlas?.master?.contentHash || ""),
+    /**
+     * THE PANEL'S REAL-WORLD SIZE TRAVELS TO CALL 2 (owner ruling, Trish
+     * 2026-09-20: "it may be smarter to add the dimensions at call 2 which is
+     * the 3d vehicle proof").
+     *
+     * `cutCallOnePanels` has always stamped these onto the panel and this
+     * function dropped every one of them, so the photographer was handed a
+     * sheet of six rectangles of wildly different proportions and no statement
+     * of which is which size. A driver flank is ~3.3:1 and a front fascia
+     * ~2.3:1; without the inches the renderer has to GUESS how the artwork maps
+     * onto the body, which is the drift `atlasContinuityContract=fail`
+     * convicts -- 16 of 16 real proof rejections in the five days to 09-20.
+     *
+     * GENIE remains the geometry authority and these stay `calls-1-7-layout-only`
+     * design-time inches; Call 2 is told the proportion, never asked for it.
+     */
+    trimWidthIn: finiteOrNull(panel.trimWidthIn),
+    trimHeightIn: finiteOrNull(panel.trimHeightIn),
+    printWidthIn: finiteOrNull(panel.printWidthIn),
+    printHeightIn: finiteOrNull(panel.printHeightIn),
+    surfaceSqFt: finiteOrNull(panel.surfaceSqFt),
+    bleedInches: finiteOrNull(panel.bleedInches),
+    geometryPurpose: String(panel.geometryPurpose || "calls-1-7-layout-only"),
   });
+}
+
+/**
+ * `Number(null)` IS `0`, AND A FABRICATED DIMENSION PRINTS AS FACT. Absence
+ * stays absent -- the same rule the panel-proof gateway and component already
+ * hold, applied here before the number can reach a prompt.
+ */
+function finiteOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }
 
 function viewAuthorityFor(atlas, sourceViewType) {
