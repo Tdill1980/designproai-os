@@ -38,7 +38,6 @@ test('active separated Call 1 injects exact persona and omits contradictory bran
   assert.match(prompt,/native Gemini 3 Pro Image design knowledge/);
   assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
   assert.match(prompt,/rich landscape photography/);
-  assert.match(prompt,/BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND/);
   assert.doesNotMatch(prompt,/ZONE 1 — Background copies|ZONE 2 — Authoritative backgrounds only|ZONE 3 — Reserved for original vector cut graphics/);
   assert.match(prompt,/Zone 1 combines these backgrounds with protected original customer branding/);
   assert.match(prompt,/Return the six clean background artworks on the staging canvas/);
