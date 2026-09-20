@@ -37,10 +37,13 @@ test("one canonical policy includes every required runtime file and five deploy 
   // test and not here — which is the point: the manifest cannot grow silently,
   // in either direction. Update the number WITH the sentence above saying what
   // joined it, never on its own.
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 133);
+  // Generated-logo chroma keying runs in the runtime, so its lazily required
+  // helper must ship even though a basic runtime health probe never loads it.
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 134);
   for (const name of [
     "runtime/atlas-proof-panel-locator.cjs",
     "runtime/atlas-panel-proof-contract.cjs",
+    "runtime/atlas-logo-chroma.cjs",
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",
     "runtime/atlas-authoring-transport.cjs",
@@ -177,7 +180,7 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
       const path = join(root, name);
       mkdirSync(dirname(path), { recursive: true });
       if (name === "ops/release-files.txt") cpSync(join(track, name), path);
-      else if (name.startsWith("supabase/")) cpSync(join(track, name), path);
+      else if (name.startsWith("supabase/") || name === "runtime/atlas-logo-chroma.cjs") cpSync(join(track, name), path);
       else writeFileSync(path, name.endsWith(".json") ? "{}\n" : `fixture:${name}\n`);
     }
     // The served application is the branded operator shell, so the builder
@@ -195,6 +198,9 @@ test("actual builder emits reproducible bytes with every fixed file manifest-bou
     assert.deepEqual(first, second);
     const manifest = JSON.parse(execFileSync("tar", ["-xOzf", join(root, "one", `designproai-release-${sha}.tgz`), ".designpro-release.json"], { encoding: "utf8" }));
     assert.deepEqual(Object.keys(manifest.files).sort(), [...fixed, "web/dist/assets/app.js"].sort());
+    const packagedChroma=execFileSync("tar",["-xOzf",join(root,"one",`designproai-release-${sha}.tgz`),"runtime/atlas-logo-chroma.cjs"]);
+    assert.deepEqual(packagedChroma,readFileSync(join(track,"runtime/atlas-logo-chroma.cjs")),
+      "archive must contain the exact lazy-loaded logo compositor, not merely a healthy runtime entrypoint");
     const extracted = join(root, "native-import-check");
     mkdirSync(extracted);
     execFileSync("tar", ["-xzf", join(root, "one", `designproai-release-${sha}.tgz`), "-C", extracted, "supabase"]);

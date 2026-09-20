@@ -107,6 +107,7 @@ runtime/atlas-panel-proof-contract.cjs
 runtime/atlas-proof-panel-locator.cjs
 runtime/atlas-typeset-layer.cjs
 runtime/atlas-logo-prepare.cjs
+runtime/atlas-logo-chroma.cjs
 runtime/atlas-element-lockup.cjs
 runtime/atlas-master-composite.cjs
 # The element graph's typography faces. VENDORED and hash-pinned rather than
