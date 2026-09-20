@@ -529,10 +529,20 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
         ? body.pickupRoofQualification : undefined,
     });
 
-    // THE PANEL FIRST, THE CAMERA LAST. Gemini weights the final part most
-    // heavily, and the camera instruction is the one that must win -- the same
-    // ordering the hero path used, for the same reason.
-    const parts = [panelPart, { text: prompt }];
+    // THE ARTWORK FIRST, THE CAMERA LAST. On the panel-proof topology IMAGE 1
+    // is the complete customer-visible three-zone Production Panel Proof.
+    // Zone 1 is the finished wrap authority; Zones 2/3 explain the same design's
+    // separated production layers. Dimensions/labels/arrows are document
+    // annotations and must NEVER be painted onto the vehicle.
+    const threeZoneAuthority = String(body.sourceAuthorityRole || "") === "three-zone-production-proof";
+    const authorityInstruction = threeZoneAuthority ? {
+      text: `IMAGE 1 is the exact THREE-ZONE PRODUCTION PANEL PROOF for this vehicle.
+Use ZONE 1 — FULL DESIGN PANELS as the finished wrap-design authority for the requested ${surfaceKey} surface.
+Use Zones 2 and 3 only to understand background/graphic separation and design continuity.
+The printed dimensions, zone headings, panel labels, arrows, borders, guides and document chrome are annotations only. NEVER render those annotations on the vehicle.
+Do not redesign the wrap. Photograph the Zone-1 design on the exact vehicle and requested camera view.`,
+    } : null;
+    const parts = [panelPart, ...(authorityInstruction ? [authorityInstruction] : []), { text: prompt }];
 
     let imageBase64: string | null = null;
     let imageMimeType = "image/png";
