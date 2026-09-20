@@ -61,7 +61,8 @@ export function useStandaloneProductionLayers(
     if (!layers || !id) return null;
     const back = returnPath || `/designpro/jobs/${id}`;
     const checkout = (product: "print_pack_entitlement" | "logo_pack") => async () => {
-      const session = await dpApi.createCheckoutSession({ generationId: id, product, returnPath: back });
+      if (!layers.atlasRevisionId || (revisionId && layers.atlasRevisionId !== revisionId)) throw new Error("checkout_revision_required");
+      const session = await dpApi.createCheckoutSession({ generationId: id, atlasRevisionId: layers.atlasRevisionId, product, returnPath: back });
       window.location.href = session.url;
     };
     return {
@@ -85,5 +86,5 @@ export function useStandaloneProductionLayers(
         },
       } : {}),
     };
-  }, [layers, entitlements, owner, id, returnPath]);
+  }, [layers, entitlements, owner, id, returnPath, revisionId]);
 }

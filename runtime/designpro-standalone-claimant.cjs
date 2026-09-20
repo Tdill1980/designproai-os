@@ -1616,6 +1616,30 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
     if (brandedPanels.length !== SURFACE_KEYS.length || new Set(brandedPanels.map((row) => row.surface_key)).size !== SURFACE_KEYS.length) {
       throw new StageError("call11_branded_set_incomplete", "Call 11 requires the exact six branded Call 9 panels", false);
     }
+    const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources").select("snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
+    if (revisionError || !revisionSource || revisionSource.snapshot_hash !== run.revision_snapshot_hash) {
+      throw new StageError("call11_revision_source_drift", "Frozen separated artwork source changed", false);
+    }
+    const panelProof = revisionSource.snapshot?.panelProofAuthoring;
+    const backgrounds = new Map();
+    if (panelProof) {
+      const clean = panelProof.quadrants?.clean;
+      if (panelProof.contract !== "designpro.atlas-panel-proof-topology.v2" || panelProof.composition?.sourceAssetsPreserved !== true
+        || !HASH_RE.test(String(panelProof.masterSha256 || "")) || !Array.isArray(clean) || clean.length !== SURFACE_KEYS.length
+        || new Set(clean.map((item) => item.surfaceKey)).size !== SURFACE_KEYS.length
+        || brandedPanels.some((row) => row.metadata?.sourceMasterHash !== panelProof.masterSha256)) {
+        throw new StageError("call11_zone2_source_invalid", "Three-zone QC requires the exact six backgrounds from its frozen master", false);
+      }
+      for (const item of clean) {
+        if (!SURFACE_KEYS.includes(item.surfaceKey) || item.role !== "clean" || item.persisted !== true
+          || item.positionalPremiseVerified !== true || !HASH_RE.test(String(item.contentHash || ""))
+          || item.storagePath !== `atlas-panel-proof/quadrants/${item.contentHash}.png`
+          || !Number.isSafeInteger(item.byteSize) || item.byteSize <= 0) {
+          throw new StageError("call11_zone2_identity_invalid", "A frozen Zone 2 background lacks its validated surface identity", false);
+        }
+        backgrounds.set(item.surfaceKey, item);
+      }
+    }
     const spools = [];
     const produced = [];
     const removals = {};
@@ -1638,12 +1662,31 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
       const { width, height } = await image.metadata();
       if (!width || !height) throw new StageError("call11_panel_not_decodable", surface, false);
 
+      const background = backgrounds.get(surface);
+      let rects = [];
+      let edited;
+      if (background) {
+        // Zone 2 is already the exact unbranded design. Copy its original bytes
+        // without detection, erasure, resize, generated fill, or a model call.
+        // This content-addressed namespace is admitted only by the frozen
+        // three-zone identity above, not by the generic run-path reader.
+        const { data, error } = await sb.storage.from(BUCKET).download(background.storagePath);
+        if (error || !data) throw new StageError("call11_zone2_download_failed", `${surface} background is unavailable`, true);
+        edited = Buffer.from(await data.arrayBuffer());
+        if (edited.length !== background.byteSize || hashBytes(edited) !== background.contentHash) {
+          throw new StageError("call11_zone2_bytes_changed", `${surface} background changed after Call 1`, false);
+        }
+        const metadata = await sharp(edited, { limitInputPixels: false }).metadata();
+        if (metadata.format !== "png" || metadata.width !== background.rect?.width || metadata.height !== background.rect?.height) {
+          throw new StageError("call11_zone2_geometry_changed", `${surface} background no longer matches its dynamic crop`, false);
+        }
+      } else {
       const located = await locateLogosForPanel(duplicate, surface);
-      const rects = logoBoxesToPixelRects(located, width, height);
+      rects = logoBoxesToPixelRects(located, width, height);
       // HONEST NO-OP: a panel with no logo mark still produces its duplicate so
       // the side is present for template QC, and records removedCount 0 so "no
       // logos found" is never read as "removal succeeded".
-      const edited = isHonestNoOp(rects)
+      edited = isHonestNoOp(rects)
         ? await sharp(duplicate, { limitInputPixels: false }).png().toBuffer()
         : await sharp(duplicate, { limitInputPixels: false })
             .composite(rects.map((rect) => ({
@@ -1651,6 +1694,7 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
               left: rect.x, top: rect.y,
             })))
             .png().toBuffer();
+      }
 
       const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/qc-panels/${surface}.png`;
       const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, edited, "image/png");
@@ -1663,9 +1707,14 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
         sourcePanelHash: expectedHash, sourcePanelPath: row.storage_path, surfaceKey: surface,
         removedLogoCount: rects.length, removedLabels: rects.map((rect) => rect.label),
         removalContract: "designpro.call11-delogo-duplicate.v1",
-        trimWidthInches: row.metadata?.trimWidthInches ?? null,
-        trimHeightInches: row.metadata?.trimHeightInches ?? null,
-        bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+        ...(background ? { reusedZone2: true, sourceBackgroundHash: background.contentHash,
+          sourceBackgroundPath: background.storagePath, sourceMasterHash: panelProof.masterSha256,
+          sourceCrop: background.rect, dimensionAuthority: "call1-design-time" } : {}),
+        trimWidthInches: background?.widthIn ?? row.metadata?.trimWidthInches ?? null,
+        trimHeightInches: background?.heightIn ?? row.metadata?.trimHeightInches ?? null,
+        // Raw design-time backgrounds are reference assets, never print files
+        // or a claim that manufacturing bleed has already been constructed.
+        bleed: background ? null : { top: 5, right: 5, bottom: 5, left: 5 },
       }));
     }
 
@@ -1689,6 +1738,8 @@ async function locateLogosForPanel(panelBytes, surfaceKey) {
       qcPanelHashes: qcHashes, sourcePanelHashes: call9.panelHashes || {},
       removedLogoCounts: removals, brandedSetPreserved: true,
       removalContract: "designpro.call11-delogo-duplicate.v1",
+      ...(backgrounds.size ? { backgroundsReused: true, imageRequestCount: 0,
+        sourceBackgroundHashes: Object.fromEntries([...backgrounds].map(([surface, item]) => [surface, item.contentHash])) } : {}),
     }, null, produced);
     for (const spool of spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed Call 11 QC panel spool cleanup failed: ${error.message}`));
     return completed;
@@ -3041,6 +3092,56 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }
     const panelProfileFiles = attachmentArchiveFiles(panelProfileAttachments);
     const panelProfileEntries = panelProfileZipEntries(sb, panelProfileAttachments);
+    // Call 8 is the dimensioned production proof; it does not replace the
+    // customer's complete three-zone Call 1 sheet or its A.T.L.A.S. master.
+    // Package their frozen bytes through this same ZIP producer.
+    const sourceProofFiles = [];
+    const sourceProofEntries = [];
+    if (authorized.productionPackAuthorized) {
+      const { data: source, error: sourceError } = await sb.from("designpro_revision_sources")
+        .select("owner_id,tenant_key,snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
+      if (sourceError || !source || source.owner_id !== run.owner_id || source.tenant_key !== run.tenant_key
+        || source.snapshot_hash !== run.revision_snapshot_hash) {
+        throw new StageError("zip_revision_source_changed", "The frozen proof source does not match this paid revision", false);
+      }
+      const frozen = source.snapshot || {};
+      // Older non-panel-proof revisions have no three-zone artifact to add.
+      // A named panel-proof receipt must be complete; never silently omit it.
+      if (Object.prototype.hasOwnProperty.call(frozen, "panelProofAuthoring")) {
+        const proof = frozen.panelProofAuthoring;
+        if (!proof || proof.contract !== "designpro.atlas-panel-proof-topology.v2"
+          || proof.composition?.contract !== "designpro.production-zone-composite.v1"
+          || proof.composition?.sourceAssetsPreserved !== true
+          || proof.quadrants?.branded?.length !== 6 || proof.quadrants?.clean?.length !== 6
+          || !Array.isArray(proof.quadrants?.cutGraphics) || !proof.quadrants.cutGraphics.length
+          || !HASH_RE.test(String(proof.proofSha256 || "")) || !HASH_RE.test(String(proof.masterSha256 || ""))
+          || proof.masterSha256 !== frozen.sourceMasterContentHash
+          || !Number.isSafeInteger(proof.proofByteSize) || proof.proofByteSize < 1
+          || !UUID_RE.test(String(proof.graph?.runId || ""))
+          || proof.proofStoragePath !== `atlas-panel-proof/${proof.proofSha256}.png`
+          || proof.masterStoragePath !== `atlas-call1-graph/${proof.graph.runId}/panel-proof-master-${proof.masterSha256}.png`) {
+          throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching A.T.L.A.S. master", false);
+        }
+        const frozenFiles = [
+          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize },
+          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256 },
+        ];
+        for (const file of frozenFiles) {
+          // These content-addressed graph paths are intentionally outside the
+          // generic production prefix. Admit only the exact frozen paths above.
+          const { data, error } = await sb.storage.from(BUCKET).download(file.storagePath);
+          if (error || !data) throw new StageError("zip_call1_proof_unavailable", file.kind, true);
+          if (data.size > 128 * 1024 * 1024) throw new StageError("zip_call1_proof_size_invalid", file.kind, false);
+          const bytes = Buffer.from(await data.arrayBuffer());
+          if (!bytes.length || hashBytes(bytes) !== file.contentHash
+            || (file.byteSize !== undefined && bytes.length !== file.byteSize)) {
+            throw new StageError("zip_call1_proof_changed", `${file.kind} bytes differ from the frozen Call 1 identity`, false);
+          }
+          sourceProofFiles.push({ ...file, byteSize: bytes.length, contentType: "image/png", revisionSnapshotHash: run.revision_snapshot_hash });
+          sourceProofEntries.push(bufferZipEntry(file.archivePath, bytes));
+        }
+      }
+    }
     const dimensionManifest = productionDimensionManifest(run, input);
     const dimensionManifestBytes = Buffer.from(JSON.stringify(canonical(dimensionManifest)));
     const dimensionManifestHash = hashBytes(dimensionManifestBytes);
@@ -3052,6 +3153,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       ...zipArtifactEntries(sb, rows),
       ...viewEntries,
       ...panelProfileEntries,
+      ...sourceProofEntries,
       bufferZipEntry(dimensionArchivePath, dimensionManifestBytes),
       bufferZipEntry(businessIdentityArchivePath, businessIdentityBytes),
     ];
@@ -3065,11 +3167,11 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     }));
     const materialHash = hashJson({
       artifacts: rows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: row.storage_path, contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`)),
-      sourceViews: archivedSourceViews, panelProfileAttachments,
+      sourceViews: archivedSourceViews, panelProfileAttachments, sourceProofs: sourceProofFiles,
       dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
-    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}) };
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1 } : {}) };
 
     // THE ZIP SAYS WHAT IS IN IT, FILE BY FILE. (Trish 2026-08-28)
     //
@@ -3103,6 +3205,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         contentHash: view.contentHash, byteSize: Number(view.byteSize) || null,
       })),
       ...panelProfileFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, role: file.role, surfaceKey: file.pieceId || null, contentHash: file.contentHash, byteSize: file.byteSize, attachmentId: file.attachmentId })),
+      ...sourceProofFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, surfaceKey: null, contentHash: file.contentHash, byteSize: file.byteSize })),
       { archivePath: dimensionArchivePath, kind: "dimension-manifest", surfaceKey: null, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length },
       { archivePath: businessIdentityArchivePath, kind: "design-order-identity", surfaceKey: null, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length },
     ];
@@ -3124,7 +3227,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         materialHash, entryCount: entries.length, includedKinds, archiveManifest,
         authorizedAssetManifest: authorized, deliverables: authorized.deliverables,
         sourceViews: archivedSourceViews,
-        stampedViews, proofJoin, panelProfileAttachments,
+        stampedViews, proofJoin, panelProfileAttachments, sourceProofs: sourceProofFiles,
         dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
         businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
         designId, orderNumber,

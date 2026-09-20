@@ -183,6 +183,7 @@ export type ProductionLayersSource = {
 };
 
 export type ProductionLayers = {
+  atlasRevisionId?: string;
   stage: "entice" | "production";
   rows: ProductionFlowAssetRow[];
   /** The approved 3D view per side, so each panel shows beside its own render. */
@@ -493,10 +494,11 @@ export async function loadProductionLayers(generationId: string, revisionId?: st
       humanQcApproved: status.stages.some((stage) => stage.key === "await_final_human_qc" && stage.state === "complete")
         && ownArtifacts.filter((artifact) => artifact.kind === "panel").every((artifact) => artifact.metadata?.revisionId === status.revisionId),
     });
-    if (built) return built;
+    if (built) return { ...built, atlasRevisionId: selected?.id };
   }
   if (!selected) return null;
-  return toAtlasEnticeLayers({
+  const preview = toAtlasEnticeLayers({
     revision: selected, approvedViews: ownViews, createdAt: selected.createdAt || "",
   });
+  return preview ? { ...preview, atlasRevisionId: selected.id } : null;
 }

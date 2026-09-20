@@ -1471,6 +1471,7 @@ export const dpApi = {
    */
   createCheckoutSession: (input: {
     generationId: string;
+    atlasRevisionId: string;
     product: "print_pack_entitlement" | "logo_pack";
     returnPath?: string;
   }) =>

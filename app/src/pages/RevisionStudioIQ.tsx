@@ -60,6 +60,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
+import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 // DesignVersionRecordCard is intentionally not mounted: production identity lives in PanelPro.
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
@@ -1059,16 +1060,27 @@ function InlineVisionBoard({
 // Renders nothing until a stored proof exists, so it's always additive.
 function InlineStoredProof({ render }: { render: any }) {
   const id = render?.id || null;
-  const { data: proofUrl } = useQuery({
+  const { data: proofStatus } = useQuery({
     queryKey: ["revstudio-inline-2dproof", id, render?.atlas_revision_id, render?._revisionRequest?.requestId],
     enabled: !!id,
-    queryFn: async () => (await getDesignBuildStatus({ generationId: String(id),
-      atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest })).proofUrl,
+    queryFn: () => getDesignBuildStatus({ generationId: String(id),
+      atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest }),
     refetchInterval: 15000,
   });
-  if (!proofUrl) return null;
+  const proofUrl = proofStatus?.proofUrl;
+  const panelProofSource = proofStatus?.panelProofSource;
+  if (!proofUrl && !panelProofSource) return null;
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+    <div className="space-y-3">
+      {panelProofSource && (
+        <AtlasPanelProofSheetLoader
+          key={panelProofSource.requestId}
+          requestId={panelProofSource.requestId}
+          revisionId={panelProofSource.revisionId || undefined}
+          pollWhilePending={Boolean(render?._revisionRequest)}
+        />
+      )}
+      {proofUrl && <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold text-zinc-200">2D Production Proof</span>
         <span className="ml-auto text-[10px] text-zinc-500">preloaded</span>
@@ -1076,6 +1088,7 @@ function InlineStoredProof({ render }: { render: any }) {
       <a href={proofUrl} target="_blank" rel="noreferrer" className="block rounded-md overflow-hidden border border-zinc-800 bg-white">
         <img src={proofUrl} alt="2D Production Proof" className="w-full object-contain" loading="eager" />
       </a>
+      </div>}
     </div>
   );
 }
@@ -2279,10 +2292,16 @@ export default function RevisionStudioIQ() {
   const [orderingPack, setOrderingPack] = useState(false);
   const orderProductionPack = useCallback(async () => {
     if (!selectedRender?.id) { toast.error("Open a design first."); return; }
+    const atlasRevisionId = selectedVersionTimelineKey?.startsWith("commit:")
+      ? selectedVersionTimelineKey.slice(7) : selectedRender.atlas_revision_id;
+    if (!atlasRevisionId || selectedRender._revisionRequest) {
+      toast.error("Wait for this design revision to finish before ordering."); return;
+    }
     setOrderingPack(true);
     try {
       const session = await dpApi.createCheckoutSession({
         generationId: String(selectedRender.id),
+        atlasRevisionId,
         product: "print_pack_entitlement",
         returnPath: "/revision-studio",
       });
@@ -2291,7 +2310,7 @@ export default function RevisionStudioIQ() {
       toast.error(`Checkout could not be opened: ${error?.message || error}`);
       setOrderingPack(false);
     }
-  }, [selectedRender?.id]);
+  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedRender?._revisionRequest, selectedVersionTimelineKey]);
 
   // ── Cut Production Sheet ──────────────────────────────────────────────────
   // The dimensioned cut sheet: every graphic specced FLAT at its real cut size
