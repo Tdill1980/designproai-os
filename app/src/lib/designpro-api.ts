@@ -1356,14 +1356,14 @@ export const dpApi = {
 
   /* Calls 8-12 production workflow */
   listJobs: () => request<WorkflowStatus[]>("/jobs"),
-  getStatus: (generationId: string) =>
-    request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
+  getStatus: (generationId: string, revisionId?: string | null) =>
+    request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}${revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : ""}`),
   getDesignPromptRecord: (generationId: string) =>
     request<DesignPromptRecord>(`/jobs/${encodeURIComponent(generationId)}/prompt-record`),
   getGenerationProgress: (generationId: string) =>
     request<GenerationProgress>(`/generation/${encodeURIComponent(generationId)}/progress`),
-  listArtifacts: (generationId: string) =>
-    request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts`),
+  listArtifacts: (generationId: string, revisionId?: string | null) =>
+    request<WorkflowArtifact[]>(`/jobs/${encodeURIComponent(generationId)}/artifacts${revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : ""}`),
   /**
    * The approved per-side 3D views this run was frozen against. The gateway has
    * served these since the run identity work; nothing consumed them, so the

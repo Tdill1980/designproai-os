@@ -15,11 +15,27 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { runInNewContext } from "node:vm";
 import { loadDesignIQ, ATLAS_PANELS } from "./helpers/load-designiq.mjs";
 
 const require = createRequire(import.meta.url);
 const runtime = require("../runtime/atlas-panel-proof-contract.cjs");
 const containerTemplate = require("../runtime/atlas-proof-container-template.cjs");
+
+test("Call 1 supplies system-level Studio assembly boundaries and keeps images in user parts", () => {
+  const source = readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  const start = source.indexOf("const modelRequest = JSON.stringify({");
+  const end = source.indexOf("\n    });",start)+7;
+  const parts = [{inlineData:{mimeType:"image/png",data:"fixture-template"}}];
+  const request = JSON.parse(runInNewContext(`${source.slice(start,end)}; modelRequest`,
+    {body:{separatedArtwork:true},parts}));
+  assert.match(request.systemInstruction.parts[0].text,/A.C.E./);
+  assert.match(request.systemInstruction.parts[0].text,/complete three-zone Studio production proof/);
+  assert.match(request.systemInstruction.parts[0].text,/Never paint document annotations into panel textures/);
+  assert.equal(request.contents[0].role,"user");
+  assert.equal(request.contents[0].parts[0].inlineData.data,"fixture-template");
+  assert.equal(request.generationConfig.imageConfig.aspectRatio,"3:2");
+});
 const edgeSource = readFileSync(
   new URL("../supabase/functions/_shared/atlas-panel-proof-prompt.ts", import.meta.url), "utf8");
 

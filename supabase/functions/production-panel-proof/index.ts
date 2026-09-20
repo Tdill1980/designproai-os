@@ -70,6 +70,8 @@ import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-cont
  * of A.C.E. That is why it returned generic blue waves and stock photography.
  */
 import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
+import { buildPrompt as buildTextLayerPrompt, chromaKeyToAlpha } from "../_shared/designpro-text-layer-art.ts";
+import { authorProofLogo, proofLogoRequested } from "../_shared/atlas-proof-elements.mjs";
 // THE PROVEN DURABLE-PROVIDER MODULE, not a second implementation of it
 // (RULE 1). `design-panel-ai-generate` already routes every Call-1 image
 // request through this; a bare fetch here is what made `cacheOnly` a no-op.
@@ -663,6 +665,12 @@ serve(async (req) => {
 
     const t0 = Date.now();
     const modelRequest = JSON.stringify({
+      ...(body.separatedArtwork === true ? { systemInstruction: { parts: [{ text:
+        "Follow the A.C.E. commercial-wrap creative direction in the user request. You author the imagery and background artwork for a complete three-zone Studio production proof. "
+        + "The attached Studio artwork template defines six exact panel destinations. Preserve those positions and proportions. Photography and illustration belong inside the artwork. "
+        + "The compositor builds Zone 1 from your art plus protected brand assets, Zone 2 from your same art, and Zone 3 from isolated brand assets. "
+        + "Document headings, dimensions, panel labels, borders and other sheet annotations are drawn by code. Never paint document annotations into panel textures. Return only the requested clean artwork canvas."
+      }] } } : {}),
       contents: [{ role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
@@ -711,7 +719,21 @@ serve(async (req) => {
       attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
       cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
     };
-    const cached = await runDurableImageProviderRequest({
+    const logoPromise = body.separatedArtwork === true ? authorProofLogo({
+      bucket: svc.storage.from(BUCKET), ownerId: caller.userId, providerRequest,
+      input: { companyName: field("companyName"), logoAsset: body.hasCustomerLogo || body.logoAsset,
+        generateLogo: proofLogoRequested({ ...body, customerPrompt }),
+        industry: field("industryType"),
+        brief: customerPrompt, colorBrief: field("brandColors"), stylePrompt: field("style") },
+      model: PRIMARY_IMAGE_MODEL, buildPrompt: buildTextLayerPrompt,
+      normalize: (bytes: Uint8Array) => chromaKeyToAlpha(bytes, true),
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, caller.userId),
+      invoke: (request: string) => captureGeminiHttpExchange(async () => await fetch(
+        geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: request },
+      )),
+    }) : Promise.resolve(null);
+    const [cached, generatedLogo] = await Promise.all([runDurableImageProviderRequest({
       bucket: svc.storage.from(BUCKET),
       identity: { ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof" },
       requestHash: await providerSha256(JSON.stringify({
@@ -725,7 +747,7 @@ serve(async (req) => {
         geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),
         { method: "POST", headers: { "Content-Type": "application/json" }, body: modelRequest },
       )),
-    });
+    }), logoPromise]);
     requestId = cached.requestId;
     const payload = cached.payload;
     const candidateParts = payload?.candidates?.[0]?.content?.parts ?? [];
@@ -757,6 +779,8 @@ serve(async (req) => {
       proofSha256: sha256,
       proofByteSize: bytes.length,
       sheetShape,
+      generatedElements: generatedLogo ? [generatedLogo] : [],
+      imageRequestCount: generatedLogo ? 2 : 1,
       // The whole assembled ask, so a disagreement about the design is settled
       // on the REQUEST rather than on impressions of the output -- the reason
       // the designiq A/B harness exists at all.

@@ -89,6 +89,25 @@ const child: PanelOutputRun = {
 };
 
 describe("GENIE generation and production reporting", () => {
+  it("pins a purchased revision without reading newer generation progress", async () => {
+    const purchasedJob = { generationId: "existing-generation", revisionId: "paid-manufacturing", stages: [] } as unknown as WorkflowStatus;
+    const client = {
+      getStatus: vi.fn().mockResolvedValue(purchasedJob),
+      getGenerationProgress: vi.fn().mockResolvedValue(progress),
+      listApprovedViews: vi.fn().mockResolvedValue([]),
+      listArtifacts: vi.fn().mockResolvedValue([]),
+    };
+    const patch = await readGenieProgress("existing-generation", client, { list: vi.fn().mockResolvedValue([]) }, {
+      revisionId: "paid-manufacturing", sourceRevisionId: "paid-atlas",
+    });
+    expect(client.getStatus).toHaveBeenCalledWith("existing-generation", "paid-manufacturing");
+    expect(client.listArtifacts).toHaveBeenCalledWith("existing-generation", "paid-manufacturing");
+    expect(client.listApprovedViews).toHaveBeenCalledWith("existing-generation", "paid-atlas");
+    expect(client.getGenerationProgress).not.toHaveBeenCalled();
+    expect(patch.job).toBe(purchasedJob);
+    expect(patch.progress).toBeUndefined();
+    expect(patch.loadError).toBe(false);
+  });
   it("reports a saved proof set whose preparation handoff needs attention", () => {
     const stalled: GenerationProgress = { ...progress, generationState: "outputs_ready", facts: { ...progress.facts, handoffNeedsAttention: true }, stages: [
       ...progress.stages.map((stage) => ({ ...stage, state: "complete" as const })),

@@ -426,6 +426,7 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, as
         byteSize: Number(sheet.byteSize || sheet.bytes?.length || 0),
         model: sheet.model || null, proofContract: sheet.contract || null,
         promptChars: Number(sheet.promptChars || 0), sheetShape: sheet.sheetShape || null,
+        generatedElements: sheet.generatedElements || [], imageRequestCount: Number(sheet.imageRequestCount || 1),
         intake: sheet.intake || null, containerSource: sheet.containerSource || null,
       },
       panelRows, customerAssets,

@@ -343,6 +343,8 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     // are retained by the compositor, outside this image-generation request.
     customerAssets,
     separatedArtwork: true,
+    hasCustomerLogo: Boolean(input?.logoAsset),
+    generateLogo: input?.generateLogo,
     // The customer's own words. The edge's intake node parses vehicle, contact
     // and brand out of them; a field set here is a field intake never had to
     // find, and the raw text is what production actually carries.
@@ -486,6 +488,8 @@ function createPanelProofTransport({
       promptChars: Number(payload.promptChars || 0),
       sheetShape: payload.sheetShape || null,
       intake: payload.intake || null,
+      generatedElements: payload.generatedElements || [],
+      imageRequestCount: Number(payload.imageRequestCount || 1),
       containerSource: (payload.attachedInputs || []).find((a) => a?.role === "container") || null,
     };
   };
@@ -589,6 +593,21 @@ async function assemblePanelProofMaster({
     assets.push({...identity,bytes,role:"logo",width:meta.width,height:meta.height,
       contentType:input.logoAsset.contentType,vector:input.logoAsset.contentType === "image/svg+xml"});
   }
+  // Generated marks use the exact same immutable asset in Zones 1 and 3.
+  // A supplied logo always wins and is never replaced or regenerated.
+  if (!input.logoAsset) {
+    const generated = (sheet.generatedElements || []).find(asset => asset.role === "logo");
+    if (generated) {
+      if (typeof downloadAsset !== "function") throw refuse("generated logo reader missing");
+      const bytes = await downloadAsset(generated);
+      if (bytes.length !== generated.byteSize || sha256(bytes) !== generated.contentHash) {
+        throw refuse("generated logo identity mismatch");
+      }
+      const meta = await sharp(bytes).metadata();
+      if (!meta.hasAlpha) throw refuse("generated logo has no transparent channel");
+      assets.push({...generated,bytes,width:meta.width,height:meta.height,vector:false});
+    }
+  }
   const brand = {...(sheet.intake || {}), ...Object.fromEntries(Object.entries(input).filter(([,v]) => v != null && v !== "" && (!Array.isArray(v) || v.length)))};
   const services = Array.isArray(brand.services) ? brand.services : [];
   const textJobs = [
@@ -629,11 +648,12 @@ async function assemblePanelProofMaster({
   // zone bar, caption, note and footer is exact; then place the exact clean
   // backgrounds, the deterministic branded composites, and the original assets.
   const vehicle = input?.vehicle || {};
-  const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model]
+  const vehicleLabel = [vehicle.year || brand.vehicleYear, vehicle.make || brand.vehicleMake,
+    vehicle.model || brand.vehicleModel]
     .map(v => String(v || "").trim()).filter(Boolean).join(" ");
   const blankTemplate = await renderContainerTemplate({
     manifest: proofManifest,
-    companyName: input?.companyName || input?.businessName || "",
+    companyName: brand.companyName || brand.businessName || "",
     vehicle: vehicleLabel,
     bleedInches: 5,
     job: {
@@ -800,7 +820,7 @@ async function assemblePanelProofMaster({
     contentHash: assembled.contentHash,
     model: sheet.model || "gemini-3-pro-image",
     promptVersion: sheet.promptVersion || sheet.contract || PANEL_PROOF_TOPOLOGY_CONTRACT,
-    imageRequestCount: 1,
+    imageRequestCount: Number(sheet.imageRequestCount || 1),
     surfaces: zone1.map((p) => ({
       surfaceKey: p.surfaceKey, method: "panel-proof-cut", fit: p.fit,
       widthIn: p.widthIn, heightIn: p.heightIn, byteSize: p.byteSize,
@@ -838,7 +858,7 @@ async function assemblePanelProofMaster({
         backgrounds: zone2.length, graphics: zone3.length,
         graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
       composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,panels:compositionChecks,sourceAssetsPreserved:true},
-      imageRequestCount: 1,
+      imageRequestCount: Number(sheet.imageRequestCount || 1),
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
       // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.

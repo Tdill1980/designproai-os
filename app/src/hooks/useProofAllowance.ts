@@ -20,6 +20,10 @@ export interface ProofAllowance {
   white_label_enabled: boolean;
 }
 
+export function proofAllowanceAllowsSend(allowance: ProofAllowance | null | undefined): boolean {
+  return Boolean(allowance && Number.isFinite(allowance.remaining) && allowance.remaining > 0);
+}
+
 async function fetchAllowance(): Promise<ProofAllowance | null> {
   // Read the cached session (local, no network) instead of getUser(): the
   // latter does a network round-trip behind a cross-tab Web Lock and can
@@ -48,9 +52,10 @@ async function fetchAllowance(): Promise<ProofAllowance | null> {
   };
 }
 
-export function useProofAllowance() {
+export function useProofAllowance({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["proof_allowance"],
+    enabled,
     queryFn: fetchAllowance,
     staleTime: 60 * 1000, // 1 min — fresh enough for the dialog
     gcTime: 5 * 60 * 1000,

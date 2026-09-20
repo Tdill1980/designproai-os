@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
+import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { FullQcPanel } from "@/components/designpro/FullQcPanel";
 import type { PanelQcReport } from "@/lib/designpro-panel-qc";
@@ -1110,6 +1111,15 @@ export default function PanelProStudioBoard() {
             </Button>
           </div>
         </Notice>
+      )}
+
+      {selectedVersion?.revision.requestId && (
+        <AtlasPanelProofSheetLoader
+          key={selectedVersion.revision.requestId}
+          requestId={selectedVersion.revision.requestId}
+          revisionId={selectedVersion.revisionId}
+          pollWhilePending
+        />
       )}
 
       {selectedVersion && (() => {

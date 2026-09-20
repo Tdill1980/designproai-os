@@ -2303,7 +2303,7 @@ export default function RevisionStudioIQ() {
         generationId: String(selectedRender.id),
         atlasRevisionId,
         product: "print_pack_entitlement",
-        returnPath: "/revision-studio",
+        returnPath: `/revision-studio?id=${encodeURIComponent(String(selectedRender.id))}&sourceRevisionId=${encodeURIComponent(atlasRevisionId)}`,
       });
       window.location.href = session.url;
     } catch (error: any) {
@@ -6241,41 +6241,6 @@ export default function RevisionStudioIQ() {
                     inspected. This surface is review / revise / approve / buy. */}
                 <DesignPromptRecord generationId={productionLayersId} />
 
-                {/* APPROVE DESIGN & BUILD PRINT PANELS — the stage 2 → 3 door.
-                    (Trish 2026-08-29.)
-
-                    It is a NAVIGATION, deliberately, and it does not pretend to
-                    trigger a build. The freeze is already the server's: the
-                    handoff fires on master acceptance (RULE 0.5 amendment), the
-                    entice workflow runs `revision.freeze` and `panels.build`
-                    without being asked, and Call 1 cut the six panels before any
-                    proof rendered. A button here that POSTed something would be
-                    a second trigger for work already in flight.
-
-                    What it does provide is the thing that was missing: the
-                    owner's explicit "this design is the one", carrying the job
-                    identity to PanelPro so no id is ever retyped. The breadcrumb
-                    above reports whether the server has actually frozen. */}
-                {productionLayersId && (
-                  <div className="rounded-lg border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 to-zinc-900 p-4">
-                    <p className="text-sm font-bold text-zinc-100">Happy with this design?</p>
-                    <p className="mt-1 text-xs text-zinc-400">
-                      Approving freezes this revision as the production authority. Every print
-                      panel below is a deterministic crop of its accepted master — nothing is
-                      redesigned downstream.
-                    </p>
-                    <Button
-                      onClick={() => navigate(
-                        `/designpro/jobs/${encodeURIComponent(productionLayersId)}/panelpro/surfaces`,
-                      )}
-                      className="mt-3 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-500"
-                    >
-                      <Package className="w-4 h-4" />
-                      Approve Design &amp; Build Print Panels
-                    </Button>
-                  </div>
-                )}
-
                 {productionLayersId && (
                   <Button variant="outline" className="w-full" onClick={() => {
                     const sourceRevisions = new Set((standaloneProductionLayers?.stage === "production" ? standaloneProductionLayers.rows : []).map((row) => row.revision_id).filter(Boolean));
@@ -6316,6 +6281,16 @@ export default function RevisionStudioIQ() {
                     })
                   }
                 />
+
+                <Button
+                  className="w-full bg-blue-600 hover:bg-blue-700 h-11"
+                  onClick={() => { void orderProductionPack(); }}
+                  disabled={!selectedRender || orderingPack}
+                >
+                  {orderingPack
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Opening checkout…</>
+                    : <><Package className="w-4 h-4 mr-2" /> Order Production Files</>}
+                </Button>
 
                 {/* CUT GRAPHICS PACK — upsell enticement under the print panels.
                     A DesignPro / RecreatePro PRINTED wrap doesn't produce cut vinyl
@@ -6609,23 +6584,6 @@ export default function RevisionStudioIQ() {
                       <FileText className="w-4 h-4 mr-2" /> 3D Proof
                     </Button>
                   </div>
-
-                  {/* ORDER THE PRODUCTION PACK, THROUGH THE SERVER'S CHECKOUT.
-                      This opened a dialog that detected the vehicle's panel
-                      dimensions in the browser and kicked its own pack build.
-                      The price and the entitlement are the server's, and the
-                      panels are already cut from the accepted master, so the
-                      only thing left for a click to do is open the purchase.
-                      Disabled until the run is one the gateway owns. */}
-                  <Button
-                    className="w-full bg-blue-600 hover:bg-blue-700 h-11"
-                    onClick={() => { void orderProductionPack(); }}
-                    disabled={!selectedRender || orderingPack}
-                  >
-                    {orderingPack
-                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Opening checkout…</>
-                      : <><Package className="w-4 h-4 mr-2" /> Order Production Pack</>}
-                  </Button>
 
                   {/* Build Files — flatten each side OFF THE APPROVED 2D PROOF
                       (the source with per-side dimensions), full-bleed, all sides

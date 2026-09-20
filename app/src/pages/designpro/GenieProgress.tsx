@@ -19,7 +19,7 @@
  * customer that their production files are real.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   CheckCircle2,
@@ -112,17 +112,20 @@ export async function readGenieProgress(
     | "listArtifacts"
   > = dpApi,
   outputClient: Pick<typeof panelOutputApi, "list"> = panelOutputApi,
+  scope: { revisionId?: string | null; sourceRevisionId?: string | null } = {},
 ): Promise<Partial<GenieReadState>> {
   const [status, progress, views, artifacts, panelOutputs] =
     await Promise.allSettled([
-      client.getStatus(generationId),
-      client.getGenerationProgress(generationId),
-      client.listApprovedViews(generationId),
-      client.listArtifacts(generationId),
+      client.getStatus(generationId, scope.revisionId),
+      // Generation-wide progress can describe a newer revision than this purchase.
+      scope.revisionId ? Promise.resolve(undefined) : client.getGenerationProgress(generationId),
+      client.listApprovedViews(generationId, scope.sourceRevisionId),
+      client.listArtifacts(generationId, scope.revisionId),
       outputClient.list({ sourceApp: "DesignPro", generationId }),
     ]);
   const beforeHandoff =
     progress.status === "fulfilled" &&
+    progress.value != null &&
     !progress.value.facts.productionRunLinked;
   const workflowUnavailable = (result: PromiseSettledResult<unknown>) =>
     result.status === "rejected" &&
@@ -318,6 +321,9 @@ export function GenieBuildRail({
 
 export default function GenieProgress() {
   const { generationId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const revisionId = searchParams.get("revisionId");
+  const sourceRevisionId = searchParams.get("sourceRevisionId");
   const [data, setData] = useState<GenieReadState>({
     views: [],
     artifacts: [],
@@ -340,11 +346,12 @@ export default function GenieProgress() {
     !progress.workflowRevisionIds.includes(reportedJob.revisionId || "")
       ? undefined
       : reportedJob;
-  const views = progress?.currentRevisionId
+  const selectedAtlasRevisionId = sourceRevisionId || progress?.currentRevisionId;
+  const views = selectedAtlasRevisionId
     ? reportedViews.filter(
         (view) =>
           view.generationId === generationId &&
-          view.atlasBinding?.revisionId === progress.currentRevisionId,
+          view.atlasBinding?.revisionId === selectedAtlasRevisionId,
       )
     : reportedViews.filter((view) => view.generationId === generationId);
   const artifacts = progress
@@ -358,11 +365,11 @@ export default function GenieProgress() {
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
-    const patch = await readGenieProgress(generationId);
+    const patch = await readGenieProgress(generationId, dpApi, panelOutputApi, { revisionId, sourceRevisionId });
     if (sequence !== loadSequence.current) return;
     setData((previous) => ({ ...previous, ...patch }));
     setLoading(false);
-  }, [generationId]);
+  }, [generationId, revisionId, sourceRevisionId]);
 
   useEffect(() => {
     setLoading(true);
@@ -448,7 +455,7 @@ export default function GenieProgress() {
   const panelOutput = selectGenerationPanelOutput(
     panelOutputRuns,
     generationId,
-    progress?.currentRevisionId,
+    selectedAtlasRevisionId,
   );
   const active = viewByRole.get(activeRole);
   const buildPreviews = publicBuildPreviews(artifacts);
@@ -502,7 +509,7 @@ export default function GenieProgress() {
       <div className="flex flex-wrap gap-2">
         <Button asChild size="sm" variant="outline">
           <Link
-            to={`/revision-studio?generationId=${encodeURIComponent(generationId)}`}
+            to={`/revision-studio?id=${encodeURIComponent(generationId)}${selectedAtlasRevisionId ? `&sourceRevisionId=${encodeURIComponent(selectedAtlasRevisionId)}` : ""}`}
           >
             RevisionStudioIQ
           </Link>
@@ -520,8 +527,8 @@ export default function GenieProgress() {
               sourceApp: "DesignPro",
               sourceJobId: generationId,
               generationId,
-              ...(progress?.currentRevisionId
-                ? { revisionId: progress.currentRevisionId }
+              ...(selectedAtlasRevisionId
+                ? { revisionId: selectedAtlasRevisionId }
                 : {}),
             })}
           >

@@ -341,6 +341,26 @@ test("provisional AI Zone 1 geometry is discarded and the complete band is compo
   }
 });
 
+test("composed proof header preserves brand and vehicle parsed from the customer's brief", async () => {
+  const sheet = await paintedSheet();
+  const store = memoryStore();
+  const { callProofEdge } = edgeStub(sheet, { intake: {
+    companyName: "Bright Smiles Dental", vehicleYear: "2012", vehicleMake: "Toyota", vehicleModel: "Prius",
+  } });
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge,
+    input: { brief: "Bright Smiles Dental wrap for a 2012 Toyota Prius", vehicle: {} },
+  });
+  const actual = store.objects.get(out.provenance.proofStoragePath).bytes;
+  const expected = await container.renderContainerTemplate({
+    manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)),
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5,
+  });
+  const header = async bytes => sharp(bytes).resize(3072,2048,{fit:"fill"})
+    .extract({left:0,top:0,width:3072,height:160}).removeAlpha().raw().toBuffer();
+  assert.deepEqual(await header(actual), await header(expected),
+    "code-owned header must use parsed intake rather than generic COMPANY NAME / VEHICLE placeholders");
+});
+
 test("panel-proof refusals are recorded and terminal, without a substitute authoring route", () => {
   const error = new proof.PanelProofRefusal("the proof edge returned no sheet");
   assert.equal(error.code, "flat_atlas_panel_proof_refused");
@@ -711,11 +731,11 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
   // `parseCustomerIntake`, a Flash TEXT call, and counting every fetch convicted
   // it. The contract here is about the billed image generation.
   const imageCalls = [...edge.matchAll(/await fetch\(\s*\n?\s*geminiImageUrl\(/g)].length;
-  assert.equal(imageCalls, 1,
-    `exactly one image-provider fetch, inside invoke(); found ${imageCalls}`);
-  const invokeAt = edge.indexOf("invoke: () => captureGeminiHttpExchange");
-  assert.ok(invokeAt > 0 && invokeAt < edge.indexOf("geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),\n"),
-    "the image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
+  assert.equal(imageCalls, 2,
+    `only the artwork and explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
+  const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
+  assert.equal(wrappedCalls,imageCalls,
+    "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
   // A FRESH UUID PER INVOCATION IS THE DEFECT. It must be reassignable from the
   // claim, so a recovered attempt reports the request it recovered.
   assert.match(edge, /let requestId = crypto\.randomUUID\(\)/);
@@ -903,4 +923,23 @@ test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () =
   const roof = MANIFEST.zones.find(z => z.surfaceKey === "roof").extraction;
   const pixel = await sharp(result.bytes).extract({left:roof.x+Math.floor(roof.w/2),top:roof.y+Math.floor(roof.h/2),width:1,height:1}).removeAlpha().raw().toBuffer();
   assert.deepEqual([...pixel],[15,118,110],"Zone 1 derives from green Zone 2, never blue generated Zone 1");
+});
+
+test("generated custom logo identity is shared by branded panels and Zone 3", async () => {
+  const bytes = await sharp({create:{width:120,height:40,channels:4,
+    background:{r:210,g:30,b:40,alpha:0.7}}}).png().toBuffer();
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const logo = {role:"logo",storagePath:`atlas-elements/${contentHash}.png`,contentHash,
+    byteSize:bytes.length,contentType:"image/png"};
+  const store = memoryStore();
+  const {callProofEdge} = edgeStub(await paintedSheet(),{generatedElements:[logo],imageRequestCount:2});
+  const out = await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge,
+    downloadAsset:async identity=>{assert.equal(identity.contentHash,contentHash);return bytes;}});
+  const graphic = out.provenance.quadrants.cutGraphics.find(asset=>asset.surfaceKey==="logo");
+  assert.equal(graphic.contentHash,contentHash);
+  const placements = out.provenance.composition.placements.filter(placement=>placement.role==="logo");
+  assert.equal(placements.length,5);
+  assert.ok(placements.every(placement=>placement.contentHash===graphic.contentHash
+    && placement.storagePath===graphic.storagePath));
+  assert.equal(out.imageRequestCount,2);
 });

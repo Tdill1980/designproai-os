@@ -130,6 +130,19 @@ test('checkout pins selected Atlas, source hash, manufacturing revision, owner a
   for (const [key,value] of [['success_url','print_pack_entitlement'],['cancel_url','cancelled']]) {
     const target=new URL(g.stripeForms[0].get(key));
     assert.equal(target.origin,'https://app.example.test');
+    assert.equal(target.pathname,key==='success_url'?`/designpro/jobs/${GENERATION}/progress`:'/revision-studio');
+    assert.equal(target.searchParams.get('id'),key==='success_url'?null:GENERATION);
+    assert.equal(target.searchParams.get('sourceRevisionId'),ATLAS);
+    if(key==='success_url' && value==='print_pack_entitlement') assert.equal(target.searchParams.get('revisionId'),REVISION);
+    assert.deepEqual(target.searchParams.getAll('purchase'),[value]);
+  }
+});
+
+test('logo checkout retains the selected studio while production success opens GENIE progress',async t=>{
+  const g=await gateway(t),response=await checkout(g.base,{product:'logo_pack',returnPath:`/revision-studio?id=${GENERATION}&sourceRevisionId=${ATLAS}`});
+  assert.equal(response.status,200);
+  for(const [key,value]of [['success_url','logo_pack'],['cancel_url','cancelled']]){
+    const target=new URL(g.stripeForms[0].get(key));
     assert.equal(target.pathname,'/revision-studio');
     assert.equal(target.searchParams.get('id'),GENERATION);
     assert.equal(target.searchParams.get('sourceRevisionId'),ATLAS);

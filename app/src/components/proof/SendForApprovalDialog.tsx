@@ -31,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useProofAllowance } from "@/hooks/useProofAllowance";
+import { proofAllowanceAllowsSend, useProofAllowance } from "@/hooks/useProofAllowance";
 import {
   Loader2, Send, CheckCircle2, Copy, ImagePlus, X,
   Palette, FileUp, AlertCircle, Lock, Layers,
@@ -110,7 +110,7 @@ export const SendForApprovalDialog = ({
   context,
 }: SendForApprovalDialogProps) => {
   const { toast } = useToast();
-  const { data: allowance } = useProofAllowance();
+  const { data: allowance, isLoading: allowanceLoading } = useProofAllowance({ enabled: open });
 
   // Common fields
   const [customerName, setCustomerName] = useState("");
@@ -147,7 +147,7 @@ export const SendForApprovalDialog = ({
   const hasRenderUrls = context.renderUrls && Object.keys(context.renderUrls).length > 0;
   const renderUrlCount = Object.keys(context.renderUrls || {}).length;
   const aiRevisionsUnavailable = source === "upload" || source === "multi";
-  const tierBlocks = allowance && allowance.remaining <= 0;
+  const tierBlocks = !proofAllowanceAllowsSend(allowance);
 
   // Auto-populate line items from render URLs when there are multiple views
   // so each view can be approved/declined individually.
@@ -290,6 +290,12 @@ export const SendForApprovalDialog = ({
 
   const handleSend = async () => {
     setTierError(null);
+    if (!proofAllowanceAllowsSend(allowance)) {
+      setTierError(!allowance
+        ? "Client approval is unavailable. Your proof allowance could not be verified."
+        : "No client approvals remaining on your plan.");
+      return;
+    }
     if (!customerEmail || !customerEmail.includes("@")) {
       toast({
         title: "Customer email required",
@@ -789,6 +795,13 @@ export const SendForApprovalDialog = ({
             </div>
             </div>
 
+            {!allowance && (
+              <p role="status" className="px-6 py-3 text-sm text-zinc-600">
+                {allowanceLoading
+                  ? "Checking client approval availability…"
+                  : "Client approval is unavailable. Your proof allowance could not be verified."}
+              </p>
+            )}
             {/* Sticky footer — Send button always reachable */}
             <div className="shrink-0 px-6 py-3 border-t border-zinc-200 bg-white grid grid-cols-2 gap-3">
               <Button variant="outline" onClick={resetAndClose} disabled={isSubmitting}>

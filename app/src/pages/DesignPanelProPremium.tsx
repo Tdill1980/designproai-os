@@ -334,7 +334,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     activePipelineMode,
     flatAtlasRevisions,
     flatAtlasLoadError,
-  } = useDesignPanelProLogic(briefVehicleRef.current?.vehicleType);
+  } = useDesignPanelProLogic(briefVehicleRef.current?.vehicleType, { loadCuratedPanels: false });
 
   // PAST JOBS — the live `flatProofUrl` is only populated during a fresh
   // generation run. When a previously-generated design is opened (pushed from
@@ -1695,10 +1695,13 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     }
 
     if (result?.directRender) {
-      // V1 path: render is already done
+      // The server has saved the complete view set and accepted its production handoff.
       if (!isPrivileged) incrementFreemium();
       if (subscription) await incrementRenderCount();
       setPipelineActive(false);
+      if (result.generationId) {
+        navigate(`/revision-studio?id=${encodeURIComponent(result.generationId)}`);
+      }
     } else {
       // Library panel path: auto-trigger projection render via useEffect
       autoRenderRef.current = true;
@@ -1965,7 +1968,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     .map(findViewByType)
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
   // VehiclePro exposes each completed angle automatically, in driver-first order.
-  const viewsVisible = isFlatFirstDiagnostic || allViewsRevealed;
+  const viewsVisible = Boolean(generationRequestState?.requestId) || isFlatFirstDiagnostic || allViewsRevealed;
   const displayedAllViews = viewsVisible ? sortedAllViews : [];
   const VIEW_LABEL_MAP: Record<string, string> = {
     side: 'Driver Side', 'driver-side': 'Driver Side',

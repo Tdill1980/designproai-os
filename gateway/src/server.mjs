@@ -471,12 +471,14 @@ function preHandoffState(request) {
   };
 }
 
-async function listRuns(fetchImpl, token, cfg) {
+async function listRuns(fetchImpl, token, cfg, revisionId = null) {
+  if (revisionId !== null && !UUID_PATTERN.test(revisionId)) throw Object.assign(new Error("revision_id_invalid"), { status: 400 });
   const fields = encodeURIComponent("id,workflow_type,status,results,input,revision_id,revision_snapshot_hash,artifact_set_hash,created_at");
   const types = encodeURIComponent("(designpro.entice_pack,designpro.production_pack)");
-  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_runs?select=${fields}&workflow_type=in.${types}&order=created_at.desc&limit=100`, { method: "GET" }, token, cfg);
+  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/rest/v1/designpro_workflow_runs?select=${fields}&workflow_type=in.${types}${revisionId ? `&revision_id=eq.${encodeURIComponent(revisionId)}` : ""}&order=created_at.desc&limit=100`, { method: "GET" }, token, cfg);
   if (!response.ok) throw Object.assign(new Error(`runs_query_${response.status}`), { status: response.status });
-  return response.json();
+  const rows = await response.json();
+  return revisionId ? rows.filter(run => run.revision_id === revisionId) : rows;
 }
 
 // Checkout freezes the revision being viewed, never whichever run is newest
@@ -3491,6 +3493,15 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         const checkoutReturnUrl = (purchase) => {
           const target = new URL(`${cfg.appOrigin}${returnPath}`);
           if (target.origin !== new URL(cfg.appOrigin).origin) throw Object.assign(new Error("checkout_return_origin_invalid"), { status: 400 });
+          if (purchase === "print_pack_entitlement") {
+            // A successful production purchase opens the existing server-owned
+            // GENIE progress page. Cancellation returns to the selected design.
+            target.pathname = `/designpro/jobs/${generationId}/progress`;
+            target.search = "";
+            target.hash = "";
+            target.searchParams.set("sourceRevisionId", revision.atlasRevisionId);
+            target.searchParams.set("revisionId", revision.revisionId);
+          }
           target.searchParams.set("purchase", purchase);
           return target.href;
         };
@@ -3879,9 +3890,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
 
       if (req.method === "GET" && artifactMatch) {
         const requestedArtifactId = decodeURIComponent(artifactMatch[1]);
-        const runs = await listRuns(fetchImpl, token, cfg);
+        const revisionId = url.searchParams.get("revisionId");
+        const runs = await listRuns(fetchImpl, token, cfg, revisionId);
         const run = requestedProductionRun(runs, requestedArtifactId);
         if (!run) {
+          if (revisionId !== null) return json(res, 404, { error: "revision_job_not_found" });
           // Manufacturing has not started, so there are no artifacts. For a
           // generation that exists this is an empty list, not a missing job --
           // 404 here made the board report a live design as not found.
@@ -3918,9 +3931,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
       const match = url.pathname.match(/^\/api\/jobs\/([^/]+)(?:\/(resume|approvals\/(preflight|final)))?$/);
       if (match) {
         const requestedId = decodeURIComponent(match[1]);
-        const runs = await listRuns(fetchImpl, token, cfg);
+        const revisionId = req.method === "GET" && !match[2] ? url.searchParams.get("revisionId") : null;
+        const runs = await listRuns(fetchImpl, token, cfg, revisionId);
         const run = requestedProductionRun(runs, requestedId);
         if (!run) {
+          if (revisionId !== null) return json(res, 404, { error: "revision_job_not_found" });
           // No run yet: the design is still in Calls 1-7. Answer from the
           // generation request, which has existed since Create Design, so the
           // board can be opened on the generationId immediately and fill in as

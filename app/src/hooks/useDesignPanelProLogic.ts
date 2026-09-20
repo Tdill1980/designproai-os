@@ -158,7 +158,10 @@ const normalizeLogoAsset = async (blob: Blob): Promise<File> => {
     : normalizeVisionBoardImage(blob, "logo");
 };
 
-export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") => {
+export const useDesignPanelProLogic = (
+  initialVehicleType: VehicleType = "car",
+  { loadCuratedPanels = true }: { loadCuratedPanels?: boolean } = {},
+) => {
   const { toast } = useToast();
   const { checkCanGenerate } = useSubscriptionLimits();
   const { currentShop } = useOrganization();
@@ -283,6 +286,8 @@ export const useDesignPanelProLogic = (initialVehicleType: VehicleType = "car") 
   // batch pipeline that should NOT appear in the curated panel library.
   const { data: curatedPanels, isLoading } = useQuery({
     queryKey: ["designpanelpro_patterns"],
+    // The standalone generated-design route has no legacy pattern library.
+    enabled: loadCuratedPanels,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("designpanelpro_patterns")
