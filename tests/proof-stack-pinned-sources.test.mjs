@@ -179,7 +179,7 @@ test("the runtime does not author its own studio or lighting text", () => {
 test("the A.T.L.A.S. proof provider is a transport, not a second producer", () => {
   const provider = readFileSync(join(ROOT, "runtime/designpanel-server-provider.cjs"), "utf8");
   const atlasProvider = provider.slice(
-    provider.indexOf("function createAtlasDesignPanelProvider"),
+    provider.indexOf("function atlasProofArtworkAuthority"),
     provider.indexOf("module.exports = {"),
   );
   assert.ok(atlasProvider.length > 500, "the atlas provider is gone");
@@ -188,8 +188,11 @@ test("the A.T.L.A.S. proof provider is a transport, not a second producer", () =
   assert.match(atlasProvider, /mode: "atlas-proof"/);
   // It resolves THIS surface's panel and sends its path + hash as the artwork.
   assert.match(atlasProvider, /atlas\.panelFor\(sourceViewType\)/);
-  assert.match(atlasProvider, /sourcePanelStoragePath: panel\.storagePath/);
-  assert.match(atlasProvider, /sourcePanelHash: panel\.contentHash/);
+  assert.match(atlasProvider, /sourcePanelStoragePath: authority\.storagePath/);
+  assert.match(atlasProvider, /sourcePanelHash: authority\.contentHash/);
+  assert.match(atlasProvider, /surfaceKey: authority\.surfaceKey/);
+  assert.match(atlasProvider, /storagePath: panel\.storagePath/);
+  assert.match(atlasProvider, /storagePath: sheet\.storagePath/);
   // No prompt assembly, no direct image call, and no Driver anchor.
   assert.ok(!atlasProvider.includes("buildAtlasProjectionPrompt"),
     "the atlas provider builds its own proof prompt again");

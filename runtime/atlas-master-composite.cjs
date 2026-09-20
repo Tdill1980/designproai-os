@@ -290,9 +290,12 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
   // copy a fatal Call-1 error.
   for (const surfaceKey of expected.filter(key => key !== "roof")) {
     const surfacePlacements = placements.filter(p => p.surfaceKey === surfaceKey);
-    if (!surfacePlacements.length || new Set(surfacePlacements.map(p => p.role)).size !== surfacePlacements.length) {
+    const missingFlankAsset = ["driver", "passenger"].includes(surfaceKey)
+      && [...originals.keys()].some(role => !surfacePlacements.some(p => p.role === role));
+    if (!surfacePlacements.length || missingFlankAsset
+      || new Set(surfacePlacements.map(p => p.role)).size !== surfacePlacements.length) {
       throw new AtlasCompositeError("atlas_composite_asset_coverage_invalid",
-        `${surfaceKey}: requires at least one unique protected brand placement`);
+        `${surfaceKey}: requires unique protected branding and complete flank assets`);
     }
   }
   const panels = [];
