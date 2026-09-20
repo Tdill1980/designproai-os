@@ -115,6 +115,7 @@ jobs:
           docker image inspect "$image" >/dev/null
           work=$(mktemp -d /tmp/vehiclepro-real.XXXXXX)
           mkdir -p "$work/out"
+          chmod 0777 "$work" "$work/out"
           printf '%s' "$PAYLOAD" | base64 -d > "$work/test.mjs"
           chmod 0644 "$work/test.mjs"
           set +e
