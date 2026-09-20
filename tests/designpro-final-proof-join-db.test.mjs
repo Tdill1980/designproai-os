@@ -6,6 +6,7 @@ import {readFile} from 'node:fs/promises';
 
 const require=createRequire(new URL('../runtime/package.json',import.meta.url));
 const {PGlite}=require('@electric-sql/pglite');
+const {_test: runtimeClaimant}=require('./designpro-standalone-claimant.cjs');
 const migrationPath='../supabase/migrations/20260908193134_designpro_final_proof_join.sql';
 const migration=await readFile(new URL(migrationPath,import.meta.url),'utf8');
 const readMigration=name=>readFile(new URL(`../supabase/migrations/${name}`,import.meta.url),'utf8');
@@ -422,4 +423,59 @@ test('paid PDF SQL preserves only the immutable completed legacy output contract
   const definition=(await db.query("SELECT pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure) AS body")).rows[0].body;
   await db.exec(paidPdfMigration);
   assert.equal((await db.query("SELECT pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure) AS body")).rows[0].body,definition,'migration rerun is idempotent');
+});
+
+test('Call 10 runtime preserves frozen placements and passes the actual immutable SQL inventory gate',async t=>{
+  const {db}=await database();t.after(()=>db.close());const f=await fixture(db);
+  const original=Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><path d="M0 0H40V20H0Z"/></svg>');
+  const contentHash=hash(original),storagePath=`users/${OWNER}/revisions/${f.revisionId}/inputs/logo/${contentHash}.svg`;
+  const expected=surfaces.filter(surface=>surface!=='roof').map(surfaceKey=>({
+    placementKey:`customer-logo@${surfaceKey}`,identityKey:'customer-logo',displayName:'Exact customer brand',surfaceKey,
+    storagePath,contentHash,byteSize:original.length,contentType:'image/svg+xml'}));
+  await db.query("UPDATE public.designpro_revision_sources SET snapshot=snapshot||$1::jsonb WHERE revision_id=$2",[
+    JSON.stringify({expectedLogoInventory:expected,logoInventoryAttestation:{attested:true,mode:'listed'}}),f.revisionId]);
+  const regions=Object.fromEntries(surfaces.map(surface=>[surface,hash(`region-${surface}`)]));
+  const panelsStage=await stage(db,f.runId,'panels.build','completed',{sourceRegionHashes:regions});
+  await db.query("INSERT INTO public.designpro_stage_receipts(run_id,stage_id,receipt_kind,identity,receipt,receipt_hash) VALUES($1,$2,'call9.surface-panels','{}',$3,$4)",[
+    f.runId,panelsStage.id,JSON.stringify({sourceRegionHashes:regions}),hashJson({sourceRegionHashes:regions})]);
+  for(const surfaceKey of surfaces)await artifact(db,f.runId,panelsStage.id,{kind:'panel',surfaceKey,storagePath:`panels/${surfaceKey}.png`,
+    contentHash:hash(surfaceKey),byteSize:3,metadata:{sourceMasterHash:f.masterHash}});
+  const logosStage=await stage(db,f.runId,'logos.extract','running');
+  const run=(await db.query('SELECT * FROM public.designpro_workflow_runs WHERE id=$1',[f.runId])).rows[0];
+  const calls=[];
+  const sb={from(table){
+    const filters=[],values=[];
+    const query={select(){return query;},eq(key,value){values.push(value);filters.push(`${key}=$${values.length}`);return query;},
+      in(key,value){values.push(value);filters.push(`${key}=ANY($${values.length})`);return query;},
+      async result(single){const result=await db.query(`SELECT * FROM public.${table} WHERE ${filters.join(' AND ')}`,values);return {data:single?result.rows[0]||null:result.rows,error:null};},
+      maybeSingle(){return query.result(true);},then(resolve,reject){return query.result(false).then(resolve,reject);}};
+    return query;},
+    storage:{from(){return {async download(path){assert.equal(path,storagePath);return {data:new Blob([original]),error:null};}};}},
+    async rpc(name,args){assert.equal(name,'complete_designpro_stage');calls.push(args);
+      const result=await db.query('SELECT public.complete_designpro_stage($1,$2,$3,$4,$5,$6) AS result',[
+        args.p_stage_id,args.p_lease_token,JSON.stringify(args.p_identity),JSON.stringify(args.p_receipt),args.p_receipt_hash,JSON.stringify(args.p_artifacts)]);
+      return {data:result.rows[0].result,error:null};}};
+  const stageInput={id:logosStage.id,stage_key:'logos.extract',lease_token:logosStage.token};
+  await db.query("UPDATE public.designpro_revision_sources SET snapshot=jsonb_set(snapshot,'{expectedLogoInventory,0,placementKey}',to_jsonb('driver:customer-logo:0'::text)) WHERE revision_id=$1",[f.revisionId]);
+  await assert.rejects(runtimeClaimant.executeEntice(sb,null,null,null,stageInput,run,{}),{code:'call10_logo_placement_invalid'});
+  assert.equal(calls.length,0,'an invented placement must not reach stage completion');
+  await db.query("UPDATE public.designpro_revision_sources SET snapshot=jsonb_set(snapshot,'{expectedLogoInventory}',$1::jsonb) WHERE revision_id=$2",[JSON.stringify(expected),f.revisionId]);
+  await runtimeClaimant.executeEntice(sb,null,null,null,stageInput,run,{});
+  assert.equal(calls.length,1);
+  const receipt=calls[0].p_receipt;
+  assert.equal(receipt.inventoryHash,hashJson(receipt.inventory));
+  for(const item of receipt.inventory){
+    const frozen=expected.find(row=>row.placementKey===item.placementKey);
+    assert.deepEqual(item,{placementKey:frozen.placementKey,identityKey:frozen.identityKey,displayName:frozen.displayName,
+      targetSurfaceKey:frozen.surfaceKey,storagePath:frozen.storagePath,contentType:frozen.contentType,
+      contentHash:frozen.contentHash,byteSize:frozen.byteSize});
+  }
+  const persisted=(await db.query("SELECT * FROM public.designpro_artifacts WHERE run_id=$1 AND artifact_kind='logo' ORDER BY surface_key",[f.runId])).rows;
+  assert.deepEqual(runtimeClaimant.logoInventoryReceipt(persisted),[...receipt.inventory].sort((a,b)=>a.placementKey.localeCompare(b.placementKey)),
+    'paid source verification uses the exact same receipt shape as Call 10');
+  const storedReceipt=(await db.query("SELECT receipt FROM public.designpro_stage_receipts WHERE run_id=$1 AND receipt_kind='call10.logo-inventory'",[f.runId])).rows[0].receipt;
+  assert.equal(storedReceipt.inventoryHash,hashJson(storedReceipt.inventory),'JSONB property reordering preserves inventory identity');
+  assert.equal(hashJson([...storedReceipt.inventory].sort((a,b)=>a.placementKey.localeCompare(b.placementKey))),hashJson(runtimeClaimant.logoInventoryReceipt(persisted)));
+  assert.deepEqual(persisted.map(row=>row.surface_key),expected.map(row=>row.placementKey).sort());
+  assert.equal((await db.query('SELECT status FROM public.designpro_workflow_stages WHERE id=$1',[logosStage.id])).rows[0].status,'completed');
 });

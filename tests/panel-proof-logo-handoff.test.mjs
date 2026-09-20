@@ -10,6 +10,7 @@ const UPLOAD='22222222-2222-4222-8222-222222222222';
 const REVISION='33333333-3333-4333-8333-333333333333';
 const HASH='a'.repeat(64),MASTER='b'.repeat(64);
 const migration=readFileSync(new URL('../supabase/migrations/20260920022906_designpro_panel_proof_logo_handoff.sql',import.meta.url),'utf8');
+const inventoryShapeMigration=readFileSync(new URL('../supabase/migrations/20260920025200_designpro_panel_proof_inventory_shape.sql',import.meta.url),'utf8');
 const historical=readFileSync(new URL('../supabase/migrations/20260825120000_designpro_atlas_enters_handoff.sql',import.meta.url),'utf8');
 const original=historical.slice(historical.indexOf('CREATE OR REPLACE FUNCTION public.handoff_designpro_generation_to_production'),historical.indexOf('$fn$;')+5);
 function fixture(mime='image/png') {
@@ -42,8 +43,13 @@ async function database(t) {
     CREATE TABLE public.designpro_flat_atlas_revisions(id uuid,request_id uuid,owner_id uuid,generation_id uuid,revision_sequence int,metadata jsonb,master_content_hash text);`);
   await db.exec(original);
   await db.exec(migration);
+  await db.exec(inventoryShapeMigration);
   const snapshotSchema=readFileSync(new URL('../supabase/migrations/20260825121000_designpro_atlas_revision_source_admitted.sql',import.meta.url),'utf8');
   await db.exec(snapshotSchema.slice(snapshotSchema.indexOf('ALTER TABLE public.designpro_revision_sources'),snapshotSchema.indexOf('CREATE OR REPLACE FUNCTION')));
+  const triggerSource=readFileSync(new URL('../supabase/migrations/20260806180700_designpro_storage_and_path_identity.sql',import.meta.url),'utf8');
+  const triggerStart=triggerSource.indexOf('CREATE OR REPLACE FUNCTION public.verify_designpro_revision_source_hash()');
+  await db.exec(triggerSource.slice(triggerStart,triggerSource.indexOf('$fn$;',triggerStart)+5));
+  await db.exec('CREATE TRIGGER designpro_revision_source_hash BEFORE INSERT ON public.designpro_revision_sources FOR EACH ROW EXECUTE FUNCTION public.verify_designpro_revision_source_hash()');
   return db;
 }
 const inventory=async(db,f)=> (await db.query('SELECT designpro_private.panel_proof_logo_inventory($1,$2,$3,$4,$5,$6,$7) inventory',
@@ -55,12 +61,10 @@ test('the actual handoff migration keeps existing guards and freezes verified lo
   assert.equal(result.length,5);
   assert.deepEqual(result.map(p=>p.surfaceKey).sort(),['driver','front','hood','passenger','rear']);
   for(const item of result){
-    assert.equal(item.originalStoragePath,f.logo.storagePath);
-    assert.equal(item.sourceMasterContentHash,MASTER);
-    assert.equal(item.sourcePanelHash,f.panels.find(p=>p.surfaceKey===item.surfaceKey).contentHash);
+    assert.deepEqual(Object.keys(item).sort(),['placementKey','identityKey','displayName','surfaceKey','storagePath','contentHash','byteSize','contentType'].sort());
+    assert.equal(item.placementKey,`${item.identityKey}@${item.surfaceKey}`);
     assert.equal(item.contentHash,HASH);
     assert.equal(item.byteSize,f.logo.byteSize);
-    assert.deepEqual(item.box,f.proof.composition.placements[0].box);
     assert.doesNotThrow(()=>normalizeLogoAsset(item,`user_${OWNER}`,REVISION));
   }
   const [{definition}]=(await db.query("SELECT pg_get_functiondef('public.handoff_designpro_generation_to_production(uuid)'::regprocedure) definition")).rows;
@@ -72,6 +76,7 @@ test('the actual handoff migration keeps existing guards and freezes verified lo
   assert.match(definition,/'placementPending',false/);
   assert.doesNotMatch(definition,/'qcApproved',true|'designerApproved',true/);
   await db.exec(migration); // Migration replay must not patch the installed body twice.
+  await db.exec(inventoryShapeMigration);
 });
 
 test('root handoff requires the copied logo and preserves separated zones under the real snapshot constraint',async t=>{
@@ -89,6 +94,9 @@ test('root handoff requires the copied logo and preserves separated zones under 
   const handoff=()=>db.query('SELECT public.handoff_designpro_generation_to_production($1) result',[request]);
   await assert.rejects(handoff(),/generation_logo_copy_required/);
   await db.query("INSERT INTO storage.objects VALUES('wrap-files',$1)",[`users/${OWNER}/revisions/${REVISION}/inputs/logo/${HASH}.png`]);
+  await db.exec(migration); // Restore the pre-fix helper under the real trigger.
+  await assert.rejects(handoff(),/expected_logo_inventory_item_invalid/);
+  await db.exec(inventoryShapeMigration);
   assert.equal((await handoff()).rows[0].result.revisionId,REVISION);
   const snapshot=(await db.query('SELECT snapshot FROM public.designpro_revision_sources WHERE revision_id=$1',[REVISION])).rows[0].snapshot;
   assert.deepEqual(snapshot.panelProofAuthoring,f.proof);
@@ -100,6 +108,20 @@ test('root handoff requires the copied logo and preserves separated zones under 
   assert.equal(snapshot.logoInventoryAttestation.placementPending,false);
   assert.equal(snapshot.logoInventoryAttestation.atlasRevisionId,atlas);
   assert.equal(snapshot.brandAssets.logo.storagePath,f.logo.storagePath);
+  assert.ok(snapshot.expectedLogoInventory.every(item=>Object.keys(item).length===8&&item.placementKey===`${item.identityKey}@${item.surfaceKey}`));
+  const rejectedInsert=async(candidate,hashOverride=null)=>{
+    const data=JSON.stringify(candidate);
+    return db.query(`INSERT INTO public.designpro_revision_sources(revision_id,owner_id,tenant_key,generation_id,visualization_id,snapshot,snapshot_hash,idempotency_key)
+      SELECT revision_id,owner_id,tenant_key,generation_id,visualization_id,$2::jsonb,COALESCE($3,encode(extensions.digest(convert_to(($2::jsonb)::text,'UTF8'),'sha256'),'hex')),idempotency_key
+      FROM public.designpro_revision_sources WHERE revision_id=$1`,[REVISION,data,hashOverride]);
+  };
+  const extra=structuredClone(snapshot);extra.expectedLogoInventory[0].box={xPct:.1};
+  await assert.rejects(rejectedInsert(extra),/expected_logo_inventory_item_invalid/);
+  const missing=structuredClone(snapshot);delete missing.expectedLogoInventory[0].placementKey;
+  await assert.rejects(rejectedInsert(missing),/expected_logo_inventory_item_invalid/);
+  const wrong=structuredClone(snapshot);wrong.expectedLogoInventory[0].placementKey='customer-logo@roof';
+  await assert.rejects(rejectedInsert(wrong),/expected_logo_inventory_item_invalid/);
+  await assert.rejects(rejectedInsert(snapshot,'f'.repeat(64)),/revision_snapshot_hash_mismatch/);
   assert.equal((await handoff()).rows[0].result.alreadyHandedOff,true);
   await db.query("UPDATE public.designpro_generation_requests SET engine_receipt=jsonb_set(engine_receipt,'{atlasRevisionId}',$1::jsonb) WHERE id=$2",[JSON.stringify(UPLOAD),request]);
   await assert.rejects(handoff(),/generation_logo_placement_manifest_required/);
@@ -140,7 +162,8 @@ test('SVG and raster sources retain their original bytes identity and canonical 
   jpeg.proof.quadrants.cutGraphics[0].storagePath=jpeg.logo.storagePath;
   for(const placement of jpeg.proof.composition.placements)placement.storagePath=jpeg.logo.storagePath;
   const jpegInventory=await inventory(db,jpeg);
-  assert.ok(jpegInventory.every(item=>item.originalStoragePath.endsWith('.jpeg')&&item.storagePath.endsWith('.jpg')));
+  assert.ok(jpegInventory.every(item=>item.storagePath.endsWith('.jpg')));
+  assert.ok(jpeg.proof.quadrants.cutGraphics[0].storagePath.endsWith('.jpeg'));
   const f=fixture();f.logo.storagePath=f.logo.storagePath.replace(OWNER,UPLOAD);
   await assert.rejects(inventory(db,f),/generation_logo_asset_invalid/);
 });
