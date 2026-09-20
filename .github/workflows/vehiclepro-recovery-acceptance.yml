@@ -101,17 +101,17 @@ jobs:
           docker image inspect "$image" >/dev/null
           case "$TEST_CASE" in
             A)
-              company='Copper Finch Artisan Bakery'; industry='artisan bakery delivery'
+              company='Copper Finch Artisan Bakery'; industry='artisan bakery delivery'; website='copperfinch.example'
               year=2023; make=Ford; model='Transit'; type=van
               brief='Design a premium wrap for Copper Finch Artisan Bakery on a 2023 Ford Transit delivery van. Use a warm ivory base with terracotta botanical linework, large engraved wheat stalks and small copper finch illustrations. Give the company name a strong dark-chocolate wordmark treatment. Keep the composition calm and editorial, with abundant clear space around the lettering. Show Fresh bread, early mornings and copperfinch.example as readable secondary copy. Continue the botanical campaign around the rear doors and onto the hood; use a quiet tonal wheat pattern on the roof.'
               ;;
             B)
-              company='Granite Ridge Arborists'; industry='tree care and forestry'
+              company='Granite Ridge Arborists'; industry='tree care and forestry'; website='graniteridge.example'
               year=2022; make=Ford; model='F250 Crew Cab'; type=truck
               brief='Create a rugged commercial wrap for Granite Ridge Arborists on a 2022 Ford F250 Crew Cab. Use charcoal, forest green and a sharp safety-lime accent. Build a high-contrast composition from angular mountain silhouettes and a large realistic cedar canopy, with purposeful diagonals following the truck body. Granite Ridge Arborists must dominate both sides; Tree care. Storm response. belongs beneath it. Put graniteridge.example prominently on the rear. Keep the hood bold and simple, the roof a restrained topographic pattern, and preserve forward-reading lettering on the passenger side.'
               ;;
             C)
-              company='Orbit Mobile Planetarium'; industry='science education outreach'
+              company='Orbit Mobile Planetarium'; industry='science education outreach'; website='orbitclassroom.example'
               year=2024; make=Volkswagen; model='ID. Buzz'; type=van
               brief='Wrap a 2024 Volkswagen ID. Buzz for Orbit Mobile Planetarium, a science workshop visiting schools. Create a joyful deep-violet and midnight-blue star field with oversized luminous orange planetary rings and a single detailed moon illustration. Use round, highly readable white lettering for Orbit Mobile Planetarium. Include Bring the universe to your school and orbitclassroom.example as secondary copy. Use sweeping orbital arcs to connect the two sides and rear, a distinct crescent motif on the hood, and a recognizable solar-system composition on the roof. The result should feel scientific and imaginative, with precise astronomical details and a bold museum-quality identity.'
               ;;
@@ -129,7 +129,7 @@ jobs:
             -v "$work/scripts/vehiclepro-live-prompt-test.mjs:/app/vehiclepro-live-prompt-test.mjs:ro" \
             -v "$work/output:/evidence" "$image" node /app/vehiclepro-live-prompt-test.mjs \
             --case "$TEST_CASE" --source-sha "$EXPECTED_SHA" --out /evidence \
-            --company "$company" --industry "$industry" --brief "$brief" \
+            --company "$company" --industry "$industry" --website "$website" --brief "$brief" \
             --year "$year" --make "$make" --model "$model" --type "$type"
           status=$?
           set -e

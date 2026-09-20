@@ -93,14 +93,7 @@ try{
  if(loginError||!signed?.session?.access_token) throw new Error(`test login failed: ${loginError?.message||"no session"}`);
  operator=createClient(SUPABASE_URL,SERVICE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:{Authorization:`Bearer ${signed.session.access_token}`}}});
  evidence.auth={method:"fresh password authentication",userId:operatorId,verifiedAt:new Date().toISOString(),browserSession:"UNVERIFIED"};save();
- const sharp=(()=>{try{return require("sharp")}catch{return require("../runtime/node_modules/sharp")}})();
- const logoSvg=Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360"><rect width="900" height="360" rx="48" fill="#ffffff"/><text x="450" y="205" text-anchor="middle" font-family="Arial,sans-serif" font-size="72" font-weight="700" fill="#111111">${company.replace(/[<&]/g,"")}</text></svg>`);
- const logoBytes=await sharp(logoSvg).png().toBuffer();
- const logoHash=createHash("sha256").update(logoBytes).digest("hex");
- const logoPath=`users/${operatorId}/revisions/${generationId}/inputs/logo/${logoHash}.png`;
- const {error:uploadError}=await service.storage.from("wrap-files").upload(logoPath,logoBytes,{contentType:"image/png",upsert:false});
- if(uploadError) throw new Error(`logo upload failed: ${uploadError.message}`);
- const input={contractVersion:"designpro.calls-1-7-input.v3",pipelineMode:"flat-first-atlas-v1",vehicle:{year,make,model,type},brief,designName:company,companyName:company,phone,website,industry,mode:"commercial",finish:"Gloss",logoAsset:{storagePath:logoPath,contentHash:logoHash,byteSize:logoBytes.length,contentType:"image/png"}};
+ const input={contractVersion:"designpro.calls-1-7-input.v3",pipelineMode:"flat-first-atlas-v1",vehicle:{year,make,model,type},brief,designName:company,companyName:company,phone,website,industry,mode:"commercial",finish:"Gloss"};
  evidence.generateClickedAt=new Date().toISOString();save();
  const req=await jsonFetch(`${origin}/api/generation/requests`,{method:"POST",headers:{Authorization:`Bearer ${signed.session.access_token}`,"content-type":"application/json",Origin:origin},body:JSON.stringify({generationId,input,requiredPipelineMode:"flat-first-atlas-v1"})});
  const requestId=String(req?.requestId||req?.id||""); if(!requestId) throw new Error("generation request returned no requestId");
