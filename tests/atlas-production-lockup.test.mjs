@@ -44,12 +44,14 @@ test('production planner handles all nonempty known asset subsets without silent
   assert.deepEqual(plan([...elements].reverse()),plan(),'input asset order never changes final hierarchy');
 });
 
-test('production planner refuses unknown/duplicate roles, invalid crops and unreadably tall type',()=>{
+test('production planner refuses malformed inputs but treats oversized copy as a nonfatal surface-composition choice',()=>{
   for(const assets of [[],[...elements,elements[0]], [...elements,{role:'mystery',width:20,height:20}],elements.map(e=>e.role==='typography'?{...e,width:NaN}:e),elements.map(e=>e.role==='contact'?{...e,height:Infinity}:e)])
     assert.throws(()=>plan(assets),{code:'atlas_lockup_element_invalid'});
   for(const measured of [panels.slice(1),[...panels.slice(1),panels[1]],panels.map((p,i)=>i?p:{...p,surfaceKey:'unknown'}),panels.map((p,i)=>i?p:{...p,rect:{width:Infinity,height:100}}),panels.map((p,i)=>i?p:{...p,rect:{width:100,height:0}})])
     assert.throws(()=>planProductionPanelLockup({panels:measured,elements}),{code:'atlas_lockup_zone_invalid'});
-  assert.throws(()=>plan(elements.map(e=>e.role==='typography'?{...e,width:100,height:2000}:e)),{code:'atlas_lockup_text_unreadable'});
+  const tall=plan(elements.map(e=>e.role==='typography'?{...e,width:100,height:2000}:e));
+  assert.ok(tall.placements.some(p=>p.role==='logo'),'logo still completes the panel when a text stack is too tall');
+  assert.equal(tall.placements.some(p=>p.role==='typography'),false,'oversized type is omitted from that composition instead of killing Call 1');
 });
 
 test('legacy planner keeps its existing shared-width and passenger-box mirroring contract',()=>{
