@@ -21,7 +21,7 @@ test("ordered migration chain retains existing production boundaries and appends
   // 20260813190000_designpro_design_master_revisions.sql, so every migration
   // appended below must widen it by one or the chain's head falls out of view
   // and the assertion convicts an unrelated file.
-  assert.deepEqual(names.slice(-116), [
+  assert.deepEqual(names.slice(-117), [
     // The slot-lease layer the Calls 1-7 store calls, then the completion RPC
     // rewritten to validate in place rather than delete and re-insert.
     "20260814050000_designpro_generation_slot_leases.sql",
@@ -346,6 +346,7 @@ test("ordered migration chain retains existing production boundaries and appends
     "20260920022906_designpro_panel_proof_logo_handoff.sql",
     "20260920025200_designpro_panel_proof_inventory_shape.sql",
     "20260920042000_designpro_revision_pinned_purchase.sql",
+    "20260920043000_designpro_enhance_terminal_lease_release.sql",
     "20260920113000_designpro_paid_pdf_outputs.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
