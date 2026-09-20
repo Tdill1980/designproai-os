@@ -1071,3 +1071,41 @@ test("P4. a worker built without the panel-proof seams fails the node by name, n
   assert.match(branch, /refusal\.retryable = false/);
   assert.doesNotMatch(branch, /failOverToSixSurface|authorPanelProofMaster/);
 });
+
+test("cache-only proof sheet reuses only matching hash-verified completed checkpoints without Edge", async () => {
+  const {createHash}=await import("node:crypto");
+  const bytes=Buffer.from("original saved provider image");
+  const asset={storagePath:"original.png",byteSize:bytes.length,contentHash:createHash("sha256").update(bytes).digest("hex")};
+  const output={contract:graph.GRAPH_CONTRACT,stage:"proof-sheet",sheet:{...asset,intake:{creativeDirection:"Original immutable parsed brief"},generatedElements:[asset]},panelRows:[],customerAssets:[]};
+  const definition=graph.panelProofExecutionDefinition({manifest:{zones:[]},input:{brief:"Feature the RACING wordmark"},providerRequest:{requestId:REQUEST,generationId:GENERATION,cacheOnly:true}});
+  for(const scenario of ["valid","brief","owner","output hash","image bytes"]){
+    const priorDefinition=structuredClone(definition);delete priorDefinition.providerRequest.cacheOnly;delete priorDefinition.recoveryCheckpointVersion;
+    if(scenario==="brief")priorDefinition.input.brief="Different customer brief";
+    const prior={id:"prior",request_id:REQUEST,generation_id:GENERATION,owner_id:scenario==="owner"?"other":OWNER,definition:priorDefinition};
+    let edgeCalls=0,downloads=0;
+    const supabase={from(table){const q={select(){return q;},eq(){return q;},order(){return q;},
+      async limit(){return{data:[prior],error:null};},async maybeSingle(){return{data:{output,output_hash:scenario==="output hash"?"bad":graph.hashJson(output)},error:null};}};return q;},
+      storage:{from(){return{async download(){downloads++;return{data:new Blob([scenario==="image bytes"?Buffer.from("corrupt"):bytes]),error:null};}};}}};
+    const invoke=()=>graph.executeNode({claim:{node:{node_key:"proof.sheet",depends_on:[]},run:{id:"recovery",request_id:REQUEST,generation_id:GENERATION,owner_id:OWNER,definition},claimToken:CLAIM},supabase,
+      callProofEdge:async()=>{edgeCalls++;throw new Error("cache-only Edge refused unmatched identity");}});
+    if(scenario==="valid"){
+      const result=await invoke();assert.equal(result.state,"completed");assert.deepEqual(result.output,output);
+      assert.equal(edgeCalls,0);assert.equal(downloads,2);
+    }else{
+      await assert.rejects(invoke);
+      if(scenario==="output hash"||scenario==="image bytes")assert.equal(edgeCalls,0);
+      else assert.equal(downloads,0,"unmatched checkpoint bytes are never reused");
+    }
+  }
+});
+
+
+test("cache-only checkpoint execution versions the graph without changing the provider definition", () => {
+  const original={input:{brief:"immutable"},providerRequest:{requestId:REQUEST,generationId:GENERATION}};
+  assert.deepEqual(graph.panelProofExecutionDefinition(original),original);
+  const recovery={...original,providerRequest:{...original.providerRequest,cacheOnly:true}};
+  const before=structuredClone(recovery);
+  assert.notEqual(graph.hashJson(graph.panelProofExecutionDefinition(recovery)),graph.hashJson(recovery));
+  assert.equal(graph.hashJson(graph.panelProofExecutionDefinition(recovery)),graph.hashJson(graph.panelProofExecutionDefinition(before)));
+  assert.deepEqual(recovery,before);
+});

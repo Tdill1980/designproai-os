@@ -108,6 +108,9 @@ function canonical(value) {
   return value;
 }
 const hashJson = (value) => sha256(JSON.stringify(canonical(value)));
+const PROOF_CHECKPOINT_VERSION = "verified-completed-proof-sheet.v1";
+const panelProofExecutionDefinition = definition => definition.providerRequest?.cacheOnly === true
+  ? {...definition,recoveryCheckpointVersion:PROOF_CHECKPOINT_VERSION} : definition;
 const surfaceNode = (surfaceKey) => `surface.${surfaceKey}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -399,6 +402,39 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, as
   // recovery costs nothing at all -- not a second sheet, and not even the
   // cache-read round trip the durable provider module would otherwise make.
   if (node.node_key === PROOF_SHEET_NODE) {
+    if (definition.providerRequest?.cacheOnly === true) {
+      // Intake is model-derived. Rebuilding it can change an otherwise identical
+      // provider request. Reuse the durable completed sheet before calling Edge.
+      if (!run.owner_id || !run.request_id || !run.generation_id) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_checkpoint_identity_mismatch","checkpoint recovery requires owner, request and generation");
+      }
+      const comparable = value => {
+        const copy = structuredClone(value);
+        if (copy.providerRequest) delete copy.providerRequest.cacheOnly;
+        if (copy.recoveryCheckpointVersion === PROOF_CHECKPOINT_VERSION) delete copy.recoveryCheckpointVersion;
+        return hashJson(copy);
+      };
+      const { data: priorRuns, error: readError } = await supabase.from("designpro_atlas_call1_runs")
+        .select("id,owner_id,request_id,generation_id,definition").eq("request_id",run.request_id)
+        .eq("generation_id",run.generation_id).eq("owner_id",run.owner_id).order("created_at",{ascending:false}).limit(20);
+      if (readError) throw new AtlasCall1GraphError("designpro_atlas_call1_checkpoint_read_failed",String(readError.message),true);
+      for (const prior of priorRuns || []) {
+        if (prior.id === run.id || prior.owner_id !== run.owner_id || prior.request_id !== run.request_id
+          || prior.generation_id !== run.generation_id || comparable(prior.definition) !== comparable(definition)) continue;
+        const { data: saved, error } = await supabase.from("designpro_atlas_call1_nodes")
+          .select("output,output_hash").eq("run_id",prior.id).eq("node_key",PROOF_SHEET_NODE).eq("state","completed").maybeSingle();
+        if (error) throw new AtlasCall1GraphError("designpro_atlas_call1_checkpoint_read_failed",String(error.message),true);
+        if (!saved) continue;
+        if (!saved.output?.sheet || hashJson(saved.output) !== saved.output_hash) {
+          throw new AtlasCall1GraphError("designpro_atlas_call1_checkpoint_identity_mismatch","completed proof sheet output hash mismatch");
+        }
+        await downloadVerified(supabase,saved.output.sheet);
+        for (const asset of saved.output.sheet.generatedElements || []) await downloadVerified(supabase,asset);
+        abortIf();
+        logger(`atlas call 1 graph ${run.id}: reused verified proof.sheet from ${prior.id}`);
+        return {state:"completed",output:saved.output};
+      }
+    }
     if (typeof callProofEdge !== "function") {
       throw new AtlasCall1GraphError("designpro_atlas_call1_transport_missing",
         `${PROOF_SHEET_NODE} needs the panel-proof transport; this worker was built without one`);
@@ -985,12 +1021,14 @@ function createAtlasCall1NodeWorker({
     // parts ride the definition so whichever worker claims proof.sheet sends
     // the same references — never the pixels, which is why only their
     // identities are ever put in a node's input or output.
-    const definition = {
+    const definition = panelProofExecutionDefinition({
       contract: GRAPH_CONTRACT, role: "panel-proof", manifest, input,
       providerRequest: providerRequest ? providerBase : null,
       customerImageParts,
       panelProofContract: panelProof.PANEL_PROOF_TOPOLOGY_CONTRACT,
-    };
+    });
+    // A terminal pre-checkpoint recovery run stays immutable. Version only the
+    // cache-only execution graph, never the original provider request identity.
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {
       p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
@@ -1237,6 +1275,6 @@ function createAtlasCall1NodeWorker({
 module.exports = {
   GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, viewNode, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   PROOF_SHEET_NODE, PROOF_ASSEMBLE_NODE,
-  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, compilePanelProofGraph, elementNodes, readyNodes, hashJson,
+  AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, compilePanelProofGraph, elementNodes, readyNodes, hashJson, panelProofExecutionDefinition,
   createAtlasCall1NodeWorker, executeNode, failurePayload,
 };
