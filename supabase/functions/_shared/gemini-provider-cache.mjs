@@ -213,14 +213,58 @@ function isMissing(error) {
     || /^(?:Object not found|The resource was not found|Not found)$/i.test(String(error?.message || ''));
 }
 
+async function unwrapStorageDownloadError(error) {
+  // Older storage-js can wrap a cross-realm Response as StorageUnknownError.
+  // A missing claim then has HTTP 400 outside and Object-not-found inside.
+  // Decode that existing response; do not retry the request or treat arbitrary
+  // HTTP 400s (including authentication failures) as permission to generate.
+  const response = error?.name === 'StorageUnknownError' ? error.originalError : null;
+  if (![400, 404].includes(Number(response?.status)) || typeof response?.json !== 'function') return error;
+  try {
+    const body = await response.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return error;
+    return {
+      name: 'StorageApiError',
+      status: Number(response.status),
+      statusCode: body.statusCode,
+      code: body.code || body.error,
+      message: body.message || body.error_description || '',
+    };
+  } catch { return error; }
+}
+
+function storageReadFailure(cause) {
+  // Preserve only transport classification. Never expose a path, response
+  // body, request headers, error message or stack through a customer receipt.
+  const status = [cause?.status, cause?.statusCode, cause?.originalError?.status]
+    .map(Number).find(value => Number.isInteger(value) && value >= 100 && value <= 599);
+  const name = String(cause?.name || 'Error');
+  const code = String(cause?.code || (Number.isNaN(Number(cause?.statusCode)) ? cause?.statusCode : '') || '');
+  const diagnostic = {
+    contractVersion: 'designpro.provider-storage-diagnostic.v1',
+    operation: 'download',
+    httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    exceptionClass: ['StorageApiError', 'StorageUnknownError', 'StorageError', 'Error', 'TypeError', 'AbortError', 'TimeoutError'].includes(name) ? name : 'Error',
+    code: /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(code) ? code : null,
+  };
+  return Object.assign(new GeminiProviderError('provider_cache_read_failed', 503), {
+    storageDiagnostic: diagnostic,
+  });
+}
+
 async function readBytes(bucket, path, maximum = MAX_RESPONSE_BYTES) {
   let downloaded;
   try { downloaded = await bucket.download(path); }
-  catch { throw new GeminiProviderError('provider_cache_read_failed', 503); }
+  catch (cause) {
+    const error = await unwrapStorageDownloadError(cause);
+    if (isMissing(error)) return null;
+    throw storageReadFailure(error);
+  }
   const { data, error } = downloaded;
   if (error) {
-    if (isMissing(error)) return null;
-    throw new GeminiProviderError('provider_cache_read_failed', 503);
+    const resolved = await unwrapStorageDownloadError(error);
+    if (isMissing(resolved)) return null;
+    throw storageReadFailure(resolved);
   }
   if (!data || (Number.isFinite(data.size) && data.size > maximum)) throw new GeminiProviderError('provider_cache_invalid', 409);
   const bytes = new Uint8Array(await data.arrayBuffer());

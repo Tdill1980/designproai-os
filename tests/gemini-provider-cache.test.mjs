@@ -74,6 +74,88 @@ test('cache-only capability never reserves or calls a provider for a missing rec
   assert.equal(bucket.files.size, 0);
 });
 
+test('storage read failures preserve safe classification without authorizing an image request', async () => {
+  for (const throws of [false, true]) {
+    const bucket = bucketFixture();
+    const failure = Object.assign(new Error('private object path and API key MUST NOT LEAK'), {
+      name: 'StorageApiError', statusCode: '403', code: 'AccessDenied',
+    });
+    bucket.download = async () => {
+      if (throws) throw failure;
+      return { data: null, error: failure };
+    };
+    await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no provider call'))), error => {
+      assert.equal(error.code, 'provider_cache_read_failed');
+      assert.equal(error.status, 503);
+      assert.equal(error.providerOutcome, 'not_sent');
+      assert.equal(error.imageRequestCount, 0);
+      assert.deepEqual(error.storageDiagnostic, {
+        contractVersion: 'designpro.provider-storage-diagnostic.v1', operation: 'download',
+        httpStatus: 403, exceptionClass: 'StorageApiError', code: 'AccessDenied',
+      });
+      assert.doesNotMatch(JSON.stringify(error), /private object|API key|MUST NOT LEAK/);
+      return true;
+    });
+    assert.equal(bucket.writes.length, 0);
+  }
+});
+
+test('cross-realm missing-object responses permit one fresh request and cache-only never spends', async () => {
+  for (const cacheOnly of [false, true]) {
+    for (const throws of [false, true]) {
+      const bucket = bucketFixture();
+      const download = bucket.download.bind(bucket);
+      bucket.download = async path => {
+        if (bucket.files.has(path)) return download(path);
+        const failure = {
+          name: 'StorageUnknownError',
+          // Deliberately not instanceof the host Response.
+          originalError: { status: 400, async json() {
+            return { statusCode: '404', error: 'not_found', message: 'Object not found' };
+          } },
+        };
+        if (throws) throw failure;
+        return { data: null, error: failure };
+      };
+      let calls = 0;
+      const request = () => runDurableImageProviderRequest(options(bucket, async () => {
+        calls += 1;
+        return { status: 200, payload: nativePayload };
+      }, { cacheOnly }));
+      if (cacheOnly) {
+        await assert.rejects(request(), { code: 'provider_cache_miss' });
+        assert.equal(calls, 0);
+        assert.equal(bucket.writes.length, 0);
+      } else {
+        await request();
+        await request();
+        assert.equal(calls, 1);
+      }
+    }
+  }
+});
+
+test('wrapped authentication, malformed and unrelated HTTP 400 responses stay fail-closed', async () => {
+  for (const body of [null, [], { message: 'Bad request' }, { code: 'InvalidJWT', message: 'private JWT MUST NOT LEAK' }]) {
+    const bucket = bucketFixture();
+    bucket.download = async () => ({ data: null, error: {
+      name: 'StorageUnknownError', originalError: { status: 400, async json() {
+        if (body === null) throw new SyntaxError('private response MUST NOT LEAK');
+        return body;
+      } },
+    } });
+    await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no provider call'))), error => {
+      assert.equal(error.code, 'provider_cache_read_failed');
+      assert.equal(error.imageRequestCount, 0);
+      assert.equal(error.storageDiagnostic.httpStatus, 400);
+      assert.equal(error.storageDiagnostic.code, body?.code || null);
+      assert.doesNotMatch(JSON.stringify(error), /private|MUST NOT LEAK/);
+      return true;
+    });
+    assert.equal(bucket.writes.length, 0);
+  }
+});
+
 test('lost reservation acknowledgement does not grant permission for a provider call', async () => {
   const bucket = bucketFixture();
   const upload = bucket.upload.bind(bucket);
