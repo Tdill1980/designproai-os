@@ -909,7 +909,7 @@ test("P2. authorPanelProof runs end to end across two workers, and a resume buys
   try {
     other.start();
     const result = await owner.authorPanelProof({
-      manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      manifest, input: { ...INPUT, companyName: "Acme Fleet" }, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
       providerRequest: { requestId: REQUEST, generationId: GENERATION },
       logger: () => {}, pollMs: 20, timeoutMs: 90_000,
     });
@@ -937,10 +937,12 @@ test("P2. authorPanelProof runs end to end across two workers, and a resume buys
     // ALL THREE QUADRANTS ARE ON THE RECEIPT, and the two siblings are stored.
     assert.equal(result.provenance.quadrants.branded.length, 6);
     assert.equal(result.provenance.quadrants.clean.length, 6);
-    assert.equal(result.provenance.quadrants.cutGraphics.length, 5);
+    assert.equal(result.provenance.quadrants.cutGraphics.length, 1);
     for (const panel of [...result.provenance.quadrants.clean, ...result.provenance.quadrants.cutGraphics]) {
       assert.equal(panel.persisted, true, `${panel.role}:${panel.surfaceKey} must be stored, not described`);
-      assert.match(panel.storagePath, /^atlas-panel-proof\/quadrants\/[0-9a-f]{64}\.png$/);
+      assert.match(panel.storagePath, panel.role === "cut-graphic"
+        ? /^atlas-elements\/[0-9a-f]{64}\.svg$/
+        : /^atlas-panel-proof\/quadrants\/[0-9a-f]{64}\.png$/);
     }
     // THE CUT SPENDS NO MODEL CALL, per surface.
     assert.equal(result.surfaces.length, 6);
@@ -983,7 +985,7 @@ test("P2. authorPanelProof runs end to end across two workers, and a resume buys
     // — not a second sheet, and not even the cache-read round trip the durable
     // provider module would otherwise make, because the node row already has it.
     const again = await owner.authorPanelProof({
-      manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+      manifest, input: { ...INPUT, companyName: "Acme Fleet" }, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
       providerRequest: { requestId: REQUEST, generationId: GENERATION },
       logger: () => {}, pollMs: 20, timeoutMs: 90_000,
     });
@@ -1062,8 +1064,10 @@ test("P4. a worker built without the panel-proof seams fails the node by name, n
   const atlasSrc = fs.readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.match(atlasSrc, /authorPanelProof\(\{/);
   assert.match(atlasSrc, /typeof options\.atlasCall1Graph\.authorPanelProof === "function"/);
-  // The in-process pass stays reachable for the kill switch and for a database
-  // without the migration; the unavailable case is recorded, never silent.
-  assert.match(atlasSrc, /running the panel proof in-process/);
-  assert.match(atlasSrc, /proof\.provenance\.graph = \{ unavailable: true/);
+  // Missing graph support must refuse; it cannot silently bypass durability.
+  const branch = atlasSrc.slice(atlasSrc.indexOf("} else if (panelProof) {"), atlasSrc.indexOf("generated = { bytes: proof.bytes"));
+  assert.match(branch, /designpro_atlas_call1_graph_unavailable/);
+  assert.match(branch, /await recordAtlasRefusal/);
+  assert.match(branch, /refusal\.retryable = false/);
+  assert.doesNotMatch(branch, /failOverToSixSurface|authorPanelProofMaster/);
 });
