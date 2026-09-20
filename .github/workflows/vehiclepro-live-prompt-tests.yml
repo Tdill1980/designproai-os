@@ -1,0 +1,152 @@
+name: VehiclePro real-prompt live tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/vehiclepro-live-prompt-tests.yml"
+      - "scripts/vehiclepro-live-prompt-test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vehiclepro-real-prompt-live-tests
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  real-prompt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: botanical-gardens
+            year: "2019"
+            make: Lamborghini
+            model: Urus
+            type: suv
+            company: Botanical Gardens Landscape Design
+            website: BotanicalGardensAZ.com
+            phone: "(480) 555-0147"
+            industry: landscape design
+            brief: "Create a wrap for a landscape design company for Botanical Gardens Landscape Design feature a custom logo use a desert tropical Scottsdale home front on 3/4 of sides and rear along with green, blue, black and rust colors."
+          - case: custom-homes
+            year: "2022"
+            make: Ford
+            model: F250 Crew Cab
+            type: truck
+            company: Saguaro Ridge Custom Homes
+            website: SaguaroRidgeHomes.com
+            phone: "(602) 555-0136"
+            industry: custom home builder
+            brief: "Create a premium commercial wrap for a custom home builder. Feature a modern Spanish desert home with warm stucco, black steel windows and resort landscaping. Communicate Custom Homes — Your Lot or Ours and In-House Financing Available. Use charcoal, sand, copper and deep teal with a clean upscale architectural look."
+          - case: plumbing-fleet
+            year: "2022"
+            make: Ford
+            model: F250 Crew Cab
+            type: truck
+            company: Copper State Plumbing
+            website: CopperStatePlumbing.com
+            phone: "(623) 555-0178"
+            industry: plumbing
+            brief: "Design a bold high-visibility commercial wrap for a plumbing company. Use deep navy, bright cyan and white with energetic water-flow graphics, a strong service-company hierarchy and clear Plumbing · Drain · Water Heater services. Make it readable at road speed and polished enough for a multi-vehicle fleet."
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Pin production host
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key"
+          test "$(ssh-keygen -lf "$public_key" -E sha256 | awk 'NR==1{print $2}')" = "$EXPECTED_AUTOMATION_KEY_FINGERPRINT"
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts"
+          test "$(ssh-keygen -lf "$known_hosts" -E sha256 | awk 'NR==1{print $2}')" = "$EXPECTED_HOST_FINGERPRINT"
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run real VehiclePro generation
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+          CASE: ${{ matrix.case }}
+          YEAR: ${{ matrix.year }}
+          MAKE: ${{ matrix.make }}
+          MODEL: ${{ matrix.model }}
+          VTYPE: ${{ matrix.type }}
+          COMPANY: ${{ matrix.company }}
+          WEBSITE: ${{ matrix.website }}
+          PHONE: ${{ matrix.phone }}
+          INDUSTRY: ${{ matrix.industry }}
+          BRIEF: ${{ matrix.brief }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
+          payload=$(base64 -w0 scripts/vehiclepro-live-prompt-test.mjs)
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST"             "PAYLOAD='$payload' CASE='$CASE' YEAR='$YEAR' MAKE='$MAKE' MODEL='$MODEL' VTYPE='$VTYPE' COMPANY='$COMPANY' WEBSITE='$WEBSITE' PHONE='$PHONE' INDUSTRY='$INDUSTRY' BRIEF=$(printf %q "$BRIEF") bash -s"             > "$RUNNER_TEMP/live-test.log" 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          release=/opt/designproai-os/current
+          sha=$(basename "$(readlink -f "$release")")
+          image="designproai-runtime:$sha"
+          docker image inspect "$image" >/dev/null
+          work=$(mktemp -d /tmp/vehiclepro-real.XXXXXX)
+          mkdir -p "$work/out"
+          printf '%s' "$PAYLOAD" | base64 -d > "$work/test.mjs"
+          chmod 0644 "$work/test.mjs"
+          set +e
+          docker run --rm --network host             --env-file /opt/designproai-os/shared/runtime.env             -v "$work/test.mjs:/app/vehiclepro-live-prompt-test.mjs:ro"             -v "$work/out:/evidence"             "$image" node /app/vehiclepro-live-prompt-test.mjs               --out /evidence --case "$CASE" --year "$YEAR" --make "$MAKE" --model "$MODEL" --type "$VTYPE"               --company "$COMPANY" --website "$WEBSITE" --phone "$PHONE" --industry "$INDUSTRY" --brief "$BRIEF"
+          status=$?
+          set -e
+          echo "---EVIDENCE---"
+          tar -C "$work/out" -cz . | base64 -w0
+          rm -rf "$work"
+          exit "$status"
+          REMOTE
+          status=$?
+          mkdir -p "evidence/$CASE"
+          if grep -q -- '---EVIDENCE---' "$RUNNER_TEMP/live-test.log"; then
+            sed -n '/---EVIDENCE---/,$p' "$RUNNER_TEMP/live-test.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C "evidence/$CASE" -xz
+            sed -n '1,/---EVIDENCE---/p' "$RUNNER_TEMP/live-test.log" | sed '$d' > "evidence/$CASE/run.log"
+          else
+            cp "$RUNNER_TEMP/live-test.log" "evidence/$CASE/run.log"
+          fi
+          cat "evidence/$CASE/run.log"
+          if [[ -f "evidence/$CASE/GENERATION_ID.txt" ]]; then
+            gid=$(tr -d '\r\n' < "evidence/$CASE/GENERATION_ID.txt")
+            echo "### $CASE" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Generation ID: `$gid`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Prompt: $BRIEF" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vehiclepro-live-${{ matrix.case }}-${{ github.run_id }}
+          path: evidence/${{ matrix.case }}/**
+          retention-days: 90
+          if-no-files-found: warn
