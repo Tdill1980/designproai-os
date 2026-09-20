@@ -16,7 +16,7 @@ assert.ok(start>0 && end>start);
 const assembly=execFileSync(resolveEsbuild(),['--loader=ts','--format=cjs'],{
   input:`(() => {${source.slice(start,end)}\nreturn {prompt,customerAssets};})()`,encoding:'utf8',stdio:['pipe','pipe','pipe'],
 });
-const PERSONA='You are an expert commercial graphic designer. Generate a high-fidelity, photorealistic vehicle wrap background layout. DO NOT generate text, logos, or typography of any kind. Leave negative space for vector asset placement.';
+const PERSONA='You are the wrap-artwork designer, not the proof-sheet renderer. Generate ONLY the clean printed BACKGROUND ARTWORK that will be placed into six vehicle panel cells by code.';
 const BODY={separatedArtwork:true,companyName:'Precision Climate Solutions',phone:'(520) 555-0192',website:'precisionclimate.example',
   creativeDirection:'Deep blue base with sunrise-orange airflow ribbons sweeping front to rear, rich landscape photography.',
   fontStyle:'bold condensed',brandColors:'#06284A, #FF7A18',finish:'Gloss',industryType:'HVAC',
@@ -31,14 +31,17 @@ async function assemble(body={}) {
 test('active separated Call 1 injects exact persona and omits contradictory branded generation directions',async()=>{
   const {prompt}=await assemble();
   assert.ok(prompt.startsWith(PERSONA+'\n\n'));
-  assert.ok(prompt.includes('Using the provided 2D production-proof examples as your structural guide, generate the flat, print-ready background panels for Zone 2. DO NOT generate typography, logos, or 3D vehicle perspectives. Output only the flat background art, leaving the correct negative space for later vector placement.'));
+  assert.match(prompt,/DO NOT generate a production-proof document/);
+  assert.match(prompt,/ARTWORK STAGING CANVAS/);
+  assert.match(prompt,/six rectangular cells in its green ZONE 2 row/);
+  assert.match(prompt,/Bright Smiles FINISHED THREE-ZONE EXAMPLE/);
   assert.match(prompt,/native Gemini 3 Pro Image design knowledge/);
   assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
   assert.match(prompt,/rich landscape photography/);
   assert.match(prompt,/BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND/);
-  assert.match(prompt,/ZONE 1 — Background copies/);
-  assert.match(prompt,/ZONE 2 — Authoritative backgrounds only/);
-  assert.match(prompt,/ZONE 3 — Reserved for original vector cut graphics\. Leave this entire band plain white/);
+  assert.doesNotMatch(prompt,/ZONE 1 — Background copies|ZONE 2 — Authoritative backgrounds only|ZONE 3 — Reserved for original vector cut graphics/);
+  assert.match(prompt,/Zone 1 = these exact backgrounds \+ protected original customer assets/);
+  assert.match(prompt,/Your only output responsibility is the six clean background artworks/);
   assert.doesNotMatch(prompt,/EXACT TEXT, character for character|ZONE 3'S FIVE BOXES, every one filled|Spell the business name|Typography preference:|The company name reads clearly|SMALL PANELS.*carry the logo/);
   for(const protectedCopy of [BODY.companyName,BODY.phone,BODY.website])assert.ok(!prompt.includes(protectedCopy));
 });
