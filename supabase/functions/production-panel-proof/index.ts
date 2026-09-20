@@ -487,7 +487,25 @@ serve(async (req) => {
         .replace(/Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet\./g,
           "The artwork contains the customer's creative background design. Panel names, surface IDs, legends and captions are server-rendered document chrome.")
         .replace(/never generic AI filler, never a template/gi,
-          "bespoke, commercially specific artwork with intentional composition");
+          "bespoke, commercially specific artwork with intentional composition")
+        .replace(/This is the single design authority for the complete vehicle, not six independent graphics\./gi,
+          "This is the single design authority for the complete vehicle as one unified six-surface composition.")
+        .replace(/with real dimension rather than flat shapes on bare panel/gi,
+          "with dimensional layered forms, material depth and intentional foreground accents")
+        .replace(/with real dimension rather than flat shapes on bare vinyl/gi,
+          "with dimensional layered forms, material depth and intentional foreground accents")
+        .replace(/do not reproduce the reference images directly/gi,
+          "create an original interpretation of the reference energy")
+        .replace(/do not introduce unrelated colors/gi,
+          "use tonal variations and coordinated shades from this palette")
+        .replace(/guide tone — not literal on-vehicle text/gi,
+          "guide tone and visual mood")
+        .replace(/without crowding it/gi,
+          "with clear breathing room around it")
+        .replace(/no reflections or shine; soft diffuse shading only/gi,
+          "flat light-absorbing character with soft diffuse shading")
+        .replace(/never mirror-bright/gi,
+          "with a restrained feathered sheen");
     }
 
     let prompt = buildPanelProofPrompt({
