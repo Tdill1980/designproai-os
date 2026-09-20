@@ -107,6 +107,8 @@ export interface AtlasProofPresentationInput {
   finish?: string | null;
   /** OS input: vehicle configuration. On a pickup the bed clause is carried. */
   isPickup?: boolean;
+  /** OS camera input: runtime/view-angles.cjs's existing cab-roof qualification. */
+  pickupRoofQualification?: string;
 }
 
 /** The lens half of the camera anchor. Close-up alone gets the 85mm variant. */
@@ -133,7 +135,8 @@ FINISH: ${finishSpec}${input.isPickup === true ? `\nCOVERAGE: ${TRUCK_BED_RULE}`
 ${ATLAS_PROOF_INSTRUCTION}
 
 CAMERA ANCHOR:
-${getCameraAngle(input.viewType || "side")}
+${getCameraAngle(input.viewType || "side")}${input.isPickup === true && input.viewType === "roof" && input.pickupRoofQualification
+    ? `\n${input.pickupRoofQualification}` : ""}
 ${cameraSpecFor(input.viewType)}
 
 STUDIO AND LIGHTING ANCHOR:
