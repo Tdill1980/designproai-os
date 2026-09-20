@@ -59,15 +59,44 @@ test('explicit 429 uses only the existing bounded ladder and then replays it wit
   assert.equal(replay.imageRequestCount, 3);
 });
 
-test('wrong owner, expired lease and changed panel cannot reuse or generate a proof', async () => {
+test('wrong owner and expired lease cannot reuse or generate a proof', async () => {
   const f = fixture(); let calls = 0;
   const invoke = async () => { calls += 1; return { status: 200, payload }; };
   await runAtlasProofProvider({ ...f.options, invoke });
-  await assert.rejects(runAtlasProofProvider({ ...f.options, invoke, authority: { sourcePanelHash: 'b'.repeat(64) } }), { code: 'provider_request_identity_conflict' });
   await assert.rejects(runAtlasProofProvider({ ...f.options, invoke, ownerId: providerRequest.requestId }), { code: 'provider_claim_invalid' });
   f.row.lease_expires_at = '2020-01-01T00:00:00Z';
   await assert.rejects(runAtlasProofProvider({ ...f.options, invoke }), { code: 'provider_claim_invalid' });
   assert.equal(calls, 1);
+});
+
+/**
+ * THIS CASE USED TO READ "changed panel cannot reuse OR GENERATE a proof", AND
+ * THE SECOND HALF OF THAT WAS THE DEFECT, NOT THE CONTRACT.
+ *
+ * Live 2cc236b9 (Saguaro Ridge, F250, 2026-09-20): 7/7 proof views lost, 14
+ * attempts, every one `provider_request_identity_conflict`, `rejections` 0 on
+ * every slot -- no acceptance gate ever ran because no image was ever fetched.
+ * The slot is keyed on the identity alone, so a re-claimed generation whose
+ * accepted master had been promoted addressed the same slot with a different
+ * request, disagreed with the immutable claim, and could never clear it.
+ *
+ * What must hold is only the REUSE half: a proof built for a retired panel is
+ * never served for the new one. Rendering its own is the product working.
+ */
+test('a promoted panel renders its own proof and never reuses the retired one', async () => {
+  const f = fixture(); let calls = 0;
+  const invoke = async () => { calls += 1; return { status: 200, payload }; };
+  const first = await runAtlasProofProvider({ ...f.options, invoke });
+  const promoted = await runAtlasProofProvider({ ...f.options, invoke, authority: { sourcePanelHash: 'b'.repeat(64) } });
+  assert.equal(calls, 2, 'the promoted panel renders once; it is a different operation');
+  assert.notEqual(promoted.requestId, first.requestId, 'it must not answer with the retired panel\'s receipt');
+  assert.equal(promoted.providerCacheHit, false, 'a retired proof may never be replayed for a new panel');
+  // Each operation still re-reads its OWN banked response and spends nothing.
+  for (const authority of [{ sourcePanelHash: 'a'.repeat(64) }, { sourcePanelHash: 'b'.repeat(64) }]) {
+    await runAtlasProofProvider({ ...f.options, invoke, authority,
+      providerRequest: { ...providerRequest, cacheOnly: true } });
+  }
+  assert.equal(calls, 2, 'recovery of either operation buys no further image');
 });
 
 test('missing final image and multiple final images are refused without choosing a thought image', () => {

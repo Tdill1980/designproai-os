@@ -307,11 +307,25 @@ async function stageCustomerAssets({ store, customerImageParts = [], logger = ()
     .filter((part) => typeof part?.inlineData?.data === "string" && part.inlineData.data.length);
   if (!inline.length) return [];
   if (typeof store?.putImmutableBytes !== "function") {
-    // Honest and non-fatal: the sheet is still worth drawing from the brief, and
-    // the receipt records that the assets could not be staged rather than
-    // implying the model saw them.
-    logger("atlas call 1: customer assets could not be staged (no store); the proof will not see them");
-    return [];
+    /**
+     * AN EMPTY ARRAY HERE MEANT "THE CUSTOMER UPLOADED NOTHING", AND IT WAS
+     * ALSO WHAT A DROP LOOKED LIKE.
+     *
+     * The receipt records `customerAssets: []` and its own comment says an
+     * empty array is "a real answer (the customer uploaded nothing)". When the
+     * customer DID upload and staging could not run, this returned exactly that
+     * answer -- so the photo and the logo left the pipeline and every surface
+     * downstream reported a design that had simply never been given any
+     * references. RULE 0.24 calls those CREATIVE authority, and nothing
+     * downstream can detect that they were dropped.
+     *
+     * So a staging path that cannot carry assets the customer actually supplied
+     * refuses instead. The absent-store case with nothing to stage is unchanged
+     * and still returns `[]` one line above, which is the only honest `[]`.
+     */
+    logger(`atlas call 1: ${inline.length} customer asset(s) cannot be staged (no store)`);
+    throw new PanelProofRefusal(
+      `${inline.length} customer asset(s) supplied and no artifact store to stage them`);
   }
   const staged = [];
   for (const part of inline) {
@@ -887,7 +901,13 @@ async function assemblePanelProofMaster({
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
         graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
-      composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,panels:compositionChecks,sourceAssetsPreserved:true},
+      // `omitted` is the answer to "which asset did not reach which panel, and
+      // why". Empty means every Zone-3 original was drawn onto every branded
+      // surface that carries branding; it is never absent, so a reader can tell
+      // "nothing was dropped" from "nobody recorded it".
+      composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,
+        panels:compositionChecks,sourceAssetsPreserved:true,
+        omitted:[...(productionLayout.omitted || []),...(composed.omitted || [])]},
       imageRequestCount: Number(sheet.imageRequestCount || 1),
       masterSha256: assembled.contentHash,
       masterStoragePath: null,

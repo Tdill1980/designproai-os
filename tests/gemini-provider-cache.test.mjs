@@ -277,12 +277,40 @@ test('failed diagnostic persistence cannot remove the claim or authorize another
   assert.equal(bucket.files.size, 1);
 });
 
-test('same creative attempt with changed model/request digest fails closed', async () => {
+/**
+ * THIS CASE READ "changed model/request digest FAILS CLOSED", and closed is
+ * where live generation 2cc236b9 died: 7/7 proof views, 14 attempts, every one
+ * `provider_request_identity_conflict`, and the claim is immutable so no later
+ * attempt could ever clear it.
+ *
+ * The property worth keeping is that a changed request is never SERVED the
+ * other request's banked response, and that RECOVERY never turns into a new
+ * image. Both still hold below. What no longer holds is the deadlock.
+ */
+test('a changed model/request digest is its own operation and never reads the other', async () => {
   const bucket = bucketFixture();
-  const invoke = async () => ({ status: 200, payload: nativePayload });
-  await runDurableImageProviderRequest(options(bucket, invoke));
-  await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'), { requestHash: 'b'.repeat(64) })),
-    { code: 'provider_request_identity_conflict' });
+  let calls = 0;
+  const invoke = async () => { calls += 1; return { status: 200, payload: nativePayload }; };
+  const first = await runDurableImageProviderRequest(options(bucket, invoke));
+  const changed = await runDurableImageProviderRequest(options(bucket, invoke, {
+    requestHash: 'b'.repeat(64), outputRequestId: '77777777-7777-4777-8777-777777777777',
+  }));
+  assert.equal(calls, 2, 'the changed request renders its own image exactly once');
+  assert.notEqual(changed.requestId, first.requestId);
+  assert.equal(changed.providerCacheHit, false);
+  // Each identical request still re-reads its OWN banked response, spending nothing.
+  for (const digest of [requestHash, 'b'.repeat(64)]) {
+    await runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'),
+      { requestHash: digest, cacheOnly: true }));
+  }
+  assert.equal(calls, 2, 'recovery of either operation buys no further image');
+});
+
+test('cacheOnly recovery of an unbanked changed digest refuses rather than generating', async () => {
+  const bucket = bucketFixture();
+  await runDurableImageProviderRequest(options(bucket, async () => ({ status: 200, payload: nativePayload })));
+  await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'),
+    { requestHash: 'c'.repeat(64), cacheOnly: true })), { code: 'provider_cache_miss' });
 });
 
 test('corrupted persisted provider bytes cannot be published or cause regeneration', async () => {

@@ -634,10 +634,49 @@ export async function runDurableImageProviderRequest({
     throw new GeminiProviderError('provider_private_request_invalid', 400);
   }
   await authorize();
-  const key = await providerSha256(JSON.stringify({ contractVersion: GEMINI_PROVIDER_CACHE_CONTRACT, ...identity }));
-  const prefix = `${PREFIX}/${identity.ownerId}/${identity.generationId}/${key}`;
+  /**
+   * A CLAIM THAT CANNOT SERVE THIS REQUEST IS NOT A REASON TO KILL THE DESIGN.
+   *
+   * The slot is keyed on the IDENTITY alone -- {ownerId, requestId,
+   * generationId, mode, attemptKey} -- and `requestHash` was then only
+   * VALIDATED against whatever that slot already held. So a re-claimed
+   * generation that rebuilds a genuinely different request against the same
+   * attempt (the accepted master was promoted, so `sourcePanelHash` and the
+   * proof prompt moved with it) found the older run's claim, disagreed with it
+   * and threw a non-retryable 409. The claim is immutable, so NO later attempt
+   * could ever clear it: the slot stays poisoned for the life of the
+   * generation.
+   *
+   * Measured, designproai-os-prod: generation 2cc236b9 (Saguaro Ridge, F250)
+   * lost 7/7 proof views to `provider_request_identity_conflict`, 14 attempts,
+   * every shot, both attempts -- the only 0/7 in five days whose cause is code
+   * rather than the provider. `rejections` on every slot is 0: no acceptance
+   * gate ever ran, because no image was ever fetched.
+   *
+   * A DIFFERENT REQUEST IS A DIFFERENT OPERATION, so it gets its own slot,
+   * keyed on the identity AND the request. Idempotency is unchanged and is
+   * what it always claimed to be -- the same request re-reads its own banked
+   * response and spends nothing, because an identical request hashes to the
+   * identical primary key and never reaches this fallback. The fence below is
+   * unchanged and still final: a slot that cannot serve this request still
+   * refuses. What is gone is only the deadlock.
+   */
+  const slotKey = (extra) => providerSha256(JSON.stringify({
+    contractVersion: GEMINI_PROVIDER_CACHE_CONTRACT, ...identity, ...extra,
+  }));
+  const servesThisRequest = (record) => record.contractVersion === GEMINI_PROVIDER_CACHE_CONTRACT
+    && record.requestHash === requestHash
+    && !Object.keys(identity).some((field) => record[field] !== identity[field])
+    && UUID.test(record.outputRequestId);
+  let key = await slotKey();
+  let prefix = `${PREFIX}/${identity.ownerId}/${identity.generationId}/${key}`;
+  let claim = await readJson(bucket, `${prefix}/claim.json`);
+  if (claim && !servesThisRequest(claim)) {
+    key = await slotKey({ requestHash });
+    prefix = `${PREFIX}/${identity.ownerId}/${identity.generationId}/${key}`;
+    claim = await readJson(bucket, `${prefix}/claim.json`);
+  }
   const claimPath = `${prefix}/claim.json`;
-  let claim = await readJson(bucket, claimPath);
   let cacheHit = true;
   if (!claim && cacheOnly) throw new GeminiProviderError('provider_cache_miss', 404);
   if (!claim) {
@@ -657,8 +696,7 @@ export async function runDurableImageProviderRequest({
       cacheHit = false;
     }
   }
-  if (claim.contractVersion !== GEMINI_PROVIDER_CACHE_CONTRACT || claim.requestHash !== requestHash
-    || Object.keys(identity).some((field) => claim[field] !== identity[field]) || !UUID.test(claim.outputRequestId)) {
+  if (!servesThisRequest(claim)) {
     throw new GeminiProviderError('provider_request_identity_conflict', 409);
   }
   let result;

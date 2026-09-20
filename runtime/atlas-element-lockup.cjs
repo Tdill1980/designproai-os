@@ -219,6 +219,18 @@ function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
   const columnGap = 0.04;
   const textGap = 0.03;
   const placements = [];
+  /**
+   * A SKIPPED ASSET IS NAMED, NEVER SILENT.
+   *
+   * The narrow-surface `continue` below is correct -- unreadable 6pt copy on a
+   * front fascia helps nobody -- but it dropped the customer's own lettering
+   * off that panel with no trace anywhere: not on the receipt, not in the
+   * layout, not in a log. `composition.placements` then listed only what
+   * survived, so "was the contact bar on the rear?" could not be answered from
+   * the run, and a dropped asset read exactly like an asset that was never
+   * supplied. Every omission now carries its surface, its role and its reason.
+   */
+  const omitted = [];
   for (const surfaceKey of surfaces.filter(key => key !== "roof")) {
     const panel = panels.find(p => p.surfaceKey === surfaceKey);
     const aspect = panel.rect.width / panel.rect.height;
@@ -253,7 +265,13 @@ function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
       // gate turned ordinary long customer copy into a fatal generation error
       // (live real-prompt tests 5c565d37 / 94ea97e5). Keep readable text when
       // it fits; omit this surface's text stack when it does not.
-      if (!Number.isFinite(w) || w < 0.18) continue;
+      if (!Number.isFinite(w) || w < 0.18) {
+        for (const element of text) {
+          omitted.push({ surfaceKey, role: element.role, contentHash: element.contentHash || null,
+            reason: "text_stack_below_readable_width", widthPct: Number.isFinite(w) ? round(w) : null });
+        }
+        continue;
+      }
       const heights = text.map(element => w * element.height / element.width * aspect);
       const x = (logo ? margin + logoColumn + columnGap : margin) + (maxWidth - w) / 2;
       let y = (1 - heights.reduce((sum, h) => sum + h, 0) - gaps) / 2;
@@ -264,7 +282,7 @@ function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
     }
   }
   return { contract: "designpro.production-panel-lockup.v1", surfaces: surfaces.filter(key => key !== "roof"),
-    safeMarginPct: margin, placements, deterministic: true };
+    safeMarginPct: margin, placements, omitted, deterministic: true };
 }
 
 module.exports = {
