@@ -101,13 +101,13 @@ test('old Edge capability prevents all proof POSTs, including recovery', async (
   })), { code: 'atlas_proof_recovery_unavailable' }); assert.equal(posts, 0);
 });
 
-test('an uncertain proof stops after three cache lookups and never reposts a new operation', async () => {
+test('an uncertain proof stops at its bounded read budget and never reposts a new operation', async () => {
   const posts = [];
   await assert.rejects(invokeAtlasProof(transport(async (url, init) => {
     if (init.method === 'GET') return capability(); posts.push(JSON.parse(init.body));
     return { ok: false, status: 409, json: async () => ({ error: 'provider_outcome_unknown' }) };
   })), { code: 'provider_outcome_unknown' });
-  assert.equal(posts.length, 4); assert.equal(posts.filter(p => !p.providerRequest.cacheOnly).length, 1);
+  assert.equal(posts.length, 91); assert.equal(posts.filter(p => !p.providerRequest.cacheOnly).length, 1);
 });
 
 test('a foreign revision response is refused before its proof can be downloaded', async () => {
@@ -122,3 +122,23 @@ test('deadline ends a hung response/storage promise even if the SDK ignores Abor
   controller.abort(new Error('bounded deadline'));
   await assert.rejects(pending, /bounded deadline/);
 });
+
+ test('a prefetched proof still running after three lookups is recovered without another paid POST', async () => {
+ const posts=[];
+ const result=await invokeAtlasProof(transport(async (_url,init)=>{
+  if(init.method==='GET')return capability();
+  posts.push(JSON.parse(init.body));
+  return posts.length<8 ? {ok:false,status:409,json:async()=>({error:'provider_outcome_unknown'})} : success();
+ }));
+ assert.equal(result.payload.success,true);
+ assert.equal(posts.filter(p=>!p.providerRequest.cacheOnly).length,1);
+ assert.equal(posts.length,8);
+ });
+ test('recorded provider failure stops cache polling immediately', async()=>{
+ let posts=0;
+ await assert.rejects(invokeAtlasProof(transport(async (_url,init)=>{
+  if(init.method==='GET')return capability();posts++;
+  return {ok:false,status:409,json:async()=>({error:'provider_outcome_unknown',providerFailureRecorded:true})};
+ })),{code:'provider_outcome_unknown'});
+ assert.equal(posts,1);
+ });

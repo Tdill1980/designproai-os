@@ -57,9 +57,11 @@ const capture=async()=>{
    ...evidence.views.map(v=>({role:`call2-${v.consumer_role}`,storagePath:v.storage_path,contentHash:v.content_hash}))];
  for(const src of sources){
    if(evidence.artifacts.some(a=>a.contentHash===src.contentHash&&a.role===src.role))continue;
-   const {data,error}=await operator.storage.from("wrap-files").download(src.storagePath);
+   const {data,error}=await operator.storage.from("wrap-files").createSignedUrl(src.storagePath,60);
    if(error)throw new Error(`artifact ${src.role}: ${error.message}`);
-   const bytes=Buffer.from(await data.arrayBuffer());
+   const response=await fetch(data.signedUrl,{signal:AbortSignal.timeout(30000)});
+   if(!response.ok)throw new Error(`artifact ${src.role}: HTTP ${response.status}`);
+   const bytes=Buffer.from(await response.arrayBuffer());
    if(hash(bytes)!==src.contentHash)throw new Error(`artifact hash mismatch: ${src.role}`);
    if(!/^(?:call1|call2-[a-z0-9-]+)$/.test(src.role))throw new Error("invalid artifact role");
    const extension=src.storagePath.split('.').pop();

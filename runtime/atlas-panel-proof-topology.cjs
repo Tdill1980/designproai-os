@@ -863,6 +863,7 @@ async function assemblePanelProofMaster({
       quadrants: {
         branded: zone1.map((p) => ({
           surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.displayRect, backgroundRect: p.rect,
+          widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
           identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         })),
         clean: cleanQuadrant,
