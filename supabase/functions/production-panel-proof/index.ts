@@ -467,7 +467,7 @@ serve(async (req) => {
         .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
           "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
         .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
-          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully; exclude every logo and all lettering");
+          "Use its background colors, patterns, layout, composition, proportions and visual hierarchy as the visual reference for the clean artwork layer.");
     }
 
     let prompt = buildPanelProofPrompt({
@@ -490,12 +490,16 @@ serve(async (req) => {
     });
 
     if (body.separatedArtwork === true) {
-      // Replace the branded proof tail: appending a prohibition after instructions
-      // to draw exact customer text and fill five logo boxes was contradictory.
+      // Scope-led image prompting: preserve A.C.E.'s creative intelligence while
+      // dropping legacy prohibition lines. The model receives what to create.
+      const artworkCreativeHead = creativeHead
+        .split(/\n+/)
+        .filter((line) => !/\b(?:no|not|never|without|do\s+not|don't|must\s+not|cannot)\b/i.test(line))
+        .join("\n");
       prompt = [
         "ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer's six vehicle panel cells.",
         "CONTENT SCOPE: color fields, photography, illustration, gradients, textures, patterns, graphic motion, lighting, depth and visual accents. Keep every generated pixel within this artwork vocabulary.",
-        creativeHead,
+        artworkCreativeHead,
         "ARTWORK STAGING CANVAS: Attachment 1 is the code-drawn geometry reference for this exact vehicle. The six rectangular cells in its green ZONE 2 row are the six artwork destinations. Fill each of those six rectangles edge-to-edge with one cohesive commercial wrap campaign. Keep the surrounding document area plain white.",
         "DESIGN CONTINUITY: Driver and passenger are coordinated sides of one campaign. Hood, roof, front and rear continue the same visual language. Reserve calm visual space for the operating system's protected customer branding layer. Treat every rectangle as flat printed vinyl artwork.",
         "REFERENCE: Attachment 2 is the Bright Smiles finished three-zone example. Learn its professional design quality, hierarchy, panel-to-panel continuity and relationship between completed panels, clean backgrounds and separated graphics. Create an original campaign from the customer's brief and references.",
