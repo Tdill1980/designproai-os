@@ -47,7 +47,7 @@ function panelLabel(panel: PanelProofPanel): string {
 
 /** Inches, or nothing. A cut graphic has no inches and must not read as 0". */
 function inches(panel: PanelProofPanel): string | null {
-  if (panel.widthIn === null || panel.heightIn === null) return null;
+  if (!Number.isFinite(panel.widthIn) || !Number.isFinite(panel.heightIn)) return null;
   return `${panel.widthIn}" × ${panel.heightIn}"`;
 }
 

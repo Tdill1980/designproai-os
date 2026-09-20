@@ -8,9 +8,10 @@ const ownerId = '11111111-1111-4111-8111-111111111111';
 const providerRequest = { contractVersion: ATLAS_PROOF_RECOVERY_CONTRACT,
   requestId: '22222222-2222-4222-8222-222222222222', generationId: '33333333-3333-4333-8333-333333333333',
   claimToken: '44444444-4444-4444-8444-444444444444' };
+const proofBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 const payload = { candidates: [{ content: { role: 'model', parts: [
   { inlineData: { data: Buffer.from('private thought').toString('base64'), mimeType: 'image/png' }, thought: true },
-  { inlineData: { data: Buffer.from('final proof').toString('base64'), mimeType: 'image/png' }, thoughtSignature: 'opaque-signature' },
+  { inlineData: { data: proofBytes.toString('base64'), mimeType: 'image/png' }, thoughtSignature: 'opaque-signature' },
 ] } }] };
 function fixture() {
   const files = new Map();
@@ -35,7 +36,7 @@ test('a lost proof acknowledgement recovers the exact native response without an
   const recovered = await runAtlasProofProvider({ ...f.options, invoke,
     providerRequest: { ...providerRequest, cacheOnly: true } });
   assert.equal(calls, 1); assert.equal(recovered.requestId, first.requestId);
-  assert.equal(recovered.bytes.toString(), 'final proof');
+  assert.deepEqual(recovered.bytes, proofBytes);
   assert.equal(recovered.providerCacheHit, true); assert.deepEqual(recovered.payload, payload);
 });
 
@@ -101,13 +102,13 @@ test('old Edge capability prevents all proof POSTs, including recovery', async (
   })), { code: 'atlas_proof_recovery_unavailable' }); assert.equal(posts, 0);
 });
 
-test('an uncertain proof stops after three cache lookups and never reposts a new operation', async () => {
+test('an uncertain proof stops at its bounded read budget and never reposts a new operation', async () => {
   const posts = [];
   await assert.rejects(invokeAtlasProof(transport(async (url, init) => {
     if (init.method === 'GET') return capability(); posts.push(JSON.parse(init.body));
     return { ok: false, status: 409, json: async () => ({ error: 'provider_outcome_unknown' }) };
   })), { code: 'provider_outcome_unknown' });
-  assert.equal(posts.length, 4); assert.equal(posts.filter(p => !p.providerRequest.cacheOnly).length, 1);
+  assert.equal(posts.length, 91); assert.equal(posts.filter(p => !p.providerRequest.cacheOnly).length, 1);
 });
 
 test('a foreign revision response is refused before its proof can be downloaded', async () => {
@@ -121,4 +122,46 @@ test('deadline ends a hung response/storage promise even if the SDK ignores Abor
   const pending = withinProofDeadline(() => new Promise(() => {}), controller.signal);
   controller.abort(new Error('bounded deadline'));
   await assert.rejects(pending, /bounded deadline/);
+});
+
+ test('a prefetched proof still running after three lookups is recovered without another paid POST', async () => {
+ const posts=[];
+ const result=await invokeAtlasProof(transport(async (_url,init)=>{
+  if(init.method==='GET')return capability();
+  posts.push(JSON.parse(init.body));
+  return posts.length<8 ? {ok:false,status:409,json:async()=>({error:'provider_outcome_unknown'})} : success();
+ }));
+ assert.equal(result.payload.success,true);
+ assert.equal(posts.filter(p=>!p.providerRequest.cacheOnly).length,1);
+ assert.equal(posts.length,8);
+ });
+ test('recorded provider failure stops cache polling immediately', async()=>{
+ let posts=0;
+ await assert.rejects(invokeAtlasProof(transport(async (_url,init)=>{
+  if(init.method==='GET')return capability();posts++;
+  return {ok:false,status:409,json:async()=>({error:'provider_outcome_unknown',providerFailureRecorded:true})};
+ })),{code:'provider_outcome_unknown'});
+ assert.equal(posts,1);
+ });
+
+
+test('proof intake uses encoded format despite missing, parameterized or incorrect MIME metadata', () => {
+  for (const mimeType of [undefined, ' IMAGE/PNG; charset=binary ', 'image/jpeg']) {
+    for (const key of ['inlineData', 'inline_data']) {
+      const native = { candidates: [{ content: { parts: [{ [key]: { data: proofBytes.toString('base64'), mimeType } }] } }] };
+      const before = JSON.stringify(native);
+      const parsed = finalAtlasProofImage(native);
+      assert.equal(parsed.contentType, 'image/png');
+      assert.deepEqual(parsed.bytes, proofBytes);
+      assert.equal(JSON.stringify(native), before, 'the cached native response stays immutable');
+    }
+  }
+});
+
+test('proof intake rejects corrupt bytes despite valid-looking MIME metadata', () => {
+  for (const bytes of [Buffer.from('not an image'), proofBytes.subarray(0, 30)]) {
+    assert.throws(() => finalAtlasProofImage({ candidates: [{ content: { parts: [
+      { inlineData: { data: bytes.toString('base64'), mimeType: 'image/png' } },
+    ] } }] }), { code: 'atlas_proof_final_image_invalid' });
+  }
 });

@@ -320,10 +320,50 @@ if (generationId) {
   // empty set rather than an error anyone notices.
   const { data: requestRows, error: requestError } = await supabase
     .from("designpro_generation_requests")
-    .select("id,engine_receipt")
+    .select("id,owner_id,generation_id,engine_receipt")
     .eq("generation_id", generationId);
   if (requestError) console.error(`generation request query failed: ${requestError.message}`);
   const requestIds = (requestRows || []).map((row) => row.id);
+  const proof = atlas.metadata?.panelProofAuthoring;
+  if (proof?.proofStoragePath) await fetchVerified(proof.proofStoragePath, proof.proofSha256,
+    "call1-production-proof.png", {role:"customer-three-zone-proof"}, files);
+  if (proof?.sourceArtwork?.storagePath) await fetchVerified(proof.sourceArtwork.storagePath,
+    proof.sourceArtwork.contentHash, "call1-internal-staging.png", {role:"internal-staging-not-customer-proof"}, files);
+  // Inspect only already-paid final images from this generation. Never export
+  // native requests, model thought parts or signatures; never promote a view.
+  const { readDurableImageProviderExchange } = await import("../supabase/functions/_shared/gemini-provider-cache.mjs");
+  for (const row of requestRows || []) {
+    for (const shot of ["side","passenger-side","hood_detail","roof","front","rear","close-up"]) {
+      for (let attempt=1;attempt<=3;attempt++) {
+        const identity={ownerId:row.owner_id,requestId:row.id,generationId,mode:"atlas-proof",attemptKey:`proof:${shot}:${attempt}`};
+        const key=createHash("sha256").update(JSON.stringify({contractVersion:"designpro.gemini-provider-cache.v1",...identity})).digest("hex");
+        const prefix=`designpro-provider-private/v1/${row.owner_id}/${generationId}/${key}`;
+        const bucket=supabase.storage.from("wrap-files");
+        const receipt=await bucket.download(`${prefix}/response.json`);
+        if(receipt.error)continue;
+        let exchange;
+        try {
+          exchange=await readDurableImageProviderExchange({bucket,ownerId:row.owner_id,generationId,requestId:row.id,providerRequestKey:key,
+            authorize:async()=>{
+              const current=await supabase.from("designpro_generation_requests").select("owner_id,generation_id").eq("id",row.id).single();
+              if(current.error||current.data?.owner_id!==row.owner_id||current.data?.generation_id!==generationId)throw new Error("export_request_identity_mismatch");
+            }});
+        } catch(cause) { console.error(`CACHE ${shot} #${attempt}: ${String(cause.code||"unreadable")}`);continue; }
+        const candidates=exchange.payload?.candidates;
+        const images=candidates?.length===1 ? (candidates[0].content?.parts||[]).filter(p=>p.thought!==true&&p.inlineData?.data):[];
+        if(images.length!==1)throw new Error(`export_final_image_ambiguous:${shot}`);
+        const {data,mimeType}=images[0].inlineData;
+        const ext={"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}[mimeType];
+        if(!ext)throw new Error("export_final_image_type_invalid");
+        const bytes=Buffer.from(data,"base64");
+        if(bytes.toString("base64")!==data)throw new Error("export_final_image_encoding_invalid");
+        const file=`cached-proof__${shot}__${attempt}.${ext}`;
+        writeFileSync(`${outDir}/${file}`,bytes);
+        files.push({file,role:"cached-final-image-NOT-accepted-proof",sourceViewType:shot,requestId:row.id,
+          providerRequestKey:key,contentHash:createHash("sha256").update(bytes).digest("hex"),byteSize:bytes.length,downloaded:true});
+      }
+    }
+  }
   const { data: viewRows, error: viewError } = requestIds.length
     ? await supabase
       .from("designpro_generation_views")

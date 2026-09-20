@@ -310,6 +310,14 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   if (surfaces.length !== 6) {
     throw new Error(`atlas_container_template_needs_six_surfaces:${surfaces.length}`);
   }
+  // Only artwork destinations reach the model. Document chrome is composed later.
+  if (mode === "artwork") {
+    const cells = containerLayout(manifest).zone2;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">`
+      + `<rect width="100%" height="100%" fill="#ffffff"/>`
+      + cells.map(cell => `<rect x="${cell.x}" y="${cell.y}" width="${cell.w}" height="${cell.h}" fill="#d1d5db"/>`).join("")
+      + `</svg>`;
+  }
   // THE ROWS ARRIVE AS TRIM INCHES -- that is what the contract states and what
   // GENIE resolves. The PRINT size is trim plus the bleed on all four edges, so
   // it is trim + 2x bleed in each dimension. Stating both is the point of the

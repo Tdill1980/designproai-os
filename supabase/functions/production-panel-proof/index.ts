@@ -493,8 +493,8 @@ serve(async (req) => {
     });
 
     if (body.separatedArtwork === true) {
-      // Scope-led image prompting: preserve A.C.E.'s creative intelligence while
-      // dropping legacy prohibition lines. The model receives what to create.
+      // Preserve A.C.E.'s creative direction while replacing legacy layout
+      // language with the explicit artwork-only boundary below.
       const artworkCreativeHead = creativeHead
         .replace(" — build the entire design from this palette and do not introduce unrelated colors.",
           " — build the entire design from this palette.")
@@ -506,10 +506,10 @@ serve(async (req) => {
         "ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer's six vehicle panel cells.",
         "CONTENT SCOPE: color fields, photography, illustration, gradients, textures, patterns, graphic motion, lighting, depth and visual accents. Keep every generated pixel within this artwork vocabulary.",
         artworkCreativeHead,
-        "ARTWORK STAGING CANVAS: Attachment 1 is the code-drawn geometry reference for this exact vehicle. The six rectangular cells in its green ZONE 2 row are the six artwork destinations. Fill each of those six rectangles edge-to-edge with one cohesive commercial wrap campaign. Keep the surrounding document area plain white.",
-        "DESIGN CONTINUITY: Driver and passenger are coordinated sides of one campaign. Hood, roof, front and rear continue the same visual language. Reserve calm visual space for the operating system's protected customer branding layer. Treat every rectangle as flat printed vinyl artwork.",
-        "REFERENCE: Attachment 2 is the Bright Smiles finished three-zone example. Learn its professional design quality, hierarchy, panel-to-panel continuity and relationship between completed panels, clean backgrounds and separated graphics. Create an original campaign from the customer's brief and references.",
-        "DOWNSTREAM COMPOSITION: The operating system builds the customer-visible three-zone Production Panel Proof deterministically. Zone 1 combines these backgrounds with protected original customer branding. Zone 2 uses these backgrounds directly. Zone 3 uses protected original logo, outlined typography, contact and icon assets. Return the six clean background artworks on the staging canvas.",
+        "Output raw edge-to-edge wrap pattern artwork only. Strictly forbid document frames, headers, text labels, borders, dimensions, arrows, typography, logos or zone markers.",
+        "ARTWORK STAGING CANVAS: Attachment 1 contains six unlabelled gray rectangles. Fill those exact rectangles boundary-to-boundary with cohesive raw artwork. Preserve their locations and aspect ratios on the 3:2 canvas. Keep the unused canvas white.",
+        "DESIGN CONTINUITY: From left to right: driver, passenger, roof, hood, front, rear. Coordinate all six artworks as one campaign. Reserve calm visual space for a separate customer branding layer. Treat every rectangle as flat printed vinyl artwork.",
+        "Customer reference images demonstrate color palette and surface style ONLY; ignore all reference frames and layouts. Return the six clean background artworks on the staging canvas.",
       ].join("\n\n");
     }
 
@@ -526,7 +526,7 @@ serve(async (req) => {
       flatPanelProductionProofInjected:
         /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
         || (/OUTPUT: six clean printed background artworks/.test(prompt)
-          && /six rectangular cells in its green ZONE 2 row/.test(prompt)),
+          && /six unlabelled gray rectangles/.test(prompt)),
       templateLayoutLocked:
         /Fill the attached template; do not re-flow it\./.test(prompt)
         || /ARTWORK STAGING CANVAS/.test(prompt),
@@ -556,6 +556,7 @@ serve(async (req) => {
     try {
       const drawn = await stageProofContainer(svc.storage.from(BUCKET), {
         manifest: parsePanelRows(panelRows),
+        mode: body.separatedArtwork === true ? "artwork" : "template",
         companyName: field("companyName"),
         vehicle: ["vehicleYear", "vehicleMake", "vehicleModel"].map(field).filter(Boolean).join(" "),
       });
@@ -563,6 +564,8 @@ serve(async (req) => {
       containerHash = drawn.contentHash;
       containerSource = { origin: "studio", svgChars: drawn.svgChars, byteSize: drawn.byteSize };
     } catch (renderError) {
+      // A legacy fallback can contain the same labels this path removes.
+      if (body.separatedArtwork === true) throw renderError;
       // FALL BACK TO A CALLER-STAGED CONTAINER, AND SAY SO. The reason is
       // carried into the response rather than swallowed: a probe that silently
       // stopped drawing its own sheet would look exactly like one that never
@@ -605,7 +608,7 @@ serve(async (req) => {
       });
     }
 
-    for (const pinned of PINNED_INPUTS) {
+    for (const pinned of (body.separatedArtwork === true ? [] : PINNED_INPUTS)) {
       const { data, error } = await svc.storage.from(BUCKET).download(pinned.path);
       if (error || !data) throw new Error(`panel_proof_input_missing:${pinned.path}`);
       const bytes = new Uint8Array(await data.arrayBuffer());

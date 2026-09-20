@@ -27,8 +27,9 @@ async function withinProofDeadline(operation, signal) {
  * generate again. Recovery is never sent until the new contract is proven.
  */
 async function invokeAtlasProof({ url, headers, body, fetchImpl = fetch, signal,
-  timeoutMs = MAX_OPERATION_MS, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
+  timeoutMs = MAX_OPERATION_MS, now = Date.now, wait = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw proofError("atlas_proof_timeout_invalid");
+  const endsAt = now() + Math.min(timeoutMs, MAX_OPERATION_MS);
   const deadline = AbortSignal.timeout(Math.min(timeoutMs, MAX_OPERATION_MS));
   const operationSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const limited = ms => AbortSignal.any([operationSignal, AbortSignal.timeout(ms)]);
@@ -49,16 +50,18 @@ async function invokeAtlasProof({ url, headers, body, fetchImpl = fetch, signal,
     if (signal?.aborted) throw error;
     result = { ok: false, status: 0, payload: null };
   }
-  const recoverable = value => value.status === 0 || value.status >= 500 || value.status === 408
-    || value.payload?.error === "provider_outcome_unknown"
-    || value.payload?.error === "provider_cache_miss"
-    || value.payload?.retryable === true;
+  const recoverable = value => ![401,403].includes(value.status)
+    && value.payload?.providerFailureRecorded !== true
+    && !/^provider_http_\d{3}$/.test(String(value.payload?.error || ""))
+    && (value.status === 0 || value.status >= 500 || value.status === 408
+      || value.payload?.error === "provider_outcome_unknown"
+      || value.payload?.error === "provider_cache_miss" || value.payload?.retryable === true);
   // These are lookup attempts for the SAME model call. They cannot reserve an
   // operation, call Gemini, consume another token or create another generation.
-  for (let index = 0; result.payload?.success !== true && recoverable(result) && index < 3; index += 1) {
+  for (let index = 0; result.payload?.success !== true && recoverable(result) && index < 90 && now() < endsAt; index += 1) {
     if (operationSignal.aborted) break;
     try {
-      if (index) await withinProofDeadline(() => wait(index * 2000), operationSignal);
+      if (index) await withinProofDeadline(() => wait(Math.min(2000, Math.max(1, endsAt-now()))), operationSignal);
       result = await read("POST", url, { ...body,
         providerRequest: { ...body.providerRequest, cacheOnly: true } }, limited(10_000));
     } catch (error) {

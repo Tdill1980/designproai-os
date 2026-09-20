@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { decodeGenerateContentImage } from './gemini-image-history.mjs';
 import { GeminiProviderError, authorizeAtlasProviderRequest, providerSha256,
   runDurableImageProviderRequest } from './gemini-provider-cache.mjs';
 
@@ -9,15 +10,28 @@ const TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 export function finalAtlasProofImage(payload) {
   if (payload?.candidates?.length !== 1) throw new GeminiProviderError('atlas_proof_ambiguous_candidates', 422, 'received', 1);
   const images = (payload.candidates[0]?.content?.parts || [])
-    .filter(part => part?.thought !== true && part?.inlineData?.data);
+    .filter(part => part?.thought !== true && (part?.inlineData?.data || part?.inline_data?.data));
   if (images.length !== 1) throw new GeminiProviderError('atlas_proof_final_image_missing_or_ambiguous', 422, 'received', 1);
-  const { data, mimeType } = images[0].inlineData;
-  if (!TYPES.has(mimeType) || typeof data !== 'string' || !data.length) {
+  const inline = images[0].inlineData || images[0].inline_data;
+  const data = inline.data;
+  if (typeof data !== 'string' || !data.length || data.length > 64 * 1024 * 1024) {
     throw new GeminiProviderError('atlas_proof_final_image_invalid', 422, 'received', 1);
   }
   const bytes = Buffer.from(data, 'base64');
-  if (!bytes.length || bytes.toString('base64') !== data) throw new GeminiProviderError('atlas_proof_final_image_invalid', 422, 'received', 1);
-  return { bytes, contentType: mimeType };
+  // Provider headers are advisory; encoded image bytes establish their format.
+  // The native envelope remains untouched in the durable cache.
+  const detected = bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) ? 'image/png'
+    : bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 ? 'image/jpeg'
+    : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' ? 'image/webp' : null;
+  const declared = String(inline.mimeType || inline.mime_type || '').split(';')[0].trim().toLowerCase();
+  const contentType = detected || declared;
+  if (!TYPES.has(contentType)) throw new GeminiProviderError('atlas_proof_final_image_invalid', 422, 'received', 1);
+  try {
+    const decoded = decodeGenerateContentImage({ data, mimeType: contentType }, 'atlas_proof');
+    return { bytes: decoded.bytes, contentType };
+  } catch {
+    throw new GeminiProviderError('atlas_proof_final_image_invalid', 422, 'received', 1);
+  }
 }
 
 /** One durable operation per camera shot, independent of HTTP/worker retries.

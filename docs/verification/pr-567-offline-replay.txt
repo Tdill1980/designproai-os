@@ -1,0 +1,19 @@
+PR #567 offline final-image replay
+Source export: GitHub Actions run 35524986707, artifact 10608289986
+Export SHA: 3feb87c620603e9e9f3c97bfdd87c6b97eacf08b
+Command: node scripts/replay-saved-atlas-proofs.mjs EXPORT_DIR 393f1976-4549-4c1a-a71a-44e0feef6751
+
+Generation: 393f1976-4549-4c1a-a71a-44e0feef6751
+Replay source: exported final-image bytes; native response envelopes not included
+PASS side: 5504x3072 image/jpeg; hash and lineage verified
+PASS passenger-side: 5504x3072 image/jpeg; hash and lineage verified
+PASS hood_detail: 5504x3072 image/jpeg; hash and lineage verified
+PASS roof: 5504x3072 image/jpeg; hash and lineage verified
+PASS front: 5504x3072 image/jpeg; hash and lineage verified
+PASS rear: 5504x3072 image/jpeg; hash and lineage verified
+PASS close-up: 5504x3072 image/jpeg; hash and lineage verified
+Offline intake/structural acceptance: 7/7
+Semantic/visual acceptance: NOT REPLAYED (no saved reviewer responses)
+Remote generation calls: 0; production writes: 0
+
+Focused prompt/container/recovery/QC/compositor regressions: 90 passed, 0 failed.

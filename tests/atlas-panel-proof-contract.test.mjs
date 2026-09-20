@@ -538,7 +538,7 @@ test("the prompt names the attachments in the order the function sends them", ()
   // per vehicle and attached from the request rather than from PINNED_INPUTS.
   // Both pieces have to be read, or the lock would check half the sequence.
   const containerAt = fn.indexOf('role: "container"');
-  const loopAt = fn.indexOf("for (const pinned of PINNED_INPUTS)");
+  const loopAt = fn.indexOf("for (const pinned of (body.separatedArtwork === true ? [] : PINNED_INPUTS))");
   assert.ok(containerAt > 0 && loopAt > 0, "both attachment paths must exist");
   assert.ok(containerAt < loopAt,
     "the container is attachment (1) in the prompt, so it must be pushed before the pinned loop");
