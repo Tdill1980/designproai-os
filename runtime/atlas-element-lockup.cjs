@@ -188,9 +188,11 @@ function planElementLockup({ zones = [], elements = [] } = {}) {
 }
 
 /**
- * Production-panel composition uses the actual detected crop, not the rotated
- * Atlas cell. A square logo has its own column; it cannot shrink the company
- * name and contact stack. The legacy two-flank planner above stays unchanged.
+ * Production-panel composition uses the deterministic Studio/GENIE panel cell.
+ * A square logo has its own column; text scales independently. Narrow end-cap
+ * surfaces may carry the logo alone when the full text stack would become
+ * unreadable; that is a composition choice, never a reason to kill Call 1.
+ * The legacy two-flank planner above stays unchanged.
  */
 function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
   const surfaces = ["driver", "passenger", "roof", "hood", "front", "rear"];
@@ -246,9 +248,12 @@ function planProductionPanelLockup({ panels = [], elements = [] } = {}) {
       const heightPerWidth = text.reduce((sum, element) => sum + element.height / element.width * aspect, 0);
       // Scale only text when its own aspect requires it, independently of logo.
       const w = Math.min(maxWidth, (available - gaps) / heightPerWidth);
-      if (w < 0.42) {
-        throw new AtlasLockupError("atlas_lockup_text_unreadable", `${surfaceKey}: supplied text cannot fit at a readable panel width`);
-      }
+      // A narrow front/rear/hood is allowed to carry the already-placed logo
+      // while the richer copy remains on the flanks. The old hard 42%-width
+      // gate turned ordinary long customer copy into a fatal generation error
+      // (live real-prompt tests 5c565d37 / 94ea97e5). Keep readable text when
+      // it fits; omit this surface's text stack when it does not.
+      if (!Number.isFinite(w) || w < 0.18) continue;
       const heights = text.map(element => w * element.height / element.width * aspect);
       const x = (logo ? margin + logoColumn + columnGap : margin) + (maxWidth - w) / 2;
       let y = (1 - heights.reduce((sum, h) => sum + h, 0) - gaps) / 2;
