@@ -14,12 +14,13 @@ async function run({mismatch=false,failed=false,missingView=false}={}){
  const sheet=image('call1');
  const views=roles.map(role=>{const i=image(role);return {consumer_role:role,source_view_type:role,storage_path:i.storagePath,content_hash:i.contentHash,byte_size:images.get(i.storagePath).length,content_type:'image/png'}});
  const client={auth:{admin:{createUser:async()=>{creates++;return {data:{user:{id:'owner'}}}}},signInWithPassword:async()=>({data:{session:{access_token:'fixture-session'}}})},
-  storage:{from:()=>({upload:async()=>({error:null}),download:async path=>({data:new Blob([images.get(path)])})})},
+  storage:{from:()=>({upload:async()=>({error:null}),createSignedUrl:async(path,expires)=>{assert.equal(expires,60);assert.ok(images.has(path));return {data:{signedUrl:`https://signed.fixture/${path}`}}}})},
   from:()=>({select:()=>({eq:()=>({single:async()=>({data:{request_input:{brief},engine_receipt:{atlasRevisionId:'revision'},error:failed?{code:'provider_refused'}:null}}),is:()=>({order:async()=>({data:views})})})})}),
   rpc:async name=>({data:name==='get_designpro_generation_request'?{state:failed?'failed':'outputs_ready',failureCode:failed?'provider_refused':null}
     :name==='designpro_atlas_panel_proof_paths'?{panelProof:true,sheet}: {originalPrompt:brief,versions:[{version:1}]}})};
  const sharp=()=>({png:()=>({toBuffer:async()=>Buffer.from('fixture-logo')})});
  const fetch=async(url,init={})=>{
+  if(url.startsWith('https://signed.fixture/'))return new Response(images.get(url.slice('https://signed.fixture/'.length)));
   if(init.method==='OPTIONS')return new Response('',{headers:{'x-designpro-source-sha':sha}});
   if(url.endsWith('/release.json'))return Response.json({sourceSha:mismatch?'b'.repeat(40):sha});
   if(url.endsWith('/gateway-healthz'))return Response.json({sourceSha:sha});
