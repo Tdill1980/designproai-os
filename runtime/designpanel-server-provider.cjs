@@ -1200,6 +1200,10 @@ function createAtlasDesignPanelProvider(options = {}) {
         // that already drives the pickup cab-roof qualification below, so the
         // proof and the camera authority cannot disagree about the vehicle.
         isPickup: pickupVehicle(input),
+        // Reuse the camera authority's existing pickup qualification; the
+        // generic roof anchor's "A-pillars to trunk" does not describe a cab.
+        ...(sourceViewType === "roof" && pickupVehicle(input)
+          ? { pickupRoofQualification: angles.PICKUP_ROOF_QUALIFICATION } : {}),
         finish: String(input?.finish || "Gloss"),
       },
     });

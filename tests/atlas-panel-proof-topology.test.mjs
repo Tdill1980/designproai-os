@@ -32,6 +32,10 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { runInNewContext } from "node:vm";
+import { resolveEsbuild } from "../scripts/build-control-prompt.mjs";
+import { loadDesignIQ, ATLAS_PANELS } from "./helpers/load-designiq.mjs";
 
 const require = createRequire(import.meta.url);
 const runtimeRequire = createRequire(new URL("../runtime/package.json", import.meta.url));
@@ -130,6 +134,62 @@ const AUTHOR_ARGS = {
     vehicle: { year: "2012", make: "Toyota", model: "Prius" },
   },
 };
+
+test("Call 1 preserves selected brand choices and actual VisionBoard intent in the shared designer payload", async () => {
+  const { buildDesignIQPrompt } = await loadDesignIQ();
+  const { panelProofCreativeHead } = require("../runtime/atlas-panel-proof-contract.cjs");
+  const edge = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  const start = edge.indexOf("    const customerAssets =");
+  const end = edge.indexOf("    let prompt = buildPanelProofPrompt(");
+  assert.ok(start > 0 && end > start, "the edge must select its attached references before assembling the designer prompt");
+  // Execute the edge's actual parameter mapping with its real shared designer,
+  // without starting Deno or making a paid provider request.
+  const assembly = execFileSync(resolveEsbuild(), ["--loader=ts", "--format=cjs"], {
+    input: `(() => {\n${edge.slice(start, end)}\nreturn creativeHead;\n})()`, encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123456" } }).png().toBuffer();
+  const input = {
+    ...AUTHOR_ARGS.input, colors: ["#123456", "#fedcba"], style: "geometric racing stripes",
+    fontStyle: "bold condensed", industry: "Dental", finish: "Satin",
+    visionboardIntent: "exact_reference", styleDescriptors: "diagonal copper gradients",
+    vehicle: { ...AUTHOR_ARGS.input.vehicle, type: "car" },
+  };
+  const { calls, callProofEdge } = edgeStub(Buffer.from("sheet"));
+  await proof.requestProofSheet({ manifest: MANIFEST, input, callProofEdge, store: memoryStore(),
+    customerImageParts: [{ inlineData: { mimeType: "image/png", data: png.toString("base64") } }] });
+  const body = calls[0];
+  assert.equal(body.brandColors, "#123456, #fedcba");
+  assert.equal(body.style, input.style);
+  assert.equal(body.fontStyle, input.fontStyle);
+  assert.equal(body.industryType, input.industry);
+  assert.equal(body.finish, "Satin");
+  assert.equal(body.vehicleType, "car");
+  assert.equal(body.visionboard_intent, "exact_reference");
+  assert.equal(body.styleDescriptors, input.styleDescriptors);
+  assert.equal(body.customerAssets.length, 1);
+  assert.equal(body.separatedArtwork, true);
+  assert.ok(!Object.hasOwn(body, "logoAsset"), "protected Zone-3 originals do not enter the generation request");
+  const assemble = (request) => runInNewContext(assembly, {
+    body: request, customerPrompt: request.customerPrompt,
+    field: (name) => String(request[name] || "").trim(),
+    buildDesignIQPrompt, panelProofCreativeHead, ATLAS_PANELS,
+  });
+  const exact = assemble(body);
+  assert.match(exact, /senior graphic designer and vehicle-wrap specialist/);
+  assert.match(exact, /native Gemini 3 Pro Image design knowledge/);
+  assert.ok(exact.includes(input.brief), "failed intake cannot erase the customer's creative brief");
+  assert.match(exact, /Brand colors: #123456, #fedcba/);
+  assert.match(exact, /Style direction: geometric racing stripes/);
+  assert.match(exact, /Typography preference: bold condensed/);
+  assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
+  assert.doesNotMatch(exact, /STYLE INSPIRATION:/);
+  const inspired = assemble({ ...body, visionboard_intent: "style_inspiration" });
+  assert.match(inspired, /STYLE INSPIRATION:/);
+  assert.ok(inspired.includes(input.styleDescriptors));
+  assert.doesNotMatch(assemble({ ...body, customerAssets: [] }), /EXACT REFERENCE:|STYLE INSPIRATION:/,
+    "reference instructions require a reference attached to this same request");
+});
 
 test("the DAG runs sheet -> cut -> assemble, and only the sheet spends a model call", async () => {
   const sheet = await paintedSheet();

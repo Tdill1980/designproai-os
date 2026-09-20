@@ -1085,6 +1085,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const [pipelineActive, setPipelineActive] = useState(false);
   const [pipelinePhase, setPipelinePhase] = useState<1 | 2>(1);
   const [pipelineElapsed, setPipelineElapsed] = useState(0);
+  const proofSubmissionTimeRef = useRef<number | null>(null);
   // Granular live stage so the customer is never blind while edge functions run.
   // Mirrors the real steps of handlePipelineStart (analyze → GENIE enhance →
   // render → finish). Presentational only; drives DesignPipelineProgress.
@@ -1291,6 +1292,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
   // Pipeline entry point - called when user clicks "Create with DesignIQ"
   const handlePipelineStart = async (params: DesignIQParams) => {
+    proofSubmissionTimeRef.current = performance.now();
     if (atlasResponseUnconfirmed) {
       toast({ title: "ATLAS response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
       return;
@@ -1950,7 +1952,9 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const sortedAllViews = requiredViewTypes
     .map(findViewByType)
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
-  const displayedAllViews = allViewsRevealed ? sortedAllViews : [];
+  // VehiclePro exposes each completed angle automatically, in driver-first order.
+  const viewsVisible = isFlatFirstDiagnostic || allViewsRevealed;
+  const displayedAllViews = viewsVisible ? sortedAllViews : [];
   const VIEW_LABEL_MAP: Record<string, string> = {
     side: 'Driver Side', 'driver-side': 'Driver Side',
     'passenger-side': 'Passenger Side',
@@ -1970,10 +1974,8 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // result. Precision Mode keeps its flat master separate; never let another
   // saved angle impersonate Driver Side.
   const driverDisplayUrl = savedDriverDisplayUrl || (!isFlatFirstDiagnostic ? baseDisplayUrl : null);
-  // Driver Side stays pinned until the customer explicitly asks to see the
-  // other angles. After reveal, the chosen thumbnail owns the canvas even while
-  // later server views continue arriving.
-  const mainDisplayUrl = !allViewsRevealed
+  // The selected completed angle owns the canvas while later views arrive.
+  const mainDisplayUrl = !viewsVisible
     ? driverDisplayUrl
     : (displayedAllViews[clampedViewIndex]?.url || baseDisplayUrl);
   // The customer's design is the seven 3D proofs and, in RevisionStudio, the six
@@ -2448,6 +2450,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       />
                     )}
 
+                    {/* Call 1 is visible independently of revision acceptance and 3D output. */}
+                    {generationRequestState?.requestId && (
+                      <AtlasPanelProofSheetLoader
+                        key={generationRequestState.requestId}
+                        requestId={generationRequestState.requestId}
+                        pollWhilePending={pipelineActive || ["queued", "leased", "retryable"].includes(generationRequestState.state)}
+                        submittedAt={proofSubmissionTimeRef.current}
+                      />
+                    )}
+
                     {/* Render Preview */}
                     {(
                       <Card
@@ -2709,20 +2721,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         className="w-full rounded-lg border"
                       />
                     )}
-                    {/* THE THREE-ZONE PRODUCTION PANEL PROOF, IMMEDIATELY.
-                        It sits ABOVE "See All Views" and is not gated on it, on
-                        purpose: the sheet, its six print panels, the six clean
-                        panels and the five cut graphics all exist the moment
-                        Call 1 is accepted, so making the customer press a button
-                        for more 3D camera angles before they can see what they
-                        actually bought had the order backwards. The component
-                        renders nothing at all when this run was authored on a
-                        topology that has no three-zone document, so a
-                        six-surface or field run is byte-identical to before. */}
-                    {mainDisplayUrl && generationRequestState?.requestId && (
-                      <AtlasPanelProofSheetLoader requestId={generationRequestState.requestId} />
-                    )}
-                    {mainDisplayUrl && !allViewsRevealed && (
+                    {mainDisplayUrl && !viewsVisible && (
                       <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
                         <p className="text-sm font-semibold text-cyan-100">
                           Do you want to see all sides of this design, or revise it?
@@ -2770,7 +2769,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         canvas so the live timer + progress bar is visible the moment
                         "All Views" is clicked, with NO scrolling. Sprocket's rotating
                         wrap facts sit underneath as engagement content during the wait. */}
-                    {allViewsRevealed && mainDisplayUrl && (
+                    {viewsVisible && mainDisplayUrl && (
                       isViewsStillGenerating || (pipelineActive && sortedAllViews.length < requiredViewCount)
                     ) && (() => {
                       const totalViews = requiredViewCount;
@@ -3177,7 +3176,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Failed Views Banner */}
-                    {allViewsRevealed && failedViews.length > 0 && (
+                    {viewsVisible && failedViews.length > 0 && (
                       <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
                         <div className="space-y-1">
@@ -3203,7 +3202,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     )}
 
                     {/* Additional Views Grid - sorted to match locked VIEW_ORDER */}
-                    {allViewsRevealed && (displayedAllViews.length > 0 || failedViews.length > 0) && (
+                    {viewsVisible && (displayedAllViews.length > 0 || failedViews.length > 0) && (
                       <div className={cn("grid gap-4", isMobile ? "grid-cols-1" : "grid-cols-2")}>
                         {/* Successful views */}
                         {displayedAllViews.map((view) => (

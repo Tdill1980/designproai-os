@@ -69,8 +69,9 @@ const WORKER_SECRET = String(process.env.WORKER_SECRET || "").trim();
 // This identity belongs only to the current-architecture canary. Never reuse a
 // real customer here: recipient bindings are append-only business records and
 // are created only after the protected owner entitlement below is persisted.
+const DESIGNATED_CUSTOMER_EMAIL = "atlas-canary-customer@designproai.com";
 const CUSTOMER_EMAIL = String(
-  process.env.DESIGNPRO_CANARY_EMAIL || "atlas-canary-customer@designproai.com"
+  process.env.DESIGNPRO_CANARY_EMAIL || DESIGNATED_CUSTOMER_EMAIL
 ).trim().toLowerCase();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
 const SERVICE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -121,6 +122,10 @@ if (!SUPABASE_URL || !SERVICE_KEY || !WORKER_SECRET || !CUSTOMER_EMAIL) {
   process.exit(2);
 }
 
+if (CUSTOMER_EMAIL !== DESIGNATED_CUSTOMER_EMAIL || !ORDER_NUMBER.startsWith("CANARY-")) {
+  throw new Error("Automatic canary entitlements and approvals are restricted to the designated test customer and CANARY order");
+}
+
 const service = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 });
@@ -136,6 +141,9 @@ const elapsedSeconds = (start, end, label) => {
 
 const evidence = {
   contract: "designpro.production-canary-evidence.v3",
+  diagnosticOnly: true,
+  designerApproved: false,
+  paymentProviderExercised: false,
   ranAt: new Date().toISOString(),
   graphContract: "designpro.atlas-one-artifact-graph.v1",
   vehicle: VEHICLE,
@@ -328,7 +336,7 @@ async function rpc(client, name, params) {
 async function fetchRun(runId) {
   const { data, error } = await service
     .from("designpro_workflow_runs")
-    .select("id,workflow_type,status,results,error,entice_pack_id,updated_at")
+    .select("id,owner_id,revision_id,workflow_type,status,results,error,entice_pack_id,updated_at")
     .eq("id", runId)
     .maybeSingle();
   if (error) throw new Error(`run ${runId} read failed: ${error.message}`);
@@ -435,7 +443,17 @@ async function automaticProductionRun(enticePackId, enticeRunId) {
   throw new Error(`expected exactly one automatic Production workflow for Entice pack ${enticePackId}, found 0 after ${MAX_AUTOMATIC_PRODUCTION_POLLS} bounded lookups`);
 }
 
+async function assertCanaryRun(runId, generationId) {
+  const run = await fetchRun(runId);
+  if (!run || run.owner_id !== evidence.operator?.id || generationId !== evidence.generationId
+    || ![evidence.enticeRunId, evidence.productionRunId].includes(runId)
+    || run.revision_id !== evidence.revisionId || CUSTOMER_EMAIL !== DESIGNATED_CUSTOMER_EMAIL) {
+    throw new Error("Automatic entitlement/QC refused outside the designated test job");
+  }
+}
+
 async function confirmOwnerPromotionEntitlement(generationId, enticeRunId) {
+  await assertCanaryRun(enticeRunId, generationId);
   const checkoutSessionId = `cs_owner_canary_${generationId.replaceAll("-", "")}`;
   const result = await rpc(service, "confirm_designpro_purchase", {
     p_checkout_session_id: checkoutSessionId,
@@ -474,6 +492,8 @@ async function confirmOwnerPromotionEntitlement(generationId, enticeRunId) {
 }
 
 async function approveGate(operator, operatorId, runId, stageKey, qc) {
+  await assertCanaryRun(runId, evidence.generationId);
+  if (operatorId !== evidence.operator?.id) throw new Error("Canary approval actor mismatch");
   const approvalRef = `CANARY-${stageKey === "await_panelpro_preflight_qc" ? "PREFLIGHT" : "FINAL"}-${runId}`;
   const result = await rpc(operator, "approve_designpro_human_gate", {
     p_run_id: runId,
@@ -483,7 +503,7 @@ async function approveGate(operator, operatorId, runId, stageKey, qc) {
     p_qc: qc,
   });
   evidence.autoApprovals.push({ runId, stageKey, approvalRef, qc, result, approvedAt: new Date().toISOString() });
-  step(`${stageKey} approved through real QC RPC`);
+  step(`${stageKey}: automated TEST approval through QC RPC; NOT designer-approved`);
 }
 
 async function waitForProduction(operator, operatorId, runId, designId) {
@@ -717,6 +737,9 @@ function assertOutputSet() {
     productionFlatProofs: count("production", "flat-proof"),
     productionUpscaledPanels: count("production", "upscaled-panel"),
     productionOutputs: count("production", "output"),
+    productionFormats: Object.fromEntries(["png", "tiff", "eps", "pdf"].map(format => [format,
+      evidence.outputs.filter(o => o.run === "production" && o.artifactKind === "output"
+        && o.hashVerified && o.storagePath.endsWith(`.${format}`)).length])),
     productionZip: count("production", "zip"),
     productionWrapboxManifest: count("production", "wrapbox-manifest"),
     requiredHashesVerified:
@@ -724,7 +747,7 @@ function assertOutputSet() {
       && verifiedCount("entice", "panel") === 6
       && verifiedCount("production", "flat-proof") === 1
       && verifiedCount("production", "upscaled-panel") === 6
-      && verifiedCount("production", "output") === 18
+      && verifiedCount("production", "output") === 24
       && verifiedCount("production", "zip") === 1
       && verifiedCount("production", "wrapbox-manifest") === 1,
     productionFlatProofExactCopy,
@@ -734,7 +757,8 @@ function assertOutputSet() {
     checks.enticePanels === 6 &&
     checks.productionFlatProofs === 1 &&
     checks.productionUpscaledPanels === 6 &&
-    checks.productionOutputs === 18 &&
+    checks.productionOutputs === 24 &&
+    Object.values(checks.productionFormats).every(n => n === 6) &&
     checks.productionZip === 1 &&
     checks.productionWrapboxManifest === 1 &&
     checks.requiredHashesVerified &&
@@ -996,41 +1020,59 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (Number(atlasRow.metadata?.masterAuthoringAttempts) > 2) {
     throw new Error(`A.T.L.A.S. spent ${atlasRow.metadata.masterAuthoringAttempts} candidates on one contract; the per-contract budget is two`);
   }
-  // THE CUSTOMER'S UPLOADED LOGO MUST HAVE REACHED CALL 1, and until now
-  // nothing checked it on any route.
-  //
-  // Measured on the live panel-proof route (2026-09-19): it forwarded NO logo
-  // and NO VisionBoard reference at all, while six-surface and field carry both.
-  // RULE 0.24 names those CREATIVE authority and no gate convicts their absence,
-  // so the sheet comes back a perfectly good design that is simply not the
-  // customer's brand -- and every receipt reads green.
-  //
-  // The canary now uploads one (see stageCustomerLogo) and convicts a run that
-  // did not carry it. WHICH RECEIPT holds that answer depends on the routing, so
-  // both are read: the panel-proof pass records `customerAssets` identities on
-  // `panelProofAuthoring`, and six-surface/field record the reference count.
-  // A route that records NEITHER while a logo was uploaded is the defect.
-  const panelProofAssets = atlasRow.metadata?.panelProofAuthoring?.customerAssets;
-  const referenceCount = Number(atlasRow.metadata?.verifiedCustomerReferenceCount);
-  const logoOnPanelProof = Array.isArray(panelProofAssets) && panelProofAssets.length > 0;
-  const loggedIdentity = atlasRow.metadata?.brandIdentity?.logo || atlasRow.metadata?.logoAsset || null;
-  if (atlasRow.metadata?.panelProofAuthoring) {
-    // The panel-proof route: the receipt names exactly which assets went.
-    if (!logoOnPanelProof) {
-      throw new Error("the panel-proof Call 1 recorded NO customer assets although the request carried an uploaded logo: "
-        + JSON.stringify(panelProofAssets ?? null)
-        + " — this is the F12 defect (the customer's brand never reached the design)");
+  // Original assets are protected from generation and composited onto Zone 2.
+  // Verify their exact identities in the completed proof, not Gemini's inputs.
+  const panelProof = atlasRow.metadata?.panelProofAuthoring;
+  const composedProof = panelProof?.composition?.contract === "designpro.production-zone-composite.v1";
+  if (panelProof) {
+    if (!composedProof || panelProof.composition.sourceAssetsPreserved !== true
+      || panelProof.threeZoneLayout?.required !== true
+      || !panelProof.proofStoragePath || !/^[0-9a-f]{64}$/.test(panelProof.proofSha256 || "")) {
+      throw new Error("Call 1 has no completed, persisted three-zone composition receipt");
     }
-    step(`the customer's logo reached Call 1: ${panelProofAssets.length} asset(s), `
-      + `${panelProofAssets.map((a) => String(a.contentHash || "").slice(0, 12)).join(", ")}`);
+    for (const zone of ["branded", "clean"]) {
+      const panels = panelProof.quadrants?.[zone] || [];
+      if (panels.length !== 6 || new Set(panels.map(p => p.surfaceKey)).size !== 6
+        || CALL_ONE_SURFACES.some(surface => !panels.some(p => p.surfaceKey === surface
+          && p.positionalPremiseVerified === true))
+        || (zone === "clean" && panels.some(p => !p.persisted || !p.storagePath || !p.contentHash))) {
+        throw new Error(`Call 1 ${zone} has incomplete or unverified panel identities`);
+      }
+    }
+    const originals = panelProof.quadrants?.cutGraphics || [];
+    const logo = originals.find(a => a.assetRole === "logo" || a.surfaceKey === "logo");
+    if (!logo || logo.contentHash !== customerLogo.contentHash || logo.storagePath !== customerLogo.storagePath
+      || logo.byteSize !== customerLogo.byteSize || logo.contentType !== customerLogo.contentType) {
+      throw new Error("Zone 3 does not preserve the exact uploaded customer logo");
+    }
+    const requiredRoles = ["logo", ...(COMPANY_NAME ? ["typography"] : []),
+      ...(COMPANY_PHONE || COMPANY_WEBSITE ? ["contact"] : [])];
+    for (const role of requiredRoles) {
+      const asset = originals.find(a => a.assetRole === role || a.surfaceKey === role);
+      if (!asset?.persisted || !asset.storagePath || !asset.contentHash
+        || (role !== "logo" && (asset.vector !== true || asset.contentType !== "image/svg+xml"))) {
+        throw new Error(`Zone 3 is missing the original ${role} asset`);
+      }
+      for (const surfaceKey of CALL_ONE_SURFACES.filter(s => s !== "roof")) {
+        if (!panelProof.composition.placements.some(p => p.surfaceKey === surfaceKey && p.role === role
+          && p.contentHash === asset.contentHash && p.storagePath === asset.storagePath
+          && p.byteSize === asset.byteSize && p.flipped === false)) {
+          throw new Error(`Zone 1 ${surfaceKey} did not receive pristine ${role}`);
+        }
+      }
+    }
+    evidence.threeZoneProof = {
+      proofStoragePath: panelProof.proofStoragePath, proofHash: panelProof.proofSha256,
+      sourceAssetsPreserved: true, designerApproved: false,
+      logoHash: logo.contentHash, placements: panelProof.composition.placements,
+      panels: panelProof.quadrants.clean.map(p => ({surfaceKey:p.surfaceKey,fit:p.fit,identity:p.identity})),
+    };
+    step(`completed three-zone proof: six panels, preserved logo ${logo.contentHash.slice(0,12)}, ${originals.length} separate original assets`);
   } else {
-    // Six-surface / field: the logo rides as an inline part, so the observable
-    // is that the request was BUILT with it. `flat_atlas_logo_*` would have
-    // failed the generation outright if it had not verified, so reaching here
-    // with a logo on the frozen snapshot is the evidence this route offers.
+    const referenceCount = Number(atlasRow.metadata?.verifiedCustomerReferenceCount);
+    const loggedIdentity = atlasRow.metadata?.brandIdentity?.logo || atlasRow.metadata?.logoAsset;
     if (!loggedIdentity && !(Number.isFinite(referenceCount) && referenceCount > 0)) {
-      step("NOTE: this routing records no per-asset receipt for the uploaded logo; "
-        + "the logo verified (or the generation would have failed closed) but the run does not say it was sent");
+      throw new Error("Legacy route records no uploaded customer logo identity or verified reference");
     }
   }
 
@@ -1052,7 +1094,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   // owner judges that sheet on pixels. Silence is what is forbidden.
   const elementGraph = atlasRow.metadata?.elementGraph;
   const declaredBranding = Boolean(COMPANY_NAME || COMPANY_PHONE || COMPANY_WEBSITE);
-  if (declaredBranding) {
+  if (declaredBranding && !composedProof) {
     if (elementGraph === null || elementGraph === undefined) {
       throw new Error("the element graph never ran on a brief that declares a company name and contact details: "
         + "with the clean base on, Call 1 authored no lettering and nothing composited it, "

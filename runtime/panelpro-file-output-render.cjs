@@ -269,6 +269,23 @@ function productionPdf(png, metadata, section, policy) {
   return Buffer.concat(parts);
 }
 
+// The paid six-surface package uses the same lossless PDF encoder as reviewed
+// physical pieces. Its input is the already verified Call 12 export; this
+// adapter does not resize, invent template geometry, or grant QC approval.
+async function buildPanelProProductionPdf({ png, surfaceKey, trimWidthInches, trimHeightInches }) {
+  if (!['driver', 'passenger', 'hood', 'roof', 'front', 'rear'].includes(surfaceKey)
+    || ![trimWidthInches, trimHeightInches].every((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)) stop('panelprofile_pdf_geometry_invalid');
+  const metadata = await sharp(png, { limitInputPixels: false }).metadata();
+  const width = exactPixels(trimWidthInches + 10, 150), height = exactPixels(trimHeightInches + 10, 150);
+  if (metadata.format !== 'png' || metadata.width !== width || metadata.height !== height
+    || metadata.channels !== 3 || metadata.hasAlpha || !metadata.icc?.length || metadata.density !== 1500
+    || (metadata.orientation && metadata.orientation !== 1)) stop('panelprofile_pdf_export_source_invalid');
+  return productionPdf(png, metadata, {
+    sectionId: surfaceKey, rollRotationDegrees: 0,
+    trimBoundsInches: { x: 0, y: 0, width: trimWidthInches, height: trimHeightInches },
+  }, { outputScale: 0.1 });
+}
+
 async function writeArtifact(options, request, name, bytes, mimeType, role, pieceId, metadata = {}) {
   const contentHash = sha(bytes);
   const stored = await options.writeArtifact({ name, bytes, mimeType, role, pieceId, contentHash,
@@ -451,4 +468,4 @@ async function renderPanelProFileOutputPiece(input, pieceId, options) {
   return renderPanelProFileOutput(input, { ...options, pieceIds: [pieceId] });
 }
 
-module.exports = { RENDER_CONTRACT, GEOMETRY_CONTRACT, LIMITS, preparePanelProFileOutput, renderPanelProFileOutput, renderPanelProFileOutputPiece };
+module.exports = { RENDER_CONTRACT, GEOMETRY_CONTRACT, LIMITS, preparePanelProFileOutput, renderPanelProFileOutput, renderPanelProFileOutputPiece, buildPanelProProductionPdf };

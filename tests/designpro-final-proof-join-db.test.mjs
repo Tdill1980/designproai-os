@@ -37,6 +37,16 @@ for(const file of precedentFiles) {
   }
 }
 const approvalBase=await readMigration('20260906132000_designpro_final_qc_resolves_late_fulfillment.sql');
+const paidPdfMigration=await readMigration('20260920113000_designpro_paid_pdf_outputs.sql');
+const canonicalHashMigration=await readMigration('20260908201216_designpro_parent_bound_atlas_revisions.sql');
+
+async function installPaidPdf(db) {
+  for(const name of ['atlas_revision_canonical','atlas_revision_hash']) {
+    const definition=canonicalHashMigration.match(new RegExp(`CREATE OR REPLACE FUNCTION designpro_private\\.${name}\\([\\s\\S]*?\\$fn\\$;`))[0];
+    await db.exec(definition);
+  }
+  await db.exec(paidPdfMigration);
+}
 
 async function database({apply=true}={}) {
   const db=new PGlite();
@@ -362,4 +372,54 @@ test('real child-attachment migration extends the reconstructed production proof
   assert.equal((await complete(db,f,f.outputStage,f.output)).rows[0].result,true);
   await approve(db,f);
   assert.equal((await db.query("SELECT count(*)::int AS n FROM public.designpro_stage_receipts WHERE run_id=$1 AND receipt_kind='final.human-qc'",[f.runId])).rows[0].n,1);
+});
+
+test('paid PDF SQL binds all twenty-four outputs to the existing paid stage and final-proof gate',async t=>{
+  const {db}=await database();t.after(()=>db.close());await installPaidPdf(db);const f=await fixture(db);
+  const buildStage=await stage(db,f.runId,'output.build','running');
+  await db.query("DELETE FROM public.designpro_artifacts WHERE run_id=$1 AND artifact_kind='output'",[f.runId]);
+  const files=[...f.output.files];
+  for(const surfaceKey of surfaces) {
+    const png=files.find(file=>file.surfaceKey===surfaceKey&&file.format==='png');
+    files.push({...png,format:'pdf',contentHash:hash(`output-${surfaceKey}-pdf`),storagePath:png.storagePath.replace(/\.png$/,'.pdf')});
+  }
+  const artifacts=files.map(file=>({...file,kind:'output',metadata:{format:file.format,width:file.widthPixels,height:file.heightPixels,
+    dpi:1500,outputScale:0.1,fullScaleBleedInches:5,...(file.format==='pdf'?{sourcePngHash:files.find(png=>png.surfaceKey===file.surfaceKey&&png.format==='png').contentHash}:{})}}));
+  const built={verified:true,outputFormatContract:'designpro.production-formats.v2',outputFormats:['png','tiff','eps','pdf'],
+    outputCount:24,outputSetHash:hashJson(artifacts.map(a=>({path:a.storagePath,hash:a.contentHash})))};
+  await assert.rejects(complete(db,f,buildStage,{verified:true,outputCount:18,outputSetHash:built.outputSetHash},artifacts.slice(0,18)),/production_pdf_output_build_required/);
+  await assert.rejects(complete(db,f,buildStage,built,artifacts.slice(0,23)),/production_pdf_output_artifact_set_required/);
+  const melted=clone(artifacts);melted.find(a=>a.metadata.format==='pdf').metadata.sourcePngHash=hash('wrong-artwork');
+  await assert.rejects(complete(db,f,buildStage,built,melted),/production_pdf_output_artifact_set_required/);
+  assert.equal((await complete(db,f,buildStage,built,artifacts)).rows[0].result,true);
+  const resolved=(await db.query('SELECT designpro_private.production_output_formats($1) AS formats',[f.runId])).rows[0].formats;
+  assert.deepEqual(resolved,['png','tiff','eps','pdf']);
+  const output={...f.output,files,fileCount:24,exactFormatSet:resolved,outputHashes:files.map(file=>file.contentHash),
+    exactSurfaceFormatCount:24,authorizedAssetManifest:{...f.authorized,requiredOutputFiles:24,outputFormatContract:built.outputFormatContract,outputFormats:resolved}};
+  await assert.rejects(complete(db,f,f.outputStage,f.output),/verified_output_artifact_ledger_mismatch/);
+  const missing=clone(output);missing.files.pop();missing.outputHashes.pop();
+  await assert.rejects(complete(db,f,f.outputStage,missing),/verified_output_artifact_ledger_mismatch/);
+  assert.equal((await complete(db,f,f.outputStage,output)).rows[0].result,true);
+  assert.equal((await db.query('SELECT status FROM public.designpro_workflow_stages WHERE id=$1',[f.gate.id])).rows[0].status,'waiting');
+  assert.deepEqual((await db.query("SELECT output->'authorizedAssetManifest' AS manifest FROM public.designpro_workflow_stages WHERE run_id=$1 AND stage_key='await_purchase'",[f.runId])).rows[0].manifest,f.authorized,
+    'adding PDF for an older purchased but unbuilt run must not rewrite the frozen purchase');
+  await db.exec('SET ROLE authenticated');
+  await assert.rejects(db.query('SELECT designpro_private.production_output_formats($1)',[f.runId]),/permission denied/);
+});
+
+test('paid PDF SQL preserves only the immutable completed legacy output contract',async t=>{
+  const {db}=await database();t.after(()=>db.close());const f=await fixture(db);
+  const built={verified:true,outputCount:18,outputSetHash:hash('legacy-frozen-output-set')};
+  const buildStage=await stage(db,f.runId,'output.build','completed',built);
+  await db.query('UPDATE public.designpro_workflow_stages SET output_hash=$1 WHERE id=$2',[hashJson(built),buildStage.id]);
+  await installPaidPdf(db);
+  assert.deepEqual((await db.query('SELECT designpro_private.production_output_formats($1) AS formats',[f.runId])).rows[0].formats,['png','tiff','eps']);
+  await db.query('UPDATE public.designpro_workflow_stages SET output_hash=$1 WHERE id=$2',[hash('wrong-receipt'),buildStage.id]);
+  await assert.rejects(db.query('SELECT designpro_private.production_output_formats($1)',[f.runId]),/output_build_receipt_invalid/);
+  await db.query('UPDATE public.designpro_workflow_stages SET output_hash=$1 WHERE id=$2',[hashJson(built),buildStage.id]);
+  assert.equal((await complete(db,f,f.outputStage,f.output)).rows[0].result,true);
+  assert.deepEqual((await db.query('SELECT output,output_hash FROM public.designpro_workflow_stages WHERE id=$1',[buildStage.id])).rows[0],{output:built,output_hash:hashJson(built)});
+  const definition=(await db.query("SELECT pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure) AS body")).rows[0].body;
+  await db.exec(paidPdfMigration);
+  assert.equal((await db.query("SELECT pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure) AS body")).rows[0].body,definition,'migration rerun is idempotent');
 });

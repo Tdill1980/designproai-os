@@ -125,7 +125,7 @@ test("production is server-created exactly once after Entice completes, with a b
   const retryWait = lookup.indexOf("setTimeout(resolve, POLL_INTERVAL_MS)");
   const exhausted = lookup.lastIndexOf("found 0 after");
   assert.match(lookup, /for \(let poll = 0; poll < MAX_AUTOMATIC_PRODUCTION_POLLS; poll \+= 1\)/);
-  assert.match(canary, /\.select\("id,workflow_type,status,results,error,entice_pack_id,updated_at"\)/);
+  assert.match(canary, /\.select\("id,owner_id,revision_id,workflow_type,status,results,error,entice_pack_id,updated_at"\)/);
   assert.match(canary, /const enticePackId = String\(completedEntice\?\.entice_pack_id \|\| ""\)/);
   assert.match(canary, /completed Entice workflow carries no canonical pack identity/);
   assert.match(lookup, /\.eq\("entice_pack_id", enticePackId\)/);
@@ -221,7 +221,7 @@ test("canary uses the real QC gates and returns both Entice and Production artif
   assert.match(canary, /productionProof\.metadata\?\.sourceContentHash === enticeProof\.contentHash/);
   assert.match(canary, /productionProof\.metadata\?\.sourceStoragePath === enticeProof\.storagePath/);
   assert.match(canary, /productionProof\.metadata\?\.sourceEnticeRunId === evidence\.enticeRunId/);
-  assert.match(canary, /productionOutputs === 18/);
+  assert.match(canary, /productionOutputs === 24/);
   assert.match(canary, /productionUpscaledPanels === 6/);
   assert.match(workflow, /one Entice Call 8 proof and one exact Production copy/);
   assert.doesNotMatch(workflow, /customer 2D proof \+ immutable flat layout/);
@@ -279,7 +279,7 @@ test("the canary caps its export without weakening a single acceptance check", (
   // An omitted file says so, by name and reason, instead of going missing.
   assert.match(canary, /notExportedReason/);
   // The acceptance predicate still reads verified hashes, not exported files.
-  assert.match(canary, /verifiedCount\("production", "output"\) === 18/);
+  assert.match(canary, /verifiedCount\("production", "output"\) === 24/);
   assert.match(canary, /verifiedCount\("production", "upscaled-panel"\) === 6/);
   assert.doesNotMatch(canary, /\.filter\(\(item\) => item\.exported === true\)/,
     "an acceptance count may never be computed from what happened to fit in the tarball");
@@ -409,14 +409,13 @@ test("the canary uploads a real customer logo and convicts a Call 1 that did not
   assert.match(canary, /the staged logo does not hash to what was uploaded/,
     "the canary must verify its own upload the way the runtime will");
 
-  // AND IT CONVICTS A RUN THAT DID NOT CARRY IT. Reporting is not enough on the
-  // route whose receipt can answer the question.
-  assert.match(canary, /const panelProofAssets = atlasRow\.metadata\?\.panelProofAuthoring\?\.customerAssets;/,
-    "the panel-proof receipt is where 'did the logo reach Call 1' is answerable");
-  assert.match(canary, /the panel-proof Call 1 recorded NO customer assets although the request carried an uploaded logo/,
-    "a panel-proof run with no recorded customer assets must FAIL, not warn");
-  // On a routing with no per-asset receipt the honest answer is to say so rather
-  // than to claim proof it does not have.
-  assert.match(canary, /this routing records no per-asset receipt for the uploaded logo/,
-    "a routing that cannot answer must say so instead of passing silently");
+  assert.match(canary, /composition\?\.contract === "designpro\.production-zone-composite\.v1"/);
+  assert.match(canary, /logo\.contentHash !== customerLogo\.contentHash/);
+  assert.match(canary, /logo\.storagePath !== customerLogo\.storagePath/);
+  assert.match(canary, /p\.flipped === false/);
+  assert.match(canary, /Zone 1 \$\{surfaceKey\} did not receive pristine/);
+  assert.match(canary, /declaredBranding && !composedProof/);
+  assert.doesNotMatch(canary, /const panelProofAssets =/,
+    "original protected logos are composited after generation, not sent to Gemini");
+
 });

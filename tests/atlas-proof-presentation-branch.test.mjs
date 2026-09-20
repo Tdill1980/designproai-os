@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MODULE_PATH = join(ROOT, "supabase/functions/_shared/atlas-proof-presentation.ts");
@@ -180,6 +181,23 @@ test("every shot builds a prompt in the anchors-only size band", async () => {
     assert.ok(p.length > 2_500 && p.length < 4_000,
       `${shot} prompt is ${p.length} chars — outside the anchors-only band`);
   }
+});
+
+test("pickup roof framing reuses the existing camera qualification and never changes other shots", async () => {
+  const { buildAtlasProofPresentationPrompt: build } = await mod();
+  const { PICKUP_ROOF_QUALIFICATION } = createRequire(import.meta.url)("../runtime/view-angles.cjs");
+  const base = { vehicle: "2024 Ford F-250", viewType: "roof", surfaceKey: "roof", finish: "Gloss" };
+  const pickup = { ...base, isPickup: true, pickupRoofQualification: PICKUP_ROOF_QUALIFICATION };
+  const prompt = build(pickup);
+  assert.ok(prompt.includes(PICKUP_ROOF_QUALIFICATION), "the roof camera must carry the authoritative cab-only qualification verbatim");
+  assert.equal(prompt.split(PICKUP_ROOF_QUALIFICATION).length - 1, 1);
+  assert.ok(prompt.indexOf(PICKUP_ROOF_QUALIFICATION) > prompt.indexOf("CAMERA ANCHOR:"));
+  assert.ok(prompt.indexOf(PICKUP_ROOF_QUALIFICATION) < prompt.indexOf("STUDIO AND LIGHTING ANCHOR:"));
+  assert.match(PHOTOGRAPHER, /pickupRoofQualification: typeof body\.pickupRoofQualification === "string"/,
+    "the deployed photographer must pass through the runtime camera authority");
+  assert.equal(build({ ...pickup, isPickup: false }), build(base));
+  assert.equal(build({ ...pickup, viewType: "side", surfaceKey: "driver" }),
+    build({ ...base, isPickup: true, viewType: "side", surfaceKey: "driver" }));
 });
 
 test("design-panel-ai-generate is pure Call-1 authoring again", () => {

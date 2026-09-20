@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AtlasPanelProofSheet } from "./AtlasPanelProofSheet";
+import { AtlasPanelProofSheet, panelProofRefreshInterval } from "./AtlasPanelProofSheet";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
 
 const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
@@ -37,6 +37,19 @@ function proof(over: Partial<AtlasPanelProof> = {}): AtlasPanelProof {
 }
 
 describe("AtlasPanelProofSheet", () => {
+  it("shows a completed three-zone proof before any accepted revision or 3D view", () => {
+    const early = proof({ revisionId: null, masterContentHash: null });
+    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={early} status="success" />);
+    expect(html).toContain("https://signed.example/sheet");
+    expect(html).toContain("Zone 1 — print panels");
+    expect(html).toContain("Zone 2 — panels without type or logos");
+    expect(html).toContain("Zone 3 — logo, text and graphic elements");
+    expect(html).not.toContain("These are what get printed");
+    expect(panelProofRefreshInterval({ ...early, panelProof: false }, true)).toBe(1_000);
+    expect(panelProofRefreshInterval(early, true)).toBe(240_000);
+    expect(panelProofRefreshInterval(undefined, false)).toBe(false);
+  });
+
   it("shows all three zones from the one sheet, with the sheet itself", () => {
     const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
     expect(html).toContain("https://signed.example/sheet");

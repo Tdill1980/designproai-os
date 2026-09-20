@@ -82,8 +82,9 @@ function checkRow(y, label, ok) {
  */
 function certificateSvg({
   designId, orderNumber, designName, vehicle,
-  verifiedBy, approvedAtIso, preflightQc, finalQc, surfaces,
+  verifiedBy, approvedAtIso, preflightQc, finalQc, surfaces, approvalRef = "",
 }) {
+  const automatedTest = /^CANARY-FINAL-/.test(approvalRef);
   const rows = Array.isArray(surfaces) ? surfaces : [];
   const vehicleLine = [vehicle?.year, vehicle?.make, vehicle?.model]
     .map((part) => String(part || "").trim()).filter(Boolean).join(" ");
@@ -146,21 +147,21 @@ function certificateSvg({
     <circle r="76" fill="none" stroke="url(#stampGrad)" stroke-width="2"/>
     <text y="-16" text-anchor="middle" font-family="sans-serif" font-size="23" font-weight="bold" fill="#2563eb">DesignProAI</text>
     <text y="9" text-anchor="middle" font-family="sans-serif" font-size="23" font-weight="bold" fill="#2563eb">QUALITY</text>
-    <text y="33" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#2563eb">★ APPROVED ★</text>
+    <text y="33" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#2563eb">${automatedTest ? "TEST ONLY" : "★ APPROVED ★"}</text>
   </g>`;
 
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height}" viewBox="0 0 ${W} ${height}">
   <rect x="0" y="0" width="${W}" height="${height}" fill="#ffffff"/>
   <rect x="24" y="24" width="${W - 48}" height="${height - 48}" fill="none" stroke="#1e3a8a" stroke-width="4"/>
   <text x="${PAD}" y="${PAD + 42}" font-family="sans-serif" font-size="40" font-weight="bold" fill="#0a0a0a">DesignProAI Quality</text>
-  <text x="${PAD}" y="${PAD + 80}" font-family="sans-serif" font-size="21" font-weight="bold" fill="#2563eb">Production Pack — Quality Control Certificate</text>
+  <text x="${PAD}" y="${PAD + 80}" font-family="sans-serif" font-size="21" font-weight="bold" fill="${automatedTest ? "#b91c1c" : "#2563eb"}">${automatedTest ? "AUTOMATED TEST — NOT DESIGNER APPROVED" : "Production Pack — Quality Control Certificate"}</text>
   <text x="${PAD}" y="${PAD + 110}" font-family="sans-serif" font-size="15" fill="#6b7280">${esc(subTitle)}</text>
   <text x="${PAD}" y="${PAD + 136}" font-family="monospace" font-size="16" font-weight="bold" fill="#2563eb">${esc(designId)}</text>
   ${designName ? `<text x="${PAD}" y="${PAD + 162}" font-family="sans-serif" font-size="15" fill="#6b7280">Design: ${esc(designName)}</text>` : ""}
   ${groups.join("\n  ")}
   ${table.join("\n  ")}
   ${stamp}
-  <text x="${PAD}" y="${stampCentreY - 6}" font-family="sans-serif" font-size="14" fill="#111827">Quality checked by ${esc(verifiedBy)}</text>
+  <text x="${PAD}" y="${stampCentreY - 6}" font-family="sans-serif" font-size="14" fill="#111827">${automatedTest ? "Automated diagnostic by" : "Quality checked by"} ${esc(verifiedBy)}</text>
   <text x="${PAD}" y="${stampCentreY + 16}" font-family="sans-serif" font-size="13" fill="#6b7280">${esc(approvedAtIso)}</text>
 </svg>`);
 }

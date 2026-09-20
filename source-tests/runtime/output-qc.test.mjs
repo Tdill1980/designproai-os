@@ -20,6 +20,7 @@ const {
   sha256,
   verifyProductionOutputSet,
 } = require("../../runtime/output-qc.cjs");
+const { buildPanelProProductionPdf } = require("../../runtime/panelpro-file-output-render.cjs");
 
 const trimWidthInches = 0.02;
 const trimHeightInches = 0.04;
@@ -103,16 +104,24 @@ before(async () => {
   }
   const eps = buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidthInches, trimHeightInches });
   formatBytes = { png, tiff, eps };
-  validArtifacts = SURFACES.flatMap((surfaceKey) => FORMATS.map((format) => artifact(surfaceKey, format, formatBytes[format])));
+  validArtifacts = [];
+  for (const surfaceKey of SURFACES) {
+    const pdf = await buildPanelProProductionPdf({ png, surfaceKey, trimWidthInches, trimHeightInches });
+    for (const format of FORMATS) {
+      const row = artifact(surfaceKey, format, format === "pdf" ? pdf : formatBytes[format]);
+      if (format === "pdf") row.metadata.sourcePngHash = sha256(png);
+      validArtifacts.push(row);
+    }
+  }
 });
 
-test("accepts exactly six surfaces times PNG/TIFF/EPS and returns a canonical stable receipt", async () => {
+test("accepts exactly six surfaces times PNG/TIFF/EPS/PDF and returns a canonical stable receipt", async () => {
   const first = await verifyProductionOutputSet({ artifacts: validArtifacts, dimensionManifest });
   const second = await verifyProductionOutputSet({ artifacts: [...validArtifacts].reverse(), dimensionManifest });
   assert.equal(first.verified, true);
-  assert.equal(first.fileCount, 18);
+  assert.equal(first.fileCount, 24);
   assert.deepEqual(first.exactSurfaceSet, ["driver", "passenger", "hood", "roof", "front", "rear"]);
-  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps"]);
+  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps", "pdf"]);
   assert.equal(first.outputSetHash, second.outputSetHash);
   assert.deepEqual(first.files.map(({ surfaceKey, format }) => `${surfaceKey}:${format}`), SURFACES.flatMap((surface) => FORMATS.map((format) => `${surface}:${format}`)));
   assert.ok(first.files.every((file) => file.widthPixels === widthPixels && file.heightPixels === heightPixels && file.dpi === 1500 && file.colorSpace === "sRGB"));
@@ -122,7 +131,44 @@ test("supports server-side byte loading without trusting artifact metadata", asy
   const rows = validArtifacts.map(({ bytes, ...row }) => row);
   const byPath = new Map(validArtifacts.map((row) => [row.storagePath, row.bytes]));
   const receipt = await verifyProductionOutputSet({ artifacts: rows, dimensionManifest, readBytes: async (row) => byPath.get(row.storagePath) });
-  assert.equal(receipt.fileCount, 18);
+  assert.equal(receipt.fileCount, 24);
+});
+
+test("PDF reuses exact PNG pixels with tenth-scale trim and five-inch bleed geometry", () => {
+  const row = validArtifacts.find((item) => item.surfaceKey === "driver" && item.metadata.format === "pdf");
+  const source = row.bytes.toString("latin1");
+  assert.ok(source.includes("/MediaBox [0 0 72.144 72.288] /BleedBox [0 0 72.144 72.288] /TrimBox [36 36 36.144 36.288]"));
+  assert.ok(source.includes(`/Width ${widthPixels} /Height ${heightPixels} /BitsPerComponent 8 /ColorSpace [/ICCBased 5 0 R] /Filter /FlateDecode`));
+  assert.ok(source.includes("1:10 drawing scale; enlarge to 1000 percent."));
+  assert.equal(row.metadata.sourcePngHash, sha256(formatBytes.png));
+});
+
+test("PDF rejects forged geometry or different artwork even with recomputed artifact hash", async () => {
+  const index = validArtifacts.findIndex((row) => row.surfaceKey === "driver" && row.metadata.format === "pdf");
+  const rows = cloneArtifacts();
+  replaceBytes(rows[index], Buffer.from(rows[index].bytes.toString("latin1").replace("/MediaBox [0 0 72.144 72.288]", "/MediaBox [0 0 99.999 99.999]"), "latin1"));
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: rows, dimensionManifest }), expectCode("output_pdf_source_or_geometry_mismatch"));
+  const otherPng = await sharp({ create: { width: widthPixels, height: heightPixels, channels: 3, background: "red" } }).png().withMetadata({ density: FILE_DPI }).toBuffer();
+  replaceBytes(rows[index], await buildPanelProProductionPdf({ png: otherPng, surfaceKey: "driver", trimWidthInches, trimHeightInches }));
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: rows, dimensionManifest }), expectCode("output_pdf_source_or_geometry_mismatch"));
+});
+
+test("PDF cannot be replaced by PNG and cannot omit its source identity", async () => {
+  const index = validArtifacts.findIndex((row) => row.metadata.format === "pdf");
+  const wrongType = cloneArtifacts();
+  replaceBytes(wrongType[index], formatBytes.png);
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: wrongType, dimensionManifest }), expectCode("output_pdf_magic_invalid"));
+  const missingIdentity = cloneArtifacts();
+  delete missingIdentity[index].metadata.sourcePngHash;
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: missingIdentity, dimensionManifest }), expectCode("output_pdf_source_or_geometry_mismatch"));
+});
+
+test("legacy eighteen-file output requires an explicit frozen legacy format contract", async () => {
+  const artifacts = validArtifacts.filter((row) => row.metadata.format !== "pdf");
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts, dimensionManifest }), expectCode("output_artifact_count_invalid"));
+  const verified = await verifyProductionOutputSet({ artifacts, dimensionManifest, outputFormatContract: "designpro.production-formats.v1" });
+  assert.equal(verified.fileCount, 18);
+  assert.deepEqual(verified.exactFormatSet, ["png", "tiff", "eps"]);
 });
 
 test("rejects missing and duplicate surface/format identities", async () => {

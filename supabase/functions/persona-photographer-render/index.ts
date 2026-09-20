@@ -525,6 +525,8 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
       viewType: shotKey,
       finish: body.finish == null ? null : String(body.finish),
       isPickup: body.isPickup === true,
+      pickupRoofQualification: typeof body.pickupRoofQualification === "string"
+        ? body.pickupRoofQualification : undefined,
     });
 
     // THE PANEL FIRST, THE CAMERA LAST. Gemini weights the final part most

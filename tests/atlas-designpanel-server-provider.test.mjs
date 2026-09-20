@@ -223,6 +223,9 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
     // Vehicle + finish travel; nothing creative does.
     assert.equal(post.body.vehicleMake, "Ford");
     assert.equal(post.body.finish, "Gloss");
+    assert.equal(post.body.pickupRoofQualification, sourceViewType === "roof"
+      ? require("../runtime/view-angles.cjs").PICKUP_ROOF_QUALIFICATION : undefined,
+    "only a pickup roof receives the existing cab-only camera qualification");
     assert.equal(post.body.brief, undefined);
     assert.equal(post.body.companyName, undefined);
 
