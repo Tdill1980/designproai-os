@@ -62,7 +62,7 @@ import {
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
-// DesignVersionRecordCard is intentionally not mounted: production identity lives in PanelPro.
+import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
 import { useStandaloneProductionLayers } from "@/hooks/useStandaloneProductionLayers";
 import { panelOutputHref } from "@/lib/panelpro-file-output-api";
@@ -6239,11 +6239,7 @@ export default function RevisionStudioIQ() {
                     A.T.L.A.S. generation id, because that is the internal
                     control room where the authority everything descends from is
                     inspected. This surface is review / revise / approve / buy. */}
-                {/* The version record card (Generation ID / Design ID / order number)
-                    was unmounted by owner directive (2026-08-26): those are
-                    production identities, and they live in PanelPro Studio
-                    with the rest of the technical record. RestylePro's studio
-                    -- the spec -- never showed them to the customer. */}
+                <DesignPromptRecord generationId={productionLayersId} />
 
                 {/* APPROVE DESIGN & BUILD PRINT PANELS — the stage 2 → 3 door.
                     (Trish 2026-08-29.)

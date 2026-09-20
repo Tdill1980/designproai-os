@@ -108,7 +108,11 @@ test("2+3: Passenger and every other surface render from their own surface autho
   // And each surface is SENT its own panel: `panelFor` resolves through
   // `surfaceForProofView`, so passenger-side receives the passenger panel.
   assert.match(ATLAS_BRANCH, /atlas\.panelFor\(sourceViewType\)/);
-  assert.match(ATLAS_BRANCH, /sourcePanelStoragePath: panel\.storagePath/);
+  assert.match(ATLAS_BRANCH, /sourcePanelStoragePath: authority\.storagePath/);
+  assert.match(ATLAS_BRANCH, /surfaceKey: authority\.surfaceKey/);
+  assert.match(ATLAS_BRANCH, /storagePath: panel\.storagePath/);
+  assert.match(ATLAS_BRANCH, /storagePath: sheet\.storagePath/);
+  assert.match(ATLAS_BRANCH, /role: "three-zone-production-proof"/);
 });
 
 // 4. a failed Driver does not prevent the others

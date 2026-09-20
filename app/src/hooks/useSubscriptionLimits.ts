@@ -42,18 +42,22 @@ export const useSubscriptionLimits = () => {
 
   useEffect(() => {
     checkSubscription();
+    let authReload: ReturnType<typeof setTimeout> | undefined;
     
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        checkSubscription();
+        clearTimeout(authReload);
+        // Supabase session reads must start after the auth callback returns.
+        authReload = setTimeout(() => { void checkSubscription(); }, 0);
       }
       if (event === 'SIGNED_OUT') {
+        clearTimeout(authReload);
         setSubscription(null);
         setLoading(false);
       }
     });
     
-    return () => authSub.unsubscribe();
+    return () => { clearTimeout(authReload); authSub.unsubscribe(); };
   }, []);
 
   const checkSubscription = async () => {

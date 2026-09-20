@@ -1,4 +1,5 @@
 import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -1402,6 +1403,7 @@ function JobHeader({
       </dl>
 
       <AtlasProgressCard job={job} selectedVersion={selectedVersion} />
+      <div className="mt-4"><DesignPromptRecord generationId={job.generation_id} /></div>
 
       <div className="mt-4 border-t border-gray-100 pt-3">
         <div className="mb-2 flex items-center justify-between">

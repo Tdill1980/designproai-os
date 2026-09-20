@@ -65,6 +65,13 @@ test('exact-reference guidance is restricted to backgrounds, and protected origi
   assert.match(source,/for \(const asset of customerAssets\)/,'the image attachment loop consumes the filtered set');
 });
 
+test('customer direction containing a negative preference survives the scope filter',async()=>{
+  const direction = 'Forest-green landscape photography with no neon colors and no cartoon animals.';
+  const {prompt} = await assemble({creativeDirection: direction});
+  assert.ok(prompt.includes(direction));
+  assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
+});
+
 test('legacy non-separated probe retains the existing branded prompt contract',async()=>{
   const {prompt}=await assemble({separatedArtwork:false});
   assert.match(prompt,/Spell the business name exactly/);

@@ -105,12 +105,12 @@ export function designVersionsFrom(input: {
   revisions: readonly FlatAtlasRevision[];
 }): DesignVersionHistory {
   const { designId, orderNumber } = identityFrom(input.job);
-  const brief = typeof input.job?.brief === "string" ? input.job.brief.trim() : "";
+  const brief = typeof input.job?.brief === "string" ? input.job.brief : "";
 
   const versions = [...input.revisions]
     .sort((left, right) => left.revisionSequence - right.revisionSequence)
     .map((revision) => {
-      const instruction = typeof revision.instruction === "string" ? revision.instruction.trim() : "";
+      const instruction = typeof revision.instruction === "string" ? revision.instruction : "";
       const isOriginal = revision.revisionSequence <= 1;
       return {
         version: revision.revisionSequence,

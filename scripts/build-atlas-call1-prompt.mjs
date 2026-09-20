@@ -64,6 +64,7 @@ export function buildAtlasCall1Prompt({ outDir, esbuild = "esbuild" }) {
   mkdirSync(outDir, { recursive: true });
   const fns = join(REPO, "supabase", "functions");
   copyFileSync(join(fns, "_shared", "studio-os.ts"), join(outDir, "studio-os.ts"));
+  copyFileSync(join(fns, "_shared", "release-source.ts"), join(outDir, "release-source.ts"));
   copyFileSync(join(fns, "_shared", "view-angles-os.ts"), join(outDir, "view-angles-os.ts"));
 
   const events = readFileSync(join(fns, "_shared", "render-events.ts"), "utf8").split("\n");
@@ -96,6 +97,7 @@ export function buildAtlasCall1Prompt({ outDir, esbuild = "esbuild" }) {
   writeFileSync(
     sliced,
     'import { STUDIO_ENVIRONMENT } from "./studio-os.ts";\n'
+    + 'import { RELEASE_SOURCE_SHA } from "./release-source.ts";\n'
     + 'import { getCameraAngle, getAspectRatio, getResolution } from "./view-angles-os.ts";\n'
     + 'import { canonicalizeVehicle } from "./render-events-slice.ts";\n'
     + pure

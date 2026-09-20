@@ -495,6 +495,25 @@ export const SURFACE_LABEL: Record<string, string> = {
   hero3d: "Historical 3D Hero",
 };
 
+export type DesignPromptRecord = {
+  generationId: string;
+  designId: string;
+  originalRequestId: string;
+  originalPrompt: string | null;
+  createdAt: string;
+  versions: Array<{
+    version: number;
+    requestId: string;
+    revisionId: string | null;
+    prompt: string | null;
+    createdAt: string;
+    authoredAt: string | null;
+    completedAt: string | null;
+    state: string;
+    errorCode: string | null;
+  }>;
+};
+
 export type WorkflowStatus = {
   generationId: string;
   /**
@@ -1339,6 +1358,8 @@ export const dpApi = {
   listJobs: () => request<WorkflowStatus[]>("/jobs"),
   getStatus: (generationId: string) =>
     request<WorkflowStatus>(`/jobs/${encodeURIComponent(generationId)}`),
+  getDesignPromptRecord: (generationId: string) =>
+    request<DesignPromptRecord>(`/jobs/${encodeURIComponent(generationId)}/prompt-record`),
   getGenerationProgress: (generationId: string) =>
     request<GenerationProgress>(`/generation/${encodeURIComponent(generationId)}/progress`),
   listArtifacts: (generationId: string) =>

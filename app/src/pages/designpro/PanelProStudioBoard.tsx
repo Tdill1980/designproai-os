@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
+import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { FullQcPanel } from "@/components/designpro/FullQcPanel";
 import type { PanelQcReport } from "@/lib/designpro-panel-qc";
 import { CheckCircle2, Download, FileArchive, ImageOff, PackageCheck, ShieldCheck, UploadCloud, Wand2 } from "lucide-react";
@@ -1091,6 +1092,7 @@ export default function PanelProStudioBoard() {
       </div>
 
       {error && <Notice tone="warning">{error}</Notice>}
+      <DesignPromptRecord generationId={generationId} />
 
       {job && producedCount < PRODUCTION_SURFACES.length && (
         <Notice tone="warning">

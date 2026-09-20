@@ -407,10 +407,12 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   }
   // The proof sheet's own identity is on the receipt, so "which sheet produced
   // this master" is a query rather than a storage-timestamp guess.
-  assert.equal(out.provenance.proofSha256, "a".repeat(64), "customer Call 1 keeps the exact Gemini sheet identity");
-  assert.equal(out.provenance.proofStoragePath, "atlas-panel-proof/a.jpg");
-  assert.ok(out.provenance.productionComposedProof?.storagePath, "production composition is retained separately");
-  assert.notEqual(out.provenance.productionComposedProof.contentHash, out.provenance.proofSha256);
+  assert.equal(out.provenance.sourceArtwork.contentHash, "a".repeat(64), "retain the internal Gemini artwork identity");
+  assert.equal(out.provenance.sourceArtwork.storagePath, "atlas-panel-proof/a.jpg");
+  assert.ok(out.provenance.productionComposedProof?.storagePath);
+  assert.equal(out.provenance.productionComposedProof.contentHash, out.provenance.proofSha256,
+    "customer Call 1 must address the code-owned complete three-zone sheet");
+  assert.equal(out.provenance.productionComposedProof.storagePath, out.provenance.proofStoragePath);
   // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
   // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
   // production's six from the assembled master and a second set nobody reads

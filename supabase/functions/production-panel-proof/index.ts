@@ -43,7 +43,10 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders as baseCorsHeaders } from "../_shared/cors.ts";
+import { RELEASE_SOURCE_SHA } from "../_shared/release-source.ts";
+const corsHeaders = { ...baseCorsHeaders, "X-DesignPro-Source-Sha": RELEASE_SOURCE_SHA,
+  "Access-Control-Expose-Headers": "X-DesignPro-Source-Sha" };
 import { getGeminiKey, hasGeminiKey } from "../_shared/gemini-key-pool.ts";
 import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
@@ -467,7 +470,7 @@ serve(async (req) => {
         .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
           "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
         .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
-          "Use its background colors, patterns, layout, composition, proportions and visual hierarchy as the visual reference for the clean artwork layer.");
+          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully");
     }
 
     let prompt = buildPanelProofPrompt({
@@ -493,8 +496,11 @@ serve(async (req) => {
       // Scope-led image prompting: preserve A.C.E.'s creative intelligence while
       // dropping legacy prohibition lines. The model receives what to create.
       const artworkCreativeHead = creativeHead
+        .replace(" — build the entire design from this palette and do not introduce unrelated colors.",
+          " — build the entire design from this palette.")
         .split(/\n+/)
-        .filter((line) => !/\b(?:no|not|never|without|do\s+not|don't|must\s+not|cannot)\b/i.test(line))
+        .filter((line) => line.startsWith("Client's creative direction:")
+          || !/\b(?:no|not|never|without|do\s+not|don't|must\s+not|cannot)\b/i.test(line))
         .join("\n");
       prompt = [
         "ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer's six vehicle panel cells.",

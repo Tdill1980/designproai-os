@@ -1,0 +1,161 @@
+name: VehiclePro controlled recovery acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      exact_sha:
+        description: Exact successful main release SHA deployed everywhere
+        required: true
+        type: string
+      test_case:
+        description: One fresh engineering test; never automatically retried
+        required: true
+        type: choice
+        options: [A, B, C]
+      confirmation:
+        description: Spends one engineering generation after source verification
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options: [DO_NOT_RUN, RUN_ONE_ACCEPTANCE_TEST]
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: designproai-vehiclepro-recovery
+  cancel-in-progress: false
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+  EXACT_SHA: ${{ inputs.exact_sha }}
+  TEST_CASE: ${{ inputs.test_case }}
+jobs:
+  acceptance:
+    if: inputs.confirmation == 'RUN_ONE_ACCEPTANCE_TEST'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.exact_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the complete successful release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$EXACT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TEST_CASE" =~ ^[ABC]$ ]]
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          git merge-base --is-ancestor "$EXACT_SHA" origin/main
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+            -f head_sha="$EXACT_SHA" -f event=push -f status=success \
+            | jq -e --arg sha "$EXACT_SHA" 'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { local code="$1"; shift; printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$code"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 36 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 37 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Run one test and retrieve all evidence, including failures
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+          payload=$(tar -cz scripts/vehiclepro-live-prompt-test.mjs | base64 -w0)
+          set +e
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" "PAYLOAD='$payload' EXPECTED_SHA='$EXACT_SHA' TEST_CASE='$TEST_CASE' bash -s" > "$RUNNER_TEMP/recovery.log" 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          release=/opt/designproai-os/current
+          test "$(basename "$(readlink -f "$release")")" = "$EXPECTED_SHA"
+          image="designproai-runtime:$EXPECTED_SHA"
+          docker image inspect "$image" >/dev/null
+          case "$TEST_CASE" in
+            A)
+              company='Copper Finch Artisan Bakery'; industry='artisan bakery delivery'; website='copperfinch.example'
+              year=2022; make=Ford; model='Transit'; type=van
+              brief='Design a premium wrap for Copper Finch Artisan Bakery on a 2022 Ford Transit delivery van. Use a warm ivory base with terracotta botanical linework, large engraved wheat stalks and small copper finch illustrations. Give the company name a strong dark-chocolate wordmark treatment. Keep the composition calm and editorial, with abundant clear space around the lettering. Show Fresh bread, early mornings and copperfinch.example as readable secondary copy. Continue the botanical campaign around the rear doors and onto the hood; use a quiet tonal wheat pattern on the roof.'
+              ;;
+            B)
+              company='Granite Ridge Arborists'; industry='tree care and forestry'; website='graniteridge.example'
+              year=2022; make=Ford; model='F250 Crew Cab'; type=truck
+              brief='Create a rugged commercial wrap for Granite Ridge Arborists on a 2022 Ford F250 Crew Cab. Use charcoal, forest green and a sharp safety-lime accent. Build a high-contrast composition from angular mountain silhouettes and a large realistic cedar canopy, with purposeful diagonals following the truck body. Granite Ridge Arborists must dominate both sides; Tree care. Storm response. belongs beneath it. Put graniteridge.example prominently on the rear. Keep the hood bold and simple, the roof a restrained topographic pattern, and preserve forward-reading lettering on the passenger side.'
+              ;;
+            C)
+              company='Orbit Mobile Planetarium'; industry='science education outreach'; website='orbitclassroom.example'
+              year=2015; make=Mini; model='Cooper S'; type=car
+              brief='Wrap a 2015 Mini Cooper S outreach car for Orbit Mobile Planetarium, a science workshop visiting schools. Create a joyful deep-violet and midnight-blue star field with oversized luminous orange planetary rings and a single detailed moon illustration. Use round, highly readable white lettering for Orbit Mobile Planetarium. Include Bring the universe to your school and orbitclassroom.example as secondary copy. Use sweeping orbital arcs to connect the two sides and rear, a distinct crescent motif on the hood, and a recognizable solar-system composition on the roof. The result should feel scientific and imaginative, with precise astronomical details and a bold museum-quality identity.'
+              ;;
+            *) exit 42 ;;
+          esac
+          work=$(mktemp -d /tmp/vehiclepro-recovery.XXXXXX)
+          mkdir -p "$work/output"
+          printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
+          chown -R 10001:10001 "$work"
+          chmod -R u+rwX,go-rwx "$work"
+          # Keep the host evidence directory even if transfer or artifact upload fails.
+          echo "Host evidence directory: $work/output"
+          set +e
+          docker run --rm --network host --env-file /opt/designproai-os/shared/runtime.env \
+            -v "$work/scripts/vehiclepro-live-prompt-test.mjs:/app/vehiclepro-live-prompt-test.mjs:ro" \
+            -v "$work/output:/evidence" "$image" node /app/vehiclepro-live-prompt-test.mjs \
+            --case "$TEST_CASE" --source-sha "$EXPECTED_SHA" --out /evidence \
+            --company "$company" --industry "$industry" --website "$website" --brief "$brief" \
+            --year "$year" --make "$make" --model "$model" --type "$type"
+          status=$?
+          set -e
+          echo '---RECOVERY-EVIDENCE-TAR---'
+          tar -C "$work/output" -cz . | base64 -w0
+          exit "$status"
+          REMOTE
+          status=$?
+          set -e
+          mkdir -p recovery-evidence
+          if grep -q -- '---RECOVERY-EVIDENCE-TAR---' "$RUNNER_TEMP/recovery.log"; then
+            sed -n '1,/---RECOVERY-EVIDENCE-TAR---/p' "$RUNNER_TEMP/recovery.log" | sed '$d' > recovery-evidence/run.log
+            sed -n '/---RECOVERY-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/recovery.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C recovery-evidence -xz
+          else
+            cp "$RUNNER_TEMP/recovery.log" recovery-evidence/run.log
+          fi
+          cat recovery-evidence/run.log
+          exit "$status"
+      - name: Preserve prompt, identities, timings, refusal and original image bytes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vehiclepro-recovery-${{ inputs.test_case }}-${{ inputs.exact_sha }}-${{ github.run_id }}
+          path: recovery-evidence/**
+          if-no-files-found: warn
+          retention-days: 90
+      - name: State the remaining visual acceptance requirement
+        if: always()
+        run: echo 'A successful runner is technical evidence only. Review Call 1, all seven photographs, and both studio prompt records before marking PASS.'

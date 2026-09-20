@@ -239,12 +239,16 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
   // Initial load + reload on auth state change
   useEffect(() => {
     loadMemberships();
+    let authReload: ReturnType<typeof setTimeout> | undefined;
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, _session) => {
-        loadMemberships();
+        clearTimeout(authReload);
+        // Release the auth callback's lock before reading/refreshing a session.
+        authReload = setTimeout(() => { void loadMemberships(); }, 0);
       }
     );
     return () => {
+      clearTimeout(authReload);
       subscription.subscription.unsubscribe();
     };
   }, [loadMemberships]);
