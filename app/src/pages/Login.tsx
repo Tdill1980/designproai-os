@@ -33,24 +33,36 @@ const Login = () => {
   // they land on the design tool with their 3 tokens visible, and runs
   // the auto-link in the background to pull in past orders if any.
   useEffect(() => {
+    let live = true;
     const checkExistingSession = async () => {
+      // A persisted token is only a hint. Verify/refresh it before redirecting
+      // away from /login; otherwise an expired mobile session creates the
+      // login -> dashboard -> auth guard -> login loop and the form is
+      // effectively impossible to use.
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        if (isWpwFlow) {
-          try {
-            await supabase.functions.invoke("wpw-oauth-link", {
-              body: { mode: "lookup" },
-            });
-          } catch (err) {
-            console.warn("[login] wpw auto-link failed", err);
-          }
-          navigate("/designpro", { replace: true });
-        } else {
-          navigate("/dashboard", { replace: true });
+      if (!session || !live) return;
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+      const verified = refreshed.session;
+      if (refreshError || !verified?.user) {
+        await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+        return;
+      }
+      if (!live) return;
+      if (isWpwFlow) {
+        try {
+          await supabase.functions.invoke("wpw-oauth-link", {
+            body: { mode: "lookup" },
+          });
+        } catch (err) {
+          console.warn("[login] wpw auto-link failed", err);
         }
+        if (live) navigate("/designpro", { replace: true });
+      } else if (live) {
+        navigate("/dashboard", { replace: true });
       }
     };
-    checkExistingSession();
+    void checkExistingSession();
+    return () => { live = false; };
   }, [navigate, isWpwFlow]);
 
   const handleLogin = async (e: React.FormEvent) => {
