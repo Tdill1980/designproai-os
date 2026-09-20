@@ -126,6 +126,7 @@ jobs:
           exit "$status"
           REMOTE
           status=$?
+          set -e
           mkdir -p "evidence/$CASE"
           if grep -q -- '---EVIDENCE---' "$RUNNER_TEMP/live-test.log"; then
             sed -n '/---EVIDENCE---/,$p' "$RUNNER_TEMP/live-test.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C "evidence/$CASE" -xz
