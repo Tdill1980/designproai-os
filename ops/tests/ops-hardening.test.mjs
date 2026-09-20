@@ -29,14 +29,18 @@ test("one canonical policy includes every required runtime file and five deploy 
   // cells from, and the cutter that turns the returned sheet into the three
   // quadrants. All three are required at REQUIRE time by flat-first-atlas, so
   // they are release files whether or not the routing flag is on.
+  // The dynamic locator and panel-proof prompt contract add two more runtime
+  // modules required by the three-zone composition path.
   //
   // THIS COUNT IS THE TRIPWIRE, AND IT FIRED. The push gate on 69b55e9 failed
   // `131 !== 128` because those three were added to the manifest by the closure
   // test and not here — which is the point: the manifest cannot grow silently,
   // in either direction. Update the number WITH the sentence above saying what
   // joined it, never on its own.
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 131);
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 133);
   for (const name of [
+    "runtime/atlas-proof-panel-locator.cjs",
+    "runtime/atlas-panel-proof-contract.cjs",
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",
     "runtime/atlas-authoring-transport.cjs",
