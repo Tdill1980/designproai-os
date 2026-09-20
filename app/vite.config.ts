@@ -4,10 +4,11 @@ import path from "path";
 import { execSync } from "child_process";
 
 // Build stamp shown in the UI so you can tell which build is live.
-// Prefers the Vercel commit SHA; falls back to local git, then build time.
-const sourceSha = process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || (() => {
+// Stamp the checked-out source, including exact-SHA workflow checkouts where
+// GITHUB_SHA can refer to a different merge or dispatch commit.
+const sourceSha = (() => {
   try { return execSync("git rev-parse HEAD").toString().trim(); } catch { return ""; }
-})();
+})() || process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || "";
 function buildId(): string {
   const sha = sourceSha;
   const short = sha ? sha.slice(0, 7) : "";

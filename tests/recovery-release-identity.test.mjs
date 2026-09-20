@@ -26,3 +26,15 @@ test('acceptance verifies full app and gateway SHA in addition to both runtime c
   assert.match(acceptance, /json\.loads\(os\.environ\["BODY"\]\)\.get\("sourceSha"\) == os\.environ\["EXPECTED"\]/);
   assert.match(read('app/vite.config.ts'), /fileName: "release\.json"/);
 });
+
+test('live acceptance is one explicit case behind the full release gate, with failure artifacts retained', () => {
+  const workflow = read('.github/workflows/vehiclepro-recovery-acceptance.yml');
+  assert.match(workflow, /options: \[A, B, C\]/);
+  assert.doesNotMatch(workflow, /strategy:|matrix:|Precision Climate Solutions|Bright Smiles/);
+  assert.match(workflow, /\.head_sha == \$sha and \.head_branch == "main" and \.conclusion == "success"/);
+  assert.equal((workflow.match(/"\$image" node \/app\/vehiclepro-live-prompt-test\.mjs/g) || []).length, 1);
+  assert.match(workflow, /--source-sha "\$EXPECTED_SHA"/);
+  assert.match(workflow, /if: always\(\)/);
+  assert.match(workflow, /path: recovery-evidence\/\*\*/);
+  assert.match(workflow, /technical evidence only/);
+});
