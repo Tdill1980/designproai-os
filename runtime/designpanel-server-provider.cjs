@@ -1138,7 +1138,6 @@ function atlasProofRequestBody({ options, input, sourceViewType, authority, revi
     sourcePanelContentType: authority.contentType,
     sourceAuthorityRole: authority.role,
     sourceAuthorityContract: authority.contract,
-    expectedSurfacePanelHash: authority.panel?.contentHash || null,
     sourceMasterHash: authority.role === "three-zone-production-proof"
       ? authority.contentHash
       : (authority.panel?.sourceMasterHash || ""),
