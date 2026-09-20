@@ -26,6 +26,7 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { RELEASE_SOURCE_SHA } from "../_shared/release-source.ts";
 import { encode as encodeBase64, decode as decodeBase64 } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { tokenGate } from "../_shared/token-gate.ts";
@@ -108,6 +109,8 @@ export function validateAtlasTeachingProofIdentity(value: unknown): Record<strin
 }
 
 const corsHeaders = {
+  "X-DesignPro-Source-Sha": RELEASE_SOURCE_SHA,
+  "Access-Control-Expose-Headers": "X-DesignPro-Source-Sha",
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-designpro-owner-id",
@@ -3787,4 +3790,3 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
     );
   }
 }
-

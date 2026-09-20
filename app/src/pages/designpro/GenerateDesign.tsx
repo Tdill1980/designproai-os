@@ -460,7 +460,7 @@ export default function GenerateDesign() {
             type: String(form.get("type") || "van") as GenerationVehicle["type"],
           },
           brief: {
-            brief: String(form.get("brief") || "").trim(),
+            brief: String(form.get("brief") || ""),
             businessName: String(form.get("businessName") || "").trim() || undefined,
             industry: String(form.get("industry") || "").trim() || undefined,
             style: String(form.get("style") || "").trim() || undefined,

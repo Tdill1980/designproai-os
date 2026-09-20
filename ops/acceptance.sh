@@ -86,12 +86,12 @@ gateway_last_error=""
 for _ in $(seq 1 30); do
   gateway_body=$(curl -fsS --max-time 5 http://127.0.0.1:8787/healthz 2>/dev/null || true)
   [[ -n $gateway_body ]] && gateway_last_body=$gateway_body
-  if BODY="$gateway_body" python3 -I -c '
+  if BODY="$gateway_body" EXPECTED="$sha" python3 -I -c '
 import json, os
 raw = os.environ["BODY"]
 assert raw.strip(), "empty /healthz response"
 h = json.loads(raw)
-expected = {"status": "ok", "service": "designpro-api-gateway"}
+expected = {"status": "ok", "service": "designpro-api-gateway", "sourceSha": os.environ["EXPECTED"]}
 assert h == expected, "healthz=%r expected=%r" % (h, expected)' 2>"$probe_err"; then
     gateway_ok=true
     break
@@ -162,10 +162,15 @@ if [[ -n $public ]]; then
   [[ -L $ROOT/public && $(readlink -f "$ROOT/public") == "$ROOT/releases/$sha" ]] || { echo "Public web pointer is not the requested release" >&2; exit 10; }
   curl --proto '=https' --tlsv1.2 -fsS "$public/" | grep -qi '<!doctype html'
   public_gateway=$(curl --proto '=https' --tlsv1.2 -fsS "$public/gateway-healthz")
-  BODY="$public_gateway" python3 -I -c '
+  BODY="$public_gateway" EXPECTED="$sha" python3 -I -c '
 import json, os
 h = json.loads(os.environ["BODY"])
-assert h.get("status") == "ok" and h.get("service") == "designpro-api-gateway", "public healthz=%r" % (h,)'
+assert h.get("status") == "ok" and h.get("service") == "designpro-api-gateway", "public healthz=%r" % (h,)
+assert h.get("sourceSha") == os.environ["EXPECTED"], "public gateway SHA mismatch"'
+  app_release=$(curl --proto '=https' --tlsv1.2 -fsS "$public/release.json")
+  BODY="$app_release" EXPECTED="$sha" python3 -I -c '
+import json, os
+assert json.loads(os.environ["BODY"]).get("sourceSha") == os.environ["EXPECTED"], "public app SHA mismatch"'
   worker_status=$(curl --proto '=https' --tlsv1.2 -sS -o /dev/null -w '%{http_code}' "$public/worker/health")
   [[ $worker_status == 404 ]] || { echo "A production worker path is publicly reachable" >&2; exit 11; }
   headers=$(curl --proto '=https' --tlsv1.2 -fsSI "$public/")

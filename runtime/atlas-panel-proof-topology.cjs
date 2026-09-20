@@ -605,6 +605,11 @@ async function assemblePanelProofMaster({
       width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true});
   }
   if (!assets.length) throw refuse("Zone 3 requires original assets or customer text");
+  // Keep byte identities on the receipt, never the in-memory asset buffers.
+  // These are the same originals used in both the branded panels and Zone 3.
+  zone3 = assets.map(({bytes, role, ...asset}) => ({
+    ...asset, surfaceKey: role, role: "cut-graphic", persisted: true,
+  }));
   let productionLayout;
   try { productionLayout = planProductionPanelLockup({panels:zone2,elements:assets}); }
   catch (cause) { throw refuse("production panel overlay layout invalid", {cause:String(cause?.message || cause),code:cause?.code}); }

@@ -5,10 +5,11 @@ import { execSync } from "child_process";
 
 // Build stamp shown in the UI so you can tell which build is live.
 // Prefers the Vercel commit SHA; falls back to local git, then build time.
+const sourceSha = process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || (() => {
+  try { return execSync("git rev-parse HEAD").toString().trim(); } catch { return ""; }
+})();
 function buildId(): string {
-  const sha = process.env.VERCEL_GIT_COMMIT_SHA || (() => {
-    try { return execSync("git rev-parse --short HEAD").toString().trim(); } catch { return ""; }
-  })();
+  const sha = sourceSha;
   const short = sha ? sha.slice(0, 7) : "";
   const time = new Date().toISOString().slice(0, 16).replace("T", " ");
   return short ? `${short} · ${time} UTC` : `${time} UTC`;
@@ -23,7 +24,14 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [react()].filter(Boolean),
+  plugins: [react(), {
+    name: "designpro-release-identity",
+    generateBundle() {
+      this.emitFile({type: "asset", fileName: "release.json", source: JSON.stringify({
+        sourceSha: /^[0-9a-f]{40}$/.test(sourceSha) ? sourceSha : null,
+      })});
+    },
+  }].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

@@ -708,12 +708,12 @@ test("a RevisionStudio deep link opens a design the feed cannot answer for", () 
  * version, the words that produced it, when -- and the identity trio.
  */
 test("RevisionStudio shows the version record and never the A.T.L.A.S. master", () => {
-  // The card itself is UNMOUNTED from the customer studio (owner, 2026-08-26):
-  // Generation ID, Design ID and order number are production identities and
-  // live in PanelPro Studio. The component remains for any internal surface,
-  // and the assertions below still pin what it may never carry.
-  assert.ok(!revisionStudio.includes("<DesignVersionRecordCard"),
-    "the version record card must not be mounted on the customer studio");
+  // The recovery contract requires original prompts and identities in both
+  // studios. The shared record includes failed requests as well as saved art.
+  assert.match(revisionStudio, /<DesignPromptRecord generationId=\{productionLayersId\}/);
+  for (const path of ["../app/src/pages/AdminGeminiCompareStudio.tsx", "../app/src/pages/designpro/PanelProStudioBoard.tsx"]) {
+    assert.match(readFileSync(new URL(path, import.meta.url), "utf8"), /<DesignPromptRecord/);
+  }
 
   // The master, its hash and its guide are absent from the customer surface.
   for (const atlasInternal of ["masterUrl", "guideUrl", "masterContentHash", "master.contentHash"]) {

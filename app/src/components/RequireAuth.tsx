@@ -2,85 +2,32 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { observeAuthSession } from "@/lib/observe-auth-session";
 
-// If a sb-{ref}-auth-token key exists in localStorage, the user has a stored
-// session even if getSession() is hung — we can render the app and let the
-// inner queries refresh the JWT themselves rather than blocking on a Promise
-// that never settles (mobile Safari edge case observed in production).
-function hasStoredSupabaseSession(): boolean {
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith("sb-") && k.endsWith("-auth-token")) return true;
-    }
-  } catch {
-    // localStorage may throw in private modes — treat as no session
-  }
-  return false;
-}
-
+// Session events can finish before the initial read. The observer orders them
+// and keeps an unresolved/failed check separate from an authenticated identity.
 export const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [stuck, setStuck] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    let resolved = false;
-
-    // Hard ceiling on the auth check. If getSession() never resolves
-    // (observed on some mobile Safari sessions), fall through optimistically
-    // when a stored session token exists; otherwise treat as anon.
-    const hardTimeout = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      if (hasStoredSupabaseSession()) {
-        // Optimistic: stored token exists, render the app. Inner Supabase
-        // queries will hit getUser() / refreshSession() themselves and either
-        // succeed or show their own error states.
-        setUser({ id: "stored-session-pending-resolve" });
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    }, 6000);
-
     // Visual hint at 4s so the user knows something can be tapped.
     const stuckHint = setTimeout(() => setStuck(true), 4000);
-
-    // Use getSession() instead of getUser() — getUser() makes a network call
-    // that fails on expired JWT. getSession() uses cached session and auto-refreshes.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(hardTimeout);
+    const stop = observeAuthSession(supabase.auth, ({ user, unavailable }) => {
       clearTimeout(stuckHint);
-      setUser(session?.user ?? null);
+      setUser(user);
+      setUnavailable(unavailable);
       setLoading(false);
-      // If session exists but is near expiry, proactively refresh
-      if (session && (session.expires_at ?? 0) * 1000 - Date.now() < 120_000) {
-        supabase.auth.refreshSession();
-      }
-    }).catch(() => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(hardTimeout);
-      clearTimeout(stuckHint);
-      // getSession() rejected — treat as optimistic if a stored token exists
-      setUser(hasStoredSupabaseSession() ? { id: "stored-session-pending-resolve" } : null);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      // Once the auth client recovers, replace any optimistic stub with the real user
-      setUser(session?.user ?? null);
+      setStuck(false);
     });
 
     return () => {
-      clearTimeout(hardTimeout);
       clearTimeout(stuckHint);
-      subscription.unsubscribe();
+      stop();
     };
   }, []);
 
@@ -130,8 +77,9 @@ export const RequireAuth = ({ children }: { children: React.ReactNode }) => {
           Hold up, space cadet!
         </h1>
         <p className="text-zinc-400 max-w-md mb-6 text-sm leading-relaxed">
-          SPROKET here — you need to be logged in to access this tool.
-          Sign in or create an account to start designing wraps.
+          {unavailable
+            ? "We couldn’t verify your session. Sign in again to continue."
+            : "SPROKET here — you need to be logged in to access this tool. Sign in or create an account to start designing wraps."}
         </p>
         <div className="flex gap-3">
           <Button

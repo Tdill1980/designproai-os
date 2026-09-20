@@ -43,7 +43,10 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
-import { corsHeaders } from "../_shared/cors.ts";
+import { corsHeaders as baseCorsHeaders } from "../_shared/cors.ts";
+import { RELEASE_SOURCE_SHA } from "../_shared/release-source.ts";
+const corsHeaders = { ...baseCorsHeaders, "X-DesignPro-Source-Sha": RELEASE_SOURCE_SHA,
+  "Access-Control-Expose-Headers": "X-DesignPro-Source-Sha" };
 import { getGeminiKey, hasGeminiKey } from "../_shared/gemini-key-pool.ts";
 import { PRIMARY_IMAGE_MODEL, geminiImageUrl } from "../_shared/model-config.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";

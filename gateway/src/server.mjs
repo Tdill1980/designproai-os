@@ -2503,7 +2503,10 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url || "/", "http://gateway");
-      if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { status: "ok", service: "designpro-api-gateway" });
+      if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, {
+        status: "ok", service: "designpro-api-gateway",
+        sourceSha: /^[0-9a-f]{40}$/.test(env.DESIGNPRO_RELEASE_SHA || "") ? env.DESIGNPRO_RELEASE_SHA : null,
+      });
       // The Stripe webhook is exempt, and only the Stripe webhook. The
       // same-origin rule is CSRF defence: it stops a page the customer did not
       // open from spending their cookie. Stripe carries no cookie and is not a
@@ -2656,6 +2659,29 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/assets/upload-intents") {
         return json(res, 201, await createUploadIntent(fetchImpl, token, cfg, user.id, await readBody(req)));
+      }
+
+      const promptRecordMatch = url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/prompt-record$/);
+      if (req.method === "GET" && promptRecordMatch) {
+        const id = promptRecordMatch[1];
+        if (!UUID_PATTERN.test(id)) return json(res, 400, { error: "generation_id_invalid" });
+        const record = await rpc(fetchImpl, token, cfg, "designpro_generation_prompt_record", { p_generation_id: id });
+        if (!record) return json(res, 404, { error: "job_not_found" });
+        if (record.generationId !== id || !UUID_PATTERN.test(record.originalRequestId)
+          || !Array.isArray(record.versions)) return json(res, 502, { error: "prompt_record_invalid" });
+        return json(res, 200, {
+          generationId: id, designId: canonicalDesignId(id),
+          originalRequestId: record.originalRequestId,
+          originalPrompt: typeof record.originalPrompt === "string" ? record.originalPrompt : null,
+          createdAt: record.createdAt,
+          versions: record.versions.map(entry => ({
+            version: entry.version, requestId: entry.requestId, revisionId: entry.revisionId,
+            prompt: typeof entry.prompt === "string" ? entry.prompt : null,
+            createdAt: entry.createdAt, authoredAt: entry.authoredAt, completedAt: entry.completedAt,
+            state: entry.state,
+            errorCode: /^[a-z0-9][a-z0-9_:-]{0,119}$/.test(entry.errorCode || "") ? entry.errorCode : null,
+          })),
+        });
       }
 
       const generationProgressMatch=url.pathname.match(/^\/api\/generation\/([0-9a-f-]{36})\/progress$/);

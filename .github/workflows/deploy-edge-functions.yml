@@ -8,6 +8,10 @@ name: Deploy DesignPro Edge Functions
 on:
   workflow_dispatch:
     inputs:
+      exact_sha:
+        description: "Full successful main release SHA; must match the app, gateway and runtime"
+        required: true
+        type: string
       confirmation:
         description: "Protected action — deploys edge functions to the production DesignProAI Supabase project"
         required: true
@@ -24,6 +28,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: designproai-edge-function-deploy
@@ -31,6 +36,7 @@ concurrency:
 
 env:
   PROJECT_REF: wozyamlnygaddievzuwn
+  EXACT_SHA: ${{ inputs.exact_sha }}
 
 jobs:
   deploy:
@@ -42,7 +48,26 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ inputs.exact_sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify exact successful main release and embed source identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$EXACT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+          git merge-base --is-ancestor "$EXACT_SHA" origin/main
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+            -f head_sha="$EXACT_SHA" -f event=push -f status=success \
+            | jq -e --arg sha "$EXACT_SHA" 'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "main" and .conclusion == "success")'
+          python3 - <<'PY'
+          import json, os, pathlib
+          pathlib.Path('supabase/functions/_shared/release-source.ts').write_text(
+              'export const RELEASE_SOURCE_SHA = ' + json.dumps(os.environ['EXACT_SHA']) + ';\n')
+          PY
 
       - name: Resolve function list
         id: fns
@@ -68,7 +93,7 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.111.0
 
       - name: Set function secrets
         env:
@@ -164,4 +189,13 @@ jobs:
           while IFS= read -r fn; do
             [[ -n "$fn" ]] || continue
             grep -q "$fn" <<< "$deployed" || { echo "::error::$fn not present after deploy"; exit 1; }
+            case "$fn" in
+              design-panel-ai-generate|production-panel-proof|persona-photographer-render)
+                actual=$(curl --fail --silent --show-error -X OPTIONS -D - -o /dev/null \
+                  "https://$PROJECT_REF.supabase.co/functions/v1/$fn" \
+                  | tr -d '\r' | awk 'tolower($1)=="x-designpro-source-sha:" {print $2}')
+                test "$actual" = "$EXACT_SHA" || { echo "::error::$fn source SHA mismatch"; exit 1; }
+                echo "$fn source SHA verified: $actual"
+                ;;
+            esac
           done <<< "$FUNCTIONS"
