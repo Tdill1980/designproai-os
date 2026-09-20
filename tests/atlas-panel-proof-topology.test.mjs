@@ -943,3 +943,22 @@ test("generated custom logo identity is shared by branded panels and Zone 3", as
     && placement.storagePath===graphic.storagePath));
   assert.equal(out.imageRequestCount,2);
 });
+
+test("native generated logo is keyed in the runtime before shared Zone 1 and Zone 3 placement",async()=>{
+  const bytes=await sharp({create:{width:100,height:80,channels:3,background:"#ff00ff"}}).composite([{
+    input:await sharp({create:{width:40,height:20,channels:3,background:"#123456"}}).png().toBuffer(),left:30,top:30,
+  }]).png().toBuffer();
+  const nativeHash=createHash("sha256").update(bytes).digest("hex");
+  const logo={role:"logo",storagePath:`atlas-elements/${nativeHash}.png`,contentHash:nativeHash,
+    byteSize:bytes.length,contentType:"image/png",needsChromaKey:true};
+  const store=memoryStore();
+  const {callProofEdge}=edgeStub(await paintedSheet(),{generatedElements:[logo],imageRequestCount:2});
+  const out=await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge,downloadAsset:async()=>bytes});
+  const graphic=out.provenance.quadrants.cutGraphics.find(a=>a.surfaceKey==="logo");
+  assert.notEqual(graphic.contentHash,nativeHash);
+  assert.equal(graphic.sourceContentHash,nativeHash);assert.equal(graphic.needsChromaKey,false);
+  assert.equal(graphic.contentType,"image/png");assert.equal(graphic.vector,false);
+  assert.ok(store.objects.has(graphic.storagePath));
+  assert.ok(out.provenance.composition.placements.filter(p=>p.role==="logo")
+    .every(p=>p.contentHash===graphic.contentHash));
+});

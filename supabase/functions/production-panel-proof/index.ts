@@ -70,7 +70,7 @@ import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-cont
  * of A.C.E. That is why it returned generic blue waves and stock photography.
  */
 import { buildDesignIQPrompt } from "../_shared/designiq-assembly.ts";
-import { buildPrompt as buildTextLayerPrompt, chromaKeyToAlpha } from "../_shared/designpro-text-layer-art.ts";
+import { buildPrompt as buildTextLayerPrompt } from "../_shared/designpro-text-layer-prompt.ts";
 import { authorProofLogo, proofLogoRequested } from "../_shared/atlas-proof-elements.mjs";
 // THE PROVEN DURABLE-PROVIDER MODULE, not a second implementation of it
 // (RULE 1). `design-panel-ai-generate` already routes every Call-1 image
@@ -727,7 +727,6 @@ serve(async (req) => {
         industry: field("industryType"),
         brief: customerPrompt, colorBrief: field("brandColors"), stylePrompt: field("style") },
       model: PRIMARY_IMAGE_MODEL, buildPrompt: buildTextLayerPrompt,
-      normalize: (bytes: Uint8Array) => chromaKeyToAlpha(bytes, true),
       authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, caller.userId),
       invoke: (request: string) => captureGeminiHttpExchange(async () => await fetch(
         geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),

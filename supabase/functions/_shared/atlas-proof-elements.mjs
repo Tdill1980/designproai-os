@@ -29,11 +29,17 @@ export async function authorProofLogo({ bucket, ownerId, providerRequest, input,
     privateRequest: modelRequest, cacheOnly: providerRequest.cacheOnly === true,
     authorize, invoke: () => invoke(modelRequest),
   });
-  const bytes = await normalize(finalAtlasProofImage(cached.payload).bytes);
+  const native = finalAtlasProofImage(cached.payload);
+  // Edge only checkpoints encoded bytes. Full-resolution pixel decoding and
+  // chroma keying belong to the existing runtime compositor, not Edge CPU.
+  const deferred = typeof normalize !== 'function';
+  const bytes = deferred ? native.bytes : await normalize(native.bytes);
+  const contentType = deferred ? native.contentType : 'image/png';
   const contentHash = await providerSha256(bytes);
-  const storagePath = `atlas-elements/${contentHash}.png`;
-  const { error } = await bucket.upload(storagePath, bytes, { contentType: 'image/png', upsert: false });
+  const extension = contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png';
+  const storagePath = `atlas-elements/${contentHash}.${extension}`;
+  const { error } = await bucket.upload(storagePath, bytes, { contentType, upsert: false });
   if (error && !/exists/i.test(String(error.message))) throw error;
   return { role: 'logo', source: 'designpro-text-layer-art', storagePath, contentHash,
-    byteSize: bytes.length, contentType: 'image/png', providerCacheHit: cached.providerCacheHit === true };
+    byteSize: bytes.length, contentType, needsChromaKey: deferred, providerCacheHit: cached.providerCacheHit === true };
 }

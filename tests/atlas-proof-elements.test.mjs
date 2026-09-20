@@ -33,6 +33,14 @@ test('customer logo and absent explicit request never spend a logo call',async()
   assert.equal(f.calls,0);
 });
 
+test('Edge checkpoints native encoded logo for runtime processing without pixel decoding',async()=>{
+ const f=fixture();
+ const asset=await authorProofLogo({...f.options,normalize:undefined});
+ assert.equal(asset.needsChromaKey,true);assert.equal(asset.contentType,'image/png');
+ assert.equal(asset.contentHash,createRequire(new URL('../runtime/package.json',import.meta.url))('node:crypto').createHash('sha256').update(bytes).digest('hex'));
+ assert.equal(f.calls,1);
+});
+
 test('only explicit logo requests opt in and negative requests or originals take precedence',()=>{
   assert.equal(proofLogoRequested({customerPrompt:'Create a custom logo for Bright Smiles'}),true);
   for(const customerPrompt of ['Use blue imagery','Do not generate a logo','I want a wrap without a logo','Create a wrap using my existing logo']) {

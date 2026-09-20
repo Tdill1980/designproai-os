@@ -599,13 +599,21 @@ async function assemblePanelProofMaster({
     const generated = (sheet.generatedElements || []).find(asset => asset.role === "logo");
     if (generated) {
       if (typeof downloadAsset !== "function") throw refuse("generated logo reader missing");
-      const bytes = await downloadAsset(generated);
+      let bytes = await downloadAsset(generated);
       if (bytes.length !== generated.byteSize || sha256(bytes) !== generated.contentHash) {
         throw refuse("generated logo identity mismatch");
       }
+      let asset = generated;
+      if (generated.needsChromaKey === true) {
+        bytes = await require("./atlas-logo-chroma.cjs").keyGeneratedLogo(bytes);
+        const contentHash = sha256(bytes);
+        const stored = await persist({storagePath:`atlas-elements/${contentHash}.png`,bytes,contentType:"image/png"});
+        asset = {...generated,...stored,contentHash,byteSize:bytes.length,contentType:"image/png",
+          needsChromaKey:false,sourceContentHash:generated.contentHash};
+      }
       const meta = await sharp(bytes).metadata();
       if (!meta.hasAlpha) throw refuse("generated logo has no transparent channel");
-      assets.push({...generated,bytes,width:meta.width,height:meta.height,vector:false});
+      assets.push({...asset,bytes,width:meta.width,height:meta.height,vector:false});
     }
   }
   const brand = {...(sheet.intake || {}), ...Object.fromEntries(Object.entries(input).filter(([,v]) => v != null && v !== "" && (!Array.isArray(v) || v.length)))};
