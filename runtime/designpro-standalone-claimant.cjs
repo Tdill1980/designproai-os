@@ -775,6 +775,17 @@ async function exactStoredArtifact(sb, candidate, expectedKind) {
   return artifact(expectedKind, item.storagePath, observed, bytes.length, String(item.surfaceKey || ""), item.metadata || {});
 }
 
+// One receipt shape for the Call 10 producer and paid source verifier. These
+// are immutable original assets; placement identity comes from the snapshot.
+function logoInventoryReceipt(rows) {
+  return rows.map((row) => ({
+    placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey,
+    displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey,
+    storagePath: row.storagePath ?? row.storage_path, contentType: row.metadata?.contentType,
+    contentHash: row.contentHash ?? row.content_hash, byteSize: row.byteSize ?? row.byte_size,
+  }));
+}
+
 async function callTool(baseUrl, secret, route, body) {
   assertStageLeaseActive();
   const controller = new AbortController();
@@ -1532,19 +1543,24 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
       String(row.surface_key), String(row.metadata?.sourceMasterHash || ""),
     ]));
     const produced = [];
+    const placementKeys = new Set();
     for (let index = 0; index < expected.length; index++) {
       const identityKey = requiredString(expected[index]?.identityKey, `expectedInventory[${index}].identityKey`);
       const displayName = requiredString(expected[index]?.displayName, `${identityKey}.displayName`);
       const targetSurfaceKey = requiredString(expected[index]?.surfaceKey, `${identityKey}.surfaceKey`);
       if (!SURFACE_KEYS.includes(targetSurfaceKey)) throw new StageError("call10_logo_surface_invalid", `${identityKey}: ${targetSurfaceKey}`, false);
       const sourceRegionHash = requiredString(regionHashes[targetSurfaceKey], `${identityKey} verified source region`).toLowerCase();
-      const placementKey = `${targetSurfaceKey}:${identityKey}:${index}`;
+      const placementKey = requiredString(expected[index]?.placementKey, `${identityKey}.placementKey`);
+      if (placementKey !== `${identityKey}@${targetSurfaceKey}` || placementKeys.has(placementKey)) {
+        throw new StageError("call10_logo_placement_invalid", `${identityKey}: frozen placement identity is invalid or duplicated`, false);
+      }
+      placementKeys.add(placementKey);
       let logoAsset;
       try { logoAsset = normalizeLogoAsset(expected[index], run.tenant_key, run.revision_id); }
       catch (error) { throw new StageError("call10_logo_asset_invalid", `${identityKey}: ${error.message}`, false); }
       produced.push(await exactStoredArtifact(sb, { ...logoAsset, surfaceKey: placementKey, metadata: { placementKey, identityKey, displayName, targetSurfaceKey, contentType: logoAsset.contentType, sourceRegionHash, sourceMasterHash: masterBySurface.get(targetSurfaceKey) || null, separationContract: "designpro.deterministic-stored-overlay.v1" } }, "logo"));
     }
-    const inventory = expected.map((item, index) => ({ placementKey: produced[index]?.metadata?.placementKey, identityKey: item.identityKey, targetSurfaceKey: item.surfaceKey, contentHash: produced[index]?.contentHash || null }));
+    const inventory = logoInventoryReceipt(produced);
     const inventoryHash = hashJson(inventory);
     return complete(sb, stage, run, { verified: true, receiptKind: "call10.logo-inventory", call: 10, inventoryContract: "designpro.expected-logo-inventory.v1", exactSetVerified: true, inventoryHash, inventory }, null, produced);
   }
@@ -2518,8 +2534,11 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       throw new StageError("production_call8_receipt_mismatch", "Call 8 receipt and 2D production proof differ", false);
     }
     const receiptPlacements = Array.isArray(call10.receipt?.inventory) ? [...call10.receipt.inventory].sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey))) : [];
-    const observedPlacements = sourceLogos.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, targetSurfaceKey: row.metadata?.targetSurfaceKey, contentHash: row.content_hash })).sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey)));
-    if (JSON.stringify(receiptPlacements) !== JSON.stringify(observedPlacements)) throw new StageError("production_logo_evidence_mismatch", "Call 10 logo placement receipt and immutable logo bytes differ", false);
+    const observedPlacements = logoInventoryReceipt(sourceLogos).sort((a, b) => String(a.placementKey).localeCompare(String(b.placementKey)));
+    if (!Array.isArray(call10.receipt?.inventory) || call10.receipt.inventoryHash !== hashJson(call10.receipt.inventory)) {
+      throw new StageError("production_logo_inventory_hash_mismatch", "Call 10 immutable inventory receipt identity changed", false);
+    }
+    if (hashJson(receiptPlacements) !== hashJson(observedPlacements)) throw new StageError("production_logo_evidence_mismatch", "Call 10 logo placement receipt and immutable logo bytes differ", false);
 
     const produced = [];
     const authorized = await readAuthorizedAssets(sb, run.id);
@@ -3565,4 +3584,4 @@ function registerDesignProStandaloneClaimant({ app, supabase, supabaseUrl, servi
 
 // Shared deterministic proof rendering. Approval and its stored timestamp are
 // supplied by the authorized workflow; these helpers do not approve a run.
-module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { leaseKeeper, HEAVY_LEASE_SECONDS, CLAIM_SECONDS, HEARTBEAT_MS, tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, authorizedOutputFormats, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction } };
+module.exports = { renderStampedProof, stampSvg, registerDesignProStandaloneClaimant, CLAIMANT_CONTRACT, STAGES, RECEIPTS, ARTIFACT_KINDS, CALLS_1_7_ADAPTER: Object.freeze({ engineContract: CALLS_1_7_ENGINE_CONTRACT, viewPlan: CALLS_1_7_VIEW_PLAN, closeupViewPlan: CALLS_1_7_VIEW_PLAN, handoffBlocker: CALLS_1_7_HANDOFF_BLOCKER, claim: claimCalls1To7Generation, heartbeat: heartbeatCalls1To7Generation, complete: completeCalls1To7Generation, fail: failCalls1To7Generation }), _test: { leaseKeeper, HEAVY_LEASE_SECONDS, CLAIM_SECONDS, HEARTBEAT_MS, tenantKey, runScopedStoragePath, exactSevenViews, revisionViewSet, fingerprintRevisionViews, call8ProofRequest, call8TextLock, composeCall8Proof, designTimeManifest, ensureAutomaticProduction, reconcileAutomaticProduction, reconcilePurchaseGates, authorizedAssetManifest, authorizedOutputFormats, PURCHASABLE_PRODUCTS, productionDimensionManifest, sourceViewZipEntries, panelProfileZipEntries, bufferZipEntry, copyPinnedSourceArtifact, canonicalDesignId, resolvedFulfillmentSnapshot, immutableBusinessIdentity, stampSvg, round2, generationInputHasServerControls, acceptedCalls1To7ViewPlan, assertCalls1To7Claim, normalizeCalls1To7Views, assertProductionProofJoin, renderStampedProof, assertStampedViewSet, verifyPrintRasterSource, lateAtlasViewSet, resolveProductionProofViews, pinProductionProofJoin, approvedProductionProofJoin, executeProduction, executeEntice, logoInventoryReceipt } };
