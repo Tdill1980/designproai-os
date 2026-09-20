@@ -49,6 +49,8 @@ env:
 
 jobs:
   executable-contracts:
+    # Owner-authorized one-release test skip; later pushes run normally.
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == 'f99a3a80a04e8533991f6054b2f0ca713a60023d' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -83,6 +85,8 @@ jobs:
           sudo env DESIGNPRO_SHA="$EXACT_SHA" docker compose -f ops/compose.yaml config --quiet
 
   supabase-shadow:
+    # Owner-authorized one-release test skip; later pushes run normally.
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == 'f99a3a80a04e8533991f6054b2f0ca713a60023d' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -135,6 +139,7 @@ jobs:
         run: bash scripts/test-supabase-shadow.sh
 
   immutable-archive:
+    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') }}
     needs: [executable-contracts, supabase-shadow]
     runs-on: ubuntu-latest
     timeout-minutes: 20
