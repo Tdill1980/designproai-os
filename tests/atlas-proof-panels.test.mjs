@@ -82,27 +82,31 @@ test("all three quadrants come out: 6 branded, 6 clean, 5 cut graphics", async (
   }
 });
 
-test("detected bounds follow shifted artwork; identity is not assigned from array order", async () => {
+test("Studio/GENIE template cells remain authoritative even when artwork shifts inside them", async () => {
   const layout = containerLayout(TRANSIT);
   const out = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { shift: 6 }), manifest: TRANSIT, sharp });
   assert.equal(out.refused, null);
   for (const panel of out.panels.filter((p) => p.zone !== "zone3")) {
     const cell = layout[panel.zone].find((c) => c.surfaceKey === panel.surfaceKey);
-    const expected = scaleCell({ ...cell, x: cell.x + 6 }, layout, out.sheet);
-    assert.ok(Math.abs(panel.rect.left - expected.left) <= 5);
-    assert.ok(Math.abs(panel.rect.width - expected.width) <= 5);
+    const expected = scaleCell(cell, layout, out.sheet);
+    assert.deepEqual(panel.rect, expected);
     assert.equal(panel.positionalPremiseVerified, true);
+    assert.equal(panel.identity.method, "studio-template-cell");
+    assert.equal(panel.identity.geometryAuthority, "GENIE");
     assert.equal(panel.productionApproved, false);
   }
 });
 
-test("reflowed equal-aspect flanks and missing panels refuse instead of guessing", async () => {
+test("generated-pixel reflow or a visually blank cell never changes the six known Studio cells", async () => {
   const shifted = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { shift: 60 }), manifest: TRANSIT, sharp });
-  assert.match(shifted.refused, /panel_identity_ambiguous/);
-  assert.deepEqual(shifted.panels, []);
+  assert.equal(shifted.refused, null);
+  assert.equal(shifted.panels.filter((p) => p.zone === "zone1").length, 6);
   const missing = await cutProofPanels({ proofBytes: await sheet(3072, 2048, TRANSIT, { missing: "zone1:rear" }), manifest: TRANSIT, sharp });
-  assert.match(missing.refused, /panel_count:5<6/);
-  assert.deepEqual(missing.panels, []);
+  assert.equal(missing.refused, null);
+  assert.equal(missing.panels.filter((p) => p.zone === "zone1").length, 6);
+  const rear = missing.panels.find((p) => p.zone === "zone1" && p.surfaceKey === "rear");
+  assert.ok(rear);
+  assert.equal(rear.identity.method, "studio-template-cell");
 });
 
 test("a bigger sheet moves every rectangle proportionally — nothing is absolute", async () => {
@@ -174,7 +178,7 @@ test("a sheet of the wrong SHAPE is refused, never cut into plausible wrong regi
   );
 });
 
-test("geometric evidence is recorded for located panels; Zone 3 remains unverified", async () => {
+test("GENIE template geometry is recorded for production cells; Zone 3 remains unverified", async () => {
   // atlas-proof-zone-gate recorded it falsified on live sheet d5314267: the
   // model keeps the bands and the identities and arranges the panels itself.
   // Four live sheets have held the order; four is not a law. A consumer that
