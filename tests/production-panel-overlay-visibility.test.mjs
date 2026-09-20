@@ -17,7 +17,8 @@ test('every protected original appears on each branded panel with visible pixels
  for(const panel of result.panels){assert.equal(panel.applied.length,panel.surfaceKey==='roof'?0:3);for(const a of panel.applied){assert.ok(a.visiblePixels>0);if(a.role!=='logo')assert.equal(a.contrastBacking,'#ffffff');}}
  assert.deepEqual(f.assets.map(a=>hash(a.bytes)),before);
  const {data,info}=await sharp(result.panels[0].bytes).raw().toBuffer({resolveWithObject:true});
- const i=(106*info.width+61)*info.channels;assert.ok(data[i]>240,'black lettering has a white backing over the dark panel');
+ const white=Array.from({length:info.width*info.height},(_,i)=>i*info.channels).filter(i=>data[i]>240&&data[i+1]>240&&data[i+2]>240).length;assert.ok(white>0,'black lettering has a white contrast halo');
+ const i=(106*info.width+61)*info.channels;assert.equal(data[i],20,'negative space retains the background rather than a rectangular plate');
 });
 test('missing typography or duplicate placements refuse rather than succeed',async()=>{
  const f=await fixture();f.placements=f.placements.filter(p=>!(p.surfaceKey==='driver'&&p.role==='typography'));

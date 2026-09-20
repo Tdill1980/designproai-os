@@ -332,7 +332,12 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       let contrastBacking = null;
       if (text) {
         contrastBacking = luminance/visible < 128 ? "#ffffff" : "#111111";
-        const backing = await sharp({create:{width,height,channels:4,background:contrastBacking}}).png().toBuffer();
+        // A narrow glyph halo preserves the design underneath; do not cover
+        // the generated panel with an opaque rectangular text plate.
+        const mask = await sharp(raster).extractChannel("alpha")
+          .convolve({width:5,height:5,kernel:Array(25).fill(1),scale:1}).raw().toBuffer();
+        const backing = await sharp({create:{width,height,channels:3,background:contrastBacking}})
+          .joinChannel(mask,{raw:{width,height,channels:1}}).png().toBuffer();
         layers.push({input:backing,left,top});
       }
       layers.push({input:raster,left,top});
