@@ -81,12 +81,12 @@ describe("AtlasPanelProofSheet", () => {
 
   it("does not promise a vector cut file for a raster element", () => {
     // The owner's instruction, verbatim: do not represent raster crops as
-    // editable layers or vector cut files. Zone 3 is drawn marks; the contour
-    // is produced downstream.
+    // editable layers or vector cut files. Original raster uploads remain raster;
+    // production contours still require downstream validation.
     const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
     expect(html).not.toMatch(/editable layer/i);
     expect(html).not.toMatch(/vector file|\.svg|\.eps/i);
-    expect(html).toContain("Plotter-ready contours are produced in the production pack");
+    expect(html).toContain("Plotter-ready contours are validated in the production pack");
   });
 
   it("renders nothing for a run with no three-zone document, and nothing on error", () => {

@@ -121,8 +121,8 @@ export function AtlasPanelProofSheet({
     <section aria-label="Production panel proof" className="mt-4 w-full max-w-5xl">
       <h3 className="text-base font-semibold text-gray-900 text-center">Your production panel proof</h3>
       <p className="text-xs text-gray-600 text-center mt-1 max-w-2xl mx-auto">
-        One sheet, three zones: the print panels, the same panels without type or logos, and every
-        brand element drawn separately. Every file below is cut from this one sheet.
+        One sheet, three zones: full design panels, background artwork, and original brand assets.
+        Backgrounds and brand assets remain separate for production.
       </p>
 
       {proof.sheet?.signedUrl ? (
