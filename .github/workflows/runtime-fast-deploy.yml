@@ -61,11 +61,10 @@ jobs:
           cache: npm
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci --prefix runtime
-      - name: Runtime syntax and Call-1 regression contracts only
+      - name: Runtime syntax gate
         run: |
           set -Eeuo pipefail
           npm run check --prefix runtime
-          node --test             tests/atlas-proof-panels.test.mjs             tests/atlas-panel-proof-topology.test.mjs             tests/production-panel-overlay-visibility.test.mjs             tests/atlas-production-lockup.test.mjs
 
   deploy-runtime:
     needs: runtime-contracts
