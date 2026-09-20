@@ -314,7 +314,7 @@ test("an unfilled authoritative Zone 2 panel is refused", async () => {
     () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge }),
     (error) => {
       assert.equal(error.code, "flat_atlas_panel_proof_refused");
-      assert.match(error.reason, /atlas_proof_panels_zone2:panel_count:5!=6/);
+      assert.match(error.reason, /atlas_proof_panels_zone2:panel_count:5<6/);
       return true;
     });
 });
