@@ -17,10 +17,9 @@
  *   zone 2  ->  the clean/background panel       (the same design, no overlay)
  *   zone 3  ->  the cut graphics                 (the overlays by themselves)
  *
- * Zones 1/2 use detected rectangles inside the proof's known bands. Physical
- * aspect ratios identify distinct surfaces; overlapping aspect candidates need
- * a unique template-position anchor. Detection order never supplies identity.
- * Ambiguous layouts are refused. Zone 3 remains unverified raster slot crops
+ * Zones 1/2 use the Studio template rectangles authored from GENIE geometry
+ * before Gemini runs. Those coordinates are the surface identity; generated
+ * pixels are never re-detected or counted. Zone 3 remains unverified raster slot crops
  * until the separate overlay-compositor phase.
  *
  * No model call or new artwork producer is introduced here.
@@ -30,83 +29,6 @@ const PANELS_CONTRACT = "designpro.atlas-proof-panels.v2";
 
 const { containerLayout } = require("./atlas-proof-container-template.cjs");
 const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
-const { locatePanels, COARSE_WIDTH, ERODE_PASSES } = require("./atlas-proof-panel-locator.cjs");
-
-const MAX_IDENTITY_ASPECT_DRIFT = 1.05;
-const MIN_POSITION_OVERLAP = 0.8;
-
-// Match against geometry, never against the detector's array order. Equal or
-// near-equal aspect surfaces require a unique spatial anchor in the template.
-// Reflowed identical flanks therefore refuse rather than being guessed.
-function identifyPanels(detected, cells, layout, sheet) {
-  if (detected.length < cells.length) {
-    return { refused: `panel_count:${detected.length}<${cells.length}` };
-  }
-
-  // The locator can legitimately see one extra document component (for
-  // example a rule, caption block, or border) inside a proof band. Ignore only
-  // components that cannot match ANY of the six physical panel aspect ratios.
-  // If more than six plausible panels remain, fail closed exactly as before.
-  const plausible = [];
-  for (const panel of detected) {
-    const { x, y, w, h } = panel;
-    if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0
-      || w <= 0 || h <= 0 || x + w > sheet.width || y + h > sheet.height) {
-      return { refused: "panel_bounds_invalid" };
-    }
-    const aspect = w / h;
-    const candidates = cells.filter((cell) => {
-      const expected = cell.widthIn / cell.heightIn;
-      return Number.isFinite(expected) && expected > 0
-        && Math.max(aspect / expected, expected / aspect) <= MAX_IDENTITY_ASPECT_DRIFT;
-    });
-    if (candidates.length === 0 && detected.length > cells.length) continue;
-    plausible.push(panel);
-  }
-  if (plausible.length !== cells.length) {
-    return { refused: `panel_count:${detected.length}->${plausible.length}!=${cells.length}` };
-  }
-
-  const assignments = [];
-  const used = new Set();
-  for (const panel of plausible) {
-    const { x, y, w, h } = panel;
-    if (![x, y, w, h].every(Number.isInteger) || x < 0 || y < 0
-      || w <= 0 || h <= 0 || x + w > sheet.width || y + h > sheet.height) {
-      return { refused: "panel_bounds_invalid" };
-    }
-    const aspect = w / h;
-    const candidates = cells.filter((cell) => {
-      const expected = cell.widthIn / cell.heightIn;
-      return Number.isFinite(expected) && expected > 0
-        && Math.max(aspect / expected, expected / aspect) <= MAX_IDENTITY_ASPECT_DRIFT;
-    });
-    let matches = candidates;
-    let method = "aspect";
-    if (candidates.length > 1) {
-      method = "aspect-and-template-position";
-      matches = candidates.filter((cell) => {
-        const anchor = scaleCell(cell, layout, sheet);
-        const overlapW = Math.max(0, Math.min(x + w, anchor.left + anchor.width) - Math.max(x, anchor.left));
-        const overlapH = Math.max(0, Math.min(y + h, anchor.top + anchor.height) - Math.max(y, anchor.top));
-        const overlap = overlapW * overlapH;
-        // Require mutual overlap, not merely a small crop somewhere in a cell.
-        return overlap / (w * h) >= MIN_POSITION_OVERLAP
-          && overlap / (anchor.width * anchor.height) >= MIN_POSITION_OVERLAP;
-      });
-    }
-    if (matches.length !== 1) {
-      return { refused: `panel_identity_ambiguous:${x},${y},${w},${h}:candidates=${candidates.map((c) => c.surfaceKey).join(",") || "none"}` };
-    }
-    const cell = matches[0];
-    if (used.has(cell.surfaceKey)) return { refused: `panel_identity_duplicate:${cell.surfaceKey}` };
-    used.add(cell.surfaceKey);
-    assignments.push({ cell, rect: { left: x, top: y, width: w, height: h },
-      identity: { method, aspect, candidates: candidates.map((c) => c.surfaceKey) } });
-  }
-  if (used.size !== cells.length) return { refused: "panel_identity_incomplete" };
-  return { assignments };
-}
 
 /** The three quadrants, by the role each plays downstream. */
 const QUADRANTS = Object.freeze({
@@ -198,28 +120,19 @@ async function cutProofPanels({
     if (!Array.isArray(cells)) throw new Error(`atlas_proof_panels_unknown_zone:${zone}`);
     let assignments;
     if (zone === "zone1" || zone === "zone2") {
-      const located = await locatePanels({ proofBytes, band: PROOF_REGIONS[zone], sharp });
-      // The locator returns components after erosion at COARSE_WIDTH. Restore
-      // that known inset before measuring aspect or extracting source artwork.
-      const inset = Math.ceil(ERODE_PASSES * located.region.width / COARSE_WIDTH);
-      const bounds = located.panels.map((p) => {
-        const x = Math.max(located.region.left, p.x - inset);
-        const y = Math.max(located.region.top, p.y - inset);
-        const right = Math.min(located.region.left + located.region.width, p.x + p.w + inset);
-        const bottom = Math.min(located.region.top + located.region.height, p.y + p.h + inset);
-        return { ...p, x, y, w: right - x, h: bottom - y };
-      });
-      const identified = identifyPanels(bounds, cells, layout, sheet);
-      if (identified.refused) {
-        return { contract: PANELS_CONTRACT, sheet, panels: [],
-          refused: `atlas_proof_panels_${zone}:${identified.refused}` };
-      }
-      assignments = identified.assignments.map((assignment) => ({
-        ...assignment,
-        // Restore only the locator erosion we introduced ourselves. The
-        // rectangle remains clamped to the authoritative zone band above, so
-        // this is a bounded opaque-edge extension rather than invented bleed.
-        opaqueEdgeExtensionPx: inset,
+      // Studio authored these cells from GENIE geometry before Gemini ran.
+      // Their coordinates are therefore the authority. Do NOT re-detect/count
+      // rectangles from generated pixels: that redundant locator produced the
+      // live 3<6 / 5<6 / 7!=6 false refusals and blocked valid customer work.
+      assignments = cells.map((cell) => ({
+        cell,
+        rect: scaleCell(cell, layout, sheet),
+        identity: {
+          method: "studio-template-cell",
+          surfaceKey: cell.surfaceKey,
+          geometryAuthority: "GENIE",
+        },
+        opaqueEdgeExtensionPx: 0,
         opaqueEdgeExtensionBoundedToBand: true,
       }));
     } else {
