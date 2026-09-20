@@ -17,7 +17,7 @@ const assembly=execFileSync(resolveEsbuild(),['--loader=ts','--format=cjs'],{
   input:`(() => {${source.slice(start,end)}\nreturn {prompt,customerAssets};})()`,encoding:'utf8',stdio:['pipe','pipe','pipe'],
 });
 const PERSONA='ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer\'s six vehicle panel cells.';
-const BODY={separatedArtwork:true,companyName:'Precision Climate Solutions',phone:'(520) 555-0192',website:'precisionclimate.example',
+const BODY={separatedArtwork:true,companyName:'Copper Finch Artisan Bakery',phone:'(520) 555-0192',website:'copperfinch.example',
   creativeDirection:'Deep blue base with sunrise-orange airflow ribbons sweeping front to rear, rich landscape photography.',
   fontStyle:'bold condensed',brandColors:'#06284A, #FF7A18',finish:'Gloss',industryType:'HVAC',
   vehicleYear:'2022',vehicleMake:'Ford',vehicleModel:'F250 Crew Cab',vehicleType:'truck'};
@@ -33,17 +33,14 @@ test('active separated Call 1 injects exact persona and omits contradictory bran
   assert.ok(prompt.startsWith(PERSONA+'\n\n'));
   assert.match(prompt,/CONTENT SCOPE:/);
   assert.match(prompt,/ARTWORK STAGING CANVAS/);
-  assert.match(prompt,/six rectangular cells in its green ZONE 2 row/);
-  assert.match(prompt,/Bright Smiles finished three-zone example/);
+  assert.match(prompt,/six unlabelled gray rectangles/);
+  assert.doesNotMatch(prompt,/Bright Smiles|three-zone|ZONE [123]|document area|sheet/i);
   assert.match(prompt,/native Gemini 3 Pro Image design knowledge/);
   assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
   assert.match(prompt,/rich landscape photography/);
   assert.doesNotMatch(prompt,/ZONE 1 — Background copies|ZONE 2 — Authoritative backgrounds only|ZONE 3 — Reserved for original vector cut graphics/);
-  assert.match(prompt,/Zone 1 combines these backgrounds with protected original customer branding/);
+  assert.match(prompt,/Strictly forbid document frames, headers, text labels, borders, dimensions/);
   assert.match(prompt,/Return the six clean background artworks on the staging canvas/);
-  for (const negativeDirective of [/\\bDO NOT\\b/i,/\\bNEVER\\b/i,/\\bNO\\s+(?:TEXT|LOGO|TYPOGRAPHY|HEADERS|BORDERS)\\b/i]) {
-    assert.doesNotMatch(prompt, negativeDirective, 'active separated Call-1 instructions use positive scope rather than negative directives');
-  }
   assert.doesNotMatch(prompt,/EXACT TEXT, character for character|ZONE 3'S FIVE BOXES, every one filled|Spell the business name|Typography preference:|The company name reads clearly|SMALL PANELS.*carry the logo/);
   for(const protectedCopy of [BODY.companyName,BODY.phone,BODY.website])assert.ok(!prompt.includes(protectedCopy));
 });
@@ -77,4 +74,11 @@ test('legacy non-separated probe retains the existing branded prompt contract',a
   assert.match(prompt,/Spell the business name exactly/);
   assert.ok(prompt.includes(BODY.companyName));
   assert.match(prompt,/ZONE 3'S FIVE BOXES, every one filled/);
+});
+
+
+test('separated artwork input excludes full proof examples and cannot fall back to a labeled container', () => {
+  assert.match(source, /mode: body.separatedArtwork === true \? "artwork" : "template"/);
+  assert.match(source, /for \(const pinned of \(body.separatedArtwork === true \? \[\] : PINNED_INPUTS\)\)/);
+  assert.match(source, /if \(body.separatedArtwork === true\) throw renderError/);
 });

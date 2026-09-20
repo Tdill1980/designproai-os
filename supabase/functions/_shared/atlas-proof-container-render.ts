@@ -99,7 +99,7 @@ export async function renderPanelStudioContainer(options: ContainerOptions): Pro
   // interpret rather than as a document to fill. The Prius sheet is ~109 KB and
   // the F250's is the same order; an all-white 1536x1024 PNG compresses to a
   // few kilobytes, so the byte size separates the two cases without a decode.
-  if (bytes.length < 20_000) {
+  if (bytes.length < (options.mode === "artwork" ? 100 : 20_000)) {
     throw new Error(`panel_proof_container_render_empty:${bytes.length}`);
   }
   return { bytes, width: WIDTH, height: HEIGHT, contract: CONTAINER_CONTRACT, svgChars: svg.length };

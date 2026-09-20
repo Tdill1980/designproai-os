@@ -264,3 +264,19 @@ test("the contract identity is the same string in both homes", async () => {
   // 3:2, the ratio the pinned filled reference and the request both carry.
   assert.equal(edgeMod.WIDTH / edgeMod.HEIGHT, 1.5);
 });
+
+
+test("artwork conditioning contains only six unlabelled destinations at the exact cutter coordinates", async () => {
+  const edgeMod = await edge();
+  for (const rows of [PRIUS, F250]) {
+    const manifest = runtimeTemplate.parsePanelRows(rows);
+    const options = { manifest, ...BRAND, mode: "artwork" };
+    const svg = runtimeTemplate.containerSvg(options);
+    assert.equal(svg, edgeMod.containerSvg(options));
+    assert.doesNotMatch(svg, /<text|<line|stroke=|ZONE|PROOF|COMPANY/);
+    assert.equal((svg.match(/<rect /g) || []).length, 7);
+    for (const cell of runtimeTemplate.containerLayout(manifest).zone2) {
+      assert.ok(svg.includes(`x="${cell.x}" y="${cell.y}" width="${cell.w}" height="${cell.h}"`));
+    }
+  }
+});

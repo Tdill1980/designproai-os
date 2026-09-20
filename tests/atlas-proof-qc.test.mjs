@@ -696,3 +696,13 @@ test("the strict parser rejects extra fields and non-applicable contract inflati
   assert.equal(verdict.metadata.semanticDisposition, "review_required");
   assert.equal(verdict.metadata.semanticCode, "atlas_qc_orientation_failed");
 });
+
+
+test("proof preflight accepts MIME casing and parameters without exact pixel bounding", async () => {
+  const f = await fixture();
+  const bytes = await image(163, 90, "#f06292");
+  const preflight = await _test.deterministicProofPreflight({ atlas: f.atlas, bytes,
+    contentType: " IMAGE/PNG; charset=binary ", sourceViewType: "side" });
+  assert.equal(preflight.proofContentType, "image/png");
+  assert.deepEqual(preflight.proofDimensions, { width: 163, height: 90 });
+});

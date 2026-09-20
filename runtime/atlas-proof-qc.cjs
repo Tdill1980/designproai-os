@@ -125,7 +125,7 @@ function requireBuffer(value, label) {
 }
 
 function requireContentType(value, label) {
-  const normalized = String(value || "").toLowerCase();
+  const normalized = String(value || "").split(";")[0].trim().toLowerCase();
   if (!ALLOWED_IMAGE_TYPES.has(normalized)) {
     throw new AtlasProofQcError("atlas_qc_image_type_invalid", `${label} content type ${normalized || "missing"} is not supported`);
   }
