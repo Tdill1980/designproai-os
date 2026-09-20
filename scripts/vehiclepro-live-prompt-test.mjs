@@ -93,7 +93,7 @@ try{
  if(loginError||!signed?.session?.access_token) throw new Error(`test login failed: ${loginError?.message||"no session"}`);
  operator=createClient(SUPABASE_URL,SERVICE_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:{Authorization:`Bearer ${signed.session.access_token}`}}});
  evidence.auth={method:"fresh password authentication",userId:operatorId,verifiedAt:new Date().toISOString(),browserSession:"UNVERIFIED"};save();
- const input={contractVersion:"designpro.calls-1-7-input.v3",pipelineMode:"flat-first-atlas-v1",vehicle:{year,make,model,type},brief,designName:company,companyName:company,phone,website,industry,mode:"commercial",finish:"Gloss"};
+ const input={contractVersion:"designpro.calls-1-7-input.v3",pipelineMode:"flat-first-atlas-v1",vehicle:{year,make,model,type},brief,designName:company,companyName:company,...(phone?{phone}:{}),...(website?{website}:{}),industry,mode:"commercial",finish:"Gloss"};
  evidence.generateClickedAt=new Date().toISOString();save();
  const req=await jsonFetch(`${origin}/api/generation/requests`,{method:"POST",headers:{Authorization:`Bearer ${signed.session.access_token}`,"content-type":"application/json",Origin:origin},body:JSON.stringify({generationId,input,requiredPipelineMode:"flat-first-atlas-v1"})});
  const requestId=String(req?.requestId||req?.id||""); if(!requestId) throw new Error("generation request returned no requestId");

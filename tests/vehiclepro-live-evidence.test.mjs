@@ -26,7 +26,7 @@ async function run({mismatch=false,failed=false,missingView=false}={}){
   if(url.endsWith('/health'))return Response.json({commit:sha,ready:true});
   assert.ok(url.endsWith('/api/generation/requests'));
   submissions++;assert.equal(init.headers.Authorization,'Bearer fixture-session');
-  const body=JSON.parse(init.body);assert.equal(body.input.brief,brief);assert.equal(body.requiredPipelineMode,'flat-first-atlas-v1');
+  const body=JSON.parse(init.body);assert.equal(body.input.brief,brief);assert.equal(body.requiredPipelineMode,'flat-first-atlas-v1');assert.equal(body.input.phone,undefined);assert.equal(body.input.website,undefined);
   return Response.json({requestId:'request'});
  };
  const process={argv:['node','runner','--source-sha',sha,'--company','Copper Finch','--brief',brief,'--out','/evidence'],env:{SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'fixture-service'},stdout:{write:()=>{}}};
