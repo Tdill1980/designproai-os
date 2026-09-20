@@ -70,6 +70,8 @@ jobs:
     needs: runtime-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    environment:
+      name: designproai-production
     env:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
     steps:
