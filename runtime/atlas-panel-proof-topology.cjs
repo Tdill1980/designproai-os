@@ -610,6 +610,9 @@ async function assemblePanelProofMaster({
   catch (cause) { throw refuse("production panel overlay layout invalid", {cause:String(cause?.message || cause),code:cause?.code}); }
   const placements = productionLayout.placements;
   const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
+  const compositionChecks = composed.panels.map(({surfaceKey,contentHash,backgroundContentHash,applied}) =>
+    ({surfaceKey,contentHash,backgroundContentHash,applied}));
+  logger(`atlas call 1: flat compositor checks passed ${JSON.stringify(compositionChecks)}`);
   const displayLayout = containerLayout(proofManifest);
   const displayCells = new Map(displayLayout.zone1.map(cell => [cell.surfaceKey,
     scaleCell(cell,displayLayout,cut.sheet)]));
@@ -784,7 +787,7 @@ async function assemblePanelProofMaster({
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
         graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
-      composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,sourceAssetsPreserved:true},
+      composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,panels:compositionChecks,sourceAssetsPreserved:true},
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
