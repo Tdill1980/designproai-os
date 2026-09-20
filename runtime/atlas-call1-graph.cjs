@@ -1019,18 +1019,25 @@ function createAtlasCall1NodeWorker({
     let proofSheetPublished = false;
     const publishProofSheet = async () => {
       if (proofSheetPublished || typeof onProofSheetReady !== "function") return;
-      const row = await readNode(run.id, PROOF_SHEET_NODE);
-      if (row?.state !== "completed" || !row?.output?.sheet?.storagePath) return;
+      const row = await readNode(run.id, PROOF_ASSEMBLE_NODE);
+      const provenance = row?.output?.provenance;
+      if (row?.state !== "completed" || !provenance?.proofStoragePath || !provenance?.proofSha256) return;
       proofSheetPublished = true;
-      // CUSTOMER-CRITICAL FAN-OUT: proof.sheet is the first durable Call-1
-      // artifact. Publish it immediately and let Call 2 prefetch from these
-      // exact bytes while proof.assemble continues independently.
+      // CUSTOMER CALL 1 BEGINS HERE, AFTER deterministic composition. The raw
+      // Gemini artwork staging canvas is never customer-visible and never sent
+      // to Call 2. Fan out only the code-owned three-zone Production Panel Proof.
       void Promise.resolve(onProofSheetReady({
         graphRunId: run.id,
-        sheet: row.output.sheet,
-        panelRows: row.output.panelRows || [],
-        customerAssets: row.output.customerAssets || [],
-      })).catch((cause) => log(`atlas panel-proof graph ${run.id}: early proof fan-out failed non-fatally: ${String(cause?.message || cause)}`));
+        sheet: {
+          storagePath: provenance.proofStoragePath,
+          contentHash: provenance.proofSha256,
+          byteSize: provenance.proofByteSize,
+          contentType: provenance.proofContentType || "image/png",
+          proofContract: provenance.proofContract,
+        },
+        panelRows: [],
+        customerAssets: provenance.customerAssets || [],
+      })).catch((cause) => log(`atlas panel-proof graph ${run.id}: composed proof fan-out failed non-fatally: ${String(cause?.message || cause)}`));
     };
     const readRun = async () => {
       const { data, error } = await supabase.from("designpro_atlas_call1_runs").select("*").eq("id", run.id).single();

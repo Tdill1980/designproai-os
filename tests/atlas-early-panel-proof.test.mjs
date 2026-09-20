@@ -32,7 +32,7 @@ test('completed composed graph proof is readable before revision, with owner/sig
     GRANT SELECT ON storage.objects TO authenticated;
     GRANT USAGE ON SCHEMA storage TO authenticated;
     CREATE FUNCTION storage.allow_only_operation(text) RETURNS boolean LANGUAGE sql STABLE AS $$SELECT $1='object.sign'$$;`);
-  for(const name of ['20260919180000_designpro_atlas_panel_proof_paths.sql','20260920011000_designpro_early_panel_proof.sql','20260920080000_designpro_call1_sheet_immediate.sql'])
+  for(const name of ['20260919180000_designpro_atlas_panel_proof_paths.sql','20260920011000_designpro_early_panel_proof.sql','20260920080000_designpro_call1_sheet_immediate.sql','20260920093000_designpro_composed_call1_only.sql'])
     await db.exec(await readFile(new URL(`../supabase/migrations/${name}`,import.meta.url),'utf8'));
   await db.query("INSERT INTO public.designpro_atlas_call1_runs(id,request_id,generation_id,owner_id,contract,definition_hash,definition,state) VALUES($1,$2,'generation',$3,'designpro.atlas-call1-graph.v1',$4,'{}','running')",[RUN,REQUEST,OWNER,HASH]);
   await db.query("INSERT INTO public.designpro_atlas_call1_nodes(run_id,node_key,depends_on,state,output) VALUES($1,'proof.assemble','{}','pending',$2)",[RUN,JSON.stringify(output)]);
@@ -41,10 +41,8 @@ test('completed composed graph proof is readable before revision, with owner/sig
     await db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('wrap-files',$1)",[path]);
   await claims(db);await db.exec('SET ROLE authenticated');
   const immediate=await paths(db);
-  assert.equal(immediate.panelProof,true,'proof.sheet is customer-visible before production assembly');
-  assert.equal(immediate.source,'call1_graph_sheet');
-  assert.equal(immediate.sheet.contentHash,RAW);
-  assert.equal(await maySign(db,`atlas-panel-proof/${RAW}.png`),true,'owned completed Call-1 sheet grants exact-object signing');
+  assert.equal(immediate.panelProof,false,'raw Gemini artwork staging is never customer-visible');
+  assert.equal(await maySign(db,`atlas-panel-proof/${RAW}.png`),false,'raw artwork staging is never signable as a Production Panel Proof');
   assert.equal(await maySign(db,proof.proofStoragePath),false,'composed production proof is not signable until assembly completes');
   await db.exec('RESET ROLE');
   await db.query("UPDATE public.designpro_atlas_call1_nodes SET state='completed',output_hash=$2,completed_at=now() WHERE run_id=$1 AND node_key='proof.assemble'",[RUN,HASH]);
@@ -53,8 +51,8 @@ test('completed composed graph proof is readable before revision, with owner/sig
   assert.equal(early.panelProof,true);assert.equal(early.revisionId,null);assert.equal(early.source,'call1_graph');assert.equal(early.graphRunId,RUN);
   assert.equal(early.masterContentHash,MASTER);assert.deepEqual(early.quadrants,proof.quadrants);
   for(const path of [proof.proofStoragePath,...proof.quadrants.clean.map(p=>p.storagePath),proof.quadrants.cutGraphics[0].storagePath])assert.equal(await maySign(db,path),true);
-  assert.equal((await db.query('SELECT name FROM storage.objects')).rows.length,4,'sign-only storage policy grants raw Call-1 sheet plus composed sheet, clean layer and original asset');
-  assert.equal(await maySign(db,`atlas-panel-proof/${RAW}.png`),true);
+  assert.equal((await db.query('SELECT name FROM storage.objects')).rows.length,3,'sign-only storage policy grants composed sheet, clean layer and original asset only');
+  assert.equal(await maySign(db,`atlas-panel-proof/${RAW}.png`),false);
   assert.equal(await maySign(db,'provider-cache/secret.png'),false);
   assert.equal(await maySign(db,`atlas-panel-proof/${MASTER}.png`),false);
   await assert.rejects(db.query('SELECT * FROM public.designpro_atlas_call1_nodes'),/permission denied/);
@@ -70,7 +68,7 @@ test('completed composed graph proof is readable before revision, with owner/sig
   for(const mutate of [p=>p.quadrants.clean.pop(),p=>p.quadrants.cutGraphics=[],p=>p.quadrants.cutGraphics[0].persisted=false,p=>p.composition.sourceAssetsPreserved=false,p=>p.quadrants.branded[0].surfaceKey='roof',p=>p.quadrants.branded[0].positionalPremiseVerified=false,p=>delete p.quadrants.clean[0].identity,p=>p.composition.contract='unknown']){
     const invalid=structuredClone(proof);mutate(invalid);
     await db.query("UPDATE public.designpro_atlas_call1_nodes SET output=$2 WHERE run_id=$1 AND node_key='proof.assemble'",[RUN,JSON.stringify({...output,provenance:invalid})]);
-    const fallback=await paths(db);assert.equal(fallback.panelProof,true);assert.equal(fallback.source,'call1_graph_sheet');assert.equal(await maySign(db,proof.proofStoragePath),false);
+    const fallback=await paths(db);assert.equal(fallback.panelProof,false);assert.equal(await maySign(db,proof.proofStoragePath),false);
   }
   await db.query("UPDATE public.designpro_atlas_call1_nodes SET output=$2 WHERE run_id=$1 AND node_key='proof.assemble'",[RUN,JSON.stringify(output)]);
   await db.query('INSERT INTO public.designpro_flat_atlas_revisions VALUES($1,$2,$3,1,$4,$5)',[REV,REQUEST,OWNER,MASTER,JSON.stringify({panelProofAuthoring:proof})]);
