@@ -617,19 +617,40 @@ async function assemblePanelProofMaster({
     }
   }
   const brand = {...(sheet.intake || {}), ...Object.fromEntries(Object.entries(input).filter(([,v]) => v != null && v !== "" && (!Array.isArray(v) || v.length)))};
+  // Explicit customer lettering is production copy even without a company or
+  // contact form. Never infer a logo from a generic brand mention.
+  const brief = String(input.brief || input.prompt || "");
+  const wordmarkMatch = brief.match(/\b(?:feature|include|add|use)\s+(?:the\s+)?["“]?([^.!?\n"”]{1,80}?)["”]?\s+wordmark\b/i);
+  const requestedWordmark = wordmarkMatch && !/\b(?:do not|don't|without|no)\s*$/i.test(brief.slice(0, wordmarkMatch.index))
+    ? wordmarkMatch[1].trim() : "";
+  const raceMatch = brief.match(/\brace\s+(?:number|no\.?)\s*#?\s*(\d{1,3})\b/i);
+  const requestedNumber = raceMatch && !/\b(?:without|no|omit)\s*$/i.test(brief.slice(0, raceMatch.index)) ? raceMatch[1] : "";
+  const explicitText = [brand.companyName,brand.businessName,brand.tagline,brand.phone,brand.website].filter(Boolean).join(" ");
+  const raceNumber = requestedNumber && !new RegExp(`\\b${requestedNumber}\\b`).test(explicitText) ? requestedNumber : "";
   const services = Array.isArray(brand.services) ? brand.services : [];
   const textJobs = [
-    {role:"typography",name:brand.companyName || brand.businessName || "",lines:[brand.tagline || ""]},
+    {role:"typography",name:brand.companyName || brand.businessName || requestedWordmark,lines:[brand.tagline || ""],raceNumber},
     {role:"contact",name:"",lines:[brand.phone,brand.website,...services,brand.promo].filter(Boolean)},
   ];
   for (const job of textJobs) {
-    if (!job.name && !job.lines.some(Boolean)) continue;
-    const rendered = await typeset.renderLockup({...job,width:1600});
+    if (!job.name && !job.lines.some(Boolean) && !job.raceNumber) continue;
+    let rendered = job.name || job.lines.some(Boolean)
+      ? await typeset.renderLockup({...job,width:1600}) : {svg:"",width:1600,height:0};
+    if (job.raceNumber) {
+      const number = await typeset.renderLockup({name:job.raceNumber,width:420,color:"#000000"});
+      const roundel = /\broundels?\b/i.test(brief);
+      const top = rendered.height;
+      const height = top + (roundel ? 480 : number.height + 40);
+      const inner = (svg) => svg.replace(/^.*?<svg[^>]*>/s, "").replace(/<\/svg>\s*$/, "");
+      const centerY = top + (height-top)/2;
+      rendered = {width:1600,height,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="${height}" viewBox="0 0 1600 ${height}">${inner(rendered.svg)}${roundel ? `<circle cx="800" cy="${centerY}" r="220" fill="#ffffff"/>` : ""}<g transform="translate(590 ${centerY-number.height/2})">${inner(number.svg)}</g></svg>`};
+    }
     const bytes = Buffer.from(rendered.svg);
     const stored = await persist({storagePath:typeset.elementStoragePath(sha256(bytes),"svg"),
       bytes,contentType:"image/svg+xml"});
     assets.push({...stored,bytes,byteSize:bytes.length,contentHash:sha256(bytes),role:job.role,
-      width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true});
+      width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true,
+      textContent:[job.name,...job.lines,job.raceNumber].filter(Boolean)});
   }
   if (!assets.length) throw refuse("Zone 3 requires original assets or customer text");
   // Keep byte identities on the receipt, never the in-memory asset buffers.

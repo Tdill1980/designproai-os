@@ -245,7 +245,7 @@ function storageReadFailure(cause) {
     operation: 'download',
     httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
     exceptionClass: ['StorageApiError', 'StorageUnknownError', 'StorageError', 'Error', 'TypeError', 'AbortError', 'TimeoutError'].includes(name) ? name : 'Error',
-    code: /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(code) ? code : null,
+    code: /^(?:[A-Za-z][A-Za-z0-9_]{0,63}|53300)$/.test(code) ? code : null,
   };
   return Object.assign(new GeminiProviderError('provider_cache_read_failed', 503), {
     storageDiagnostic: diagnostic,
@@ -284,20 +284,56 @@ export async function putImmutableProviderArtifact(bucket, path, bytes, contentT
   return putHashedImmutableArtifact(bucket, path, bytes, contentType, contentHash);
 }
 
+function transientArtifactStorageError(error) {
+  const diagnostic = error?.storageDiagnostic;
+  const status = Number(diagnostic ? diagnostic.httpStatus
+    : error?.statusCode ?? error?.status ?? error?.originalError?.status);
+  if ([401, 403].includes(status)) return false;
+  if ([429, 502, 503, 504].includes(status)) return true;
+  const code = String(diagnostic?.code ?? error?.code ?? error?.originalError?.code ?? '');
+  if (code === '53300') return true;
+  if (Number.isFinite(status) && status > 0) return false;
+  const name = diagnostic?.exceptionClass ?? error?.originalError?.name ?? error?.name;
+  return ['TypeError', 'AbortError', 'TimeoutError'].includes(name)
+    || ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE'].includes(code);
+}
+
 async function putHashedImmutableArtifact(bucket, path, bytes, contentType, contentHash) {
-  let uploaded;
-  try { uploaded = await bucket.upload(path, bytes, { contentType, upsert: false }); }
-  catch { uploaded = { error: true }; }
-  const { error } = uploaded;
-  if (error) {
-    // Includes a lost upload acknowledgement: only identical stored bytes count
-    // as success. Never upsert an old canonical image during response recovery.
-    const existing = await readBytes(bucket, path);
-    if (!existing || await providerSha256(existing) !== contentHash) {
-      throw new GeminiProviderError('provider_artifact_write_failed', 503, 'received', 1);
+  const fail = () => new GeminiProviderError('provider_artifact_write_failed', 503, 'received', 1);
+  let uploadNeeded = true;
+  let retryUpload = false;
+  // Four bounded storage-only cycles reuse the same byte buffer. Reservations
+  // and Gemini invocation are outside this helper and are never retried here.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, [250, 750, 1500][attempt - 1]));
+    if (uploadNeeded) {
+      let uploaded;
+      try { uploaded = await bucket.upload(path, bytes, { contentType, upsert: false }); }
+      catch (error) { uploaded = { error }; }
+      if (!uploaded.error) return { storagePath: path, contentHash, byteSize: bytes.length };
+      const error = uploaded.error;
+      retryUpload = transientArtifactStorageError(error);
+      const duplicate = Number(error?.statusCode ?? error?.status) === 409
+        || /^(?:The resource already exists|Resource already exists|Duplicate)$/i.test(String(error?.message || ''));
+      if (!retryUpload && !duplicate) throw fail();
+      uploadNeeded = false;
+    }
+    try {
+      // An uncertain acknowledgement or duplicate is successful only if the
+      // exact immutable bytes already exist. Hash conflicts are never retried.
+      const existing = await readBytes(bucket, path, bytes.length);
+      if (existing) {
+        if (await providerSha256(existing) !== contentHash) throw fail();
+        return { storagePath: path, contentHash, byteSize: bytes.length };
+      }
+      if (!retryUpload) throw fail();
+      uploadNeeded = true;
+    } catch (error) {
+      if (error?.code === 'provider_artifact_write_failed' || !transientArtifactStorageError(error)) throw fail();
+      // Retry the read first; do not re-upload while its outcome is uncertain.
     }
   }
-  return { storagePath: path, contentHash, byteSize: bytes.length };
+  throw fail();
 }
 
 async function saveResult(bucket, prefix, claim, result) {

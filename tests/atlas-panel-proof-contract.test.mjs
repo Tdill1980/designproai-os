@@ -648,3 +648,34 @@ test("the six panels are demanded ONCE each, because the live sheet drew FRONT t
     assert.ok(prompt.includes(`  ${slot.caption}: `), `Zone 3 slot ${slot.caption} is unfilled`);
   }
 });
+
+test("a refused panel-proof records its original gate and never invokes alternate artwork", async () => {
+  const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  const start = source.indexOf("    if (heroDriver || panelProof) {", source.indexOf("const refusalReason = stillBlocking"));
+  const fixedStart = source.indexOf("    if (heroDriver) {", source.indexOf("const refusalReason = stillBlocking"));
+  const end = source.indexOf("    if (attempt === maxAuthoringAttempts)", fixedStart >= 0 ? fixedStart : start);
+  const branch = source.slice(start >= 0 ? start : fixedStart, end);
+  for (const code of ["flat_atlas_master_deterministic_failed", "flat_atlas_master_output_class_invalid"]) {
+    const recorded = [];
+    let alternateProviderCalls = 0;
+    class FlatAtlasError extends Error { constructor(code, message) { super(message); this.code = code; } }
+    const reason = "original gate evidence retained verbatim";
+    const run = runInNewContext(`(async () => { ${branch} })`, {
+      heroDriver: false, panelProof: true, HERO_DRIVER_TOPOLOGY: "hero-driver", PANEL_PROOF_TOPOLOGY: "panel-proof",
+      AUTHORING_FAILOVER_CONTRACT: "failover", authoringTopology: "panel-proof", providerRecoveryOnly: true,
+      refusalCode: code, refusalReason: reason, attempt: 1, edgeProvenance: [],
+      generated: { bytes: Buffer.from("saved proof"), model: "fixture", provenance: {
+        masterStoragePath: "saved/master.png", masterSha256: "a".repeat(64), masterContentType: "image/png" } },
+      HASH_RE: /^[a-f0-9]{64}$/, supabase: {}, requestId: "request", generationId: "generation",
+      ownerId: "owner", tenantKey: "tenant", logger() {}, FlatAtlasError,
+      async recordAtlasRefusal(_db, record) { recorded.push(record); },
+      async failOverToSixSurface() { alternateProviderCalls++; throw new Error("unexpected alternate provider"); },
+    });
+    await assert.rejects(run, (error) => error.code === code && error.message === reason && error.retryable === false);
+    assert.equal(alternateProviderCalls, 0);
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].code, code);
+    assert.equal(recorded[0].reason, reason);
+    assert.equal(recorded[0].storagePath, "saved/master.png");
+  }
+});

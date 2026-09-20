@@ -6416,7 +6416,7 @@ export default function RevisionStudioIQ() {
                   </Button>
 
                   {/* Refine in Studio Board — push this design to the Studio Board
-                      page (/admin/studio-board) where the shop slides each uploaded
+                      page (/designpro/studio-board) where the shop slides each uploaded
                       Gemini side over the real 2D proof to compare + approve before
                       the GENIE panelizer runs. Deep-links by order number when we
                       have it, else the canonical generation id (Studio Board's
@@ -6429,7 +6429,7 @@ export default function RevisionStudioIQ() {
                         || (selectedRender as any)?._generationId
                         || genIdOf(selectedRender)
                         || selectedRender?.id;
-                      if (ref) navigate(`/admin/studio-board?order=${encodeURIComponent(ref)}`);
+                      if (ref) navigate(`/designpro/studio-board?order=${encodeURIComponent(ref)}`);
                     }}
                     disabled={!selectedRender}
                     title="Open this design in PanelProStudio to slide each PanelPro Extract side over the real proof, refine, and approve"

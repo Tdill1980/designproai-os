@@ -3869,13 +3869,11 @@ async function generateOrReuseFlatAtlasResolved(options) {
     if (!stillBlocking.length) {
       break;
     }
-    if (heroDriver || panelProof) {
-      // BOTH AUTHORING PASSES SPEND ONE ASSEMBLED CANDIDATE. The cascade already
-      // bounded every surface; the panel proof already spent its one image call
-      // on a document, and re-rolling that document is the same ask again. A
-      // gate refusal here hands the request to the unchanged six-surface
-      // contract rather than re-rolling.
-      const from = heroDriver ? HERO_DRIVER_TOPOLOGY : PANEL_PROOF_TOPOLOGY;
+    if (heroDriver) {
+      // The legacy hero-driver contract may fail over. Panel proofs must reach
+      // the refusal ledger and terminal guard below, retaining the original
+      // master-gate reason without invoking a second artwork contract.
+      const from = HERO_DRIVER_TOPOLOGY;
       logger(`atlas call 1: ${from} sheet refused by the master gates (${refusalCode}); failing over to the six-surface contract`);
       return failOverToSixSurface({
         contract: AUTHORING_FAILOVER_CONTRACT, from, to: "six-surface",

@@ -962,3 +962,24 @@ test("native generated logo is keyed in the runtime before shared Zone 1 and Zon
   assert.ok(out.provenance.composition.placements.filter(p=>p.role==="logo")
     .every(p=>p.contentHash===graphic.contentHash));
 });
+
+test("Porsche brief lettering and race roundel share one original asset across Zones 1 and 3", async () => {
+  const brief = "Create a motorsport wrap for a 2022 Porsche 911 Turbo inspired by the classic Porsche Martini race team. Use a clean gloss white base with sweeping navy blue, light blue and red racing stripes running continuously across the hood, roof, rear and both sides. Feature the MARTINI RACING wordmark and race number 23 in bold black numerals inside white roundels on both doors and the hood. Keep the livery crisp, balanced and unmistakably racing-focused, with consistent stripe alignment and the same wordmark and number across all six panels and seven photographic vehicle proof views. Preserve the real Porsche body geometry, vents, lights, windows, rear wing and wheels. Limit printed artwork to the racing stripes, MARTINI RACING wordmark and number 23 roundels; keep the remaining white body areas clean.";
+  const store = memoryStore();
+  const sheet = await paintedSheet();
+  const {callProofEdge,calls} = edgeStub(sheet,{intake:{},generatedElements:[],imageRequestCount:1});
+  const out = await proof.authorPanelProofMaster({...AUTHOR_ARGS,store,callProofEdge,
+    input:{brief,vehicle:{year:"2022",make:"Porsche",model:"911 Turbo"}}});
+  assert.equal(calls.length,1,"uses saved artwork response with no separate logo generation");
+  assert.equal(out.imageRequestCount,1);
+  const graphic=out.provenance.quadrants.cutGraphics.find(a=>a.surfaceKey==="typography");
+  assert.deepEqual(graphic.textContent,["MARTINI RACING","23"]);
+  const svg=store.objects.get(graphic.storagePath).bytes.toString();
+  assert.match(svg,/<circle[^>]*fill="#ffffff"/);
+  assert.match(svg,/<path/);
+  assert.doesNotMatch(svg,/<text/);
+  assert.ok(out.provenance.composition.placements.filter(p=>p.role==="typography")
+    .every(p=>p.contentHash===graphic.contentHash && p.storagePath===graphic.storagePath));
+  assert.equal(out.provenance.threeZoneLayout.branded,6);
+  assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
+});

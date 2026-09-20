@@ -50,7 +50,7 @@ env:
 jobs:
   executable-contracts:
     # Owner-authorized one-release test skip; later pushes run normally.
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '4befde9c08a73a961c5359ede24166f70740a0dd' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '9c957aa60624f2a5aac5f3efe53b0151f24b1b75' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -86,7 +86,7 @@ jobs:
 
   supabase-shadow:
     # Owner-authorized one-release test skip; later pushes run normally.
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '4befde9c08a73a961c5359ede24166f70740a0dd' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '9c957aa60624f2a5aac5f3efe53b0151f24b1b75' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

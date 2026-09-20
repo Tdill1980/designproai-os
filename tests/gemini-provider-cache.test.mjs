@@ -361,3 +361,84 @@ test('generateContent final-image selection excludes thought images/text and rej
   twoFinals.candidates[0].content.parts.push(twoFinals.candidates[0].content.parts[2]);
   assert.throws(() => selectFinalGenerateContentImage(twoFinals, 'atlas_panel'), /atlas_panel_ambiguous_final_images/);
 });
+
+test('immutable artifact storage retries transient uploads with the same buffer and no upsert', async () => {
+  for (const error of [{ statusCode: 429 }, { statusCode: 502 }, { statusCode: 503 }, { statusCode: 504 }, { code: '53300' }, new TypeError('network interrupted')]) {
+    const bucket = bucketFixture();
+    const original = bucket.upload.bind(bucket);
+    const bytes = new TextEncoder().encode('received provider bytes');
+    let uploads = 0;
+    bucket.upload = async (path, value, opts) => {
+      uploads += 1;
+      assert.equal(value, bytes);
+      assert.equal(opts.upsert, false);
+      return uploads === 1 ? { error } : original(path, value, opts);
+    };
+    const result = await putImmutableProviderArtifact(bucket, 'artifact', bytes);
+    assert.equal(result.contentHash, await providerSha256(bytes));
+    assert.equal(uploads, 2);
+  }
+});
+
+test('lost artifact acknowledgement retries transient verification reads and verifies exact hash', async () => {
+  const bucket = bucketFixture();
+  const originalUpload = bucket.upload.bind(bucket), originalRead = bucket.download.bind(bucket);
+  let uploads = 0, reads = 0;
+  bucket.upload = async (...args) => { uploads += 1; await originalUpload(...args); throw new TypeError('lost acknowledgement'); };
+  bucket.download = async (...args) => ++reads === 1 ? { error: { statusCode: 503 } } : originalRead(...args);
+  const bytes = new TextEncoder().encode('same immutable content');
+  assert.equal((await putImmutableProviderArtifact(bucket, 'artifact', bytes)).contentHash, await providerSha256(bytes));
+  assert.equal(uploads, 1);
+  assert.equal(reads, 2);
+});
+
+test('artifact retries fail closed for permanent errors and hash conflicts and exhaust a fixed budget', async () => {
+  for (const status of [400, 401, 403, 422]) {
+    let uploads = 0;
+    const bucket = { upload: async () => { uploads += 1; return { error: { statusCode: status } }; }, download: async () => assert.fail('permanent upload error must not become success') };
+    await assert.rejects(putImmutableProviderArtifact(bucket, 'artifact', new Uint8Array([1])), { code: 'provider_artifact_write_failed' });
+    assert.equal(uploads, 1);
+  }
+  const bucket = bucketFixture();
+  bucket.files.set('artifact', new Uint8Array([2]));
+  await assert.rejects(putImmutableProviderArtifact(bucket, 'artifact', new Uint8Array([1])), { code: 'provider_artifact_write_failed' });
+  assert.equal(bucket.writes.length, 1);
+  let uploads = 0, reads = 0;
+  const unavailable = {
+    upload: async () => { uploads += 1; return { error: { statusCode: 503 } }; },
+    download: async () => { reads += 1; return { error: { statusCode: 404 } }; },
+  };
+  await assert.rejects(putImmutableProviderArtifact(unavailable, 'artifact', new Uint8Array([1])), { code: 'provider_artifact_write_failed' });
+  assert.equal(uploads, 4);
+  assert.equal(reads, 4);
+});
+
+test('chunk storage recovery invokes Gemini and reserves its request exactly once', async () => {
+  const bucket = bucketFixture();
+  const original = bucket.upload.bind(bucket);
+  let chunkFailure = false, providerCalls = 0, claims = 0;
+  bucket.upload = async (path, bytes, opts) => {
+    if (path.endsWith('/claim.json')) claims += 1;
+    if (path.endsWith('.jsonpart') && !chunkFailure) { chunkFailure = true; return { error: { statusCode: 503, code: '53300' } }; }
+    return original(path, bytes, opts);
+  };
+  const invoke = async () => { providerCalls += 1; return { status: 200, payload: nativePayload }; };
+  await runDurableImageProviderRequest(options(bucket, invoke));
+  const recovered = await runDurableImageProviderRequest(options(bucket, invoke, { cacheOnly: true }));
+  assert.deepEqual(recovered.payload, nativePayload);
+  assert.equal(providerCalls, 1);
+  assert.equal(claims, 1);
+});
+
+test('uncertain artifact writes bound read-only verification and reject read authorization failures', async () => {
+  for (const status of [403, 503]) {
+    let uploads = 0, reads = 0;
+    const bucket = {
+      upload: async () => { uploads += 1; throw new TypeError('lost acknowledgement'); },
+      download: async () => { reads += 1; return { error: { statusCode: status } }; },
+    };
+    await assert.rejects(putImmutableProviderArtifact(bucket, 'artifact', new Uint8Array([1])), { code: 'provider_artifact_write_failed' });
+    assert.equal(uploads, 1);
+    assert.equal(reads, status === 403 ? 1 : 4);
+  }
+});
