@@ -106,6 +106,7 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS")
           payload=$(base64 -w0 scripts/vehiclepro-live-prompt-test.mjs)
+          set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST"             "PAYLOAD='$payload' CASE='$CASE' YEAR='$YEAR' MAKE='$MAKE' MODEL='$MODEL' VTYPE='$VTYPE' COMPANY='$COMPANY' WEBSITE='$WEBSITE' PHONE='$PHONE' INDUSTRY='$INDUSTRY' BRIEF=$(printf %q "$BRIEF") bash -s"             > "$RUNNER_TEMP/live-test.log" 2>&1 <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
