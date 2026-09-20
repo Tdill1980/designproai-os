@@ -135,16 +135,16 @@ jobs:
           EOF
           DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" up -d --no-deps runtime-1
           for i in $(seq 1 24); do
-            [ "$(docker inspect -f '{{.State.Health.Status}}' designproai-os-runtime-1-1)" = healthy ] && break
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" ps -q runtime-1)")" = healthy ] && break
             sleep 5
           done
-          test "$(docker inspect -f '{{.State.Health.Status}}' designproai-os-runtime-1-1)" = healthy
+          test "$(docker inspect -f '{{.State.Health.Status}}' "$(DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" ps -q runtime-1)")" = healthy
           DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" up -d --no-deps runtime-2
           for i in $(seq 1 24); do
-            [ "$(docker inspect -f '{{.State.Health.Status}}' designproai-os-runtime-2-1)" = healthy ] && break
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" ps -q runtime-2)")" = healthy ] && break
             sleep 5
           done
-          test "$(docker inspect -f '{{.State.Health.Status}}' designproai-os-runtime-2-1)" = healthy
+          test "$(docker inspect -f '{{.State.Health.Status}}' "$(DESIGNPRO_SHA="$current_sha" docker compose --env-file deploy/release.env -f ops/compose.yaml -f "/tmp/runtime-hotfix-$sha.override.yml" ps -q runtime-2)")" = healthy
           test "$(docker inspect -f '{{index .Config.Labels "com.designpro.sha"}}' designproai-runtime:$sha)" = "$sha"
           printf '%s\n' "$sha" > /opt/designproai-os/shared/runtime-hotfix-sha
           rm -rf "$work" "/tmp/runtime-$sha.tgz"
