@@ -1088,7 +1088,7 @@ function validatedPanelProofQuadrantPanel(row, { keys, role }) {
   // The owner-scoped RPC supplies membership; storage RLS checks it again when signing.
   // Original Zone 3 files are not raster quadrant crops.
   const originalPath = role === "cut-graphic" && (
-    /^atlas-elements\/[0-9a-f]{64}\.svg$/.test(storagePath)
+    /^atlas-elements\/[0-9a-f]{64}\.(svg|png)$/.test(storagePath)
     || /^users\/[0-9a-f-]{36}\/revisions\/[0-9a-f-]{36}\/inputs\/logo\/[0-9a-f]{64}\.(svg|png|jpg|jpeg|webp)$/.test(storagePath)
   ) && storagePath.split("/").pop().split(".")[0] === contentHash;
   if ((!PANEL_PROOF_QUADRANT_PATH.test(storagePath) && !originalPath) || !SHA256_PATTERN.test(contentHash)) {

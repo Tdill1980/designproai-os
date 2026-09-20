@@ -3277,7 +3277,8 @@ test("the panel proof answers 404 for a request the caller does not own, before 
   assert.equal(signAttempted, false);
 });
 
-test("the panel proof route refuses an RPC answer naming an object outside the panel-proof namespace", async (t) => {
+for (const invalidPath of ["foreign panel", "PNG hash mismatch", "PNG traversal"]) {
+test(`the panel proof route refuses ${invalidPath} before signing`, async (t) => {
   // The paths never leave the gateway, so the gateway is the only thing that
   // decides WHICH object it will ask storage to sign. A drifted resolver, or a
   // row someone wrote by hand, must not be able to talk it into signing an
@@ -3291,7 +3292,14 @@ test("the panel proof route refuses an RPC answer naming an object outside the p
       if (value.endsWith("/auth/v1/user")) return Response.json({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
       if (value.endsWith("/rest/v1/rpc/designpro_atlas_panel_proof_paths")) {
         const answer = panelProofRpcAnswer(requestId);
-        answer.quadrants.clean[0].storagePath = "designpro/user_someone-else/run/panels/driver.png";
+        if (invalidPath === "foreign panel") {
+          answer.quadrants.clean[0].storagePath = "designpro/user_someone-else/run/panels/driver.png";
+        } else {
+          answer.quadrants.cutGraphics[0] = { surfaceKey: "logo", role: "cut-graphic", persisted: true,
+            contentHash: "3".repeat(64), contentType: "image/png", vector: false,
+            storagePath: invalidPath === "PNG hash mismatch" ? `atlas-elements/${"4".repeat(64)}.png`
+              : `atlas-elements/../${"3".repeat(64)}.png` };
+        }
         return Response.json(answer);
       }
       if (value.includes("/storage/v1/object/sign/")) { signAttempted = true; return Response.json({ message: "no" }, { status: 400 }); }
@@ -3307,6 +3315,7 @@ test("the panel proof route refuses an RPC answer naming an object outside the p
   assert.equal((await response.json()).error, "atlas_panel_proof_response_invalid");
   assert.equal(signAttempted, false, "nothing is signed once the answer is refused");
 });
+}
 
 test("refused Atlas candidates answer 404 for a request the caller does not own, before any signing", async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000013";
@@ -3331,12 +3340,14 @@ test("refused Atlas candidates answer 404 for a request the caller does not own,
 });
 
 
-test("three-zone handoff signs original vector graphics separately from clean panels", async (t) => {
+for (const original of [{ extension: "svg", contentType: "image/svg+xml", vector: true },
+  { extension: "png", contentType: "image/png", vector: false }]) {
+test(`three-zone handoff signs original ${original.extension} graphics separately from clean panels`, async (t) => {
   const requestId = "10000000-0000-4000-8000-000000000021";
   const answer = panelProofRpcAnswer(requestId);
-  answer.quadrants.cutGraphics = [{surfaceKey:"typography",role:"cut-graphic",persisted:true,
-    storagePath:`atlas-elements/${"4".repeat(64)}.svg`,contentHash:"4".repeat(64),byteSize:300,
-    contentType:"image/svg+xml",vector:true}];
+  answer.quadrants.cutGraphics = [{surfaceKey:original.vector ? "typography" : "logo",role:"cut-graphic",persisted:true,
+    storagePath:`atlas-elements/${"4".repeat(64)}.${original.extension}`,contentHash:"4".repeat(64),byteSize:300,
+    contentType:original.contentType,vector:original.vector}];
   const server = createGateway({env,fetchImpl:async url => {
     const value = String(url);
     if (value.endsWith("/auth/v1/user")) return Response.json({id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"});
@@ -3354,10 +3365,12 @@ test("three-zone handoff signs original vector graphics separately from clean pa
   const result = await response.json();
   assert.equal(result.quadrants.clean.length,6);
   assert.equal(result.quadrants.branded.length,6);
-  assert.equal(result.quadrants.cutGraphics[0].vector,true);
-  assert.equal(result.quadrants.cutGraphics[0].contentType,"image/svg+xml");
-  assert.match(result.quadrants.cutGraphics[0].signedUrl,/atlas-elements.*\.svg/);
+  assert.equal(result.quadrants.cutGraphics[0].vector,original.vector);
+  assert.equal(result.quadrants.cutGraphics[0].contentType,original.contentType);
+  assert.ok(result.quadrants.cutGraphics[0].signedUrl.includes(`atlas-elements/${"4".repeat(64)}.${original.extension}?`));
+  assert.ok(result.sheet.signedUrl, "the original logo must not hide the complete three-zone sheet");
 });
+}
 
 
 test("completed three-zone proof is signed before an atlas revision or a 3D view exists", async (t) => {
