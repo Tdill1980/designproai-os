@@ -59,7 +59,7 @@ try{
  evidence.promptVerified=String(row.request_input?.brief||"")===brief;
  evidence.engineReceipt=row.engine_receipt||null;
  evidence.revisionId=String(row.engine_receipt?.handoffRevisionId||row.engine_receipt?.atlasRevisionId||"")||null;
- const {data:views,error:viewsError}=await service.from("designpro_generation_views").select("source_view_type,status,storage_path,content_hash,created_at").eq("request_id",requestId).order("created_at");
+ const {data:views,error:viewsError}=await service.from("designpro_generation_views").select("source_view_type,consumer_role,storage_path,content_hash,created_at,superseded_at").eq("request_id",requestId).order("created_at");
  if(viewsError) throw new Error(`view read failed: ${viewsError.message}`);
  evidence.views=views||[];
  const {data:proof,error:proofError}=await operator.rpc("designpro_atlas_panel_proof_paths",{p_request_id:requestId});
