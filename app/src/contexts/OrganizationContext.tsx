@@ -45,11 +45,9 @@ export interface ShopMembership {
   shop: Shop;
   role: ShopMemberRole;
   franchise: Franchise | null;
-  // shop_profiles.id for the shop's owner. Group 2 tables (quotes, customers,
-  // designiq_generations, panelizer_jobs, ...) still store shop_id as a
-  // shop_profiles.id, so teammates need this legacy id to narrow their reads.
-  // null until the profile lookup resolves or if the owner never created a
-  // shop_profiles row.
+  // Compatibility field for legacy RestylePro consumers. The standalone
+  // DesignProAI schema has no shop_profiles table, so this remains null.
+  // A shops.id is not a legacy profile id and must not be substituted here.
   ownerShopProfileId: string | null;
 }
 
@@ -72,11 +70,8 @@ interface OrganizationContextType {
   currentShop: Shop | null;
   currentMembership: ShopMembership | null;
   currentFranchise: Franchise | null;
-  // Legacy bridge: shop_profiles.id for the current shop's owner. Needed for
-  // Group 2 tables (quotes, customers, designiq_generations, panelizer_jobs,
-  // production_packs, ...) whose shop_id column still references
-  // shop_profiles(id) rather than shops(id). Will become redundant after
-  // the PR #1039 follow-up migration rewrites those references.
+  // Legacy RestylePro profile id; unavailable in standalone DesignProAI.
+  // Retained as null so legacy consumers keep their existing unavailable state.
   currentShopProfileId: string | null;
   isShopOwner: boolean;
   isShopAdmin: boolean;
@@ -186,41 +181,12 @@ export function OrganizationProvider({ children }: { children: ReactNode }) {
                 .franchise ?? null,
           }));
 
-      // Resolve each shop owner's shop_profiles.id so Group 2 tables
-      // (quotes, customers, designiq_generations, panelizer_jobs, ...) can
-      // be narrowed by teammates. The lookup runs once per memberships
-      // refresh; a missing row is acceptable — the member just won't see
-      // legacy shop_profiles-scoped data for that shop until the owner
-      // creates a profile via ShopSettings.
-      const ownerUserIds = Array.from(
-        new Set(withoutProfileId.map((m) => m.shop.owner_user_id))
-      );
-
-      const ownerProfileMap = new Map<string, string>();
-      if (ownerUserIds.length > 0) {
-        const { data: profileRows, error: profileErr } = await supabase
-          .from('shop_profiles')
-          .select('id, user_id')
-          .in('user_id', ownerUserIds);
-
-        if (profileErr) {
-          console.error(
-            '[OrganizationContext] failed to resolve owner shop_profiles',
-            profileErr
-          );
-        } else if (profileRows) {
-          for (const row of profileRows) {
-            if (row.user_id && row.id) {
-              ownerProfileMap.set(row.user_id, row.id);
-            }
-          }
-        }
-      }
-
+      // shop_profiles belongs to RestylePro, not this standalone database.
+      // Keep the legacy compatibility field null without querying a table that
+      // does not exist. Membership and shop selection use public.shops above.
       const parsed: ShopMembership[] = withoutProfileId.map((m) => ({
         ...m,
-        ownerShopProfileId:
-          ownerProfileMap.get(m.shop.owner_user_id) ?? null,
+        ownerShopProfileId: null,
       }));
 
       setMemberships(parsed);
