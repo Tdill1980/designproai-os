@@ -694,7 +694,9 @@ from (values
     jsonb_build_object('authorizedAssetManifest',jsonb_build_object(
       'products',jsonb_build_array('print_pack_entitlement'),
       'productionPackAuthorized',true,'logoPackAuthorized',false,
-      'requiredOutputFiles',18,'zipIncludesSourceViews',true))),
+      'requiredOutputFiles',24,'zipIncludesSourceViews',true,
+      'outputFormatContract','designpro.production-formats.v2',
+      'outputFormats',jsonb_build_array('png','tiff','eps','pdf')))),
   ('46000000-0000-4000-8000-000000000002'::uuid,'source.verify',10,
     jsonb_build_object('call8',(select call8 from production_call8)))
 ) s(id,stage_key,sequence,output);
@@ -773,16 +775,39 @@ select jsonb_build_object(
 ) file
 from public.designpro_workflow_runs r,production_panels,
   lateral jsonb_array_elements(panels) p,
-  unnest(ARRAY['png','tiff','eps']) format
+  unnest(ARRAY['png','tiff','eps','pdf']) format
 where r.id='44000000-0000-4000-8000-000000000005';
+
+-- output.verify consumes the immutable completed build receipt, never infers
+-- an export contract from whichever files happen to exist in storage.
+create temporary table production_output_build on commit drop as
+select jsonb_build_object(
+  'verified',true,'outputFormatContract','designpro.production-formats.v2',
+  'outputFormats',jsonb_build_array('png','tiff','eps','pdf'),'outputCount',24,
+  'outputSetHash',pg_temp.handoff_json_hash(jsonb_agg(jsonb_build_object(
+    'path',file->>'storagePath','hash',file->>'contentHash'
+  ) order by file->>'surfaceKey',file->>'format'))
+) receipt from production_output_files;
+insert into public.designpro_workflow_stages(
+  id,run_id,stage_key,sequence,status,idempotency_key,output,verification,output_hash,completed_at
+)
+select '46000000-0000-4000-8000-000000000006',
+  '44000000-0000-4000-8000-000000000005','output.build',50,'completed',
+  '44000000-0000-4000-8000-000000000005:output.build',receipt,
+  '{"verified":true}'::jsonb,designpro_private.atlas_revision_hash(receipt),now()
+from production_output_build;
+
 insert into public.designpro_artifacts(
   run_id,stage_id,artifact_kind,surface_key,storage_path,content_hash,byte_size,metadata
 )
 select '44000000-0000-4000-8000-000000000005',
-  '46000000-0000-4000-8000-000000000003','output',file->>'surfaceKey',
+  '46000000-0000-4000-8000-000000000006','output',file->>'surfaceKey',
   file->>'storagePath',file->>'contentHash',(file->>'byteSize')::bigint,
   jsonb_build_object('format',file->>'format','width',file->'widthPixels',
     'height',file->'heightPixels','dpi',1500,'outputScale',0.1,'fullScaleBleedInches',5)
+    ||case when file->>'format'='pdf' then jsonb_build_object(
+      'sourcePngHash',pg_temp.handoff_hash('late-bound-output-'||(file->>'surfaceKey')||'-png')
+    ) else '{}'::jsonb end
 from production_output_files;
 
 create temporary table production_output on commit drop as
@@ -793,8 +818,8 @@ select jsonb_build_object(
     from public.designpro_workflow_stages
     where id='46000000-0000-4000-8000-000000000001'),
   'exactSurfaceSet',jsonb_build_array('driver','passenger','hood','roof','front','rear'),
-  'exactFormatSet',jsonb_build_array('png','tiff','eps'),
-  'fileCount',18,'fullScalePixelsPerInch',150,'fileDpi',1500,
+  'exactFormatSet',jsonb_build_array('png','tiff','eps','pdf'),
+  'fileCount',24,'exactSurfaceFormatCount',24,'fullScalePixelsPerInch',150,'fileDpi',1500,
   'outputScale',0.1,'fullScaleBleedInchesPerEdge',5,
   'files',(select jsonb_agg(file order by file->>'surfaceKey',file->>'format')
     from production_output_files),
@@ -819,7 +844,7 @@ select ok(public.complete_designpro_stage(
   '48000000-0000-4000-8000-000000000003',
   (select identity from production_identity),(select receipt from production_output),
   (select pg_temp.handoff_json_hash(receipt) from production_output),'[]'::jsonb
-), 'output verification joins the exact GENIE Call 8, seven frozen proofs and 18 files');
+), 'output verification joins the exact GENIE Call 8, seven frozen proofs and 24 files');
 
 select throws_ok(
   $$select public.approve_designpro_human_gate(

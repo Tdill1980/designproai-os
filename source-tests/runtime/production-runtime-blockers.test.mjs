@@ -322,11 +322,11 @@ test("heavy output, lease-loss abort, structural output QC, deterministic stamp 
   assert.doesNotMatch(claimantSource, /p_ttl_seconds/);
   assert.doesNotMatch(claimantSource, /sb\.rpc\("release_designpro_heavy_lease"/);
   assert.match(claimantSource, /database stage transition releases the exact slot atomically/);
-  // Eighteen is the Production Pack's set: six sides x three formats. A run
+  // New Production Packs have six sides x four formats, including PDF. A run
   // that did not buy it must not be asked to prove it, and one that did still
   // fails closed without the complete set.
   assert.match(claimantSource, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
-  assert.match(claimantSource, /requiredOutputFiles: production \? 18 : 0/);
+  assert.match(claimantSource, /requiredOutputFiles: production \? SURFACE_KEYS\.length \* OUTPUT_FORMATS\.length : 0/);
   assert.match(claimantSource, /createDeterministicZip64Stream/);
   assert.match(claimantSource, /uploadSpoolWithTus/);
   assert.match(claimantSource, /stamped-call8-proof\.png/);
