@@ -110,9 +110,9 @@ const { planElementLockup } = require("./atlas-element-lockup.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const { verifyLogoIdentity } = require("./atlas-logo-prepare.cjs");
 const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
-const { cutProofPanels } = require("./atlas-proof-panels.cjs");
+const { cutProofPanels, scaleCell } = require("./atlas-proof-panels.cjs");
 const {
-  parsePanelRows, renderContainerTemplate,
+  parsePanelRows, renderContainerTemplate, containerLayout,
 } = require("./atlas-proof-container-template.cjs");
 const { zonePixelSize } = require("./atlas-hero-driver.cjs");
 const { createHash } = require("node:crypto");
@@ -536,17 +536,17 @@ async function assemblePanelProofMaster({
 
   // ── node 2: the cut. Deterministic, zero model calls. ──────────────────
   const cutAt = Date.now();
+  const proofManifest = parsePanelRows(panelRows);
   const cut = await cutProofPanels({
-    proofBytes: sheet.bytes, manifest: parsePanelRows(panelRows),
-    zones: ["zone1", "zone2", "zone3"], sharp,
+    proofBytes: sheet.bytes, manifest: proofManifest,
+    // Zone 2 is the generated artwork authority. Zone 1 is composed below,
+    // and Zone 3 comes from originals; neither consumes a provisional AI crop.
+    zones: ["zone2"], sharp,
   });
   if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
 
-  let zone1 = cut.panels.filter((p) => p.zone === "zone1");
-  if (zone1.length !== 6) {
-    throw refuse(`the cut yielded ${zone1.length}/6 branded panels`);
-  }
+  let zone1 = [];
   const zone2 = cut.panels.filter((p) => p.zone === "zone2");
   let zone3 = [];
   if (zone2.length !== 6) {
@@ -561,8 +561,7 @@ async function assemblePanelProofMaster({
     try { return await store.putImmutableBytes(object); }
     catch (cause) { throw refuse("mandatory proof artifact could not be stored", {cause:String(cause?.message || cause)}); }
   };
-  const unverified = cut.panels.filter((p) =>
-    (p.zone === "zone1" || p.zone === "zone2") && (!p.positionalPremiseVerified || !p.identity));
+  const unverified = zone2.filter((p) => !p.positionalPremiseVerified || !p.identity);
   if (unverified.length) {
     throw refuse(`unverified panel identities: ${unverified.map((p) => `${p.zone}:${p.surfaceKey}`).join(", ")}`);
   }
@@ -608,13 +607,25 @@ async function assemblePanelProofMaster({
       .map(p => ({...p,surfaceKey:panel.surfaceKey})));
   }
   const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
-  const originalCells = new Map(zone1.map(p => [p.surfaceKey,p]));
-  zone1 = composed.panels.map(p => ({...p,displayRect:originalCells.get(p.surfaceKey).rect}));
+  const displayLayout = containerLayout(proofManifest);
+  const displayCells = new Map(displayLayout.zone1.map(cell => [cell.surfaceKey,
+    scaleCell(cell,displayLayout,cut.sheet)]));
+  zone1 = composed.panels.map(p => ({...p,displayRect:displayCells.get(p.surfaceKey)}));
   zone3 = assets.map(({bytes,...ref}) => ({...ref,surfaceKey:ref.role,assetRole:ref.role,role:"cut-graphic",persisted:true,productionApproved:false}));
 
   // Replace the model's provisional Zone 1 and Zone 3 in the displayed proof.
   // The customer sees the SAME composed panels the master consumes.
   const proofLayers = [];
+  const zone1Top = Math.round(cut.sheet.height*PROOF_REGIONS.zone1.y);
+  const zone1Bottom = Math.round(cut.sheet.height*PROOF_REGIONS.zone2.y);
+  const blankTemplate = await renderContainerTemplate({manifest:proofManifest});
+  // Only document chrome is scaled to the sheet here. Artwork retains its
+  // aspect through contain below, and source Zone 2 bytes remain unchanged.
+  const cleanZone1Band = await sharp(blankTemplate)
+    .resize(cut.sheet.width,cut.sheet.height,{fit:"fill"})
+    .extract({left:0,top:zone1Top,width:cut.sheet.width,height:zone1Bottom-zone1Top})
+    .png().toBuffer();
+  proofLayers.push({input:cleanZone1Band,left:0,top:zone1Top});
   for (const p of zone1) {
     const r = p.displayRect;
     proofLayers.push({input:await sharp(p.bytes).resize(r.width,r.height,{fit:"contain",background:"white"})
