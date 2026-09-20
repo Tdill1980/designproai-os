@@ -1164,11 +1164,11 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (Number.isFinite(resolvedFlankIn) && resolvedFlankIn > 0) {
     // Make + model family, NOT year: the catalog has no row covering 2022 for
     // this truck (status-board item 19), so a year-exact lookup checks nothing.
-    const family = String(CANARY_MODEL || "").split(/[\s,]+/).filter(Boolean)[0] || "";
+    const family = String(VEHICLE.model || "").split(/[\s,]+/).filter(Boolean)[0] || "";
     const { data: catalogRows } = await service
       .from("vehicle_dimensions")
       .select("model,year_range,side_width")
-      .ilike("make", String(CANARY_MAKE || ""))
+      .ilike("make", String(VEHICLE.make || ""))
       .ilike("model", `%${family}%`)
       .limit(200);
     const candidates = (catalogRows || [])
@@ -1177,7 +1177,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     if (!candidates.length) {
       // Legitimate: grounded estimation for a vehicle the catalog has never
       // seen. Status-board item 19 requires reporting such runs as provisional.
-      step(`GENIE geometry is GROUNDED/PROVISIONAL: no ${CANARY_MAKE} ${family} rows to compare the resolved ${resolvedFlankIn}" flank against`);
+      step(`GENIE geometry is GROUNDED/PROVISIONAL: no ${VEHICLE.make} ${family} rows to compare the resolved ${resolvedFlankIn}" flank against`);
     } else {
       // "Matches a catalogued configuration" is within 2% -- trim differs from
       // the catalog by rounding and the bleed, never by a body style.
@@ -1186,7 +1186,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
       const smallest = Math.min(...widths);
       const largest = Math.max(...widths);
       if (!matched.length) {
-        throw new Error(`the resolved driver flank is ${resolvedFlankIn}" but no ${CANARY_MAKE} ${family} configuration in the GENIE `
+        throw new Error(`the resolved driver flank is ${resolvedFlankIn}" but no ${VEHICLE.make} ${family} configuration in the GENIE `
           + `catalog is that size (${smallest}"-${largest}" across ${candidates.length} rows). A flank that matches no catalogued `
           + `body style is a class-constant estimate for a vehicle the catalog knows — RULE 0.28.`);
       }
@@ -1194,7 +1194,7 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
       if (largest - smallest > smallest * 0.1) {
         // The spread is the finding. Loud, and never silent, because the run
         // otherwise looks identical whichever configuration it picked.
-        step(`WARNING: "${CANARY_MAKE} ${CANARY_MODEL}" matches ${candidates.length} catalogued configurations spanning `
+        step(`WARNING: "${VEHICLE.make} ${VEHICLE.model}" matches ${candidates.length} catalogued configurations spanning `
           + `${smallest}"-${largest}" (${(largest - smallest).toFixed(1)}" apart) and this run took ${resolvedFlankIn}". `
           + `The input contract carries no cab/bed configuration, so the customer cannot say which truck they own `
           + `— status-board item 18.`);

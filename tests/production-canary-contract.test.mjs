@@ -366,7 +366,7 @@ test("the canary reports WHICH configuration GENIE resolved, and convicts one th
     "a flank matching NO catalogued configuration must throw -- that is the RULE 0.28 class-constant estimate");
   assert.match(canary, /step\(`GENIE flank \$\{resolvedFlankIn\}" matches \$\{matched/,
     "the matched configuration must be named, not merely accepted");
-  assert.match(canary, /WARNING: "\$\{CANARY_MAKE\} \$\{CANARY_MODEL\}" matches \$\{candidates\.length\} catalogued configurations spanning/,
+  assert.match(canary, /WARNING: "\$\{VEHICLE\.make\} \$\{VEHICLE\.model\}" matches \$\{candidates\.length\} catalogued configurations spanning/,
     "an ambiguous model string must be reported loudly -- status-board item 18");
 
   // Matched on make + model family, never on year: the catalog has no row
@@ -418,4 +418,33 @@ test("the canary uploads a real customer logo and convicts a Call 1 that did not
   assert.doesNotMatch(canary, /const panelProofAssets =/,
     "original protected logos are composited after generation, not sent to Gemini");
 
+});
+
+
+test("catalog validation executes using the submitted vehicle, including ambiguous and unknown rows", async () => {
+  const start = canary.indexOf("  const driverPanel = (atlasRow.metadata?.callOnePanels || [])");
+  const end = canary.indexOf("  for (const [field, value] of Object.entries({", start);
+  assert.ok(start >= 0 && end > start);
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const validate = new AsyncFunction("VEHICLE", "service", "atlasRow", "step", canary.slice(start, end));
+  const vehicle = { make: "Ford", model: "F250 Crew Cab" };
+  const atlas = { metadata: { callOnePanels: [{ surfaceKey: "driver", trimWidthIn: 230.8 }] } };
+  const filters = [];
+  const messages = [];
+  let rows = [{ model: "F250 Crew Cab 6.5 ft box", year_range: "2020", side_width: 230.8 },
+    { model: "F250 Crew Cab Chassis Cab", year_range: "2020", side_width: 153 }];
+  const service = { from(table) {
+    assert.equal(table, "vehicle_dimensions");
+    return { select() { return this; }, ilike(key, value) { filters.push([key, value]); return this; },
+      async limit() { return { data: rows }; } };
+  } };
+  await validate(vehicle, service, atlas, (message) => messages.push(message));
+  assert.deepEqual(filters, [["make", "Ford"], ["model", "%F250%"]]);
+  assert.ok(messages.some((message) => message.startsWith("GENIE flank 230.8")));
+  assert.ok(messages.some((message) => message.includes('WARNING: "Ford F250 Crew Cab"')));
+  rows = [];
+  await validate(vehicle, service, atlas, (message) => messages.push(message));
+  assert.ok(messages.some((message) => message.includes("GROUNDED/PROVISIONAL: no Ford F250")));
+  rows = [{ model: "F250 Crew Cab Chassis Cab", year_range: "2020", side_width: 153 }];
+  await assert.rejects(validate(vehicle, service, atlas, () => {}), /no Ford F250 configuration/);
 });
