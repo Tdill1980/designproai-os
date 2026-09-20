@@ -1059,6 +1059,7 @@ const ATLAS_PHOTOGRAPHER_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1
 const ATLAS_PROOF_BUCKET = "wrap-files";
 /** The proof's artwork authority is the persisted panel, not a transient crop. */
 const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
+const ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT = "designpro.atlas-three-zone-proof-authority.v1";
 
 /**
  * THE PROVEN PHOTOGRAPHER RENDERS EVERY A.T.L.A.S. PROOF. (Trish 2026-08-28)
@@ -1095,6 +1096,105 @@ const ATLAS_PANEL_AUTHORITY_CONTRACT = "designpro.atlas-panel-authority.v1";
  * surface is a deterministic cut of one master, hash-bound, which is a stronger
  * guarantee than injecting one render into the others.
  */
+function atlasProofArtworkAuthority(atlas, sourceViewType) {
+  const panel = atlas.panelFor(sourceViewType);
+  const sheet = atlas.proofSheet && typeof atlas.proofSheet === "object" ? atlas.proofSheet : null;
+  if (sheet?.storagePath && /^[0-9a-f]{64}$/.test(String(sheet.contentHash || ""))) {
+    return {
+      storagePath: sheet.storagePath,
+      contentHash: String(sheet.contentHash).toLowerCase(),
+      contentType: String(sheet.contentType || "image/png"),
+      contract: ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
+      role: "three-zone-production-proof",
+      surfaceKey: panel.surfaceKey,
+      surfaceSelection: panel.surfaceSelection,
+      panel,
+    };
+  }
+  return {
+    storagePath: panel.storagePath,
+    contentHash: panel.contentHash,
+    contentType: panel.contentType,
+    contract: ATLAS_PANEL_AUTHORITY_CONTRACT,
+    role: "surface-panel",
+    surfaceKey: panel.surfaceKey,
+    surfaceSelection: panel.surfaceSelection,
+    panel,
+  };
+}
+
+function atlasProofRequestBody({ options, input, sourceViewType, authority, revisionId }) {
+  const vehicle = input?.vehicle || {};
+  return {
+    mode: "atlas-proof",
+    providerRequest: { contractVersion: PROOF_RECOVERY_CONTRACT,
+      requestId: options.requestId, generationId: options.generationId,
+      claimToken: options.claimToken },
+    shotKey: sourceViewType,
+    surfaceKey: authority.surfaceKey,
+    surfaceSelection: authority.surfaceSelection,
+    sourcePanelStoragePath: authority.storagePath,
+    sourcePanelHash: authority.contentHash,
+    sourcePanelContentType: authority.contentType,
+    sourceAuthorityRole: authority.role,
+    sourceAuthorityContract: authority.contract,
+    sourceMasterHash: authority.role === "three-zone-production-proof"
+      ? authority.contentHash
+      : (authority.panel?.sourceMasterHash || ""),
+    atlasRevisionId: revisionId || null,
+    generationId: options.generationId || null,
+    vehicleYear: String(vehicle.year || ""),
+    vehicleMake: String(vehicle.make || ""),
+    vehicleModel: String(vehicle.model || ""),
+    isPickup: pickupVehicle(input),
+    ...(sourceViewType === "roof" && pickupVehicle(input)
+      ? { pickupRoofQualification: angles.PICKUP_ROOF_QUALIFICATION } : {}),
+    finish: String(input?.finish || "Gloss"),
+  };
+}
+
+/**
+ * Start all seven photographer calls as soon as proof.sheet is durable.
+ * The later provider call uses the exact same durable provider identity/body,
+ * so it reads these results from cache instead of spending another image call.
+ */
+async function prefetchAtlasProofsFromPanelProof(options = {}) {
+  const sheet = options.sheet;
+  if (!sheet?.storagePath || !/^[0-9a-f]{64}$/.test(String(sheet.contentHash || ""))) return [];
+  const input = options.input && typeof options.input === "object" ? options.input : {};
+  const supabaseUrl = String(options.supabaseUrl || process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(options.serviceRoleKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  const ownerId = String(options.tenantKey || "").replace(/^user_/, "");
+  if (!supabaseUrl || serviceRoleKey.length < 32 || !ownerId) return [];
+  const base = {
+    storagePath: sheet.storagePath,
+    contentHash: String(sheet.contentHash).toLowerCase(),
+    contentType: String(sheet.contentType || sheet.sheetShape?.mime || "image/png"),
+    contract: ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
+    role: "three-zone-production-proof",
+  };
+  return Promise.allSettled(Object.keys(ATLAS_VIEW_SURFACES).map(async (sourceViewType) => {
+    const surfaceKey = ATLAS_VIEW_SURFACES[sourceViewType] || "driver";
+    const authority = { ...base, surfaceKey, surfaceSelection: sourceViewType === "close-up" ? "default-driver-detail" : "fixed-by-surface",
+      panel: { surfaceKey, contentHash: String(options.expectedPanelHashes?.[surfaceKey] || "") } };
+    const body = atlasProofRequestBody({
+      options, input, sourceViewType, authority, revisionId: options.revisionId,
+    });
+    return invokeAtlasProof({
+      url: `${supabaseUrl}/functions/v1/persona-photographer-render`,
+      fetchImpl: options.fetchImpl || globalThis.fetch,
+      timeoutMs: 180_000,
+      headers: {
+        authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+        "content-type": "application/json",
+        "x-designpro-owner-id": ownerId,
+      },
+      body,
+    });
+  }));
+}
+
 function createAtlasDesignPanelProvider(options = {}) {
   const provider = options.provider;
   const input = options.input && typeof options.input === "object" ? options.input : {};
@@ -1156,11 +1256,13 @@ function createAtlasDesignPanelProvider(options = {}) {
       throw new DesignPanelServerError("designpanel_atlas_proof_transport_missing", "SUPABASE_URL / service key are required for the photographer request", true);
     }
 
-    // EACH SURFACE GETS ITS OWN PANEL. `panelFor` resolves through
-    // `surfaceForProofView`, so passenger-side receives the passenger panel and
-    // never the driver's -- the exact substitution the owner ruled out.
-    const panel = atlas.panelFor(sourceViewType);
-    const vehicle = input?.vehicle || {};
+    // PANEL-PROOF TOPOLOGY: Call 2 sees the exact customer-visible three-zone
+    // Call-1 document. Other topologies keep their proven per-surface authority.
+    const authority = atlasProofArtworkAuthority(atlas, sourceViewType);
+    const panel = authority.panel;
+    const body = atlasProofRequestBody({
+      options, input, sourceViewType, authority, revisionId: identity.revisionId,
+    });
 
     const { payload, signal: proofSignal } = await invokeAtlasProof({
       url: `${supabaseUrl}/functions/v1/persona-photographer-render`,
@@ -1171,41 +1273,7 @@ function createAtlasDesignPanelProvider(options = {}) {
         "content-type": "application/json",
         "x-designpro-owner-id": ownerId,
       },
-      body: {
-        mode: "atlas-proof",
-        providerRequest: { contractVersion: PROOF_RECOVERY_CONTRACT,
-          requestId: options.requestId, generationId: options.generationId,
-          claimToken: options.claimToken },
-        shotKey: sourceViewType,
-        surfaceKey: panel.surfaceKey,
-        surfaceSelection: panel.surfaceSelection,
-        sourcePanelStoragePath: panel.storagePath,
-        sourcePanelHash: panel.contentHash,
-        sourcePanelContentType: panel.contentType,
-        sourceMasterHash: panel.sourceMasterHash || identity.masterContentHash,
-        atlasRevisionId: identity.revisionId || null,
-        generationId: options.generationId || null,
-        vehicleYear: String(vehicle.year || ""),
-        vehicleMake: String(vehicle.make || ""),
-        vehicleModel: String(vehicle.model || ""),
-        // VEHICLE CONFIG, WHICH IS A.T.L.A.S.'S TO CONTRIBUTE.
-        //
-        // Owner, 2026-08-28: "ATLAS should contribute only: exact panel
-        // artwork; lineage; exact vehicle/config; requested shot." Whether the
-        // target is a pickup is config, and the proof needs it: the pinned
-        // photographer prompt says the wrap covers painted body panels and
-        // names glass, lights, wheels and trim -- it never mentions an open
-        // cargo bed, so nothing in the A.T.L.A.S. proof words stops artwork
-        // being painted down inside one. `pickupVehicle` is the same predicate
-        // that already drives the pickup cab-roof qualification below, so the
-        // proof and the camera authority cannot disagree about the vehicle.
-        isPickup: pickupVehicle(input),
-        // Reuse the camera authority's existing pickup qualification; the
-        // generic roof anchor's "A-pillars to trunk" does not describe a cab.
-        ...(sourceViewType === "roof" && pickupVehicle(input)
-          ? { pickupRoofQualification: angles.PICKUP_ROOF_QUALIFICATION } : {}),
-        finish: String(input?.finish || "Gloss"),
-      },
+      body,
     });
     // The proof comes back by STORAGE PATH: wrap-files is private, so a public
     // URL 400s -- the same lesson Call 1 learned live on 2026-08-27.
@@ -1253,8 +1321,11 @@ function createAtlasDesignPanelProvider(options = {}) {
         atlasZoneContentHash: panel.contentHash,
         atlasZoneSurfaceKey: panel.surfaceKey,
         atlasSurfaceSelection: panel.surfaceSelection,
-        sourcePanelStoragePath: panel.storagePath,
-        sourcePanelHash: panel.contentHash,
+        sourcePanelStoragePath: authority.storagePath,
+        sourcePanelHash: authority.contentHash,
+        proofArtworkAuthorityContract: authority.contract,
+        proofArtworkAuthorityHash: authority.contentHash,
+        proofArtworkAuthorityRole: authority.role,
       }),
     };
   }
@@ -1281,6 +1352,7 @@ module.exports = {
   // clear lineage (generation a14acec2, 2026-08-28 -- seven good proofs, all
   // refused).
   ATLAS_PANEL_AUTHORITY_CONTRACT,
+  ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
   ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
   ATLAS_PROOF_EXECUTION,
   ATLAS_PROOF_STAGE,
@@ -1289,6 +1361,7 @@ module.exports = {
   buildReproductionPrompt,
   createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
+  prefetchAtlasProofsFromPanelProof,
   designLikelyHasText,
   estimatedGeminiImageRequestBytes,
   fixMirrorText,

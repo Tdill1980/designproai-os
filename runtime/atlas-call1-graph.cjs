@@ -970,7 +970,7 @@ function createAtlasCall1NodeWorker({
    */
   async function authorPanelProof({
     manifest, input, requestId, generationId, ownerId, providerRequest = null,
-    customerImageParts = [],
+    customerImageParts = [], onProofSheetReady = null,
     logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
   }) {
     if (!manifest?.zones || !requestId || !generationId || !ownerId) {
@@ -1016,6 +1016,22 @@ function createAtlasCall1NodeWorker({
     // edge produced `designpro_atlas_call1_timeout` in 61.8 s of a test budget
     // rather than `flat_atlas_panel_proof_refused`.
     const startedAt = Date.now();
+    let proofSheetPublished = false;
+    const publishProofSheet = async () => {
+      if (proofSheetPublished || typeof onProofSheetReady !== "function") return;
+      const row = await readNode(run.id, PROOF_SHEET_NODE);
+      if (row?.state !== "completed" || !row?.output?.sheet?.storagePath) return;
+      proofSheetPublished = true;
+      // CUSTOMER-CRITICAL FAN-OUT: proof.sheet is the first durable Call-1
+      // artifact. Publish it immediately and let Call 2 prefetch from these
+      // exact bytes while proof.assemble continues independently.
+      void Promise.resolve(onProofSheetReady({
+        graphRunId: run.id,
+        sheet: row.output.sheet,
+        panelRows: row.output.panelRows || [],
+        customerAssets: row.output.customerAssets || [],
+      })).catch((cause) => log(`atlas panel-proof graph ${run.id}: early proof fan-out failed non-fatally: ${String(cause?.message || cause)}`));
+    };
     const readRun = async () => {
       const { data, error } = await supabase.from("designpro_atlas_call1_runs").select("*").eq("id", run.id).single();
       if (error || !data) {
@@ -1029,9 +1045,11 @@ function createAtlasCall1NodeWorker({
           `panel-proof run ${run.id} did not finish in time`, true);
       }
       await tick();
+      await publishProofSheet();
       await sleep(awaitPollMs);
       run = await readRun();
     }
+    await publishProofSheet();
     if (run.state === "failed") {
       // A CREATIVE REFUSAL MUST ARRIVE AS ONE, from WHICHEVER node carried it.
       const { data: failedNodes } = await supabase.from("designpro_atlas_call1_nodes")

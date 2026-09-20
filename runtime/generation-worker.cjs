@@ -32,12 +32,14 @@ const { createProvider } = require("./generation-provider.cjs");
 const {
   ARTIFACT_AUDIT_CONTRACT,
   ATLAS_PANEL_AUTHORITY_CONTRACT,
+  ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
   ATLAS_PHOTOGRAPHER_PROOF_CONTRACT,
   ATLAS_PROOF_EXECUTION,
   ATLAS_PROOF_STAGE,
   ATLAS_SERVER_PROVIDER_CONTRACT,
   createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
+  prefetchAtlasProofsFromPanelProof,
 } = require("./designpanel-server-provider.cjs");
 const { createDesignPanelEdgeProvider } = require("./designpanel-edge-provider.cjs");
 
@@ -725,7 +727,14 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || providerMetadata.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT
       || providerMetadata.atlasZoneContentHash !== panelAuthority.contentHash
       || providerMetadata.atlasZoneSurfaceKey !== panelAuthority.surfaceKey
-      || providerMetadata.sourcePanelHash !== panelAuthority.contentHash) {
+      || (
+        flatAtlas.proofSheet?.contentHash
+          ? (providerMetadata.proofArtworkAuthorityContract !== ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT
+            || providerMetadata.proofArtworkAuthorityRole !== "three-zone-production-proof"
+            || providerMetadata.proofArtworkAuthorityHash !== flatAtlas.proofSheet.contentHash
+            || providerMetadata.sourcePanelHash !== flatAtlas.proofSheet.contentHash)
+          : providerMetadata.sourcePanelHash !== panelAuthority.contentHash
+      )) {
       throw atlasLineageError(`${sourceViewType} points at a different Atlas revision`);
     }
     if (authority.contract !== flatAtlas.contract
@@ -1109,6 +1118,7 @@ function createGenerationWorker({
               conditioningPartsFor: (view) => atlasProjectionParts(atlas, view),
               conditioningIdentityFor: (view) => viewAuthorityFor(atlas, view),
               panelFor: (view) => atlasPanelForProofView(atlas, view),
+              proofSheet: atlas.proofSheet || null,
               authorityMetadata: {
                 masterContentHash: atlas.master.contentHash,
                 surfaceSourceHash: atlas.projection.sourceMasterHash,
@@ -1193,6 +1203,20 @@ function createGenerationWorker({
           // refusal. Recovery reuses the same provider attempt and never
           // resets this creative budget.
           maxAuthoringAttempts: 2,
+          // proof.sheet is already the customer's Call 1. Start all seven
+          // photographer calls from those exact bytes while the production
+          // assembly branch continues. The later provider read uses the same
+          // durable operation identities, so this is prefetch, not a second spend.
+          onProofSheetReady: ({ sheet, revisionId }) => prefetchAtlasProofsFromPanelProof({
+            sheet, revisionId,
+            input: executionInput,
+            requestId,
+            generationId: claim.generationId,
+            claimToken,
+            tenantKey: claim.tenantKey,
+            supabaseUrl,
+            serviceRoleKey,
+          }),
           onMasterReady: (atlas) => {
             progressiveAtlas = atlas;
           },

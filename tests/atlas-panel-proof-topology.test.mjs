@@ -335,8 +335,8 @@ test("provisional AI Zone 1 geometry is discarded and the complete band is compo
   assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
   assert.ok(out.provenance.threeZoneLayout.graphics > 0);
   assert.ok(out.provenance.quadrants.branded.every(panel => panel.positionalPremiseVerified && panel.identity));
-  const finalProof = store.objects.get(out.provenance.proofStoragePath).bytes;
-  const outsidePanel = await sharp(finalProof).extract({left:2,top:top+50,width:1,height:1})
+  const productionProof = store.objects.get(out.provenance.productionComposedProof.storagePath).bytes;
+  const outsidePanel = await sharp(productionProof).extract({left:2,top:top+50,width:1,height:1})
     .removeAlpha().raw().toBuffer();
   assert.deepEqual([...outsidePanel],[255,255,255],"discarded provisional pixels cannot remain behind the final panels");
   for (const panel of out.provenance.quadrants.clean) {
@@ -411,8 +411,10 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   }
   // The proof sheet's own identity is on the receipt, so "which sheet produced
   // this master" is a query rather than a storage-timestamp guess.
-  assert.notEqual(out.provenance.proofSha256, "a".repeat(64));
-  assert.equal(out.provenance.proofStoragePath, `atlas-panel-proof/${out.provenance.proofSha256}.png`);
+  assert.equal(out.provenance.proofSha256, "a".repeat(64), "customer Call 1 keeps the exact Gemini sheet identity");
+  assert.equal(out.provenance.proofStoragePath, "atlas-panel-proof/a.jpg");
+  assert.ok(out.provenance.productionComposedProof?.storagePath, "production composition is retained separately");
+  assert.notEqual(out.provenance.productionComposedProof.contentHash, out.provenance.proofSha256);
   // AND NO PANEL SET COMES BACK. The six surface RECEIPTS do (above), because a
   // receipt is a record; the panel BYTES do not, because `cutCallOnePanels` cuts
   // production's six from the assembled master and a second set nobody reads
