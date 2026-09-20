@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('retired automatic runtime-only deploy and paid matrix cannot race the controlled release', () => {
+  for (const path of ['runtime-fast-deploy.yml', 'vehiclepro-live-prompt-tests.yml']) {
+    assert.equal(existsSync(new URL(`../.github/workflows/${path}`, import.meta.url)), false);
+  }
+  const deployment = read('.github/workflows/deploy-production.yml');
+  assert.match(deployment, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(deployment, /github\.event\.workflow_run\.event == 'push'/);
+  assert.match(deployment, /github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.doesNotMatch(read('.github/workflows/vehiclepro-recovery-acceptance.yml'), /\n  push:/);
+});
 
 test('edge release checks a successful exact main SHA before deploying and verifies compiled identity', () => {
   const workflow = read('.github/workflows/deploy-edge-functions.yml');
