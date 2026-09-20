@@ -467,7 +467,27 @@ serve(async (req) => {
         .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
           "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
         .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
-          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully; exclude every logo and all lettering");
+          "Recreate its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully as the background-art layer; the compositor supplies the logo and typography layers.");
+    }
+
+    if (body.separatedArtwork === true) {
+      // Gemini image models respond more reliably to a positive target than to
+      // a list of forbidden objects. Preserve A.C.E.'s creative intelligence
+      // while reframing its clean-base/output clauses around what belongs in
+      // this layer and what the deterministic compositor owns.
+      creativeHead = creativeHead
+        .replace(
+          /BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND\.[\s\S]*?No letters, no numerals, no words, no monograms, no logo marks, no badges, no signage, no lettering of any kind anywhere in the artwork\./,
+          "BACKGROUND ARTWORK LAYER. Build the wrap's color, texture, imagery, motion, depth and focal treatment as a complete commercial background. Reserve a calm, high-contrast passage for the separate brand and contact layers. The deterministic compositor supplies the company identity, logo, typography and contact graphics as protected production layers."
+        )
+        .replace(/never an on-vehicle photograph/gi,
+          "presented as straight-on flat printed vinyl artwork")
+        .replace(/Vehicle appearance, installed boundaries and presentation lighting are produced downstream by the proof projections and are absent here\./g,
+          "Vehicle appearance, installed boundaries and presentation lighting belong to the downstream proof projections.")
+        .replace(/Set no panel names, surface IDs, legends or captions anywhere in the artwork — those words are for the server, never for the sheet\./g,
+          "The artwork contains the customer's creative background design. Panel names, surface IDs, legends and captions are server-rendered document chrome.")
+        .replace(/never generic AI filler, never a template/gi,
+          "bespoke, commercially specific artwork with intentional composition");
     }
 
     let prompt = buildPanelProofPrompt({
@@ -493,13 +513,13 @@ serve(async (req) => {
       // Replace the branded proof tail: appending a prohibition after instructions
       // to draw exact customer text and fill five logo boxes was contradictory.
       prompt = [
-        "You are the wrap-artwork designer, not the proof-sheet renderer. Generate ONLY the clean printed BACKGROUND ARTWORK that will be placed into six vehicle panel cells by code.",
-        "DO NOT generate a production-proof document. DO NOT draw headers, zone bars, borders, dimension arrows, panel labels, captions, tables, notes, footers, UI, logos, typography, phone numbers, websites, icons or cut graphics.",
+        "ROLE: Senior commercial wrap-artwork designer. Create the clean printed BACKGROUND ARTWORK layer for six vehicle panel cells.",
+        "OUTPUT TARGET: six cohesive background-art panels containing the requested colors, imagery, textures, gradients, motion, depth and focal treatment. The deterministic compositor owns all Production Panel Proof document chrome and all protected brand, typography, contact, icon and cut-graphic layers.",
         creativeHead,
-        "ARTWORK STAGING CANVAS: Attachment 1 is a CODE-DRAWN geometry reference for this exact vehicle. Use ONLY the six rectangular cells in its green ZONE 2 row as placement guides for six background-art panels. Paint those six rectangles edge-to-edge with one cohesive commercial wrap design. Everything outside those six rectangles must remain plain white.",
-        "The driver and passenger backgrounds should feel like opposite sides of the SAME wrap campaign; hood, roof, front and rear continue the same visual language. Preserve useful negative space where the operating system can later place protected customer logo/type assets. Never draw vehicle anatomy, wheel openings, windows, handles or body silhouettes inside the rectangles.",
-        "Attachment 2 is the Bright Smiles FINISHED THREE-ZONE EXAMPLE. It teaches design quality, hierarchy and the relationship between completed panels/backgrounds/separated graphics ONLY. DO NOT recreate its document, words, logo, colors, dimensions, borders or layout furniture.",
-        "The operating system will deterministically build the customer-visible three-zone Production Panel Proof AFTER this generation: Zone 1 = these exact backgrounds + protected original customer assets; Zone 2 = these exact backgrounds; Zone 3 = protected original logo/text/icons. Your only output responsibility is the six clean background artworks.",
+        "ARTWORK STAGING CANVAS: Attachment 1 is the code-drawn geometry reference for this exact vehicle. The six rectangular cells in its green ZONE 2 row are the placement guides. Fill each of those six rectangles edge-to-edge with one cohesive commercial wrap campaign. The surrounding canvas stays clean white as staging space for the compositor.",
+        "CONTINUITY: Driver and passenger are opposite sides of the same campaign. Hood, roof, front and rear continue the same palette, imagery, lighting, motion and visual language. Reserve useful calm, high-contrast areas for the protected brand layers that the compositor places next.",
+        "QUALITY REFERENCE: Attachment 2 is the Bright Smiles finished three-zone example. Use it as the standard for design quality, hierarchy, panel-to-panel cohesion and the relationship between completed panels, background artwork and separated graphics. Attachment 1 supplies this vehicle's geometry; the operating system supplies this customer's document chrome and protected brand assets.",
+        "DOWNSTREAM COMPOSITION: The operating system builds the customer-visible three-zone Production Panel Proof from this artwork. Zone 1 receives these backgrounds plus protected original customer assets. Zone 2 receives these exact backgrounds. Zone 3 receives protected original logo, typography, contact and icon assets. Your deliverable is the six clean background artworks.",
       ].join("\n\n");
     }
 
@@ -515,7 +535,7 @@ serve(async (req) => {
         /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
       flatPanelProductionProofInjected:
         /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
-        || (/Generate ONLY the clean printed BACKGROUND ARTWORK/.test(prompt)
+        || (/Create the clean printed BACKGROUND ARTWORK layer/.test(prompt)
           && /six rectangular cells in its green ZONE 2 row/.test(prompt)),
       templateLayoutLocked:
         /Fill the attached template; do not re-flow it\./.test(prompt)
