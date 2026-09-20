@@ -504,6 +504,29 @@ serve(async (req) => {
       ].join("\n\n");
     }
 
+    // PHASE 1 PAYLOAD CONTRACT — fail closed before the provider sees a request.
+    // The live canary reports this object next to the full prompt so the exact
+    // persona/layout injection can be proved from the provider payload rather
+    // than inferred from source comments.
+    const phase1Audit = {
+      contract: "designpro.vehiclepro.phase1.graphic-designer-flat-first-opaque-edge.v1",
+      graphicDesignerPersonaInjected:
+        /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/.test(prompt),
+      nativeGeminiImageKnowledgeInjected:
+        /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
+      flatPanelProductionProofInjected:
+        /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt),
+      templateLayoutLocked:
+        /Fill the attached template; do not re-flow it\./.test(prompt)
+        || /MANDATORY THREE-BAND PRODUCTION LAYOUT/.test(prompt),
+    };
+    const missingPhase1 = Object.entries(phase1Audit)
+      .filter(([key, value]) => key !== "contract" && value !== true)
+      .map(([key]) => key);
+    if (missingPhase1.length) {
+      throw new Error(`panel_proof_phase1_contract_missing:${missingPhase1.join(",")}`);
+    }
+
     // THE BIG INPUTS TRAVEL BY STORAGE PATH, NOT INSIDE THE JSON BODY.
     // Live 2026-08-27: a 2.2MB request as inline base64 killed the worker 25s
     // in, twice, with a bodiless 504.
@@ -725,6 +748,7 @@ serve(async (req) => {
       // the designiq A/B harness exists at all.
       promptChars: prompt.length,
       prompt,
+      phase1Audit,
       // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
       // sheet just quietly carries the wrong company or the wrong truck.
       intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
