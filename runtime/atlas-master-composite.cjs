@@ -283,6 +283,16 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       throw new AtlasCompositeError("atlas_composite_placement_identity_mismatch", "placement references unknown artwork or surface");
     }
   }
+  // A successful composite must account for every protected asset on each
+  // branded surface. The roof deliberately remains background-only.
+  for (const surfaceKey of expected.filter(key => key !== "roof")) {
+    for (const role of originals.keys()) {
+      if (placements.filter(p => p.surfaceKey === surfaceKey && p.role === role).length !== 1) {
+        throw new AtlasCompositeError("atlas_composite_asset_coverage_invalid",
+          `${surfaceKey}/${role}: exactly one original overlay is required`);
+      }
+    }
+  }
   const panels = [];
   for (const base of backgrounds) {
     const meta = await sharp(base.bytes).metadata();
@@ -304,8 +314,30 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       if (left+width > meta.width || top+height > meta.height) {
         throw new AtlasCompositeError("atlas_composite_bounds_invalid", "rounded overlay leaves its panel");
       }
+      const pixels = await sharp(raster).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+      let visible = 0, luminance = 0, minY = height, maxY = -1;
+      for (let y=0;y<height;y++) for (let x=0;x<width;x++) {
+        const i=(y*width+x)*4;
+        if (pixels.data[i+3] < 128) continue;
+        visible++; minY=Math.min(minY,y); maxY=Math.max(maxY,y);
+        luminance += 0.2126*pixels.data[i]+0.7152*pixels.data[i+1]+0.0722*pixels.data[i+2];
+      }
+      if (!visible) throw new AtlasCompositeError("atlas_composite_overlay_empty", `${base.surfaceKey}/${p.role}: empty rendered asset`);
+      const text = p.role === "typography" || p.role === "contact";
+      if (text && maxY-minY+1 < 16) {
+        throw new AtlasCompositeError("atlas_composite_text_unreadable", `${base.surfaceKey}/${p.role}: lettering is too small at native panel resolution`);
+      }
+      // Keep original glyph colors and bytes. A separate neutral backing makes
+      // dark and light supplied lettering visible over arbitrary generated art.
+      let contrastBacking = null;
+      if (text) {
+        contrastBacking = luminance/visible < 128 ? "#ffffff" : "#111111";
+        const backing = await sharp({create:{width,height,channels:4,background:contrastBacking}}).png().toBuffer();
+        layers.push({input:backing,left,top});
+      }
       layers.push({input:raster,left,top});
-      applied.push({role:p.role,contentHash:asset.contentHash,box:b,flipped:false});
+      applied.push({role:p.role,contentHash:asset.contentHash,box:b,flipped:false,
+        visiblePixels:visible,visibleHeight:maxY-minY+1,contrastBacking});
     }
     const bytes = layers.length ? await sharp(base.bytes).composite(layers).png().toBuffer() : base.bytes;
     panels.push({...base, bytes, byteSize:bytes.length, contentHash:sha256(bytes),

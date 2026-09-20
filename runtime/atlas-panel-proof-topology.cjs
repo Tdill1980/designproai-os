@@ -106,7 +106,7 @@ const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v2";
 const PROOF_EDGE_FUNCTION = "production-panel-proof";
 
 const { compositeProductionPanels } = require("./atlas-master-composite.cjs");
-const { planElementLockup } = require("./atlas-element-lockup.cjs");
+const { planProductionPanelLockup } = require("./atlas-element-lockup.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const { verifyLogoIdentity } = require("./atlas-logo-prepare.cjs");
 const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
@@ -605,16 +605,10 @@ async function assemblePanelProofMaster({
       width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true});
   }
   if (!assets.length) throw refuse("Zone 3 requires original assets or customer text");
-  const placements = [];
-  for (const panel of zone2) {
-    if (panel.surfaceKey === "roof") continue;
-    // Reuse the lockup planner in each panel's own reading coordinates.
-    const plan = planElementLockup({zones:[{surfaceKey:"driver",rotationDegrees:0,
-      trim:{x:0,y:0,w:panel.rect.width,h:panel.rect.height}}],elements:assets});
-    const side = panel.surfaceKey === "passenger" ? "passenger" : "driver";
-    placements.push(...plan.placements.filter(p => p.surfaceKey === side)
-      .map(p => ({...p,surfaceKey:panel.surfaceKey})));
-  }
+  let productionLayout;
+  try { productionLayout = planProductionPanelLockup({panels:zone2,elements:assets}); }
+  catch (cause) { throw refuse("production panel overlay layout invalid", {cause:String(cause?.message || cause),code:cause?.code}); }
+  const placements = productionLayout.placements;
   const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
   const displayLayout = containerLayout(proofManifest);
   const displayCells = new Map(displayLayout.zone1.map(cell => [cell.surfaceKey,
@@ -790,7 +784,7 @@ async function assemblePanelProofMaster({
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
         graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
-      composition: {contract:composed.contract,placements,sourceAssetsPreserved:true},
+      composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,sourceAssetsPreserved:true},
       imageRequestCount: 1,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
