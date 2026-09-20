@@ -133,6 +133,7 @@ const SPROCKET_DESIGN_FACTS = [
 
 /* ── ACE typewriter greeting — types in, holds, erases, repeats ── */
 const ACE_GREETING = "Hi I'm ACE your Graphic Designer AKA the";
+const VEHICLEPRO_PHASE1_CONTRACT = "designpro.vehiclepro.phase1.graphic-designer-flat-first-opaque-edge.v1";
 function AceTypewriterGreeting() {
   const [charIdx, setCharIdx] = useState(0);
   const [phase, setPhase] = useState<"typing" | "holding" | "erasing">("typing");
@@ -1298,6 +1299,17 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       return;
     }
     const requestedPipelineMode = pipelineModeRef.current;
+    // Production-visible marker for the Phase 1 contract this VehiclePro build
+    // is invoking. Creative/persona enforcement remains server-owned; this
+    // identifies the exact client build that submitted the run without moving
+    // prompt authority into the browser.
+    console.info("[VehiclePro Phase 1]", {
+      contract: VEHICLEPRO_PHASE1_CONTRACT,
+      pipelineMode: requestedPipelineMode,
+      call1GraphicDesignerPersona: "server-enforced",
+      flatFirstLayout: true,
+      boundedOpaqueEdgeExtension: "server-enforced",
+    });
     // The RAW params, captured before enrichment. `lastPipelineParamsRef`
     // below holds the ENRICHED copy, which carries this run's generationId --
     // replaying that would re-submit against a request the server is done with.

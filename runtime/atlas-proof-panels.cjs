@@ -189,12 +189,19 @@ async function cutProofPanels({
         return { contract: PANELS_CONTRACT, sheet, panels: [],
           refused: `atlas_proof_panels_${zone}:${identified.refused}` };
       }
-      assignments = identified.assignments;
+      assignments = identified.assignments.map((assignment) => ({
+        ...assignment,
+        // Restore only the locator erosion we introduced ourselves. The
+        // rectangle remains clamped to the authoritative zone band above, so
+        // this is a bounded opaque-edge extension rather than invented bleed.
+        opaqueEdgeExtensionPx: inset,
+        opaqueEdgeExtensionBoundedToBand: true,
+      }));
     } else {
       // Phase 2 owns overlay extraction. These remain explicitly unverified.
-      assignments = cells.map((cell) => ({ cell, rect: scaleCell(cell, layout, sheet), identity: null }));
+      assignments = cells.map((cell) => ({ cell, rect: scaleCell(cell, layout, sheet), identity: null, opaqueEdgeExtensionPx: 0, opaqueEdgeExtensionBoundedToBand: false }));
     }
-    for (const { cell, rect, identity } of assignments) {
+    for (const { cell, rect, identity, opaqueEdgeExtensionPx = 0, opaqueEdgeExtensionBoundedToBand = false } of assignments) {
       const bytes = await sharp(proofBytes)
         .extract(rect)
         .png({ compressionLevel: 9 })
@@ -214,6 +221,8 @@ async function cutProofPanels({
         fit: await inkFraction(sharp, proofBytes, rect),
         positionalPremiseVerified: identity !== null,
         identity,
+        opaqueEdgeExtensionPx,
+        opaqueEdgeExtensionBoundedToBand,
         // Geometric identity is not semantic/logo correctness or human QC.
         productionApproved: false,
       });
