@@ -61,8 +61,8 @@ jobs:
           cache: npm
           cache-dependency-path: runtime/package-lock.json
       - run: npm ci --prefix runtime
-      - name: Install root test toolchain
-        run: npm ci
+      - name: Install app test toolchain
+        run: npm ci --prefix app
       - name: Runtime syntax and Call-1 regression contracts only
         run: |
           set -Eeuo pipefail
