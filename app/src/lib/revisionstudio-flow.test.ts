@@ -5,8 +5,8 @@ vi.mock("@/lib/designpro-api", () => ({ dpApi: api, ROLE_FOR_SOURCE_VIEW_TYPE: {
 vi.mock("@/lib/logo-composite", () => ({ composeRenderWithLayers: compose }));
 import { getDesignBuildStatus, pendingRevisionNotes, layerRevisionReferenceFiles, readDesignAfterEdit, readSubmittedRevision, revisionParent, submitDesignRevision } from "./revisionstudio-flow";
 import type { FlatAtlasRevision, GenerationRevisionReceipt } from "./designpro-api";
-const parent = { id: "atlas-v2", generationId: "existing-generation", revisionSequence: 2, parentRevisionId: "atlas-v1", master: { contentHash: "a".repeat(64) } } as FlatAtlasRevision;
-const current = { ...parent, id: "atlas-v4", revisionSequence: 4, master: { ...parent.master, contentHash: "b".repeat(64) } };
+const parent = { id: "atlas-v2", requestId: "request-v2", generationId: "existing-generation", revisionSequence: 2, parentRevisionId: "atlas-v1", master: { contentHash: "a".repeat(64) } } as FlatAtlasRevision;
+const current = { ...parent, id: "atlas-v4", requestId: "request-v4", revisionSequence: 4, master: { ...parent.master, contentHash: "b".repeat(64) } };
 const receipt = { generationId: parent.generationId, requestId: "request-v5", parentAtlasRevisionId: parent.id, revisionSequence: 5, state: "queued" } as GenerationRevisionReceipt;
 const input = () => ({ source: { id: parent.generationId, atlas_revision_id: parent.id, vehicle_year: "2020", vehicle_make: "Chevrolet", vehicle_model: "Camaro" }, instruction: "Move the supplied logo away from the door seam.", vehicle: { year: "2020", make: "Chevrolet", model: "Camaro" }, designName: "Existing design" });
 beforeEach(() => { vi.clearAllMocks(); api.listJobFlatAtlasRevisions.mockResolvedValue([current, parent]); api.createGenerationRevision.mockResolvedValue(receipt); api.uploadRevisionAsset.mockResolvedValue({ contentHash: "c".repeat(64), storagePath: "owned/reference.png", byteSize: 3, contentType: "image/png" }); });
@@ -18,6 +18,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     api.listArtifacts.mockResolvedValue([{ id: "old-call8", kind: "flat-proof", surfaceKey: "", contentHash: "c".repeat(64), signedUrl: "https://files.test/old-proof.png", metadata: { role: "customer-2d-production-proof", sourceMasterHash: parent.master.contentHash } }]);
     const pending = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
     expect(pending.proofUrl).toBeNull();
+    expect(pending.panelProofSource).toEqual({ requestId: receipt.requestId, revisionId: null });
     expect(pending.workflowRun?.workflow_status).toBe("running");
     api.getGenerationRequest.mockResolvedValue({ ...receipt, state: "outputs_ready", revisionHandoffError: { code: "private SQL text" } });
     const stalled = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
@@ -25,6 +26,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     expect(JSON.stringify(stalled)).not.toContain("private SQL text");
     const historical = await getDesignBuildStatus({ generationId: parent.generationId, atlasRevisionId: parent.id });
     expect(historical.proofUrl).toBe("https://files.test/old-proof.png");
+    expect(historical.panelProofSource).toEqual({ requestId: parent.requestId, revisionId: parent.id });
     expect(JSON.parse(pendingRevisionNotes({ original_prompt: "Saved brief", flat_proof_url: "old", logo_pack: ["old"], logo_layers: { old: true }, ai_edit_summary: "Old change" }))).toEqual({ original_prompt: "Saved brief" });
   });
   it("revises an older selected parent as the server's next version on the same GenerationID", async () => {

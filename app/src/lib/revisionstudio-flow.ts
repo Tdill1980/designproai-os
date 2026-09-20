@@ -30,6 +30,7 @@ export type DesignBuildTrigger =
 export type DesignBuildStatus = {
   workflowRun: { id: string; workflow_status: string } | null;
   proofUrl: string | null;
+  panelProofSource?: { requestId: string; revisionId: string | null } | null;
   activePack: { proof_artifact: { url: string } | null } | null;
 };
 
@@ -97,6 +98,9 @@ export async function getDesignBuildStatus(locator: {
         : job.state === "failed" ? "failed" : !proofUrl ? "running" : workflowStatusFor(job.state),
     },
     proofUrl: proofUrl,
+    panelProofSource: current?.requestId
+      ? { requestId: current.requestId, revisionId: current.id }
+      : request?.requestId ? { requestId: request.requestId, revisionId: null } : null,
     activePack: proofUrl ? { proof_artifact: { url: proofUrl } } : null,
   };
 }
