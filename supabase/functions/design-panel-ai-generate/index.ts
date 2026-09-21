@@ -4136,7 +4136,29 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
     const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
     const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    // THE JOB IS ESTABLISHED AT SYSTEM LEVEL (owner, Trish 2026-09-21: "given
+    // the base prompt system engineering so it knows its job on call 1", and
+    // "a studio edge function template … wired for Gemini 3 to view at system
+    // level").
+    //
+    // Multimodal practice and this repo's own measurement agree: fix the OBJECT
+    // before the model reads a design word. It is deliberately short and it
+    // does NOT restate `SYSTEM_JOB`, which the user turn already carries —
+    // duplicating a block between the system and user turns spends the budget
+    // that creative direction loses first (v19: 465 characters of proven
+    // creative direction deleted while format text grew 54%).
+    const systemInstruction = {
+      parts: [{
+        text: [
+          "You are producing ONE vehicle-wrap PRODUCTION PANEL PROOF: the document a print shop receives.",
+          "The attached container template defines the document — its three zones, its cells and their proportions. Fill those cells; do not re-flow them.",
+          "Headings, zone bars, panel captions, dimension callouts, rules and the footer are printed onto this sheet afterwards by the press. Draw the artwork only, and leave every part of the sheet that is not a panel plain white.",
+          "The creative direction that follows is authored by the studio's own designer. Every decision about what appears on which surface is yours to make from the customer's brief.",
+        ].join("\n"),
+      }],
+    };
     const modelRequest = JSON.stringify({
+      systemInstruction,
       contents: [{ role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],

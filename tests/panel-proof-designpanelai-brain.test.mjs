@@ -139,3 +139,20 @@ test("the receipt proves the real brain ran", () => {
     assert.ok(handler.includes(field), `response field ${field}`);
   }
 });
+
+test("the job is established at SYSTEM level, and never duplicated into it", () => {
+  // Owner, 2026-09-21: "a studio edge function template ... wired for Gemini 3
+  // to view at system level" / "given the base prompt system engineering so it
+  // knows its job on call 1."
+  assert.match(handler, /systemInstruction/);
+  assert.match(handler, /PRODUCTION PANEL PROOF: the document a print shop receives/);
+  // Placement authority is restated at system level, because that is the rule
+  // a later prompt edit is most likely to quietly take back.
+  assert.match(handler, /Every decision about what appears on which surface is yours/);
+  // SYSTEM_JOB already rides the user turn via buildPanelProofPrompt. Repeating
+  // it here would spend the budget creative direction loses first.
+  assert.ok(
+    !/THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(handler),
+    "SYSTEM_JOB must not be duplicated into the system instruction",
+  );
+});
