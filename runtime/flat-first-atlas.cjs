@@ -2429,6 +2429,52 @@ async function callAtlasAuthorEdge(body, { ownerId, fetchImpl = fetch, signal, t
  * in-process cascade and handed to the node graph worker, so a node on the
  * other runtime process authors through exactly the same door.
  */
+/**
+ * THE BRAND MARK, WHEN THE CUSTOMER UPLOADED NONE (owner, 2026-09-21).
+ *
+ * `logo.prepare` only ever PREPARED a customer upload — `logoNodeFor` returns
+ * null without one — so a customer who typed a company name and uploaded
+ * nothing got a typeset wordmark and no mark at all. The generator existed the
+ * whole time (`authorProofLogo`) and lived behind the Call-1 bypass this
+ * restoration removed. `mode: "atlas-logo"` is the door, not a new producer.
+ *
+ * Crosses the boundary as an IDENTITY and never as bytes (RULE 0.39), and a
+ * `null` logo is a STATE — a supplied asset, an explicit "no logo", or a brief
+ * that never asked — not a failure.
+ */
+async function callAtlasLogoEdge(body, { ownerId, fetchImpl = fetch, signal, timeoutMs, wait } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_logo_edge_transport_missing", "SUPABASE_URL / service key are required", true);
+  }
+  const { response, payload } = await invokeAtlasAuthoring({
+    url: `${supabaseUrl}/functions/v1/design-panel-ai-generate`, body: { ...body, mode: "atlas-logo" },
+    fetchImpl, signal, timeoutMs, wait,
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "content-type": "application/json",
+      "x-designpro-owner-id": String(ownerId || ""),
+    },
+  });
+  if (!response.ok || payload?.success !== true) {
+    throw Object.assign(new FlatAtlasError(
+      /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
+        ? String(payload.code || payload.error) : "flat_atlas_logo_edge_call_failed",
+      `design-panel-ai-generate atlas-logo failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}${providerFailureSummary(payload)}`,
+      typeof payload?.retryable === "boolean" ? payload.retryable
+        : response.status >= 500 || [404, 409, 429].includes(response.status),
+    ), providerFailureDetails(payload));
+  }
+  return payload.logo || null;
+}
+
+/** Per call, like the author transport: one process serves every owner's runs. */
+function createAtlasLogoTransport({ callLogoEdge = callAtlasLogoEdge, ownerId: defaultOwnerId = null } = {}) {
+  return async (body, { ownerId = defaultOwnerId } = {}) => callLogoEdge(body, { ownerId });
+}
+
 function createAtlasAuthorTransport({ supabase, callAuthorEdge = callAtlasAuthorEdge, ownerId: defaultOwnerId = null } = {}) {
   if (!supabase) throw new FlatAtlasError("flat_atlas_runtime_missing", "the atlas-author transport requires Supabase");
   return async (body, { ownerId = defaultOwnerId } = {}) => {
@@ -5037,6 +5083,8 @@ module.exports = {
   PANEL_PROOF_TOPOLOGY_CONTRACT,
   callAtlasAuthorEdge,
   createAtlasAuthorTransport,
+  callAtlasLogoEdge,
+  createAtlasLogoTransport,
   CALL_ONE_PANEL_CONTRACT,
   cutCallOnePanels,
   ATLAS_CONTRACT,

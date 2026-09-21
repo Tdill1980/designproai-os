@@ -51,6 +51,14 @@ import {
   providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
   prepareAtlasRevisionProviderContents, captureGeminiHttpExchange,
 } from "../_shared/gemini-provider-cache.mjs";
+// THE ONE LOGO PRODUCER, RECOVERED RATHER THAN REBUILT (RULE 1).
+// `authorProofLogo` + `designpro-text-layer-prompt` + `chromaKeyToAlpha` are
+// the same three pieces `designpro-text-layer-generate` and
+// `production-panel-proof` already share. `mode: "atlas-logo"` gives the
+// element graph a door to them; it does not add a second logo authority.
+import { authorProofLogo, proofLogoRequested } from "../_shared/atlas-proof-elements.mjs";
+import { buildPrompt as buildTextLayerPrompt, chromaKeyToAlpha } from "../_shared/designpro-text-layer-art.ts";
+import { geminiImageUrl } from "../_shared/model-config.ts";
 // ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
 // buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
@@ -1484,6 +1492,39 @@ serve(async (req) => {
         );
       }
       return await handleAtlasAuthor(body, internalCaller.userId!);
+    }
+
+    // ═══ ATLAS-LOGO — THE BRAND MARK, WHEN THE CUSTOMER UPLOADED NONE
+    // (owner, 2026-09-21: "if they didn't [upload] it auto created a logo").
+    //
+    // THE GENERATOR ALREADY EXISTED AND CALL 1 COULD NOT REACH IT. The element
+    // graph's `logo.prepare` only PREPARES a customer upload — `logoNodeFor`
+    // returns null when there is none — so a customer who typed a company name
+    // and uploaded nothing received a typeset wordmark and no mark at all. The
+    // only auto-logo producer in the system was `authorProofLogo`, reachable
+    // solely through `production-panel-proof`, which is exactly the bypass the
+    // 2026-09-21 restoration removed.
+    //
+    // So it is recovered rather than rebuilt (RULE 1). This mode runs the SAME
+    // `authorProofLogo` with the SAME `_shared/designpro-text-layer-prompt.ts`
+    // builder and the SAME `chromaKeyToAlpha` transparency step that
+    // `designpro-text-layer-generate` and `production-panel-proof` both use.
+    // There is no second logo authority — this is the one that already exists,
+    // given a door the element graph can open.
+    //
+    // It is NOT a second Call-1 creative authority (RULE 0.26): it draws one
+    // brand mark on a magenta key, never a wrap, never a vehicle, never a
+    // sheet. The master remains the sole design authority and this mark is
+    // composited onto it by `master.composite`, exactly as a customer's own
+    // uploaded logo already is.
+    if (body?.mode === "atlas-logo") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_logo_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasLogo(body, internalCaller.userId!);
     }
     const {
       mode,
@@ -3133,6 +3174,79 @@ async function loadAtlasQualityArtboards(
     // Examples raise the bar; their absence never blocks authoring.
   }
   return out;
+}
+
+/**
+ * ONE BRAND MARK, ON A MAGENTA KEY. Never a wrap, never a vehicle, never a sheet.
+ *
+ * Returns the mark's IDENTITY — storage path, content hash, byte size — and
+ * never its bytes, so the element graph's node boundary stays reference-only
+ * (RULE 0.39). `authorProofLogo` persists it content-addressed under
+ * `atlas-elements/`, so a re-claimed node re-reads instead of re-spending.
+ *
+ * `authorProofLogo` decides for itself whether a logo is wanted: a supplied
+ * asset or an explicit refusal returns null, and `proofLogoRequested` reads the
+ * brief. A null answer is a STATE, not a failure — the run simply has no
+ * generated mark, exactly as it behaved before this door existed.
+ */
+async function handleAtlasLogo(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    const providerRequest = {
+      ...(body.providerRequest as Record<string, unknown> || {}),
+      attemptKey: String((body.providerRequest as Record<string, unknown>)?.attemptKey || "brand-logo:1"),
+    };
+    await authorizeAtlasProviderRequest(svc, providerRequest, ownerId);
+    const customerPrompt = String(body.prompt || body.brief || "").trim();
+    const generated = await authorProofLogo({
+      bucket: svc.storage.from("wrap-files"),
+      ownerId,
+      providerRequest,
+      input: {
+        companyName: String(body.companyName || "").trim(),
+        logoAsset: body.hasCustomerLogo || body.logoAsset,
+        generateLogo: proofLogoRequested({ ...body, customerPrompt }),
+        industry: String(body.industryType || "").trim(),
+        brief: customerPrompt,
+        colorBrief: String(body.brandColors || "").trim(),
+        stylePrompt: String(body.style || "").trim(),
+      },
+      model: ATLAS_ARTBOARD_AUTHORING_MODEL,
+      buildPrompt: buildTextLayerPrompt,
+      // Keyed to REAL transparency here rather than deferred: the element graph
+      // composites this mark directly and an opaque magenta block would print.
+      normalize: (bytes: Uint8Array) => chromaKeyToAlpha(bytes, true),
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: (request: string) => captureGeminiHttpExchange(async () => await fetch(
+        geminiImageUrl(getGeminiKey(), ATLAS_ARTBOARD_AUTHORING_MODEL),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: request },
+      )),
+    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        contract: "designpro.atlas-logo.v1",
+        // null is a legitimate answer: a supplied logo, an explicit "no logo",
+        // or a brief that never asked for one.
+        logo: generated
+          ? {
+            role: generated.role, source: generated.source,
+            storagePath: generated.storagePath, contentHash: generated.contentHash,
+            byteSize: generated.byteSize, contentType: generated.contentType,
+            providerCacheHit: generated.providerCacheHit === true,
+          }
+          : null,
+        imageRequestCount: generated ? (generated.providerCacheHit ? 0 : 1) : 0,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ success: false, error: String((error as Error)?.message || error).slice(0, 400) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 }
 
 async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: string): Promise<Response> {

@@ -33,7 +33,7 @@ const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolImmutableBuffer, u
 const { createGenerationWorker } = require("./generation-worker.cjs");
 const { createPanelProFileOutputService } = require("./panelpro-file-output-service.cjs");
 const { createAtlasCall1NodeWorker, graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cjs");
-const { createAtlasAuthorTransport } = require("./flat-first-atlas.cjs");
+const { createAtlasAuthorTransport, createAtlasLogoTransport } = require("./flat-first-atlas.cjs");
 const { createPanelProofTransport } = require("./atlas-panel-proof-topology.cjs");
 const { assembleFinishedMaster } = require("./atlas-finished-master.cjs");
 const { reservePanelProfileForProduction,attachPanelProfileToProduction } = require("./panelpro-production-attachment.cjs");
@@ -149,6 +149,11 @@ const atlasCall1Graph = createAtlasCall1NodeWorker({
   // panel-proof node with a named reason rather than half-executing it, which is
   // why they are passed rather than defaulted inside the graph module.
   callProofEdge: createPanelProofTransport({ supabase, logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`) }),
+  // THE GENERATED BRAND MARK. Per call, like the author transport: one process
+  // serves every owner's runs, so a construction-time-only owner would send an
+  // empty `x-designpro-owner-id` on every graph-claimed node -- the exact seam
+  // the panel-proof transport already had to move for the same reason.
+  callLogoEdge: createAtlasLogoTransport(),
   assembleFinishedMaster,
   logger: (message) => console.log(`[DESIGNPRO-OS] ${message}`),
 });
