@@ -4623,6 +4623,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
         },
         zone2Panels: callOnePanels,
         documentOnly: true,
+        // OWNER RULING 2026-09-21: clean base OFF — DesignPanelAI draws the
+        // logo and lettering into the artwork in one image call, which is the
+        // Sept 17-18 configuration the accepted designs were made on. These
+        // panels therefore carry type, and the proof's Zone 2 bar states that
+        // rather than claiming a clean base that was never authored.
+        cleanBaseZone2: cleanBaseEnabled(),
         panelRows: panelRowsFromManifest(manifest),
         input: authoringInput, manifest, store, logger,
         downloadAsset: async (identity) => {

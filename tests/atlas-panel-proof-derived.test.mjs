@@ -143,3 +143,43 @@ test("the derived receipt is the same shape every existing reader already parses
   }
   assert.match(atlasSrc, /panelProofAuthoring: generated\?\.panelProof\s*\n?\s*\|\| panelProofDocument\?\.provenance \|\| null/);
 });
+
+test("Zone 2 never claims a clean base the design does not have", async () => {
+  const container = require("../runtime/atlas-proof-container-template.cjs");
+  const rows = proof.panelRowsFromManifest(MANIFEST);
+  const manifest = container.parsePanelRows(rows);
+
+  // With the clean-base element graph ON the wording is what it has always
+  // been, byte for byte.
+  const clean = await container.renderContainerTemplate({ manifest, dimensionManifest: MANIFEST,
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5, cleanBase: true });
+  const unchanged = await container.renderContainerTemplate({ manifest, dimensionManifest: MANIFEST,
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5 });
+  assert.equal(sha(clean), sha(unchanged), "a clean base renders the template it always did");
+
+  // With it OFF the brain draws lettering and logo into the artwork, so those
+  // panels carry type. A proof printing "NO TEXT OR LOGO" over them is a
+  // document asserting something false to the customer.
+  const authored = await container.renderContainerTemplate({ manifest, dimensionManifest: MANIFEST,
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5, cleanBase: false });
+  assert.notEqual(sha(authored), sha(clean));
+
+  // Read it off the SVG rather than the raster, so the claim itself is pinned.
+  const svgOf = (cleanBase) => container.containerSvg
+    ? container.containerSvg({ manifest, dimensionManifest: MANIFEST, cleanBase })
+    : null;
+  if (svgOf(true)) {
+    assert.match(svgOf(true), /ZONE 2 — BACKGROUNDS ONLY \(NO TEXT OR LOGO\)/);
+    assert.ok(!svgOf(false).includes("BACKGROUNDS ONLY (NO TEXT OR LOGO)"),
+      "without a clean base the bar must not claim one");
+    assert.match(svgOf(false), /ZONE 2 — PRINT PANELS AS AUTHORED/);
+    // Zones 1 and 3 are untouched either way.
+    for (const zone of [/ZONE 1 — FULL DESIGN PANELS/, /ZONE 3 — CUT GRAPHICS/]) {
+      assert.match(svgOf(true), zone);
+      assert.match(svgOf(false), zone);
+    }
+  }
+
+  // And the runtime derives the flag from the live switch rather than assuming.
+  assert.match(atlasSrc, /cleanBaseZone2: cleanBaseEnabled\(\)/);
+});

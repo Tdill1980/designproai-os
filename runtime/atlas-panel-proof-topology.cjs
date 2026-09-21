@@ -574,6 +574,15 @@ async function assemblePanelProofMaster({
    * RULE 0.21 forbids by name.
    */
   documentOnly = false,
+  /**
+   * Whether the Zone 2 panels are genuinely lettering-free.
+   *
+   * True on the panel-proof pass, where the sheet authored a clean band. On the
+   * derived path it follows the clean-base element graph: with it off the brain
+   * draws the logo and lettering into the artwork, so those panels carry type
+   * and Zone 2's bar says so instead of asserting "NO TEXT OR LOGO" over them.
+   */
+  cleanBaseZone2 = true,
 } = {}) {
   const mark = (stage, at) => stageTimings.push({ stage, ms: Date.now() - at });
   if (!sheet?.bytes) throw new PanelProofRefusal("the assemble stage was handed no sheet bytes");
@@ -771,6 +780,12 @@ async function assemblePanelProofMaster({
     companyName: brand.companyName || brand.businessName || "",
     vehicle: vehicleLabel,
     bleedInches: 5,
+    // Zone 2's bar states what that row IS. On the panel-proof pass the sheet
+    // authored a genuinely lettering-free band. On the derived path it is true
+    // only when the clean-base element graph produced one; with the brain
+    // drawing lettering and logo into the artwork, those panels carry type, and
+    // the bar must not claim otherwise on the customer's own proof.
+    cleanBase: cleanBaseZone2 !== false,
     job: {
       date: input?.proofDate || "",
       order: input?.orderNumber || "",
