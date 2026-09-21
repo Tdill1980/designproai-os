@@ -15,7 +15,7 @@ import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
-import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, type WallItem } from '@/lib/wallpro-items';
+import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -38,7 +38,7 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, saveWallItemsFile, readWallItemsFile, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -220,6 +220,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  /** Where the detected-item list is stored, so a reopened project is tappable
+   * again. Ref-mirrored because several saves run inside async closures that
+   * would otherwise persist the path from the render they were created in. */
+  const [itemsPath, setItemsPath] = useState<string | null>(null);
+  const itemsPathRef = useRef<string | null>(null); itemsPathRef.current = itemsPath;
   // Read by a detection that starts in the same tick a zone is created, before
   // React has committed the state -- an accent zone must never auto-protect
   // the very object it exists to wrap.
@@ -347,7 +352,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
-      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
   // The photo pane opens on the DETERMINISTIC composite, always. It used to
@@ -629,6 +634,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setMaskRects([]); setMaskMode(false); setRefinePrompt('');
+    // ONE-TOUCH MASKING SURVIVES A REOPEN (owner, 2026-09-21). The composites
+    // already restored from maskPath/removeMaskPath; without this the photo
+    // came back with nothing labelled and nothing tappable, because detection
+    // runs only on a fresh upload. Fails soft to today's behaviour.
+    setItems([]); setItemsPath(typeof config.itemsPath === 'string' ? config.itemsPath : null);
+    if (typeof config.itemsPath === 'string' && config.itemsPath) {
+      readWallItemsFile(config.itemsPath)
+        .then(payload => setItems(parseWallItems(payload)))
+        .catch(() => { /* nothing tappable, exactly as before this existed */ });
+    }
     setParentProjectId(isAccentZone(config) ? String(config.parentProjectId) : null);
     setZoneLabel(typeof config.zoneLabel === 'string' && config.zoneLabel.trim() ? config.zoneLabel.trim().slice(0, 40) : null);
     if (id) {
@@ -648,6 +663,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setView(art ? 'after' : 'before');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
+    /**
+     * A REOPENED WALL IS STILL TAPPABLE (owner, 2026-09-21: "No hand drawing I
+     * need one touch masks object").
+     *
+     * Detection runs on a fresh upload and on a new accent zone -- never on a
+     * restore. So every reopened project arrived with nothing labelled, and the
+     * only masking left on the table was the pencil. Projects saved since the
+     * item list became persistent bring their own items back above; this covers
+     * the ones that never had any.
+     *
+     * STRICTLY WHEN THERE IS NOTHING TO LOSE. Applying detection clears
+     * hand-drawn areas by design -- the detector's answer and a customer's
+     * drawings cannot both claim the same wall -- so a project that carries
+     * either is left exactly as the customer left it. And because the list now
+     * persists, this costs one detection per project, once, not one per open.
+     */
+    const nothingToLose = !config.itemsPath && !config.maskPath && !config.removeMaskPath
+      && !(Array.isArray(config.exclusions) && config.exclusions.length);
+    if (wall && nothingToLose) void detectInBackground(wall, true);
   }
   useEffect(() => {
     // The catalog is browsable without signing in; failures leave the AI path untouched.
@@ -680,7 +714,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -748,6 +782,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // produced nothing usable — the labels are still worth showing, and an
       // item with no raster simply contributes nothing to its composite.
       setItems(detectedItems);
+      void persistItems(detectedItems, user.id);
       if (fixedRaster) {
         maskCount = fixed.length; labels = fixed.map(m => m.label);
         const blob = await canvasBlob(fixedRaster);
@@ -866,6 +901,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     await paintAiView(tileArtwork, photo, false);
   }
   /**
+   * Store the item list beside the masks, and put its path on the project.
+   *
+   * BEST EFFORT, LIKE THE MASK UPLOADS IT SITS WITH. A failed write leaves the
+   * items working in this session and the reopen no worse than it was before
+   * this existed -- which is the only honest failure mode for a repair to a
+   * thing that did not persist at all.
+   */
+  async function persistItems(next: WallItem[], owner: string) {
+    try {
+      const path = next.length ? await saveWallItemsFile(owner, serializeWallItems(next)) : null;
+      setItemsPath(path); itemsPathRef.current = path;
+      if (projectId) await saveWallProject(projectId, owner, name, { ...liveConfig(), itemsPath: path });
+    } catch { /* the list still works in this session */ }
+  }
+  /**
    * ONE CLICK, THEN BOTH COMPOSITES ARE REBUILT FROM THE ITEMS.
    *
    * Not "add this item to the protect mask": the two masks are re-rasterised
@@ -880,6 +930,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   async function applyItems(next: WallItem[]) {
     setItems(next);
+    // The tap is persisted too, or reopening the project would hand back the
+    // DETECTOR's answer and silently undo the customer's correction.
+    wallUser().then(user => persistItems(next, user.id)).catch(() => { /* signed out: the tap still applies on screen */ });
     const asset = photoRef.current;
     if (!asset?.width || !asset.height) return;
     const { fixed, movable } = splitItems(next);
@@ -927,7 +980,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
@@ -1104,8 +1157,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const bandProofs = useMemo(() => {
     const rest = (curatedProofs ?? theme.proofs)
-      .filter(p => p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after);
-    return [WALL_HERO_PROOF, ...rest];
+      .filter(p => !WALL_HERO_PROOF || (p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after));
+    // No pinned pair is a real state now that the gym is retracted: whatever a
+    // curator has published stands on its own, and nothing is invented to lead it.
+    return WALL_HERO_PROOF ? [WALL_HERO_PROOF, ...rest] : rest;
   }, [curatedProofs, theme.proofs]);
 
   useEffect(() => {
@@ -1163,7 +1218,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -1211,7 +1266,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (photo) setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
@@ -1220,7 +1275,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   }
   /** The config this zone is currently sitting on, for a save before leaving it. */
   function liveConfig() {
-    return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
+    return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
   }
   /**
    * Wrap a SECOND area of the same photograph -- a fireplace in brick beside a
@@ -1294,13 +1349,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
          * nothing here blocks Generate, and print panels are full rectangles
          * whatever is masked.
          */
-        setShowMaskTools(true);
+        // ONE TOUCH, NOT A PENCIL (owner, 2026-09-21: "No hand drawing I need
+        // one touch masks object"). This used to open the DRAWING tools here,
+        // which taught every customer that masking means tracing polygons --
+        // and produced walls carrying three rectangles labelled "Protected 1,
+        // 2, 3" while the objects sat already found and already tappable. The
+        // masks are shown; the pencil stays behind its toggle for the one case
+        // detection comes back empty.
         setShowMasks(true);
-        setNotice(
-          itemSummary(items).kept > 0
-            ? `Corners set. We are keeping ${itemSummary(items).kept} thing${itemSummary(items).kept === 1 ? '' : 's'} on this wall exactly as photographed — tap any labelled item on the photo to change that. Or go straight to describing your design.`
-            : 'Corners set. Anything mounted on this wall you want to keep — framed photos, a TV, shelves? Tap "Mask window / drapes" and draw around it. Otherwise go straight to describing your design.',
-        );
+        setNotice('Corners set. ' + wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline
+          + ' Or go straight to describing your design — nothing here blocks Generate.');
       }
     }
   }
@@ -1545,7 +1603,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
-              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : 'Drag any corner to adjust. Use the mask tools on the photo for windows, drapes and furniture, or try Auto-mask.'}</p>
+              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
@@ -1812,7 +1870,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 {hasOverride(items) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void applyItems(resetItems(items))}>Reset to what we detected</Button>}
                 {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); setItems([]); }}>Clear detected areas</Button>}
               </div>
-              <p className="mt-2 text-xs wall-muted">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
+              <p className="mt-2 text-xs wall-muted">Tap anything on the photo to keep it as photographed or paint the design through it. Drawing is only for something we missed. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
               {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}

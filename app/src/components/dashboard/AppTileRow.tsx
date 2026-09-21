@@ -72,7 +72,7 @@ export const APP_TILES: AppTile[] = [
     name: 'WallPro',
     promise: 'Wall wraps, designed and panelised to your wall',
     href: '/printpro/wallpro',
-    image: '/wallpro/proof-gym-after.jpg',
+    image: '/wallpro/landing-corporate.webp',
     // Hard right: the mural and the lettering, clear of the baked-in callouts.
     objectPosition: '85% 35%',
     alt: 'A gym training wall covered in a full-height athletic mural',
@@ -100,7 +100,7 @@ export const APP_TILES: AppTile[] = [
     // changed -- but a dead reference to a deleted file is a broken image
     // waiting for whoever mounts it, so it points at a WallPro install that
     // still ships.
-    image: '/wallpro/proof-gym-after.jpg',
+    image: '/wallpro/landing-corporate.webp',
     objectPosition: '50% 50%',
     alt: 'A gym wall finished in a full-wall printed graphic',
   },
