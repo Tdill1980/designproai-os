@@ -85,6 +85,22 @@ async function paintedSheet({ empty = [], width = 3072, height = 2048 } = {}) {
   )).png().toBuffer();
 }
 
+/**
+ * THE HANDLER THAT NOW SERVES THIS ROUTE, sliced out of the one Call-1 endpoint.
+ *
+ * Bounded at `handlePanelProof`, for the reason `atlas-artboard-edge-call1`
+ * records: an unbounded slice convicts a neighbouring handler for a rule that is
+ * only about this one. `design-panel-ai-generate` holds several.
+ */
+function handlePanelProofSource() {
+  const src = fs.readFileSync(
+    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
+  const from = src.indexOf("async function handlePanelProof");
+  assert.ok(from > -1, "handlePanelProof must exist in the Call-1 edge function");
+  const next = src.indexOf("\nasync function ", from + 1);
+  return next === -1 ? src.slice(from) : src.slice(from, next);
+}
+
 /** An edge stand-in that records what it was asked and hands back a sheet. */
 function edgeStub(sheetBytes, overrides = {}) {
   const calls = [];
@@ -138,10 +154,15 @@ const AUTHOR_ARGS = {
 test("Call 1 preserves selected brand choices and actual VisionBoard intent in the shared designer payload", async () => {
   const { buildDesignIQPrompt } = await loadDesignIQ();
   const { panelProofCreativeHead } = require("../runtime/atlas-panel-proof-contract.cjs");
-  const edge = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
-  const start = edge.indexOf("    const customerAssets =");
-  const end = edge.indexOf("    let prompt = buildPanelProofPrompt(");
-  assert.ok(start > 0 && end > start, "the edge must select its attached references before assembling the designer prompt");
+  // EXECUTED AGAINST `design-panel-ai-generate`, the endpoint this topology now
+  // posts to. The slice is the handler's real parameter mapping — the brief
+  // selection, the style line, the reference slots and the clean-base
+  // adaptation — run with the REAL deployed designer, without starting Deno or
+  // making a paid request.
+  const edge = handlePanelProofSource();
+  const start = edge.indexOf("    type StagedAsset =");
+  const end = edge.indexOf("    // \u2500\u2500 THE SEPARATED ASK, PORTED FROM");
+  assert.ok(start > 0 && end > start, "the handler must select its attached references before assembling the designer prompt");
   // Execute the edge's actual parameter mapping with its real shared designer,
   // without starting Deno or making a paid provider request.
   const assembly = execFileSync(resolveEsbuild(), ["--loader=ts", "--format=cjs"], {
@@ -171,9 +192,14 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
   assert.equal(body.separatedArtwork, true);
   assert.ok(!Object.hasOwn(body, "logoAsset"), "protected Zone-3 originals do not enter the generation request");
   const assemble = (request) => runInNewContext(assembly, {
-    body: request, customerPrompt: request.customerPrompt,
-    field: (name) => String(request[name] || "").trim(),
-    buildDesignIQPrompt, panelProofCreativeHead, ATLAS_PANELS,
+    body: request,
+    authoringMode: "commercial",
+    vehicleYear: String(request.vehicleYear || ""),
+    vehicleMake: String(request.vehicleMake || ""),
+    vehicleModel: String(request.vehicleModel || ""),
+    vehicleType: String(request.vehicleType || ""),
+    panels: request.panels,
+    buildDesignIQPrompt, panelProofCreativeHead,
   });
   const exact = assemble(body);
   assert.match(exact, /senior graphic designer and vehicle-wrap specialist/);
@@ -229,11 +255,16 @@ test("the sheet crosses the boundary as an IDENTITY, never as bytes — RULE 0.3
   });
   const lastEdgeBody = calls[0];
 
-  // The edge answers {proofStoragePath, proofSha256, proofByteSize} and the
+  // The edge answers {sheetStoragePath, sheetSha256, sheetBytes} and the
   // transport verifies BOTH halves before the pixels are used: a swapped object
   // and a caller whose claim does not match what it wrote are two failures.
-  assert.match(topologySrc, /payload\.proofStoragePath/);
-  assert.match(topologySrc, /bytes\.length !== Number\(payload\.proofByteSize\) \|\| sha256\(bytes\) !== payload\.proofSha256/);
+  //
+  // The NAMES moved with the route (2026-09-21): the three-zone proof is now
+  // `design-panel-ai-generate` mode `panel-proof`, the one Call-1 endpoint, and
+  // these are the identity fields `handlePanelProof` returns and its own lock
+  // asserts. One spelling across the seam beats an alias that can drift.
+  assert.match(topologySrc, /payload\.sheetStoragePath/);
+  assert.match(topologySrc, /bytes\.length !== Number\(payload\.sheetBytes\) \|\| sha256\(bytes\) !== payload\.sheetSha256/);
   // AND NOTHING TRAVELS AS A BLOB ACROSS IT — asserted on the BODY THAT LEAVES,
   // not on a substring of the source.
   //
@@ -278,7 +309,7 @@ test("the container is staged only where the edge would accept it", async () => 
   // Call-1 input ONLY from ^atlas-call1-inputs/<sha256>\.png$, and hero-first's
   // node 1 spent a whole live generation discovering that by being refused.
   const edge = fs.readFileSync(
-    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
   const declared = /const CALL1_INPUT_PATH = (\/\^atlas-call1-inputs[^;]*?)\;/.exec(edge);
   assert.ok(declared, "the edge must declare its own input allowlist");
   assert.equal(String(proof.CALL1_INPUT_PATH), declared[1].trim(),
@@ -706,8 +737,12 @@ test("the proof EDGE verifies every customer asset it is handed", async () => {
   // already gets: the Call-1 prefix, filename-hash == bytes-hash, and
   // claimed-hash == bytes-hash. Read from the edge source, because that is the
   // file the deploy ships.
-  const edge = fs.readFileSync(
-    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  //
+  // READ FROM `design-panel-ai-generate`, which is the endpoint this topology
+  // now posts to (2026-09-21). Leaving it pointed at `production-panel-proof`
+  // would keep this suite green while vouching for a file nothing routes to —
+  // the "a fixture laxer than the real thing" shape, one layer up.
+  const edge = handlePanelProofSource();
   assert.match(edge, /panel_proof_customer_asset_path_invalid/);
   assert.match(edge, /panel_proof_customer_asset_not_content_addressed/);
   assert.match(edge, /panel_proof_customer_asset_hash_mismatch/);
@@ -716,7 +751,7 @@ test("the proof EDGE verifies every customer asset it is handed", async () => {
   assert.match(edge, /\.slice\(0, 8\)/);
   // Attached AFTER the structural inputs, so the container still conditions the
   // layout first and the customer's assets read as brand content.
-  assert.ok(edge.indexOf("for (const pinned of PINNED_INPUTS)") < edge.indexOf("for (const asset of customerAssets)"),
+  assert.ok(edge.indexOf("const containerPath = String(body.containerStoragePath") < edge.indexOf("for (const asset of customerAssets)"),
     "customer assets must attach after the container and the pinned format sheet");
 });
 
@@ -730,29 +765,27 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
   // The fix is the module the other Call-1 endpoint already uses, so this
   // asserts the SEAM rather than re-testing that module: identity, claim,
   // cacheOnly, and the unknown-outcome path all belong to it.
-  const edge = fs.readFileSync(
-    new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  // Read from the handler that now serves this route, not from the endpoint it
+  // replaced: a durability lock aimed at a file nothing calls proves nothing.
+  const edge = handlePanelProofSource();
+  const whole = fs.readFileSync(
+    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
 
-  assert.match(edge, /from "\.\.\/_shared\/gemini-provider-cache\.mjs"/,
-    "the proof edge must use the proven durable-provider module, not a second implementation");
+  assert.match(whole, /gemini-provider-cache\.mjs/,
+    "the proof mode must use the proven durable-provider module, not a second implementation");
   assert.match(edge, /runDurableImageProviderRequest\(\{/);
-  assert.match(edge, /cacheOnly: providerRequest\.cacheOnly === true/,
+  assert.match(edge, /cacheOnly: providerRequest\?\.cacheOnly === true/,
     "the caller's cacheOnly must reach the module that can honour it");
   assert.match(edge, /authorize: \(\) => authorizeAtlasProviderRequest\(/,
     "the lease must still authorise the provider request (RULE 0.26)");
-  assert.match(edge, /identity: \{ \.\.\.providerRequest, ownerId: caller\.userId, mode: "atlas-panel-proof" \}/);
+  assert.match(edge, /identity: \{ \.\.\.providerRequest, ownerId, mode: "panel-proof" \}/);
   // THE BARE IMAGE FETCH IS GONE. A second, uncached path to the PAID model is
   // how the contract got bypassed; the only one left is inside `invoke`.
-  //
-  // Scoped to `geminiImageUrl` on purpose: the other `fetch` in this file is
-  // `parseCustomerIntake`, a Flash TEXT call, and counting every fetch convicted
-  // it. The contract here is about the billed image generation.
-  const imageCalls = [...edge.matchAll(/await fetch\(\s*\n?\s*geminiImageUrl\(/g)].length;
-  assert.equal(imageCalls, 2,
-    `only the artwork and explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
-  const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
-  assert.equal(wrappedCalls,imageCalls,
-    "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
+  const imageCalls = [...edge.matchAll(/await fetch\(geminiUrl/g)].length;
+  assert.equal(imageCalls, 1,
+    `only the durable invocation may fetch the image model; found ${imageCalls}`);
+  assert.match(edge, /invoke: \(\) => captureGeminiHttpExchange\(/,
+    "the image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
   // A FRESH UUID PER INVOCATION IS THE DEFECT. It must be reassignable from the
   // claim, so a recovered attempt reports the request it recovered.
   assert.match(edge, /let requestId = crypto\.randomUUID\(\)/);
@@ -862,8 +895,24 @@ test("the panel rows are REAL INCHES from the fields that exist — not pixels, 
   //     real      DRIVER: 163" wide x  66" high
   const rows = proof.panelRowsFromManifest(MANIFEST);
   assert.equal(rows.length, 6);
-  assert.equal(rows[0], 'DRIVER: 163" wide x 66" high',
+  // "DRIVER SIDE", not "DRIVER", since the route moved to the real brain:
+  // `atlasFlatMasterContract` validates the canonical Call-1 labels by name and
+  // throws on a missing surface, while `parsePanelRows` strips a trailing
+  // " SIDE" — so ONE row text satisfies the designer contract and the container
+  // template both, instead of two spellings of the same six rectangles.
+  assert.equal(rows[0], 'DRIVER SIDE: 163" wide x 66" high',
     "the driver flank is landscape and 163 inches, not a portrait 979");
+
+  // AND THE STRUCTURED PANELS ARE THE SAME DERIVATION, not a second reading of
+  // the manifest — the shape of the original defect, and the shape the designer
+  // contract would have re-created if it had parsed or re-derived its own.
+  const panels = proof.panelsFromManifest(MANIFEST);
+  assert.equal(panels.length, 6);
+  assert.deepEqual(
+    { ...panels[0] },
+    { label: "DRIVER SIDE", surfaceId: "DS", placement: "right-flank", widthInches: 163, heightInches: 66 },
+  );
+  assert.deepEqual(panels.map((p) => p.surfaceId), ["DS", "PS", "HD", "RF", "FR", "RR"]);
   for (const row of rows) {
     const [, w, h] = /: ([\d.]+)" wide x ([\d.]+)" high$/.exec(row) || [];
     assert.ok(w && h, `unparseable row: ${row}`);

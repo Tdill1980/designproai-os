@@ -59,6 +59,18 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
+// THE THREE-ZONE DOCUMENT CONTRACT — format only. The creative half of this
+// prompt is built here, from this file's own `buildDesignIQPrompt`, and handed
+// in as `creativeHead`, which is precisely what that module documents as the
+// intended wiring.
+import {
+  ATLAS_PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_CONTAINER_TEMPLATE,
+  PANEL_PROOF_FORMAT_EXAMPLE,
+  buildPanelProofPrompt,
+  panelProofCoverageSqFt,
+  panelProofCreativeHead,
+} from "../_shared/atlas-panel-proof-prompt.ts";
 import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage, decodeGenerateContentImage } from "../_shared/gemini-image-history.mjs";
 import {
   GEMINI_PROVIDER_CACHE_CONTRACT, authorizeAtlasProviderRequest,

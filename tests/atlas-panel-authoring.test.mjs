@@ -42,6 +42,22 @@ function panelFixture(bytes, { width, height, surfaceKey = "driver" }) {
   };
 }
 
+/**
+ * `handleAtlasPanel`, BOUNDED AT THE NEXT HANDLER.
+ *
+ * These slices ran to the END OF FILE, so the moment another handler was added
+ * after it that handler's Gemini call was counted here and the one-image lock
+ * read "2 !== 1" — convicting a neighbour for a rule that is only about this
+ * one. That is the trap `atlas-artboard-edge-call1` already records, and the
+ * reason every other slice in this repo names an end.
+ */
+function atlasPanelHandlerSource() {
+  const from = edgeSrc.indexOf("async function handleAtlasPanel(");
+  assert.ok(from > -1, "handleAtlasPanel must exist in the Call-1 edge function");
+  const next = edgeSrc.indexOf("\nasync function ", from + 1);
+  return next === -1 ? edgeSrc.slice(from) : edgeSrc.slice(from, next);
+}
+
 test("the finishing pass is OFF unless the flag says on, and a bad value fails safe", () => {
   // The flag lives in the runtime, so this reads the real gate rather than a
   // copy of it. A misspelling must resolve OFF -- the same direction
@@ -333,13 +349,13 @@ test("signed multipart replies round-trip exactly, including distinct thought im
   const replayed = await replayImageTurn(stored, async (path) => images.get(path));
   assert.deepEqual(replayed, original, "text, image MIME, part order, flags and signature attachment must survive");
   assert.deepEqual(original, before, "capture must not mutate the provider response");
-  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  const handler = atlasPanelHandlerSource();
   assert.match(handler, /replayImageTurn\(turn, downloadHistoryImage\)/);
   assert.match(handler, /captureImageTurn\(payload\.candidates\[0\]\.content/);
 });
 
 test("replayed history images are hash-verified and restricted to declared input/output paths", async () => {
-  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  const handler = atlasPanelHandlerSource();
   const loader = handler.slice(handler.indexOf("const downloadHistoryImage ="));
   // atlas-panel/ is where this function writes every sheet it makes, so the
   // prefix is what stops history replaying an arbitrary bucket object.
@@ -564,7 +580,7 @@ test("the declared input order is the order the handler actually attaches", () =
     .map((role) => tail.indexOf(role));
   assert.ok(declared[0] < declared[1] && declared[1] < declared[2], "declared order");
 
-  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  const handler = atlasPanelHandlerSource();
   const attached = [
     handler.indexOf("attach(body.sourcePanelStoragePath"),
     handler.indexOf("await attach(atlasReferencePath"),
@@ -590,7 +606,7 @@ test("the atlas-panel edge mode is internal-only and makes exactly one image req
     edgeSrc.indexOf("return await handleAtlasPanel(body, internalCaller.userId!);"),
   );
   assert.match(dispatch, /atlas_panel_internal_only/);
-  const handler = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasPanel("));
+  const handler = atlasPanelHandlerSource();
   assert.match(handler, /imageRequestCount: 1,/);
   // One fetch to the model, and the subject sheet is the FIRST image -- the
   // prompt says "the first image", so an ordering change silently re-points

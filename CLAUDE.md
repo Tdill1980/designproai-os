@@ -42,6 +42,84 @@ run 35460623843, `VERIFIED_WORKING`). Everything below is built and locked; none
 of it is on a customer's critical path until a controlled real generation with
 uploaded assets has passed.
 
+### ⛔ THE THREE-ZONE PROOF NOW RUNS ON THE REAL BRAIN (2026-09-21) — `production-panel-proof` IS UNROUTED
+
+Owner ruling: *"Only our Gemini image pro 3 model decides what goes where — it
+comes from user prompt and then Gemini uses our suite of custom edge functions
+design panel ai generate persona base graphic designer so it uses google
+knowledge and elevates every design … I need it wired using my edge functions
+using a flat panel first 3zone."*
+
+**Two sections of this file are now stale and say the opposite. This wins.**
+`runtime/atlas-panel-proof-topology.cjs` used to declare *"Its OWN Call-1
+endpoint. It cannot reach design-panel-ai-generate at all"*, and the 09-21
+"kill the production-panel-proof bypass" ruling resolved that conflict by taking
+Call 1 OFF this topology rather than fixing it. It is fixed in place now:
+`PROOF_EDGE_FUNCTION = "design-panel-ai-generate"` with `mode: "panel-proof"`,
+the ONE Call-1 endpoint (RULE 0.26). Contract
+`designpro.atlas-panel-proof-topology.v3`.
+
+**What moved, and what did not:**
+
+| | |
+|---|---|
+| the designer | **`design-panel-ai-generate`'s own `buildDesignIQPrompt`** — the deployed brain, not `_shared/designiq-assembly.ts`, which is measurably thinner on every input it reads (visionboard_intent 6 refs vs 15, visionBoardImages 4/12, styleDescriptors 6/11, brandColors 4/9) |
+| the document | unchanged — same container template, same three zones, same GENIE rows, same `_shared/atlas-panel-proof-prompt.ts` |
+| the cut, the gates, the assembly, Calls 8+ | unchanged, not one byte |
+
+**A separated request asks for a sheet with NO lettering on it, and that is
+load-bearing.** The three zones are a SEPARATION: the model draws background
+artwork, and the company name, contact bar and marks are produced as their own
+artifacts and composited by code at a known box. So `separatedArtwork: true`
+sets `atlasCleanBase` (the brain's own contract, already live on the element
+graph), swaps in the ported artwork-staging prompt and system turn, drops the
+filled format example, and stages the container in **`mode: "artwork"`** —
+six bare destinations, not the whole document. Ask the designer for a branded
+sheet here and the compositor prints the name twice.
+
+**⚠️ DO NOT PORT THE LEGACY NEGATIVE-LINE FILTER.** `production-panel-proof`
+stripped every line containing "no / not / never / without" from A.C.E.'s head,
+because that head still carried branding direction it had to neutralise. The
+clean-base head's own contract is stated as *"No letters, no numerals, no
+words…"*, so running that filter over it would delete the one sentence that
+makes Zone 2 clean. A transform written for the old shape breaks the new one.
+
+**Ported with it, because dropping them would be a silent regression:** the
+gold-standard artboard loader (`designpanel-artboard-examples/`, at most two,
+≤ 8 MiB, non-fatal — the fix for live bbdd0db0's six cropped desert-garden
+photos); the `Style direction:` line (`buildDesignIQPrompt` has no `style`
+param, so without it the customer's stated style reached nothing); the
+two-thirds word-count rule that prefers an extracted `creativeDirection` only
+while it still carries the customer's own words; and the clean-base head
+adaptation that restores composition authority.
+
+**`parseCustomerIntake` and the generated-logo pass are NOT carried.** The
+receipts report `intake: null` and `generatedElements: []` rather than
+fabricating either, and both consumers already treat absence as a real answer.
+That also removes a second Flash call from Call 1's critical path, which this
+file names as the next latency lever.
+
+**`supabase/functions/production-panel-proof` still exists and nothing routes to
+it.** Its own tests still pass and still describe it truthfully. Deleting it is
+the right follow-up **after** a controlled real generation proves the new route
+— not before, and not from a documentation pass.
+
+**Two locks were retargeted, and one had encoded a trap:**
+`tests/atlas-panel-proof-topology.test.mjs` now reads `handlePanelProof` out of
+`design-panel-ai-generate` (a lock aimed at a file nothing calls proves
+nothing), and `tests/atlas-panel-authoring.test.mjs` sliced `handleAtlasPanel`
+to the END OF FILE in four places — so the next handler added after it was
+counted by the one-image lock, which read `2 !== 1` and convicted a neighbour.
+**Every slice names an end.** The same duplication broke five prompt-pin locks
+at once: `scripts/build-atlas-call1-prompt.mjs` refuses an ambiguous
+`REGION_START`, and `const vehicleYear = String(body.vehicleYear || "").trim();`
+is that anchor — written a second time, it fails as *"Call-1 assembly start
+anchor is ambiguous"*, naming the slicer rather than the handler that copied it.
+
+**STILL NOT PROVEN:** no real generation has run on this route. Everything above
+is source, fixtures and a green suite, which this file is explicit is not
+acceptance. The flag stays `off`.
+
 ### Five defects, all of them live, all found by measurement
 
 | # | what was wrong | how it was found |

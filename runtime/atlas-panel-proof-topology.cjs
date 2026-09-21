@@ -101,9 +101,28 @@
  */
 
 const PANEL_PROOF_TOPOLOGY = "panel-proof";
-const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v2";
-/** Its OWN Call-1 endpoint. It cannot reach design-panel-ai-generate at all. */
-const PROOF_EDGE_FUNCTION = "production-panel-proof";
+const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v3";
+/**
+ * ⛔ THE THREE-ZONE PROOF NOW RUNS ON THE REAL BRAIN (owner ruling, Trish
+ * 2026-09-21: "Only our Gemini image pro 3 model decides what goes where — it
+ * comes from user prompt and then Gemini uses our suite of custom edge
+ * functions design panel ai generate persona base graphic designer … I need it
+ * wired using my edge functions using a flat panel first 3zone").
+ *
+ * This used to name `production-panel-proof`, whose own header said it "cannot
+ * reach design-panel-ai-generate at all" — so the three-zone document was
+ * designed by `_shared/designiq-assembly.ts`, a copy measurably thinner than
+ * the deployed brain on every input the designer reads (visionboard_intent
+ * 6/15 references, visionBoardImages 4/12, styleDescriptors 6/11, brandColors
+ * 4/9). That is what made the sheets generic, and it is why Call 1 had to be
+ * taken off this topology on 2026-09-21 rather than fixed in place.
+ *
+ * It is fixed in place now: `mode: "panel-proof"` on the ONE Call-1 endpoint
+ * (RULE 0.26). The document, the container, the three zones, the cut, the
+ * gates and every artifact after them are unchanged — only the designer is.
+ */
+const PROOF_EDGE_FUNCTION = "design-panel-ai-generate";
+const PROOF_EDGE_MODE = "panel-proof";
 
 const { compositeProductionPanels } = require("./atlas-master-composite.cjs");
 const { planProductionPanelLockup } = require("./atlas-element-lockup.cjs");
@@ -230,33 +249,76 @@ function panelProofEnabled(env = process.env) {
  * IT REFUSES RATHER THAN FALLS BACK. A fallback is what produced the defect: a
  * missing field silently became a pixel rectangle that every consumer believed.
  */
-function panelRowsFromManifest(manifest) {
+/**
+ * THE CANONICAL CALL-1 PANEL IDENTITY, which `atlasFlatMasterContract` in the
+ * brain validates by name: a missing or mismatched label/surfaceId/placement
+ * throws there rather than quietly designing against five surfaces.
+ * `parsePanelRows` strips a trailing " SIDE", so the SAME row text satisfies
+ * the container template and the designer contract — one spelling, two readers.
+ */
+const PANEL_IDENTITY = new Map([
+  ["driver", { label: "DRIVER SIDE", surfaceId: "DS", placement: "right-flank" }],
+  ["passenger", { label: "PASSENGER SIDE", surfaceId: "PS", placement: "left-flank" }],
+  ["hood", { label: "HOOD", surfaceId: "HD", placement: "center-column" }],
+  ["roof", { label: "ROOF", surfaceId: "RF", placement: "center-column" }],
+  ["front", { label: "FRONT", surfaceId: "FR", placement: "center-column" }],
+  ["rear", { label: "REAR", surfaceId: "RR", placement: "center-column" }],
+]);
+
+/**
+ * The six surfaces with their PRINT inches, derived exactly once.
+ *
+ * `panelRowsFromManifest` is now a formatting of this, not a second reading of
+ * the manifest. Two derivations of the same geometry is the defect this
+ * function's own header describes — a missing field silently becoming a pixel
+ * rectangle every consumer believed — and the structured panels the designer
+ * contract needs would have been the second one.
+ */
+function panelsFromManifest(manifest) {
   const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
   return zones.map((zone) => {
-    const name = String(zone?.surfaceKey || "").toUpperCase();
-    // The print rectangle, or trim plus its own bleed when a manifest states
-    // only trim. Never `zone.trim`, which is pixels.
-    const bleed = zone?.bleedIn || {};
-    const trimW = Number(zone?.trimWidthIn);
-    const trimH = Number(zone?.trimHeightIn);
-    const w = Number.isFinite(Number(zone?.printWidthIn)) ? Number(zone.printWidthIn)
-      : (Number.isFinite(trimW) ? trimW + Number(bleed.left || 0) + Number(bleed.right || 0) : NaN);
-    const h = Number.isFinite(Number(zone?.printHeightIn)) ? Number(zone.printHeightIn)
-      : (Number.isFinite(trimH) ? trimH + Number(bleed.top || 0) + Number(bleed.bottom || 0) : NaN);
-    if (!name || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-      throw new PanelProofRefusal(
-        `${name || "a surface"} has no usable print dimensions `
-        + `(printWidthIn/printHeightIn or trimWidthIn/trimHeightIn + bleedIn)`);
-    }
-    // A PLAUSIBILITY FLOOR, because this is the exact defect class that shipped:
-    // no vehicle panel is a thousand inches. A pixel rectangle read as inches
-    // trips this immediately instead of reaching the prompt.
-    if (w > MAX_PLAUSIBLE_PANEL_INCHES || h > MAX_PLAUSIBLE_PANEL_INCHES) {
-      throw new PanelProofRefusal(
-        `${name}: ${w}" x ${h}" is not a vehicle panel — these look like pixels, not inches`);
-    }
-    return `${name}: ${round1(w)}" wide x ${round1(h)}" high`;
+    const key = String(zone?.surfaceKey || "").toLowerCase();
+    const identity = PANEL_IDENTITY.get(key);
+    const { widthInches, heightInches } = printInches(zone);
+    return {
+      label: identity ? identity.label : String(zone?.surfaceKey || "").toUpperCase(),
+      surfaceId: identity ? identity.surfaceId : undefined,
+      placement: identity ? identity.placement : undefined,
+      widthInches, heightInches,
+    };
   });
+}
+
+function panelRowsFromManifest(manifest) {
+  return panelsFromManifest(manifest)
+    .map((panel) => `${panel.label}: ${round1(panel.widthInches)}" wide x ${round1(panel.heightInches)}" high`);
+}
+
+/** One zone's print rectangle in inches. Refuses rather than falls back. */
+function printInches(zone) {
+  const name = String(zone?.surfaceKey || "").toUpperCase();
+  // The print rectangle, or trim plus its own bleed when a manifest states
+  // only trim. Never `zone.trim`, which is pixels.
+  const bleed = zone?.bleedIn || {};
+  const trimW = Number(zone?.trimWidthIn);
+  const trimH = Number(zone?.trimHeightIn);
+  const w = Number.isFinite(Number(zone?.printWidthIn)) ? Number(zone.printWidthIn)
+    : (Number.isFinite(trimW) ? trimW + Number(bleed.left || 0) + Number(bleed.right || 0) : NaN);
+  const h = Number.isFinite(Number(zone?.printHeightIn)) ? Number(zone.printHeightIn)
+    : (Number.isFinite(trimH) ? trimH + Number(bleed.top || 0) + Number(bleed.bottom || 0) : NaN);
+  if (!name || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    throw new PanelProofRefusal(
+      `${name || "a surface"} has no usable print dimensions `
+      + `(printWidthIn/printHeightIn or trimWidthIn/trimHeightIn + bleedIn)`);
+  }
+  // A PLAUSIBILITY FLOOR, because this is the exact defect class that shipped:
+  // no vehicle panel is a thousand inches. A pixel rectangle read as inches
+  // trips this immediately instead of reaching the prompt.
+  if (w > MAX_PLAUSIBLE_PANEL_INCHES || h > MAX_PLAUSIBLE_PANEL_INCHES) {
+    throw new PanelProofRefusal(
+      `${name}: ${w}" x ${h}" is not a vehicle panel — these look like pixels, not inches`);
+  }
+  return { widthInches: w, heightInches: h };
 }
 
 /** One decimal, and no trailing ".0" — the owner's own spec-sheet form. */
@@ -265,12 +327,14 @@ function round1(value) {
 }
 
 /**
- * NODE 1 — the sheet. ONE image call, through the dedicated edge function.
+ * NODE 1 — the sheet. ONE image call, through the ONE Call-1 endpoint.
  *
- * The edge is `production-panel-proof`, which is its own Call-1 endpoint and
- * cannot reach `design-panel-ai-generate` at all — so production's other
- * topologies keep calling the one endpoint they always called (RULE 0.26) no
- * matter what this one returns.
+ * The edge is `design-panel-ai-generate` in `mode: "panel-proof"` (2026-09-21).
+ * It used to be `production-panel-proof`, a second Call-1 brain that by its own
+ * header "cannot reach design-panel-ai-generate at all" — which is precisely
+ * why the three-zone document came back generic and why Call 1 had to be taken
+ * off this topology instead of being fixed on it. Every topology now reaches the
+ * same designer through the same door (RULE 0.26).
  */
 /**
  * THE CUSTOMER'S OWN ASSETS, STAGED AS REFERENCES RATHER THAN INLINED.
@@ -346,6 +410,7 @@ async function stageCustomerAssets({ store, customerImageParts = [], logger = ()
 }
 
 async function requestProofSheet({ manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger }) {
+  const panels = panelsFromManifest(manifest);
   const panelRows = panelRowsFromManifest(manifest);
   if (panelRows.length !== 6) {
     throw new PanelProofRefusal(`manifest yielded ${panelRows.length}/6 panel rows`);
@@ -383,6 +448,11 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     vehicleModel: vehicle.model || null,
     vehicleType: vehicle.type || vehicle.vehicleClass || null,
     panelRows,
+    // THE SAME SIX SURFACES, STRUCTURED, because the designer contract reads
+    // identity and inches rather than a sentence: `atlasFlatMasterContract`
+    // validates label/surfaceId/placement and throws on a missing surface.
+    // Derived from `panelRows`'s own source, never re-read from the manifest.
+    panels,
     // THE OPERATION IDENTITY, STABLE ACROSS A RECOVERY.
     //
     // The edge now runs its image request through the durable provider module,
@@ -414,8 +484,22 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
  * shape the edge admits, and the regex above is checked HERE so a path the far
  * side would refuse never leaves.
  */
-async function stageProofContainer({ supabase, manifest, companyName, vehicle, logger = () => {} }) {
-  const bytes = await renderContainerTemplate({ manifest, companyName, vehicle, bleedInches: 5 });
+async function stageProofContainer({
+  supabase, manifest, companyName, vehicle, dimensionManifest,
+  // TEMPLATE IS THE WHOLE DOCUMENT; ARTWORK IS THE SIX DESTINATIONS ALONE.
+  //
+  // A separated request asks the designer for background artwork only — the
+  // compositor builds Zone 1 from that art plus the protected brand assets,
+  // Zone 2 from the same art, and Zone 3 from the isolated assets — so showing
+  // it the full three-zone sheet, with its headings, bands and captions, asks
+  // it to paint the very chrome that code draws afterwards. `mode: "artwork"`
+  // is the same template with only the six rectangles left on it.
+  mode = "template",
+  logger = () => {},
+}) {
+  const bytes = await renderContainerTemplate({
+    manifest, companyName, vehicle, dimensionManifest, mode, bleedInches: 5,
+  });
   const digest = sha256(bytes);
   const storagePath = `atlas-call1-inputs/${digest}.png`;
   if (!CALL1_INPUT_PATH.test(storagePath)) {
@@ -435,10 +519,11 @@ async function stageProofContainer({ supabase, manifest, companyName, vehicle, l
 
 /**
  * The transport, as the pass consumes it: stage the container, one POST to the
- * dedicated edge, then a HASH-VERIFIED download of the sheet it stored.
+ * Call-1 edge in `mode: "panel-proof"`, then a HASH-VERIFIED download of the
+ * sheet it stored.
  *
  * The sheet crosses this boundary as an IDENTITY first — the edge answers
- * `{proofStoragePath, proofSha256, proofByteSize}` and never base64 — which is
+ * `{sheetStoragePath, sheetSha256, sheetBytes}` and never base64 — which is
  * RULE 0.39, and the download is verified against both halves of that identity
  * for the same reason `downloadVerified` is: a swapped object and a caller whose
  * claim does not match what it wrote are two different failures.
@@ -464,6 +549,9 @@ function createPanelProofTransport({
     }
     const staged = await stageProofContainer({
       supabase, manifest: parsePanelRows(body.panelRows),
+      // The canvas the designer is shown follows the ask: six bare destinations
+      // on a separated request, the whole document otherwise.
+      mode: body.separatedArtwork === true ? "artwork" : "template",
       companyName: body.companyName || "", logger,
       vehicle: [body.vehicleYear, body.vehicleMake, body.vehicleModel]
         .map((v) => String(v || "").trim()).filter(Boolean).join(" "),
@@ -476,7 +564,7 @@ function createPanelProofTransport({
         "content-type": "application/json",
         "x-designpro-owner-id": String(callOwnerId || ""),
       },
-      body: JSON.stringify({ ...body, ...staged }),
+      body: JSON.stringify({ ...body, ...staged, mode: PROOF_EDGE_MODE }),
     });
     const payload = await response.json().catch(() => ({ error: "unparseable response" }));
     if (!response.ok || payload?.success !== true) {
@@ -484,25 +572,39 @@ function createPanelProofTransport({
         `${PROOF_EDGE_FUNCTION} failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}`,
         { status: response.status });
     }
-    const { data, error } = await supabase.storage.from(BUCKET).download(payload.proofStoragePath);
+    // THE SHEET'S IDENTITY, IN THE BRAIN'S OWN VOCABULARY. `sheetStoragePath`
+    // / `sheetSha256` / `sheetBytes` are what `handlePanelProof` returns and
+    // what its lock asserts; reading them here rather than aliasing them into
+    // the retired endpoint's `proof*` names keeps ONE spelling of the identity
+    // across the seam.
+    const { data, error } = await supabase.storage.from(BUCKET).download(payload.sheetStoragePath);
     if (error || !data) {
-      throw new PanelProofRefusal(`the proof sheet could not be read: ${payload.proofStoragePath}`);
+      throw new PanelProofRefusal(`the proof sheet could not be read: ${payload.sheetStoragePath}`);
     }
     const bytes = Buffer.from(await data.arrayBuffer());
-    if (bytes.length !== Number(payload.proofByteSize) || sha256(bytes) !== payload.proofSha256) {
-      throw new PanelProofRefusal(`${payload.proofStoragePath} does not match the identity the edge returned`);
+    if (bytes.length !== Number(payload.sheetBytes) || sha256(bytes) !== payload.sheetSha256) {
+      throw new PanelProofRefusal(`${payload.sheetStoragePath} does not match the identity the edge returned`);
     }
     return {
       bytes,
-      contentHash: payload.proofSha256,
-      storagePath: payload.proofStoragePath,
+      contentHash: payload.sheetSha256,
+      storagePath: payload.sheetStoragePath,
       byteSize: bytes.length,
       model: payload.model || null,
-      contract: payload.contract || null,
+      contract: payload.promptVersion || null,
       promptChars: Number(payload.promptChars || 0),
-      sheetShape: payload.sheetShape || null,
-      intake: payload.intake || null,
-      generatedElements: payload.generatedElements || [],
+      // HOW MUCH REAL A.C.E. REACHED THE SHEET. A collapsed creative head is
+      // the generic-sheet defect returning, and it is the one number that
+      // distinguishes this path from the copy it replaces.
+      creativeHeadChars: Number(payload.creativeHeadChars || 0),
+      sheetShape: payload.sheetContentType ? { mime: payload.sheetContentType } : null,
+      // The brain runs NO second Flash parse and generates no logo of its own:
+      // the designer draws the marks in the one image call, and Zone 3 comes
+      // from the customer's original files and outlined typography. Both stay
+      // absent rather than fabricated, and both consumers already treat absence
+      // as a real answer.
+      intake: null,
+      generatedElements: [],
       imageRequestCount: Number(payload.imageRequestCount || 1),
       containerSource: (payload.attachedInputs || []).find((a) => a?.role === "container") || null,
       // What Call 1 was SHOWN as a quality standard. Read from the edge rather
@@ -1135,9 +1237,11 @@ module.exports = {
   PANEL_PROOF_TOPOLOGY,
   PANEL_PROOF_TOPOLOGY_CONTRACT,
   PROOF_EDGE_FUNCTION,
+  PROOF_EDGE_MODE,
   CALL1_INPUT_PATH,
   PanelProofRefusal,
   panelProofEnabled,
+  panelsFromManifest,
   panelRowsFromManifest,
   stageProofContainer,
   createPanelProofTransport,

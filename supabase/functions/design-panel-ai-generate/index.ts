@@ -3967,6 +3967,34 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
 //      `0.9114 0.3` through Topaz onto a customer's 150-PPI driver panel. Real
 //      inches per NAMED surface are a designer's working unit and are what the
 //      reference sheet itself carries; a coordinate table is furniture to copy.
+//
+// THE CUSTOMER'S OWN ASSETS ARRIVE BY IDENTITY, NEVER AS BASE64. A logo is
+// conditioned to 1600px and a VisionBoard set can be several images, so
+// inlining them walks back into the bodiless 504 this contract has already
+// suffered twice. The runtime stages each one at `atlas-call1-inputs/<sha>.png`
+// and sends `{storagePath, contentHash, byteSize}` (RULE 0.39); this handler
+// re-reads and re-verifies every one, so the runtime can never name bytes the
+// far side did not check.
+const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
+/** No vehicle panel is a thousand inches. A pixel rectangle trips this. */
+const PANEL_PROOF_MAX_PLAUSIBLE_INCHES = 400;
+//
+// THE GOLD-STANDARD ARTBOARDS — WHAT "GOOD" LOOKS LIKE. Ported unchanged from
+// `production-panel-proof`, which is the endpoint this mode replaces: list ten,
+// take at most the first two supported images, skip anything over 8 MiB, and
+// treat a missing or empty prefix as non-fatal. Dropping them on the way over
+// would silently undo the fix made for live bbdd0db0 (2026-09-21), where a
+// request carrying only a blank container and text produced six cropped
+// photographs of a desert garden. Persona text can describe professionalism;
+// it cannot show it.
+//
+// THIS HANDLER READS THEM ITSELF, exactly as it reads the pinned format sheet,
+// rather than taking them on the request. That keeps RULE 0.24's classes apart
+// by construction: a quality reference can never arrive as a `customerAsset`
+// and so can never become CREATIVE authority.
+const ARTBOARD_QUALITY_PREFIX = "designpanel-artboard-examples/";
+const ARTBOARD_QUALITY_MAX_BYTES = 8 * 1024 * 1024;
+const ARTBOARD_QUALITY_MAX = 2;
 async function handlePanelProof(body: Record<string, unknown>, ownerId: string): Promise<Response> {
   let requestId = crypto.randomUUID();
   let imageRequestCount = 0;
@@ -3975,10 +4003,19 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
   try {
     await authorizeAtlasProviderRequest(svc, body.providerRequest, ownerId);
 
-    const vehicleYear = String(body.vehicleYear || "").trim();
-    const vehicleMake = String(body.vehicleMake || "").trim();
-    const vehicleModel = String(body.vehicleModel || "").trim();
-    const vehicleType = String(body.vehicleType || "").trim();
+    // ⚠️ READ THROUGH `field`, NOT AS `const vehicleYear = String(body.vehicleYear ...)`.
+    //
+    // That exact line is `REGION_START` in `scripts/build-atlas-call1-prompt.mjs`,
+    // which slices the A/B harness's control out of this file and REFUSES an
+    // ambiguous anchor. Writing it a second time here broke five prompt-pin
+    // locks with "Call-1 assembly start anchor is ambiguous" — a failure that
+    // names the slicer, not the handler that duplicated its anchor. `field` is
+    // also the idiom the endpoint this mode replaces already used.
+    const field = (name: string) => String((body as Record<string, unknown>)[name] || "").trim();
+    const vehicleYear = field("vehicleYear");
+    const vehicleMake = field("vehicleMake");
+    const vehicleModel = field("vehicleModel");
+    const vehicleType = field("vehicleType");
     const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
 
     // ── The six surfaces, with GENIE's real inches ────────────────────────
@@ -4012,6 +4049,9 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
       if (!(p.widthInches! > 0) || !(p.heightInches! > 0)) {
         throw new Error(`panel_proof_panel_inches_required:${p.label || "unnamed"}`);
       }
+      if (p.widthInches! > PANEL_PROOF_MAX_PLAUSIBLE_INCHES || p.heightInches! > PANEL_PROOF_MAX_PLAUSIBLE_INCHES) {
+        throw new Error(`panel_proof_panel_inches_implausible:${p.label}:${p.widthInches}x${p.heightInches}`);
+      }
       return `${p.label}: ${fmtIn(p.widthInches!)}" wide x ${fmtIn(p.heightInches!)}" high`;
     });
 
@@ -4026,10 +4066,55 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
     // exact marker and swaps in the three-zone document. It THROWS if the
     // marker moved or the persona sentence is missing, so a refactor that drops
     // the designer fails loudly instead of quietly shipping generic artwork.
-    const references = Array.isArray(body.referenceImagesBase64) ? (body.referenceImagesBase64 as string[]) : [];
-    const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
+    //
+    // The customer's references reach the designer as a COUNT and an intent —
+    // `visionBoardImages` is what turns on the VisionBoard branch — and as
+    // actual image parts further down. Two carriers exist on purpose: staged
+    // identities are the production path (bounded, verified, no 504), and the
+    // inline array is what a probe or a direct caller still sends.
+    type StagedAsset = { storagePath?: unknown; contentHash?: unknown; byteSize?: unknown };
+    const customerAssets = (Array.isArray(body.customerAssets) ? (body.customerAssets as StagedAsset[]) : [])
+      // BOUNDED: a malformed body cannot turn one request into an unbounded read loop.
+      .slice(0, 8);
+    const inlineReferences = (Array.isArray(body.referenceImagesBase64) ? (body.referenceImagesBase64 as string[]) : [])
+      .filter((ref) => typeof ref === "string" && ref.length > 0);
+    const references = [...customerAssets, ...inlineReferences];
+
+    // ── ZONE 2 IS AUTHORED, NEVER STRIPPED ────────────────────────────────
+    //
+    // The three-zone document is a SEPARATION (owner, 2026-09-19: "panels with
+    // seperated and logos and text"): the model draws the background artwork,
+    // and the company name, the contact bar and the marks are produced as their
+    // own deterministic artifacts and composited by code at a known box. So a
+    // separated request must ask for a sheet with NO lettering on it — asking
+    // the designer for a branded sheet and then compositing type over it prints
+    // the name twice.
+    //
+    // `atlasCleanBase` is THIS FILE's own contract, already live on the element
+    // graph, and it REPLACES the brand/contact block rather than adding a
+    // negative to it. `fontStyle` goes with it for the same reason: a typography
+    // preference beside "no lettering" is the contradiction this file warns
+    // about in four places.
+    const cleanBase = body.separatedArtwork === true || body.cleanBase === true;
+
+    // THE BRIEF THE DESIGNER READS. Ported: an extracted `creativeDirection`
+    // wins only while it still carries two thirds of the customer's own words —
+    // an unshortened brief the designer can read beats a tidy one that lost the
+    // instruction. `style` rides with it because `buildDesignIQPrompt` has no
+    // `style` parameter, so without this line the customer's stated style
+    // direction reaches nothing at all.
+    const extracted = String(body.creativeDirection || "").trim();
+    const rawBrief = String(body.enrichedBrief || body.prompt || body.customerPrompt || "").trim();
+    const words = (value: string) => String(value || "").trim().split(/\s+/).filter(Boolean).length;
+    const briefText = extracted && words(extracted) >= Math.ceil(words(rawBrief) * 0.66)
+      ? extracted : (rawBrief || extracted);
+    const style = String(body.style || "").trim();
+    const creativeDirection = [briefText, style ? `Style direction: ${style}.` : ""]
+      .filter(Boolean).join("\n");
+
+    let creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
       mode: authoringMode,
-      prompt: String(body.enrichedBrief || body.prompt || "").trim(),
+      prompt: creativeDirection,
       finish: String(body.finish || "Gloss"),
       substrate: String(body.substrate || "standard"),
       companyName: String(body.companyName || "").trim() || undefined,
@@ -4040,21 +4125,89 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
       website: String(body.website || "").trim() || undefined,
       textLayerPrompt: String(body.textLayerPrompt || "").trim() || undefined,
       brandColors: String(body.brandColors || "").trim() || undefined,
-      fontStyle: String(body.fontStyle || "").trim() || undefined,
+      fontStyle: cleanBase ? undefined : (String(body.fontStyle || "").trim() || undefined),
       qrEnabled: body.qrEnabled === true,
       vehicleYear,
       vehicleMake,
       vehicleModel,
       vehicleType,
       viewType: "side",
-      visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
+      visionBoardImages: references.map((ref, i) => ({
+        slotLabel: `Customer reference ${i + 1}`,
+        storageUrl: typeof ref === "string" ? undefined : String((ref as StagedAsset).storagePath || ""),
+      })),
       visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
       styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
       atlasFlatMaster: true,
+      atlasCleanBase: cleanBase,
       atlasPanels: panels,
     } as any));
 
-    const prompt = buildPanelProofPrompt({
+    // ── A CLEAN BASE IS STILL A DESIGN. THIS ONCE ASKED FOR A BACKGROUND. ──
+    //
+    // Ported with its reasoning, because it was written against a live defect.
+    // The shared clean-base branch replaces the sentence that hands the designer
+    // authority over composition with "reserve calm, high-contrast negative
+    // space" — and that was the whole of what the designer was told about
+    // layout. Asked for a calm background, a designer gives you a photograph,
+    // which is exactly what live bbdd0db0 returned: six cropped desert-garden
+    // photos, no composition, no colour system, and the customer's own
+    // placement instruction unanswered.
+    //
+    // The separation is NOT being undone — Zone 2 needs lettering-free panels
+    // for template QC and Zone 3 needs the marks as separate originals. What
+    // changes is that the base is a COMPOSED wrap missing only its lettering,
+    // not a backdrop. It keeps every constraint the overlay needs and adds
+    // nothing about subject, palette or style, which remain the brief's alone.
+    if (cleanBase) {
+      creativeHead = creativeHead
+        .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
+          "This is a finished commercial wrap composition with its lettering left off, never a backdrop: "
+          + "design it with deliberate flow across the panel, a committed colour system, and graphic language "
+          + "-- shapes, sweeps, edges, photographic content -- arranged as a designer would arrange them. "
+          + "Honour every placement the customer stated: where they say artwork covers a fraction of a side "
+          + "or a specific area, compose it exactly there. "
+          + "Leave one deliberate, calm, high-contrast area on each surface for the brand lockup that is "
+          + "composited separately; reserving that area is part of the composition, not a substitute for it.")
+        .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
+          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully");
+    }
+
+    // ── THE SEPARATED ASK, PORTED FROM `production-panel-proof` ────────────
+    //
+    // On a separated request the model is not drawing a document: it draws six
+    // clean background artworks onto the staging canvas and the compositor
+    // builds all three zones from them. So the three-band document contract and
+    // the filled format sheet are BOTH skipped — showing a finished three-zone
+    // example to a request for bare artwork is asking for the chrome that code
+    // draws afterwards.
+    //
+    // ⚠️ ONE DELIBERATE DIFFERENCE FROM THE PORT, AND IT IS LOAD-BEARING.
+    //
+    // The original filtered A.C.E.'s head line by line, dropping every line
+    // containing "no / not / never / without / do not", because that head still
+    // carried branding and layout direction it had to neutralise. This head is
+    // built with `atlasCleanBase`, which REPLACES the brand block with the
+    // clean-base contract — and that contract is stated as "No letters, no
+    // numerals, no words, no monograms...". Running the legacy filter over it
+    // would delete the exact sentence that makes Zone 2 clean, so the head goes
+    // through intact. A transform written for the old shape breaks the new one.
+    const separatedPrompt = [
+      "ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer's six vehicle panel cells.",
+      "CONTENT SCOPE: color fields, photography, illustration, gradients, textures, patterns, graphic motion, lighting, depth and visual accents. Keep every generated pixel within this artwork vocabulary.",
+      creativeHead,
+      "REQUIRED SUBJECT HIERARCHY: When the customer's creative direction requests a photoreal hero subject or scene, render that specific subject prominently inside the panel artwork. Preserve its people, animals, products or activity as requested. Textures and patterns support the requested subject; they must not replace it. Background artwork here includes the complete photographic and illustrated design beneath the separate branding layer.",
+      "Output raw edge-to-edge wrap artwork only. Strictly forbid document frames, headers, text labels, borders, dimensions, arrows, typography, logos or zone markers.",
+      "ARTWORK STAGING CANVAS: Attachment 1 contains six unlabelled gray rectangles. Fill those exact rectangles boundary-to-boundary with cohesive raw artwork. Preserve their locations and aspect ratios on the 3:2 canvas. Keep the unused canvas white.",
+      // The rows are NAMED, so each one identifies its own rectangle and the
+      // list's order cannot mislead; the canvas's own left-to-right order is
+      // stated separately below because that is what the container draws.
+      "EACH PANEL'S REAL PRINTED SHAPE:\n" + panelRows.map((row) => `  ${row}`).join("\n"),
+      "DESIGN CONTINUITY: From left to right: driver, passenger, roof, hood, front, rear. Coordinate all six artworks as one campaign. Reserve calm visual space for a separate customer branding layer. Treat every rectangle as flat printed vinyl artwork.",
+      "Customer reference images demonstrate color palette and surface style ONLY; ignore all reference frames and layouts. Return the six clean background artworks on the staging canvas.",
+    ].join("\n\n");
+
+    const prompt = cleanBase ? separatedPrompt : buildPanelProofPrompt({
       creativeHead,
       panelRows,
       companyName: String(body.companyName || "").trim() || undefined,
@@ -4098,13 +4251,21 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
     // three zones and six cells. It never contributes colour, palette, subject,
     // wording, brand or style — those come from the customer's own brief and
     // references, which sit after it and outrank it.
-    parts.push({
-      text: "THREE-ZONE PRODUCTION PROOF — FORMAT AND QUALITY REFERENCE. Learn the document: Zone 1 is the six finished panels, Zone 2 is those same panels with the lettering left off, Zone 3 is the brand elements lifted out on their own. Match its professional standard of execution. Copy none of its artwork, palette, photography, wording, logo, brand or industry — the customer's brief and references below alone decide subject, colour and every design decision.",
-    });
-    const exampleVerified = await attach(
-      PANEL_PROOF_FORMAT_EXAMPLE.path, "image/png",
-      PANEL_PROOF_FORMAT_EXAMPLE.sha256, PANEL_PROOF_FORMAT_EXAMPLE.byteSize,
-    );
+    //
+    // SKIPPED ON A SEPARATED ASK. A finished three-zone sheet shown to a request
+    // for six bare artworks teaches exactly the document chrome — headings,
+    // bands, captions — that the compositor draws afterwards, and the
+    // gold-standard artboards below carry the quality half of its job anyway.
+    let exampleVerified: Record<string, unknown> | null = null;
+    if (!cleanBase) {
+      parts.push({
+        text: "THREE-ZONE PRODUCTION PROOF — FORMAT AND QUALITY REFERENCE. Learn the document: Zone 1 is the six finished panels, Zone 2 is those same panels with the lettering left off, Zone 3 is the brand elements lifted out on their own. Match its professional standard of execution. Copy none of its artwork, palette, photography, wording, logo, brand or industry — the customer's brief and references below alone decide subject, colour and every design decision.",
+      });
+      exampleVerified = await attach(
+        PANEL_PROOF_FORMAT_EXAMPLE.path, "image/png",
+        PANEL_PROOF_FORMAT_EXAMPLE.sha256, PANEL_PROOF_FORMAT_EXAMPLE.byteSize,
+      );
+    }
 
     // The blank container for THIS vehicle — captioned, banded and dimensioned
     // by code, staged by the caller. It carries no path constant on purpose:
@@ -4113,19 +4274,100 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
     let containerVerified: Record<string, unknown> | null = null;
     const containerPath = String(body.containerStoragePath || "").trim();
     if (containerPath) {
-      parts.push({
-        text: "CURRENT CONTAINER TEMPLATE — the empty document for this exact vehicle. Its bands, cells and printed dimensions are the layout to fill. Headings, captions, dimension callouts, rules and zone bars are printed onto this sheet afterwards by the press; draw the artwork only.",
-      });
-      const v = await attach(containerPath, "image/png");
-      containerVerified = { contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract, ...(v || {}) };
+      if (!CALL1_INPUT_PATH.test(containerPath)) {
+        throw new Error(`panel_proof_input_path_invalid:${containerPath}`);
+      }
+      // On a separated ask the prompt above already names this as ATTACHMENT 1
+      // and describes it exactly; a second caption describing bands, captions
+      // and callouts would describe chrome that the artwork canvas does not
+      // carry, which is the same contradiction as asking for no lettering
+      // beside a typography preference.
+      if (!cleanBase) {
+        parts.push({
+          text: "CURRENT CONTAINER TEMPLATE — the empty document for this exact vehicle. Its bands, cells and printed dimensions are the layout to fill. Headings, captions, dimension callouts, rules and zone bars are printed onto this sheet afterwards by the press; draw the artwork only.",
+        });
+      }
+      const v = await attach(
+        containerPath, "image/png",
+        String(body.containerContentHash || "") || undefined,
+        Number.isFinite(Number(body.containerByteSize)) ? Number(body.containerByteSize) : undefined,
+      );
+      containerVerified = { contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract, origin: "caller", ...(v || {}) };
     }
 
-    // The customer's own references LAST among the images: creative authority
-    // sits closest to the ask.
-    for (const ref of references) {
-      if (typeof ref === "string" && ref.length > 0) {
-        parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+    // Quality reference ONLY — never topology, never artwork. A bucket outage
+    // or an empty prefix must not cost a design, so every failure here is
+    // swallowed and simply yields no examples.
+    const qualityExamples: Array<{ path: string; sha256: string; byteSize: number }> = [];
+    try {
+      const { data: listed } = await svc.storage.from("wrap-files")
+        .list(ARTBOARD_QUALITY_PREFIX.replace(/\/$/, ""), { limit: 10 });
+      const candidates = (listed || [])
+        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
+        .slice(0, ARTBOARD_QUALITY_MAX);
+      for (const file of candidates) {
+        const path = `${ARTBOARD_QUALITY_PREFIX}${file.name}`;
+        const { data, error } = await svc.storage.from("wrap-files").download(path);
+        if (error || !data) continue;
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        if (!bytes.length || bytes.length > ARTBOARD_QUALITY_MAX_BYTES) continue;
+        const extension = String(file.name).toLowerCase().split(".").pop();
+        const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg"
+          : extension === "webp" ? "image/webp" : "image/png";
+        // The text goes FIRST so the image is already framed as a quality
+        // reference when the model reaches it, and it names every axis the
+        // example may NOT influence. Wording preserved from the port.
+        parts.push({
+          text: `DESIGNPANEL GOLD-STANDARD ARTBOARD ${qualityExamples.length + 1} — PRODUCTION-QUALITY REFERENCE ONLY. `
+            + `Match its professional depth, finish, typographic hierarchy, connected-wrap coherence and gallery-grade execution: `
+            + `this is the standard of design the output must reach. `
+            + `Copy none of its artwork, photography, palette, wording, logo, brand, industry, panel geometry or topology. `
+            + `The container template above alone controls topology, and the customer's own brief alone controls subject and colour.`,
+        });
+        let binary = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+        parts.push({ inlineData: { mimeType, data: btoa(binary) } });
+        qualityExamples.push({ path, sha256: await sha256Hex(bytes), byteSize: bytes.length });
       }
+    } catch (_error) {
+      // Examples improve quality; their absence never blocks authoring.
+    }
+
+    // ── THE CUSTOMER'S OWN ASSETS — logo and VisionBoard, by identity ──────
+    //
+    // AFTER the structural inputs, so the container still conditions the layout
+    // first and these read as brand content (RULE 0.24: creative authority sits
+    // closest to the ask). Every one is re-verified here rather than trusted:
+    // the Call-1 prefix, that the filename IS the hash of the bytes, and that
+    // the hash the caller claimed is that same hash. Those are three different
+    // failures and they are reported as three different errors.
+    const customerAssetIdentities: Array<Record<string, unknown>> = [];
+    for (const asset of customerAssets) {
+      const key = String(asset?.storagePath || "").trim();
+      if (!key) throw new Error("panel_proof_customer_asset_missing");
+      if (!CALL1_INPUT_PATH.test(key)) throw new Error(`panel_proof_customer_asset_path_invalid:${key}`);
+      const claimed = String(asset?.contentHash || "").trim();
+      if (!claimed || !key.includes(claimed)) {
+        throw new Error(`panel_proof_customer_asset_not_content_addressed:${key}`);
+      }
+      const v = await attach(
+        key, "image/png", claimed,
+        Number.isFinite(Number(asset?.byteSize)) ? Number(asset.byteSize) : undefined,
+      ).catch((err) => {
+        const message = String((err as Error)?.message || err);
+        if (message.startsWith("panel_proof_input_hash_mismatch")) {
+          throw new Error(`panel_proof_customer_asset_hash_mismatch:${key}`);
+        }
+        throw err;
+      });
+      customerAssetIdentities.push({ role: "customer-asset", storagePath: key, ...(v || {}) });
+    }
+
+    // The inline carrier, still last: a probe or a direct caller that has no
+    // artifact store to stage through sends base64 and is not refused for it.
+    for (const ref of inlineReferences) {
+      parts.push({ inlineData: { mimeType: "image/png", data: ref } });
     }
 
     // ── Exactly ONE Gemini image request ──────────────────────────────────
@@ -4147,7 +4389,18 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
     // duplicating a block between the system and user turns spends the budget
     // that creative direction loses first (v19: 465 characters of proven
     // creative direction deleted while format text grew 54%).
-    const systemInstruction = {
+    //
+    // THE SEPARATED ASK HAS ITS OWN SYSTEM TURN, ported verbatim: it names the
+    // compositor's division of labour, which is the fact that makes "draw no
+    // lettering" reasonable rather than arbitrary.
+    const systemInstruction = cleanBase ? {
+      parts: [{
+        text: "Follow the A.C.E. commercial-wrap creative direction in the user request. You author the imagery and background artwork for a complete three-zone Studio production proof. "
+          + "The attached Studio artwork template defines six exact panel destinations. Preserve those positions and proportions. Photography and illustration belong inside the artwork. "
+          + "The compositor builds Zone 1 from your art plus protected brand assets, Zone 2 from your same art, and Zone 3 from isolated brand assets. "
+          + "Document headings, dimensions, panel labels, borders and other sheet annotations are drawn by code. Never paint document annotations into panel textures. Return only the requested clean artwork canvas.",
+      }],
+    } : {
       parts: [{
         text: [
           "You are producing ONE vehicle-wrap PRODUCTION PANEL PROOF: the document a print shop receives.",
@@ -4217,6 +4470,19 @@ async function handlePanelProof(body: Record<string, unknown>, ownerId: string):
         promptChars: prompt.length,
         formatExampleIdentity: exampleVerified ? { path: PANEL_PROOF_FORMAT_EXAMPLE.path, ...exampleVerified } : null,
         containerIdentity: containerVerified,
+        // Every image this request actually carried, by role and identity, so
+        // "did the designer see the container / the customer's logo" is a read
+        // of the receipt rather than an inference from a count.
+        attachedInputs: [
+          ...(exampleVerified ? [{ role: "format-example", storagePath: PANEL_PROOF_FORMAT_EXAMPLE.path, ...exampleVerified }] : []),
+          ...(containerVerified ? [{ role: "container", storagePath: containerPath, ...containerVerified }] : []),
+          ...qualityExamples.map((q) => ({ role: "artboard-quality", ...q })),
+          ...customerAssetIdentities,
+        ],
+        // "Did the designer see a gold standard, and which one" — a field, not
+        // a grep. The revision receipt recorded a hardcoded 0 for this for weeks.
+        artboardQualityExamplesApplied: qualityExamples.length,
+        artboardQualityExampleIdentities: qualityExamples,
         verifiedCustomerReferenceCount: references.length,
         panelRows,
         coverageSqFt: panelProofCoverageSqFt(panelRows),
