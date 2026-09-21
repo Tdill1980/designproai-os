@@ -78,20 +78,6 @@ import { geminiImageUrl } from "../_shared/model-config.ts";
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-/**
- * THE THREE-ZONE PRODUCTION PROOF, pinned by hash.
- *
- * The SAME object `runtime/atlas-panel-proof-contract.cjs` and
- * `_shared/atlas-panel-proof-prompt.ts` already pin as
- * `PANEL_PROOF_FORMAT_EXAMPLE` — one asset, one hash, three readers. Do not
- * re-pin this to a screenshot of it: the copies that circulate carry an
- * "EXAMPLE" badge across Zone 2 and a UI widget in the corner, and a teaching
- * input is learned exactly as it arrives.
- */
-const ATLAS_THREE_ZONE_EXAMPLE = {
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-} as const;
 const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260921.v29-designpanelai-brain";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed

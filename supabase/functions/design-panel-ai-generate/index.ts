@@ -64,20 +64,6 @@ import { geminiImageUrl } from "../_shared/model-config.ts";
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-/**
- * THE THREE-ZONE PRODUCTION PROOF, pinned by hash.
- *
- * The SAME object `runtime/atlas-panel-proof-contract.cjs` and
- * `_shared/atlas-panel-proof-prompt.ts` already pin as
- * `PANEL_PROOF_FORMAT_EXAMPLE` — one asset, one hash, three readers. Do not
- * re-pin this to a screenshot of it: the copies that circulate carry an
- * "EXAMPLE" badge across Zone 2 and a UI widget in the corner, and a teaching
- * input is learned exactly as it arrives.
- */
-const ATLAS_THREE_ZONE_EXAMPLE = {
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-} as const;
 const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260921.v29-designpanelai-brain";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
@@ -3456,9 +3442,9 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       };
     }
     for (const ref of references) pushImage(ref);
-    // THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT (owner, twice,
-    // 2026-09-21: "provide this example on call one everytime … so the model
-    // understands a 3 zone proof").
+    // THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT (owner, 2026-09-21:
+    // "provide this example on call one everytime … so the model understands a
+    // 3 zone proof", then "Recreate in code … it should say example").
     //
     // ⚠️ IT IS SHOWN SO THE MODEL KNOWS WHAT HAPPENS TO ITS ARTWORK, NEVER AS
     // SOMETHING TO DRAW. The document is drawn by CODE
@@ -3468,46 +3454,53 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     // which is why it has to leave a deliberate, calm, high-contrast area for
     // the lockup rather than paint edge to edge and hope.
     //
-    // ⚠️ AND IT IS THE EXACT RISK `map_drawn` EXISTS FOR. This sheet is covered
-    // in dimension arrows, dashed frames and captions, and four live runs
+    // DRAWN BY THE RUNTIME, NOT A STORED PNG. It arrives on the SAME
+    // `atlas-call1-inputs/<sha256>.png` allowlist as the teaching proof and the
+    // guide, hash-verified by `downloadPart`. A stored example had two failure
+    // modes this repo already paid for: the copies that circulate are
+    // screenshots carrying a burned-in badge and a UI widget (the
+    // `installer-one-panel-per-side.png` precedent, which live sheet
+    // 35402317471 answered), and a stored sheet drifts from the document it
+    // claims to show. Generated from the real container template, it can do
+    // neither. See `runtime/atlas-three-zone-example.cjs`.
+    //
+    // ⚠️ AND IT IS THE EXACT RISK `map_drawn` EXISTS FOR. This sheet carries
+    // dimension arrows, dashed frames and captions, and four live runs
     // (455b1723, 7c7bd633, cc382c3c, 8c525565) painted layout numbers onto the
     // flanks from a far weaker cue. The text below names every one of those
     // marks as forbidden output, the gate convicts the sheet if the model draws
     // them anyway, and the refusal ledger makes that measurable rather than a
     // matter of opinion. Judge it from the ledger, not from this comment.
     //
-    // FAIL SOFT, UNLIKE `production-panel-proof`'s hard `panel_proof_input_
-    // missing`. There the document IS the deliverable; here a missing teaching
-    // input must never cost a customer their design.
+    // FAIL SOFT. A missing or altered example must never cost a design.
     try {
-      const { data: zonesData } = await svc.storage.from("wrap-files")
-        .download(ATLAS_THREE_ZONE_EXAMPLE.path);
-      if (zonesData) {
-        const zoneBytes = new Uint8Array(await zonesData.arrayBuffer());
-        // Pinned by hash for the reason the panel-proof contract already gives:
-        // a teaching input that silently changes teaches something nobody chose.
-        if (await sha256Hex(zoneBytes) === ATLAS_THREE_ZONE_EXAMPLE.sha256) {
-          parts.push({
-            text: "DOWNSTREAM SEPARATION CONTEXT — THIS IS A DOCUMENT ABOUT YOUR ARTWORK, NOT ARTWORK TO PRODUCE. "
-              + "It shows what the production system does with the sheet you are being asked for: ZONE 1 is your "
-              + "finished panels, ZONE 2 is those same panels with the lettering and logo left off, and ZONE 3 is the "
-              + "brand elements lifted out as separate cut graphics. Design accordingly: the artwork must read as a "
-              + "finished commercial wrap on its own, and it must carry a deliberate, calm, high-contrast area on each "
-              + "flank where the brand lockup belongs. "
-              // Each forbidden mark is kept WHOLE on its own source line, so the
-              // lock can assert the phrases rather than a reflowed fragment of
-              // them. The first draft split "no registration marks" across a
-              // concatenation and the assertion could not see it.
-              + "DO NOT REPRODUCE ANY PART OF THIS DOCUMENT. Your output carries "
-              + "no zone bands, no headers, no captions, no panel names, "
-              + "no dimension arrows, no measurements, no decimal numbers, "
-              + "no dashed frames, no registration marks and no legend. "
-              + "Those belong to the document, which is drawn separately by the "
-              + "production system and never by you.",
-          });
-          parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(zoneBytes) } });
-          threeZoneContextApplied = true;
-        }
+      const staged = await downloadPart(body.threeZoneExampleStoragePath, "image/png");
+      if (staged) {
+        // The text goes AFTER the image it describes here, unlike the teaching
+        // proof: the caption has to name what was just seen as forbidden
+        // output, and a prohibition read before the picture is read against
+        // nothing.
+        parts.push({
+          text: "THE IMAGE ABOVE IS DOWNSTREAM SEPARATION CONTEXT — A DOCUMENT ABOUT YOUR ARTWORK, "
+            + "NOT ARTWORK TO PRODUCE. It is an EXAMPLE sheet and says so on its face. "
+            + "It shows what the production system does with the sheet you are being asked for: "
+            + "ZONE 1 is your finished panels, ZONE 2 is those same panels with the lettering and logo "
+            + "left off, and ZONE 3 is the brand elements lifted out as separate cut graphics. "
+            + "Design accordingly: the artwork must read as a finished commercial wrap on its own, and it "
+            + "must carry a deliberate, calm, high-contrast area on each flank where the brand lockup belongs. "
+            // Each forbidden mark is kept WHOLE on its own source line, so the
+            // lock can assert the phrases rather than a reflowed fragment of
+            // them. An earlier draft split "no registration marks" across a
+            // concatenation and the assertion could not see it.
+            + "DO NOT REPRODUCE ANY PART OF THAT DOCUMENT. Your output carries "
+            + "no zone bands, no headers, no captions, no panel names, "
+            + "no dimension arrows, no measurements, no decimal numbers, "
+            + "no dashed frames, no registration marks and no legend, "
+            + "and never the word EXAMPLE. "
+            + "Those belong to the document, which is drawn separately by the "
+            + "production system and never by you.",
+        });
+        threeZoneContextApplied = true;
       }
     } catch (_error) {
       // Context improves separation; its absence never blocks authoring.

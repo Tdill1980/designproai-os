@@ -90,6 +90,7 @@ const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cj
 // (sheet -> cut -> assemble), and the same authoring seam as the cascade: one
 // function returning {bytes, contentHash, model, provenance} and throwing a
 // typed refusal, so everything downstream of acceptance is untouched.
+const { renderThreeZoneExample } = require("./atlas-three-zone-example.cjs");
 const {
   PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
   authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
@@ -1790,6 +1791,11 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       teachingProofStoragePath: extras.teachingProofStoragePath,
       teachingProofIdentity: extras.teachingProofIdentity,
       guideStoragePath: extras.guideStoragePath,
+      // The code-drawn three-zone example. Six-container branch only: the field
+      // contract sends ONE text part plus the customer's own references and
+      // nothing else (RULE 0.33), and adding an image to it would break a
+      // contract locked byte-for-byte by `atlas-one-field-call1`.
+      threeZoneExampleStoragePath: extras.threeZoneExampleStoragePath,
     }),
     referenceImagesBase64: extras.referenceImagesBase64,
     ...(extras.revisionContextHash ? { revisionContextHash: extras.revisionContextHash } : {}),
@@ -3620,11 +3626,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // Restore the two hash-addressed inputs required by the deployed branch.
   const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
   const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
+  // THE THREE-ZONE SEPARATION CONTEXT, DRAWN HERE (owner, 2026-09-21: "Recreate
+  // in code … it should say example"). Deterministic, so the sha256 is stable
+  // and the object is uploaded once and re-read forever after. It rides the
+  // same `atlas-call1-inputs/<sha256>.png` allowlist the edge already enforces,
+  // so a path the edge would refuse cannot leave this runtime.
+  const threeZoneBytes = await renderThreeZoneExample();
   const teachingInputPath = `atlas-call1-inputs/${sha256(teachingBytes)}.png`;
   const guideInputPath = `atlas-call1-inputs/${sha256(authoringGuideBytes)}.png`;
+  const threeZoneInputPath = `atlas-call1-inputs/${sha256(threeZoneBytes)}.png`;
   await Promise.all([
     store.putImmutableBytes({ storagePath: teachingInputPath, bytes: teachingBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
+    store.putImmutableBytes({ storagePath: threeZoneInputPath, bytes: threeZoneBytes, contentType: "image/png" }),
   ]);
   const customerImageParts = [
     ...(panelProof ? [] : await verifiedCustomerLogoPart(supabase, input)),
@@ -3641,6 +3655,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     teachingProofStoragePath: teachingInputPath,
     teachingProofIdentity: teachingProof.identity,
     guideStoragePath: guideInputPath,
+    threeZoneExampleStoragePath: threeZoneInputPath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
     revisionContextHash,
   };

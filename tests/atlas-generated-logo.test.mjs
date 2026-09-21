@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const require = createRequire(new URL("../runtime/package.json", import.meta.url));
 const graph = require("../runtime/atlas-call1-graph.cjs");
@@ -10,6 +11,7 @@ const graphSrc = src("../runtime/atlas-call1-graph.cjs");
 const edgeSrc = src("../supabase/functions/design-panel-ai-generate/index.ts");
 const runtimeSrc = src("../runtime/flat-first-atlas.cjs");
 const workerSrc = src("../runtime/index.js");
+const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 test("a customer who uploads no logo still gets a mark drawn for them", () => {
   // Owner, 2026-09-21: "if they didn't [upload] it auto created a logo."
@@ -98,47 +100,80 @@ test("the transport takes its owner PER CALL, like the author transport", () => 
   assert.match(workerSrc, /callLogoEdge: createAtlasLogoTransport\(\)/);
 });
 
-test("the three-zone proof is shown as separation context, never as artwork to draw", () => {
-  // Owner, twice, 2026-09-21: "provide this example on call one everytime …
-  // so the model understands a 3 zone proof."
-  // Anchored on the BLOCK, not on a phrase inside the prompt text — the first
-  // draft sliced from the prompt string and so began after the hash check it
-  // meant to assert. Both offsets are checked, for the reason the note on the
-  // logo-transport test gives.
+test("the three-zone example is DRAWN IN CODE, not a stored screenshot", async () => {
+  // Owner, 2026-09-21: "Recreate in code. But call one is not atlas and it
+  // should say example."
+  const example = require("../runtime/atlas-three-zone-example.cjs");
+  const a = await example.renderThreeZoneExample();
+  const b = await example.renderThreeZoneExample();
+  assert.equal(sha(a), sha(b), "deterministic, or the staged object is re-uploaded every run");
+  assert.ok(a.length > 50_000, "a real rendered sheet");
+
+  // IT IS THE REAL TEMPLATE, so the example cannot drift from the document the
+  // production system actually produces — the defect that retired the previous
+  // stored sheet (it showed ONE version where the contract asks for THREE).
+  const exampleSrc = src("../runtime/atlas-three-zone-example.cjs");
+  assert.match(exampleSrc, /require\("\.\/atlas-proof-container-template\.cjs"\)/);
+  assert.match(exampleSrc, /renderContainerTemplate\(/);
+
+  // AND IT IS NOT CALLED A.T.L.A.S. — owner: "call one is not atlas". The
+  // document is a 2D production proof; A.T.L.A.S. is the flat six-surface
+  // master, a different object.
+  const container = src("../runtime/atlas-proof-container-template.cjs");
+  assert.match(container, /2D PRODUCTION PROOF/);
+  assert.ok(!/A\.T\.L\.A\.S\./.test(container), "the sheet must not name itself ATLAS");
+
+  // IT SAYS EXAMPLE — in the CHROME. Header badge, all three zone bars, footer.
+  assert.match(exampleSrc, /EXAMPLE<\/text>/);
+  assert.match(exampleSrc, /EXAMPLE — NOT A REAL JOB/);
+  assert.match(exampleSrc, /EXAMPLE DOCUMENT — FORMAT REFERENCE ONLY/);
+  // …and NEVER across a cell. That distinction is the whole safety argument:
+  // `installer-one-panel-per-side.png` carried its own watermark and live sheet
+  // 35402317471 answered it.
+  const stamp = exampleSrc.slice(exampleSrc.indexOf("function exampleStampSvg"),
+    exampleSrc.indexOf("The finished sheet."));
+  assert.ok(!/layout\.zone1|layout\.zone2|cell\./.test(stamp),
+    "the stamp never addresses a panel cell");
+
+  // A GENERIC BUSINESS, so a structural reference carries no real brand
+  // (RULE 0.24) and no other customer's client rides every generation.
+  assert.equal(example.EXAMPLE_BRAND.name, "NORTHPOINT");
+  assert.ok(!/bright\s*smiles/i.test(exampleSrc));
+});
+
+test("the example reaches Call 1 on the same allowlist as every other input", () => {
   const start = edgeSrc.indexOf("THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT");
   const end = edgeSrc.indexOf("THE GOLD-STANDARD ARTBOARDS", start);
   assert.ok(start > 0 && end > start, "the separation context block must be locatable");
   const block = edgeSrc.slice(start, end);
 
-  // ONE ASSET, ONE HASH, THREE READERS. Pinned to the same object
-  // `PANEL_PROOF_FORMAT_EXAMPLE` already names — never to a screenshot of it,
-  // which carries an "EXAMPLE" badge over Zone 2 and a UI widget in the corner.
-  const runtimePin = require("../runtime/atlas-panel-proof-contract.cjs").PANEL_PROOF_FORMAT_EXAMPLE;
-  assert.match(edgeSrc, new RegExp(`sha256: "${runtimePin.sha256}"`));
-  assert.match(edgeSrc, new RegExp(`path: "${runtimePin.path.replace(/[/.]/g, "\\$&")}"`));
-  // And it is VERIFIED, not trusted: a silently different teaching input
-  // teaches something nobody chose.
-  assert.match(block, /await sha256Hex\(zoneBytes\) === ATLAS_THREE_ZONE_EXAMPLE\.sha256/);
+  // `downloadPart` enforces `atlas-call1-inputs/<sha256>.png` and hash-verifies
+  // the bytes, so a path the edge would refuse cannot leave the runtime — the
+  // 2099d17d lesson, applied before it costs a live run.
+  assert.match(block, /downloadPart\(body\.threeZoneExampleStoragePath, "image\/png"\)/);
+  assert.ok(!/atlas-examples/.test(block), "no stored-PNG path survives");
 
-  // THE NEGATIVE IS THE WHOLE POINT. This sheet is covered in the exact marks
+  // Staged by the runtime, and actually SENT — a field the edge reads and the
+  // body never sets is the inert-seam defect this repo records twice.
+  assert.match(runtimeSrc, /renderThreeZoneExample\(\)/);
+  assert.match(runtimeSrc, /threeZoneInputPath = `atlas-call1-inputs\/\$\{sha256\(threeZoneBytes\)\}\.png`/);
+  assert.match(runtimeSrc, /threeZoneExampleStoragePath: extras\.threeZoneExampleStoragePath/);
+
+  // THE NEGATIVE IS THE WHOLE POINT. The sheet carries the exact marks
   // `map_drawn` convicts, and four live runs painted layout numbers onto the
   // flanks from a weaker cue than an attached picture of them.
   for (const forbidden of [/no zone bands/, /no captions/, /no dimension arrows/,
-    /no measurements/, /no decimal numbers/, /no dashed frames/, /no registration marks/]) {
+    /no measurements/, /no decimal numbers/, /no dashed frames/, /no registration marks/,
+    /never the word EXAMPLE/]) {
     assert.match(block, forbidden);
   }
   assert.match(block, /NOT ARTWORK TO PRODUCE/);
-  // Contiguous fragments only: the prompt is a concatenation, and a phrase
-  // asserted across a source line break can never match.
   assert.match(block, /production system and never by you/);
 
-  // FAIL SOFT. `production-panel-proof` throws `panel_proof_input_missing`
-  // because there the document IS the deliverable; here a missing teaching
-  // input must never cost a customer their design.
+  // FAIL SOFT, unlike `production-panel-proof`'s hard `panel_proof_input_
+  // missing`: there the document IS the deliverable; here a missing teaching
+  // input must never cost a customer a design.
   assert.match(block, /catch \(_error\)/);
-  assert.ok(!/throw /.test(block), "a missing or altered example never blocks authoring");
-
-  // Reported, so "did this run see it" is a query — the effect has to be
-  // judged from the refusal ledger, not from a comment.
+  assert.ok(!/throw /.test(block));
   assert.match(edgeSrc, /threeZoneContextApplied,/);
 });
