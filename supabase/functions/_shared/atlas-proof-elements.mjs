@@ -6,11 +6,52 @@ export function proofLogoRequested(input) {
   if (input.generateLogo === true) return true;
   const brief = String(input.customerPrompt || '');
   if (/\b(?:no logo|without (?:a )?logo|(?:do not|don't|never)\b[^.!?\n]{0,60}\blogo)\b/i.test(brief)) return false;
-  const requests = brief.matchAll(/\b(?:create|design|generate|need|want)\s+([^.!?\n]{0,100}?)\blogo\b/gi);
-  for (const [, modifiers] of requests) {
-    // Descriptive subjects (bicycle-chain, paw-and-floral, sun/lightning) are
-    // valid logo requests. A request for a wrap USING a logo is not one.
-    if (!/\b(?:wrap|vehicle|panel|artwork|using|with|existing|supplied|uploaded|my)\b/i.test(modifiers)) return true;
+  /**
+   * READ THE WORDS ATTACHED TO "LOGO", NOT A HUNDRED CHARACTERS OF SENTENCE.
+   *
+   * This used to span up to 100 characters back from `logo` to the nearest
+   * request verb and veto the whole span if it mentioned a wrap. That veto is
+   * right about "design a wrap USING my existing logo" and catastrophically
+   * wrong about one long sentence, because the span swallows the brief:
+   *
+   *   "Create a wrap for a landscape design company for Botanical Gardens
+   *    landscape Design feature a custom logo"
+   *
+   * matched, contained "wrap", and was vetoed -- so a brief that says "feature
+   * a custom logo" in plain words produced no logo at all (live bbdd0db0,
+   * 2026-09-21: Zone 3 carried two elements, both text). People write one
+   * sentence; the old window only worked when "logo" happened to sit in a
+   * short clause of its own.
+   *
+   * So the decision is made on the ~60 characters IMMEDIATELY before the word,
+   * which is where a writer actually says whose logo it is:
+   *
+   *   · an ownership or existing-asset marker there means theirs, not ours;
+   *   · otherwise a request verb OR a creation adjective there means draw one.
+   *
+   * "feature", "include", "add", "incorporate" and "showcase" join the verbs:
+   * the old list demanded create/design/generate/need/want, and a customer
+   * asking to FEATURE a custom logo is asking for a logo.
+   */
+  // `with` and `using` stay here rather than in the ask list: "a wrap WITH a
+  // logo" is the customer describing what the wrap carries, not asking for one
+  // to be drawn, and that reading is already locked by
+  // `tests/atlas-proof-elements.test.mjs`. Scoped to the near window, it no
+  // longer reaches across a whole sentence to veto "feature a custom logo".
+  const OWNED = /\b(?:my|our|your|their|its|his|her|clients?'?s?|customers?'?s?|existing|supplied|uploaded|provided|attached|current|same|with|using)\b/i;
+  const ASKS = /\b(?:create|design|generate|need|want|feature|featuring|include|including|add|adding|incorporate|incorporating|showcase|showcasing|make|build)\b/i;
+  const MADE_FOR_THEM = /\b(?:custom|new|original|bespoke|unique|fresh|brand[- ]new)\b/i;
+  for (const match of brief.matchAll(/\blogos?\b/gi)) {
+    const window = brief.slice(Math.max(0, match.index - 60), match.index);
+    // A clause boundary ends the window: words from the previous sentence are
+    // not describing this logo.
+    const clause = window.split(/[.!?\n;]/).pop();
+    // OWNERSHIP IS READ CLOSER THAN THE ASK, because "my" attaches to whatever
+    // noun it precedes. "Wrap my van ... add an original logo" is a request to
+    // draw one; "using my existing logo" is not. The van is 25 characters away
+    // and the ownership of the logo is never that far from the word.
+    if (OWNED.test(clause.slice(-25))) continue;
+    if (ASKS.test(clause) || MADE_FOR_THEM.test(clause)) return true;
   }
   return false;
 }
