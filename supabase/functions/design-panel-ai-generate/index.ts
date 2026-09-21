@@ -45,6 +45,18 @@ import { buildLayer1CleanPrompt } from "../_shared/layer1-clean-prompt.ts";
 import { buildFlatMasterPrompt } from "../_shared/flat-master-prompt.ts";
 import { resolveArtboardPanels, loadArtboardExamples } from "../_shared/artboard-template-os.ts";
 import { resolveDesignProInternalCaller } from "../_shared/designpro-internal-call.ts";
+// THE THREE-ZONE DOCUMENT CONTRACT — format only. The creative half of this
+// prompt is built here, from this file's own `buildDesignIQPrompt`, and handed
+// in as `creativeHead`, which is precisely what that module documents as the
+// intended wiring.
+import {
+  ATLAS_PANEL_PROOF_CONTRACT,
+  PANEL_PROOF_CONTAINER_TEMPLATE,
+  PANEL_PROOF_FORMAT_EXAMPLE,
+  buildPanelProofPrompt,
+  panelProofCoverageSqFt,
+  panelProofCreativeHead,
+} from "../_shared/atlas-panel-proof-prompt.ts";
 import { captureImageTurn, replayImageTurn, selectFinalGenerateContentImage, decodeGenerateContentImage } from "../_shared/gemini-image-history.mjs";
 import {
   GEMINI_PROVIDER_CACHE_CONTRACT, authorizeAtlasProviderRequest,
@@ -1484,6 +1496,45 @@ serve(async (req) => {
         );
       }
       return await handleAtlasAuthor(body, internalCaller.userId!);
+    }
+
+    // ═══ PANEL-PROOF — THE FLAT-PANEL-FIRST THREE-ZONE PRODUCTION PROOF
+    // (owner ruling, Trish 2026-09-21: "I need it wired using my edge functions
+    // using a flat panel first 3zone").
+    //
+    // It is a MODE HERE, not a separate function, for one measurable reason:
+    // this file owns the real `buildDesignIQPrompt`. `production-panel-proof`
+    // executes a SECOND copy of the assembly (`_shared/designiq-assembly.ts`),
+    // and that copy is thinner on every input the designer actually reads —
+    // counted across the two files:
+    //
+    //   visionboard_intent   6 there / 15 here     brandColors        4 / 9
+    //   visionBoardImages    4 there / 12 here     styleDescriptors   6 / 11
+    //
+    // So the customer's uploaded style reference — the input that decides
+    // whether the sheet reads as designed or as generic — was handled by a third
+    // as much code. `_shared/atlas-panel-proof-prompt.ts` already says this is
+    // the intended wiring: its `creativeHead` field is documented as "the REAL
+    // A.C.E. assembly, head only … the one place that can execute the deployed
+    // assembly is the edge function, and that is where it is executed."
+    //
+    // WHAT IS NOT CHANGED: the three-zone DOCUMENT — its container template, its
+    // filled example, the zone bands, the GENIE dimension rows — still comes
+    // from that shared module. That half is FORMAT, and a shared module is
+    // exactly where format belongs. Only the creative authority moves.
+    //
+    // GEMINI DECIDES PLACEMENT. Nothing here briefs a surface for what it should
+    // carry; the panel list supplies each surface's GENIE inches and nothing
+    // more. Per-surface content direction is template injection, which is the
+    // move A.C.E.'s own architecture rule forbids by name.
+    if (body?.mode === "panel-proof") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "panel_proof_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handlePanelProof(body, internalCaller.userId!);
     }
     const {
       mode,
@@ -3887,3 +3938,293 @@ async function handleAtlasPanel(body: Record<string, unknown>, ownerId: string):
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PANEL-PROOF — FLAT PANEL FIRST, THREE ZONES, ONE DESIGNER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Owner ruling, Trish 2026-09-21: "Only our Gemini image pro 3 model decides
+// what goes where — it comes from user prompt and then Gemini uses our suite of
+// custom edge functions design panel ai generate persona base graphic designer
+// so it uses google knowledge and elevates every design … I need it wired using
+// my edge functions using a flat panel first 3zone."
+//
+// The document is unchanged. What changes is WHO DESIGNS IT: the real
+// `buildDesignIQPrompt` in this file, not the thinner copy in
+// `_shared/designiq-assembly.ts` that `production-panel-proof` reaches for.
+//
+// TWO THINGS THIS HANDLER DELIBERATELY DOES NOT DO:
+//
+//   1. It does not tell any surface what to carry. The panel list gives each
+//      surface its GENIE inches and its name. Whether the hood takes the mark,
+//      the roof takes background or the rear stacks the lockup is the
+//      DESIGNER'S decision, made from the customer's brief. Briefing a surface
+//      for its content is template injection — the exact move A.C.E.'s
+//      architecture rule forbids, and the reason the GENIE pre-pass was removed
+//      from the render flow and must never come back.
+//   2. It does not send normalized coordinates. Four consecutive live field
+//      runs painted bare four-decimal rows into the artwork, and 8c525565 put
+//      `0.9114 0.3` through Topaz onto a customer's 150-PPI driver panel. Real
+//      inches per NAMED surface are a designer's working unit and are what the
+//      reference sheet itself carries; a coordinate table is furniture to copy.
+async function handlePanelProof(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  let requestId = crypto.randomUUID();
+  let imageRequestCount = 0;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    await authorizeAtlasProviderRequest(svc, body.providerRequest, ownerId);
+
+    const vehicleYear = String(body.vehicleYear || "").trim();
+    const vehicleMake = String(body.vehicleMake || "").trim();
+    const vehicleModel = String(body.vehicleModel || "").trim();
+    const vehicleType = String(body.vehicleType || "").trim();
+    const authoringMode = String(body.authoringMode || "commercial") === "restyle" ? "restyle" : "commercial";
+
+    // ── The six surfaces, with GENIE's real inches ────────────────────────
+    //
+    // `production-panel-proof` hardcodes this list as label/surfaceId/placement
+    // and NO dimensions, so GENIE's measured geometry — the whole reason the
+    // prep lifecycle exists — never reached the designer at all. The panels
+    // arrive from the caller's GENIE manifest here, exactly as `atlas-artboard`
+    // already takes them.
+    type PanelIn = { label?: unknown; surfaceId?: unknown; placement?: unknown; widthInches?: unknown; heightInches?: unknown };
+    const suppliedPanels = Array.isArray(body.panels) ? (body.panels as PanelIn[]) : [];
+    if (suppliedPanels.length !== 6) {
+      throw new Error(`panel_proof_topology_required:${suppliedPanels.length}`);
+    }
+    const panels = suppliedPanels.map((p) => ({
+      label: String(p.label || "").toUpperCase(),
+      surfaceId: String(p.surfaceId || "").toUpperCase() || undefined,
+      placement: String(p.placement || "") || undefined,
+      widthInches: Number(p.widthInches) || undefined,
+      heightInches: Number(p.heightInches) || undefined,
+    }));
+
+    // INCHES, NAMED, NEVER TRANSPOSED. `panelRowsFromManifest` once emitted
+    // PIXELS labelled as inches and swapped — `DRIVER: 979" wide x 2674" high`
+    // for a panel that is 163" x 66" — so the prompt described an 81-foot
+    // portrait panel and every flank was stretched ~2.1x to fit its cell. A
+    // missing or non-positive dimension is refused here rather than printed as
+    // a number, because a fabricated dimension is worse than an absent sheet.
+    const fmtIn = (v: number) => (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, "");
+    const panelRows = panels.map((p) => {
+      if (!(p.widthInches! > 0) || !(p.heightInches! > 0)) {
+        throw new Error(`panel_proof_panel_inches_required:${p.label || "unnamed"}`);
+      }
+      return `${p.label}: ${fmtIn(p.widthInches!)}" wide x ${fmtIn(p.heightInches!)}" high`;
+    });
+
+    // ── THE REAL A.C.E. ASSEMBLY, HEAD ONLY ───────────────────────────────
+    //
+    // `buildDesignIQPrompt` here is THIS FILE's — LOGO_REQUIREMENT,
+    // buildLogoArchitecture, COMMERCIAL_DEPTH, COMMERCIAL_TRANSLATION,
+    // PROFESSIONAL_JUDGMENT, the VisionBoard and styleDescriptors branches,
+    // exact contact handling, brand colours, industry, finish and the
+    // photo-intent lock. `atlasFlatMaster: true` makes it emit the flat-master
+    // contract; `panelProofCreativeHead` then cuts that output tail at its
+    // exact marker and swaps in the three-zone document. It THROWS if the
+    // marker moved or the persona sentence is missing, so a refactor that drops
+    // the designer fails loudly instead of quietly shipping generic artwork.
+    const references = Array.isArray(body.referenceImagesBase64) ? (body.referenceImagesBase64 as string[]) : [];
+    const creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
+      mode: authoringMode,
+      prompt: String(body.enrichedBrief || body.prompt || "").trim(),
+      finish: String(body.finish || "Gloss"),
+      substrate: String(body.substrate || "standard"),
+      companyName: String(body.companyName || "").trim() || undefined,
+      mascot: String(body.mascot || "").trim() || undefined,
+      bulletPoints: Array.isArray(body.bulletPoints) ? (body.bulletPoints as string[]) : undefined,
+      industryType: String(body.industryType || "").trim() || undefined,
+      phone: String(body.phone || "").trim() || undefined,
+      website: String(body.website || "").trim() || undefined,
+      textLayerPrompt: String(body.textLayerPrompt || "").trim() || undefined,
+      brandColors: String(body.brandColors || "").trim() || undefined,
+      fontStyle: String(body.fontStyle || "").trim() || undefined,
+      qrEnabled: body.qrEnabled === true,
+      vehicleYear,
+      vehicleMake,
+      vehicleModel,
+      vehicleType,
+      viewType: "side",
+      visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
+      visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
+      styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
+      atlasFlatMaster: true,
+      atlasPanels: panels,
+    } as any));
+
+    const prompt = buildPanelProofPrompt({
+      creativeHead,
+      panelRows,
+      companyName: String(body.companyName || "").trim() || undefined,
+      tagline: String(body.tagline || "").trim() || undefined,
+      phone: String(body.phone || "").trim() || undefined,
+      website: String(body.website || "").trim() || undefined,
+      services: Array.isArray(body.services) ? (body.services as string[]) : (String(body.services || "").trim() || undefined),
+      promo: String(body.promo || "").trim() || undefined,
+      vehicleYear, vehicleMake, vehicleModel,
+      proofDate: String(body.proofDate || "").trim() || undefined,
+      orderNumber: String(body.orderNumber || "").trim() || undefined,
+      designer: String(body.designer || "").trim() || undefined,
+      proofVersion: String(body.proofVersion || "").trim() || undefined,
+      creativeDirection: String(body.creativeDirection || "").trim() || undefined,
+    });
+
+    // ── The request: prompt, the filled example, the container, references ──
+    const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+    const sha256Hex = async (bytes: Uint8Array) => {
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    };
+    const attach = async (path: string, mime: string, expectedHash?: string, expectedByteSize?: number) => {
+      const key = String(path || "").trim();
+      if (!key) return null;
+      const { data, error } = await svc.storage.from("wrap-files").download(key);
+      if (error || !data) throw new Error(`panel_proof_input_download_failed:${key}:${error?.message || "missing"}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const actualHash = await sha256Hex(bytes);
+      if (expectedHash && actualHash !== expectedHash) throw new Error(`panel_proof_input_hash_mismatch:${key}`);
+      if (expectedByteSize != null && bytes.length !== expectedByteSize) throw new Error(`panel_proof_input_size_mismatch:${key}`);
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      parts.push({ inlineData: { mimeType: mime, data: btoa(binary) } });
+      return { contentHash: actualHash, byteSize: bytes.length };
+    };
+
+    // THE FILLED EXAMPLE IS A REAL DESIGNED SHEET, and it is pinned by hash.
+    // RULE 0.24 keeps it STRUCTURAL: it teaches how one cohesive wrap occupies
+    // three zones and six cells. It never contributes colour, palette, subject,
+    // wording, brand or style — those come from the customer's own brief and
+    // references, which sit after it and outrank it.
+    parts.push({
+      text: "THREE-ZONE PRODUCTION PROOF — FORMAT AND QUALITY REFERENCE. Learn the document: Zone 1 is the six finished panels, Zone 2 is those same panels with the lettering left off, Zone 3 is the brand elements lifted out on their own. Match its professional standard of execution. Copy none of its artwork, palette, photography, wording, logo, brand or industry — the customer's brief and references below alone decide subject, colour and every design decision.",
+    });
+    const exampleVerified = await attach(
+      PANEL_PROOF_FORMAT_EXAMPLE.path, "image/png",
+      PANEL_PROOF_FORMAT_EXAMPLE.sha256, PANEL_PROOF_FORMAT_EXAMPLE.byteSize,
+    );
+
+    // The blank container for THIS vehicle — captioned, banded and dimensioned
+    // by code, staged by the caller. It carries no path constant on purpose:
+    // one was pinned to a single Prius render and became a lie the moment the
+    // container went per-vehicle.
+    let containerVerified: Record<string, unknown> | null = null;
+    const containerPath = String(body.containerStoragePath || "").trim();
+    if (containerPath) {
+      parts.push({
+        text: "CURRENT CONTAINER TEMPLATE — the empty document for this exact vehicle. Its bands, cells and printed dimensions are the layout to fill. Headings, captions, dimension callouts, rules and zone bars are printed onto this sheet afterwards by the press; draw the artwork only.",
+      });
+      const v = await attach(containerPath, "image/png");
+      containerVerified = { contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract, ...(v || {}) };
+    }
+
+    // The customer's own references LAST among the images: creative authority
+    // sits closest to the ask.
+    for (const ref of references) {
+      if (typeof ref === "string" && ref.length > 0) {
+        parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+      }
+    }
+
+    // ── Exactly ONE Gemini image request ──────────────────────────────────
+    //
+    // 3:2 because both pinned inputs are 1536x1024 (exactly 1.5). Asking for a
+    // different canvas while showing the model a 3:2 document makes it re-flow
+    // the very thing it is being told to reproduce.
+    const model = ATLAS_ARTBOARD_AUTHORING_MODEL;
+    const t0 = Date.now();
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const modelRequest = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { aspectRatio: "3:2", imageSize: "4K" },
+      },
+    });
+    const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
+    if (modelRequestByteSize > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES) {
+      throw new Error(`panel_proof_model_request_too_large:${modelRequestByteSize}`);
+    }
+    const providerRequest = body.providerRequest as Record<string, unknown>;
+    const cached = await runDurableImageProviderRequest({
+      bucket: svc.storage.from("wrap-files"),
+      identity: { ...providerRequest, ownerId, mode: "panel-proof" },
+      requestHash: await providerSha256(JSON.stringify({ model, promptVersion: ATLAS_PANEL_PROOF_CONTRACT, modelRequest })),
+      privateRequest: modelRequest,
+      outputRequestId: requestId, cacheOnly: providerRequest?.cacheOnly === true,
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: () => captureGeminiHttpExchange(async () => {
+        return await fetch(geminiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": getGeminiKey() },
+          signal: AbortSignal.timeout(115_000), body: modelRequest,
+        });
+      }),
+    });
+    requestId = cached.requestId;
+    imageRequestCount = 1;
+    console.log(`panel-proof ${requestId}: gemini responded in ${Date.now() - t0}ms (${model}, ${parts.length} parts, prompt ${prompt.length} chars)`);
+    const { imagePart, textOut } = selectFinalGenerateContentImage(cached.payload, "panel_proof");
+    const { bytes: sheetBytes, mimeType: sheetContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "panel_proof");
+    const sheetSha256 = await providerSha256(sheetBytes);
+    const storagePath = `atlas-panel-proof/${sheetSha256}.${extension}`;
+    await putImmutableProviderArtifact(svc.storage.from("wrap-files"), storagePath, sheetBytes, sheetContentType);
+    const { data: signed } = await svc.storage.from("wrap-files").createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        sourceCommit: ATLAS_ARTBOARD_SOURCE_COMMIT,
+        promptVersion: ATLAS_PANEL_PROOF_CONTRACT,
+        model,
+        imageRequestCount: 1,
+        providerCacheContract: cached.providerCacheContract,
+        providerCacheHit: cached.providerCacheHit,
+        providerRequestKey: cached.providerRequestKey,
+        modelRequestByteSize,
+        modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
+        // Proof that the REAL brain ran. `creativeHeadChars` is the measurable
+        // difference between this path and the copy it replaces: a head that
+        // collapses is the defect returning, and it is visible on the receipt
+        // rather than only in the pixels.
+        creativeHeadChars: creativeHead.length,
+        promptChars: prompt.length,
+        formatExampleIdentity: exampleVerified ? { path: PANEL_PROOF_FORMAT_EXAMPLE.path, ...exampleVerified } : null,
+        containerIdentity: containerVerified,
+        verifiedCustomerReferenceCount: references.length,
+        panelRows,
+        coverageSqFt: panelProofCoverageSqFt(panelRows),
+        sheetUrl: signed?.signedUrl || null,
+        sheetStoragePath: storagePath,
+        sheetContentType,
+        sheetSha256,
+        sheetBytes: sheetBytes.length,
+        designText: textOut.slice(0, 2000),
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        requestId,
+        functionName: "design-panel-ai-generate",
+        promptVersion: ATLAS_PANEL_PROOF_CONTRACT,
+        imageRequestCount: Number((err as any)?.imageRequestCount) || imageRequestCount,
+        providerOutcome: (err as any)?.providerOutcome || (imageRequestCount ? "received" : "not_sent"),
+        providerStatus: (err as any)?.providerStatus || null,
+        providerDiagnostic: (err as any)?.providerDiagnostic || null,
+        providerFailureRecorded: (err as any)?.providerFailureRecorded === true,
+        retryable: (err as any)?.retryable === true,
+        providerRetryDisposition: (err as any)?.providerRetryDisposition || "operator_required",
+        error: String((err as Error)?.message || err).slice(0, 500),
+      }),
+      { status: Number((err as any)?.status) || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
