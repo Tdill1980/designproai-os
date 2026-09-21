@@ -108,3 +108,68 @@ export function itemSummary(items: WallItem[]): { kept: number; through: number 
   const { fixed, movable } = splitItems(items);
   return { kept: fixed.length, through: movable.length };
 }
+
+/* ── Persistence ───────────────────────────────────────────────────────────
+ *
+ * ONE-TOUCH MASKING SURVIVED ONLY THE SESSION THAT DETECTED IT (owner,
+ * 2026-09-21, asked whether one-touch masking works).
+ *
+ * Measured: `setItems` was called from exactly two places — the detection
+ * result, and a customer's own tap re-toggling items that already existed —
+ * and `detectInBackground` runs only on a FRESH photo upload or when an accent
+ * zone is added. Reopening a saved project runs neither, and the project config
+ * had no `items` key at all. So the composites came back as flattened rasters,
+ * the design still respected them, and NOTHING on the photo was tappable. The
+ * feature worked exactly once per photograph.
+ *
+ * WHY A FILE AND NOT THE CONFIG. Every item carries `png` — a data URL of its
+ * own pixel-accurate mask — and that is what a tap needs to rebuild the two
+ * composites. Inlining those in `wallpro_projects.config` would write hundreds
+ * of kilobytes of jsonb on every save, and the page saves on every pattern-size
+ * commit. So the list goes to storage like the masks already do and the config
+ * carries a path, which is written once per detection or tap rather than once
+ * per slider release.
+ *
+ * The parse is defensive because the file is read back as `any`: a truncated or
+ * hand-edited list must degrade to "nothing tappable", which is today's
+ * behaviour, never to a crash on a customer's restored project.
+ */
+export const WALL_ITEMS_CONTRACT = 'wallpro.items.v1';
+
+export function serializeWallItems(items: WallItem[]): string {
+  return JSON.stringify({ contract: WALL_ITEMS_CONTRACT, items });
+}
+
+const isBox = (b: unknown): b is WallItem['box'] => {
+  if (!b || typeof b !== 'object') return false;
+  const v = b as Record<string, unknown>;
+  return ['x0', 'y0', 'x1', 'y1'].every(k => typeof v[k] === 'number' && Number.isFinite(v[k] as number));
+};
+const isClass = (c: unknown): c is OcclusionClass => c === 'fixed' || c === 'movable';
+
+/** Every row that is not a complete, usable item is dropped, not repaired. */
+export function parseWallItems(payload: unknown): WallItem[] {
+  const body = payload as { contract?: unknown; items?: unknown } | null;
+  if (!body || typeof body !== 'object') return [];
+  if (body.contract !== WALL_ITEMS_CONTRACT) return [];
+  if (!Array.isArray(body.items)) return [];
+  const seen = new Set<string>();
+  const out: WallItem[] = [];
+  for (const row of body.items) {
+    if (!row || typeof row !== 'object') continue;
+    const r = row as Record<string, unknown>;
+    // `png` is what a tap re-rasterises from; an item without it can be shown
+    // but never correctly re-applied, so it is not an item.
+    if (typeof r.id !== 'string' || !r.id || typeof r.png !== 'string' || !r.png) continue;
+    if (typeof r.label !== 'string' || !isBox(r.box)) continue;
+    if (!isClass(r.detected) || !isClass(r.applied)) continue;
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push({
+      id: r.id, label: r.label, box: r.box, png: r.png,
+      class: isClass(r.class) ? r.class : r.detected,
+      detected: r.detected, applied: r.applied,
+    });
+  }
+  return out;
+}

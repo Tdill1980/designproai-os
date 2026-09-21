@@ -15,7 +15,7 @@ import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
-import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, type WallItem } from '@/lib/wallpro-items';
+import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -38,7 +38,7 @@ import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
 import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
-import { wallUser, wallFreeReason, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
+import { wallUser, wallFreeReason, saveWallItemsFile, readWallItemsFile, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
 import { beginAppBusy, endAppBusy } from '@/lib/app-busy';
 
@@ -220,6 +220,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  /** Where the detected-item list is stored, so a reopened project is tappable
+   * again. Ref-mirrored because several saves run inside async closures that
+   * would otherwise persist the path from the render they were created in. */
+  const [itemsPath, setItemsPath] = useState<string | null>(null);
+  const itemsPathRef = useRef<string | null>(null); itemsPathRef.current = itemsPath;
   // Read by a detection that starts in the same tick a zone is created, before
   // React has committed the state -- an accent zone must never auto-protect
   // the very object it exists to wrap.
@@ -347,7 +352,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
-      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
   // The photo pane opens on the DETERMINISTIC composite, always. It used to
@@ -629,6 +634,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setSeamPreference(['auto', 'mirror', 'blend'].includes(config.seamPreference) ? config.seamPreference : 'auto');
     setDesignMode(['library', 'ai', 'match', 'wall', 'upload'].includes(config.designMode) ? config.designMode : 'ai'); setDesignId(typeof config.designId === 'string' ? config.designId : null);
     setMaskRects([]); setMaskMode(false); setRefinePrompt('');
+    // ONE-TOUCH MASKING SURVIVES A REOPEN (owner, 2026-09-21). The composites
+    // already restored from maskPath/removeMaskPath; without this the photo
+    // came back with nothing labelled and nothing tappable, because detection
+    // runs only on a fresh upload. Fails soft to today's behaviour.
+    setItems([]); setItemsPath(typeof config.itemsPath === 'string' ? config.itemsPath : null);
+    if (typeof config.itemsPath === 'string' && config.itemsPath) {
+      readWallItemsFile(config.itemsPath)
+        .then(payload => setItems(parseWallItems(payload)))
+        .catch(() => { /* nothing tappable, exactly as before this existed */ });
+    }
     setParentProjectId(isAccentZone(config) ? String(config.parentProjectId) : null);
     setZoneLabel(typeof config.zoneLabel === 'string' && config.zoneLabel.trim() ? config.zoneLabel.trim().slice(0, 40) : null);
     if (id) {
@@ -680,7 +695,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -748,6 +763,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // produced nothing usable — the labels are still worth showing, and an
       // item with no raster simply contributes nothing to its composite.
       setItems(detectedItems);
+      void persistItems(detectedItems, user.id);
       if (fixedRaster) {
         maskCount = fixed.length; labels = fixed.map(m => m.label);
         const blob = await canvasBlob(fixedRaster);
@@ -866,6 +882,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     await paintAiView(tileArtwork, photo, false);
   }
   /**
+   * Store the item list beside the masks, and put its path on the project.
+   *
+   * BEST EFFORT, LIKE THE MASK UPLOADS IT SITS WITH. A failed write leaves the
+   * items working in this session and the reopen no worse than it was before
+   * this existed -- which is the only honest failure mode for a repair to a
+   * thing that did not persist at all.
+   */
+  async function persistItems(next: WallItem[], owner: string) {
+    try {
+      const path = next.length ? await saveWallItemsFile(owner, serializeWallItems(next)) : null;
+      setItemsPath(path); itemsPathRef.current = path;
+      if (projectId) await saveWallProject(projectId, owner, name, { ...liveConfig(), itemsPath: path });
+    } catch { /* the list still works in this session */ }
+  }
+  /**
    * ONE CLICK, THEN BOTH COMPOSITES ARE REBUILT FROM THE ITEMS.
    *
    * Not "add this item to the protect mask": the two masks are re-rasterised
@@ -880,6 +911,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   async function applyItems(next: WallItem[]) {
     setItems(next);
+    // The tap is persisted too, or reopening the project would hand back the
+    // DETECTOR's answer and silently undo the customer's correction.
+    wallUser().then(user => persistItems(next, user.id)).catch(() => { /* signed out: the tap still applies on screen */ });
     const asset = photoRef.current;
     if (!asset?.width || !asset.height) return;
     const { fixed, movable } = splitItems(next);
@@ -927,7 +961,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
@@ -1163,7 +1197,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
+    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -1211,7 +1245,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (photo) setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
@@ -1220,7 +1254,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   }
   /** The config this zone is currently sitting on, for a save before leaving it. */
   function liveConfig() {
-    return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
+    return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
   }
   /**
    * Wrap a SECOND area of the same photograph -- a fireplace in brick beside a

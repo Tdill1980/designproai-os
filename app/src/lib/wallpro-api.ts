@@ -62,6 +62,32 @@ export async function uploadWallAsset(asset: WallAsset, owner: string): Promise<
   if (error) throw new Error('Image upload failed: ' + error.message);
   return path;
 }
+/**
+ * The detected-item list for a wall photo, as its own file.
+ *
+ * Mirrors how the protect/remove masks are already persisted: the pixels live
+ * in storage and the project config carries a path. Items carry a data-URL mask
+ * each, so inlining them in `wallpro_projects.config` would write hundreds of
+ * kilobytes of jsonb on every save -- and the page saves on every pattern-size
+ * commit. Written once per detection or tap instead.
+ *
+ * Storage objects are immutable here, so every save is a fresh uuid and the
+ * config's path is the authority.
+ */
+export async function saveWallItemsFile(owner: string, json: string): Promise<string> {
+  const path = owner + '/items/' + crypto.randomUUID() + '.json';
+  const { error } = await supabase.storage.from(WALLPRO_BUCKET)
+    .upload(path, new Blob([json], { type: 'application/json' }), { contentType: 'application/json', upsert: false });
+  if (error) throw new Error('The detected items could not be saved: ' + error.message);
+  return path;
+}
+/** Reads that file back. Any failure is "nothing tappable", never a broken restore. */
+export async function readWallItemsFile(path: string): Promise<unknown> {
+  const url = await openWallAsset(path);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('The detected items could not be read.');
+  return response.json();
+}
 export async function openWallAsset(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from(WALLPRO_BUCKET).createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) throw new Error('The saved image could not be opened. ' + (error?.message || ''));
