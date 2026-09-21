@@ -1123,6 +1123,29 @@ function atlasProofArtworkAuthority(atlas, sourceViewType) {
   };
 }
 
+/**
+ * Only dimensions the manifest actually stated. `Number(null)` is `0`, and a
+ * fabricated `0" x 0"` panel in a prompt is worse than no dimension at all.
+ */
+function panelDimensionFields(panel) {
+  const positive = (value) => {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0 ? Math.round(number * 10) / 10 : null;
+  };
+  const printWidthIn = positive(panel?.printWidthIn);
+  const printHeightIn = positive(panel?.printHeightIn);
+  if (!printWidthIn || !printHeightIn) return {};
+  return {
+    panelPrintWidthIn: printWidthIn,
+    panelPrintHeightIn: printHeightIn,
+    ...(positive(panel?.trimWidthIn) ? { panelTrimWidthIn: positive(panel.trimWidthIn) } : {}),
+    ...(positive(panel?.trimHeightIn) ? { panelTrimHeightIn: positive(panel.trimHeightIn) } : {}),
+    ...(positive(panel?.surfaceSqFt) ? { panelSquareFeet: positive(panel.surfaceSqFt) } : {}),
+    ...(positive(panel?.bleedInches) ? { panelBleedIn: positive(panel.bleedInches) } : {}),
+    panelGeometryPurpose: String(panel?.geometryPurpose || "calls-1-7-layout-only"),
+  };
+}
+
 function atlasProofRequestBody({ options, input, sourceViewType, authority, revisionId }) {
   const vehicle = input?.vehicle || {};
   return {
@@ -1144,6 +1167,12 @@ function atlasProofRequestBody({ options, input, sourceViewType, authority, revi
       targetPanelContentType: authority.panel.contentType || "image/png",
       targetPanelSurfaceKey: authority.panel.surfaceKey,
     } : {}),
+    // THE PANEL'S PRINTED SIZE, SO CALL 2 WRAPS AT THE TRUE PROPORTION.
+    // Design-time GENIE inches (`calls-1-7-layout-only`); the validated
+    // production size is still resolved at `manifest.resolve` after purchase.
+    // Omitted entirely when the manifest did not state them -- a `0"` panel
+    // reads as fact to the model exactly as it does to a customer.
+    ...panelDimensionFields(authority.panel),
     sourceMasterHash: authority.role === "three-zone-production-proof"
       ? authority.contentHash
       : (authority.panel?.sourceMasterHash || ""),
@@ -1371,6 +1400,9 @@ module.exports = {
   SERVER_PROVIDER_CONTRACT,
   DesignPanelServerError,
   buildReproductionPrompt,
+  // Exported so the dimension contract Call 2 depends on is asserted on the
+  // REQUEST the edge receives, not on a second description of it.
+  atlasProofRequestBody,
   createAtlasDesignPanelProvider,
   createDesignPanelServerProvider,
   prefetchAtlasProofsFromPanelProof,

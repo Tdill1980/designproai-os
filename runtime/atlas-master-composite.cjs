@@ -299,6 +299,10 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
     }
   }
   const panels = [];
+  // Same rule as the lockup planner: an overlay this pass declines to draw is
+  // recorded with its reason. A `continue` that leaves no trace is how the
+  // customer's own lettering left a panel while every receipt read green.
+  const omitted = [];
   for (const base of backgrounds) {
     const meta = await sharp(base.bytes).metadata();
     const layers = [], applied = [];
@@ -333,6 +337,8 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
         // Preserve the readable logo/background composition on this surface.
         // The richer copy remains on the flanks and in Zone 3; tiny rasterized
         // lettering is omitted here rather than terminating the whole design.
+        omitted.push({ surfaceKey: base.surfaceKey, role: p.role, contentHash: asset.contentHash,
+          reason: "rasterized_lettering_below_legible_height", visibleHeight: maxY-minY+1 });
         continue;
       }
       // Keep original glyph colors and bytes. A separate neutral backing makes
@@ -357,7 +363,7 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
       backgroundContentHash:sha256(base.bytes), applied, zone:"zone1", role:"branded"});
   }
   return {contract:"designpro.production-zone-composite.v1", panels,
-    placements, deterministic:true, sourceAssetsPreserved:true};
+    placements, omitted, deterministic:true, sourceAssetsPreserved:true};
 }
 
 module.exports = {
