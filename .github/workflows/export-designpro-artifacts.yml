@@ -130,6 +130,15 @@ jobs:
               printf '::error title=Panel rows required::atlas_panel_rows must carry the six GENIE trim rows, | separated.\n' >&2
               exit 45
             }
+            # The rows are free text and they cross to the droplet inside a
+            # single-quoted SSH command, so a quote or backslash in them would
+            # end that quoting and the rest would be read as shell. Inches use
+            # the DOUBLE quote, which is safe inside single quotes; neither of
+            # these has any business in a dimension row.
+            [[ $ATLAS_PANEL_ROWS != *"'"* && $ATLAS_PANEL_ROWS != *'\'* ]] || {
+              printf '::error title=Panel rows rejected::atlas_panel_rows must not contain a single quote or a backslash.\n' >&2
+              exit 46
+            }
           fi
 
       - name: Pin the droplet SSH identity
@@ -171,7 +180,7 @@ jobs:
           payload=$(tar -cz scripts/export-designpro-artifacts.mjs | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' ATLAS_REFUSAL_REQUEST_ID='$ATLAS_REFUSAL_REQUEST_ID' ATLAS_REFUSAL_DIGEST_DAYS='$ATLAS_REFUSAL_DIGEST_DAYS' bash -s" \
+            "PAYLOAD='$payload' RUN_ID='$RUN_ID' ATLAS_GENERATION_ID='$ATLAS_GENERATION_ID' ATLAS_REFUSAL_REQUEST_ID='$ATLAS_REFUSAL_REQUEST_ID' ATLAS_REFUSAL_DIGEST_DAYS='$ATLAS_REFUSAL_DIGEST_DAYS' ATLAS_PROOF_SHEET_PATH='$ATLAS_PROOF_SHEET_PATH' ATLAS_PANEL_ROWS='$ATLAS_PANEL_ROWS' bash -s" \
             > "$RUNNER_TEMP/export.b64" 2>"$RUNNER_TEMP/export.log" <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
