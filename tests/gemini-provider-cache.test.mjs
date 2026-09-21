@@ -294,6 +294,7 @@ test('a changed model/request digest is its own operation and never reads the ot
   const first = await runDurableImageProviderRequest(options(bucket, invoke));
   const changed = await runDurableImageProviderRequest(options(bucket, invoke, {
     requestHash: 'b'.repeat(64), outputRequestId: '77777777-7777-4777-8777-777777777777',
+    allowRequestScopedSlot: true,
   }));
   assert.equal(calls, 2, 'the changed request renders its own image exactly once');
   assert.notEqual(changed.requestId, first.requestId);
@@ -301,7 +302,7 @@ test('a changed model/request digest is its own operation and never reads the ot
   // Each identical request still re-reads its OWN banked response, spending nothing.
   for (const digest of [requestHash, 'b'.repeat(64)]) {
     await runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'),
-      { requestHash: digest, cacheOnly: true }));
+      { requestHash: digest, cacheOnly: true, allowRequestScopedSlot: true }));
   }
   assert.equal(calls, 2, 'recovery of either operation buys no further image');
 });
@@ -310,7 +311,23 @@ test('cacheOnly recovery of an unbanked changed digest refuses rather than gener
   const bucket = bucketFixture();
   await runDurableImageProviderRequest(options(bucket, async () => ({ status: 200, payload: nativePayload })));
   await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'),
-    { requestHash: 'c'.repeat(64), cacheOnly: true })), { code: 'provider_cache_miss' });
+    { requestHash: 'c'.repeat(64), cacheOnly: true, allowRequestScopedSlot: true })),
+    { code: 'provider_cache_miss' });
+});
+
+// THE DEFAULT IS STILL FAIL-CLOSED, AND THAT IS LOAD-BEARING.
+//
+// The request-scoped slot can SPEND. `atlas-proof-elements` has always held
+// that "a changed prompt cannot silently spend against a previous operation"
+// for the logo element -- one bounded candidate, no attempt ladder above it.
+// So only `runAtlasProofProvider` opts in; every other caller keeps the 409.
+test('without the opt-in a changed digest still fails closed and spends nothing', async () => {
+  const bucket = bucketFixture();
+  let calls = 0;
+  await runDurableImageProviderRequest(options(bucket, async () => { calls += 1; return { status: 200, payload: nativePayload }; }));
+  await assert.rejects(runDurableImageProviderRequest(options(bucket, async () => assert.fail('no reroll'),
+    { requestHash: 'b'.repeat(64) })), { code: 'provider_request_identity_conflict' });
+  assert.equal(calls, 1);
 });
 
 test('corrupted persisted provider bytes cannot be published or cause regeneration', async () => {
