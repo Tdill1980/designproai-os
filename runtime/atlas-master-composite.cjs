@@ -362,16 +362,41 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
          *
          *   5x5 scale 1  (was)   1.29x   1.92x   2.56x   <- grows as type shrinks
          *   5x5 scale 25         1.00x   0.98x   0.90x   <- averages away, no halo
-         *   3x3 scale 5  (now)   1.08x   1.22x   1.43x   <- tight, and stays tight
+         *   3x3 scale 3  (now)   1.11x   1.31x   1.52x   <- tight, and stays tight
          *
          * The fixed kernel is in OUTPUT pixels, so a smaller panel renders the
          * same lettering smaller while the dilation stays the same size: that
          * is why the defect is worst exactly where the text is hardest to
          * read. A 3x3 at a normalising scale keeps a visible edge without
          * covering the design underneath.
+         *
+         * ⚠️ AND THE THRESHOLD IS WHAT MAKES IT A BACKING RATHER THAN A HAZE.
+         *
+         * A convolution alone CANNOT produce an opaque ring on a placed asset,
+         * and the first attempt at this fix shipped that defect the other way
+         * round. The overlay is resized into its box before compositing, so its
+         * own edge pixels are already anti-aliased; summing nine of them can
+         * only ever return a partial value. Measured on the hard-edged fixture
+         * the halo peaked at ~200/255 and NOT ONE pixel reached white, so black
+         * lettering sat on a dark panel with a translucent smear behind it. A
+         * contrast backing that is see-through is the readability failure this
+         * whole block exists to prevent — the opposite of the plate, and just
+         * as real.
+         *
+         * `threshold` makes the dilated mask binary, so the backing is solid at
+         * exactly the dilated footprint. That is better on BOTH axes than what
+         * it replaces — solid where the old plate was, and far tighter:
+         *
+         *                     1600x220  520x72  260x36
+         *   5x5 scale 1 (was)    1.29x   1.92x   2.56x   translucent edge
+         *   3x3 s3 + thr 96      1.05x   1.14x   1.12x   fully opaque
+         *
+         * 96 is a floor on the dilation, not on the glyph: it keeps the ring
+         * solid and drops the faint spill an upscale throws further out.
          */
         const mask = await sharp(raster).extractChannel("alpha")
-          .convolve({width:3,height:3,kernel:Array(9).fill(1),scale:5}).raw().toBuffer();
+          .convolve({width:3,height:3,kernel:Array(9).fill(1),scale:3})
+          .threshold(96).raw().toBuffer();
         const backing = await sharp({create:{width,height,channels:3,background:contrastBacking}})
           .joinChannel(mask,{raw:{width,height,channels:1}}).png().toBuffer();
         layers.push({input:backing,left,top});

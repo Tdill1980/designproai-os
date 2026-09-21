@@ -6244,6 +6244,49 @@ export default function RevisionStudioIQ() {
                     inspected. This surface is review / revise / approve / buy. */}
                 <DesignPromptRecord generationId={productionLayersId} />
 
+                {/* APPROVE DESIGN & BUILD PRINT PANELS — the stage 2 → 3 door.
+                    (Trish 2026-08-29.)
+
+                    It is a NAVIGATION, deliberately, and it does not pretend to
+                    trigger a build. The freeze is already the server's: the
+                    handoff fires on master acceptance (RULE 0.5 amendment), the
+                    entice workflow runs `revision.freeze` and `panels.build`
+                    without being asked, and Call 1 cut the six panels before any
+                    proof rendered. A button here that POSTed something would be
+                    a second trigger for work already in flight.
+
+                    What it does provide is the thing that was missing: the
+                    owner's explicit "this design is the one", carrying the job
+                    identity to PanelPro so no id is ever retyped. The breadcrumb
+                    above reports whether the server has actually frozen.
+
+                    ⚠️ RESTORED 2026-09-21. `4dd532d` deleted this card and put a
+                    checkout button in its place, under a test skip, so the lock
+                    naming this route never ran. Ordering a pack is not the same
+                    act as approving the design, and with this gone there was no
+                    way from RevisionStudio to PanelPro at all — the customer
+                    approves by buying, or not at all. The checkout button below
+                    stays; it is an addition, not a replacement. */}
+                {productionLayersId && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 to-zinc-900 p-4">
+                    <p className="text-sm font-bold text-zinc-100">Happy with this design?</p>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Approving freezes this revision as the production authority. Every print
+                      panel below is a deterministic crop of its accepted master — nothing is
+                      redesigned downstream.
+                    </p>
+                    <Button
+                      onClick={() => navigate(
+                        `/designpro/jobs/${encodeURIComponent(productionLayersId)}/panelpro/surfaces`,
+                      )}
+                      className="mt-3 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-500"
+                    >
+                      <Package className="w-4 h-4" />
+                      Approve Design &amp; Build Print Panels
+                    </Button>
+                  </div>
+                )}
+
                 {productionLayersId && (
                   <Button variant="outline" className="w-full" onClick={() => {
                     const sourceRevisions = new Set((standaloneProductionLayers?.stage === "production" ? standaloneProductionLayers.rows : []).map((row) => row.revision_id).filter(Boolean));
