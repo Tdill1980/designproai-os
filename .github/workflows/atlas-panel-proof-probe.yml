@@ -214,7 +214,7 @@ jobs:
             runtime/atlas-proof-diecut.cjs \
             runtime/atlas-panel-proof-contract.cjs \
             runtime/atlas-proof-panels.cjs \
-            runtime/atlas-examples/panel-proof-zones-filled.png \
+            runtime/atlas-examples/ridgeline-panel-proof-gold.png \
             runtime/atlas-examples/installer-one-panel-per-side.png > "$RUNNER_TEMP/probe-payload.tgz"
           payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             'f=$(mktemp /tmp/designpro-panel-proof.XXXXXX) && cat > "$f" && echo "$f"' \

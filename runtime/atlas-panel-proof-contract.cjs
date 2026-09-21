@@ -100,17 +100,24 @@ const PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
  * craft has missed the point of pinning it.
  *
  * ONE CARVE-OUT, and it is about ownership rather than style: the identity on
- * this sheet belongs to Bright Smiles Dental. A customer's proof carries the
+ * this sheet belongs to Ridgeline Custom Pools. A customer's proof carries the
  * name, tagline, logo and contact strings in their own request and no others,
  * which the EXACT TEXT block already states. Nothing else here is off limits.
  *
  * (It was produced by ChatGPT, so it is a target rather than a demonstration of
  * what this model will draw. That is what the probe measures.)
+ *
+ * ⚠️ THIS CONSTANT HAS A TWIN at
+ * `supabase/functions/_shared/atlas-panel-proof-prompt.ts` and the two must
+ * move together. CLAUDE.md records four separate changes that had to land in
+ * both, caught each time by the byte-identity locks -- and repinning this sheet
+ * to Ridgeline was the fifth, caught by `atlas-panel-proof-contract` asserting
+ * the edge carries the same hash. Changing one home is never the change.
  */
 const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-  byteSize: 1870997,
+  path: "atlas-examples/ridgeline-panel-proof-gold.png",
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 });
