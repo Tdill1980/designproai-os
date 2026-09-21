@@ -417,7 +417,16 @@ async function measure(bytes) {
       vehicle: [parsed?.vehicleYear, parsed?.vehicleMake, parsed?.vehicleModel]
         .filter(Boolean).join(" ") || vehicle,
       bleedInches: 5,
-      job: { date: request.proofDate, order: request.orderNumber,
+      // THE ORDER LINE FALLS BACK TO THE DESIGN'S OWN IDENTITY, not a blank.
+      // Run 19 printed an empty ORDER # because this compose path is NOT
+      // `assemblePanelProofMaster` -- it is `composeProofChrome`, and the DID
+      // fallback added there never reaches here. Two compose paths, one of them
+      // fixed, is precisely the "one artifact, two producers" shape that keeps
+      // undoing fixes in this repo; the same slice is used so both print the
+      // same string.
+      job: { date: request.proofDate,
+        order: request.orderNumber
+          || `DID-${String(generationId).replaceAll("-", "").slice(0, 8).toUpperCase()}`,
         designer: request.designer, version: request.proofVersion },
       sharp: require("../runtime/node_modules/sharp"),
     });
