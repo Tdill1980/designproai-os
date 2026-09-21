@@ -64,6 +64,20 @@ import { geminiImageUrl } from "../_shared/model-config.ts";
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
+/**
+ * THE THREE-ZONE PRODUCTION PROOF, pinned by hash.
+ *
+ * The SAME object `runtime/atlas-panel-proof-contract.cjs` and
+ * `_shared/atlas-panel-proof-prompt.ts` already pin as
+ * `PANEL_PROOF_FORMAT_EXAMPLE` — one asset, one hash, three readers. Do not
+ * re-pin this to a screenshot of it: the copies that circulate carry an
+ * "EXAMPLE" badge across Zone 2 and a UI widget in the corner, and a teaching
+ * input is learned exactly as it arrives.
+ */
+const ATLAS_THREE_ZONE_EXAMPLE = {
+  path: "atlas-examples/panel-proof-zones-filled.png",
+  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
+} as const;
 const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260921.v29-designpanelai-brain";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
@@ -3409,6 +3423,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     // the prefix is not seeded, and a run that silently showed none would look
     // identical to one that showed two.
     const qualityArtboards: Array<{ path: string; byteSize: number }> = [];
+    // Whether the three-zone separation context was actually attached. Reported
+    // on the provenance: "did this run see it" must be a query, not a guess,
+    // because it is the one input whose effect has to be judged from the
+    // refusal ledger.
+    let threeZoneContextApplied = false;
     if (atlasField) {
       for (const ref of references) pushImage(ref);
     } else {
@@ -3437,6 +3456,62 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       };
     }
     for (const ref of references) pushImage(ref);
+    // THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT (owner, twice,
+    // 2026-09-21: "provide this example on call one everytime … so the model
+    // understands a 3 zone proof").
+    //
+    // ⚠️ IT IS SHOWN SO THE MODEL KNOWS WHAT HAPPENS TO ITS ARTWORK, NEVER AS
+    // SOMETHING TO DRAW. The document is drawn by CODE
+    // (`renderContainerTemplate`); Gemini never produces it. What the model
+    // must understand is that its sheet gets SEPARATED — Zone 2 is the artwork
+    // with the lettering left off, Zone 3 is the brand elements lifted out —
+    // which is why it has to leave a deliberate, calm, high-contrast area for
+    // the lockup rather than paint edge to edge and hope.
+    //
+    // ⚠️ AND IT IS THE EXACT RISK `map_drawn` EXISTS FOR. This sheet is covered
+    // in dimension arrows, dashed frames and captions, and four live runs
+    // (455b1723, 7c7bd633, cc382c3c, 8c525565) painted layout numbers onto the
+    // flanks from a far weaker cue. The text below names every one of those
+    // marks as forbidden output, the gate convicts the sheet if the model draws
+    // them anyway, and the refusal ledger makes that measurable rather than a
+    // matter of opinion. Judge it from the ledger, not from this comment.
+    //
+    // FAIL SOFT, UNLIKE `production-panel-proof`'s hard `panel_proof_input_
+    // missing`. There the document IS the deliverable; here a missing teaching
+    // input must never cost a customer their design.
+    try {
+      const { data: zonesData } = await svc.storage.from("wrap-files")
+        .download(ATLAS_THREE_ZONE_EXAMPLE.path);
+      if (zonesData) {
+        const zoneBytes = new Uint8Array(await zonesData.arrayBuffer());
+        // Pinned by hash for the reason the panel-proof contract already gives:
+        // a teaching input that silently changes teaches something nobody chose.
+        if (await sha256Hex(zoneBytes) === ATLAS_THREE_ZONE_EXAMPLE.sha256) {
+          parts.push({
+            text: "DOWNSTREAM SEPARATION CONTEXT — THIS IS A DOCUMENT ABOUT YOUR ARTWORK, NOT ARTWORK TO PRODUCE. "
+              + "It shows what the production system does with the sheet you are being asked for: ZONE 1 is your "
+              + "finished panels, ZONE 2 is those same panels with the lettering and logo left off, and ZONE 3 is the "
+              + "brand elements lifted out as separate cut graphics. Design accordingly: the artwork must read as a "
+              + "finished commercial wrap on its own, and it must carry a deliberate, calm, high-contrast area on each "
+              + "flank where the brand lockup belongs. "
+              // Each forbidden mark is kept WHOLE on its own source line, so the
+              // lock can assert the phrases rather than a reflowed fragment of
+              // them. The first draft split "no registration marks" across a
+              // concatenation and the assertion could not see it.
+              + "DO NOT REPRODUCE ANY PART OF THIS DOCUMENT. Your output carries "
+              + "no zone bands, no headers, no captions, no panel names, "
+              + "no dimension arrows, no measurements, no decimal numbers, "
+              + "no dashed frames, no registration marks and no legend. "
+              + "Those belong to the document, which is drawn separately by the "
+              + "production system and never by you.",
+          });
+          parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(zoneBytes) } });
+          threeZoneContextApplied = true;
+        }
+      }
+    } catch (_error) {
+      // Context improves separation; its absence never blocks authoring.
+    }
     // THE GOLD-STANDARD ARTBOARDS — the "visual quality references" (owner,
     // 2026-09-21). Quality authority ONLY: never topology, never artwork.
     //
@@ -3567,6 +3642,7 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
+        threeZoneContextApplied,
         qualityArtboardsApplied: qualityArtboards.length,
         qualityArtboardIdentities: qualityArtboards,
         fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,

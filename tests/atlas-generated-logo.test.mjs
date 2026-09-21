@@ -97,3 +97,48 @@ test("the transport takes its owner PER CALL, like the author transport", () => 
   // the exact class of defect CLAUDE.md records twice for routing flags.
   assert.match(workerSrc, /callLogoEdge: createAtlasLogoTransport\(\)/);
 });
+
+test("the three-zone proof is shown as separation context, never as artwork to draw", () => {
+  // Owner, twice, 2026-09-21: "provide this example on call one everytime …
+  // so the model understands a 3 zone proof."
+  // Anchored on the BLOCK, not on a phrase inside the prompt text — the first
+  // draft sliced from the prompt string and so began after the hash check it
+  // meant to assert. Both offsets are checked, for the reason the note on the
+  // logo-transport test gives.
+  const start = edgeSrc.indexOf("THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT");
+  const end = edgeSrc.indexOf("THE GOLD-STANDARD ARTBOARDS", start);
+  assert.ok(start > 0 && end > start, "the separation context block must be locatable");
+  const block = edgeSrc.slice(start, end);
+
+  // ONE ASSET, ONE HASH, THREE READERS. Pinned to the same object
+  // `PANEL_PROOF_FORMAT_EXAMPLE` already names — never to a screenshot of it,
+  // which carries an "EXAMPLE" badge over Zone 2 and a UI widget in the corner.
+  const runtimePin = require("../runtime/atlas-panel-proof-contract.cjs").PANEL_PROOF_FORMAT_EXAMPLE;
+  assert.match(edgeSrc, new RegExp(`sha256: "${runtimePin.sha256}"`));
+  assert.match(edgeSrc, new RegExp(`path: "${runtimePin.path.replace(/[/.]/g, "\\$&")}"`));
+  // And it is VERIFIED, not trusted: a silently different teaching input
+  // teaches something nobody chose.
+  assert.match(block, /await sha256Hex\(zoneBytes\) === ATLAS_THREE_ZONE_EXAMPLE\.sha256/);
+
+  // THE NEGATIVE IS THE WHOLE POINT. This sheet is covered in the exact marks
+  // `map_drawn` convicts, and four live runs painted layout numbers onto the
+  // flanks from a weaker cue than an attached picture of them.
+  for (const forbidden of [/no zone bands/, /no captions/, /no dimension arrows/,
+    /no measurements/, /no decimal numbers/, /no dashed frames/, /no registration marks/]) {
+    assert.match(block, forbidden);
+  }
+  assert.match(block, /NOT ARTWORK TO PRODUCE/);
+  // Contiguous fragments only: the prompt is a concatenation, and a phrase
+  // asserted across a source line break can never match.
+  assert.match(block, /production system and never by you/);
+
+  // FAIL SOFT. `production-panel-proof` throws `panel_proof_input_missing`
+  // because there the document IS the deliverable; here a missing teaching
+  // input must never cost a customer their design.
+  assert.match(block, /catch \(_error\)/);
+  assert.ok(!/throw /.test(block), "a missing or altered example never blocks authoring");
+
+  // Reported, so "did this run see it" is a query — the effect has to be
+  // judged from the refusal ledger, not from a comment.
+  assert.match(edgeSrc, /threeZoneContextApplied,/);
+});
