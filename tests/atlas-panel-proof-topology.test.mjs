@@ -1079,3 +1079,36 @@ test("Porsche brief lettering and race roundel share one original asset across Z
   assert.equal(out.provenance.threeZoneLayout.branded,6);
   assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
 });
+
+test("every pinned teaching input states its ROLE before the image, and FORMAT never teaches design", () => {
+  // Owner, 2026-09-21: "Should just be using to see how it needs to feed
+  // rectangle panels in the zones. Not the design. For design it uses designer
+  // persona in design panel ai generate ... it knows what a pro level dentist
+  // wrap should look like."
+  //
+  // The pinned format sheet went into `parts` as bare `inlineData` with NO
+  // framing text, while every gold-standard artboard beside it carried a
+  // sentence naming what it may not teach. That sheet is the FILLED twin of the
+  // container -- a finished Bright Smiles Dental wrap -- so unlabelled it was
+  // the strongest visual instruction in the request. Same failure as canary
+  // 33389124918, and RULE 0.24 had already forbidden it in prose.
+  const fn = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+
+  assert.match(fn, /PINNED_INPUT_FRAMING/, "pinned inputs carry framing text");
+  assert.match(fn, /panel_proof_pinned_input_unframed/,
+    "a role with no framing REFUSES rather than shipping the sheet unlabelled");
+
+  // Text before image, in that order, or the sheet arrives unlabelled anyway.
+  const loop = fn.slice(fn.indexOf("for (const pinned of"), fn.indexOf("// The gold-standard artboards"));
+  assert.ok(loop.indexOf("parts.push({ text: framing })") < loop.indexOf("parts.push(pinnedPart)"),
+    "the role is stated BEFORE the image it describes");
+
+  // FORMAT is topology only. These are the axes the sheet's own business owns.
+  const framing = fn.slice(fn.indexOf("const PINNED_INPUT_FRAMING"), fn.indexOf("const PINNED_INPUTS"));
+  assert.match(framing, /FORMAT AND TOPOLOGY REFERENCE ONLY/);
+  for (const forbidden of ["artwork", "palette", "company name", "logo", "brand", "industry", "typography"]) {
+    assert.ok(framing.includes(forbidden), `FORMAT must not teach ${forbidden}`);
+  }
+  assert.match(framing, /come from this customer's own brief/,
+    "the design comes from the brief through A.C.E., never from the example");
+});
