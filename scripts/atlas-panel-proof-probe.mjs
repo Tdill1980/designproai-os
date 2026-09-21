@@ -33,7 +33,7 @@
  * from receipts. Open the export before calling a run good."
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -256,8 +256,21 @@ async function measure(bytes) {
   // year/make/model and no creativeDirection — the edge's intake node parses
   // all of it out of that one sentence, which is the thing being tested. A
   // field set here would be a field intake never had to find.
+  // THE PROVIDER SLOT NEEDS A REAL IDENTITY, AND THE PROBE NEVER SENT ONE.
+  //
+  // `normalizeIdentity` (gemini-provider-cache) requires ownerId, requestId AND
+  // generationId to each be a UUID, and the edge reads the latter two off the
+  // body, defaulting to "". So every probe request died at the door with
+  // `provider_request_identity_invalid` (HTTP 400) before one image call was
+  // made. The owner id travelled as a header and was fine; its two siblings
+  // simply were not in the request.
+  //
+  // Fresh per run by default, so two probes are two operations rather than one
+  // cache hit; pass them explicitly to deliberately re-read a spent slot.
   const request = {
     customerPrompt,
+    requestId: arg("request-id", randomUUID()),
+    generationId: arg("generation-id", randomUUID()),
     proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
     orderNumber: arg("order", "CS-2019TRANSIT-01"),
     designer: arg("designer", "A.L."),
