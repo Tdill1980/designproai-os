@@ -139,34 +139,49 @@ function fitSize(value, maxWidth, desired, { min = 4, spacing = 0 } = {}) {
  * design, and an example whose panels did not agree would teach the opposite.
  */
 function groundSvg(w, h, { seed = 0 } = {}) {
-  const sweep = (yBase, amp, opacity, colour) => {
-    const y = h * yBase;
-    const a = h * amp;
-    return `<path d="M0 ${y.toFixed(1)}`
-      + ` C ${(w * 0.28).toFixed(1)} ${(y - a).toFixed(1)}, ${(w * 0.52).toFixed(1)} ${(y + a).toFixed(1)}, ${w} ${(y - a * 0.4).toFixed(1)}`
-      + ` L ${w} ${h} L 0 ${h} Z" fill="${colour}" opacity="${opacity}"/>`;
-  };
-  // ⚠️ DO NOT ADD MOTIF HERE TO "ENRICH" THE SMALL PANELS. IT WAS TRIED.
+  // ⚠️ DO NOT ADD PER-SURFACE MOTIF HERE. IT WAS TRIED AND IT REGRESSED.
   //
   // A diagonal cut and a chevron field were added to this shared function to
   // give the four small surfaces more to look at. Because it is SHARED, it
   // degraded the two flanks that were already right: the chevrons read as scuff
   // marks and the cut muddied every top-right corner. A fix aimed at four
-  // panels damaged all six.
+  // panels damaged all six. Differentiation belongs in `SURFACE_TREATMENT`.
   //
-  // The premise was wrong as well as the execution. On the reference sheet the
-  // ROOF is pure background, the FRONT carries one line and the HOOD carries
-  // the mark alone -- different surfaces carry different amounts, which is what
-  // a real wrap does and what this sheet should teach. Equal complexity on
-  // every panel teaches the opposite. Differentiation belongs in
-  // `SURFACE_TREATMENT` below, per surface, not in the ground they share.
+  // What DOES belong here is depth. Three flat sweeps read as a wash; the
+  // reference sheet carries layered ribbons that cross each other, so light
+  // and dark interleave and the eye finds a front and a back. Same composition
+  // on every panel, sampled at that panel's own aspect.
+  // One ribbon: a band between two parallel cubics, so it reads as a shape with
+  // a near and a far edge rather than a fill to the bottom. AMPLITUDE AND PHASE
+  // ARE THE WHOLE EFFECT -- the first attempt used a shallow amplitude and
+  // near-identical phases, and five ribbons stacked in parallel read as
+  // STRIPES. Ribbons have to cross each other to read as ribbons.
+  const R = (yBase, amp, phase, thickness, colour, opacity) => {
+    const y = h * yBase;
+    const a = h * amp;
+    const k = (v) => (y + v).toFixed(1);
+    const x1 = w * (0.18 + phase);
+    const x2 = w * (0.66 + phase);
+    return `<path d="M${(-w * 0.05).toFixed(1)} ${k(a * 0.9)}`
+      + ` C ${x1.toFixed(1)} ${k(-a)}, ${x2.toFixed(1)} ${k(a * 1.1)}, ${(w * 1.05).toFixed(1)} ${k(-a * 0.8)}`
+      + ` L ${(w * 1.05).toFixed(1)} ${k(-a * 0.8 + thickness)}`
+      + ` C ${x2.toFixed(1)} ${k(a * 1.1 + thickness)}, ${x1.toFixed(1)} ${k(-a + thickness)}, ${(-w * 0.05).toFixed(1)} ${k(a * 0.9 + thickness)} Z"`
+      + ` fill="${colour}" opacity="${opacity}"/>`;
+  };
+  const t = h * 0.12;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${w} ${h}">`
-    + `<defs><linearGradient id="g${seed}" x1="0" y1="0" x2="1" y2="1">`
-    + `<stop offset="0" stop-color="${ACCENT}"/><stop offset="1" stop-color="${INK}"/></linearGradient></defs>`
+    + `<defs><linearGradient id="g${seed}" x1="0" y1="0" x2="0.9" y2="1">`
+    + `<stop offset="0" stop-color="${ACCENT}"/><stop offset="0.55" stop-color="#17548c"/>`
+    + `<stop offset="1" stop-color="${INK}"/></linearGradient></defs>`
     + `<rect width="${w}" height="${h}" fill="url(#g${seed})"/>`
-    + sweep(0.42, 0.20, 0.30, "#ffffff")
-    + sweep(0.60, 0.14, 0.22, LIGHT)
-    + sweep(0.80, 0.10, 0.30, "#ffffff")
+    // Far: broad and soft, sweeping the other way, so the stack has a back.
+    + R(0.34, 0.30, 0.22, t * 2.4, "#ffffff", 0.09)
+    + R(0.58, 0.34, -0.14, t * 1.9, "#ffffff", 0.12)
+    // Mid: the ribbons the eye actually follows. Opposed phases so they cross.
+    + R(0.66, 0.26, 0.30, t * 1.2, LIGHT, 0.32)
+    + R(0.78, 0.30, -0.20, t * 0.9, "#ffffff", 0.38)
+    // Near: one bright leading edge.
+    + R(0.90, 0.22, 0.10, t * 0.45, "#ffffff", 0.58)
     + `</svg>`;
 }
 
