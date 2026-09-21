@@ -566,14 +566,41 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
         + ` The bleed is trimmed at installation and is never visible on the finished vehicle.`
       : "";
     const authorityInstruction = threeZoneAuthority ? {
-      text: `IMAGE 1 is the exact THREE-ZONE PRODUCTION PANEL PROOF for this vehicle.${panelDimensionLine}
-Use ZONE 1 — FULL DESIGN PANELS as the finished wrap-design authority for the requested ${surfaceKey} surface.
-Use Zones 2 and 3 only to understand background/graphic separation and design continuity.
-IMAGE 2 is the exact isolated finished ${surfaceKey} panel from Zone 1, verified against its stored hash. It is the PRIMARY artwork authority for this vehicle surface. Copy this panel's imagery, layout and colors exactly. Do not borrow logos, gears, motifs or scenes from other panels in IMAGE 1. IMAGE 1 remains the full production context; IMAGE 2 resolves which artwork belongs on this surface.
-The printed dimensions, zone headings, panel labels, arrows, borders, guides and document chrome are annotations only. NEVER render those annotations on the vehicle.
-Do not redesign the wrap. Photograph the Zone-1 design on the exact vehicle and requested camera view.`,
+      text: `IMAGE 1 is the EXACT finished ${surfaceKey} print panel, isolated from Zone 1 of this vehicle's Production Panel Proof and verified against its stored hash. IMAGE 1 IS THE ARTWORK. Reproduce it on the vehicle exactly as it is: the same imagery, the same photographs, the same logo, the same words, the same colors, the same layout, in the same left-to-right order and the same relative sizes and positions across the panel.${panelDimensionLine}
+Every element visible in IMAGE 1 must appear on the vehicle, and nothing that is absent from IMAGE 1 may appear on it. Do not redraw, restyle, re-letter, re-crop, re-colour, simplify, embellish, rearrange or substitute any part of it. Do not invent a logo, a photograph, a slogan, an icon or a phone number. This is a photograph of an existing printed wrap, not a new design.
+IMAGE 2 is the full THREE-ZONE PRODUCTION PANEL PROOF document, for context only. Use it ONLY to confirm this design's colour palette and how the panels relate to each other. Do not take artwork from it: it contains the other five panels, and borrowing a logo, scene, motif or graphic from one of them onto this surface is the exact failure this instruction exists to prevent.
+IMAGE 2 is a printed DOCUMENT. Its dimension numbers, arrows, zone headings, colour bars, panel captions, trim/bleed guides, tables and footer are annotations on paper. NEVER render any of them on the vehicle.
+Photograph IMAGE 1's design on the exact vehicle from the requested camera view. Nothing about the artwork changes.`,
     } : null;
-    const parts = [panelPart, ...(targetPart ? [targetPart] : []), ...(authorityInstruction ? [authorityInstruction] : []), { text: prompt }];
+    /**
+     * THE PANEL COMES FIRST, BECAUSE THE PANEL IS THE ARTWORK.
+     *
+     * This sent the whole three-zone SHEET as IMAGE 1 and the exact isolated
+     * panel as IMAGE 2, while the instruction beside it said "IMAGE 2 ... is
+     * the PRIMARY artwork authority". The words named the panel and the image
+     * order named the document, and an image model weights the first and
+     * largest image it is given.
+     *
+     * The sheet is a white page carrying eighteen small pictures plus dimension
+     * arrows, zone bars, captions, a header table and a footer. The driver
+     * panel inside it is roughly a twelfth of the frame. So the renderer's
+     * strongest artwork signal was a thumbnail on a spec sheet, and what it
+     * produced was a design that resembles the wrap rather than reproduces it.
+     * That is the drift `atlasContinuityContract=fail` convicts -- every
+     * non-transport proof rejection in the five days to 2026-09-20, 16 of 16.
+     *
+     * THIS IS THE THIRD TIME THIS REPO HAS FIXED THIS EXACT SHAPE. RULE 0.36
+     * moved the lettering read off the squeezed sheet and onto the panel; the
+     * output-class inspector stopped judging one 1280px JPEG of the whole
+     * 4096-square master and started transporting each surface separately. Both
+     * lessons were written down and neither was carried here.
+     *
+     * Nothing is dropped: the sheet still rides as IMAGE 2 for palette and
+     * cross-panel continuity. Only the order changed, and the instruction now
+     * names the images in the order they actually arrive.
+     */
+    const parts = [...(targetPart ? [targetPart] : []), panelPart,
+      ...(authorityInstruction ? [authorityInstruction] : []), { text: prompt }];
 
     let imageBase64: string | null = null;
     let imageMimeType = "image/png";

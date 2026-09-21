@@ -99,5 +99,5 @@ test("the photographer states the proportion and never paints the annotation", (
   // The line is emitted only when both dimensions are real.
   assert.match(source, /Number\.isFinite\(panelW\) && panelW > 0 && Number\.isFinite\(panelH\) && panelH > 0/);
   // Unchanged: document chrome is still forbidden on the vehicle.
-  assert.match(source, /NEVER render those annotations on the vehicle/);
+  assert.match(source, /NEVER render any of them on the vehicle/);
 });
