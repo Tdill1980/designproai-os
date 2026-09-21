@@ -35,8 +35,8 @@ the running system before reporting anything as done — see
 
 | Zone | Contents | Count | Rule |
 |---|---|---|---|
-| **ZONE 1 — FULL DESIGN PANELS** | photo + design + text + logo | **7 panels** | Complete wrap artwork, rectangle panels |
-| **ZONE 2 — BACKGROUNDS ONLY** | background artwork, **no text or logo** | **7 panels** | **Must match Zone 1 EXACTLY** — same artwork, branding removed |
+| **ZONE 1 — FULL DESIGN PANELS** | photo + design + text + logo | **6 panels** | Complete wrap artwork, rectangle panels |
+| **ZONE 2 — BACKGROUNDS ONLY** | background artwork, **no text or logo** | **6 panels** | **Must match Zone 1 EXACTLY** — same artwork, branding removed |
 | **ZONE 3 — CUT GRAPHICS** | logo, tagline, phone, website, icon | vector elements | **Vector cut paths, NO background** |
 
 Zone 2 is not a separate design. It is Zone 1 with the branding absent — the
@@ -47,10 +47,30 @@ Zone 3 elements are the real branding assets lifted as cut-ready vector paths,
 each with its own dimensions (e.g. PRIMARY LOGO 72.0" W x 24.0" H, TAGLINE
 54.0" x 8.5", PHONE 36.0" x 8.0", WEBSITE 60.0" x 6.0", ICON 48.0" x 14.0").
 
-#### The 7 panels
+#### The panels — SIX surfaces. Owner ruling, 2026-09-21.
 
-Driver Side · Passenger Side · Hood · Roof · Front Bumper · Rear (split) ·
-Rear Bumper.
+**driver · passenger · hood · roof · front · rear**
+
+`SURFACE_KEYS` is frozen at these six in seven runtime files, and that is
+**CORRECT**. Do not "fix" it to seven.
+
+**Why the reference sheet shows seven tiles, and why the system is still six.**
+The Ridgeline reference is a **2024 Ford F-250 Crew Cab — a PICKUP.** A pickup
+physically has a separate tailgate and rear bumper, so its rear splits into
+*Rear (split)* 73.5" x 60.0" and *Rear Bumper* 121.0" x 39.0". That is a BODY
+STYLE artifact, not the universal panel model.
+
+Owner, ruling on exactly this question: *"that's the rear design which includes
+back window so don't split, keep at 6 — my system got messed up because it was
+a truck."*
+
+**THE RULE: the REAR panel is ONE design that INCLUDES THE BACK WINDOW.**
+Panel count is a property of the body style, not a universal constant. A
+seven-tile pickup sheet is a correct rendering of a pickup; it is not a
+seven-surface system.
+
+A future session that opens the Ridgeline PNG will re-derive "seven panels"
+from it, exactly as this document did on its first draft. It is wrong. Six.
 
 Every panel is **dimensioned by Universal GENIE** and carries a **5" bleed on
 all four edges**. Each panel shows, on the sheet: overall W x H, the TRIM size
@@ -98,6 +118,8 @@ trim line**.
   already exists. The 3D proof reproduces Call 1's design — it does not invent a
   new one.
 - **ALL SIDES MUST BE GENERATED — 7 ANGLES.** Not a hero plus a few. Seven.
+  Note the seven here is CAMERA ANGLES, which is a different seven from the
+  panel count (six). Close-Up shares the Driver surface. Do not conflate them.
 - **Sides 1–7 generate in PARALLEL.**
 - **As each side finishes it is automatically shown to the customer.** Progressive
   reveal — the customer does not wait for all 7.
@@ -150,7 +172,7 @@ Once the designer check-marks quality approval:
 
 ## Open decisions — DO NOT implement past these without a ruling
 
-### 1. Dimensions at Call 1 or Call 2?
+### 1. Dimensions at Call 1 or Call 2? (still open)
 
 Owner raised this and has not ruled. Engineering read, for the record:
 
