@@ -9,13 +9,18 @@ name: Seed the Call-1 artboard quality examples
 # The prefix has been empty since it was wired, so Call 1 has been designing
 # with no reference at all.
 #
-# IT RE-ENCODES; IT DOES NOT COPY. The gold-standard masters are 27.0 MiB and
-# 17.3 MiB, and both loaders SKIP an oversized file silently by design (fail
-# soft: a quality reference must never cost a customer their generation). A
-# straight copy would therefore list two objects, report success, and change
-# nothing -- so the script downscales each master under the stricter 2 MiB cap
-# and then RE-READS the prefix the way the loaders read it to prove the model
-# will actually be shown them.
+# OVERSIZED SOURCES ARE RE-ENCODED; SOURCES THAT FIT ARE COPIED UNTOUCHED.
+# Both loaders SKIP an oversized file silently by design (fail soft: a quality
+# reference must never cost a customer their generation), and a flat A.T.L.A.S.
+# master is 17-27 MiB -- so a straight copy of one would list an object, report
+# success and change nothing. Those are downscaled under the stricter 2 MiB cap.
+# The owner's pinned format sheet is 1,870,997 bytes and ALREADY fits, so it is
+# copied byte for byte: re-encoding it would degrade the finish and type that
+# are the reason it is the standard.
+#
+# Either way the script then RE-READS the prefix the way the loaders read it --
+# list ten, take the first two, check each is inside the cap -- to prove the
+# model will actually be shown what landed.
 #
 # WHY IT RUNS ON THE DROPLET. wrap-files is private and there is no service-role
 # secret in GitHub; the key already lives in /opt/designproai-os/shared/runtime.env.
@@ -37,10 +42,10 @@ on:
           - DO_NOT_RUN
           - PREVIEW_ONLY
           - SEED_THE_BUCKET
-      masters:
-        description: "Master content-hash prefixes, comma separated, in the order they should be shown (max 2 -- the loaders read no more)."
+      sources:
+        description: "Up to 2, comma separated, in the order shown to the model. Each is a master content-hash prefix OR an atlas-examples/ image path."
         required: false
-        default: "1564c66d,2165a36c"
+        default: "atlas-examples/panel-proof-zones-filled.png,1564c66d"
         type: string
 
 permissions:
@@ -64,7 +69,7 @@ jobs:
       name: designproai-production
     env:
       SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
-      MASTERS: ${{ inputs.masters }}
+      SOURCES: ${{ inputs.sources }}
       # Only the explicit seeding choice passes --write. PREVIEW_ONLY encodes,
       # verifies and hands back the images without touching the bucket.
       SEED_WRITE: ${{ inputs.confirmation == 'SEED_THE_BUCKET' && '--write' || '' }}
@@ -82,11 +87,14 @@ jobs:
             printf '::error title=Environment secret withheld::DESIGNPROAI_SSH_PRIVATE_KEY is empty for ref %s.\n' "$GITHUB_REF" >&2
             exit 39
           fi
-          # Hex prefixes only, at most two. This is the sole selector that
-          # reaches an object in a private bucket, so it is constrained here as
-          # well as in the script -- neither alone is the gate.
-          [[ $MASTERS =~ ^[0-9a-f]{8,64}(,[0-9a-f]{8,64})?$ ]] || {
-            printf '::error title=Bad master selector::masters must be one or two hex content-hash prefixes (8-64 chars), comma separated.\n' >&2
+          # Two selector shapes only -- a hex content-hash prefix, or a path
+          # inside the pinned teaching prefix -- and at most two of them. These
+          # are the only selectors that reach an object in a private bucket, so
+          # they are constrained here as well as in the script; neither alone is
+          # the gate.
+          one='([0-9a-f]{8,64}|atlas-examples/[A-Za-z0-9._-]+\.(png|jpe?g|webp))'
+          [[ $SOURCES =~ ^${one}(,${one})?$ ]] || {
+            printf '::error title=Bad source selector::sources must be one or two entries, each a hex content-hash prefix (8-64 chars) or an atlas-examples/ image path.\n' >&2
             exit 43
           }
 
@@ -129,7 +137,7 @@ jobs:
           payload=$(tar -cz scripts/seed-artboard-quality-examples.mjs | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' MASTERS='$MASTERS' SEED_WRITE='$SEED_WRITE' bash -s" \
+            "PAYLOAD='$payload' SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
             > "$RUNNER_TEMP/seed.b64" 2>"$RUNNER_TEMP/seed.log" <<'REMOTE'
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -149,7 +157,7 @@ jobs:
             --env-file /opt/designproai-os/shared/runtime.env \
             -v "$work/scripts/seed-artboard-quality-examples.mjs:/app/seed.mjs:ro" \
             -v "$work/out:/out" \
-            "$image" node /app/seed.mjs --masters "$MASTERS" --out /out $SEED_WRITE >&2
+            "$image" node /app/seed.mjs --sources "$SOURCES" --out /out $SEED_WRITE >&2
 
           tar -C "$work/out" -cz . | base64 -w0
           REMOTE
