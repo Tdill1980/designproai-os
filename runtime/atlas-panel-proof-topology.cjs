@@ -505,6 +505,13 @@ function createPanelProofTransport({
       generatedElements: payload.generatedElements || [],
       imageRequestCount: Number(payload.imageRequestCount || 1),
       containerSource: (payload.attachedInputs || []).find((a) => a?.role === "container") || null,
+      // What Call 1 was SHOWN as a quality standard. Read from the edge rather
+      // than assumed: `designPanelArtboardQualityExamplesApplied` was a
+      // hardcoded 0 on the revision for weeks, so "did the designer see a gold
+      // standard" was unanswerable from any run.
+      artboardQualityExamplesApplied: Number(payload.artboardQualityExamplesApplied || 0),
+      artboardQualityExampleIdentities: Array.isArray(payload.artboardQualityExampleIdentities)
+        ? payload.artboardQualityExampleIdentities : [],
     };
   };
 }
@@ -909,6 +916,11 @@ async function assemblePanelProofMaster({
         panels:compositionChecks,sourceAssetsPreserved:true,
         omitted:[...(productionLayout.omitted || []),...(composed.omitted || [])]},
       imageRequestCount: Number(sheet.imageRequestCount || 1),
+      // The gold standards Call 1 actually saw, by identity. Zero is now a
+      // measured answer rather than a literal, so an empty prefix is visible.
+      artboardQualityExamplesApplied: Number(sheet.artboardQualityExamplesApplied || 0),
+      artboardQualityExampleIdentities: Array.isArray(sheet.artboardQualityExampleIdentities)
+        ? sheet.artboardQualityExampleIdentities : [],
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
       // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.
