@@ -1977,16 +1977,54 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     // many it applied, so the expected count is still a single number and an
     // unexplained extra image is still a refusal.
     const qualityArtboardCount = Number(payload?.qualityArtboardsApplied || 0);
-    if (payload?.fieldContract || !body?.teachingProofStoragePath || !body?.guideStoragePath
-      || !expectedTeaching || !actualTeaching
-      || payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION
-      || !Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2
-      || Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount
-      || ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]
-        .some((key) => actualTeaching[key] !== expectedTeaching[key])) {
+    /**
+     * ⚠️ THE GUARD MUST NAME THE CLAUSE THAT FAILED, WITH ITS VALUES.
+     *
+     * This was EIGHT separate conditions collapsed into one `if` behind one
+     * sentence that reports no value at all: "Six-surface authoring requires
+     * the pinned teaching proof, target guide, matching prompt version and no
+     * field contract". Every failure mode — a stale edge deploy, an unexpected
+     * attachment, a re-encoded teaching proof, a field contract leaking into
+     * the six-surface branch — arrives as that identical string.
+     *
+     * Measured cost, this session: the same error was diagnosed twice from that
+     * sentence and BOTH diagnoses were wrong, because the sentence cannot
+     * distinguish them. It refuses a master the customer has already paid for,
+     * so every wrong guess costs a real image call and a real generation.
+     *
+     * The DECISION is byte-identical — same clauses, same order, still fail
+     * closed on any one of them. Only the message changes, from a description
+     * of the contract to the measurement that broke it. A guard that refuses
+     * paid work owes the next reader the number it refused on.
+     */
+    const contractFailures = [];
+    if (payload?.fieldContract) contractFailures.push(`fieldContract=${JSON.stringify(payload.fieldContract)} on the six-surface branch`);
+    if (!body?.teachingProofStoragePath) contractFailures.push("request carried no teachingProofStoragePath");
+    if (!body?.guideStoragePath) contractFailures.push("request carried no guideStoragePath");
+    if (!expectedTeaching) contractFailures.push("no expected teaching descriptor was resolved");
+    if (!actualTeaching) contractFailures.push("edge returned no teaching descriptor");
+    if (payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
+      contractFailures.push(`promptVersion edge=${JSON.stringify(payload?.promptVersion)} runtime=${JSON.stringify(ATLAS_ARTBOARD_EDGE_PROMPT_VERSION)}`
+        + " (a STALE EDGE DEPLOY looks exactly like this; deploy-production.yml does not ship edge functions)");
+    }
+    if (!Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2) {
+      contractFailures.push(`qualityArtboardsApplied=${JSON.stringify(payload?.qualityArtboardsApplied)} is not an integer in 0..2`);
+    } else if (Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount) {
+      contractFailures.push(`modelInputImageCount=${JSON.stringify(payload?.modelInputImageCount)}`
+        + ` but expected ${customerImageCount + 2 + qualityArtboardCount}`
+        + ` (customerImages=${customerImageCount} + teachingProof+guide=2 + qualityArtboards=${qualityArtboardCount})`);
+    }
+    if (expectedTeaching && actualTeaching) {
+      for (const key of ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]) {
+        if (actualTeaching[key] !== expectedTeaching[key]) {
+          contractFailures.push(`teaching.${key} edge=${JSON.stringify(actualTeaching[key])} expected=${JSON.stringify(expectedTeaching[key])}`);
+        }
+      }
+    }
+    if (contractFailures.length) {
       throw new FlatAtlasError(
         "flat_atlas_edge_topology_contract_mismatch",
-        "Six-surface authoring requires the pinned teaching proof, target guide, matching prompt version and no field contract",
+        `Six-surface authoring contract refused a returned master. ${contractFailures.length} failing check(s): ${contractFailures.join(" | ")}`,
       );
     }
   }
@@ -3312,7 +3350,9 @@ async function generateOrReuseFlatAtlas(options) {
   // "BYPASSED" the brain and lost "the enriched brief, `styleDescriptors`, the
   // VisionBoard branch, LOGO_REQUIREMENT, COMMERCIAL_DEPTH and the gold-standard
   // artboards". That was TRUE when it was written and is FALSE now, measured in
-  // the function rather than inferred: it calls `buildDesignIQPrompt` with
+  // the function rather than inferred: it executes the shared DesignIQ prompt
+  // assembly (named in `_shared/designiq-assembly.ts`, never in this file — the
+  // "no in-runtime creative builder" lock is what keeps it that way) with
   // `atlasFlatMaster: true` — the same branch Call 1 runs, so LOGO_REQUIREMENT,
   // COMMERCIAL_DEPTH, the concept translation, the layered build order and the
   // customer's FINISH_SPEC all fire — and passes `creativeDirection`,
