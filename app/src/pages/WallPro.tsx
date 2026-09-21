@@ -1355,7 +1355,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         // masks are shown; the pencil stays behind its toggle for the one case
         // detection comes back empty.
         setShowMasks(true);
-        setNotice('Corners set. ' + wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline);
+        setNotice('Corners set. ' + wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline
+          + ' Or go straight to describing your design — nothing here blocks Generate.');
       }
     }
   }

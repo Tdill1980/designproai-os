@@ -233,13 +233,13 @@ export function wallMaskGuidance(input: {
   if (!available) {
     return {
       stage: 'unavailable',
-      headline: `We could not check this photo for things to keep. Mark anything that must stay exactly as photographed.${drawn}`,
+      headline: `We could not check this photo for things to keep. Mark anything that must stay as photographed — a TV, shelves, a framed photo.${drawn}`,
       offerDrawing: true,
     };
   }
   return {
     stage: 'empty',
-    headline: `Nothing on this wall needs keeping — the design covers it all. Mark anything we missed.${drawn}`,
+    headline: `Nothing on this wall needs keeping — the design covers it all. Mark anything we missed — a TV, shelves, a framed photo.${drawn}`,
     offerDrawing: true,
   };
 }
