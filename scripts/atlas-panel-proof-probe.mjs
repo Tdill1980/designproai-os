@@ -76,6 +76,9 @@ const arg = (name, fallback) => {
 };
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+
+// Set once the harness lease exists, so the finally below can always cancel it.
+let releaseLease = null;
 // `--out` so the workflow can collect the evidence from a bind mount, exactly
 // as atlas-hero-driver-probe.mjs does.
 const outDir = path.resolve(arg("out", path.join(process.cwd(), "panel-proof-probe")));
@@ -256,21 +259,54 @@ async function measure(bytes) {
   // year/make/model and no creativeDirection — the edge's intake node parses
   // all of it out of that one sentence, which is the thing being tested. A
   // field set here would be a field intake never had to find.
-  // THE PROVIDER SLOT NEEDS A REAL IDENTITY, AND THE PROBE NEVER SENT ONE.
+  // ── THE HARNESS LEASE THE EDGE AUTHORIZES AGAINST ─────────────────────────
   //
-  // `normalizeIdentity` (gemini-provider-cache) requires ownerId, requestId AND
-  // generationId to each be a UUID, and the edge reads the latter two off the
-  // body, defaulting to "". So every probe request died at the door with
-  // `provider_request_identity_invalid` (HTTP 400) before one image call was
-  // made. The owner id travelled as a header and was fine; its two siblings
-  // simply were not in the request.
+  // This file's own banner said the probe "needs no harness lease either,
+  // because this endpoint is not the provider-cache path". That stopped being
+  // true at 1601ba7 ("scope the request-scoped provider slot to the proof path
+  // only"), and nothing updated the probe. So every dispatch died before one
+  // image request was made, in two stages:
   //
-  // Fresh per run by default, so two probes are two operations rather than one
-  // cache hit; pass them explicitly to deliberately re-read a spent slot.
+  //   provider_request_identity_invalid (400) — normalizeIdentity wants
+  //     ownerId, requestId AND generationId as UUIDs; the edge reads the
+  //     latter two off the body defaulting to "", and only the owner was sent.
+  //   provider_claim_invalid (403) — authorizeAtlasProviderRequest then
+  //     requires a real `designpro_generation_requests` row, state `leased`,
+  //     whose lease_token equals the claimToken and whose lease has not
+  //     expired.
+  //
+  // Ported verbatim in shape from `atlas-hero-driver-probe.mjs` (RULE 1 —
+  // recover before you invent): a harness-only row, marked as one in its own
+  // error field, cancelled in a finally so a crashed probe cannot leave a
+  // leased row behind. It is NOT a customer generation and writes no revision,
+  // view or artifact.
+  const requestId = arg("request-id", randomUUID());
+  const generationId = arg("generation-id", randomUUID());
+  const claimToken = randomUUID();
+  const inputHash = sha256(Buffer.from(customerPrompt));
+  const { error: leaseError } = await svc.from("designpro_generation_requests").insert({
+    id: requestId, generation_id: generationId, owner_id: OWNER_ID, tenant_key: `user_${OWNER_ID}`,
+    idempotency_key: `panel-proof-probe:${generationId}:${inputHash}`,
+    state: "leased", request_input: { customerPrompt }, input_hash: inputHash,
+    engine_contract: { contractVersion: "designpro.calls-1-7-engine.v2", harness: "panel-proof-probe" },
+    engine_contract_hash: sha256(Buffer.from("panel-proof-probe")),
+    attempt: 1, available_at: new Date().toISOString(),
+    lease_owner: "panel-proof-probe", lease_token: claimToken,
+    lease_expires_at: new Date(Date.now() + 45 * 60_000).toISOString(),
+    error: { code: "designiq_ab_harness_lease", note: "panel-proof probe; harness-only row, never a customer generation" },
+  });
+  if (leaseError) throw new Error(`harness lease insert failed: ${leaseError.message}`);
+  releaseLease = async () => {
+    await svc.from("designpro_generation_requests")
+      .update({ state: "cancelled", lease_owner: null, lease_token: null, lease_expires_at: null })
+      .eq("id", requestId);
+  };
+
   const request = {
     customerPrompt,
-    requestId: arg("request-id", randomUUID()),
-    generationId: arg("generation-id", randomUUID()),
+    requestId,
+    generationId,
+    providerRequest: { requestId, generationId, claimToken },
     proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
     orderNumber: arg("order", "CS-2019TRANSIT-01"),
     designer: arg("designer", "A.L."),
@@ -495,5 +531,14 @@ async function measure(bytes) {
   console.log(`  as drawn:  panel-proof-probe/panel-production-proof.png`);
 })().catch((error) => {
   console.error(String(error?.message || error));
-  process.exit(1);
+  process.exitCode = 1;
+}).finally(async () => {
+  // A CRASHED PROBE MUST NOT LEAVE A LEASED ROW BEHIND. The lease is 45
+  // minutes; without this, a failure between the insert and the end of the run
+  // parks a harness row in `leased` for all of it.
+  if (typeof releaseLease === "function") {
+    try { await releaseLease(); } catch (error) {
+      console.error(`harness lease release failed: ${String(error?.message || error)}`);
+    }
+  }
 });
