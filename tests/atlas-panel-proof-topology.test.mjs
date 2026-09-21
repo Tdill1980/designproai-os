@@ -747,9 +747,28 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
   // Scoped to `geminiImageUrl` on purpose: the other `fetch` in this file is
   // `parseCustomerIntake`, a Flash TEXT call, and counting every fetch convicted
   // it. The contract here is about the billed image generation.
+  //
+  // THREE SINCE THE ANCHORED PATH (2026-09-21): the DESIGN turn, the LAYOUT
+  // turn and the explicit custom-logo call. The design turn is a real third
+  // paid generation and this lock's whole subject is that a paid generation
+  // cannot be bought twice -- so raising the number is not enough, and the
+  // assertions below prove the new one carries the same contract as the others:
+  // its own stable attemptKey (`:design`, so a recovery cannot be handed the
+  // layout's bytes or made to re-buy the design), the caller's cacheOnly, and
+  // the lease authorisation.
   const imageCalls = [...edge.matchAll(/await fetch\(\s*\n?\s*geminiImageUrl\(/g)].length;
-  assert.equal(imageCalls, 2,
-    `only the artwork and explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
+  assert.equal(imageCalls, 3,
+    `only the design turn, the layout turn and the explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
+  assert.match(edge, /attemptKey: `\$\{providerRequest\.attemptKey\}:design`/,
+    "the design turn needs its OWN durable key, or a recovery reads the layout turn's record");
+  const designBlock = edge.slice(edge.indexOf("const designRequest = JSON.stringify({"),
+    edge.indexOf("designTurnRequestId = designCached.requestId"));
+  assert.match(designBlock, /runDurableImageProviderRequest\(\{/,
+    "the design turn must go through the durable module, not a bare fetch");
+  assert.match(designBlock, /cacheOnly: providerRequest\.cacheOnly === true/,
+    "a RECOVERY must not buy the design turn a second time");
+  assert.match(designBlock, /authorize: \(\) => authorizeAtlasProviderRequest\(/,
+    "the design turn is a paid provider request and still needs the lease (RULE 0.26)");
   const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
   assert.equal(wrappedCalls,imageCalls,
     "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");

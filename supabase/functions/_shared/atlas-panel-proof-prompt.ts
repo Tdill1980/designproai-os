@@ -310,6 +310,112 @@ export interface PanelProofParams {
   creativeHead?: string;
 }
 
+/**
+ * THE SAME ASK, SPLIT INTO THE TWO TURNS OF ONE CONVERSATION.
+ *
+ * Owner, 2026-09-21: "do the multitodal thought signatures", after "Like a real
+ * graphic designer creates a cohesive design. design each element seperatley,
+ * then put togetehr".
+ *
+ * WHY A SECOND TURN AND NOT A LONGER PROMPT. Live sheet 7a72951823648d27 sent
+ * ONE user turn carrying 5,106 characters and four images, of which roughly
+ * three lines were the design and forty-five were the document. The model had
+ * to invent a wrap AND decompose it into clean backgrounds AND decompose it
+ * into cut graphics AND lay eighteen cells out, in one pass, with the creative
+ * references and the structural references in the same undifferentiated bag.
+ * Google's own guidance names both halves of that: "iterate and refine" (the
+ * documented multi-turn example generates an infographic, then revises it) and
+ * reference images that carry ROLES. We were doing neither.
+ *
+ * TURN 1 IS THE DESIGN. Persona, brief, the exact strings, the six panel
+ * shapes, and the physical fact that a panel is a solid rectangle -- all
+ * properties of the ARTWORK. Its attachments are the CREATIVE class: the
+ * customer's own references and the gold-standard artboards. The word
+ * "document", the three bands and the container never appear, so nothing
+ * competes with designing.
+ *
+ * TURN 2 IS THE LAYOUT, and it is a continuation rather than a new request:
+ * turn 1's user turn and the model's reply are replayed with the reply's
+ * thoughtSignature intact on the part it arrived on, exactly as
+ * `gemini-image-history.mjs` already does for the hero cascade. So turn 2 does
+ * not re-invent the wrap -- it has it in the conversation and decomposes it.
+ * Its attachments are the STRUCTURAL class: the container template and the
+ * pinned format sheet. RULE 0.24's three classes stop sharing one bag.
+ *
+ * THE HONEST COST: two image requests instead of one, so roughly double the
+ * ~40 s authoring leg. That is the trade, and it is not hidden -- the receipt
+ * reports `imageRequestCount` and both turns' prompts.
+ *
+ * `buildPanelProofPrompt` below is UNCHANGED and still assembles the
+ * single-turn ask byte for byte. Neither is derived from the other, so
+ * `panelProofTurnsCoverTheSinglePrompt` in the contract test asserts the two
+ * turns still carry every section the one prompt does.
+ */
+export function buildPanelProofTurns(params: PanelProofParams): { design: string; layout: string } {
+  const pick = (v: unknown) => String(v == null ? "" : v).trim();
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(pick).filter(Boolean).join(", ") : pick(v));
+  const head = pick(params.creativeHead);
+  const vehicle = [params.vehicleYear, params.vehicleMake, params.vehicleModel]
+    .map(pick).filter(Boolean).join(" ");
+  const rows = (params.panelRows || []).filter((row) => pick(row).length > 0);
+  const strings: Array<[string, string]> = ([
+    ["Company name", pick(params.companyName)],
+    ["Tagline", pick(params.tagline)],
+    ["Phone", pick(params.phone)],
+    ["Web address", pick(params.website)],
+    ["Services", list(params.services)],
+    ["Promotional text", pick(params.promo)],
+  ] as Array<[string, string]>)
+    .filter(([, value]) => value.length > 0)
+    .filter(([label]) => !(head && ["Company name", "Phone", "Web address"].includes(label)));
+
+  const design: string[] = [];
+  if (head) design.push(head, "");
+  else design.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`, "");
+  design.push(INSTALLATION_FACT);
+  if (rows.length) {
+    design.push("", "THE SIX PANELS, left to right, each drawn at this shape:",
+      ...rows.map((row) => `  ${row}`));
+  }
+  if (strings.length) {
+    design.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
+      ...strings.map(([label, value]) => `  ${label}: ${value}`));
+  }
+  design.push("", "THE SMALL PANELS (hood, front, rear) carry the logo and ONE line at most, set LARGE.",
+    "The longer copy belongs on the flanks, which have the room to read it.");
+  // The turn-1 ask, stated last so it is the instruction the model leaves with.
+  // It names the six panels and nothing about a document.
+  design.push("", "Draw those six panels of finished wrap artwork, one cohesive design across all of them,",
+    "each panel filled corner to corner. Nothing else on the canvas.");
+
+  const layout: string[] = [
+    "Keep that exact design — every colour, motif, photograph, logo and line of type as you just drew it.",
+    "Now lay it out as the production proof document.",
+    "",
+    SYSTEM_JOB,
+    "",
+    "THE THREE BANDS, in this order:",
+    ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`),
+  ];
+  const supplied: Record<string, string> = {
+    logo: "",
+    tagline: pick(params.tagline) ? "the tagline above" : "",
+    contact: [pick(params.phone), pick(params.website)].filter(Boolean).length
+      ? "the phone and web address above, on one line" : "",
+    promo: pick(params.promo) ? "the promotional text above" : "",
+    icons: "",
+  };
+  layout.push("", "ZONE 3'S FIVE BOXES, every one filled:",
+    ...CUT_GRAPHIC_SLOTS.map((slot) => `  ${slot.caption}: ${supplied[slot.from] || slot.fallback}`));
+  layout.push("", SHEET_LAYOUT);
+  layout.push("",
+    "ATTACHED NOW: (1) the BLANK CONTAINER TEMPLATE — it is drawn for THIS vehicle, so every panel's",
+    "shape and position comes from it; (2) a FINISHED PROOF — the standard for the QUALITY of the",
+    "work, on a different vehicle and another company's brand, so take no shape or figure from it.",
+    "The only shapes anywhere are Zone 3's cut graphics.");
+  return { design: design.join("\n"), layout: layout.join("\n") };
+}
+
 export function buildPanelProofPrompt(params: PanelProofParams): string {
   const pick = (v: unknown) => String(v == null ? "" : v).trim();
   const list = (v: unknown) => (Array.isArray(v) ? v.map(pick).filter(Boolean).join(", ") : pick(v));
