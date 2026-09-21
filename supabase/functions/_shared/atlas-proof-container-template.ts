@@ -394,11 +394,27 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // states the difference between the rectangle the shop CUTS and the rectangle
   // it PRINTS. Zone 1 had the captions without it, so a reader of the blank
   // template learned the panel names and not the numbers under them.
+  //
+  // PER-PANEL SQUARE FOOTAGE, added 2026-09-21. The owner's own gold-standard
+  // sheets carry it on every panel ("with 5\" bleed - 101.4 sq ft"), and she
+  // asked for it directly: "if it knows make and model it must calculate sq ft
+  // on PanelProductionSheet document". It is the figure a shop actually orders
+  // material by, and the sheet stated a total while stating no part of it.
+  //
+  // It is the PRINT area -- the rectangle that goes on the roll, bleed
+  // included -- because that is what is bought. The header's TOTAL COVERAGE is
+  // the TRIM area, what lands on the vehicle, and the two are DIFFERENT
+  // NUMBERS ON PURPOSE. So the header now also states the material total, or a
+  // reader would reasonably try to sum these and find they do not reach it.
+  // Both are computed from the GENIE manifest; neither is ever copied.
+  //
+  // TWIN OF runtime/atlas-proof-container-template.cjs -- byte-identical SVG is
+  // asserted across both homes, so this change belongs in both or neither.
   const panelDetail = (s: ContainerSurface) => {
     const p = printOf(s);
     return [`TRIM ${r1(trimOf(s).w)}" x ${r1(trimOf(s).h)}"`,
       `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
-      `${bleedInches}" bleed all edges`];
+      `${bleedInches}" bleed all edges — ${((p.w * p.h) / 144).toFixed(1)} sq ft`];
   };
 
   // TOTAL COVERAGE IS COMPUTED, NEVER COPIED. The owner's filled sheet carries
@@ -408,6 +424,9 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // them. This one is the sum of the GENIE trim areas and nothing else, so the
   // blank template can never teach arithmetic that does not close.
   const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (trimOf(s).w * trimOf(s).h) / 144, 0);
+  // The material total, which the per-panel figures DO sum to.
+  const totalPrintSqFt = surfaces.reduce(
+    (sum, s) => sum + (printOf(s).w * printOf(s).h) / 144, 0);
   const m: string[] = [];
 
   // ── the knock-out, in chrome mode only ──────────────────────────────────
@@ -441,7 +460,8 @@ export function containerSvg(options: ContainerOptions = {}): string {
   m.push(text(WIDTH / 2, 44, "2D PRODUCTION PROOF", { size: 21, weight: 700, anchor: "middle", spacing: 0.4 }));
   m.push(text(WIDTH / 2, 61, vehicle || "VEHICLE", { size: 10, fill: MUTED, anchor: "middle", spacing: 0.6 }));
   m.push(text(WIDTH / 2, 77, `TOTAL COVERAGE (TRIM): ${totalTrimSqFt.toFixed(2)} SQ FT`
-    + `  |  EVERY PANEL DIMENSIONED BY GENIE  |  ${bleedInches}" BLEED ON ALL FOUR EDGES`,
+    + `  |  MATERIAL (WITH ${bleedInches}" BLEED): ${totalPrintSqFt.toFixed(2)} SQ FT`
+    + `  |  EVERY PANEL DIMENSIONED BY GENIE`,
     { size: 8.5, fill: MUTED, anchor: "middle", spacing: 0.3 }));
   m.push(`<rect x="1180" y="22" width="302" height="62" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   // THE JOB BLOCK IS FILLED BY CODE WHEN THE REQUEST CARRIES IT, and left as a
