@@ -146,12 +146,38 @@ function groundSvg(w, h, { seed = 0 } = {}) {
       + ` C ${(w * 0.28).toFixed(1)} ${(y - a).toFixed(1)}, ${(w * 0.52).toFixed(1)} ${(y + a).toFixed(1)}, ${w} ${(y - a * 0.4).toFixed(1)}`
       + ` L ${w} ${h} L 0 ${h} Z" fill="${colour}" opacity="${opacity}"/>`;
   };
+  // THE SMALL PANELS CARRY THE SAME COMPOSITION, NOT A PLAIN WASH.
+  //
+  // Owner, 2026-09-21: "If this sheet is teaching format and quality, a basic
+  // gradient isn't enough." Correct, and the flaw ran deeper than prettiness:
+  // four of the six panels were a bare gradient with a lockup on it, so the
+  // sheet taught that a roof or a front is somewhere artwork STOPS. That is
+  // exactly the "six areas must each read as intentional, finished,
+  // commercially valuable artwork" requirement the field tail already states,
+  // taught backwards.
+  //
+  // So every panel gets the same three elements at its own scale: the sweeps,
+  // a diagonal cut, and a chevron field. Scale-relative, never fixed pixels --
+  // a fixed motif is a hairline on a 165" flank and a blob on a 43" roof.
+  const unit = Math.min(w, h);
+  const cut = `<path d="M${(w * 0.62).toFixed(1)} 0 L${w} 0 L${w} ${(h * 0.34).toFixed(1)} Z"`
+    + ` fill="#ffffff" opacity="0.10"/>`;
+  const chevrons = Array.from({ length: 4 }, (_, i) => {
+    const x = w - unit * (0.14 + i * 0.085);
+    const t = unit * 0.026;
+    return `<path d="M${x.toFixed(1)} ${(h * 0.60).toFixed(1)}`
+      + ` l${(unit * 0.07).toFixed(1)} ${(-unit * 0.11).toFixed(1)}`
+      + ` l${t.toFixed(1)} 0 l${(-unit * 0.07).toFixed(1)} ${(unit * 0.11).toFixed(1)} Z"`
+      + ` fill="${LIGHT}" opacity="${(0.42 - i * 0.07).toFixed(2)}"/>`;
+  }).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${w} ${h}">`
     + `<defs><linearGradient id="g${seed}" x1="0" y1="0" x2="1" y2="1">`
     + `<stop offset="0" stop-color="${ACCENT}"/><stop offset="1" stop-color="${INK}"/></linearGradient></defs>`
     + `<rect width="${w}" height="${h}" fill="url(#g${seed})"/>`
+    + cut
     + sweep(0.42, 0.20, 0.30, "#ffffff")
     + sweep(0.60, 0.14, 0.22, LIGHT)
+    + chevrons
     + sweep(0.80, 0.10, 0.30, "#ffffff")
     + `</svg>`;
 }

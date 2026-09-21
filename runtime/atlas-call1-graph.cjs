@@ -671,9 +671,19 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
         source: "designpro-text-layer-art", element: null, generated: false, transportUnavailable: true,
         retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
     }
+    // THE CONTINUATION, READ OFF THE RUN DEFINITION. Both halves or neither:
+    // a signature without the sheet it belongs to is a token with no context,
+    // and the master is what carries the palette. Absent is legitimate -- the
+    // model does not always emit a signature -- and the mark is then drawn the
+    // way it was before this existed.
+    const definition = run.definition || {};
+    const continuation = definition.callOneExchange?.thoughtSignature && definition.masterRef?.storagePath
+      ? { thoughtSignature: definition.callOneExchange.thoughtSignature, master: definition.masterRef }
+      : null;
     const generated = await callLogoEdge({
       providerRequest: { requestId: run.generation_request_id, generationId: run.generation_id,
         claimToken: run.claim_token, attemptKey: `brand-logo:${node.attempt || 1}` },
+      ...(continuation ? { continuation } : {}),
       companyName: node.input?.companyName,
       prompt: node.input?.brief,
       industryType: node.input?.industryType,
@@ -688,9 +698,12 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
         retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
     }
     logger(`atlas call 1 graph ${run.id}: brand mark drawn ${String(generated.contentHash).slice(0, 12)}`
-      + ` (${generated.byteSize} B${generated.providerCacheHit ? ", cache hit" : ""})`);
+      + ` (${generated.byteSize} B${generated.providerCacheHit ? ", cache hit" : ""}`
+      + `${continuation ? ", continuing Call 1" : ", no continuation"})`);
     return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo",
       source: "designpro-text-layer-art", generated: true,
+      // Queryable: "did this mark see the design" must not be a guess.
+      continuedCallOne: Boolean(continuation),
       element: { storagePath: generated.storagePath, contentHash: generated.contentHash,
         byteSize: generated.byteSize },
       providerCacheHit: generated.providerCacheHit === true,
@@ -1012,6 +1025,10 @@ function createAtlasCall1NodeWorker({
    */
   async function authorElements({
     masterRef, manifest, input, requestId, generationId, ownerId,
+    // Call 1's own exchange. Rides the DEFINITION beside `masterRef`, which is
+    // already there, so the generated mark can continue the design without a
+    // new node, a new edge or any change to the orchestrator.
+    callOneExchange = null,
     logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
   }) {
     if (!elementGraphEnabled()) return null;
@@ -1032,6 +1049,10 @@ function createAtlasCall1NodeWorker({
     // producers' own contract does -- a typeset change must not resume a run
     // whose elements were rendered by the previous one.
     const definition = { contract: GRAPH_CONTRACT, manifest, input, role: "elements", masterRef,
+      // In the hash on purpose: a run whose mark continued the design is not
+      // the same run as one whose mark guessed at it, so they must not resume
+      // into each other.
+      ...(callOneExchange?.thoughtSignature ? { callOneExchange } : {}),
       elementContracts: { typeset: typeset.CONTRACT, lockup: lockup.CONTRACT, composite: composite.CONTRACT } };
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {

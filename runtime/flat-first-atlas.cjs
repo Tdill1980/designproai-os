@@ -2015,6 +2015,15 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       providerCacheContract: payload.providerCacheContract || null,
       providerRequestKey: payload.providerRequestKey || null,
       providerCacheHit: payload.providerCacheHit === true,
+      // CARRIED SO THE GENERATED BRAND MARK CAN CONTINUE THIS DESIGN.
+      // `logo.generate` is a SECOND image call and used to open a fresh
+      // conversation, guessing the wrap's palette. With the signature it
+      // replays this exchange instead. Null is legitimate — the model does not
+      // always emit one, and a mark drawn without it is what shipped before.
+      thoughtSignature: typeof payload.thoughtSignature === "string" && payload.thoughtSignature
+        ? payload.thoughtSignature : null,
+      threeZoneContextApplied: payload.threeZoneContextApplied === true,
+      qualityArtboardsApplied: Number(payload.qualityArtboardsApplied) || 0,
       ...(body.revisionContextHash ? { revisionContextHash: payload.revisionContextHash,
         parentAtlasRevisionId: payload.parentAtlasRevisionId, parentMasterContentHash: payload.parentMasterContentHash,
         revisionHistoryMode: payload.revisionHistoryMode } : {}),
@@ -4405,6 +4414,17 @@ async function generateOrReuseFlatAtlasResolved(options) {
     });
     const composited = await elementWorker.authorElements({
       masterRef: { storagePath: staged.storagePath, contentHash: acceptedMasterHash, byteSize: acceptedMasterBytes.length },
+      // CALL 1'S OWN EXCHANGE, so `logo.generate` continues this design instead
+      // of opening a fresh conversation about it. It rides the run DEFINITION
+      // beside `masterRef`, which the definition already carries -- no new
+      // node, no new edge, no change to the orchestrator. The definition hash
+      // moves with it, which is correct: a run whose mark continued the design
+      // is not the same run as one whose mark guessed.
+      callOneExchange: (() => {
+        const latest = edgeProvenance[edgeProvenance.length - 1];
+        const signature = latest?.thoughtSignature;
+        return typeof signature === "string" && signature ? { thoughtSignature: signature } : null;
+      })(),
       manifest, input: authoringInput, requestId, generationId, ownerId, logger,
     });
     if (composited?.changed) {

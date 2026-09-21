@@ -3199,7 +3199,44 @@ async function handleAtlasLogo(body: Record<string, unknown>, ownerId: string): 
     };
     await authorizeAtlasProviderRequest(svc, providerRequest, ownerId);
     const customerPrompt = String(body.prompt || body.brief || "").trim();
+
+    // THE CONTINUATION. Both halves or neither: the signature is a token with
+    // no meaning without the turn it belongs to, and the MASTER is what
+    // actually carries the palette the mark has to match.
+    //
+    // The sheet is re-read here by IDENTITY and hash-verified (RULE 0.39), the
+    // same way every other Call-1 input arrives — a caller cannot name bytes
+    // this side did not check.
+    let priorTurns: Array<Record<string, unknown>> | null = null;
+    const continuation = body.continuation as Record<string, any> | undefined;
+    if (continuation?.thoughtSignature && continuation?.master?.storagePath) {
+      const ref = continuation.master;
+      const { data, error } = await svc.storage.from("wrap-files").download(String(ref.storagePath));
+      if (error || !data) throw new Error(`atlas_logo_master_download_failed:${ref.storagePath}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (digest !== String(ref.contentHash || "").toLowerCase()) {
+        throw new Error(`atlas_logo_master_identity_mismatch:${ref.storagePath}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      priorTurns = [
+        { role: "user", parts: [{ text: "Design the flat printed wrap sheet for this vehicle." }] },
+        {
+          role: "model",
+          parts: [
+            // The signature rides the part it arrived on, which is how the
+            // model reads it — not as a sibling field on the turn.
+            { inlineData: { mimeType: "image/png", data: btoa(binary) }, thoughtSignature: continuation.thoughtSignature },
+          ],
+        },
+      ];
+    }
+
     const generated = await authorProofLogo({
+      priorTurns,
       bucket: svc.storage.from("wrap-files"),
       ownerId,
       providerRequest,
@@ -3601,6 +3638,23 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     const payload = cached.payload;
     const { imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_artboard");
 
+    // THE THOUGHT SIGNATURE, CARRIED OUT SO THE MARK CAN CONTINUE THIS DESIGN.
+    //
+    // Six-surface Call 1 is ONE image request, so there is nothing to continue
+    // WITHIN it -- a signature needs a prior turn and there is none. But the
+    // element graph then makes a SECOND image call, `logo.generate`, and until
+    // now it drew the brand mark in a brand-new conversation with no knowledge
+    // of the artwork it was about to be composited onto. It guessed the palette
+    // and we pasted the guess on.
+    //
+    // Returned as an identity alongside the master this response already names,
+    // so the logo request can replay this exchange and inherit the wrap's own
+    // colour and geometry. Absent is a legitimate answer: the model does not
+    // always emit one, and a logo drawn without it is what shipped before.
+    const artboardThoughtSignature = (payload?.candidates?.[0]?.content?.parts || [])
+      .map((part: Record<string, unknown>) => part?.thoughtSignature)
+      .find((signature: unknown) => typeof signature === "string" && signature.length > 0) || null;
+
     // 5 — persist + provenance.
     // Accept native PNG/JPEG/WebP without recompression or MIME relabeling.
     // The server's existing normalizer produces the canonical PNG afterward.
@@ -3636,6 +3690,9 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
         threeZoneContextApplied,
+        // Consumed by `logo.generate` so the generated mark continues THIS
+        // design rather than starting a fresh conversation about it.
+        thoughtSignature: artboardThoughtSignature,
         qualityArtboardsApplied: qualityArtboards.length,
         qualityArtboardIdentities: qualityArtboards,
         fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,

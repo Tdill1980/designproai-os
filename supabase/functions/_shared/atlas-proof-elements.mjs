@@ -59,14 +59,31 @@ export function proofLogoRequested(input) {
 // The existing text-layer designer authors a missing brand mark. Its operation
 // is separate from the artwork candidate and survives worker/HTTP recovery.
 export async function authorProofLogo({ bucket, ownerId, providerRequest, input,
-  model, buildPrompt, normalize, authorize, invoke, runProvider = runDurableImageProviderRequest }) {
+  model, buildPrompt, normalize, authorize, invoke, runProvider = runDurableImageProviderRequest,
+  /**
+   * CALL 1'S OWN EXCHANGE, so the mark CONTINUES the design instead of opening
+   * a fresh conversation about it.
+   *
+   * Without it this call drew a brand mark blind -- no sight of the artwork it
+   * was about to be composited onto -- and guessed the palette. `priorTurns`
+   * carries the accepted sheet and the thought signature ON THE MODEL PART IT
+   * ARRIVED ON, which is the shape Gemini reads it in.
+   *
+   * Absent is legitimate and is exactly the previous behaviour: the model does
+   * not always emit a signature, and a mark drawn without one still ships.
+   */
+  priorTurns = null }) {
   if (input.logoAsset || input.generateLogo !== true || !String(input.companyName || '').trim()) return null;
   const prompt = buildPrompt(input, { id: 'brand-logo', kind: 'logo', role: 'logo', text: input.companyName });
-  const modelRequest = JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }],
+  const contents = [
+    ...(Array.isArray(priorTurns) ? priorTurns : []),
+    { role: 'user', parts: [{ text: prompt }] },
+  ];
+  const modelRequest = JSON.stringify({ contents,
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: '1:1', imageSize: '4K' } } });
   const cached = await runProvider({ bucket,
     identity: { ...providerRequest, ownerId, mode: 'atlas-panel-proof-element', attemptKey: 'brand-logo:1' },
-    requestHash: await providerSha256(JSON.stringify({ model, contract: 'designpro.proof-logo.v1', modelRequest })),
+    requestHash: await providerSha256(JSON.stringify({ model, contract: priorTurns?.length ? 'designpro.proof-logo.v2-continues-call-one' : 'designpro.proof-logo.v1', modelRequest })),
     privateRequest: modelRequest, cacheOnly: providerRequest.cacheOnly === true,
     authorize, invoke: () => invoke(modelRequest),
   });
