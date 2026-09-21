@@ -1977,16 +1977,41 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     // many it applied, so the expected count is still a single number and an
     // unexplained extra image is still a refusal.
     const qualityArtboardCount = Number(payload?.qualityArtboardsApplied || 0);
-    if (payload?.fieldContract || !body?.teachingProofStoragePath || !body?.guideStoragePath
-      || !expectedTeaching || !actualTeaching
-      || payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION
-      || !Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2
-      || Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount
-      || ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]
-        .some((key) => actualTeaching[key] !== expectedTeaching[key])) {
+    // ⛔ THE GUARD NAMES THE RULE IT ENFORCED.
+    //
+    // These eight conditions all threw ONE code with ONE sentence, so from
+    // outside — a failed row, a customer's screen, a log line — they are
+    // indistinguishable. #590 fixed the image count, correctly, and the next
+    // failure looked identical to the one it fixed, so it read as "the fix did
+    // not work" rather than "a different rule fired". Live, 2026-09-21: the
+    // owner hit this at 23:07:42 on a build carrying that fix.
+    //
+    // Naming the rule costs nothing and leaks nothing: these are contract
+    // facts, not secrets, and the counts are already reported by the edge.
+    const mismatches = [];
+    if (payload?.fieldContract) mismatches.push("field_contract_present");
+    if (!body?.teachingProofStoragePath) mismatches.push("teaching_proof_path_absent");
+    if (!body?.guideStoragePath) mismatches.push("guide_path_absent");
+    if (!expectedTeaching) mismatches.push("expected_teaching_identity_absent");
+    if (!actualTeaching) mismatches.push("returned_teaching_identity_absent");
+    if (payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
+      mismatches.push(`prompt_version(expected=${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION},got=${payload?.promptVersion || "none"})`);
+    }
+    if (!Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2) {
+      mismatches.push(`quality_artboard_count(${payload?.qualityArtboardsApplied})`);
+    } else if (Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount) {
+      mismatches.push(`model_input_image_count(expected=${customerImageCount + 2 + qualityArtboardCount}`
+        + `,got=${payload?.modelInputImageCount},customer=${customerImageCount},quality=${qualityArtboardCount})`);
+    }
+    if (expectedTeaching && actualTeaching) {
+      for (const key of ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]) {
+        if (actualTeaching[key] !== expectedTeaching[key]) mismatches.push(`teaching_identity.${key}`);
+      }
+    }
+    if (mismatches.length) {
       throw new FlatAtlasError(
         "flat_atlas_edge_topology_contract_mismatch",
-        "Six-surface authoring requires the pinned teaching proof, target guide, matching prompt version and no field contract",
+        `Six-surface authoring contract mismatch: ${mismatches.join(", ")}`,
       );
     }
   }
