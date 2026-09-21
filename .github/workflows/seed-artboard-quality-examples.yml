@@ -136,12 +136,10 @@ jobs:
                     -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
           # ONLY the assets this run actually names ride along.
           #
-          # THE PAYLOAD IS AN SSH COMMAND-LINE ARGUMENT, so its size is bounded
-          # by ARG_MAX, not by patience. Shipping the whole runtime/atlas-examples
-          # directory is ~10 MB, ~13.5 MB base64'd, and the exec fails with 126
-          # before the remote script runs a single line -- which reads as a
-          # droplet problem rather than an argument-length one. One named
-          # example is ~200 KB encoded.
+          # Not for size any more -- the payload is copied now, see below -- but
+          # because the prefix should hold what was asked for and nothing else,
+          # and because a named example that is missing from the checkout should
+          # say so rather than seed silently.
           payload_paths=(scripts/seed-artboard-quality-examples.mjs)
           while IFS= read -r wanted; do
             [[ -n $wanted ]] || continue
@@ -151,8 +149,24 @@ jobs:
             }
             payload_paths+=("runtime/atlas-examples/$wanted")
           done < <(tr ',' '\n' <<<"$SOURCES" | sed -n 's/^local://p')
-          payload=$(tar -cz "${payload_paths[@]}" | base64 -w0)
-          printf 'payload: %s bytes encoded, %s file(s)\n' "${#payload}" "${#payload_paths[@]}"
+          # THE PAYLOAD IS COPIED, NEVER PASSED AS AN ARGUMENT.
+          #
+          # Linux caps a SINGLE argument at MAX_ARG_STRLEN (128 KiB), separately
+          # from the ~2 MiB total, and the base64 tar is one argument. Bounding
+          # it from ~13.5 MB to 203 KB cleared the total limit and stayed over
+          # the per-argument one, so `ssh` failed to exec with
+          # "Argument list too long" -- on the RUNNER, never reaching the
+          # droplet, while reporting 126 like a remote failure.
+          #
+          # scp has no such ceiling and uses the same pinned key and known_hosts,
+          # so the tar travels as a file and the remote script reads it. The
+          # size stops being a design constraint: an example is an image, and
+          # images grow.
+          tar -cz "${payload_paths[@]}" > "$RUNNER_TEMP/seed-payload.tgz"
+          printf 'payload: %s bytes, %s file(s)\n' \
+            "$(stat -c%s "$RUNNER_TEMP/seed-payload.tgz")" "${#payload_paths[@]}"
+          scp "${ssh_args[@]}" "$RUNNER_TEMP/seed-payload.tgz" \
+            "root@$TARGET_HOST:/tmp/designpro-seed-payload.tgz"
 
           # THE REMOTE STDERR IS THE ONLY ACCOUNT OF WHAT HAPPENED ON THE
           # DROPLET, so it is printed whatever the outcome. Previously the
@@ -162,7 +176,7 @@ jobs:
           # discarded at exactly the moment they were needed.
           seed_status=0
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "PAYLOAD='$payload' SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
+            "SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
             > "$RUNNER_TEMP/seed.b64" 2>"$RUNNER_TEMP/seed.log" <<'REMOTE' || seed_status=$?
           set -Eeuo pipefail
           release=/opt/designproai-os/current
@@ -172,10 +186,13 @@ jobs:
           image="designproai-runtime:$sha"
           docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image absent" >&2; exit 42; }
 
+          payload=/tmp/designpro-seed-payload.tgz
+          test -s "$payload" || { echo "seed payload was not copied to the droplet" >&2; exit 43; }
+
           work=$(mktemp -d /tmp/designpro-seed.XXXXXX)
-          trap 'rm -rf "$work"' EXIT
+          trap 'rm -rf "$work" "$payload"' EXIT
           mkdir -p "$work/scripts" "$work/out"
-          printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
+          tar -C "$work" -xzf "$payload"
           chmod -R 0777 "$work"
 
           docker run --rm --network host \
