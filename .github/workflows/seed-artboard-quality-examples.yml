@@ -154,9 +154,16 @@ jobs:
           payload=$(tar -cz "${payload_paths[@]}" | base64 -w0)
           printf 'payload: %s bytes encoded, %s file(s)\n' "${#payload}" "${#payload_paths[@]}"
 
+          # THE REMOTE STDERR IS THE ONLY ACCOUNT OF WHAT HAPPENED ON THE
+          # DROPLET, so it is printed whatever the outcome. Previously the
+          # `cat` sat after the ssh and `set -e` aborted first, so a failing
+          # run showed an exit code and nothing else -- the seed script's own
+          # messages, the docker error, the remote guard that fired, all
+          # discarded at exactly the moment they were needed.
+          seed_status=0
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "PAYLOAD='$payload' SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
-            > "$RUNNER_TEMP/seed.b64" 2>"$RUNNER_TEMP/seed.log" <<'REMOTE'
+            > "$RUNNER_TEMP/seed.b64" 2>"$RUNNER_TEMP/seed.log" <<'REMOTE' || seed_status=$?
           set -Eeuo pipefail
           release=/opt/designproai-os/current
           test -d "$release" || { echo "no deployed release" >&2; exit 40; }
@@ -181,10 +188,15 @@ jobs:
           tar -C "$work/out" -cz . | base64 -w0
           REMOTE
 
+          echo "---- seed log (droplet stderr) ----"
+          cat "$RUNNER_TEMP/seed.log" || echo "(no stderr captured)"
+          if [[ $seed_status -ne 0 ]]; then
+            printf '::error title=Seed failed on the droplet::ssh returned %s; the remote account is above.\n' "$seed_status" >&2
+            exit "$seed_status"
+          fi
+
           mkdir -p "$RUNNER_TEMP/examples"
           base64 -d < "$RUNNER_TEMP/seed.b64" | tar -C "$RUNNER_TEMP/examples" -xz
-          echo "---- seed log ----"
-          cat "$RUNNER_TEMP/seed.log"
           echo "---- files ----"
           ls -l "$RUNNER_TEMP/examples"
 
