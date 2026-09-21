@@ -26,28 +26,47 @@
 export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
 
 /**
- * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18).
+ * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18);
+ * "It's supposed to use the production panel proof for Ridgeline Pools"
+ * (2026-09-21).
  *
- * The Bright Smiles Dental 2012 Toyota Prius 2D PRODUCTION PROOF, 1536x1024:
- * header and TOTAL COVERAGE, three full-width ZONE bands, the PANEL DIMENSIONS
- * REFERENCE row, TEMPLATE NOTES, GUIDE legend, footer. It is the FILLED TWIN of
- * the container template, which is why it replaced the two-column sheet pinned
- * earlier the same day -- two layouts cannot both be "the template filled in".
- * Pinned exactly as the Flamingo
- * teaching proof is pinned, for the same reason: a teaching input that silently
- * changes teaches something nobody chose (canary 33389124918). NEVER recreate,
- * crop, relabel or re-encode it.
+ * The RIDGELINE CUSTOM POOLS 2024 Ford F-250 Crew Cab 2D PRODUCTION PROOF,
+ * 1536x1024: header with ORDER #, DESIGNER, VERSION and TOTAL COVERAGE, then
+ * the three full-width ZONE bands the product is named for --
+ *   ZONE 1  FULL DESIGN PANELS (photo + design + text + logo), 6 panels
+ *   ZONE 2  BACKGROUNDS ONLY (no text or logo), matching Zone 1 exactly
+ *   ZONE 3  CUT GRAPHICS (logo, text and icons only), vector, no background
+ * -- each panel dimensioned in inches with its trim size and 5" bleed, then the
+ * PANEL DIMENSIONS REFERENCE row, TEMPLATE NOTES and the GUIDE legend.
+ *
+ * It replaced the Bright Smiles Dental 2012 Prius sheet, which taught the same
+ * structure from a different job. Pinned exactly as the Flamingo teaching proof
+ * is pinned, for the same reason: a teaching input that silently changes
+ * teaches something nobody chose (canary 33389124918). NEVER recreate, crop,
+ * relabel or re-encode it.
+ *
+ * ⚠️ THE HASH PIN IS WHAT MAKES "USE THIS SHEET" TRUE. Swapping the sheet means
+ * changing this constant AND `byteSize` together, and seeding the object at the
+ * path above; it does not mean deleting the check. Without it any object that
+ * happens to sit at that path becomes the format authority, which is exactly
+ * how a sheet nobody chose ends up teaching Call 1. The bytes are versioned at
+ * `runtime/atlas-examples/ridgeline-panel-proof-gold.png` so the pin is
+ * reproducible from the checkout alone.
+ *
+ * SIX PANELS, REAR AS ONE PIECE -- matching `SURFACE_KEYS` exactly. The first
+ * Ridgeline sheet drew seven (rear split plus a rear bumper), which maps onto no
+ * canonical surface; #592 corrected it and this pins the corrected bytes.
  *
  * IT IS THE STANDARD, NOT JUST THE GRID (owner correction, 2026-09-18). The
  * layout AND the quality of the work on it are the bar -- finish, type, the
  * depth of the artwork. One carve-out, about ownership rather than style: the
- * identity on the sheet is Bright Smiles Dental's, and a customer's proof
+ * identity on the sheet is Ridgeline Custom Pools', and a customer's proof
  * carries only the strings in their own request.
  */
 export const PANEL_PROOF_FORMAT_EXAMPLE = {
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-  byteSize: 1870997,
+  path: "atlas-examples/ridgeline-panel-proof-gold.png",
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 } as const;

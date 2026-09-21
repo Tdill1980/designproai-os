@@ -95,7 +95,7 @@ mkdirSync(outDir, { recursive: true });
  * wheel wells back into the source rectangles.
  */
 const PINNED = [
-  { local: "runtime/atlas-examples/panel-proof-zones-filled.png", remote: "atlas-examples/panel-proof-zones-filled.png" },
+  { local: "runtime/atlas-examples/ridgeline-panel-proof-gold.png", remote: "atlas-examples/ridgeline-panel-proof-gold.png" },
   { local: "runtime/atlas-examples/installer-one-panel-per-side.png", remote: "atlas-examples/installer-one-panel-per-side.png" },
 ];
 

@@ -210,6 +210,47 @@ const ATLAS_PANELS = [
  * that same structure. Both sheets are 1536x1024, which is also the request's
  * aspectRatio, so nothing has to be re-flowed to be read.
  */
+/**
+ * ⚠️ EVERY PINNED INPUT CARRIES ITS ROLE IN WORDS, IMMEDIATELY BEFORE IT.
+ *
+ * Owner, 2026-09-21: "Should just be using to see how it needs to feed
+ * rectangle panels in the zones. Not the design. For design it uses designer
+ * persona in design panel ai generate ... it capitalizes on Gemini's native
+ * Google knowledge, it knows what a pro level dentist wrap should look like, it
+ * uses the natural language prompt and designs it like a real graphic
+ * designer."
+ *
+ * This attachment had NO framing text. It went into `parts` as bare
+ * `inlineData` while every gold-standard artboard beside it got a sentence
+ * naming what it may and may not teach. The pinned sheet is the FILLED twin of
+ * the container -- a finished Bright Smiles Dental wrap on a 2012 Prius -- so
+ * an unlabelled copy of it is the single strongest visual instruction in the
+ * request, and nothing anywhere told the model its artwork was off limits.
+ *
+ * That is the failure mode CLAUDE.md already records twice: canary 33389124918,
+ * where an unlabelled installed proof "was the strongest visual instruction"
+ * and taught wheel wells back into the source rectangles; and RULE 0.24, which
+ * says a STRUCTURAL reference may teach how a composition occupies the
+ * rectangles and may NEVER contribute artwork, wording, logo, colour, brand or
+ * style. The rule was written down and the request did not implement it.
+ *
+ * So the role is stated, in the same shape the artboards use: text first, image
+ * second, both moving together. FORMAT means the zone bands, the panel
+ * rectangles and how artwork fills them edge to edge -- nothing about what is
+ * drawn. The design comes from the customer's own brief through A.C.E., which
+ * is what already knows what a professional dentist wrap looks like.
+ */
+const PINNED_INPUT_FRAMING: Record<string, string> = {
+  format: "PANEL PRODUCTION PROOF — FORMAT AND TOPOLOGY REFERENCE ONLY. "
+    + "Read it for STRUCTURE alone: how the three zone bands are laid out, how the panel rectangles sit inside them, "
+    + "how each rectangle is filled corner to corner with artwork that runs off all four edges, "
+    + "and where the dimensions row, template notes and legend sit. "
+    + "It is an example of the DOCUMENT, not of the design. "
+    + "Copy none of its artwork, photography, palette, wording, company name, logo, brand, industry or typography — "
+    + "that identity belongs to the business on that sheet, not to this customer. "
+    + "The subject, colour and every design decision come from this customer's own brief and from your own judgement as the designer.",
+};
+
 const PINNED_INPUTS = [
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
 ] as const;
@@ -732,10 +773,17 @@ serve(async (req) => {
       if (pinned.sha256 && digest !== pinned.sha256) {
         throw new Error(`panel_proof_format_example_mismatch:${pinned.role}:${digest.slice(0, 16)}`);
       }
+      // THE ROLE GOES FIRST so the image is already framed as format-only when
+      // the model reaches it, exactly as each gold-standard artboard is framed.
+      // Text and image move together or the sheet arrives unlabelled, which is
+      // the state this fixed. A role with no framing is a bug, not a default.
+      const framing = PINNED_INPUT_FRAMING[pinned.role];
+      if (!framing) throw new Error(`panel_proof_pinned_input_unframed:${pinned.role}`);
+      parts.push({ text: framing });
       const pinnedPart = { inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } };
       parts.push(pinnedPart);
       structuralParts.push(pinnedPart);
-      attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
+      attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length, framed: true });
     }
 
     // The gold-standard artboards. Quality reference ONLY -- never topology,
