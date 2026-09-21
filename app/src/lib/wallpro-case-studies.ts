@@ -83,17 +83,18 @@ const STUDIO: WallCaseStudy = {
 };
 
 /**
- * THE GYM — photographs in hand, wall not yet measured.
+ * THE GYM — measured 2026-09-21, and published because of it.
  *
- * `proof-gym-before/after.jpg` already ship (they are the hero band's pair), so
- * the only thing standing between this and publication is two numbers off a
- * tape measure, plus confirmation that it is a WePrintWraps job we may present
- * as one — the installed mural carries another brand's artwork, and describing
- * someone else's wall as our case study would be a false claim about a real
- * company, which is worse than an empty page.
+ * It sat here with `wall: null` for exactly as long as nobody had measured it,
+ * which is the rule this file exists to enforce. The owner supplied the inches
+ * and it published itself: the route, the switcher and every computed figure
+ * follow from those two numbers and nothing else here changed. That is the
+ * whole point of a study being data.
  *
- * Fill `wall` and it publishes itself: the route, the switcher and every
- * computed figure follow from it. Nothing else here needs to change.
+ * STILL WORTH KNOWING: the installed mural carries another brand's artwork. The
+ * owner directed publication, so this presents it as a WePrintWraps job on her
+ * authority; if that is ever not the case, the honest repair is to pull the
+ * entry rather than soften the wording.
  */
 const GYM: WallCaseStudy = {
   key: 'gym',
@@ -102,7 +103,19 @@ const GYM: WallCaseStudy = {
   eyebrow: 'CASE STUDY · GYM FEATURE WALL',
   headline: ['One wall,', 'bare to installed.'],
   wallNoun: 'gym wall',
-  wall: null,
+  /**
+   * MEASURED: the owner gave "120\" x 240\"" on 2026-09-21.
+   *
+   * THE ORDER IS READ OFF THE PHOTOGRAPH, NOT OFF THE MESSAGE. 240 x 120 is a
+   * wall twice as wide as it is high, which is the wall in proof-gym-*.jpg;
+   * 120 x 240 would be a ten-foot-wide wall standing twenty feet tall, which it
+   * plainly is not. Every figure on the page -- panel count, linear feet, price,
+   * repeat width -- follows from these two numbers, so putting them the wrong
+   * way round would print a wrong panel plan on a public page. Flagged to the
+   * owner for a one-word confirmation; if it is the other way, swap these two
+   * values and nothing else changes.
+   */
+  wall: { widthIn: 240, heightIn: 120 },
   brief: 'full-height athletic hero wall, high contrast, bold type, wall to wall',
   photos: {
     before: '/wallpro/proof-gym-before.jpg',

@@ -20,10 +20,21 @@ describe('publication requires a measured wall', () => {
     }
   });
 
-  it('keeps the gym out until somebody measures it', () => {
+  it('publishes the gym now that it is measured, and only because it is', () => {
+    // This asserted the opposite while the wall was unmeasured, which is the
+    // rule working: a study reaches customers the moment it has real inches and
+    // not one commit before.
     const gym = ALL_CASE_STUDIES.find(s => s.key === 'gym')!;
-    expect(gym.wall).toBeNull();
-    expect(publishedCaseStudies().map(s => s.key)).not.toContain('gym');
+    expect(gym.wall).toEqual({ widthIn: 240, heightIn: 120 });
+    expect(publishedCaseStudies().map(s => s.key)).toContain('gym');
+  });
+
+  it('keeps the gym wall wider than it is tall, as the photograph shows', () => {
+    // The owner gave "120 x 240"; the order is read off proof-gym-*.jpg. Every
+    // figure on the page follows from these two, so a transposition would print
+    // a wrong panel plan rather than merely look odd.
+    const gym = ALL_CASE_STUDIES.find(s => s.key === 'gym')!;
+    expect(gym.wall!.widthIn).toBeGreaterThan(gym.wall!.heightIn);
   });
 
   it('still ships the studio, which is measured', () => {
@@ -34,7 +45,7 @@ describe('publication requires a measured wall', () => {
 
 describe('slug resolution is total', () => {
   it('falls back to the default rather than 404ing', () => {
-    for (const slug of [undefined, '', 'nope', 'gym']) {
+    for (const slug of [undefined, '', 'nope', 'not-a-study']) {
       expect(caseStudyForSlug(slug).key).toBe(DEFAULT_CASE_STUDY.key);
     }
   });
