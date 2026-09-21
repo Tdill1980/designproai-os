@@ -632,7 +632,16 @@ export async function runDurableImageProviderRequest({
   }
   const identity = normalizeIdentity(suppliedIdentity);
   if (privateRequest != null && (typeof privateRequest !== 'string' || Buffer.byteLength(privateRequest, 'utf8') > 20 * 1024 * 1024)) {
-    throw new GeminiProviderError('provider_private_request_invalid', 400);
+    // THE CODE CARRIES THE TWO FACTS THAT IDENTIFY THE CAUSE. A bare
+    // `provider_private_request_invalid` says only "one of two things went
+    // wrong" -- the caller then cannot tell a non-string from an oversized
+    // one, and cannot tell an oversized one that is 21 MB from one that is
+    // 200 MB. Three probe runs were spent guessing between those cases from
+    // the outside. The type and the measured byte length are both cheap and
+    // neither is secret: the REQUEST stays private, only its shape is named.
+    const kind = typeof privateRequest;
+    const bytes = kind === 'string' ? Buffer.byteLength(privateRequest, 'utf8') : -1;
+    throw new GeminiProviderError(`provider_private_request_invalid:${kind}:${bytes}`, 400);
   }
   await authorize();
   /**
