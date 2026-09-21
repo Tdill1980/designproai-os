@@ -631,17 +631,25 @@ export async function runDurableImageProviderRequest({
     throw new GeminiProviderError('provider_cache_arguments_invalid', 400);
   }
   const identity = normalizeIdentity(suppliedIdentity);
-  if (privateRequest != null && (typeof privateRequest !== 'string' || Buffer.byteLength(privateRequest, 'utf8') > 20 * 1024 * 1024)) {
-    // THE CODE CARRIES THE TWO FACTS THAT IDENTIFY THE CAUSE. A bare
-    // `provider_private_request_invalid` says only "one of two things went
-    // wrong" -- the caller then cannot tell a non-string from an oversized
-    // one, and cannot tell an oversized one that is 21 MB from one that is
-    // 200 MB. Three probe runs were spent guessing between those cases from
-    // the outside. The type and the measured byte length are both cheap and
-    // neither is secret: the REQUEST stays private, only its shape is named.
-    const kind = typeof privateRequest;
-    const bytes = kind === 'string' ? Buffer.byteLength(privateRequest, 'utf8') : -1;
-    throw new GeminiProviderError(`provider_private_request_invalid:${kind}:${bytes}`, 400);
+  // THE SIZE CAP IS REMOVED -- owner ruling, 2026-09-21: "I am saying remove
+  // the gate." It rejected Call 1 outright at HTTP 400 and, because the code
+  // named neither the type nor the size, it could not even say which of its
+  // two branches had fired. Runs 21, 22 and 23 all died here without a pixel.
+  //
+  // The TYPE check stays, because a non-string privateRequest is a caller bug
+  // rather than a large request, and it would be stored as "[object Object]".
+  // The size is now MEASURED AND LOGGED instead of being fatal: an oversized
+  // request proceeds to the provider, which applies its own limits and answers
+  // with a real reason, and the log carries the byte count we were guessing at.
+  const privateRequestKind = typeof privateRequest;
+  if (privateRequest != null && privateRequestKind !== 'string') {
+    throw new GeminiProviderError(`provider_private_request_invalid:${privateRequestKind}:-1`, 400);
+  }
+  if (privateRequestKind === 'string') {
+    const privateRequestBytes = Buffer.byteLength(privateRequest, 'utf8');
+    if (privateRequestBytes > 20 * 1024 * 1024) {
+      console.log(`provider_private_request_oversize_allowed bytes=${privateRequestBytes}`);
+    }
   }
   await authorize();
   /**
