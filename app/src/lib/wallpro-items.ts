@@ -173,3 +173,73 @@ export function parseWallItems(payload: unknown): WallItem[] {
   }
   return out;
 }
+
+/* ── What the customer is asked to do ──────────────────────────────────────
+ *
+ * Owner, 2026-09-21: "No hand drawing I need one touch masks object if its not
+ * coded that way then fix it and make sure app is clear on what user does."
+ *
+ * The capability was coded; the INSTRUCTIONS were not. Step one said "use the
+ * mask tools on the photo for windows, drapes and furniture", the mask panel
+ * said "mask the window and each drape", and marking the fourth corner opened
+ * the drawing tools. So the app led with tracing polygons by hand and mentioned
+ * tapping an object as an aside — which is how a customer ends up with three
+ * rectangles labelled "Protected 1, 2, 3" and no idea the objects were already
+ * found for her.
+ *
+ * One state machine decides the wording everywhere, so the page cannot say two
+ * different things about the same moment. Drawing is never the headline; it is
+ * offered only when detection has actually come back empty, which is the one
+ * case where there is nothing to tap.
+ */
+export type WallMaskStage = 'detecting' | 'tap' | 'empty' | 'unavailable';
+
+export type WallMaskGuidance = {
+  stage: WallMaskStage;
+  /** The one sentence telling the customer what to do now. */
+  headline: string;
+  /** Whether to offer hand-drawing at all. */
+  offerDrawing: boolean;
+};
+
+export function wallMaskGuidance(input: {
+  detecting: boolean;
+  items: WallItem[];
+  /** Areas the customer drew themselves, which are never taken away. */
+  drawnCount: number;
+  /** False when detection could not run at all (signed out, offline, refused). */
+  available?: boolean;
+}): WallMaskGuidance {
+  const { detecting, items, drawnCount, available = true } = input;
+  const drawn = drawnCount > 0 ? ` ${drawnCount} area${drawnCount === 1 ? '' : 's'} you marked by hand ${drawnCount === 1 ? 'is' : 'are'} kept too.` : '';
+
+  if (detecting) {
+    return {
+      stage: 'detecting',
+      headline: 'Finding the things on your wall — windows, drapes, shelves, furniture. A moment.',
+      offerDrawing: false,
+    };
+  }
+  if (items.length > 0) {
+    const { kept, through } = itemSummary(items);
+    return {
+      stage: 'tap',
+      // The verb first, and the thing it acts on named: a customer who reads
+      // only the first four words still knows what to do.
+      headline: `Tap anything on the photo to keep it or paint through it. Keeping ${kept}, painting through ${through}.${drawn}`,
+      offerDrawing: false,
+    };
+  }
+  if (!available) {
+    return {
+      stage: 'unavailable',
+      headline: `We could not check this photo for things to keep. Mark anything that must stay exactly as photographed.${drawn}`,
+      offerDrawing: true,
+    };
+  }
+  return {
+    stage: 'empty',
+    headline: `Nothing on this wall needs keeping — the design covers it all. Mark anything we missed.${drawn}`,
+    offerDrawing: true,
+  };
+}

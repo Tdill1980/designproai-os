@@ -15,7 +15,7 @@ import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
-import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, type WallItem } from '@/lib/wallpro-items';
+import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -663,6 +663,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     setView(art ? 'after' : 'before');
     setName(title || 'Wall design'); setHistory(null);
     if (id) { setProjectId(id); setParams({ project: id }, { replace: true }); }
+    /**
+     * A REOPENED WALL IS STILL TAPPABLE (owner, 2026-09-21: "No hand drawing I
+     * need one touch masks object").
+     *
+     * Detection runs on a fresh upload and on a new accent zone -- never on a
+     * restore. So every reopened project arrived with nothing labelled, and the
+     * only masking left on the table was the pencil. Projects saved since the
+     * item list became persistent bring their own items back above; this covers
+     * the ones that never had any.
+     *
+     * STRICTLY WHEN THERE IS NOTHING TO LOSE. Applying detection clears
+     * hand-drawn areas by design -- the detector's answer and a customer's
+     * drawings cannot both claim the same wall -- so a project that carries
+     * either is left exactly as the customer left it. And because the list now
+     * persists, this costs one detection per project, once, not one per open.
+     */
+    const nothingToLose = !config.itemsPath && !config.maskPath && !config.removeMaskPath
+      && !(Array.isArray(config.exclusions) && config.exclusions.length);
+    if (wall && nothingToLose) void detectInBackground(wall, true);
   }
   useEffect(() => {
     // The catalog is browsable without signing in; failures leave the AI path untouched.
@@ -1328,13 +1347,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
          * nothing here blocks Generate, and print panels are full rectangles
          * whatever is masked.
          */
-        setShowMaskTools(true);
+        // ONE TOUCH, NOT A PENCIL (owner, 2026-09-21: "No hand drawing I need
+        // one touch masks object"). This used to open the DRAWING tools here,
+        // which taught every customer that masking means tracing polygons --
+        // and produced walls carrying three rectangles labelled "Protected 1,
+        // 2, 3" while the objects sat already found and already tappable. The
+        // masks are shown; the pencil stays behind its toggle for the one case
+        // detection comes back empty.
         setShowMasks(true);
-        setNotice(
-          itemSummary(items).kept > 0
-            ? `Corners set. We are keeping ${itemSummary(items).kept} thing${itemSummary(items).kept === 1 ? '' : 's'} on this wall exactly as photographed — tap any labelled item on the photo to change that. Or go straight to describing your design.`
-            : 'Corners set. Anything mounted on this wall you want to keep — framed photos, a TV, shelves? Tap "Mask window / drapes" and draw around it. Otherwise go straight to describing your design.',
-        );
+        setNotice('Corners set. ' + wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline);
       }
     }
   }
@@ -1579,7 +1600,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
-              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : 'Drag any corner to adjust. Use the mask tools on the photo for windows, drapes and furniture, or try Auto-mask.'}</p>
+              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
             </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
@@ -1846,7 +1867,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 {hasOverride(items) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void applyItems(resetItems(items))}>Reset to what we detected</Button>}
                 {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); setItems([]); }}>Clear detected areas</Button>}
               </div>
-              <p className="mt-2 text-xs wall-muted">Mask the window and each drape to keep their original appearance while the design covers the wall around them. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
+              <p className="mt-2 text-xs wall-muted">Tap anything on the photo to keep it as photographed or paint the design through it. Drawing is only for something we missed. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
               {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
