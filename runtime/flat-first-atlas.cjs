@@ -93,6 +93,10 @@ const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cj
 const {
   PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
   authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
+  // The three-zone document, derived from the accepted master on every
+  // topology. Same functions the panel-proof pass runs -- a second producer of
+  // these panels is what RULE 0.21 forbids by name.
+  assemblePanelProofMaster, panelRowsFromManifest,
 } = require("./atlas-panel-proof-topology.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -4577,6 +4581,69 @@ async function generateOrReuseFlatAtlasResolved(options) {
     }),
     projectionPromise,
   ]);
+
+  // ── THE CALL-1 PRODUCTION PANEL PROOF, DERIVED FROM THE ACCEPTED MASTER ──
+  //
+  // Owner, 2026-09-21: "obviously you maintain Call 1 PanelPro production
+  // proof." The three-zone document stays the deliverable. What changed is only
+  // who draws the artwork underneath it.
+  //
+  // Read `assemblePanelProofMaster` before assuming this needs its own image
+  // call: it does not. Only ZONE 2 — the six clean, unlettered backgrounds —
+  // ever came from a model. Zone 1 is `compositeProductionPanels`, Zone 3 is
+  // original assets and outlined typeset, the sheet is
+  // `renderContainerTemplate`. All deterministic. And the brain already authors
+  // the clean backgrounds: `cleanBase` asks for a composition with the
+  // lettering left off, and the six panels above are exact crops of it.
+  //
+  // So the proof is built from the panels the customer actually buys, and the
+  // design comes from DesignPanelAI. That is the whole point of the
+  // restoration — the proof was never the designer, and killing the bypass was
+  // never meant to kill the document.
+  //
+  // ⚠️ IT FAILS SOFT, AND THAT IS THE RULE 0.15 BLAST-RADIUS LESSON APPLIED.
+  // The master is accepted, the panels are cut, the proofs are rendering. A
+  // document that cannot be assembled must not destroy any of that — this repo
+  // has already recorded one interrupted OPTIONAL edit failing a whole
+  // generation as terminal, and the finishing rule exists because of it. An
+  // absent proof is a missing document; a thrown one is a lost design.
+  let panelProofDocument = null;
+  if (!panelProof) {
+    const proofAt = Date.now();
+    try {
+      panelProofDocument = await assemblePanelProofMaster({
+        // The accepted master is named as the artwork authority so every
+        // refusal can point at the pixels it judged. It is also what Zone 2
+        // was cut from, so this is its true source.
+        sheet: {
+          bytes: surfaceSourceBytes,
+          storagePath: acceptedMasterStoragePath || null,
+          contentHash: acceptedMasterHash,
+          byteSize: surfaceSourceBytes.length,
+        },
+        zone2Panels: callOnePanels,
+        documentOnly: true,
+        panelRows: panelRowsFromManifest(manifest),
+        input: authoringInput, manifest, store, logger,
+        downloadAsset: async (identity) => {
+          const { data, error } = await supabase.storage.from("wrap-files").download(identity.storagePath);
+          if (error || !data) throw new Error(`${identity.storagePath}: ${error?.message || "missing"}`);
+          return Buffer.from(await data.arrayBuffer());
+        },
+      });
+      timings.panelProofDocumentMs = Date.now() - proofAt;
+      logger(`atlas call 1: production panel proof `
+        + `${String(panelProofDocument?.provenance?.proofSha256 || "").slice(0, 12)} derived from the accepted master`);
+    } catch (cause) {
+      timings.panelProofDocumentMs = Date.now() - proofAt;
+      logger?.warn?.("flat_atlas_panel_proof_document_failed", {
+        generationId,
+        code: cause?.code || "flat_atlas_panel_proof_document_failed",
+        reason: String(cause?.reason || cause?.message || cause).slice(0, 400),
+      });
+    }
+  }
+
   // Every content-addressed path the write batch below needs must be resolved
   // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
   // thirty lines earlier than the write it replaced, so a declaration left at
@@ -4710,7 +4777,15 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // cut cell's fit, the stage timings, and the proof sheet's own identity.
       // Null on every other topology. A reader that cannot see the clean panels
       // and the cut graphics here would assume the sheet carried only panels.
-      panelProofAuthoring: generated?.panelProof || null,
+      // On the panel-proof topology this is the authoring receipt. On every
+      // other topology it is the receipt of the three-zone document DERIVED
+      // from the accepted master — same `proofStoragePath` / `proofSha256`
+      // shape, so `readStoredRevision`, the claimant and the UI all read it
+      // unchanged. `provenance.topology` says which one produced it, and the
+      // derived one carries no `bytes` or `contentHash`, so it can never be
+      // mistaken for a master.
+      panelProofAuthoring: generated?.panelProof
+        || panelProofDocument?.provenance || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.

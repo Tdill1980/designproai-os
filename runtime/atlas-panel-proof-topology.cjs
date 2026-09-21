@@ -540,6 +540,40 @@ async function assemblePanelProofMaster({
   sheet, panelRows, customerAssets = [], input = {}, downloadAsset, manifest, store, logger = () => {},
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(), stageTimings = [],
+  /**
+   * ZONE 2 SUPPLIED INSTEAD OF CUT (owner, 2026-09-21: "obviously you maintain
+   * Call 1 PanelPro production proof").
+   *
+   * Read the rest of this function before assuming the model draws the proof:
+   * it does not. Only ZONE 2 — the six clean, unlettered backgrounds — ever
+   * came out of the sheet. Zone 1 is `compositeProductionPanels`, Zone 3 is
+   * original assets and outlined typeset, and the document itself is
+   * `renderContainerTemplate`. All three are deterministic code with zero model
+   * calls, and all three are exactly what the owner means by the production
+   * panel proof.
+   *
+   * So the proof does not need its own Call 1. It needs six clean backgrounds,
+   * and the DesignPanelAI brain already authors those: `cleanBase` asks for a
+   * composition with the lettering left off, and `cutCallOnePanels` cuts six
+   * panels from the accepted master. Handing them in here keeps the whole
+   * three-zone document — and gets it built from the better artwork.
+   *
+   * This is why the bypass could be killed without losing the proof: they were
+   * never the same thing. One is who designs; the other is what is published.
+   */
+  zone2Panels = null,
+  /**
+   * STOP AT THE DOCUMENT. DO NOT ASSEMBLE A MASTER.
+   *
+   * On the derived path the master already exists, is already gated, and is
+   * already what every panel and proof cites. Re-assembling one from these
+   * composites would put a SECOND master beside it — the exact two-master shape
+   * the 2026-08-31 ruling retired and the v28 composite shipped again. Worse,
+   * the element graph already composites lettering onto the clean base and
+   * promotes it, so a second compositor here is also the second producer
+   * RULE 0.21 forbids by name.
+   */
+  documentOnly = false,
 } = {}) {
   const mark = (stage, at) => stageTimings.push({ stage, ms: Date.now() - at });
   if (!sheet?.bytes) throw new PanelProofRefusal("the assemble stage was handed no sheet bytes");
@@ -571,12 +605,42 @@ async function assemblePanelProofMaster({
   // ── node 2: the cut. Deterministic, zero model calls. ──────────────────
   const cutAt = Date.now();
   const proofManifest = parsePanelRows(panelRows);
-  const cut = await cutProofPanels({
-    proofBytes: sheet.bytes, manifest: proofManifest,
-    // Zone 2 is the generated artwork authority. Zone 1 is composed below,
-    // and Zone 3 comes from originals; neither consumes a provisional AI crop.
-    zones: ["zone2"], sharp,
-  });
+  const cut = zone2Panels
+    // SUPPLIED ZONE 2: the six Call-1 panels, already cut from the accepted
+    // master. There is nothing to locate — each panel IS its surface by
+    // construction, a deterministic `sharp.extract` of a gated master with a
+    // recorded `sourceMasterHash`. The positional-premise check below exists to
+    // catch a crop of the WRONG region out of a model-drawn sheet; hash lineage
+    // to an accepted master is strictly stronger evidence than that, so these
+    // arrive already satisfying it rather than bypassing it.
+    //
+    // The layout's own canvas is the sheet, so `scaleCell` scales by 1 and the
+    // document is drawn at the template's native size.
+    ? (() => {
+        const layout = containerLayout(proofManifest);
+        const cells = new Map(layout.zone2.map((cell) => [cell.surfaceKey, cell]));
+        const panels = zone2Panels.map((panel) => {
+          const cell = cells.get(panel.surfaceKey);
+          if (!cell) throw refuse(`${panel.surfaceKey}: no Zone 2 cell in the container layout`);
+          if (!panel.bytes?.length) throw refuse(`${panel.surfaceKey}: supplied Zone 2 panel has no bytes`);
+          return {
+            ...panel, zone: "zone2", role: "clean-panel",
+            rect: { left: cell.x, top: cell.y, width: cell.w, height: cell.h },
+            byteSize: panel.byteSize ?? panel.bytes.length,
+            fit: 1, widthIn: panel.trimWidthIn ?? null, heightIn: panel.trimHeightIn ?? null,
+            identity: { surfaceKey: panel.surfaceKey, contentHash: panel.contentHash,
+              sourceMasterHash: panel.sourceMasterHash ?? null, source: "call-one-panel" },
+            positionalPremiseVerified: true,
+          };
+        });
+        return { panels, sheet: { width: layout.width, height: layout.height }, refused: null };
+      })()
+    : await cutProofPanels({
+      proofBytes: sheet.bytes, manifest: proofManifest,
+      // Zone 2 is the generated artwork authority. Zone 1 is composed below,
+      // and Zone 3 comes from originals; neither consumes a provisional AI crop.
+      zones: ["zone2"], sharp,
+    });
   if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
 
@@ -765,6 +829,77 @@ async function assemblePanelProofMaster({
     contract: "designpro.code-owned-three-zone-production-proof.v1",
   };
 
+  // Declared here, not beside its first use: BOTH exits below persist the
+  // clean quadrant, and the derived one returns before the original call site.
+  const sibling = async (zone) => {
+    const panels = cut.panels.filter((p) => p.zone === zone);
+    const out = [];
+    for (const p of panels) {
+      const described = {
+        surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
+        identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
+        widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
+      };
+      try {
+        const stored = await persist({
+          storagePath: `${QUADRANT_PREFIX}/${sha256(p.bytes)}.png`,
+          bytes: p.bytes, contentType: "image/png",
+        });
+        out.push({ ...described, persisted: true, ...stored });
+      } catch (cause) {
+        throw refuse(`${zone}:${p.surfaceKey}: mandatory proof artifact could not be stored`, {
+          cause: String(cause?.message || cause).slice(0, 200),
+        });
+      }
+    }
+    return out;
+  };
+
+  // ── THE DERIVED PATH STOPS HERE. The document is the deliverable. ──────
+  //
+  // Everything above is the production panel proof in full: Zone 2 clean, Zone
+  // 1 branded, Zone 3 cut graphics, the code-drawn template, the composed
+  // document and the stored quadrants. What follows is master assembly, and on
+  // this path the master already exists and is already the accepted authority.
+  // See `documentOnly` in the signature for why building a second one here
+  // would be a defect and not a convenience.
+  if (documentOnly) {
+    const quadrantsAt = Date.now();
+    const cleanOnly = await sibling("zone2");
+    logger(`atlas call 1: derived three-zone proof ${String(composedProof.contentHash).slice(0, 12)}`
+      + ` (${composedProof.byteSize} B, clean ${cleanOnly.length}, cut graphics ${zone3.length})`);
+    return {
+      // NO `bytes` AND NO `contentHash`, DELIBERATELY. Those two fields are how
+      // a caller names a master, and this path has no master to name. A receipt
+      // that carried them would be read as one by the next reader, which is
+      // precisely the ambiguity the two-master ruling exists to prevent.
+      documentOnly: true,
+      imageRequestCount: 0,
+      provenance: {
+        contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
+        topology: "derived-from-accepted-master",
+        proofContract: composedProof.contract,
+        proofSha256: composedProof.contentHash,
+        proofStoragePath: composedProof.storagePath,
+        proofByteSize: composedProof.byteSize,
+        proofContentType: composedProof.contentType,
+        // The artwork authority is the accepted master, named by identity and
+        // never by bytes (RULE 0.39).
+        sourceArtwork: {
+          storagePath: sheet.storagePath || null,
+          contentHash: sheet.contentHash || null,
+          byteSize: sheet.byteSize || null,
+        },
+        quadrants: { clean: cleanOnly, cutGraphics: zone3 },
+        composition: { placements: productionLayout.placements, omitted: productionLayout.omitted || [] },
+        surfaces: zone1.map((p) => ({ surfaceKey: p.surfaceKey, byteSize: p.byteSize,
+          widthIn: p.widthIn, heightIn: p.heightIn })),
+        stageTimings: [...stageTimings, { stage: "proof.document", ms: Date.now() - quadrantsAt }],
+        totalMs: Date.now() - startedAt,
+      },
+    };
+  }
+
   // ── node 3: the master. The six panels into the GENIE zones. ───────────
   //
   // EACH PANEL IS RESIZED TO ITS ZONE'S EXACT PIXEL SIZE FIRST, and the hash is
@@ -831,29 +966,6 @@ async function assemblePanelProofMaster({
   // One content-addressed write each, through the store seam the caller already
   // hands this function.
   const quadrantAt = Date.now();
-  const sibling = async (zone) => {
-    const panels = cut.panels.filter((p) => p.zone === zone);
-    const out = [];
-    for (const p of panels) {
-      const described = {
-        surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
-        identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
-        widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
-      };
-      try {
-        const stored = await persist({
-          storagePath: `${QUADRANT_PREFIX}/${sha256(p.bytes)}.png`,
-          bytes: p.bytes, contentType: "image/png",
-        });
-        out.push({ ...described, persisted: true, ...stored });
-      } catch (cause) {
-        throw refuse(`${zone}:${p.surfaceKey}: mandatory proof artifact could not be stored`, {
-          cause: String(cause?.message || cause).slice(0, 200),
-        });
-      }
-    }
-    return out;
-  };
   const cleanQuadrant = await sibling("zone2");
   const cutGraphicsQuadrant = zone3;
   // NOT A `mark()`. `stageTimings` is the DAG's node list and its order is
