@@ -135,6 +135,31 @@ test("the three-zone example is DRAWN IN CODE, not a stored screenshot", async (
   assert.ok(!/layout\.zone1|layout\.zone2|cell\./.test(stamp),
     "the stamp never addresses a panel cell");
 
+  // EACH SURFACE CARRIES A DIFFERENT AMOUNT, which is the sheet's real lesson
+  // and what the reference itself does: the roof is background alone, the front
+  // one line, the hood the mark, and only the flanks the full lockup and the
+  // service bar. An earlier pass gave all six equal complexity -- it degraded
+  // the two flanks that were already right and taught a customer's roof to be
+  // as busy as their door.
+  const treatments = new Set(Object.values(example.SURFACE_TREATMENT).map((t) => t.lockup));
+  assert.ok(treatments.size >= 4, "the six surfaces must not all carry the same treatment");
+  assert.equal(example.SURFACE_TREATMENT.roof.lockup, "none", "a roof is background");
+  assert.equal(example.SURFACE_TREATMENT.driver.lockup, "full");
+  assert.equal(example.SURFACE_TREATMENT.passenger.lockup, "full");
+  assert.ok(!example.SURFACE_TREATMENT.front.services, "only a flank carries the service bar");
+  // And the SHARED ground stays shared: motif added there reaches all six, so a
+  // small-panel fix lands on the flanks too. That is how the last one regressed.
+  // Comments stripped first: the block carries a cautionary note naming the
+  // motif that regressed, and asserting over prose would convict the warning
+  // rather than the code.
+  const ground = exampleSrc.slice(exampleSrc.indexOf("function groundSvg"),
+    exampleSrc.indexOf("const SURFACE_TREATMENT"))
+    .split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+  assert.ok(!/surfaceKey|SURFACE_TREATMENT/.test(ground),
+    "the ground stays surface-agnostic; differentiation belongs per surface");
+  assert.match(exampleSrc, /brandedPanelSvg\(cell\.w, cell\.h, cell\.surfaceKey\)/,
+    "each Zone 1 panel is drawn for the surface it is");
+
   // A GENERIC BUSINESS, so a structural reference carries no real brand
   // (RULE 0.24) and no other customer's client rides every generation.
   assert.equal(example.EXAMPLE_BRAND.name, "NORTHPOINT");

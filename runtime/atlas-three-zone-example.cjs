@@ -146,41 +146,47 @@ function groundSvg(w, h, { seed = 0 } = {}) {
       + ` C ${(w * 0.28).toFixed(1)} ${(y - a).toFixed(1)}, ${(w * 0.52).toFixed(1)} ${(y + a).toFixed(1)}, ${w} ${(y - a * 0.4).toFixed(1)}`
       + ` L ${w} ${h} L 0 ${h} Z" fill="${colour}" opacity="${opacity}"/>`;
   };
-  // THE SMALL PANELS CARRY THE SAME COMPOSITION, NOT A PLAIN WASH.
+  // ⚠️ DO NOT ADD MOTIF HERE TO "ENRICH" THE SMALL PANELS. IT WAS TRIED.
   //
-  // Owner, 2026-09-21: "If this sheet is teaching format and quality, a basic
-  // gradient isn't enough." Correct, and the flaw ran deeper than prettiness:
-  // four of the six panels were a bare gradient with a lockup on it, so the
-  // sheet taught that a roof or a front is somewhere artwork STOPS. That is
-  // exactly the "six areas must each read as intentional, finished,
-  // commercially valuable artwork" requirement the field tail already states,
-  // taught backwards.
+  // A diagonal cut and a chevron field were added to this shared function to
+  // give the four small surfaces more to look at. Because it is SHARED, it
+  // degraded the two flanks that were already right: the chevrons read as scuff
+  // marks and the cut muddied every top-right corner. A fix aimed at four
+  // panels damaged all six.
   //
-  // So every panel gets the same three elements at its own scale: the sweeps,
-  // a diagonal cut, and a chevron field. Scale-relative, never fixed pixels --
-  // a fixed motif is a hairline on a 165" flank and a blob on a 43" roof.
-  const unit = Math.min(w, h);
-  const cut = `<path d="M${(w * 0.62).toFixed(1)} 0 L${w} 0 L${w} ${(h * 0.34).toFixed(1)} Z"`
-    + ` fill="#ffffff" opacity="0.10"/>`;
-  const chevrons = Array.from({ length: 4 }, (_, i) => {
-    const x = w - unit * (0.14 + i * 0.085);
-    const t = unit * 0.026;
-    return `<path d="M${x.toFixed(1)} ${(h * 0.60).toFixed(1)}`
-      + ` l${(unit * 0.07).toFixed(1)} ${(-unit * 0.11).toFixed(1)}`
-      + ` l${t.toFixed(1)} 0 l${(-unit * 0.07).toFixed(1)} ${(unit * 0.11).toFixed(1)} Z"`
-      + ` fill="${LIGHT}" opacity="${(0.42 - i * 0.07).toFixed(2)}"/>`;
-  }).join("");
+  // The premise was wrong as well as the execution. On the reference sheet the
+  // ROOF is pure background, the FRONT carries one line and the HOOD carries
+  // the mark alone -- different surfaces carry different amounts, which is what
+  // a real wrap does and what this sheet should teach. Equal complexity on
+  // every panel teaches the opposite. Differentiation belongs in
+  // `SURFACE_TREATMENT` below, per surface, not in the ground they share.
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${w} ${h}">`
     + `<defs><linearGradient id="g${seed}" x1="0" y1="0" x2="1" y2="1">`
     + `<stop offset="0" stop-color="${ACCENT}"/><stop offset="1" stop-color="${INK}"/></linearGradient></defs>`
     + `<rect width="${w}" height="${h}" fill="url(#g${seed})"/>`
-    + cut
     + sweep(0.42, 0.20, 0.30, "#ffffff")
     + sweep(0.60, 0.14, 0.22, LIGHT)
-    + chevrons
     + sweep(0.80, 0.10, 0.30, "#ffffff")
     + `</svg>`;
 }
+
+/**
+ * WHAT EACH SURFACE CARRIES — the sheet's real lesson.
+ *
+ * Read off the reference: the roof is background alone, the front carries a
+ * single line, the hood carries the mark, the rear carries mark plus contact,
+ * and only the two flanks carry the full lockup with the service bar. A wrap
+ * designer does not put the same amount on a 165" flank and a 50" bumper, and
+ * an example that did would teach a customer's roof to be as busy as their door.
+ */
+const SURFACE_TREATMENT = Object.freeze({
+  driver: { lockup: "full", services: true },
+  passenger: { lockup: "full", services: true },
+  roof: { lockup: "none", services: false },
+  hood: { lockup: "mark", services: false },
+  front: { lockup: "line", services: false },
+  rear: { lockup: "stacked", services: false },
+});
 
 /** The mark: a plain geometric device, never a real company's logo. */
 function markSvg(size, colour = "#ffffff") {
@@ -190,32 +196,66 @@ function markSvg(size, colour = "#ffffff") {
     + ` fill="${colour}"/>`;
 }
 
-/** Zone 1: the ground, the lockup, and the service bar — a finished panel. */
-function brandedPanelSvg(w, h) {
+/** Zone 1: the ground plus whatever THIS surface carries. */
+function brandedPanelSvg(w, h, surfaceKey = "driver") {
+  const treatment = SURFACE_TREATMENT[surfaceKey] || SURFACE_TREATMENT.driver;
+  const open = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${w} ${h}">`;
+  // A roof is background. Nothing else, on purpose.
+  if (treatment.lockup === "none") return open + `</svg>`;
+
   const markSize = Math.min(h * 0.34, w * 0.16);
-  const nameSize = Math.min(h * 0.19, w * 0.085,
-    // …and never wider than the room left beside the mark.
-    fitSize(EXAMPLE_BRAND.name, w * 0.52, h * 0.19));
+  const out = [open];
+
+  // THE MARK ALONE, centred — a hood.
+  if (treatment.lockup === "mark") {
+    out.push(`<g transform="translate(${((w - markSize * 1.4) / 2).toFixed(1)} ${((h - markSize * 1.4) / 2).toFixed(1)})">`);
+    out.push(markSvg(markSize * 1.4));
+    out.push(`</g>`, `</svg>`);
+    return out.join("");
+  }
+
+  // ONE LINE — a front bumper. The reference carries the web address there and
+  // nothing else, because that is all a 22"-tall strip can hold and be read.
+  if (treatment.lockup === "line") {
+    const size = fitSize(EXAMPLE_BRAND.contact, w * 0.82, h * 0.26, { spacing: 0.5 });
+    // Set on the DARK upper ground. At y 0.58 it landed on the pale mid sweep
+    // and the white type had almost no contrast -- which on a 22"-tall bumper
+    // strip is the difference between readable and decorative.
+    out.push(`<text x="${(w / 2).toFixed(1)}" y="${(h * 0.34).toFixed(1)}"`
+      + ` font-family="Helvetica,Arial,sans-serif" font-size="${size.toFixed(1)}" font-weight="700"`
+      + ` fill="#ffffff" text-anchor="middle" letter-spacing="0.5">${esc(EXAMPLE_BRAND.contact)}</text>`);
+    out.push(`</svg>`);
+    return out.join("");
+  }
+
+  // STACKED — a rear door: mark over name over contact, centred.
+  if (treatment.lockup === "stacked") {
+    const nameSize = fitSize(EXAMPLE_BRAND.name, w * 0.74, h * 0.16, { spacing: 1 });
+    out.push(`<g transform="translate(${((w - markSize) / 2).toFixed(1)} ${(h * 0.10).toFixed(1)})">`);
+    out.push(markSvg(markSize));
+    out.push(`</g>`);
+    out.push(`<text x="${(w / 2).toFixed(1)}" y="${(h * 0.56).toFixed(1)}"`
+      + ` font-family="Helvetica,Arial,sans-serif" font-size="${nameSize.toFixed(1)}" font-weight="700"`
+      + ` fill="#ffffff" text-anchor="middle" letter-spacing="1">${esc(EXAMPLE_BRAND.name)}</text>`);
+    out.push(`<text x="${(w / 2).toFixed(1)}" y="${(h * 0.56 + nameSize * 1.05).toFixed(1)}"`
+      + ` font-family="Helvetica,Arial,sans-serif" font-size="${(nameSize * 0.5).toFixed(1)}" font-weight="600"`
+      + ` fill="${LIGHT}" text-anchor="middle" letter-spacing="2">${esc(EXAMPLE_BRAND.suffix)}</text>`);
+    out.push(`</svg>`);
+    return out.join("");
+  }
+
+  // FULL — a flank: the horizontal lockup and the service bar.
+  const nameSize = Math.min(h * 0.19, w * 0.085);
   const barH = Math.max(10, h * 0.14);
   const slot = w / EXAMPLE_BRAND.services.length;
-  // THE SERVICE BAR IS DROPPED WHEN IT CANNOT BE READ, NOT SQUEEZED.
-  // Four labels across a 50" front is an unreadable smear, and the first render
-  // produced exactly that. A real designer drops the row on a small panel; so
-  // does this. The bar itself stays, because it is part of the composition.
   const longest = Math.max(...EXAMPLE_BRAND.services.map((label) => label.length));
   const serviceSize = Math.min(barH * 0.46, fitSize("x".repeat(longest), slot * 0.88, barH * 0.46));
-  const services = serviceSize < 5 ? "" : EXAMPLE_BRAND.services.map((label, i) =>
+  const services = !treatment.services || serviceSize < 5 ? "" : EXAMPLE_BRAND.services.map((label, i) =>
     `<text x="${(slot * (i + 0.5)).toFixed(1)}" y="${(h - barH * 0.32).toFixed(1)}"`
     + ` font-family="Helvetica,Arial,sans-serif" font-size="${serviceSize.toFixed(1)}" font-weight="700"`
     + ` fill="#ffffff" text-anchor="middle" letter-spacing="0.4">${esc(label)}</text>`).join("");
-  // THE LOCKUP IS MEASURED AND CENTRED AS ONE OBJECT.
-  // Placing the mark and the wordmark from separate fractions of `w` made them
-  // OVERLAP on the narrow panels -- the roof read as a circle sitting on top of
-  // the N. A lockup is one unit: measure it, then centre the unit.
+
   const gap = markSize * 0.28;
-  // …and the WHOLE unit is clamped to the panel, not just centred in it.
-  // Centring alone still ran "NORTHPOINT" off the right edge of the 43" roof,
-  // because a lockup wider than its panel has no centre that fits.
   const maxLockup = w * 0.92;
   const roomForText = Math.max(1, maxLockup - markSize - gap);
   const fittedName = Math.min(nameSize, fitSize(EXAMPLE_BRAND.name, roomForText, nameSize, { spacing: 1 }));
@@ -224,8 +264,7 @@ function brandedPanelSvg(w, h) {
   const startX = Math.max((w - maxLockup) / 2, (w - lockupWidth) / 2);
   const textX = startX + markSize + gap;
   const baseline = h * 0.34;
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w)}" height="${Math.round(h)}" viewBox="0 0 ${w} ${h}">`,
+  out.push(
     `<g transform="translate(${startX.toFixed(1)} ${(baseline - markSize * 0.72).toFixed(1)})">`,
     markSvg(markSize),
     `</g>`,
@@ -238,7 +277,8 @@ function brandedPanelSvg(w, h) {
     `<rect x="0" y="${(h - barH).toFixed(1)}" width="${w}" height="${barH.toFixed(1)}" fill="${INK}" opacity="0.82"/>`,
     services,
     `</svg>`,
-  ].join("");
+  );
+  return out.join("");
 }
 
 /** Zone 3: the elements alone, on nothing. */
@@ -340,7 +380,7 @@ async function renderThreeZoneExample({ sharp = require("sharp") } = {}) {
   for (const [index, cell] of layout.zone1.entries()) {
     const ground = await sharp(Buffer.from(groundSvg(cell.w, cell.h, { seed: index }))).png().toBuffer();
     const branded = await sharp(ground)
-      .composite([{ input: Buffer.from(brandedPanelSvg(cell.w, cell.h)), top: 0, left: 0 }])
+      .composite([{ input: Buffer.from(brandedPanelSvg(cell.w, cell.h, cell.surfaceKey)), top: 0, left: 0 }])
       .png().toBuffer();
     layers.push({ input: branded, left: Math.round(cell.x), top: Math.round(cell.y) });
   }
@@ -360,6 +400,7 @@ module.exports = {
   EXAMPLE_SURFACES,
   EXAMPLE_MANIFEST,
   EXAMPLE_BRAND,
+  SURFACE_TREATMENT,
   WIDTH,
   HEIGHT,
   renderThreeZoneExample,
