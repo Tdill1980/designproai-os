@@ -116,8 +116,8 @@ const PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
  */
 const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
   path: "atlas-examples/ridgeline-panel-proof-gold.png",
-  sha256: "b81b4967e287633c80792f0eb49245ce3e188913e99e6109d922b301f8a4d600",
-  byteSize: 1812713,
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 });

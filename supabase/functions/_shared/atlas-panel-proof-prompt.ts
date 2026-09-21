@@ -33,7 +33,7 @@ export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proo
  * The RIDGELINE CUSTOM POOLS 2024 Ford F-250 Crew Cab 2D PRODUCTION PROOF,
  * 1536x1024: header with ORDER #, DESIGNER, VERSION and TOTAL COVERAGE, then
  * the three full-width ZONE bands the product is named for --
- *   ZONE 1  FULL DESIGN PANELS (photo + design + text + logo), 7 rectangles
+ *   ZONE 1  FULL DESIGN PANELS (photo + design + text + logo), 6 panels
  *   ZONE 2  BACKGROUNDS ONLY (no text or logo), matching Zone 1 exactly
  *   ZONE 3  CUT GRAPHICS (logo, text and icons only), vector, no background
  * -- each panel dimensioned in inches with its trim size and 5" bleed, then the
@@ -53,16 +53,20 @@ export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proo
  * `runtime/atlas-examples/ridgeline-panel-proof-gold.png` so the pin is
  * reproducible from the checkout alone.
  *
+ * SIX PANELS, REAR AS ONE PIECE -- matching `SURFACE_KEYS` exactly. The first
+ * Ridgeline sheet drew seven (rear split plus a rear bumper), which maps onto no
+ * canonical surface; #592 corrected it and this pins the corrected bytes.
+ *
  * IT IS THE STANDARD, NOT JUST THE GRID (owner correction, 2026-09-18). The
  * layout AND the quality of the work on it are the bar -- finish, type, the
  * depth of the artwork. One carve-out, about ownership rather than style: the
- * identity on the sheet is Bright Smiles Dental's, and a customer's proof
+ * identity on the sheet is Ridgeline Custom Pools', and a customer's proof
  * carries only the strings in their own request.
  */
 export const PANEL_PROOF_FORMAT_EXAMPLE = {
   path: "atlas-examples/ridgeline-panel-proof-gold.png",
-  sha256: "b81b4967e287633c80792f0eb49245ce3e188913e99e6109d922b301f8a4d600",
-  byteSize: 1812713,
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 } as const;

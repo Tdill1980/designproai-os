@@ -48,7 +48,7 @@ on:
       expect_sha256:
         description: "The sha256 the pinned constant names. The file must already hash to this."
         required: true
-        default: "b81b4967e287633c80792f0eb49245ce3e188913e99e6109d922b301f8a4d600"
+        default: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa"
         type: string
 
 permissions:

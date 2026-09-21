@@ -1977,54 +1977,46 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     // many it applied, so the expected count is still a single number and an
     // unexplained extra image is still a refusal.
     const qualityArtboardCount = Number(payload?.qualityArtboardsApplied || 0);
-    /**
-     * ⚠️ THE GUARD MUST NAME THE CLAUSE THAT FAILED, WITH ITS VALUES.
-     *
-     * This was EIGHT separate conditions collapsed into one `if` behind one
-     * sentence that reports no value at all: "Six-surface authoring requires
-     * the pinned teaching proof, target guide, matching prompt version and no
-     * field contract". Every failure mode — a stale edge deploy, an unexpected
-     * attachment, a re-encoded teaching proof, a field contract leaking into
-     * the six-surface branch — arrives as that identical string.
-     *
-     * Measured cost, this session: the same error was diagnosed twice from that
-     * sentence and BOTH diagnoses were wrong, because the sentence cannot
-     * distinguish them. It refuses a master the customer has already paid for,
-     * so every wrong guess costs a real image call and a real generation.
-     *
-     * The DECISION is byte-identical — same clauses, same order, still fail
-     * closed on any one of them. Only the message changes, from a description
-     * of the contract to the measurement that broke it. A guard that refuses
-     * paid work owes the next reader the number it refused on.
-     */
-    const contractFailures = [];
-    if (payload?.fieldContract) contractFailures.push(`fieldContract=${JSON.stringify(payload.fieldContract)} on the six-surface branch`);
-    if (!body?.teachingProofStoragePath) contractFailures.push("request carried no teachingProofStoragePath");
-    if (!body?.guideStoragePath) contractFailures.push("request carried no guideStoragePath");
-    if (!expectedTeaching) contractFailures.push("no expected teaching descriptor was resolved");
-    if (!actualTeaching) contractFailures.push("edge returned no teaching descriptor");
+    // ⛔ THE GUARD NAMES THE RULE IT ENFORCED.
+    //
+    // These eight conditions all threw ONE code with ONE sentence, so from
+    // outside — a failed row, a customer's screen, a log line — they are
+    // indistinguishable. #590 fixed the image count, correctly, and the next
+    // failure looked identical to the one it fixed, so it read as "the fix did
+    // not work" rather than "a different rule fired". Live, 2026-09-21: the
+    // owner hit this at 23:07:42 on a build carrying that fix.
+    //
+    // Naming the rule costs nothing and leaks nothing: these are contract
+    // facts, not secrets, and the counts are already reported by the edge.
+    const mismatches = [];
+    if (payload?.fieldContract) mismatches.push("field_contract_present");
+    if (!body?.teachingProofStoragePath) mismatches.push("teaching_proof_path_absent");
+    if (!body?.guideStoragePath) mismatches.push("guide_path_absent");
+    if (!expectedTeaching) mismatches.push("expected_teaching_identity_absent");
+    if (!actualTeaching) mismatches.push("returned_teaching_identity_absent");
     if (payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
-      contractFailures.push(`promptVersion edge=${JSON.stringify(payload?.promptVersion)} runtime=${JSON.stringify(ATLAS_ARTBOARD_EDGE_PROMPT_VERSION)}`
-        + " (a STALE EDGE DEPLOY looks exactly like this; deploy-production.yml does not ship edge functions)");
+      // A STALE EDGE DEPLOY LOOKS EXACTLY LIKE THIS, and it is the one cause a
+      // reader cannot act on from the token alone: `deploy-production.yml` does
+      // not ship Supabase edge functions -- `deploy-edge-functions.yml` does,
+      // by dispatch only -- so the runtime can roll while the edge stays behind.
+      mismatches.push(`prompt_version(expected=${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION},got=${payload?.promptVersion || "none"}`
+        + ",hint=redeploy_the_edge_function)");
     }
     if (!Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2) {
-      contractFailures.push(`qualityArtboardsApplied=${JSON.stringify(payload?.qualityArtboardsApplied)} is not an integer in 0..2`);
+      mismatches.push(`quality_artboard_count(${payload?.qualityArtboardsApplied})`);
     } else if (Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount) {
-      contractFailures.push(`modelInputImageCount=${JSON.stringify(payload?.modelInputImageCount)}`
-        + ` but expected ${customerImageCount + 2 + qualityArtboardCount}`
-        + ` (customerImages=${customerImageCount} + teachingProof+guide=2 + qualityArtboards=${qualityArtboardCount})`);
+      mismatches.push(`model_input_image_count(expected=${customerImageCount + 2 + qualityArtboardCount}`
+        + `,got=${payload?.modelInputImageCount},customer=${customerImageCount},quality=${qualityArtboardCount})`);
     }
     if (expectedTeaching && actualTeaching) {
       for (const key of ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]) {
-        if (actualTeaching[key] !== expectedTeaching[key]) {
-          contractFailures.push(`teaching.${key} edge=${JSON.stringify(actualTeaching[key])} expected=${JSON.stringify(expectedTeaching[key])}`);
-        }
+        if (actualTeaching[key] !== expectedTeaching[key]) mismatches.push(`teaching_identity.${key}`);
       }
     }
-    if (contractFailures.length) {
+    if (mismatches.length) {
       throw new FlatAtlasError(
         "flat_atlas_edge_topology_contract_mismatch",
-        `Six-surface authoring contract refused a returned master. ${contractFailures.length} failing check(s): ${contractFailures.join(" | ")}`,
+        `Six-surface authoring contract mismatch: ${mismatches.join(", ")}`,
       );
     }
   }
