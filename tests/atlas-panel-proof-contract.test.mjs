@@ -27,17 +27,103 @@ test("Call 1 supplies system-level Studio assembly boundaries and keeps images i
   const start = source.indexOf("const modelRequest = JSON.stringify({");
   const end = source.indexOf("\n    });",start)+7;
   const parts = [{inlineData:{mimeType:"image/png",data:"fixture-template"}}];
+  // `designExchange`/`turns` are null on this branch: `separatedArtwork` asks
+  // for artwork alone with no document and no container, so it has nothing to
+  // split and stays the single turn it has always been. The anchored shape has
+  // its own case below.
   const request = JSON.parse(runInNewContext(`${source.slice(start,end)}; modelRequest`,
-    {body:{separatedArtwork:true},parts}));
+    {body:{separatedArtwork:true},parts,designExchange:null,turns:null,structuralParts:[]}));
   assert.match(request.systemInstruction.parts[0].text,/A.C.E./);
   assert.match(request.systemInstruction.parts[0].text,/complete three-zone Studio production proof/);
   assert.match(request.systemInstruction.parts[0].text,/Never paint document annotations into panel textures/);
   assert.equal(request.contents[0].role,"user");
   assert.equal(request.contents[0].parts[0].inlineData.data,"fixture-template");
   assert.equal(request.generationConfig.imageConfig.aspectRatio,"3:2");
+
+  // ═══ THE ANCHORED SHAPE — ONE CONVERSATION, NOT ONE BAG ═══
+  //
+  // Owner, 2026-09-21: "do the multitodal thought signatures", "multi modal",
+  // "WHy is model not being anchored".
+  //
+  // Live sheet 7a72951823648d27 sent `contents: [{role:"user", parts}]` -- ONE
+  // turn carrying 5,106 characters and four images, and `thoughtSignatureCount`
+  // on its receipt was a signature that came BACK. Nothing was ever replayed
+  // IN. Google's documented pattern is the opposite: generate, then continue.
+  //
+  // THE MODEL TURN IS REPLAYED VERBATIM. That is the assertion that matters:
+  // `thoughtSignature` is opaque metadata bound to the part it arrived on, and
+  // a tidied-up reconstruction of the model's reply is a NEW conversation that
+  // happens to contain an image. `gemini-image-history.mjs` opens with that
+  // rule; this pins that this file obeys it.
+  const modelTurn = { role: "model", parts: [
+    { text: "concept" },
+    { inlineData: { mimeType: "image/png", data: "fixture-design" }, thoughtSignature: "sig-abc" },
+  ] };
+  const userTurn = { role: "user", parts: [{ text: "design ask" }] };
+  const anchored = JSON.parse(runInNewContext(`${source.slice(start,end)}; modelRequest`, {
+    body: {}, parts,
+    designExchange: { user: userTurn, model: modelTurn },
+    turns: { design: "design ask", layout: "layout ask" },
+    structuralParts: [{ inlineData: { mimeType: "image/png", data: "fixture-container" } }],
+  }));
+  assert.equal(anchored.contents.length, 3, "design user turn, model reply, layout user turn");
+  assert.deepEqual(anchored.contents[0], userTurn);
+  assert.deepEqual(anchored.contents[1], modelTurn,
+    "the model's reply must be replayed byte for byte, signature on the part it arrived on");
+  assert.equal(anchored.contents[1].parts[1].thoughtSignature, "sig-abc");
+  assert.equal(anchored.contents[2].role, "user");
+  assert.equal(anchored.contents[2].parts[0].text, "layout ask");
+  // THE STRUCTURAL REFERENCES RIDE THE LAYOUT TURN, NOT THE DESIGN TURN.
+  // RULE 0.24 keeps three reference classes apart and they were all arriving in
+  // one undifferentiated bag; a blank container template competing with the
+  // customer's own reference photograph is the role dilution Google's guidance
+  // names directly.
+  assert.equal(anchored.contents[2].parts[1].inlineData.data, "fixture-container");
 });
 const edgeSource = readFileSync(
   new URL("../supabase/functions/_shared/atlas-panel-proof-prompt.ts", import.meta.url), "utf8");
+
+test("the two anchored turns still carry every section the single prompt does", () => {
+  // ANTI-DRIFT, AND HONEST ABOUT WHAT IT CHECKS. `buildPanelProofTurns` and
+  // `buildPanelProofPrompt` are not derived from one another -- deliberately,
+  // so adding the conversation could not change the single-turn ask by one
+  // byte -- and two independent assemblies of the same contract is exactly the
+  // shape this repo has watched drift four times ("one artifact, two producers,
+  // which is how a fix here keeps coming undone").
+  //
+  // The tests in this file execute the RUNTIME twin, which has no
+  // `buildPanelProofTurns` (it would be dead code there, and dead code is what
+  // drifts). So this reads the source and checks the SECTIONS, which is the
+  // failure that matters: a constant silently present in one assembly and
+  // absent from the other. It cannot check wording, and does not claim to.
+  const body = edgeSource.slice(
+    edgeSource.indexOf("export function buildPanelProofTurns"),
+    edgeSource.indexOf("export function buildPanelProofPrompt"));
+  assert.ok(body.length > 0, "buildPanelProofTurns must exist");
+  const design = body.slice(0, body.indexOf("const layout: string[] = ["));
+  const layout = body.slice(body.indexOf("const layout: string[] = ["));
+
+  // TURN 1 IS THE DESIGN, and the word "document" never reaches it. The panel
+  // is a solid rectangle is a property of the ARTWORK, so it belongs here.
+  assert.match(design, /INSTALLATION_FACT/);
+  assert.match(design, /THE SIX PANELS/);
+  assert.match(design, /EXACT TEXT, character for character/);
+  assert.match(design, /THE SMALL PANELS/);
+  for (const documentOnly of ["SYSTEM_JOB", "VERSIONS", "CUT_GRAPHIC_SLOTS", "SHEET_LAYOUT"]) {
+    assert.doesNotMatch(design, new RegExp(documentOnly),
+      `${documentOnly} is document vocabulary and must not compete with designing in turn 1`);
+  }
+
+  // TURN 2 IS THE LAYOUT, and it carries every section the single prompt's
+  // document half carries.
+  for (const section of ["SYSTEM_JOB", "VERSIONS", "CUT_GRAPHIC_SLOTS", "SHEET_LAYOUT"]) {
+    assert.match(layout, new RegExp(section), `turn 2 lost ${section}`);
+  }
+  // AND IT SAYS IT IS A CONTINUATION. Without this the second turn reads as a
+  // fresh brief that happens to follow a picture, which is the thing the
+  // conversation exists to stop.
+  assert.match(layout, /Keep that exact design/);
+});
 
 test("the runtime and the edge carry the SAME contract words", () => {
   // The job statement and the installation fact are the whole conditioning.
@@ -120,12 +206,35 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // is the negative shape CLAUDE.md warns about in four places and which has
   // failed 4/4 on the field map.
   assert.match(runtime.INSTALLATION_FACT, /ONE CONTINUOUS PANEL/);
-  // THE SENTENCE THAT FORBIDS A DIE-CUT PANEL IS BACK, and this is the lock on
-  // it. I cut it to 90 characters for budget and live sheet 35389031759 came
-  // back with the windshield cut out of both flanks. RULE 0.32's acceptance
-  // contract is not a nice-to-have in this prompt; it IS the prompt.
+  // THE SENTENCE THAT RULES OUT A DIE-CUT PANEL IS PRESENT, and this is the
+  // lock on it. It was once cut to 90 characters for budget and live sheet
+  // 35389031759 came back with the windshield cut out of both flanks. RULE
+  // 0.32's acceptance contract is not a nice-to-have in this prompt; it IS the
+  // prompt.
   assert.match(runtime.INSTALLATION_FACT, /SOLID RECTANGLE of artwork/);
-  assert.match(runtime.INSTALLATION_FACT, /no holes and no vehicle-shaped outline/);
+
+  // ⚠️ THIS LOCK USED TO PIN THE NEGATIVE, UNDER A TEST NAMED "POSITIVE".
+  //
+  // It asserted the literal "no holes and no vehicle-shaped outline" while its
+  // own comment four lines above says a prohibition is "the negative shape
+  // CLAUDE.md warns about in four places and which has failed 4/4 on the field
+  // map". So the restoration after 35389031759 brought the sentence back in the
+  // form the file already knew was wrong, and the lock then held it there.
+  //
+  // THE EVIDENCE THAT IT DOES NOT WORK: live sheet 7a72951823648d27
+  // (2026-09-21) carried that exact clause and still returned both flanks
+  // die-cut to the van outline -- diecut.json, zone1 dieCut true, two enclosed
+  // openings, the windshield. Zone 2, drawn from the same design in the same
+  // pass, came back as clean rectangles. The clause is not what makes the
+  // difference, and naming "vehicle-shaped outline" is what the model drew.
+  //
+  // Google's own published guidance says the same thing under "semantic
+  // negative prompts": describe the scene you want rather than the thing to
+  // leave out. So the rule stays and its GRAMMAR changes -- the panel is
+  // described by what it IS, four straight edges, four square corners.
+  assert.match(runtime.INSTALLATION_FACT, /four straight edges, four square corners/);
+  assert.doesNotMatch(runtime.INSTALLATION_FACT, /no holes|vehicle-shaped outline/,
+    "the installation fact must state the panel's shape, never prohibit the vehicle's");
   assert.match(runtime.INSTALLATION_FACT, /artwork runs straight through the places those openings will be/);
 
   // AND THE OTHER HALF OF RULE 0.28 §3: "Filled edge to edge. Artwork runs off

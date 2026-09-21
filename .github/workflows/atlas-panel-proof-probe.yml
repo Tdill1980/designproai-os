@@ -55,6 +55,11 @@ on:
         required: false
         type: string
         default: ""
+      single_turn:
+        description: "Send the OLD one-bag request (one turn, every reference image together) instead of the anchored design -> layout conversation. For a side-by-side; costs one image request instead of two."
+        required: false
+        type: boolean
+        default: false
       company:
         required: true
         type: string
@@ -186,6 +191,12 @@ jobs:
           P_PANELS: ${{ inputs.panels }}
           P_REUSE: ${{ inputs.reuse }}
           P_PROMOTE: ${{ inputs.promote }}
+          # A BOOLEAN INPUT ARRIVES AS THE STRING "true"/"false", and `${VAR:+...}`
+          # fires on ANY non-empty value -- so passing it through raw would send
+          # --single-turn on `false` too. The `&& || ''` form here is the one
+          # CLAUDE.md records: value on the TRUE branch, empty string on the
+          # false one. Never `cond && '' || value`.
+          P_SINGLE_TURN: ${{ inputs.single_turn && '1' || '' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -261,7 +272,8 @@ jobs:
               --brief "${p_text[6]}" \
               --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" \
               --panels "$p_panels" ${p_prompt:+--customer-prompt "$p_prompt"} \
-              ${P_REUSE:+--reuse "$P_REUSE"} ${P_PROMOTE:+--promote "$P_PROMOTE"}
+              ${P_REUSE:+--reuse "$P_REUSE"} ${P_PROMOTE:+--promote "$P_PROMOTE"} \
+              ${P_SINGLE_TURN:+--single-turn}
           status=$?
           set -e
 

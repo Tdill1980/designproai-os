@@ -53,7 +53,8 @@ declare
   v_generation_id uuid := pg_catalog.gen_random_uuid();
   v_claim_token uuid := pg_catalog.gen_random_uuid();
   v_input jsonb;
-  v_hash text;
+  v_engine jsonb;
+  v_input_hash text;
 begin
   if p_owner_id is null then
     raise exception 'harness_lease_owner_required';
@@ -67,8 +68,11 @@ begin
     'designName', p_design_name,
     'mode', 'commercial'
   );
-  v_hash := pg_catalog.encode(
-    pg_catalog.digest(pg_catalog.convert_to(v_input::text, 'UTF8'), 'sha256'), 'hex');
+  v_engine := designpro_private.calls_1_7_engine_contract();
+  -- `digest` is pgcrypto and lives in `extensions`, not pg_catalog; the
+  -- built-in `sha256(bytea)` is the same hash with no extension dependency.
+  v_input_hash := pg_catalog.encode(
+    pg_catalog.sha256(pg_catalog.convert_to(v_input::text,'UTF8')),'hex');
 
   insert into public.designpro_generation_requests (
     id, generation_id, owner_id, tenant_key, idempotency_key,
@@ -77,11 +81,12 @@ begin
     attempt, available_at, lease_owner, lease_token, lease_expires_at, error
   ) values (
     v_request_id, v_generation_id, p_owner_id, 'user_' || p_owner_id::text,
-    p_harness || ':' || v_generation_id::text,
-    'leased', v_input, v_hash,
-    designpro_private.calls_1_7_engine_contract(),
-    pg_catalog.encode(pg_catalog.digest(pg_catalog.convert_to(
-      designpro_private.calls_1_7_engine_contract()::text, 'UTF8'), 'sha256'), 'hex'),
+    -- `designpro_generation_request_identity` DERIVES this key; it is not
+    -- free-form. A v2/v3 input must read 'calls17:<generationId>:<inputHash>'.
+    'calls17:' || v_generation_id::text || ':' || v_input_hash,
+    'leased', v_input, v_input_hash,
+    v_engine,
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(v_engine::text,'UTF8')),'hex'),
     1, pg_catalog.now(), p_harness, v_claim_token,
     pg_catalog.now() + pg_catalog.make_interval(secs => p_lease_seconds),
     pg_catalog.jsonb_build_object(

@@ -74,6 +74,8 @@ const arg = (name, fallback) => {
   }
   return fallback;
 };
+/** A bare `--name` switch. Distinct from `arg` because a switch takes no value. */
+const flag = (name) => process.argv.includes(`--${name}`);
 
 const svc = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
@@ -318,10 +320,19 @@ async function measure(bytes) {
     generationId,
     providerRequest: { requestId, generationId, claimToken },
     proofDate: arg("proof-date", new Date().toISOString().slice(0, 10)),
-    orderNumber: arg("order", "CS-2019TRANSIT-01"),
+    // EMPTY BY DEFAULT SO THE SHEET PRINTS THE DESIGN'S OWN IDENTITY.
+    // This defaulted to a made-up shop order number and the sheet duly printed
+    // it, while the GenerationID that Call 1 had just minted appeared nowhere
+    // on the document. `--order` still supplies a real one; with none, the
+    // compositor fills the line with DID-XXXXXXXX from the generation.
+    orderNumber: arg("order", ""),
     designer: arg("designer", "A.L."),
     proofVersion: arg("proof-version", "1.0"),
     panelRows: panelRows(),
+    // THE ANCHORED CONVERSATION (design turn -> layout turn, thought signature
+    // carried). On by default on this route; `--single-turn` sends the old
+    // one-bag request, which is what a side-by-side needs.
+    anchorTurns: !flag("single-turn"),
   };
   // THE FALLBACK CONTAINER IS DRAWN FROM THE DETERMINISTIC HALF OF INTAKE, the
   // same parser the edge runs. The edge draws its own container from its own
@@ -406,7 +417,16 @@ async function measure(bytes) {
       vehicle: [parsed?.vehicleYear, parsed?.vehicleMake, parsed?.vehicleModel]
         .filter(Boolean).join(" ") || vehicle,
       bleedInches: 5,
-      job: { date: request.proofDate, order: request.orderNumber,
+      // THE ORDER LINE FALLS BACK TO THE DESIGN'S OWN IDENTITY, not a blank.
+      // Run 19 printed an empty ORDER # because this compose path is NOT
+      // `assemblePanelProofMaster` -- it is `composeProofChrome`, and the DID
+      // fallback added there never reaches here. Two compose paths, one of them
+      // fixed, is precisely the "one artifact, two producers" shape that keeps
+      // undoing fixes in this repo; the same slice is used so both print the
+      // same string.
+      job: { date: request.proofDate,
+        order: request.orderNumber
+          || `DID-${String(generationId).replaceAll("-", "").slice(0, 8).toUpperCase()}`,
         designer: request.designer, version: request.proofVersion },
       sharp: require("../runtime/node_modules/sharp"),
     });

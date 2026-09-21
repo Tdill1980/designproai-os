@@ -139,6 +139,15 @@ const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
  */
 const QUADRANT_PREFIX = "atlas-panel-proof/quadrants";
 
+// DID-XXXXXXXX — the ONE canonical form, identical to app/src/lib/designId.ts,
+// runtime/wrapbox-delivery.cjs and runtime/generation-worker.cjs. Kept as its
+// own tiny function rather than imported because this module is loaded in the
+// edge bundle too; the slice is what must not drift, and it is asserted.
+function designIdFromGenerationId(generationId) {
+  const hex = String(generationId || "").replaceAll("-", "");
+  return hex.length >= 8 ? `DID-${hex.slice(0, 8).toUpperCase()}` : "";
+}
+
 /**
  * How far a cut crop's aspect may sit from the zone it is resized into.
  *
@@ -538,6 +547,12 @@ function createPanelProofTransport({
  */
 async function assemblePanelProofMaster({
   sheet, panelRows, customerAssets = [], input = {}, downloadAsset, manifest, store, logger = () => {},
+  /**
+   * The design's own identity, minted at Call 1. Optional here so the probe and
+   * the fixtures keep working without one; when present it fills the sheet's
+   * ORDER # line. See the job block below for why that line mattered.
+   */
+  generationId = "",
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(), stageTimings = [],
   /**
@@ -786,9 +801,24 @@ async function assemblePanelProofMaster({
     // drawing lettering and logo into the artwork, those panels carry type, and
     // the bar must not claim otherwise on the customer's own proof.
     cleanBase: cleanBaseZone2 !== false,
+    // THE SHEET CARRIES THE DESIGN'S OWN IDENTITY, MINTED AT CALL 1.
+    //
+    // Owner, 2026-09-21: "MOST IMPORTANTLY IT MUST CREATE THE GENERATE ID ON
+    // CALL 1". The GenerationID already exists by the time this runs -- live
+    // 7a72951823648d27 was authored under aded4bf5-1cd9-4f31-8d6e-8d6c3cc1c94b
+    // -- and the sheet printed `CS-2019TRANSIT-01`, a literal the caller typed,
+    // because `order` read only `orderNumber`. A production proof whose ORDER #
+    // is a hand-typed string cannot be matched back to the run that made it.
+    //
+    // DID-XXXXXXXX is the one canonical form (app/src/lib/designId.ts, and the
+    // same slice in wrapbox-delivery / generation-worker), so PanelPro,
+    // RevisionStudio, WrapBox and this sheet all name the design identically.
+    // A supplied orderNumber still WINS -- a real shop order number is the more
+    // specific fact -- and the DID is what fills the line when there is none,
+    // instead of leaving it a ruled blank.
     job: {
       date: input?.proofDate || "",
-      order: input?.orderNumber || "",
+      order: input?.orderNumber || designIdFromGenerationId(generationId) || "",
       designer: input?.designer || "",
       version: input?.proofVersion || "",
     },
@@ -1128,6 +1158,9 @@ async function authorPanelProofMaster({
   return assemblePanelProofMaster({
     sheet, panelRows, customerAssets, input, downloadAsset, manifest, store, logger,
     assembleFinishedMaster, sharp, startedAt, stageTimings,
+    // Same identity the provider request was authorised against, so the sheet
+    // and the provider cache name one generation.
+    generationId: providerRequest?.generationId || "",
   });
 }
 

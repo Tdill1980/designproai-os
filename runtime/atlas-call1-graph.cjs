@@ -528,6 +528,9 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       panelRows: sheetOutput.panelRows, customerAssets: sheetOutput.customerAssets || [],
       input: definition.input, downloadAsset: identity => downloadVerified(supabase, identity),
       manifest, store, logger, assembleFinishedMaster,
+      // The run row already holds the identity Call 1 minted; the sheet prints
+      // it as DID-XXXXXXXX when no shop order number was supplied.
+      generationId: run.generation_id,
       startedAt: Date.parse(run.created_at) || startedAt,
       // The sheet node's own timing travels forward, so the receipt keeps ONE
       // shape whether Call 1 ran as a graph or in process.
