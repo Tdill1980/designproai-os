@@ -769,6 +769,20 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
     "a RECOVERY must not buy the design turn a second time");
   assert.match(designBlock, /authorize: \(\) => authorizeAtlasProviderRequest\(/,
     "the design turn is a paid provider request and still needs the lease (RULE 0.26)");
+
+  // A REJECTED QUALITY CANDIDATE MUST NOT SPEND A SLOT.
+  //
+  // The loader used to `.slice(0, ARTBOARD_QUALITY_MAX)` the LISTING and then
+  // skip the unusable ones inside the loop -- so a duplicate, an oversized
+  // file or a failed download consumed one of only two exemplar slots instead
+  // of yielding it to the next file in the bucket. With the seeded
+  // `01-panel-proof-zones-filled.png` being byte-identical to the pinned
+  // format sheet, every request carried ONE real exemplar of professional wrap
+  // work no matter how many good files sat behind it.
+  assert.doesNotMatch(edge, /\.slice\(0, ARTBOARD_QUALITY_MAX\)/,
+    "the ceiling belongs on ACCEPTED examples, never on the listing");
+  assert.match(edge, /if \(qualityExamples\.length >= ARTBOARD_QUALITY_MAX\) break;/,
+    "walk the listing until the accepted count is reached");
   const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
   assert.equal(wrappedCalls,imageCalls,
     "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");

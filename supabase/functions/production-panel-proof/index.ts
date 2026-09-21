@@ -745,10 +745,23 @@ serve(async (req) => {
     try {
       const { data: listed } = await svc.storage.from(BUCKET)
         .list(ARTBOARD_QUALITY_PREFIX.replace(/\/$/, ""), { limit: 10 });
+      // ⚠️ DO NOT PRE-SLICE TO ARTBOARD_QUALITY_MAX. COUNT WHAT IS ACCEPTED.
+      //
+      // The previous form took the first two names and then skipped the ones
+      // that were unusable -- a duplicate, an oversized file, a failed
+      // download -- which meant a rejected candidate SPENT a slot instead of
+      // yielding it to the next file. With `01-panel-proof-zones-filled.png`
+      // being byte-identical to the pinned format sheet, the request carried
+      // ONE real exemplar however many good files sat behind it in the bucket.
+      // That is the same defect the dedupe guard was written to fix, one layer
+      // up, and it would have silently eaten the owner's first upload.
+      //
+      // So the ceiling is on ACCEPTED examples and the listing is walked until
+      // it is reached. `limit: 10` still bounds the work.
       const candidates = (listed || [])
-        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
-        .slice(0, ARTBOARD_QUALITY_MAX);
+        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")));
       for (const file of candidates) {
+        if (qualityExamples.length >= ARTBOARD_QUALITY_MAX) break;
         const path = `${ARTBOARD_QUALITY_PREFIX}${file.name}`;
         const { data, error } = await svc.storage.from(BUCKET).download(path);
         if (error || !data) continue;
