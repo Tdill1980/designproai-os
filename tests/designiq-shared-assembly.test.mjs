@@ -122,3 +122,80 @@ test("the head it feeds the proof is the persona, and the artboard tail is gone"
     "no persona here\nOUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD on one square 4K canvas."),
     /panel_proof_ace_persona_missing/);
 });
+
+/**
+ * THE CUT REMOVED THE TAIL AND LEFT THE SCENE — AND THE LOCK ABOVE MISSED IT.
+ *
+ * The test above asserts "the six-rectangle contract does not [survive]" and
+ * then only checks the OUTPUT FORMAT block and the panel list. Both are at the
+ * END of the assembly, which is exactly where the cut is. The presentation
+ * sentence is at POSITION 2, so it survived every one of those assertions:
+ *
+ *   "as ONE FLAT print-production master — flat orthographic panels ...
+ *    never an on-vehicle photograph ... not six independent graphics."
+ *
+ * followed, one blank line later, by SYSTEM_JOB asking for a three-band proof
+ * sheet carrying the six panels three times. Two output contracts in one
+ * prompt, with the wrong one first — the precise thing the cut exists to
+ * prevent, passing a green lock. This repo has now recorded that shape five
+ * times: WHEN A LOCK NAMES TWO THINGS, ASSERT BOTH OF THEM.
+ *
+ * So DesignIQ names the object itself (`atlasProofSheet`), and this asserts the
+ * swap in both directions — gone from the proof, still there for Call 1.
+ */
+test("DesignIQ names the proof's own object, and Call 1 still names the artboard's", async () => {
+  const { loadDesignIQ, ATLAS_PANELS } = await import("./helpers/load-designiq.mjs");
+  const { buildDesignIQPrompt } = await loadDesignIQ();
+  const { createRequire } = await import("node:module");
+  const runtime = createRequire(import.meta.url)("../runtime/atlas-panel-proof-contract.cjs");
+
+  const params = {
+    mode: "commercial", prompt: "clean modern dental wrap, teal and white", finish: "Gloss",
+    substrate: "standard", companyName: "Bright Smiles Dental", phone: "(520) 555-0192",
+    website: "brightsmiles.com", vehicleYear: "2012", vehicleMake: "Toyota",
+    vehicleModel: "Prius", vehicleType: "car", viewType: "side",
+    atlasFlatMaster: true, atlasPanels: ATLAS_PANELS,
+  };
+  const artboard = runtime.panelProofCreativeHead(buildDesignIQPrompt(params));
+  const proof = runtime.panelProofCreativeHead(
+    buildDesignIQPrompt({ ...params, atlasProofSheet: true }));
+
+  // THE COMPETING OBJECT IS GONE FROM THE PROOF. Each of these is a sentence
+  // naming a DIFFERENT deliverable than the one SYSTEM_JOB asks for.
+  for (const competing of [
+    "ONE FLAT print-production master",
+    "not six independent graphics",
+    "flat orthographic panels",
+  ]) {
+    assert.ok(!proof.includes(competing),
+      `the proof head still asks for the artboard: "${competing}"`);
+  }
+
+  // AND SO IS THE NEGATIVE. "never an on-vehicle photograph" is the prompt
+  // shape that has failed 4/4 on the field map; SYSTEM_JOB states the same
+  // requirement positively, so carrying both is cost with no benefit.
+  assert.ok(!/never an on-vehicle photograph/.test(proof),
+    "the proof head carries a negative instruction SYSTEM_JOB already states positively");
+
+  // THE VALUABLE HALF SURVIVES. If a future edit swaps the object by deleting
+  // the creative direction with it, the proof loses its designer again — which
+  // is the 2026-09-18 defect (3,906 chars, ~40 of brief, zero of A.C.E.).
+  assert.match(proof, /senior graphic designer and vehicle-wrap specialist/, "the persona");
+  assert.match(proof, /built from layered elements/, "COMMERCIAL_DEPTH's build order");
+  assert.match(proof, /mid-ground graphic motion/, "the layered build order's middle term");
+  assert.match(proof, /clean modern dental wrap, teal and white/, "the customer's brief");
+  assert.match(proof, /\(520\) 555-0192/, "the exact contact string");
+
+  // IT IS A SWAP, NOT AN ADDITION. The owner's constraint was explicit: no
+  // bloat, no added latency. A proof head longer than the artboard head means
+  // something was appended rather than replaced.
+  assert.ok(proof.length < artboard.length,
+    `the proof head must not grow (artboard ${artboard.length}, proof ${proof.length})`);
+
+  // AND IT IS SCOPED. Call 1 is what every customer generation runs through;
+  // its head must still name the artboard, byte for byte as before.
+  assert.ok(artboard.includes("ONE FLAT print-production master"),
+    "Call 1 lost its own output object — this change must not touch the artboard path");
+  assert.ok(!proof.includes("OUTPUT FORMAT") && !artboard.includes("OUTPUT FORMAT"),
+    "the artboard tail is still cut from both");
+});
