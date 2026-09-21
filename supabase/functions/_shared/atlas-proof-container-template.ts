@@ -412,9 +412,10 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // asserted across both homes, so this change belongs in both or neither.
   const panelDetail = (s: ContainerSurface) => {
     const p = printOf(s);
-    return [`TRIM ${r1(trimOf(s).w)}" x ${r1(trimOf(s).h)}"`,
-      `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
-      `${bleedInches}" bleed all edges — ${((p.w * p.h) / 144).toFixed(1)} sq ft`];
+    const t = trimOf(s);
+    return [`${r1(p.w)}" W x ${r1(p.h)}" H`,
+      `(TRIM: ${r1(t.w)}" x ${r1(t.h)}")`,
+      `with ${bleedInches}" bleed — ${((p.w * p.h) / 144).toFixed(1)} sq ft`];
   };
 
   // TOTAL COVERAGE IS COMPUTED, NEVER COPIED. The owner's filled sheet carries
@@ -480,19 +481,19 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // ── zone 1: the finished panels ──────────────────────────────────────────
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
-    "6 PANELS — COMPLETE WRAP ARTWORK"));
+    `${surfaces.length} PANELS — COMPLETE WRAP ARTWORK (RECTANGLE PANELS)`));
   m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail, fill: ground }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
     "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
-    "6 PANELS — BACKGROUND ARTWORK ONLY"));
+    `${surfaces.length} PANELS — BACKGROUND ARTWORK ONLY (MATCHES ZONE 1 EXACTLY)`));
   m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,
     "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
-    "VECTOR CUT PATHS — NO BACKGROUND"));
+    "VECTOR CUT ELEMENTS — NO BACKGROUND"));
   for (const slot of layoutCutGraphics()) {
     m.push(`<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" fill="${ground}"`
       + ` stroke="${FRAME}" stroke-width="1" stroke-dasharray="5 4"/>`);
@@ -519,8 +520,8 @@ export function containerSvg(options: ContainerOptions = {}): string {
   ].forEach((line, i) => m.push(text(838, 862 + i * 12, line, { size: 8, fill: MUTED })));
   m.push(`<rect x="1204" y="836" width="278" height="74" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   m.push(text(1216, 851, "GUIDE (FOR REFERENCE ONLY)", { size: 8.5, weight: 700 }));
-  [["#ec4899", "Panel size (with bleed)"], ["#16a34a", "Trim line (finished size)"],
-    ["#2563eb", "Safe zone (keep critical elements inside)"]].forEach(([colour, label], i) => {
+  [["#ec4899", "Panel Trim Line (Actual Size)"], ["#16a34a", `${bleedInches}" Bleed Area`],
+    ["#2563eb", "Safe Zone (Keep Text/Logos Inside)"]].forEach(([colour, label], i) => {
     m.push(`<rect x="1216" y="${860 + i * 15}" width="24" height="10" fill="none" stroke="${colour}"`
       + ` stroke-width="1.2" stroke-dasharray="4 3"/>`);
     m.push(text(1248, 869 + i * 15, `= ${label}`, { size: 8, fill: MUTED }));
