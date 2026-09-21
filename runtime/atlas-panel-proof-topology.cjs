@@ -110,7 +110,10 @@ const { planProductionPanelLockup } = require("./atlas-element-lockup.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const { verifyLogoIdentity } = require("./atlas-logo-prepare.cjs");
 const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
-const { cutProofPanels, scaleCell } = require("./atlas-proof-panels.cjs");
+// QUADRANTS is the ONE definition of the three role names. It is imported
+// rather than retyped because a retyped copy is exactly how "clean-panel"
+// drifted from "clean" and blanked every derived proof behind a 502.
+const { cutProofPanels, scaleCell, QUADRANTS } = require("./atlas-proof-panels.cjs");
 const {
   parsePanelRows, renderContainerTemplate, containerLayout,
 } = require("./atlas-proof-container-template.cjs");
@@ -648,7 +651,22 @@ async function assemblePanelProofMaster({
           if (!cell) throw refuse(`${panel.surfaceKey}: no Zone 2 cell in the container layout`);
           if (!panel.bytes?.length) throw refuse(`${panel.surfaceKey}: supplied Zone 2 panel has no bytes`);
           return {
-            ...panel, zone: "zone2", role: "clean-panel",
+            // ⛔ THE ROLE NAME IS A CONTRACT, NOT A LABEL. Live bug, found
+            // 2026-09-21: this said "clean-panel". The canonical name is
+            // "clean" -- `runtime/atlas-proof-panels.cjs` QUADRANTS, and the
+            // gateway's `PANEL_PROOF_ROLES` accepts only
+            // branded | clean | cut-graphic. Anything else makes
+            // `validatedPanelProofQuadrantPanel` throw
+            // `atlas_panel_proof_response_invalid` with status 502, which
+            // `AtlasPanelProofSheet` turns into `return null`.
+            //
+            // So every DERIVED production panel proof -- the one Call 1
+            // composes from the accepted master, the one the owner has been
+            // asking to see for a week -- rendered as a silent blank in
+            // PanelProStudio, RevisionStudioIQ and the compare studio. The
+            // UIs were wired correctly the whole time. "clean-panel" appeared
+            // exactly once in the repository.
+            ...panel, zone: "zone2", role: QUADRANTS.zone2,
             rect: { left: cell.x, top: cell.y, width: cell.w, height: cell.h },
             byteSize: panel.byteSize ?? panel.bytes.length,
             fit: 1, widthIn: panel.trimWidthIn ?? null, heightIn: panel.trimHeightIn ?? null,
