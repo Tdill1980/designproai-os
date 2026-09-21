@@ -128,9 +128,35 @@ for (const format of ['png', 'jpeg', 'webp']) test(`${format}: six-surface trans
       fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,...override})})}),
       error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
   }
+  // ⛔ THE GOLD-STANDARD ARTBOARDS ARE MODEL INPUTS AND MUST BE COUNTED.
+  //
+  // Live designproai-os-prod 2026-09-21: the edge began attaching up to two
+  // `designpanel-artboard-examples/` quality references, so `modelInputImageCount`
+  // came back at customerImageCount + 2 + N. The guard expected + 2 exactly and
+  // refused every six-surface Call 1 AFTER the image call had been made and paid
+  // for — `flat_atlas_edge_topology_contract_mismatch`, non-retryable, while the
+  // edge's own log recorded a finished 9.5 MB master in 40.3 s. Requests
+  // 4cf16b58, 3b45f349, 664890a2 and 7fe1ffd9 all died this way; 52a75e92 at
+  // 02:14, before the artboards were attached, reached outputs_ready.
+  for(const override of [{qualityArtboardsApplied:1,modelInputImageCount:4},
+    {qualityArtboardsApplied:0,modelInputImageCount:3},
+    {qualityArtboardsApplied:3,modelInputImageCount:5}]){
+    await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,...override})})}),
+      error=>error.code==='flat_atlas_edge_topology_contract_mismatch',
+      `unaccounted model inputs must still refuse: ${JSON.stringify(override)}`);
+  }
   await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
     error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
   assert.equal(downloads,1,'invalid responses must fail before master download');
+  for(const applied of [1,2]){
+    const accepted=await atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,
+        qualityArtboardsApplied:applied,modelInputImageCount:2+applied})})});
+    assert.equal(sha(accepted.bytes),sha(bytes),
+      `${applied} gold-standard artboard(s) must not refuse a master the edge already produced`);
+  }
+  assert.equal(downloads,3,'an accounted-for quality artboard is a VALID reply and downloads its master');
   await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
     fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,masterContentType:format==='png'?'image/jpeg':'image/png'})})}),
     error=>error.code==='flat_atlas_edge_master_mime_mismatch');
