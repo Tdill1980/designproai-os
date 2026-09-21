@@ -921,6 +921,20 @@ async function assemblePanelProofMaster({
       artboardQualityExamplesApplied: Number(sheet.artboardQualityExamplesApplied || 0),
       artboardQualityExampleIdentities: Array.isArray(sheet.artboardQualityExampleIdentities)
         ? sheet.artboardQualityExampleIdentities : [],
+      /**
+       * WHAT THE DESIGNER WAS ACTUALLY ASKED, ON THE RECEIPT.
+       *
+       * The edge returns `prompt` precisely so "a disagreement about the
+       * design is settled on the REQUEST rather than on impressions of the
+       * output", and returns `intake` so "a wrong parse is otherwise
+       * invisible: the sheet just quietly carries the wrong company". The
+       * runtime read neither, so when the owner said her placement
+       * instruction was ignored, the run could not answer whether the words
+       * ever reached the model. The brief is the customer's own text and is
+       * already stored on the request; what was missing is what became of it.
+       */
+      intake: sheet.intake || null,
+      promptChars: Number(sheet.promptChars || 0),
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
       // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.

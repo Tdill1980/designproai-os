@@ -468,8 +468,30 @@ serve(async (req) => {
           && (!body?.logoAsset?.contentHash || a.contentHash !== body.logoAsset.contentHash);
       })
       .slice(0, 8);
+    /**
+     * A PARAPHRASE MUST NOT BE ABLE TO SWALLOW THE CUSTOMER'S PLACEMENT.
+     *
+     * `intake.creativeDirection` won outright here. The intake prompt tells
+     * the reader to copy the customer's own words, to keep placement, and that
+     * the brief "must not be shortened" -- but it is a Flash call, it fails
+     * soft, and nothing measured whether it actually kept them. On live
+     * bbdd0db0 the brief asked for the scene "on 3/4 of sides and rear" and
+     * the design covers whole panels edge to edge.
+     *
+     * So the extraction is checked against the words it came from. Intake
+     * legitimately drops the vehicle, the phone number and the web address, so
+     * a shorter result is expected; losing most of the brief is not. Below
+     * two thirds of the original wording the customer's own sentence is used
+     * instead, because an unshortened brief the designer can read beats a tidy
+     * one that lost the instruction.
+     */
+    const extracted = field("creativeDirection");
+    const rawBrief = String(body?.prompt || "") || customerPrompt;
+    const words = (value: string) => String(value || "").trim().split(/\s+/).filter(Boolean).length;
+    const briefText = extracted && words(extracted) >= Math.ceil(words(rawBrief) * 0.66)
+      ? extracted : (rawBrief || extracted);
     const creativeDirection = [
-      field("creativeDirection") || String(body?.prompt || "") || customerPrompt,
+      briefText,
       field("style") ? `Style direction: ${field("style")}.` : "",
     ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
@@ -502,9 +524,41 @@ serve(async (req) => {
       // The shared clean-base branch omits customer copy. Its presentation and
       // exact-reference sentences still mention branding; adapt only those
       // two clauses for this background-only output.
+      /**
+       * A CLEAN BASE IS STILL A DESIGN. THIS ASKED FOR A BACKGROUND.
+       *
+       * "Reserve calm, high-contrast negative space for the separate vector
+       * overlay layer" replaced the sentence that hands the designer authority
+       * over composition -- and it is the whole of what the designer was told
+       * about layout. Asked for a calm background, a designer gives you a
+       * photograph, which is exactly what live bbdd0db0 returned: six cropped
+       * desert-garden photos with no composition, no colour system and no
+       * graphic language, while the customer's own placement instruction
+       * ("a desert tropical Scottsdale home front on 3/4 of sides and rear")
+       * went unanswered.
+       *
+       * The separation is not the problem and is not being undone: Zone 2
+       * needs lettering-free panels for template QC and Zone 3 needs the marks
+       * as separate originals. What has to change is that the base is a
+       * COMPOSED wrap missing only its lettering, not a backdrop. So the
+       * replacement keeps every constraint the overlay needs -- no lettering,
+       * no logo, reserved space with enough contrast to carry type -- and
+       * gives back the design brief that was taken away.
+       *
+       * This is creative conditioning and it is therefore judgement, not a
+       * measurement. It is narrow on purpose: it restores composition
+       * authority and the customer's stated placement, and adds nothing about
+       * subject, palette or style, which remain the brief's alone.
+       */
       creativeHead = creativeHead
         .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
-          "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
+          "This is a finished commercial wrap composition with its lettering left off, never a backdrop: "
+          + "design it with deliberate flow across the panel, a committed colour system, and graphic language "
+          + "-- shapes, sweeps, edges, photographic content -- arranged as a designer would arrange them. "
+          + "Honour every placement the customer stated: where they say artwork covers a fraction of a side "
+          + "or a specific area, compose it exactly there. "
+          + "Leave one deliberate, calm, high-contrast area on each surface for the brand lockup that is "
+          + "composited separately; reserving that area is part of the composition, not a substitute for it.")
         .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
           "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully");
     }
