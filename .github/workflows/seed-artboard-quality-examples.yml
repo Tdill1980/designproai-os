@@ -134,10 +134,25 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
                     -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          # The repo's own teaching assets ride along, so a `local:` source is
-          # seeded from the checkout and the run is reproducible without anyone
-          # re-uploading a file.
-          payload=$(tar -cz scripts/seed-artboard-quality-examples.mjs runtime/atlas-examples | base64 -w0)
+          # ONLY the assets this run actually names ride along.
+          #
+          # THE PAYLOAD IS AN SSH COMMAND-LINE ARGUMENT, so its size is bounded
+          # by ARG_MAX, not by patience. Shipping the whole runtime/atlas-examples
+          # directory is ~10 MB, ~13.5 MB base64'd, and the exec fails with 126
+          # before the remote script runs a single line -- which reads as a
+          # droplet problem rather than an argument-length one. One named
+          # example is ~200 KB encoded.
+          payload_paths=(scripts/seed-artboard-quality-examples.mjs)
+          while IFS= read -r wanted; do
+            [[ -n $wanted ]] || continue
+            [[ -f "runtime/atlas-examples/$wanted" ]] || {
+              printf '::error title=Local example missing::runtime/atlas-examples/%s is not in the checkout.\n' "$wanted" >&2
+              exit 47
+            }
+            payload_paths+=("runtime/atlas-examples/$wanted")
+          done < <(tr ',' '\n' <<<"$SOURCES" | sed -n 's/^local://p')
+          payload=$(tar -cz "${payload_paths[@]}" | base64 -w0)
+          printf 'payload: %s bytes encoded, %s file(s)\n' "${#payload}" "${#payload_paths[@]}"
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "PAYLOAD='$payload' SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
