@@ -80,8 +80,13 @@ on:
         required: false
         type: string
         default: "NEW PATIENTS WELCOME"
+      customer_prompt:
+        description: "THE ONE RAW CUSTOMER MESSAGE, in plain natural language — the only creative input the edge receives. Empty uses the script's default. Never a spec sheet: write it the way a customer types it."
+        required: false
+        type: string
+        default: ""
       brief:
-        description: "The customer brief (the contract carries this verbatim)"
+        description: "UNUSED by the request — the probe sends `customer_prompt` alone, because intake parsing out of one sentence is what it tests. Kept so an old dispatch still validates."
         required: true
         type: string
         default: "Bright Smiles Dental — clean flowing blue and teal wave design, a custom tooth logo, and a professional photograph of a smiling dental patient in a clinical chair inlaid into the rear three-quarter of each side panel."
@@ -174,6 +179,7 @@ jobs:
           P_SERVICES: ${{ inputs.services }}
           P_PROMO: ${{ inputs.promo }}
           P_BRIEF: ${{ inputs.brief }}
+          P_CUSTOMER_PROMPT: ${{ inputs.customer_prompt }}
           P_YEAR: ${{ inputs.vehicle_year }}
           P_MAKE: ${{ inputs.vehicle_make }}
           P_MODEL: ${{ inputs.vehicle_model }}
@@ -208,11 +214,14 @@ jobs:
           # apostrophe or a quote in a brief cannot break the remote shell.
           text_b64=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s' \
             "$P_COMPANY" "$P_TAGLINE" "$P_PHONE" "$P_WEBSITE" "$P_SERVICES" "$P_PROMO" "$P_BRIEF" | base64 -w0)
+          # The raw customer message travels on its own line so a brief carrying
+          # a newline cannot shift every field after it.
+          prompt_b64=$(printf '%s' "$P_CUSTOMER_PROMPT" | base64 -w0)
           panels_b64=$(printf '%s' "$P_PANELS" | base64 -w0)
 
           set +e
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_REUSE='$P_REUSE' P_PROMOTE='$P_PROMOTE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
+            "P_OWNER='$P_OWNER' P_TEXT_B64='$text_b64' P_PROMPT_B64='$prompt_b64' P_PANELS_B64='$panels_b64' P_YEAR='$P_YEAR' P_MAKE='$P_MAKE' P_MODEL='$P_MODEL' P_REUSE='$P_REUSE' P_PROMOTE='$P_PROMOTE' P_PAYLOAD_FILE='$payload_file' bash -s" <<'REMOTE' > "$RUNNER_TEMP/probe.log" 2>&1
           set -Eeuo pipefail
           env_file=/opt/designproai-os/shared/runtime.env
           test -f "$env_file" || { echo "runtime.env missing"; exit 41; }
@@ -237,6 +246,7 @@ jobs:
 
           mapfile -t p_text < <(printf '%s' "$P_TEXT_B64" | base64 -d)
           p_panels=$(printf '%s' "$P_PANELS_B64" | base64 -d)
+          p_prompt=$(printf '%s' "$P_PROMPT_B64" | base64 -d)
 
           set +e
           docker run --rm \
@@ -250,7 +260,8 @@ jobs:
               --website "${p_text[3]}" --services "${p_text[4]}" --promo "${p_text[5]}" \
               --brief "${p_text[6]}" \
               --year "$P_YEAR" --make "$P_MAKE" --model "$P_MODEL" \
-              --panels "$p_panels" ${P_REUSE:+--reuse "$P_REUSE"} ${P_PROMOTE:+--promote "$P_PROMOTE"}
+              --panels "$p_panels" ${p_prompt:+--customer-prompt "$p_prompt"} \
+              ${P_REUSE:+--reuse "$P_REUSE"} ${P_PROMOTE:+--promote "$P_PROMOTE"}
           status=$?
           set -e
 
