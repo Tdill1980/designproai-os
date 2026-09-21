@@ -881,6 +881,28 @@ function buildDesignIQPrompt(params: DesignIQParams): string {
   // lock, photo-realism rule, FINISH_SPECS text, style, movement and depth are
   // untouched.
   const atlasField = atlasFlatMaster && (params as any).atlasField === true;
+  // PANEL PRODUCTION PROOF (owner ruling 2026-09-21): DesignIQ names the object
+  // ITSELF instead of leaving a second system to name a different one.
+  //
+  // `panelProofCreativeHead` cuts this assembly at its OUTPUT FORMAT tail, and
+  // that marker is at the END — so the presentation sentence, which sits at
+  // position 2, survived the cut. The proof prompt therefore opened with "ONE
+  // FLAT print-production master ... not six independent graphics" and then
+  // asked, one blank line later, for a three-band proof sheet with the six
+  // panels drawn three times. Two output contracts in one prompt, with the
+  // wrong one first — exactly what that cut exists to prevent.
+  //
+  // This is a SWAP, never an addition: the branch replaces the sentence rather
+  // than appending to it, and is shorter than what it replaces. It also drops
+  // "never an on-vehicle photograph" — a negative instruction, the prompt shape
+  // that has failed 4/4 on the field map — because `SYSTEM_JOB` already states
+  // the same thing positively. The layered build order and the
+  // branding-composition call survive verbatim; they are the valuable half.
+  //
+  // It does NOT restate the three bands, the template or the cells.
+  // `SHEET_LAYOUT` and `SYSTEM_JOB` own those, and saying them twice is the
+  // bloat that buys nothing and costs the design's share of the budget.
+  const atlasProofSheet = atlasFlatMaster && (params as any).atlasProofSheet === true;
   // HERO-DRIVER CASCADE (owner ruling 2026-09-11): the same creative assembly,
   // asked for ONE sheet -- the driver side -- instead of six on one canvas.
   // Persona, concept, brief, translation, logo, contact lock, photo-realism
@@ -1032,7 +1054,9 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // ATLAS FLAT-MASTER: same creative brief, flat print-production output. The
     // depth requirement and the branding-composition call survive verbatim;
     // only the on-vehicle photograph framing changes.
-    const atlasScene = atlasHero
+    const atlasScene = atlasProofSheet
+      ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) — the panels themselves, as they look coming off the printer. ONE design across all of them. It is built from layered elements — background color and texture, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes. The company name reads clearly at a glance; how the branding is composed is your creative call.`
+      : atlasHero
       ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, true)
       : atlasField
       ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. The design is built from layered elements — background color and texture flowing continuously across the whole field, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes on bare vinyl. The company name reads clearly at a glance; how the branding is composed is your creative call.`
@@ -1150,13 +1174,13 @@ CLIENT BRIEF:`;
     if (visionBoardImages && visionBoardImages.length > 0) {
       if (visionboard_intent === 'exact_reference') {
         assembled += atlasFlatMaster
-          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}.`
+          ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasProofSheet ? "every panel" : atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}.`
           : `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
       } else if (styleDescriptors) {
         assembled += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
       } else {
         assembled += atlasFlatMaster
-          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasField ? "continuous livery field" : atlasHero ? "single-sheet livery" : "six-field livery"}. Use them as style inspiration only — create something new that captures their energy.`
+          ? `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL ${atlasProofSheet ? "livery across the panels" : atlasField ? "continuous livery field" : atlasHero ? "single-sheet livery" : "six-field livery"}. Use them as style inspiration only — create something new that captures their energy.`
           : `\n\nSTYLE INSPIRATION: Transform the mood, colors, and artistic style of the provided reference images into an ORIGINAL wrap design for this vehicle. Use them as style inspiration only — create something new that captures their energy.`;
       }
     }

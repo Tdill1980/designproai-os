@@ -517,6 +517,10 @@ serve(async (req) => {
       vehicleType,
       viewType: "side",
       atlasFlatMaster: true,
+      // DesignIQ names THIS document's object. Without it the head opens with
+      // the six-rectangle artboard sentence and `SYSTEM_JOB` then asks for the
+      // three-band proof — two contracts, wrong one first.
+      atlasProofSheet: true,
       atlasCleanBase: body.separatedArtwork === true,
       atlasPanels: ATLAS_PANELS,
     } as Record<string, unknown>));
