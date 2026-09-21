@@ -1951,10 +1951,31 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     const expectedTeaching = body?.teachingProofIdentity;
     const actualTeaching = payload?.teachingProofIdentity;
     const customerImageCount = Array.isArray(body?.referenceImagesBase64) ? body.referenceImagesBase64.length : 0;
+    // ⛔ THE GOLD-STANDARD ARTBOARDS COUNT. THEY ARE MODEL INPUTS TOO.
+    //
+    // This read `customerImageCount + 2` — the teaching proof and the target
+    // guide — and the edge ALSO attaches up to two `designpanel-artboard-
+    // examples/` quality references as `inlineData`. `modelInputImageCount` is
+    // a count of every inline image in the request, so the moment that bucket
+    // was populated every six-surface Call 1 came back one or two over and was
+    // refused HERE, after the image call had already been made and paid for.
+    //
+    // Live, designproai-os-prod 2026-09-21: `52a75e92` reached outputs_ready at
+    // 02:14, and every six-surface request after the edge began attaching them
+    // failed `flat_atlas_edge_topology_contract_mismatch`, non-retryable, while
+    // the edge's own log recorded a finished master ("gemini responded in
+    // 39560ms … 11 parts", 40268ms total, 9.5 MB). The design existed; the
+    // runtime threw it away.
+    //
+    // The guard stays EXACT rather than becoming a range: the edge reports how
+    // many it applied, so the expected count is still a single number and an
+    // unexplained extra image is still a refusal.
+    const qualityArtboardCount = Number(payload?.qualityArtboardsApplied || 0);
     if (payload?.fieldContract || !body?.teachingProofStoragePath || !body?.guideStoragePath
       || !expectedTeaching || !actualTeaching
       || payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION
-      || Number(payload?.modelInputImageCount) !== customerImageCount + 2
+      || !Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2
+      || Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount
       || ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]
         .some((key) => actualTeaching[key] !== expectedTeaching[key])) {
       throw new FlatAtlasError(
