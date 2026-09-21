@@ -20,13 +20,19 @@ describe('publication requires a measured wall', () => {
     }
   });
 
-  it('publishes the gym now that it is measured, and only because it is', () => {
-    // This asserted the opposite while the wall was unmeasured, which is the
-    // rule working: a study reaches customers the moment it has real inches and
-    // not one commit before.
+  it('keeps the gym MEASURED but withheld, with the reason on the record', () => {
+    // Measured and unpublishable are independent. Deleting the entry would lose
+    // both the measurement and the reason, and the next person to see a gym
+    // photo with a tape-measured wall would publish it again.
     const gym = ALL_CASE_STUDIES.find(s => s.key === 'gym')!;
     expect(gym.wall).toEqual({ widthIn: 240, heightIn: 120 });
-    expect(publishedCaseStudies().map(s => s.key)).toContain('gym');
+    expect(gym.withheld).toBeTruthy();
+    expect(gym.withheld).toMatch(/trademark/i);
+    expect(publishedCaseStudies().map(s => s.key)).not.toContain('gym');
+  });
+
+  it('never publishes a study that is withheld, however well measured', () => {
+    for (const study of publishedCaseStudies()) expect(study.withheld, study.key).toBeNull();
   });
 
   it('keeps the gym wall wider than it is tall, as the photograph shows', () => {

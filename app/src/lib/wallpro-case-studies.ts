@@ -54,6 +54,15 @@ export type WallCaseStudy = {
   alt: { before: string; after: string; mask: string; artwork: string; installed: string };
   /** A real corner-marking capture when one exists; the drawn stand-in until. */
   maskCapture: string | null;
+  /**
+   * Why this study is held back despite being measured, or null to publish.
+   *
+   * A wall can be perfectly measured and still not publishable — see the gym,
+   * whose generated artwork carries a real company's trademark. Keeping the
+   * reason ON the record, rather than quietly deleting the entry, is what stops
+   * it being restored later by someone who only sees that it has inches.
+   */
+  withheld: string | null;
 };
 
 const STUDIO: WallCaseStudy = {
@@ -80,21 +89,25 @@ const STUDIO: WallCaseStudy = {
     installed: 'The finished studio with the tropical mural installed on both walls either side of the window',
   },
   maskCapture: null,
+  withheld: null,
 };
 
 /**
- * THE GYM — measured 2026-09-21, and published because of it.
+ * THE GYM — MEASURED, AND WITHHELD.
  *
- * It sat here with `wall: null` for exactly as long as nobody had measured it,
- * which is the rule this file exists to enforce. The owner supplied the inches
- * and it published itself: the route, the switcher and every computed figure
- * follow from those two numbers and nothing else here changed. That is the
- * whole point of a study being data.
+ * Owner, 2026-09-21: "its supposed to be inspired style of model wrote les
+ * mills than it needs retracting asap."
  *
- * STILL WORTH KNOWING: the installed mural carries another brand's artwork. The
- * owner directed publication, so this presents it as a WePrintWraps job on her
- * authority; if that is ever not the case, the honest repair is to pull the
- * entry rather than soften the wording.
+ * The wall is real and the inches are real. The problem is the artwork: it was
+ * generated in an athletic style and the model wrote a real company's trademark
+ * into the image. A generated design carrying someone else's mark cannot be
+ * presented as our work on a public page, whatever the measurements say.
+ *
+ * So the entry stays, measured, with the reason recorded. Deleting it would
+ * lose the measurement and lose the reason, and the next person to see a gym
+ * photo with a tape-measured wall would simply publish it again. Replace the
+ * "after" frame with a clean generation, clear `withheld`, and it publishes —
+ * everything else here is already correct.
  */
 const GYM: WallCaseStudy = {
   key: 'gym',
@@ -118,8 +131,11 @@ const GYM: WallCaseStudy = {
   wall: { widthIn: 240, heightIn: 120 },
   brief: 'full-height athletic hero wall, high contrast, bold type, wall to wall',
   photos: {
+    // The BEFORE frame is a photograph of a bare grey wall and carries no mark,
+    // so it stays. The AFTER is the retracted generation and is deleted from the
+    // build; this names the file it needs, not a file that exists.
     before: '/wallpro/proof-gym-before.jpg',
-    after: '/wallpro/proof-gym-after.jpg',
+    after: '/wallpro/proof-gym-after-REPLACEMENT-REQUIRED.jpg',
     artwork: null,
   },
   alt: {
@@ -130,12 +146,19 @@ const GYM: WallCaseStudy = {
     installed: 'The finished gym with the mural installed behind the racks',
   },
   maskCapture: null,
+  withheld: 'The generated "after" artwork carried a real company trademark and was retracted 2026-09-21. Needs a clean generation before it can be published.',
 };
 
 export const ALL_CASE_STUDIES: WallCaseStudy[] = [STUDIO, GYM];
 
-/** Only studies with a measured wall reach a customer. See the header. */
-export const publishedCaseStudies = (): WallCaseStudy[] => ALL_CASE_STUDIES.filter(s => s.wall !== null);
+/**
+ * Only studies with a measured wall AND nothing held against them reach a
+ * customer. Two independent gates, because they fail for different reasons: a
+ * missing measurement makes the page lie about the product, and a withheld
+ * study makes it lie about whose work it is.
+ */
+export const publishedCaseStudies = (): WallCaseStudy[] =>
+  ALL_CASE_STUDIES.filter(s => s.wall !== null && !s.withheld);
 
 export const DEFAULT_CASE_STUDY = STUDIO;
 

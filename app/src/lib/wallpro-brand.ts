@@ -180,32 +180,7 @@ export type WallProof = {
  * /admin/wallpro-proofs override this list when they exist; this is the floor.
  */
 const WALL_PROOFS: WallProof[] = [
-      {
-        // THE GYM FLOOR — owner-directed, 2026-09-15: "you must use this
-        // before and after."
-        //
-        // PRE-WIRED AHEAD OF ITS FILES, deliberately, and this is the one
-        // entry in this table that is. The photographs exist but have not been
-        // reachable as files in any working session; wiring the entry now means
-        // dropping the two JPGs at these exact paths puts the pair in rotation
-        // with NO code change and no wait for a developer.
-        //
-        // It costs nothing while the files are absent: WallProHeroProof drops
-        // any pair whose halves fail to load, so the band simply shows the
-        // rooms it does have. The only price is two 404s per visitor, which is
-        // why the files should land before the next deploy rather than after.
-        //
-        // Run them through scripts/wallpro-proof-normalize.mjs first — the two
-        // frames arrived at different sizes, and the band needs one canvas or
-        // the room slides under the wipe:
-        //   node scripts/wallpro-proof-normalize.mjs \
-        //     --before <bare gym> --after <wrapped gym> --slug gym --bias bottom
-        before: '/wallpro/proof-gym-before.jpg',
-        after: '/wallpro/proof-gym-after.jpg',
-        alt: 'A gym training floor photographed with a plain grey wall behind the squat racks, and again with a full-wall athletic mural covering it',
-        headline: 'A training floor, transformed.',
-        caption: 'A gym wall in a full-height athletic mural, designed in WallPro. Drag to compare.',
-      },
+
       // THE OWNER'S OWN HOME IS NOT A PORTFOLIO (owner, 2026-09-18, seeing it
       // on the tool page after it had already been taken off the landing:
       // "somehow it's the old wpw x wallpro page", and earlier "remove my
@@ -234,7 +209,21 @@ const WALL_PROOFS: WallProof[] = [
  * off the front of the band. Exported so the tool page can put it first
  * whatever else is published behind it.
  */
-export const WALL_HERO_PROOF: WallProof = WALL_PROOFS[0];
+/**
+ * RETRACTED 2026-09-21. The pinned opening pair was the gym, and its "after"
+ * frame is an AI-generated design that wrote a real company's trademark into
+ * the artwork (owner: "its supposed to be inspired style of model wrote les
+ * mills than it needs retracting asap"). A generated image carrying someone
+ * else's mark cannot sit on a marketing band, so the pair is withdrawn and the
+ * file is deleted from the build.
+ *
+ * WALL_PROOFS is therefore EMPTY and this is null. That is deliberate and it
+ * is the honest state: the band simply does not render, which it already knew
+ * how to do. A showcase with nothing truthful to show is better empty than
+ * padded. Publish a real customer install through /admin/wallpro-proofs, or add
+ * a block here, and both come straight back.
+ */
+export const WALL_HERO_PROOF: WallProof | null = WALL_PROOFS[0] ?? null;
 
 export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
   designpro: {

@@ -1157,8 +1157,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const bandProofs = useMemo(() => {
     const rest = (curatedProofs ?? theme.proofs)
-      .filter(p => p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after);
-    return [WALL_HERO_PROOF, ...rest];
+      .filter(p => !WALL_HERO_PROOF || (p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after));
+    // No pinned pair is a real state now that the gym is retracted: whatever a
+    // curator has published stands on its own, and nothing is invented to lead it.
+    return WALL_HERO_PROOF ? [WALL_HERO_PROOF, ...rest] : rest;
   }, [curatedProofs, theme.proofs]);
 
   useEffect(() => {
