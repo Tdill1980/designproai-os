@@ -625,6 +625,7 @@ export async function prepareAtlasRevisionProviderContents({ supabase, ownerId, 
 export async function runDurableImageProviderRequest({
   bucket, identity: suppliedIdentity, requestHash, authorize, invoke, cacheOnly = false,
   outputRequestId = crypto.randomUUID(), privateRequest = null,
+  allowRequestScopedSlot = false,
 }) {
   if (typeof authorize !== 'function' || typeof invoke !== 'function' || !HASH.test(requestHash)) {
     throw new GeminiProviderError('provider_cache_arguments_invalid', 400);
@@ -660,6 +661,23 @@ export async function runDurableImageProviderRequest({
    * identical primary key and never reaches this fallback. The fence below is
    * unchanged and still final: a slot that cannot serve this request still
    * refuses. What is gone is only the deadlock.
+   *
+   * ⛔ IT IS OPT-IN, AND THE DEFAULT IS THE OLD FAIL-CLOSED BEHAVIOUR.
+   *
+   * Because the second slot can SPEND, and "a changed prompt cannot silently
+   * spend against a previous operation" is a real rule that
+   * `tests/atlas-proof-elements.test.mjs` has always held for the logo element:
+   * one bounded candidate, no attempt ladder above it, so a re-worded brief
+   * buying a second paid image is exactly the F02 defect this repo already
+   * recorded ("`cacheOnly` was a no-op, so a recovery could buy a SECOND paid
+   * sheet").
+   *
+   * Only `runAtlasProofProvider` opts in, and only it has the evidence: a
+   * promoted master legitimately changes every shot's request, its spend is
+   * already bounded by the slot's two attempts per view, and without this the
+   * generation loses 7/7 views permanently to an immutable claim. Every other
+   * caller -- the panel-proof sheet, the logo element, the artboard -- keeps
+   * the 409 and therefore its one-candidate budget.
    */
   const slotKey = (extra) => providerSha256(JSON.stringify({
     contractVersion: GEMINI_PROVIDER_CACHE_CONTRACT, ...identity, ...extra,
@@ -671,7 +689,7 @@ export async function runDurableImageProviderRequest({
   let key = await slotKey();
   let prefix = `${PREFIX}/${identity.ownerId}/${identity.generationId}/${key}`;
   let claim = await readJson(bucket, `${prefix}/claim.json`);
-  if (claim && !servesThisRequest(claim)) {
+  if (claim && allowRequestScopedSlot && !servesThisRequest(claim)) {
     key = await slotKey({ requestHash });
     prefix = `${PREFIX}/${identity.ownerId}/${identity.generationId}/${key}`;
     claim = await readJson(bucket, `${prefix}/claim.json`);

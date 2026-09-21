@@ -58,6 +58,13 @@ export async function runAtlasProofProvider({ supabase, ownerId, providerRequest
         identity: { ...request, ownerId, mode: 'atlas-proof' },
         requestHash: await providerSha256(JSON.stringify({ model, promptContract, authority, modelRequest })),
         privateRequest: modelRequest, cacheOnly: providerRequest.cacheOnly === true,
+        // A promoted accepted master changes every shot's request while the
+        // slot identity stays the same. Without its own slot that claim is
+        // immutable and the generation loses 7/7 views permanently (live
+        // 2cc236b9: 14 attempts, all `provider_request_identity_conflict`,
+        // `rejections` 0). The spend stays bounded by this view's own two
+        // attempts, and a `cacheOnly` recovery still refuses to generate.
+        allowRequestScopedSlot: true,
         authorize: async () => {
           await authorizeAtlasProviderRequest(supabase, request, ownerId, now);
           if (providerRequest.cacheOnly !== true && deadlineAt - now() < 15_000) {
