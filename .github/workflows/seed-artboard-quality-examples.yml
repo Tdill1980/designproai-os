@@ -92,9 +92,9 @@ jobs:
           # are the only selectors that reach an object in a private bucket, so
           # they are constrained here as well as in the script; neither alone is
           # the gate.
-          one='([0-9a-f]{8,64}|atlas-examples/[A-Za-z0-9._-]+\.(png|jpe?g|webp))'
+          one='([0-9a-f]{8,64}|atlas-examples/[A-Za-z0-9._-]+\.(png|jpe?g|webp)|local:[A-Za-z0-9._-]+\.(png|jpe?g|webp))'
           [[ $SOURCES =~ ^${one}(,${one})?$ ]] || {
-            printf '::error title=Bad source selector::sources must be one or two entries, each a hex content-hash prefix (8-64 chars) or an atlas-examples/ image path.\n' >&2
+            printf '::error title=Bad source selector::sources must be one or two entries, each a hex content-hash prefix (8-64 chars), an atlas-examples/ image path, or local:<filename>.\n' >&2
             exit 43
           }
 
@@ -134,7 +134,10 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
                     -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
-          payload=$(tar -cz scripts/seed-artboard-quality-examples.mjs | base64 -w0)
+          # The repo's own teaching assets ride along, so a `local:` source is
+          # seeded from the checkout and the run is reproducible without anyone
+          # re-uploading a file.
+          payload=$(tar -cz scripts/seed-artboard-quality-examples.mjs runtime/atlas-examples | base64 -w0)
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             "PAYLOAD='$payload' SOURCES='$SOURCES' SEED_WRITE='$SEED_WRITE' bash -s" \
@@ -156,6 +159,7 @@ jobs:
           docker run --rm --network host \
             --env-file /opt/designproai-os/shared/runtime.env \
             -v "$work/scripts/seed-artboard-quality-examples.mjs:/app/seed.mjs:ro" \
+            -v "$work/runtime/atlas-examples:/examples:ro" \
             -v "$work/out:/out" \
             "$image" node /app/seed.mjs --sources "$SOURCES" --out /out $SEED_WRITE >&2
 

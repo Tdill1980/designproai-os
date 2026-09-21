@@ -25,7 +25,7 @@
 // master, a pinned example, a revision row, bucket visibility, the DAG or any
 // edge function.
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
@@ -85,13 +85,30 @@ if (!sourcesInput) {
 
 const HASH_SELECTOR = /^[0-9a-f]{8,64}$/;
 const PATH_SELECTOR = new RegExp(`^${EXAMPLE_PREFIX}/[A-Za-z0-9._-]+\\.(png|jpe?g|webp)$`);
+/**
+ * `local:<filename>` — a teaching asset committed to the repository at
+ * runtime/atlas-examples/, shipped to the droplet with this script and mounted
+ * read-only at LOCAL_DIR.
+ *
+ * WHY A THIRD SHAPE. An example the owner supplies is not in the bucket and
+ * cannot get there without a write path, and there is no service-role secret
+ * outside the droplet. Versioning it in the repo makes the seed reproducible
+ * from the checkout alone: re-running this workflow re-seeds the identical
+ * bytes without anyone re-uploading anything.
+ *
+ * It is a BARE FILENAME, never a path, so it cannot traverse out of the
+ * mounted directory.
+ */
+const LOCAL_SELECTOR = /^local:[A-Za-z0-9._-]+\.(png|jpe?g|webp)$/;
+const LOCAL_DIR = "/examples";
 
 const selectors = sourcesInput.split(",").map((s) => s.trim()).filter(Boolean);
 for (const selector of selectors) {
-  // Two shapes only. These are the sole selectors that reach an object in a
-  // private bucket, so neither can be widened into an arbitrary path.
-  if (!HASH_SELECTOR.test(selector) && !PATH_SELECTOR.test(selector)) {
-    console.error(`refusing selector ${JSON.stringify(selector)}: expected 8-64 hex of a master content hash, or an ${EXAMPLE_PREFIX}/ image path`);
+  // Three shapes only. Two of these reach an object in a private bucket and
+  // the third reads one file out of a mounted directory, so none can be
+  // widened into an arbitrary path.
+  if (!HASH_SELECTOR.test(selector) && !PATH_SELECTOR.test(selector) && !LOCAL_SELECTOR.test(selector)) {
+    console.error(`refusing selector ${JSON.stringify(selector)}: expected 8-64 hex of a master content hash, an ${EXAMPLE_PREFIX}/ image path, or local:<filename>`);
     process.exit(3);
   }
 }
@@ -152,6 +169,20 @@ function resolveExample(selector) {
   };
 }
 
+/** A teaching asset versioned in the repo, mounted read-only on the droplet. */
+function resolveLocal(selector) {
+  const name = selector.slice("local:".length);
+  return {
+    kind: "repo-example",
+    label: name.replace(/\.(png|jpe?g|webp)$/i, ""),
+    path: join(LOCAL_DIR, name),
+    local: true,
+    expectedHash: null,
+    note: "versioned at runtime/atlas-examples/ and shipped with this run",
+    cutoutSurfaces: null,
+  };
+}
+
 /** Step down the ladder and stop at the first rung inside the budget. */
 async function encodeWithinBudget(sourceBytes) {
   let last = null;
@@ -170,14 +201,24 @@ const results = [];
 mkdirSync(outDir, { recursive: true });
 
 for (const [index, selector] of selectors.entries()) {
-  const source = HASH_SELECTOR.test(selector) ? await resolveMaster(selector) : resolveExample(selector);
+  const source = HASH_SELECTOR.test(selector) ? await resolveMaster(selector)
+    : LOCAL_SELECTOR.test(selector) ? resolveLocal(selector)
+    : resolveExample(selector);
   console.error(`\n=== ${source.label} (${source.kind}) ===`);
   console.error(`  source path   ${source.path}`);
   console.error(`  note          ${source.note}`);
 
-  const { data: blob, error: downloadError } = await svc.storage.from(BUCKET).download(source.path);
-  if (downloadError || !blob) throw new Error(`download failed for ${source.path}: ${downloadError?.message || "no body"}`);
-  const sourceBytes = Buffer.from(await blob.arrayBuffer());
+  let sourceBytes;
+  if (source.local) {
+    // A missing mount is a wiring failure, not an empty seed: it would
+    // otherwise write nothing and still report success.
+    if (!existsSync(source.path)) throw new Error(`repo example not mounted at ${source.path}`);
+    sourceBytes = readFileSync(source.path);
+  } else {
+    const { data: blob, error: downloadError } = await svc.storage.from(BUCKET).download(source.path);
+    if (downloadError || !blob) throw new Error(`download failed for ${source.path}: ${downloadError?.message || "no body"}`);
+    sourceBytes = Buffer.from(await blob.arrayBuffer());
+  }
   const observed = sha256(sourceBytes);
 
   // Prove the bytes are what the row or the pin names. A quality bar built
