@@ -547,16 +547,31 @@ test("the flag is OFF unless a deploy says on, and the routing is first-authorin
   assert.equal(proof.panelProofEnabled({ DESIGNPRO_ATLAS_PANEL_PROOF: "no" }), false,
     "a typo fails to the SAFE side, which for an unproven routing is off");
 
-  // ROUTED AT THE HEAD, ahead of hero-driver (which measured 0/3 on real
-  // vehicles and is off), so one flag decides one thing.
+  // ⛔ AND IT NO LONGER SELECTS CALL 1 AT ALL (owner ruling, Trish 2026-09-21:
+  // "kill the production-panel-proof bypass").
+  //
+  // This test used to assert the opposite — that the flag is read FIRST, ahead
+  // of hero-driver, so it alone decides Call 1. That routing is what bypassed
+  // 58 commits of DesignPanelAI work: `production-panel-proof` is its own
+  // Call-1 endpoint and, by its own header, "cannot reach
+  // design-panel-ai-generate at all", so it reached neither the enriched brief,
+  // nor `styleDescriptors`, nor the VisionBoard branch, nor the gold-standard
+  // artboards. The owner judged the result against the Sept 17-18 designs.
+  //
+  // So the lock is inverted: no flag may put a customer's Call 1 on a path that
+  // cannot reach the brain. The topology is still REACHABLE — a probe or any
+  // caller naming `authoringTopology` still runs it, and every other assertion
+  // in this file still holds — it is simply never SELECTED.
   const head = atlasSrc.slice(atlasSrc.indexOf("async function generateOrReuseFlatAtlas(options) {"),
     atlasSrc.indexOf("async function generateOrReuseFlatAtlasResolved"));
-  assert.ok(head.indexOf("panelProofEnabled()") < head.indexOf("heroDriverEnabled()"),
-    "the panel proof is read first, so its flag alone decides whether it runs");
-  assert.match(head, /panelProofEnabled\(\)\s*\n?\s*&& options\?\.parentManifest == null && \(options\?\.revisionSequence \?\? 1\) === 1/,
-    "a revision edit keeps its parent's topology");
-  // And the pass refuses one outright rather than half-running.
+  assert.ok(!head.includes("panelProofEnabled()"),
+    "no flag routes Call 1 to the panel-proof endpoint; the brain is not optional");
+  assert.ok(head.includes("heroDriverEnabled()") && head.includes("fieldFirstReason("),
+    "the routings that DO reach the deployed design-panel-ai-generate edge are untouched");
+  // The pass still refuses a revision edit outright rather than half-running.
   assert.match(atlasSrc, /flat_atlas_panel_proof_edit_unsupported/);
+  assert.match(atlasSrc, /PANEL_PROOF_TOPOLOGY\].includes\(authoringTopology\)/,
+    "an explicitly named panel-proof topology is still a legal, runnable contract");
 });
 
 test("CALL 2 AND THE QC->WRAPBOX CHAIN ARE THE ORCHESTRATION THAT ALREADY EXISTED", () => {

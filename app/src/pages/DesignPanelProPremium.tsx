@@ -1968,7 +1968,18 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     .map(findViewByType)
     .filter((v): v is NonNullable<typeof v> => Boolean(v));
   // VehiclePro exposes each completed angle automatically, in driver-first order.
-  const viewsVisible = Boolean(generationRequestState?.requestId) || isFlatFirstDiagnostic || allViewsRevealed;
+  //
+  // ⚠️ `Boolean(generationRequestState?.requestId)` WAS HERE AND TOOK THE REVISE
+  // BUTTON WITH IT (issue #570). `isFlatFirstDiagnostic` is already the ATLAS
+  // flag, so auto-reveal was never what that term bought; what it actually did
+  // was make this true for EVERY run the moment a request existed, including
+  // legacy — which permanently closes the `mainDisplayUrl && !viewsVisible`
+  // block further down, and that block holds the only navigation to
+  // `/revision-studio` on this screen. The customer reaches a finished design
+  // with no way back to revise it, which is RULE 0.23's "then ask" half
+  // deleted. It shipped under a test skip, so the lock that says exactly this
+  // never ran.
+  const viewsVisible = isFlatFirstDiagnostic || allViewsRevealed;
   const displayedAllViews = viewsVisible ? sortedAllViews : [];
   const VIEW_LABEL_MAP: Record<string, string> = {
     side: 'Driver Side', 'driver-side': 'Driver Side',

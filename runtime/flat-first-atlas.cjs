@@ -93,6 +93,10 @@ const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cj
 const {
   PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
   authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
+  // The three-zone document, derived from the accepted master on every
+  // topology. Same functions the panel-proof pass runs -- a second producer of
+  // these panels is what RULE 0.21 forbids by name.
+  assemblePanelProofMaster, panelRowsFromManifest,
 } = require("./atlas-panel-proof-topology.cjs");
 
 const ATLAS_CONTRACT = "designpro.flat-first-atlas.v1";
@@ -116,7 +120,7 @@ const PIPELINE_MODE = "flat-first-atlas-v1";
 // (assertAtlasReuseContract, authoring paths). Existing generations stay
 // readable, viewable and downloadable everywhere — no read path checks it,
 // locked by tests/atlas-historical-read.test.mjs.
-const PROMPT_VERSION = "designpro-flat-first-atlas-20260918.v28-clean-base-elements";
+const PROMPT_VERSION = "designpro-flat-first-atlas-20260921.v29-designpanelai-brain";
 // Historical field contract retained for harness compatibility; the product
 // selects the unchanged six-surface branch by omitting this request key.
 const ATLAS_FIELD_PROMPT_CONTRACT = "designpro.atlas-field-prompt.v2";
@@ -256,7 +260,7 @@ const CANVAS = Object.freeze({ widthPx: 4096, heightPx: 4096 });
 // `atlas-artboard-designiq.20260827.v2`. Nothing compares the two, so it never
 // failed a run -- it just recorded the wrong prompt identity on every revision
 // and hashed reuse against a version no request has carried since.
-const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260918.v28-clean-base-elements";
+const ATLAS_ARTBOARD_EDGE_PROMPT_VERSION = "atlas-artboard-designiq.20260921.v29-designpanelai-brain";
 const BLEED_INCHES = 5;
 const CALL_ONE_PANEL_CONTRACT = "designpro.flat-first-atlas-call1-panel.v1";
 // Two, not three: a deterministic crop that fails the same way twice is not
@@ -1717,6 +1721,18 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
     mode: "atlas-artboard",
     authoringMode: String(input?.mode || "commercial").toLowerCase() === "restyle" ? "restyle" : "commercial",
     prompt: brief,
+    // THE STYLE DNA TRAVELS AS ITS OWN FIELD, NOT ONLY AS A LINE OF PROSE.
+    //
+    // `brief` above folds it in as "Reference style DNA: ...", which reaches the
+    // model as one more sentence among many. The edge's real DesignPanelAI
+    // assembly has a DEDICATED `styleDescriptors` branch -- the one that makes an uploaded
+    // reference actually steer the design -- and `handleAtlasArtboard` reads it
+    // from `body.styleDescriptors`, which this body never sent. So across every
+    // run the VisionBoard pre-pass produced style DNA and the brain's own
+    // branch for it never fired. Sending both is deliberate: the prose line is
+    // what the accepted Sept masters carried, and the field is what the branch
+    // needs. Absent DNA stays absent.
+    styleDescriptors: styleDna || undefined,
     finish: String(input?.finish || "Gloss"),
     companyName: String(input?.companyName || input?.businessName || "").trim() || undefined,
     phone: String(input?.phone || "").trim() || undefined,
@@ -3182,19 +3198,30 @@ async function recordAtlasRefusal(supabase, row, logger = () => {}) {
  * does.
  */
 async function generateOrReuseFlatAtlas(options) {
-  // THE PANEL PRODUCTION PROOF IS FIRST WHEN THE DEPLOY SAYS SO (owner,
-  // 2026-09-19: "wire production-panel-proof directly into the live customer
-  // production route as the active Call 1 engine — no more probe-only
-  // execution"). It is ahead of hero-driver deliberately: hero-driver measured
-  // 0/3 on real vehicles and is off, and reading the flags in this order means
-  // one flag decides one thing.
+  // ⛔ THE PANEL-PROOF ROUTING IS GONE FROM CALL 1 (owner ruling, Trish
+  // 2026-09-21: "kill the production-panel-proof bypass — put Call 1 back on
+  // the real DesignPanelAI brain where the enriched brief, style descriptors
+  // and visual quality references are actually consumed").
   //
-  // First authoring only, like both other routings: a revision edit keeps its
-  // parent's topology, and the pass refuses one outright.
-  if (options?.authoringTopology === undefined && panelProofEnabled()
-    && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
-    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: PANEL_PROOF_TOPOLOGY });
-  }
+  // `production-panel-proof` is its own Call-1 endpoint and, as its own header
+  // says, "cannot reach design-panel-ai-generate at all". Routing Call 1
+  // through it on 2026-09-19 did not revert the DesignPanelAI work — it
+  // BYPASSED it, and with it every input the brain reads: the enriched brief,
+  // `styleDescriptors`, the VisionBoard branch, LOGO_REQUIREMENT,
+  // COMMERCIAL_DEPTH and the gold-standard artboards. The owner judged the
+  // output against the Sept 17-18 designs and it is not the same product.
+  //
+  // So Call 1 falls through to the contracts that DO execute the real
+  // DesignPanelAI creative assembly through the deployed edge (RULE 0.26): field-first
+  // when the flag says so, six-surface otherwise.
+  //
+  // WHAT IS NOT DELETED: `atlas-panel-proof-topology.cjs`, the
+  // `production-panel-proof` function, the three-zone document and its read
+  // path all stay, and `authoringTopology: "panel-proof"` still runs them for a
+  // probe or a caller that names it. The three-zone proof is a PRODUCTION
+  // DOCUMENT; it was never the design authority. `DESIGNPRO_ATLAS_PANEL_PROOF`
+  // no longer selects Call 1 — a flag must not be able to put the customer back
+  // on a brain-less path, which is exactly how this shipped unnoticed.
   if (options?.authoringTopology === undefined && heroDriverEnabled()
     && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
     return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
@@ -4554,6 +4581,75 @@ async function generateOrReuseFlatAtlasResolved(options) {
     }),
     projectionPromise,
   ]);
+
+  // ── THE CALL-1 PRODUCTION PANEL PROOF, DERIVED FROM THE ACCEPTED MASTER ──
+  //
+  // Owner, 2026-09-21: "obviously you maintain Call 1 PanelPro production
+  // proof." The three-zone document stays the deliverable. What changed is only
+  // who draws the artwork underneath it.
+  //
+  // Read `assemblePanelProofMaster` before assuming this needs its own image
+  // call: it does not. Only ZONE 2 — the six clean, unlettered backgrounds —
+  // ever came from a model. Zone 1 is `compositeProductionPanels`, Zone 3 is
+  // original assets and outlined typeset, the sheet is
+  // `renderContainerTemplate`. All deterministic. And the brain already authors
+  // the clean backgrounds: `cleanBase` asks for a composition with the
+  // lettering left off, and the six panels above are exact crops of it.
+  //
+  // So the proof is built from the panels the customer actually buys, and the
+  // design comes from DesignPanelAI. That is the whole point of the
+  // restoration — the proof was never the designer, and killing the bypass was
+  // never meant to kill the document.
+  //
+  // ⚠️ IT FAILS SOFT, AND THAT IS THE RULE 0.15 BLAST-RADIUS LESSON APPLIED.
+  // The master is accepted, the panels are cut, the proofs are rendering. A
+  // document that cannot be assembled must not destroy any of that — this repo
+  // has already recorded one interrupted OPTIONAL edit failing a whole
+  // generation as terminal, and the finishing rule exists because of it. An
+  // absent proof is a missing document; a thrown one is a lost design.
+  let panelProofDocument = null;
+  if (!panelProof) {
+    const proofAt = Date.now();
+    try {
+      panelProofDocument = await assemblePanelProofMaster({
+        // The accepted master is named as the artwork authority so every
+        // refusal can point at the pixels it judged. It is also what Zone 2
+        // was cut from, so this is its true source.
+        sheet: {
+          bytes: surfaceSourceBytes,
+          storagePath: acceptedMasterStoragePath || null,
+          contentHash: acceptedMasterHash,
+          byteSize: surfaceSourceBytes.length,
+        },
+        zone2Panels: callOnePanels,
+        documentOnly: true,
+        // OWNER RULING 2026-09-21: clean base OFF — DesignPanelAI draws the
+        // logo and lettering into the artwork in one image call, which is the
+        // Sept 17-18 configuration the accepted designs were made on. These
+        // panels therefore carry type, and the proof's Zone 2 bar states that
+        // rather than claiming a clean base that was never authored.
+        cleanBaseZone2: cleanBaseEnabled(),
+        panelRows: panelRowsFromManifest(manifest),
+        input: authoringInput, manifest, store, logger,
+        downloadAsset: async (identity) => {
+          const { data, error } = await supabase.storage.from("wrap-files").download(identity.storagePath);
+          if (error || !data) throw new Error(`${identity.storagePath}: ${error?.message || "missing"}`);
+          return Buffer.from(await data.arrayBuffer());
+        },
+      });
+      timings.panelProofDocumentMs = Date.now() - proofAt;
+      logger(`atlas call 1: production panel proof `
+        + `${String(panelProofDocument?.provenance?.proofSha256 || "").slice(0, 12)} derived from the accepted master`);
+    } catch (cause) {
+      timings.panelProofDocumentMs = Date.now() - proofAt;
+      logger?.warn?.("flat_atlas_panel_proof_document_failed", {
+        generationId,
+        code: cause?.code || "flat_atlas_panel_proof_document_failed",
+        reason: String(cause?.reason || cause?.message || cause).slice(0, 400),
+      });
+    }
+  }
+
   // Every content-addressed path the write batch below needs must be resolved
   // BEFORE that batch is defined -- `persistImmutableAssets` is now invoked
   // thirty lines earlier than the write it replaced, so a declaration left at
@@ -4687,7 +4783,15 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // cut cell's fit, the stage timings, and the proof sheet's own identity.
       // Null on every other topology. A reader that cannot see the clean panels
       // and the cut graphics here would assume the sheet carried only panels.
-      panelProofAuthoring: generated?.panelProof || null,
+      // On the panel-proof topology this is the authoring receipt. On every
+      // other topology it is the receipt of the three-zone document DERIVED
+      // from the accepted master — same `proofStoragePath` / `proofSha256`
+      // shape, so `readStoredRevision`, the claimant and the UI all read it
+      // unchanged. `provenance.topology` says which one produced it, and the
+      // derived one carries no `bytes` or `contentHash`, so it can never be
+      // mistaken for a master.
+      panelProofAuthoring: generated?.panelProof
+        || panelProofDocument?.provenance || null,
       geometryAuthority: manifest.geometryAuthority,
       // GENIE PREP receipt: which authority produced the geometry (prep or
       // inline), when it was requested/ready, and the time Generate avoided.

@@ -60,3 +60,26 @@ test('live test briefs opt in with descriptive logo subjects',()=>{
     assert.equal(proofLogoRequested({customerPrompt}),false,customerPrompt);
   }
 });
+
+// ONE LONG SENTENCE IS HOW PEOPLE ACTUALLY WRITE A BRIEF.
+//
+// Live bbdd0db0 (2026-09-21, owner's own run): the brief says "feature a custom
+// logo" and Zone 3 shipped two elements, both text. The detector spanned up to
+// 100 characters back from `logo` to the nearest request verb and vetoed the
+// whole span if it mentioned a wrap -- so "Create a WRAP ... feature a custom
+// logo" was read as a request to reuse an existing mark. The veto is right
+// about "using my existing logo" and wrong about an entire sentence.
+test('a logo asked for mid-sentence is still a logo request',()=>{
+  const BOTANICAL = 'Create a wrap for a landscape design company for Botanical Gardens landscape Design feature a custom logo use a desert tropical Scottsdale home front on 3/4 of sides and rear along with green , blue black and rust colors';
+  assert.equal(proofLogoRequested({customerPrompt:BOTANICAL}),true,'live bbdd0db0');
+  for (const customerPrompt of [
+    'Design a fleet wrap for Ace Plumbing and include a custom logo.',
+    'Wrap my van in blue and add an original logo mark.',
+  ]) assert.equal(proofLogoRequested({customerPrompt}),true,customerPrompt);
+  // Ownership is read from the words attached to `logo`, not from anywhere in
+  // the sentence: the van is "my", the logo is not.
+  for (const customerPrompt of [
+    'Create a full commercial wrap for Ace Plumbing on a Ford Transit using our existing company logo and brand colors.',
+    'Build a wrap around the supplied logo.',
+  ]) assert.equal(proofLogoRequested({customerPrompt}),false,customerPrompt);
+});

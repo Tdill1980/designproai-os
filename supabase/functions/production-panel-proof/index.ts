@@ -214,6 +214,40 @@ const PINNED_INPUTS = [
 ] as const;
 
 /**
+ * THE GOLD-STANDARD ARTBOARDS — WHAT "GOOD" LOOKS LIKE.
+ *
+ * On the separated-artwork route this function was sending the model a BLANK
+ * container and TEXT, and nothing else. `PINNED_INPUTS` is skipped here, and
+ * correctly so -- the compositor draws the three-zone document, not Gemini --
+ * but that left Call 1 designing a commercial vehicle wrap with no exemplar of
+ * one anywhere in the request.
+ *
+ * Live bbdd0db0 (2026-09-21) is what that produces: six cropped photographs of
+ * a desert garden, no composition, no colour system, no integration of the
+ * brand. The persona text can describe professionalism; it cannot show it.
+ *
+ * `runtime/flat-atlas-topology-examples.cjs#loadDesignPanelArtboardExamples`
+ * has held this capability the whole time -- ported from
+ * `_shared/artboard-template-os.ts#loadArtboardExamples` -- and was never
+ * called by any production path, while the metadata reported a hardcoded 0.
+ * Its contract is preserved exactly here: list ten, take at most the first two
+ * supported images, skip anything over 8 MiB, and treat a missing or empty
+ * prefix as non-fatal.
+ *
+ * IT READS THEM ITSELF, like the pinned sheet above, rather than taking them
+ * on the request. That keeps RULE 0.24's classes apart by construction: these
+ * can never arrive as `customerAssets`, so a quality reference can never
+ * become CREATIVE authority and contribute artwork, palette or branding.
+ *
+ * The original bucket constant was the string "wrap-files flat panel", which
+ * is not a bucket on this project and never has been -- a search phrase frozen
+ * into a constant. These live under a prefix of the real Call-1 bucket.
+ */
+const ARTBOARD_QUALITY_PREFIX = "designpanel-artboard-examples/";
+const ARTBOARD_QUALITY_MAX_BYTES = 8 * 1024 * 1024;
+const ARTBOARD_QUALITY_MAX = 2;
+
+/**
  * THIS FUNCTION DRAWS ITS OWN CONTAINER TEMPLATE. IT IS THE PANEL STUDIO.
  *
  * Owner, 2026-09-18, looking at a container that had been rendered elsewhere
@@ -434,8 +468,30 @@ serve(async (req) => {
           && (!body?.logoAsset?.contentHash || a.contentHash !== body.logoAsset.contentHash);
       })
       .slice(0, 8);
+    /**
+     * A PARAPHRASE MUST NOT BE ABLE TO SWALLOW THE CUSTOMER'S PLACEMENT.
+     *
+     * `intake.creativeDirection` won outright here. The intake prompt tells
+     * the reader to copy the customer's own words, to keep placement, and that
+     * the brief "must not be shortened" -- but it is a Flash call, it fails
+     * soft, and nothing measured whether it actually kept them. On live
+     * bbdd0db0 the brief asked for the scene "on 3/4 of sides and rear" and
+     * the design covers whole panels edge to edge.
+     *
+     * So the extraction is checked against the words it came from. Intake
+     * legitimately drops the vehicle, the phone number and the web address, so
+     * a shorter result is expected; losing most of the brief is not. Below
+     * two thirds of the original wording the customer's own sentence is used
+     * instead, because an unshortened brief the designer can read beats a tidy
+     * one that lost the instruction.
+     */
+    const extracted = field("creativeDirection");
+    const rawBrief = String(body?.prompt || "") || customerPrompt;
+    const words = (value: string) => String(value || "").trim().split(/\s+/).filter(Boolean).length;
+    const briefText = extracted && words(extracted) >= Math.ceil(words(rawBrief) * 0.66)
+      ? extracted : (rawBrief || extracted);
     const creativeDirection = [
-      field("creativeDirection") || String(body?.prompt || "") || customerPrompt,
+      briefText,
       field("style") ? `Style direction: ${field("style")}.` : "",
     ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
@@ -468,9 +524,41 @@ serve(async (req) => {
       // The shared clean-base branch omits customer copy. Its presentation and
       // exact-reference sentences still mention branding; adapt only those
       // two clauses for this background-only output.
+      /**
+       * A CLEAN BASE IS STILL A DESIGN. THIS ASKED FOR A BACKGROUND.
+       *
+       * "Reserve calm, high-contrast negative space for the separate vector
+       * overlay layer" replaced the sentence that hands the designer authority
+       * over composition -- and it is the whole of what the designer was told
+       * about layout. Asked for a calm background, a designer gives you a
+       * photograph, which is exactly what live bbdd0db0 returned: six cropped
+       * desert-garden photos with no composition, no colour system and no
+       * graphic language, while the customer's own placement instruction
+       * ("a desert tropical Scottsdale home front on 3/4 of sides and rear")
+       * went unanswered.
+       *
+       * The separation is not the problem and is not being undone: Zone 2
+       * needs lettering-free panels for template QC and Zone 3 needs the marks
+       * as separate originals. What has to change is that the base is a
+       * COMPOSED wrap missing only its lettering, not a backdrop. So the
+       * replacement keeps every constraint the overlay needs -- no lettering,
+       * no logo, reserved space with enough contrast to carry type -- and
+       * gives back the design brief that was taken away.
+       *
+       * This is creative conditioning and it is therefore judgement, not a
+       * measurement. It is narrow on purpose: it restores composition
+       * authority and the customer's stated placement, and adds nothing about
+       * subject, palette or style, which remain the brief's alone.
+       */
       creativeHead = creativeHead
         .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
-          "Reserve calm, high-contrast negative space for the separate vector overlay layer.")
+          "This is a finished commercial wrap composition with its lettering left off, never a backdrop: "
+          + "design it with deliberate flow across the panel, a committed colour system, and graphic language "
+          + "-- shapes, sweeps, edges, photographic content -- arranged as a designer would arrange them. "
+          + "Honour every placement the customer stated: where they say artwork covers a fraction of a side "
+          + "or a specific area, compose it exactly there. "
+          + "Leave one deliberate, calm, high-contrast area on each surface for the brand lockup that is "
+          + "composited separately; reserving that area is part of the composition, not a substitute for it.")
         .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
           "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully");
     }
@@ -546,6 +634,10 @@ serve(async (req) => {
     // in, twice, with a bodiless 504.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
     const attached: Array<Record<string, unknown>> = [];
+    // Reported separately from `attachedInputs` so "did Call 1 see a
+    // gold standard, and which one" is a field rather than a grep. The
+    // revision receipt recorded a hardcoded 0 for this for weeks.
+    const qualityExamples: Array<{ path: string; sha256: string; byteSize: number }> = [];
 
     // THE CONTAINER GOES FIRST, because the prompt names it as attachment (1).
     //
@@ -625,6 +717,44 @@ serve(async (req) => {
       }
       parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
+    }
+
+    // The gold-standard artboards. Quality reference ONLY -- never topology,
+    // never artwork. A bucket outage or an empty prefix must not cost a design,
+    // so every failure here is swallowed and simply yields no examples, exactly
+    // as the runtime loader this is ported from behaves.
+    try {
+      const { data: listed } = await svc.storage.from(BUCKET)
+        .list(ARTBOARD_QUALITY_PREFIX.replace(/\/$/, ""), { limit: 10 });
+      const candidates = (listed || [])
+        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
+        .slice(0, ARTBOARD_QUALITY_MAX);
+      for (const file of candidates) {
+        const path = `${ARTBOARD_QUALITY_PREFIX}${file.name}`;
+        const { data, error } = await svc.storage.from(BUCKET).download(path);
+        if (error || !data) continue;
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        if (!bytes.length || bytes.length > ARTBOARD_QUALITY_MAX_BYTES) continue;
+        const extension = String(file.name).toLowerCase().split(".").pop();
+        const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg"
+          : extension === "webp" ? "image/webp" : "image/png";
+        // The text goes FIRST so the image is already framed as a quality
+        // reference when the model reaches it, and it names every axis the
+        // example may NOT influence. Wording preserved from the runtime port.
+        parts.push({
+          text: `DESIGNPANEL GOLD-STANDARD ARTBOARD ${qualityExamples.length + 1} — PRODUCTION-QUALITY REFERENCE ONLY. `
+            + `Match its professional depth, finish, typographic hierarchy, connected-wrap coherence and gallery-grade execution: `
+            + `this is the standard of design the output must reach. `
+            + `Copy none of its artwork, photography, palette, wording, logo, brand, industry, panel geometry or topology. `
+            + `The container template above alone controls topology, and the customer's own brief alone controls subject and colour.`,
+        });
+        parts.push({ inlineData: { mimeType, data: encodeBase64(bytes) } });
+        const digest = await sha256Hex(bytes);
+        qualityExamples.push({ path, sha256: digest, byteSize: bytes.length });
+        attached.push({ role: "artboard-quality", path, sha256: digest, byteSize: bytes.length });
+      }
+    } catch (_error) {
+      // Examples improve quality; their absence never blocks authoring.
     }
 
     // THE CUSTOMER'S VERIFIED CREATIVE REFERENCES.
@@ -791,6 +921,8 @@ serve(async (req) => {
       // sheet just quietly carries the wrong company or the wrong truck.
       intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
       attachedInputs: attached,
+      artboardQualityExamplesApplied: qualityExamples.length,
+      artboardQualityExampleIdentities: qualityExamples,
       elapsedMs: Date.now() - t0,
       // Whether the model returned reasoning alongside the image, so the
       // base -> typography continuation can be judged before it is built.

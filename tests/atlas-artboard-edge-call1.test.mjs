@@ -84,7 +84,7 @@ test("exactly one Gemini image request lives in the atlas-artboard handler", () 
 test("the response carries the full owner proof contract", () => {
   assert.match(handler, /functionName: "design-panel-ai-generate"/);
   assert.match(assembly, /ATLAS_ARTBOARD_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524"/);
-  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260918\.v28-clean-base-elements"/);
+  assert.match(assembly, /ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq\.20260921\.v29-designpanelai-brain"/);
   assert.match(assembly, /ATLAS_FIELD_PROMPT_CONTRACT = "designpro\.atlas-field-prompt\.v2"/);
   assert.match(handler, /fieldContract: atlasField \? ATLAS_FIELD_PROMPT_CONTRACT : null/);
   for (const field of ["requestId", "promptVersion", "model", "masterSha256", "masterUrl"]) {

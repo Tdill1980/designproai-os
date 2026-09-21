@@ -56,7 +56,7 @@ import {
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
 // path: the reconstructed persona bridge is deleted.
 const ATLAS_ARTBOARD_AUTHORING_MODEL = "gemini-3-pro-image";
-const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260918.v28-clean-base-elements";
+const ATLAS_ARTBOARD_PROMPT_VERSION = "atlas-artboard-designiq.20260921.v29-designpanelai-brain";
 // ONE-FIELD CONTRACT (owner ruling 2026-09-02, unfrozen 2026-09-02): when the
 // runtime sends this contract, Gemini authors ONE uninterrupted full-bleed
 // composition and receives NO six-region guide, NO labeled teaching sheet, NO
@@ -3077,6 +3077,64 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
 // inside this same master.
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * The gold-standard artboards Call 1 is shown as a quality bar.
+ *
+ * Seeding is a file copy: put approved flat A.T.L.A.S. sheets (PNG/JPEG/WebP)
+ * under `wrap-files/designpanel-artboard-examples/`. Nothing else is required —
+ * no row, no metadata, no naming convention beyond the extension.
+ *
+ * Everything here fails SOFT. A bucket outage, an empty prefix or a file too
+ * large yields no examples and the design is authored exactly as before; a
+ * quality reference must never be able to cost a customer their generation.
+ */
+const ATLAS_QUALITY_ARTBOARD_PREFIX = "designpanel-artboard-examples";
+const ATLAS_QUALITY_ARTBOARD_MAX = 2;
+/** Per file, on disk. Above this one example alone would eat the whole budget. */
+const ATLAS_QUALITY_ARTBOARD_MAX_BYTES = 2 * 1024 * 1024;
+/** Kept free for the neutral target guide, which is attached after these. */
+const ATLAS_QUALITY_ARTBOARD_RESERVE_BYTES = 1024 * 1024;
+
+async function loadAtlasQualityArtboards(
+  svc: any,
+  assembledParts: Array<Record<string, unknown>>,
+): Promise<Array<{ path: string; mimeType: string; data: string; byteSize: number }>> {
+  const out: Array<{ path: string; mimeType: string; data: string; byteSize: number }> = [];
+  try {
+    // Measured, not estimated: this is the same string the ceiling is applied
+    // to, so the headroom below is the real headroom.
+    let assembled = new TextEncoder().encode(JSON.stringify(assembledParts)).byteLength;
+    const { data: listed } = await svc.storage.from("wrap-files")
+      .list(ATLAS_QUALITY_ARTBOARD_PREFIX, { limit: 10 });
+    const candidates = (listed || [])
+      .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
+      .slice(0, ATLAS_QUALITY_ARTBOARD_MAX);
+    for (const file of candidates) {
+      const path = `${ATLAS_QUALITY_ARTBOARD_PREFIX}/${file.name}`;
+      const { data, error } = await svc.storage.from("wrap-files").download(path);
+      if (error || !data) continue;
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (!bytes.length || bytes.length > ATLAS_QUALITY_ARTBOARD_MAX_BYTES) continue;
+      // base64 is 4 bytes per 3, and the framing text rides along with it.
+      const projected = assembled + Math.ceil(bytes.length / 3) * 4 + 1024;
+      if (projected > ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES - ATLAS_QUALITY_ARTBOARD_RESERVE_BYTES) break;
+      const extension = String(file.name).toLowerCase().split(".").pop();
+      const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg"
+        : extension === "webp" ? "image/webp" : "image/png";
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      out.push({ path, mimeType, data: btoa(binary), byteSize: bytes.length });
+      assembled = projected;
+    }
+  } catch (_error) {
+    // Examples raise the bar; their absence never blocks authoring.
+  }
+  return out;
+}
+
 async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: string): Promise<Response> {
   let requestId = crypto.randomUUID();
   let imageRequestCount = 0;
@@ -3232,6 +3290,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     // six-region guide, no topology text. Everything below this branch is the
     // legacy six-container request, kept callable for the harness slice.
     let verifiedTeachingProof: Record<string, unknown> | null = null;
+    // Reported on the provenance, so "was Call 1 shown a gold standard" is read
+    // off the revision rather than assumed. An empty array is a real answer:
+    // the prefix is not seeded, and a run that silently showed none would look
+    // identical to one that showed two.
+    const qualityArtboards: Array<{ path: string; byteSize: number }> = [];
     if (atlasField) {
       for (const ref of references) pushImage(ref);
     } else {
@@ -3260,6 +3323,38 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       };
     }
     for (const ref of references) pushImage(ref);
+    // THE GOLD-STANDARD ARTBOARDS — the "visual quality references" (owner,
+    // 2026-09-21). Quality authority ONLY: never topology, never artwork.
+    //
+    // RULE 0.24 puts these in the STRUCTURAL class, so they sit AFTER the
+    // customer's own creative references and BEFORE the guide, which keeps
+    // v14's two proven positions intact (teaching sheet early, neutral guide
+    // last) and keeps the customer's authority ahead of ours.
+    //
+    // They are NOT read through `loadArtboardExamples`: that reads the bucket
+    // `"wrap-files flat panel"`, which is not populated on this project and
+    // measured `0 gold-standard artboard(s)` live. This reads a real prefix of
+    // the Call-1 bucket, so seeding it is a file copy.
+    //
+    // ⚠️ THE SIZE RESERVE IS LOAD-BEARING, NOT TIDINESS. The assembled request
+    // is refused ABOVE `ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES` by a THROW, and
+    // the pinned teaching proof alone is 4.57 MB once base64'd. Two unbounded
+    // 8 MB examples would put every single generation over that ceiling and
+    // fail Call 1 outright — a "quality improvement" that refuses the design.
+    // So the budget is measured against what is already assembled, with room
+    // left for the guide that still has to go on.
+    for (const attached of await loadAtlasQualityArtboards(svc, parts)) {
+      parts.push({
+        text: `DESIGNPANEL GOLD-STANDARD ARTBOARD — PRODUCTION-QUALITY REFERENCE ONLY. `
+          + `Match its professional depth, finish, typographic hierarchy, connected-wrap coherence `
+          + `and gallery-grade execution: this is the standard of design the output must reach. `
+          + `Copy none of its artwork, photography, palette, wording, logo, brand, industry, `
+          + `panel geometry or topology. The target guide below alone controls layout, and the `
+          + `customer's own brief and references alone control subject and colour.`,
+      });
+      parts.push({ inlineData: { mimeType: attached.mimeType, data: attached.data } });
+      qualityArtboards.push({ path: attached.path, byteSize: attached.byteSize });
+    }
     // THE NEUTRAL TARGET GUIDE, LAST — v14's proven position.
     //
     // It is an unlabelled, unstroked six-rectangle mask (renderAtlasAuthoringGuide
@@ -3358,6 +3453,8 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
+        qualityArtboardsApplied: qualityArtboards.length,
+        qualityArtboardIdentities: qualityArtboards,
         fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,
         topologyContract: ATLAS_TOPOLOGY_CONTRACT,
         promptChars: prompt.length,

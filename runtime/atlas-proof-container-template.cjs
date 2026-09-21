@@ -303,7 +303,24 @@ function surfacesFrom(manifest = {}) {
  * Deno. Separating the two makes the portable half portable.
  */
 function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5,
-  mode = "template", job = {}, dimensionManifest } = {}) {
+  mode = "template", job = {}, dimensionManifest,
+  /**
+   * DOES A LETTERING-FREE CLEAN BASE ACTUALLY EXIST FOR THIS DESIGN?
+   *
+   * Zone 2's bar used to assert "BACKGROUNDS ONLY (NO TEXT OR LOGO)"
+   * unconditionally. That is true only while the clean-base element graph is
+   * on: with it off, DesignPanelAI draws the logo and lettering INTO the
+   * artwork (the Sept 17-18 configuration the owner selected on 2026-09-21),
+   * so the Zone 2 panels legitimately carry type — and a document that prints
+   * "no text or logo" over panels with text on them is the claiming-what-was-
+   * never-established failure this repo has now recorded six times, printed on
+   * the customer's own proof.
+   *
+   * So the bar states what the row IS. The geometry, the captions and every
+   * dimension are untouched, and with a clean base present the wording is
+   * byte-identical to what it has always been.
+   */
+  cleanBase = true } = {}) {
   const chrome = mode === "chrome";
   const ground = chrome ? "none" : "#ffffff";
   const surfaces = surfacesFrom(manifest);
@@ -408,8 +425,12 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
-    "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
-    "6 PANELS — BACKGROUND ARTWORK ONLY"));
+    cleanBase
+      ? "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)"
+      : "ZONE 2 — PRINT PANELS AS AUTHORED",
+    cleanBase
+      ? "6 PANELS — BACKGROUND ARTWORK ONLY"
+      : "6 PANELS — ARTWORK, LETTERING AND LOGO AS DESIGNED"));
   m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
