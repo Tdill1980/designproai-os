@@ -783,6 +783,27 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
     "the ceiling belongs on ACCEPTED examples, never on the listing");
   assert.match(edge, /if \(qualityExamples\.length >= ARTBOARD_QUALITY_MAX\) break;/,
     "walk the listing until the accepted count is reached");
+
+  // ⚠️ EVERY READER OF `providerRequest` COMES AFTER ITS DECLARATION.
+  //
+  // This is a temporal-dead-zone lock, and it exists because live run 20 died
+  // in 25 seconds on "Cannot access 'providerRequest' before initialization"
+  // -- before one image request -- while 88 tests were green.
+  //
+  // THEY WERE GREEN BECAUSE THEY ALL GREP THIS FILE AND NONE EXECUTES IT. A
+  // source-level assertion cannot see a TDZ; only running the handler can, and
+  // nothing here runs the handler. So the cheap structural invariant is pinned
+  // instead: the identity is BOUND before the design turn that keys itself with
+  // it, which is bound before the layout request that continues it. Move the
+  // declaration back down and this fails where the suite previously could not.
+  const iDecl = edge.indexOf("const providerRequest = {");
+  const iDesign = edge.indexOf("const designAt = Date.now();");
+  const iModel = edge.indexOf("const modelRequest = JSON.stringify({");
+  assert.ok(iDecl > 0 && iDesign > 0 && iModel > 0, "all three anchors must exist");
+  assert.ok(iDecl < iDesign,
+    "providerRequest must be declared before the design turn that authorises against it");
+  assert.ok(iDesign < iModel,
+    "the design turn must run before the layout request that replays it");
   const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
   assert.equal(wrappedCalls,imageCalls,
     "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
