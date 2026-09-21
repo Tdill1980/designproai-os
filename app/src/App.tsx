@@ -302,8 +302,11 @@ const isSelfHeaderedToolRoute = (pathname: string) =>
 const isWallProPartnerRoute = (pathname: string, hostname: string) =>
   pathname === "/wall-wrap" ||
   // The case study wears the same partner header and must not get DesignProAI
-  // chrome stacked on top of it either.
+  // chrome stacked on top of it either. A SECOND case study lives one segment
+  // deeper (/wall-wrap/how-it-works/gym), so this matches the prefix -- an
+  // exact match would have stacked both headers on every study but the first.
   pathname === "/wall-wrap/how-it-works" ||
+  pathname.startsWith("/wall-wrap/how-it-works/") ||
   pathname === "/wall-wrap/faq" ||
   pathname === "/wallwrap-design" ||
   // PatternPro's partner page carries the same WePrintWraps header.
@@ -512,6 +515,13 @@ const App = () => {
               so it wears the app shell rather than the marketing nav. */}
           <Route path="/wall-wrap/how-it-works" element={<WallProCaseStudy brand="weprintwraps" />} />
           <Route path="/printpro/wallpro/how-it-works" element={<WallProCaseStudy />} />
+          {/* A SECOND REAL WALL (owner, 2026-09-21: "gym becomes a 2nd case
+              study"). The page is one component and a study is data
+              (lib/wallpro-case-studies.ts); an unknown or unmeasured slug
+              resolves to the default study rather than 404ing, so a stale link
+              lands on a real case study instead of an error. */}
+          <Route path="/wall-wrap/how-it-works/:study" element={<WallProCaseStudy brand="weprintwraps" />} />
+          <Route path="/printpro/wallpro/how-it-works/:study" element={<WallProCaseStudy />} />
           {/* The FAQ, the same way and for the same reason. It carries the
               corner/mask geometry the editor actually draws, the GENIE Wall
               Panelizer rail, and the price ladder -- all read from the

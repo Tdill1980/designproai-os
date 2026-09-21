@@ -1,3 +1,18 @@
+/**
+ * RETRACTED 2026-09-21 — the gym "after" frame is withdrawn from every slot.
+ *
+ * It was an AI-generated design in an athletic style, and the model wrote a
+ * real company's trademark into the artwork (owner: "its supposed to be
+ * inspired style of model wrote les mills than it needs retracting asap"). It
+ * was the Commercial hero slide and the poster on both video slots, so it was
+ * the most visible image on this page. Those three now point at
+ * landing-corporate.webp, which is a clean commercial example already shipping
+ * for the Corporate slide, and the copy that called it a training floor is
+ * corrected with it.
+ *
+ * The gym BEFORE frame stays: it is a photograph of a bare grey wall and
+ * carries no mark. Only the generated "after" is the problem.
+ */
 export type LandingSlotKey = 'residential' | 'commercial' | 'hospitality' | 'corporate' | 'retail' | 'before' | 'process' | 'install';
 export type LandingMedia = {
   slot: LandingSlotKey;
@@ -15,7 +30,7 @@ export const LANDING_QUERY_KEY = ['wallpro-landing-media'];
 export const EXAMPLE_KEYS: LandingSlotKey[] = ['residential', 'commercial', 'hospitality', 'corporate', 'retail'];
 export const LANDING_SLOTS: { key: LandingSlotKey; label: string; kind: 'image' | 'video'; ratio: string; help: string; defaults: LandingMedia }[] = [
   { key: 'residential', label: 'Residential / opening hero', kind: 'image', ratio: '16:9', help: 'The first hero image and Residential thumbnail.', defaults: { slot: 'residential', src: '/wallpro/proof-spa-after.jpg', poster: '', title: 'Residential', caption: 'Home spa', alt: 'Tropical botanical wall design in a home spa', enabled: true } },
-  { key: 'commercial', label: 'Commercial example', kind: 'image', ratio: '16:9', help: 'The Commercial hero slide and thumbnail.', defaults: { slot: 'commercial', src: '/wallpro/proof-gym-after.jpg', poster: '', title: 'Commercial', caption: 'Fitness & gyms', alt: 'Modern gym with a large wall graphic', enabled: true } },
+  { key: 'commercial', label: 'Commercial example', kind: 'image', ratio: '16:9', help: 'The Commercial hero slide and thumbnail.', defaults: { slot: 'commercial', src: '/wallpro/landing-corporate.webp', poster: '', title: 'Commercial', caption: 'Fitness & gyms', alt: 'A commercial interior with a full-height printed wall graphic', enabled: true } },
   { key: 'hospitality', label: 'Hospitality example', kind: 'image', ratio: '16:9', help: 'The Hospitality hero slide and thumbnail.', defaults: { slot: 'hospitality', src: '/wallpro/landing-hospitality.webp', poster: '', title: 'Hospitality', caption: 'Hotels & restaurants', alt: 'Illustrative hotel lounge with a floral wall wrap', enabled: true } },
   { key: 'corporate', label: 'Corporate example', kind: 'image', ratio: '16:9', help: 'The Corporate hero slide and thumbnail.', defaults: { slot: 'corporate', src: '/wallpro/landing-corporate.webp', poster: '', title: 'Corporate', caption: 'Offices & workspaces', alt: 'Illustrative office reception with a wood-effect feature wall', enabled: true } },
   { key: 'retail', label: 'Retail example', kind: 'image', ratio: '16:9', help: 'The Retail hero slide and thumbnail.', defaults: { slot: 'retail', src: '/wallpro/landing-retail.webp', poster: '', title: 'Retail', caption: 'Stores & showrooms', alt: 'Illustrative eyewear store with a photographic wall wrap', enabled: true } },
@@ -35,8 +50,8 @@ export const LANDING_SLOTS: { key: LandingSlotKey; label: string; kind: 'image' 
    * figure that measures against them.
    */
   { key: 'before', label: 'Workflow / before photo', kind: 'image', ratio: '4:3', help: 'The photo shown in Upload and Mark in the five-step workflow.', defaults: { slot: 'before', src: '/wallpro/proof-gym-before.jpg', poster: '', title: 'Your starting point', caption: '', alt: 'A gym training floor with a plain grey wall behind the squat racks, before the wall wrap', enabled: true } },
-  { key: 'process', label: 'Horizontal design / printing video', kind: 'video', ratio: '16:9', help: 'Show designing, scaling, production files, or the wrap printing. Recommended: 1920 × 1080.', defaults: { slot: 'process', src: '', poster: '/wallpro/proof-gym-after.jpg', title: 'A real training floor. Designed in WallPro.', caption: 'Follow the project from a room photo to a custom wall design, measured artwork, and production-ready files.', alt: 'A gym wall in a full-height athletic mural', enabled: true } },
-  { key: 'install', label: 'Vertical final-install reel', kind: 'video', ratio: '9:16', help: 'Show the installation and the finished wall. Recommended: 1080 × 1920. The full video stays visible without cropping.', defaults: { slot: 'install', src: '', poster: '/wallpro/proof-gym-after.jpg', title: 'The final reveal.', caption: 'From a design on screen to a wall you can walk into.', alt: 'A gym wall in a full-height athletic mural', enabled: true } },
+  { key: 'process', label: 'Horizontal design / printing video', kind: 'video', ratio: '16:9', help: 'Show designing, scaling, production files, or the wrap printing. Recommended: 1920 × 1080.', defaults: { slot: 'process', src: '', poster: '/wallpro/landing-corporate.webp', title: 'A real commercial wall. Designed in WallPro.', caption: 'Follow the project from a room photo to a custom wall design, measured artwork, and production-ready files.', alt: 'A commercial interior with a full-height printed wall graphic', enabled: true } },
+  { key: 'install', label: 'Vertical final-install reel', kind: 'video', ratio: '9:16', help: 'Show the installation and the finished wall. Recommended: 1080 × 1920. The full video stays visible without cropping.', defaults: { slot: 'install', src: '', poster: '/wallpro/landing-corporate.webp', title: 'The final reveal.', caption: 'From a design on screen to a wall you can walk into.', alt: 'A commercial interior with a full-height printed wall graphic', enabled: true } },
 ];
 
 export function validLandingUrl(value: string): boolean {

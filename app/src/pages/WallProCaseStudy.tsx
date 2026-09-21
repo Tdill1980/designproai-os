@@ -44,7 +44,7 @@
  * readable. Every other glass element on the page is the same object -- a
  * caption chip over a photograph -- for the same reason.
  */
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { ArrowRight, Check, Ruler, Frame, Sparkles, Scaling, Printer, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { wallBrand, WALL_GRADIENT, type WallBrandKey } from '@/lib/wallpro-brand';
@@ -53,10 +53,18 @@ import { WALLPRO_PRINT_WIDTH } from '@/lib/wallpro-geometry';
 import { DEFAULT_WALL_PRINT, planWallPrint, wallBilling } from '@/lib/wallpro-print-plan';
 import { autoWallScale } from '@/lib/wallpro-scale';
 import { WPW_PRINTED_FILMS, money } from '@/lib/wpw-printed-films';
+import { caseStudyForSlug, caseStudyPath, publishedCaseStudies, DEFAULT_CASE_STUDY } from '@/lib/wallpro-case-studies';
 
-/** The room. Measured, not invented — see the header. */
-const WALL = { widthIn: 142, heightIn: 96 };
-const BRIEF = 'dark tropical anthurium and bird of paradise, moody, wall to wall';
+/**
+ * THE ROOM IS NOW DATA (owner, 2026-09-21: "gym becomes a 2nd case study").
+ *
+ * The wall, the brief, the photographs and the alt text live in
+ * lib/wallpro-case-studies.ts so a second real wall is a record rather than a
+ * copied page -- and so a study with no MEASURED wall cannot be published,
+ * which is what keeps this page's "every number is the product's own answer"
+ * guarantee true. Everything below still computes from `WALL`; only where it
+ * comes from changed.
+ */
 /** The roll WePrintWraps bills at, per the Avery HP MPI 2610 spec sheet. */
 const ROLL_IN = 54;
 
@@ -76,7 +84,8 @@ const ROLL_IN = 54;
  * figure shows the screenshot instead; leave it absent and the drawn stand-in
  * renders. No other change, and no broken frame in between.
  */
-const MASK_CAPTURE: string | null = null; // e.g. '/wallpro/case-studio-mask.jpg'
+// MASK_CAPTURE now rides on the study (lib/wallpro-case-studies.ts): a real
+// corner-marking capture when one exists, the drawn stand-in until.
 
 /** The stand-in quad, as fractions of the photograph — approximate, see above. */
 const MASK = [
@@ -152,6 +161,13 @@ function Fact({ label, value, note }: { label: string; value: string; note?: str
  * the right page by adding a row to the brand table, not by editing this file.
  */
 export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: WallBrandKey } = {}) {
+  const { study: studySlug } = useParams();
+  const study = caseStudyForSlug(studySlug);
+  // A published study always has a wall; the fallback keeps this total.
+  const WALL = study.wall ?? DEFAULT_CASE_STUDY.wall!;
+  const BRIEF = study.brief;
+  const MASK_CAPTURE = study.maskCapture;
+  const others = publishedCaseStudies().filter(s => s.key !== study.key);
   const theme = wallBrand(brand);
   /** Where "design your wall" goes. The partner's tool lives at its own slug. */
   // /wall-wrap is the partner's LANDING; their tool is /wallwrap-design.
@@ -193,12 +209,27 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
       <main className="mx-auto max-w-6xl px-4 pb-20 md:px-8">
         <section className="grid items-center gap-8 py-10 lg:grid-cols-2 md:py-14">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">Case study · Interior feature wall</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-300">{study.eyebrow}</p>
+            {/* THE SWITCHER APPEARS WHEN A SECOND WALL IS MEASURED, not before.
+                `publishedCaseStudies` only returns studies with a real wall, so
+                today this renders nothing and the page is unchanged; fill the
+                gym's inches and the link is simply there. */}
+            {others.length > 0 && (
+              <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-blue-200/80">
+                <span className="font-semibold uppercase tracking-wider text-blue-300/70">Also</span>
+                {others.map(other => (
+                  <Link key={other.key} to={caseStudyPath(other, brand === 'weprintwraps' ? 'weprintwraps' : 'designpro')}
+                    className="font-semibold text-blue-200 underline-offset-4 hover:underline">
+                    {other.tab}
+                  </Link>
+                ))}
+              </p>
+            )}
             <h1 className="mt-3 text-4xl font-extrabold leading-[1.05] tracking-tight md:text-5xl">
-              One wall,<br />bare to installed.
+              {study.headline[0]}<br />{study.headline[1]}
             </h1>
             <p className="mt-4 max-w-[48ch] text-base leading-relaxed text-slate-300">
-              A {WALL.widthIn}″ × {WALL.heightIn}″ studio wall, designed in WallPro
+              A {WALL.widthIn}″ × {WALL.heightIn}″ {study.wallNoun}, designed in WallPro
               {theme.showPrintOffer ? ' and printed by WePrintWraps' : ''}. Every measurement,
               panel and price on this page is computed live by the same code the tool
               runs — so what you read here is what you will get, not a screenshot of
@@ -220,7 +251,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
             </div>
           </div>
           <Figure caption={<><strong className="font-semibold">Finished.</strong> The same wall, wrapped in the design made below.</>}>
-            <img src="/wallpro/proof-spa-after.jpg" alt="A home studio with a dark tropical anthurium mural covering the wall either side of the window" className="aspect-[4/3] w-full object-cover" />
+            <img src={study.photos.after} alt={study.alt.after} className="aspect-[4/3] w-full object-cover" />
           </Figure>
         </section>
 
@@ -230,7 +261,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
             lead="The only thing the design needs to start is the wall's size. Not a photo, not an account — two numbers. Everything downstream is derived from them, so getting them right is the whole job at this stage."
             figure={
               <Figure caption={<><strong className="font-semibold">Before.</strong> {WALL.widthIn}″ wide × {WALL.heightIn}″ high — {billing?.wallSqFt} sq ft of wall.</>}>
-                <img src="/wallpro/proof-spa-before.jpg" alt="The same studio before, with plain cream walls either side of the window" className="aspect-[4/3] w-full object-cover" />
+                <img src={study.photos.before} alt={study.alt.before} className="aspect-[4/3] w-full object-cover" />
               </Figure>
             }
           >
@@ -249,7 +280,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
                   <img src={MASK_CAPTURE} alt="WallPro with the wall photo loaded and the four corners marked on the wall" className="aspect-[4/3] w-full object-cover" />
                 ) : (
                 <div className="relative">
-                  <img src="/wallpro/proof-spa-before.jpg" alt="The bare studio wall with a translucent mask drawn over the wall area" className="aspect-[4/3] w-full object-cover" />
+                  <img src={study.photos.before} alt={study.alt.mask} className="aspect-[4/3] w-full object-cover" />
                   {/* THE GLASS MASK. The quad is clipped on the PARENT and the
                       blur lives on the child: put `clip-path` and
                       `backdrop-filter` on one element and the browser filters
@@ -292,7 +323,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
             lead="Two personas run behind the button. A consultant turns your words into a real brief — named colours, arrangement, flow, and how a space like yours is actually designed. A designer then draws it as one continuous piece of art at wall proportions, not a tile fished out of a library."
             figure={
               <Figure caption={<><strong className="font-semibold">The flat master.</strong> A print file first, a picture second.</>}>
-                <img src="/wallpro/case-studio-artwork.jpg" alt="The generated artwork: pale anthurium and bird of paradise blooms across deep green tropical foliage on near-black" className="aspect-[4/3] w-full object-cover" />
+                <img src={study.photos.artwork || study.photos.after} alt={study.alt.artwork} className="aspect-[4/3] w-full object-cover" />
               </Figure>
             }
           >
@@ -385,7 +416,7 @@ export default function WallProCaseStudy({ brand = 'designpro' }: { brand?: Wall
             lead="The panels hang in order with the overlap duplicated on both sides of every seam, so the pattern meets itself rather than being coaxed into place. Trimming at the ceiling, skirting and window happens on the wall, which is why the artwork prints straight through them."
             figure={
               <Figure caption={<><strong className="font-semibold">After.</strong> Designed in WallPro{theme.showPrintOffer ? ', printed by WePrintWraps' : ''}.</>}>
-                <img src="/wallpro/proof-spa-after.jpg" alt="The finished studio with the tropical mural installed on both walls either side of the window" className="aspect-[4/3] w-full object-cover" />
+                <img src={study.photos.after} alt={study.alt.installed} className="aspect-[4/3] w-full object-cover" />
               </Figure>
             }
           />
