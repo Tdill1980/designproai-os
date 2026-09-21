@@ -2013,11 +2013,32 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
         if (actualTeaching[key] !== expectedTeaching[key]) mismatches.push(`teaching_identity.${key}`);
       }
     }
+    // ⛔ A CONTRACT MISMATCH NEVER DISCARDS A DESIGN. Owner ruling, 2026-09-21.
+    //
+    // Every rule above describes METADATA about the response -- how many inline
+    // images the edge counted, which prompt version it stamped, whether the
+    // teaching identity echoes byte for byte. Not one of them inspects the
+    // artwork. Throwing here destroyed designs that `design-panel-ai-generate`
+    // had already authored AND BILLED: #590 recorded "gemini responded in
+    // 42604ms ... 9.5 MB" and the runtime refused it anyway over a count that
+    // was off by one.
+    //
+    // It protected nothing the steps below do not already protect.
+    // `masterStoragePath` must be present, the master must download, and every
+    // gate after this judges the PIXELS. A response with no usable master still
+    // fails, loudly, a few lines down.
+    //
+    // So the mismatch is recorded and carried, never fatal. The design
+    // survives; the log says exactly which rule disagreed.
     if (mismatches.length) {
-      throw new FlatAtlasError(
-        "flat_atlas_edge_topology_contract_mismatch",
-        `Six-surface authoring contract mismatch: ${mismatches.join(", ")}`,
-      );
+      logger(`atlas call 1: six-surface contract mismatch (kept, not fatal): ${mismatches.join(", ")}`);
+      // `generationId` is NOT in this function's scope -- it takes (body,
+      // options) and options carries no generation id. Reading it here would
+      // throw a ReferenceError on the very path this block exists to rescue,
+      // turning a tolerated mismatch into a crash. The body carries it.
+      logger?.warn?.("flat_atlas_edge_topology_contract_mismatch_tolerated", {
+        generationId: body?.generationId ?? null, mismatches,
+      });
     }
   }
   // The master comes back by STORAGE PATH and is read with the server client:

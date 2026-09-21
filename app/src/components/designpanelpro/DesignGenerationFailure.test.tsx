@@ -30,12 +30,13 @@ describe("DesignPro ATLAS failure UI", () => {
     expect(html).toContain("Another design is still generating");
     expect(html).toContain("Your brief is still here; this design has not started");
     expect(html).toContain("Return to your brief");
-    expect(html).not.toMatch(/ATLAS generation did not complete|Start New ATLAS Run|Let&#x27;s try|generation_active_request_limit|refused candidates/);
+    expect(html).not.toMatch(/ATLAS|Let&#x27;s try|generation_active_request_limit|refused candidates/);
     expect(onStartNew).not.toHaveBeenCalled();
   });
   it("offers only saved-record navigation for an unconfirmed provider outcome", () => {
     const { html, onStartNew } = render();
-    expect(html).toContain("ATLAS generation did not complete.");
+    expect(html).toContain("Your production panel proof didn&#x27;t finish.");
+    expect(html).not.toMatch(/ATLAS/);
     expect(html).toContain("image service response could not be confirmed");
     expect(html).toContain("DID-E9BABE2D");
     expect(html).toContain(`href="/designpro/studio-board?order=${generationId}"`);
@@ -43,6 +44,27 @@ describe("DesignPro ATLAS failure UI", () => {
     expect(html).toContain("Reference: provider_outcome_unknown");
     expect(html).not.toMatch(/<button|Start New|Relaunch|Precision|paused|recovering/i);
     expect(onStartNew).not.toHaveBeenCalled();
+  });
+
+  // ⛔ THE SCREEN THE OWNER SAW. Live on build 597806d, 2026-09-21, a customer
+  // generation failed and rendered "ATLAS generation did not complete." over
+  // the bare string `flat_atlas_edge_topology_contract_mismatch`. Owner: "It
+  // should never say this ever." Both halves are asserted gone here.
+  it("never shows a customer the internal name or a raw error code", () => {
+    const { html } = render({
+      errorCode: "flat_atlas_edge_topology_contract_mismatch",
+      error: "flat_atlas_edge_topology_contract_mismatch",
+    });
+    expect(html).not.toMatch(/ATLAS/);
+    expect(html).not.toMatch(/flat_atlas_edge_topology_contract_mismatch/);
+    expect(html).toContain("Your production panel proof didn&#x27;t finish.");
+    expect(html).toContain("couldn&#x27;t accept");
+  });
+
+  it("falls back to product language for an unmapped internal code", () => {
+    const { html } = render({ errorCode: "some_unmapped_internal_code", error: "some_unmapped_internal_code" });
+    expect(html).not.toMatch(/some_unmapped_internal_code/);
+    expect(html).toContain("Your brief is still here");
   });
 
   it.each([null, "not-a-generation-id", "https://other.test/job"])(
@@ -64,7 +86,7 @@ describe("DesignPro ATLAS failure UI", () => {
 
   it("keeps the explicit new-ATLAS action for a confirmed terminal failure", () => {
     const { html } = render({ errorCode: "flat_atlas_master_qc_failed", error: "This ATLAS master did not pass inspection." });
-    expect(html).toContain("Start New ATLAS Run");
+    expect(html).toContain("Start a new design");
     expect(html).toContain("<button");
     expect(html).not.toContain("Precision");
     expect(html).not.toContain("response could not be confirmed");
@@ -92,7 +114,7 @@ describe("DesignPro ATLAS failure UI — refused candidates", () => {
 
   it("mounts the refused-candidate strip under the retry on a confirmed ATLAS refusal", () => {
     const html = renderWithClient({ requestId, errorCode: "flat_atlas_master_output_class_invalid", error: "refused" });
-    expect(html).toContain("Start New ATLAS Run");
+    expect(html).toContain("Start a new design");
     expect(html).toContain("Loading the refused candidates");
   });
 

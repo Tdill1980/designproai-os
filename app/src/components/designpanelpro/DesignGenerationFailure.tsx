@@ -8,6 +8,7 @@ import {
   ATLAS_UNCONFIRMED_OUTCOME_MESSAGE,
   GENERATION_ACTIVE_LIMIT_CODE,
   GENERATION_ACTIVE_LIMIT_MESSAGE,
+  customerFacingGenerationMessage,
   isUnconfirmedProviderOutcome,
 } from "@/lib/designpro-generation-error";
 
@@ -34,13 +35,20 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
     <div role="alert" className="absolute inset-0 flex flex-col overflow-y-auto bg-gradient-to-br from-red-500/5 via-background to-red-500/10 p-6">
       <div className="my-auto flex shrink-0 flex-col items-center gap-4">
         <img src="/characters/ace-v2.png" alt="ACE" className="w-20 h-20 rounded-full border-2 border-red-400/50 object-cover" />
+        {/* ⛔ `isAtlas` NO LONGER DRIVES CUSTOMER COPY. Owner, 2026-09-21:
+            "It should never say this ever." The customer's Call 1 is the
+            Production Panel Proof; ATLAS is internal vocabulary for panel
+            assembly and has no place on this screen. `isAtlas` still selects
+            the refused-candidate loader below, which is diagnostics. */}
         <p className="text-white text-base font-semibold text-center">
-          {waitingForCapacity ? "Another design is still generating" : isAtlas ? "ATLAS generation did not complete." : "Something went wrong."}
+          {waitingForCapacity ? "Another design is still generating" : "Your production panel proof didn't finish."}
         </p>
         {(error || unconfirmed) && (
           <p className="text-sm text-red-300 text-center max-w-md">
+            {/* Never the raw `error`: that is how
+                `flat_atlas_edge_topology_contract_mismatch` reached a customer. */}
             {waitingForCapacity ? GENERATION_ACTIVE_LIMIT_MESSAGE : unconfirmed && (!error || isUnconfirmedProviderOutcome(error))
-              ? ATLAS_UNCONFIRMED_OUTCOME_MESSAGE : error}
+              ? ATLAS_UNCONFIRMED_OUTCOME_MESSAGE : customerFacingGenerationMessage(errorCode, error)}
           </p>
         )}
         {waitingForCapacity ? (
@@ -57,7 +65,7 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
               <>
                 <p className="text-xs text-gray-300 font-mono">{formatDid(savedGenerationId)}</p>
                 <Button asChild size="sm" className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white">
-                  <Link to={`/designpro/studio-board?order=${savedGenerationId}`}>Open saved ATLAS record</Link>
+                  <Link to={`/designpro/studio-board?order=${savedGenerationId}`}>Open saved record</Link>
                 </Button>
               </>
             )}
@@ -72,7 +80,7 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
             <p className="text-sm text-gray-400 text-center">Let&apos;s try that again.</p>
             <Button onClick={onStartNew} size="sm" className="bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-600 hover:to-purple-600 text-white gap-2">
               <RefreshCw className="w-4 h-4" />
-              {isAtlas ? "Start New ATLAS Run" : "Relaunch"}
+              {isAtlas ? "Start a new design" : "Relaunch"}
             </Button>
             {refusalRequestId && <AtlasRefusedSheetsLoader requestId={refusalRequestId} />}
           </>
