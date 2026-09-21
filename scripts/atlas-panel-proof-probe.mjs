@@ -259,43 +259,53 @@ async function measure(bytes) {
   // year/make/model and no creativeDirection — the edge's intake node parses
   // all of it out of that one sentence, which is the thing being tested. A
   // field set here would be a field intake never had to find.
-  // ── THE HARNESS LEASE THE EDGE AUTHORIZES AGAINST ─────────────────────────
+  // ── THE HARNESS LEASE, MINTED BY THE DATABASE ─────────────────────────────
   //
-  // This file's own banner said the probe "needs no harness lease either,
-  // because this endpoint is not the provider-cache path". That stopped being
-  // true at 1601ba7 ("scope the request-scoped provider slot to the proof path
-  // only"), and nothing updated the probe. So every dispatch died before one
-  // image request was made, in two stages:
+  // This file's banner said the probe "needs no harness lease either, because
+  // this endpoint is not the provider-cache path". That stopped being true at
+  // 1601ba7 ("scope the request-scoped provider slot to the proof path only"),
+  // and nothing updated the probe. Four runs then failed in sequence, each
+  // before one image request, each at the next gate:
   //
-  //   provider_request_identity_invalid (400) — normalizeIdentity wants
-  //     ownerId, requestId AND generationId as UUIDs; the edge reads the
-  //     latter two off the body defaulting to "", and only the owner was sent.
-  //   provider_claim_invalid (403) — authorizeAtlasProviderRequest then
-  //     requires a real `designpro_generation_requests` row, state `leased`,
-  //     whose lease_token equals the claimToken and whose lease has not
-  //     expired.
+  //   provider_request_identity_invalid (400) — requestId/generationId absent
+  //   provider_claim_invalid (403)            — no leased row, no claim token
+  //   permission denied ... calls_1_7_asset_paths_bound   — the insert trigger
+  //   permission denied ... calls_1_7_engine_contract     — the CHECK constraint
   //
-  // Ported verbatim in shape from `atlas-hero-driver-probe.mjs` (RULE 1 —
-  // recover before you invent): a harness-only row, marked as one in its own
-  // error field, cancelled in a finally so a crashed probe cannot leave a
-  // leased row behind. It is NOT a customer generation and writes no revision,
-  // view or artifact.
-  const requestId = arg("request-id", randomUUID());
-  const generationId = arg("generation-id", randomUUID());
-  const claimToken = randomUUID();
-  const inputHash = sha256(Buffer.from(customerPrompt));
-  const { error: leaseError } = await svc.from("designpro_generation_requests").insert({
-    id: requestId, generation_id: generationId, owner_id: OWNER_ID, tenant_key: `user_${OWNER_ID}`,
-    idempotency_key: `panel-proof-probe:${generationId}:${inputHash}`,
-    state: "leased", request_input: { customerPrompt }, input_hash: inputHash,
-    engine_contract: { contractVersion: "designpro.calls-1-7-engine.v2", harness: "panel-proof-probe" },
-    engine_contract_hash: sha256(Buffer.from("panel-proof-probe")),
-    attempt: 1, available_at: new Date().toISOString(),
-    lease_owner: "panel-proof-probe", lease_token: claimToken,
-    lease_expires_at: new Date(Date.now() + 45 * 60_000).toISOString(),
-    error: { code: "designiq_ab_harness_lease", note: "panel-proof probe; harness-only row, never a customer generation" },
+  // The last two are why a hand-written row can never work: the table requires
+  // `engine_contract` to EQUAL a private function's exact value (seven source
+  // blob hashes and a source commit) and `request_input` to satisfy the v3
+  // validator, and both functions are executable by postgres alone. A literal
+  // cannot equal the first and a `{customerPrompt}` object cannot satisfy the
+  // second. `atlas-hero-driver-probe.mjs` forges the same row and is broken in
+  // exactly the same way.
+  //
+  // So the row is minted by `mint_designpro_harness_lease`, a SECURITY DEFINER
+  // function that runs as its owner: the private validators EXECUTE and enforce
+  // themselves on the harness row rather than being stepped around. It returns
+  // the lease token it minted, so nothing here invents one, and it creates the
+  // row already `leased` — never queued, so no live worker can claim it and it
+  // cannot hand this probe somebody else's generation.
+  // The SAME deterministic parser the edge runs, read once and reused below for
+  // the fallback container, so the lease and the container cannot name two
+  // different trucks.
+  const { extractDeterministic } = require("../runtime/atlas-intake-parse.cjs");
+  const seen = extractDeterministic(customerPrompt);
+  const harnessVehicle = {
+    year: seen.vehicleYear || "2019", make: seen.vehicleMake || "Ford",
+    model: seen.vehicleModel || "Transit 250 High Roof", type: seen.vehicleType || "van",
+  };
+  const { data: lease, error: leaseError } = await svc.rpc("mint_designpro_harness_lease", {
+    p_owner_id: OWNER_ID,
+    p_brief: customerPrompt,
+    p_design_name: "panel-proof probe (harness)",
+    p_vehicle: harnessVehicle,
+    p_harness: "panel-proof-probe",
   });
-  if (leaseError) throw new Error(`harness lease insert failed: ${leaseError.message}`);
+  if (leaseError || !lease?.requestId) {
+    throw new Error(`harness lease failed: ${leaseError?.message || "no lease returned"}`);
+  }
+  const { requestId, generationId, claimToken } = lease;
   releaseLease = async () => {
     await svc.from("designpro_generation_requests")
       .update({ state: "cancelled", lease_owner: null, lease_token: null, lease_expires_at: null })
@@ -318,8 +328,6 @@ async function measure(bytes) {
   // parse; this one exists only for a cold isolate that cannot fetch the wasm,
   // and it must name the same vehicle or the fallback would teach a different
   // truck than the one requested.
-  const { extractDeterministic } = require("../runtime/atlas-intake-parse.cjs");
-  const seen = extractDeterministic(customerPrompt);
   const vehicle = [seen.vehicleYear, seen.vehicleMake, seen.vehicleModel].filter(Boolean).join(" ");
   Object.assign(request, await stageContainerTemplate(request.panelRows, {
     companyName: "", vehicle,
