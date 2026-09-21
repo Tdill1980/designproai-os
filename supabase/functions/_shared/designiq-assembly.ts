@@ -65,6 +65,14 @@ import {
   providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
   prepareAtlasRevisionProviderContents, captureGeminiHttpExchange,
 } from "../_shared/gemini-provider-cache.mjs";
+// THE ONE LOGO PRODUCER, RECOVERED RATHER THAN REBUILT (RULE 1).
+// `authorProofLogo` + `designpro-text-layer-prompt` + `chromaKeyToAlpha` are
+// the same three pieces `designpro-text-layer-generate` and
+// `production-panel-proof` already share. `mode: "atlas-logo"` gives the
+// element graph a door to them; it does not add a second logo authority.
+import { authorProofLogo, proofLogoRequested } from "../_shared/atlas-proof-elements.mjs";
+import { buildPrompt as buildTextLayerPrompt, chromaKeyToAlpha } from "../_shared/designpro-text-layer-art.ts";
+import { geminiImageUrl } from "../_shared/model-config.ts";
 // ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
 // buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
 // with atlasFlatMaster:true. No separate creative module, no string-replacement

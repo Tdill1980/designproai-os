@@ -644,11 +644,19 @@ test("6. the runtime seams: the hero branch runs through the injected graph unle
 test("the element subgraph compiles standalone, with no master node to wait for", () => {
   const nodes = graph.compileElementGraph({ input: { companyName: "Oasis Pools", phone: "555-0142", website: "oasispools.com" } });
   assert.deepEqual(nodes.map((n) => n.key),
-    ["typeset.produce", "contact.produce", "element.lockup", "master.composite"]);
+    ["typeset.produce", "contact.produce", "logo.generate", "element.lockup", "master.composite"]);
   // The producers are ROOTS -- they need the brief, never the sheet -- so they
-  // are claimable immediately and by either worker.
+  // are claimable immediately and by either worker. The generated mark is a
+  // root too: it draws from the business name and the brief, never from the
+  // artwork, so it runs in parallel with the two typeset producers rather than
+  // adding a step to the critical path.
   assert.deepEqual(nodes.find((n) => n.key === "typeset.produce").dependsOn, []);
   assert.deepEqual(nodes.find((n) => n.key === "contact.produce").dependsOn, []);
+  assert.deepEqual(nodes.find((n) => n.key === "logo.generate").dependsOn, []);
+  // The lockup waits for all three, so a mark that is still drawing cannot be
+  // placed late or dropped.
+  assert.deepEqual(nodes.find((n) => n.key === "element.lockup").dependsOn,
+    ["typeset.produce", "contact.produce", "logo.generate"]);
   // And the composite waits ONLY for the plan: its base is the already-accepted
   // master, which arrives on the run definition as a reference.
   assert.deepEqual(nodes.find((n) => n.key === "master.composite").dependsOn, ["element.lockup"]);
@@ -677,8 +685,26 @@ test("a brief with nothing to place compiles no element nodes at all", () => {
   assert.deepEqual(graph.compileElementGraph({ input: {} }), []);
   assert.deepEqual(graph.compileElementGraph({ input: { brief: "teal water, no branding" } }), []);
   // One field is enough to earn a lockup.
-  assert.equal(graph.compileElementGraph({ input: { companyName: "Oasis Pools" } }).length, 3);
-  assert.equal(graph.compileElementGraph({ input: { phone: "555-0142" } }).length, 3);
+  //
+  // A COMPANY NAME NOW EARNS FOUR NODES, NOT THREE (owner, 2026-09-21: "if they
+  // didn't [upload] it auto created a logo"). typeset + logo.generate + lockup
+  // + composite: a customer who names their business and uploads nothing gets a
+  // drawn mark, which `logoNodeFor` used to answer with `return null`.
+  const named = graph.compileElementGraph({ input: { companyName: "Oasis Pools" } });
+  assert.equal(named.length, 4);
+  assert.ok(named.some((n) => n.key === "logo.generate"));
+  // A PHONE NUMBER DOES NOT. There is no business name to draw a mark for, so
+  // this stays the honest no-op the customer-logo branch already makes when
+  // there is no asset — contact + lockup + composite.
+  const phoneOnly = graph.compileElementGraph({ input: { phone: "555-0142" } });
+  assert.equal(phoneOnly.length, 3);
+  assert.ok(!phoneOnly.some((n) => n.key === "logo.generate"));
+  // And an UPLOADED logo still takes the prepare branch: the customer's own
+  // mark always wins and is never replaced by a generated one.
+  const uploaded = graph.compileElementGraph({ input: { companyName: "Oasis Pools",
+    logoAsset: { storagePath: "atlas-call1-inputs/" + "a".repeat(64) + ".png", contentHash: "a".repeat(64), byteSize: 4096 } } });
+  assert.ok(uploaded.some((n) => n.key === "logo.prepare"));
+  assert.ok(!uploaded.some((n) => n.key === "logo.generate"));
 });
 
 test("the contact node still cannot invent a line the customer never gave", () => {
@@ -793,8 +819,16 @@ test("6. authorElements: the six-surface door runs end to end and the run comple
     const nodes = await db.query(
       "SELECT node_key,state FROM public.designpro_atlas_call1_nodes WHERE run_id=$1 ORDER BY node_key", [result.runId]);
     assert.deepEqual(nodes.rows.map((n) => n.node_key).sort(),
-      ["contact.produce", "element.lockup", "master.composite", "typeset.produce"]);
+      ["contact.produce", "element.lockup", "logo.generate", "master.composite", "typeset.produce"]);
     assert.ok(nodes.rows.every((n) => n.state === "completed"), "no element node may be left behind");
+    // AND `logo.generate` COMPLETED WITHOUT A TRANSPORT. This worker is built
+    // without `callLogoEdge`, and the run still reached `master.composite` with
+    // a composited sheet — which is the blast radius the node was written for:
+    // a missing seam costs the mark, never the design.
+    const mark = await db.query(
+      "SELECT output FROM public.designpro_atlas_call1_nodes WHERE run_id=$1 AND node_key='logo.generate'", [result.runId]);
+    assert.equal(mark.rows[0].output.element, null);
+    assert.equal(mark.rows[0].output.transportUnavailable, true);
 
     // RESUME. A re-claimed generation finds the completed run and spends nothing.
     const again = await worker.authorElements({

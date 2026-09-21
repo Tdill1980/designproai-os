@@ -102,6 +102,7 @@ runtime/atlas-call1-graph.cjs
 # the require happens at load and not behind it.
 runtime/atlas-panel-proof-topology.cjs
 runtime/atlas-proof-container-template.cjs
+runtime/atlas-three-zone-example.cjs
 runtime/atlas-proof-panels.cjs
 runtime/atlas-panel-proof-contract.cjs
 runtime/atlas-proof-panel-locator.cjs

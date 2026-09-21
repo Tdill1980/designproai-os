@@ -70,6 +70,10 @@ const CONTACT_NODE = "contact.produce";
 // ARCHITECTURE_DAG.md §4.4 -- the customer's uploaded logo, prepared as Layer 1
 // artwork. It NEVER generates one; absence is an honest answer, not a gap.
 const LOGO_NODE = "logo.prepare";
+// The generated mark. `node_key`'s CHECK is a regex that already admits a
+// dotted key, so this needs no migration — the same way `proof.assemble` and
+// `surface.driver.view` were added.
+const LOGO_GENERATE_NODE = "logo.generate";
 // ARCHITECTURE_DAG.md §4.5 -- the placement manifest. The ONE node in the
 // element graph that is not a root: it needs the finished elements' dimensions.
 const LOCKUP_NODE = "element.lockup";
@@ -219,12 +223,45 @@ function contactNodeFor(input) {
  * the run before a node is ever claimed and a worker ever spends a lease.
  */
 function logoNodeFor(input) {
-  if (!logo.hasCustomerLogo(input)) return null;
-  const identity = logo.verifyLogoIdentity(input.logoAsset);
+  if (logo.hasCustomerLogo(input)) {
+    const identity = logo.verifyLogoIdentity(input.logoAsset);
+    return {
+      key: LOGO_NODE,
+      dependsOn: [],
+      input: { role: "logo", source: "customer", asset: identity },
+      maxAttempts: 3,
+    };
+  }
+  // ⚠️ THIS USED TO `return null` AND THAT IS HOW THE LOGO WENT MISSING.
+  //
+  // Owner, 2026-09-21: "if they didn't [upload] it auto created a logo." It
+  // did — inside `production-panel-proof`, which was the Call-1 bypass. With
+  // that removed, a customer who typed a company name and uploaded nothing got
+  // a typeset wordmark and no mark at all, on a clean base that has no drawn
+  // lettering either.
+  //
+  // `logo.generate` is that generator given a door: the SAME `authorProofLogo`,
+  // the SAME `designpro-text-layer-prompt` builder, the SAME `chromaKeyToAlpha`
+  // that `designpro-text-layer-generate` and `production-panel-proof` share.
+  // Recovered, not rebuilt (RULE 1). It emits the identical
+  // `{role, element:{storagePath, contentHash, byteSize}}` shape, so
+  // `element.lockup` and `master.composite` consume it without knowing which
+  // branch produced it.
+  //
+  // No company name means nothing to draw a mark FOR, and no node — which is
+  // the same honest no-op the customer branch makes when there is no asset.
+  const companyName = String(input?.companyName || input?.businessName || "").trim();
+  if (!companyName) return null;
   return {
-    key: LOGO_NODE,
+    key: LOGO_GENERATE_NODE,
     dependsOn: [],
-    input: { role: "logo", source: "customer", asset: identity },
+    input: {
+      role: "logo", source: "designpro-text-layer-art", companyName,
+      brief: String(input?.brief || input?.prompt || "").slice(0, 2000),
+      industryType: String(input?.industry || input?.industryType || "").trim(),
+      brandColors: String(input?.brandColors || "").trim(),
+      style: String(input?.style || "").trim(),
+    },
     maxAttempts: 3,
   };
 }
@@ -373,7 +410,7 @@ function zoneOf(manifest, surfaceKey) {
  * surface against the already-completed dependency sheets; master.assemble
  * composes the six into the manifest zones. Returns the finish payload.
  */
-async function executeNode({ claim, supabase, store, callEdge, callProofEdge, assembleFinishedMaster, logger = () => {}, signal }) {
+async function executeNode({ claim, supabase, store, callEdge, callProofEdge, callLogoEdge, assembleFinishedMaster, logger = () => {}, signal }) {
   const { node, run, claimToken } = claim;
   const definition = run.definition || {};
   const manifest = definition.manifest;
@@ -566,11 +603,21 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, as
     abortIf();
     const elements = (node.depends_on || []).map((key) => {
       const output = deps.get(key)?.output;
-      if (!output?.element) {
+      // A COMPLETED NODE THAT DREW NOTHING IS NOT AN INCOMPLETE DEPENDENCY.
+      // `logo.generate` answers `element: null` when the brief asked for no
+      // mark, the customer supplied their own, or an explicit "no logo" was
+      // read. That is a decision, and the lockup simply places one fewer
+      // element — the exact state it was in before that node existed. Only a
+      // node that produced NO OUTPUT AT ALL is the incomplete case.
+      if (!output) {
+        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${key} carries no output`, true);
+      }
+      if (output.element === null) return null;
+      if (!output.element) {
         throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${key} carries no element reference`, true);
       }
       return { role: output.role, ...output.element };
-    });
+    }).filter(Boolean);
     const plan = lockup.planElementLockup({ zones: manifest.zones, elements });
     logger(`atlas call 1 graph ${run.id}: lockup planned (${plan.placements.length} placements across ${plan.surfaces.join(", ")})`);
     return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "lockup", lockup: plan,
@@ -596,6 +643,70 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, as
       // background is not keyed to transparent here.
       hasAlpha: prepared.hasAlpha,
       sourceIdentity: prepared.sourceIdentity, deterministic: true,
+      retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+  }
+
+  // THE GENERATED BRAND MARK. The ONE element node that makes a model call,
+  // and it is the recovered `authorProofLogo` reached through the edge — not a
+  // second producer. Idempotent by construction: the provider cache keys on
+  // `attemptKey: brand-logo:1`, and the mark is stored content-addressed, so a
+  // re-claimed node re-reads its own earlier request rather than buying a
+  // second mark.
+  //
+  // A NULL LOGO IS A COMPLETED NODE, NOT A FAILURE. The edge answers null for a
+  // supplied asset, an explicit "no logo", or a brief that never asked for one.
+  // `element.lockup` then has one fewer element to place, which is exactly the
+  // state it was in before this node existed.
+  if (node.node_key === LOGO_GENERATE_NODE) {
+    abortIf();
+    // A WORKER WITHOUT THE TRANSPORT COMPLETES WITH NO MARK — IT DOES NOT FAIL
+    // THE RUN. The panel-proof node fails closed because the proof IS the
+    // design; a generated mark is an enhancement on top of one, and destroying
+    // an accepted wrap over a missing seam is the blast radius RULE 0.15 and
+    // the 2026-09-09 finishing rule both forbid. Recorded, never silent:
+    // `transportUnavailable` makes "why has this run no mark" a query.
+    if (typeof callLogoEdge !== "function") {
+      logger(`atlas call 1 graph ${run.id}: no brand mark — the atlas-logo transport is not configured on this worker`);
+      return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo",
+        source: "designpro-text-layer-art", element: null, generated: false, transportUnavailable: true,
+        retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+    }
+    // THE CONTINUATION, READ OFF THE RUN DEFINITION. Both halves or neither:
+    // a signature without the sheet it belongs to is a token with no context,
+    // and the master is what carries the palette. Absent is legitimate -- the
+    // model does not always emit a signature -- and the mark is then drawn the
+    // way it was before this existed.
+    const definition = run.definition || {};
+    const continuation = definition.callOneExchange?.thoughtSignature && definition.masterRef?.storagePath
+      ? { thoughtSignature: definition.callOneExchange.thoughtSignature, master: definition.masterRef }
+      : null;
+    const generated = await callLogoEdge({
+      providerRequest: { requestId: run.generation_request_id, generationId: run.generation_id,
+        claimToken: run.claim_token, attemptKey: `brand-logo:${node.attempt || 1}` },
+      ...(continuation ? { continuation } : {}),
+      companyName: node.input?.companyName,
+      prompt: node.input?.brief,
+      industryType: node.input?.industryType,
+      brandColors: node.input?.brandColors,
+      style: node.input?.style,
+      generateLogo: true,
+    }, { ownerId: run.owner_id });
+    if (!generated) {
+      logger(`atlas call 1 graph ${run.id}: no brand mark drawn (the brief did not ask for one)`);
+      return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo",
+        source: "designpro-text-layer-art", element: null, generated: false,
+        retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
+    }
+    logger(`atlas call 1 graph ${run.id}: brand mark drawn ${String(generated.contentHash).slice(0, 12)}`
+      + ` (${generated.byteSize} B${generated.providerCacheHit ? ", cache hit" : ""}`
+      + `${continuation ? ", continuing Call 1" : ", no continuation"})`);
+    return { state: "completed", output: { contract: GRAPH_CONTRACT, role: "logo",
+      source: "designpro-text-layer-art", generated: true,
+      // Queryable: "did this mark see the design" must not be a guess.
+      continuedCallOne: Boolean(continuation),
+      element: { storagePath: generated.storagePath, contentHash: generated.contentHash,
+        byteSize: generated.byteSize },
+      providerCacheHit: generated.providerCacheHit === true,
       retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
 
@@ -798,7 +909,7 @@ function createAtlasCall1NodeWorker({
   // reason rather than half-executing. They are NOT defaulted to a require()
   // here -- the transport needs the same Supabase client this worker was handed,
   // and the assembler lives in flat-first-atlas, which requires this module.
-  callProofEdge = null, assembleFinishedMaster = null,
+  callProofEdge = null, callLogoEdge = null, assembleFinishedMaster = null,
 }) {
   if (!supabase) throw new Error("atlas call 1 node worker requires a Supabase client");
   if (typeof callEdge !== "function") throw new Error("atlas call 1 node worker requires the atlas-author edge transport");
@@ -824,7 +935,7 @@ function createAtlasCall1NodeWorker({
     heartbeat.unref?.();
     let result;
     try {
-      result = await executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, assembleFinishedMaster, logger, signal: controller.signal });
+      result = await executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, callLogoEdge, assembleFinishedMaster, logger, signal: controller.signal });
       if (controller.signal.aborted) throw new AtlasCall1GraphError("designpro_atlas_call1_lease_lost", "node lease lost", true);
     } catch (error) {
       result = failurePayload(error);
@@ -914,6 +1025,10 @@ function createAtlasCall1NodeWorker({
    */
   async function authorElements({
     masterRef, manifest, input, requestId, generationId, ownerId,
+    // Call 1's own exchange. Rides the DEFINITION beside `masterRef`, which is
+    // already there, so the generated mark can continue the design without a
+    // new node, a new edge or any change to the orchestrator.
+    callOneExchange = null,
     logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
   }) {
     if (!elementGraphEnabled()) return null;
@@ -934,6 +1049,10 @@ function createAtlasCall1NodeWorker({
     // producers' own contract does -- a typeset change must not resume a run
     // whose elements were rendered by the previous one.
     const definition = { contract: GRAPH_CONTRACT, manifest, input, role: "elements", masterRef,
+      // In the hash on purpose: a run whose mark continued the design is not
+      // the same run as one whose mark guessed at it, so they must not resume
+      // into each other.
+      ...(callOneExchange?.thoughtSignature ? { callOneExchange } : {}),
       elementContracts: { typeset: typeset.CONTRACT, lockup: lockup.CONTRACT, composite: composite.CONTRACT } };
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {
@@ -1269,7 +1388,7 @@ function createAtlasCall1NodeWorker({
   }
 
   return { start, stop, tick, health, author, authorElements, authorPanelProof,
-    executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, assembleFinishedMaster, logger, ...extra }), workerId };
+    executeNode: (claim, extra = {}) => executeNode({ claim, supabase, store: nodeStore, callEdge, callProofEdge, callLogoEdge, assembleFinishedMaster, logger, ...extra }), workerId };
 }
 
 module.exports = {

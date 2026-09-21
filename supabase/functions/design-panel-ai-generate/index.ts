@@ -51,6 +51,14 @@ import {
   providerSha256, putImmutableProviderArtifact, runDurableImageProviderRequest,
   prepareAtlasRevisionProviderContents, captureGeminiHttpExchange,
 } from "../_shared/gemini-provider-cache.mjs";
+// THE ONE LOGO PRODUCER, RECOVERED RATHER THAN REBUILT (RULE 1).
+// `authorProofLogo` + `designpro-text-layer-prompt` + `chromaKeyToAlpha` are
+// the same three pieces `designpro-text-layer-generate` and
+// `production-panel-proof` already share. `mode: "atlas-logo"` gives the
+// element graph a door to them; it does not add a second logo authority.
+import { authorProofLogo, proofLogoRequested } from "../_shared/atlas-proof-elements.mjs";
+import { buildPrompt as buildTextLayerPrompt, chromaKeyToAlpha } from "../_shared/designpro-text-layer-art.ts";
+import { geminiImageUrl } from "../_shared/model-config.ts";
 // ATLAS-ARTBOARD (owner directive 2026-08-27): Call 1 executes THIS file's own
 // buildDesignIQPrompt — the real DPAG commercial/restyle creative assembly —
 // with atlasFlatMaster:true. No separate creative module, no string-replacement
@@ -1484,6 +1492,39 @@ serve(async (req) => {
         );
       }
       return await handleAtlasAuthor(body, internalCaller.userId!);
+    }
+
+    // ═══ ATLAS-LOGO — THE BRAND MARK, WHEN THE CUSTOMER UPLOADED NONE
+    // (owner, 2026-09-21: "if they didn't [upload] it auto created a logo").
+    //
+    // THE GENERATOR ALREADY EXISTED AND CALL 1 COULD NOT REACH IT. The element
+    // graph's `logo.prepare` only PREPARES a customer upload — `logoNodeFor`
+    // returns null when there is none — so a customer who typed a company name
+    // and uploaded nothing received a typeset wordmark and no mark at all. The
+    // only auto-logo producer in the system was `authorProofLogo`, reachable
+    // solely through `production-panel-proof`, which is exactly the bypass the
+    // 2026-09-21 restoration removed.
+    //
+    // So it is recovered rather than rebuilt (RULE 1). This mode runs the SAME
+    // `authorProofLogo` with the SAME `_shared/designpro-text-layer-prompt.ts`
+    // builder and the SAME `chromaKeyToAlpha` transparency step that
+    // `designpro-text-layer-generate` and `production-panel-proof` both use.
+    // There is no second logo authority — this is the one that already exists,
+    // given a door the element graph can open.
+    //
+    // It is NOT a second Call-1 creative authority (RULE 0.26): it draws one
+    // brand mark on a magenta key, never a wrap, never a vehicle, never a
+    // sheet. The master remains the sole design authority and this mark is
+    // composited onto it by `master.composite`, exactly as a customer's own
+    // uploaded logo already is.
+    if (body?.mode === "atlas-logo") {
+      if (!internalCaller.internal) {
+        return new Response(
+          JSON.stringify({ success: false, error: "atlas_logo_internal_only" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return await handleAtlasLogo(body, internalCaller.userId!);
     }
     const {
       mode,
@@ -3135,6 +3176,116 @@ async function loadAtlasQualityArtboards(
   return out;
 }
 
+/**
+ * ONE BRAND MARK, ON A MAGENTA KEY. Never a wrap, never a vehicle, never a sheet.
+ *
+ * Returns the mark's IDENTITY — storage path, content hash, byte size — and
+ * never its bytes, so the element graph's node boundary stays reference-only
+ * (RULE 0.39). `authorProofLogo` persists it content-addressed under
+ * `atlas-elements/`, so a re-claimed node re-reads instead of re-spending.
+ *
+ * `authorProofLogo` decides for itself whether a logo is wanted: a supplied
+ * asset or an explicit refusal returns null, and `proofLogoRequested` reads the
+ * brief. A null answer is a STATE, not a failure — the run simply has no
+ * generated mark, exactly as it behaved before this door existed.
+ */
+async function handleAtlasLogo(body: Record<string, unknown>, ownerId: string): Promise<Response> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const svc = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  try {
+    const providerRequest = {
+      ...(body.providerRequest as Record<string, unknown> || {}),
+      attemptKey: String((body.providerRequest as Record<string, unknown>)?.attemptKey || "brand-logo:1"),
+    };
+    await authorizeAtlasProviderRequest(svc, providerRequest, ownerId);
+    const customerPrompt = String(body.prompt || body.brief || "").trim();
+
+    // THE CONTINUATION. Both halves or neither: the signature is a token with
+    // no meaning without the turn it belongs to, and the MASTER is what
+    // actually carries the palette the mark has to match.
+    //
+    // The sheet is re-read here by IDENTITY and hash-verified (RULE 0.39), the
+    // same way every other Call-1 input arrives — a caller cannot name bytes
+    // this side did not check.
+    let priorTurns: Array<Record<string, unknown>> | null = null;
+    const continuation = body.continuation as Record<string, any> | undefined;
+    if (continuation?.thoughtSignature && continuation?.master?.storagePath) {
+      const ref = continuation.master;
+      const { data, error } = await svc.storage.from("wrap-files").download(String(ref.storagePath));
+      if (error || !data) throw new Error(`atlas_logo_master_download_failed:${ref.storagePath}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)))
+        .map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (digest !== String(ref.contentHash || "").toLowerCase()) {
+        throw new Error(`atlas_logo_master_identity_mismatch:${ref.storagePath}`);
+      }
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      priorTurns = [
+        { role: "user", parts: [{ text: "Design the flat printed wrap sheet for this vehicle." }] },
+        {
+          role: "model",
+          parts: [
+            // The signature rides the part it arrived on, which is how the
+            // model reads it — not as a sibling field on the turn.
+            { inlineData: { mimeType: "image/png", data: btoa(binary) }, thoughtSignature: continuation.thoughtSignature },
+          ],
+        },
+      ];
+    }
+
+    const generated = await authorProofLogo({
+      priorTurns,
+      bucket: svc.storage.from("wrap-files"),
+      ownerId,
+      providerRequest,
+      input: {
+        companyName: String(body.companyName || "").trim(),
+        logoAsset: body.hasCustomerLogo || body.logoAsset,
+        generateLogo: proofLogoRequested({ ...body, customerPrompt }),
+        industry: String(body.industryType || "").trim(),
+        brief: customerPrompt,
+        colorBrief: String(body.brandColors || "").trim(),
+        stylePrompt: String(body.style || "").trim(),
+      },
+      model: ATLAS_ARTBOARD_AUTHORING_MODEL,
+      buildPrompt: buildTextLayerPrompt,
+      // Keyed to REAL transparency here rather than deferred: the element graph
+      // composites this mark directly and an opaque magenta block would print.
+      normalize: (bytes: Uint8Array) => chromaKeyToAlpha(bytes, true),
+      authorize: () => authorizeAtlasProviderRequest(svc, providerRequest, ownerId),
+      invoke: (request: string) => captureGeminiHttpExchange(async () => await fetch(
+        geminiImageUrl(getGeminiKey(), ATLAS_ARTBOARD_AUTHORING_MODEL),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: request },
+      )),
+    });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        contract: "designpro.atlas-logo.v1",
+        // null is a legitimate answer: a supplied logo, an explicit "no logo",
+        // or a brief that never asked for one.
+        logo: generated
+          ? {
+            role: generated.role, source: generated.source,
+            storagePath: generated.storagePath, contentHash: generated.contentHash,
+            byteSize: generated.byteSize, contentType: generated.contentType,
+            providerCacheHit: generated.providerCacheHit === true,
+          }
+          : null,
+        imageRequestCount: generated ? (generated.providerCacheHit ? 0 : 1) : 0,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ success: false, error: String((error as Error)?.message || error).slice(0, 400) }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+}
+
 async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: string): Promise<Response> {
   let requestId = crypto.randomUUID();
   let imageRequestCount = 0;
@@ -3295,6 +3446,11 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     // the prefix is not seeded, and a run that silently showed none would look
     // identical to one that showed two.
     const qualityArtboards: Array<{ path: string; byteSize: number }> = [];
+    // Whether the three-zone separation context was actually attached. Reported
+    // on the provenance: "did this run see it" must be a query, not a guess,
+    // because it is the one input whose effect has to be judged from the
+    // refusal ledger.
+    let threeZoneContextApplied = false;
     if (atlasField) {
       for (const ref of references) pushImage(ref);
     } else {
@@ -3323,6 +3479,69 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
       };
     }
     for (const ref of references) pushImage(ref);
+    // THE THREE-ZONE PRODUCTION PROOF, AS SEPARATION CONTEXT (owner, 2026-09-21:
+    // "provide this example on call one everytime … so the model understands a
+    // 3 zone proof", then "Recreate in code … it should say example").
+    //
+    // ⚠️ IT IS SHOWN SO THE MODEL KNOWS WHAT HAPPENS TO ITS ARTWORK, NEVER AS
+    // SOMETHING TO DRAW. The document is drawn by CODE
+    // (`renderContainerTemplate`); Gemini never produces it. What the model
+    // must understand is that its sheet gets SEPARATED — Zone 2 is the artwork
+    // with the lettering left off, Zone 3 is the brand elements lifted out —
+    // which is why it has to leave a deliberate, calm, high-contrast area for
+    // the lockup rather than paint edge to edge and hope.
+    //
+    // DRAWN BY THE RUNTIME, NOT A STORED PNG. It arrives on the SAME
+    // `atlas-call1-inputs/<sha256>.png` allowlist as the teaching proof and the
+    // guide, hash-verified by `downloadPart`. A stored example had two failure
+    // modes this repo already paid for: the copies that circulate are
+    // screenshots carrying a burned-in badge and a UI widget (the
+    // `installer-one-panel-per-side.png` precedent, which live sheet
+    // 35402317471 answered), and a stored sheet drifts from the document it
+    // claims to show. Generated from the real container template, it can do
+    // neither. See `runtime/atlas-three-zone-example.cjs`.
+    //
+    // ⚠️ AND IT IS THE EXACT RISK `map_drawn` EXISTS FOR. This sheet carries
+    // dimension arrows, dashed frames and captions, and four live runs
+    // (455b1723, 7c7bd633, cc382c3c, 8c525565) painted layout numbers onto the
+    // flanks from a far weaker cue. The text below names every one of those
+    // marks as forbidden output, the gate convicts the sheet if the model draws
+    // them anyway, and the refusal ledger makes that measurable rather than a
+    // matter of opinion. Judge it from the ledger, not from this comment.
+    //
+    // FAIL SOFT. A missing or altered example must never cost a design.
+    try {
+      const staged = await downloadPart(body.threeZoneExampleStoragePath, "image/png");
+      if (staged) {
+        // The text goes AFTER the image it describes here, unlike the teaching
+        // proof: the caption has to name what was just seen as forbidden
+        // output, and a prohibition read before the picture is read against
+        // nothing.
+        parts.push({
+          text: "THE IMAGE ABOVE IS DOWNSTREAM SEPARATION CONTEXT — A DOCUMENT ABOUT YOUR ARTWORK, "
+            + "NOT ARTWORK TO PRODUCE. It is an EXAMPLE sheet and says so on its face. "
+            + "It shows what the production system does with the sheet you are being asked for: "
+            + "ZONE 1 is your finished panels, ZONE 2 is those same panels with the lettering and logo "
+            + "left off, and ZONE 3 is the brand elements lifted out as separate cut graphics. "
+            + "Design accordingly: the artwork must read as a finished commercial wrap on its own, and it "
+            + "must carry a deliberate, calm, high-contrast area on each flank where the brand lockup belongs. "
+            // Each forbidden mark is kept WHOLE on its own source line, so the
+            // lock can assert the phrases rather than a reflowed fragment of
+            // them. An earlier draft split "no registration marks" across a
+            // concatenation and the assertion could not see it.
+            + "DO NOT REPRODUCE ANY PART OF THAT DOCUMENT. Your output carries "
+            + "no zone bands, no headers, no captions, no panel names, "
+            + "no dimension arrows, no measurements, no decimal numbers, "
+            + "no dashed frames, no registration marks and no legend, "
+            + "and never the word EXAMPLE. "
+            + "Those belong to the document, which is drawn separately by the "
+            + "production system and never by you.",
+        });
+        threeZoneContextApplied = true;
+      }
+    } catch (_error) {
+      // Context improves separation; its absence never blocks authoring.
+    }
     // THE GOLD-STANDARD ARTBOARDS — the "visual quality references" (owner,
     // 2026-09-21). Quality authority ONLY: never topology, never artwork.
     //
@@ -3419,6 +3638,23 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
     const payload = cached.payload;
     const { imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_artboard");
 
+    // THE THOUGHT SIGNATURE, CARRIED OUT SO THE MARK CAN CONTINUE THIS DESIGN.
+    //
+    // Six-surface Call 1 is ONE image request, so there is nothing to continue
+    // WITHIN it -- a signature needs a prior turn and there is none. But the
+    // element graph then makes a SECOND image call, `logo.generate`, and until
+    // now it drew the brand mark in a brand-new conversation with no knowledge
+    // of the artwork it was about to be composited onto. It guessed the palette
+    // and we pasted the guess on.
+    //
+    // Returned as an identity alongside the master this response already names,
+    // so the logo request can replay this exchange and inherit the wrap's own
+    // colour and geometry. Absent is a legitimate answer: the model does not
+    // always emit one, and a logo drawn without it is what shipped before.
+    const artboardThoughtSignature = (payload?.candidates?.[0]?.content?.parts || [])
+      .map((part: Record<string, unknown>) => part?.thoughtSignature)
+      .find((signature: unknown) => typeof signature === "string" && signature.length > 0) || null;
+
     // 5 — persist + provenance.
     // Accept native PNG/JPEG/WebP without recompression or MIME relabeling.
     // The server's existing normalizer produces the canonical PNG afterward.
@@ -3453,6 +3689,10 @@ async function handleAtlasArtboard(body: Record<string, unknown>, ownerId: strin
         modelRequestMaxBytes: ATLAS_ARTBOARD_MODEL_REQUEST_MAX_BYTES,
         modelInputImageCount,
         teachingProofIdentity: verifiedTeachingProof,
+        threeZoneContextApplied,
+        // Consumed by `logo.generate` so the generated mark continues THIS
+        // design rather than starting a fresh conversation about it.
+        thoughtSignature: artboardThoughtSignature,
         qualityArtboardsApplied: qualityArtboards.length,
         qualityArtboardIdentities: qualityArtboards,
         fieldContract: atlasField ? ATLAS_FIELD_PROMPT_CONTRACT : null,

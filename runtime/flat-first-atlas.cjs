@@ -90,6 +90,7 @@ const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cj
 // (sheet -> cut -> assemble), and the same authoring seam as the cascade: one
 // function returning {bytes, contentHash, model, provenance} and throwing a
 // typed refusal, so everything downstream of acceptance is untouched.
+const { renderThreeZoneExample } = require("./atlas-three-zone-example.cjs");
 const {
   PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
   authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
@@ -1790,6 +1791,11 @@ function atlasEdgeRequestBody(input, manifest, extras = {}) {
       teachingProofStoragePath: extras.teachingProofStoragePath,
       teachingProofIdentity: extras.teachingProofIdentity,
       guideStoragePath: extras.guideStoragePath,
+      // The code-drawn three-zone example. Six-container branch only: the field
+      // contract sends ONE text part plus the customer's own references and
+      // nothing else (RULE 0.33), and adding an image to it would break a
+      // contract locked byte-for-byte by `atlas-one-field-call1`.
+      threeZoneExampleStoragePath: extras.threeZoneExampleStoragePath,
     }),
     referenceImagesBase64: extras.referenceImagesBase64,
     ...(extras.revisionContextHash ? { revisionContextHash: extras.revisionContextHash } : {}),
@@ -2009,6 +2015,15 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
       providerCacheContract: payload.providerCacheContract || null,
       providerRequestKey: payload.providerRequestKey || null,
       providerCacheHit: payload.providerCacheHit === true,
+      // CARRIED SO THE GENERATED BRAND MARK CAN CONTINUE THIS DESIGN.
+      // `logo.generate` is a SECOND image call and used to open a fresh
+      // conversation, guessing the wrap's palette. With the signature it
+      // replays this exchange instead. Null is legitimate — the model does not
+      // always emit one, and a mark drawn without it is what shipped before.
+      thoughtSignature: typeof payload.thoughtSignature === "string" && payload.thoughtSignature
+        ? payload.thoughtSignature : null,
+      threeZoneContextApplied: payload.threeZoneContextApplied === true,
+      qualityArtboardsApplied: Number(payload.qualityArtboardsApplied) || 0,
       ...(body.revisionContextHash ? { revisionContextHash: payload.revisionContextHash,
         parentAtlasRevisionId: payload.parentAtlasRevisionId, parentMasterContentHash: payload.parentMasterContentHash,
         revisionHistoryMode: payload.revisionHistoryMode } : {}),
@@ -2429,6 +2444,73 @@ async function callAtlasAuthorEdge(body, { ownerId, fetchImpl = fetch, signal, t
  * in-process cascade and handed to the node graph worker, so a node on the
  * other runtime process authors through exactly the same door.
  */
+/**
+ * THE BRAND MARK, WHEN THE CUSTOMER UPLOADED NONE (owner, 2026-09-21).
+ *
+ * `logo.prepare` only ever PREPARED a customer upload — `logoNodeFor` returns
+ * null without one — so a customer who typed a company name and uploaded
+ * nothing got a typeset wordmark and no mark at all. The generator existed the
+ * whole time (`authorProofLogo`) and lived behind the Call-1 bypass this
+ * restoration removed. `mode: "atlas-logo"` is the door, not a new producer.
+ *
+ * Crosses the boundary as an IDENTITY and never as bytes (RULE 0.39), and a
+ * `null` logo is a STATE — a supplied asset, an explicit "no logo", or a brief
+ * that never asked — not a failure.
+ */
+async function callAtlasLogoEdge(body, { ownerId, fetchImpl = fetch, signal, timeoutMs, wait } = {}) {
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+  if (!supabaseUrl || serviceRoleKey.length < 32) {
+    throw new FlatAtlasError("flat_atlas_logo_edge_transport_missing", "SUPABASE_URL / service key are required", true);
+  }
+  const { response, payload } = await invokeAtlasAuthoring({
+    url: `${supabaseUrl}/functions/v1/design-panel-ai-generate`, body: { ...body, mode: "atlas-logo" },
+    fetchImpl, signal, timeoutMs, wait,
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "content-type": "application/json",
+      "x-designpro-owner-id": String(ownerId || ""),
+    },
+  });
+  if (!response.ok || payload?.success !== true) {
+    throw Object.assign(new FlatAtlasError(
+      /^provider_[a-z0-9_]+$/.test(String(payload?.code || payload?.error || ""))
+        ? String(payload.code || payload.error) : "flat_atlas_logo_edge_call_failed",
+      `design-panel-ai-generate atlas-logo failed (HTTP ${response.status}): ${String(payload?.error || "no body").slice(0, 300)}${providerFailureSummary(payload)}`,
+      typeof payload?.retryable === "boolean" ? payload.retryable
+        : response.status >= 500 || [404, 409, 429].includes(response.status),
+    ), providerFailureDetails(payload));
+  }
+  return payload.logo || null;
+}
+
+/** Per call, like the author transport: one process serves every owner's runs. */
+/**
+ * The real three-zone example, if one has been built from an accepted master.
+ *
+ * Fails soft in every direction: no object, an unreadable one, or a bucket
+ * outage all yield null and the drawn sheet is used. A teaching input must
+ * never be able to cost a customer their design.
+ */
+const STAGED_THREE_ZONE_EXAMPLE = "atlas-examples/three-zone-example.png";
+async function readStagedThreeZoneExample(supabase, logger = () => {}) {
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).download(STAGED_THREE_ZONE_EXAMPLE);
+    if (error || !data) return null;
+    const bytes = Buffer.from(await data.arrayBuffer());
+    if (bytes.length < 10_000) return null;
+    logger(`atlas call 1: three-zone example from real artwork (${bytes.length} B)`);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function createAtlasLogoTransport({ callLogoEdge = callAtlasLogoEdge, ownerId: defaultOwnerId = null } = {}) {
+  return async (body, { ownerId = defaultOwnerId } = {}) => callLogoEdge(body, { ownerId });
+}
+
 function createAtlasAuthorTransport({ supabase, callAuthorEdge = callAtlasAuthorEdge, ownerId: defaultOwnerId = null } = {}) {
   if (!supabase) throw new FlatAtlasError("flat_atlas_runtime_missing", "the atlas-author transport requires Supabase");
   return async (body, { ownerId = defaultOwnerId } = {}) => {
@@ -3574,11 +3656,34 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // Restore the two hash-addressed inputs required by the deployed branch.
   const teachingBytes = Buffer.from(teachingProof.flattenedTopView.bytes);
   const authoringGuideBytes = await renderAtlasAuthoringGuide(manifest);
+  // THE THREE-ZONE SEPARATION CONTEXT, DRAWN HERE (owner, 2026-09-21: "Recreate
+  // in code … it should say example"). Deterministic, so the sha256 is stable
+  // and the object is uploaded once and re-read forever after. It rides the
+  // same `atlas-call1-inputs/<sha256>.png` allowlist the edge already enforces,
+  // so a path the edge would refuse cannot leave this runtime.
+  // ⚠️ THE DRAWN SHEET IS THE FALLBACK, NOT THE DESTINATION.
+  //
+  // Owner, 2026-09-21: "Why is it so generic and flat on design?? Why are you
+  // not using designpanelaigenerate???" -- and that is the right question. The
+  // three zones are drawn by code, but the ARTWORK inside them should be a real
+  // DesignPanelAI generation, not hand-written SVG. A hand-drawn ground teaches
+  // the separation correctly and teaches the design quality bar wrongly.
+  //
+  // So a REAL example is preferred whenever one is staged: a previously
+  // accepted master run through `assemblePanelProofMaster({documentOnly})` --
+  // the same derivation the customer's own proof uses, over real generated
+  // artwork. `seed-artboard-quality-examples.yml` builds and stores it.
+  // Until then the drawn sheet ships, which is honest about the format and
+  // silent about the quality rather than wrong about it.
+  const threeZoneBytes = await readStagedThreeZoneExample(supabase, logger)
+    || await renderThreeZoneExample();
   const teachingInputPath = `atlas-call1-inputs/${sha256(teachingBytes)}.png`;
   const guideInputPath = `atlas-call1-inputs/${sha256(authoringGuideBytes)}.png`;
+  const threeZoneInputPath = `atlas-call1-inputs/${sha256(threeZoneBytes)}.png`;
   await Promise.all([
     store.putImmutableBytes({ storagePath: teachingInputPath, bytes: teachingBytes, contentType: "image/png" }),
     store.putImmutableBytes({ storagePath: guideInputPath, bytes: authoringGuideBytes, contentType: "image/png" }),
+    store.putImmutableBytes({ storagePath: threeZoneInputPath, bytes: threeZoneBytes, contentType: "image/png" }),
   ]);
   const customerImageParts = [
     ...(panelProof ? [] : await verifiedCustomerLogoPart(supabase, input)),
@@ -3595,6 +3700,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     teachingProofStoragePath: teachingInputPath,
     teachingProofIdentity: teachingProof.identity,
     guideStoragePath: guideInputPath,
+    threeZoneExampleStoragePath: threeZoneInputPath,
     referenceImagesBase64: customerImageParts.map((part) => part.inlineData.data),
     revisionContextHash,
   };
@@ -4344,6 +4450,17 @@ async function generateOrReuseFlatAtlasResolved(options) {
     });
     const composited = await elementWorker.authorElements({
       masterRef: { storagePath: staged.storagePath, contentHash: acceptedMasterHash, byteSize: acceptedMasterBytes.length },
+      // CALL 1'S OWN EXCHANGE, so `logo.generate` continues this design instead
+      // of opening a fresh conversation about it. It rides the run DEFINITION
+      // beside `masterRef`, which the definition already carries -- no new
+      // node, no new edge, no change to the orchestrator. The definition hash
+      // moves with it, which is correct: a run whose mark continued the design
+      // is not the same run as one whose mark guessed.
+      callOneExchange: (() => {
+        const latest = edgeProvenance[edgeProvenance.length - 1];
+        const signature = latest?.thoughtSignature;
+        return typeof signature === "string" && signature ? { thoughtSignature: signature } : null;
+      })(),
       manifest, input: authoringInput, requestId, generationId, ownerId, logger,
     });
     if (composited?.changed) {
@@ -5037,6 +5154,8 @@ module.exports = {
   PANEL_PROOF_TOPOLOGY_CONTRACT,
   callAtlasAuthorEdge,
   createAtlasAuthorTransport,
+  callAtlasLogoEdge,
+  createAtlasLogoTransport,
   CALL_ONE_PANEL_CONTRACT,
   cutCallOnePanels,
   ATLAS_CONTRACT,

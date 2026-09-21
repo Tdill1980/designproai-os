@@ -39,10 +39,15 @@ test("one canonical policy includes every required runtime file and five deploy 
   // joined it, never on its own.
   // Generated-logo chroma keying runs in the runtime, so its lazily required
   // helper must ship even though a basic runtime health probe never loads it.
-  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 134);
+  // +1 (2026-09-21): `runtime/atlas-three-zone-example.cjs`, the three-zone
+  // separation context Call 1 is shown. It is DRAWN at request-assembly time
+  // and staged to the Call-1 input prefix, so it is required at REQUIRE time by
+  // flat-first-atlas and ships whether or not anything downstream reads it.
+  assert.equal(fixed.filter((name) => name.startsWith("runtime/")).length, 135);
   for (const name of [
     "runtime/atlas-proof-panel-locator.cjs",
     "runtime/atlas-panel-proof-contract.cjs",
+    "runtime/atlas-three-zone-example.cjs",
     "runtime/atlas-logo-chroma.cjs",
     "runtime/wallpro-production.cjs",
     "runtime/atlas-proof-transport.cjs",

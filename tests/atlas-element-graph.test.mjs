@@ -77,7 +77,15 @@ test("on, the element node is a ROOT and master's edges do not move", () => {
     assert.ok(same, `${node.key} disappeared`);
     assert.deepEqual(same.dependsOn, node.dependsOn, `${node.key}'s edges moved`);
   }
-  assert.equal(on.length, off.length + 4, "typography, contact, the lockup, and the composite");
+  // FIVE, NOT FOUR, SINCE 2026-09-21: typography, contact, the GENERATED MARK,
+  // the lockup and the composite. A customer who names their business and
+  // uploads no logo now earns `logo.generate` -- the branch `logoNodeFor`
+  // used to answer with `return null`, which is how the mark went missing.
+  assert.equal(on.length, off.length + 5,
+    "typography, contact, the generated mark, the lockup, and the composite");
+  const mark = on.find((n) => n.key === "logo.generate");
+  assert.ok(mark, "a named business with no uploaded logo earns a drawn mark");
+  assert.deepEqual(mark.dependsOn, [], "it reads the brief, never the artwork, so it is a root too");
 
   // NO SURFACE waits on an element; master.composite (chunk 8) is what will
   // consume them. element.lockup depends on them by design -- it is an element
@@ -315,14 +323,26 @@ test("a malformed logo identity refuses the RUN, before a worker spends a lease"
 // ---------------------------------------------------------------------------
 
 test("the lockup depends on exactly the elements that exist", () => {
+  // CONTACT carries a company name, so the generated mark is one of the
+  // elements that exist -- the lockup must wait for it or place it late.
   const both = compile("on", CONTACT).find((n) => n.key === graph.LOCKUP_NODE);
-  assert.deepEqual(both.dependsOn.sort(), [graph.CONTACT_NODE, graph.TYPESET_NODE].sort());
+  assert.deepEqual(both.dependsOn.sort(),
+    [graph.CONTACT_NODE, graph.TYPESET_NODE, "logo.generate"].sort());
 
   const nameOnly = compile("on", { companyName: "Arctic Air" }).find((n) => n.key === graph.LOCKUP_NODE);
-  assert.deepEqual(nameOnly.dependsOn, [graph.TYPESET_NODE], "no contact node means no phantom edge to one");
+  assert.deepEqual(nameOnly.dependsOn.sort(), [graph.TYPESET_NODE, "logo.generate"].sort(),
+    "no contact node means no phantom edge to one");
 
+  // A PHONE ALONE STILL EARNS NO MARK: there is no business name to draw one
+  // for, which is the same honest no-op the customer-logo branch makes.
+  const phoneOnly = compile("on", { phone: "555-0142" }).find((n) => n.key === graph.LOCKUP_NODE);
+  assert.deepEqual(phoneOnly.dependsOn, [graph.CONTACT_NODE]);
+
+  // An UPLOADED logo takes the prepare branch and is never regenerated.
   const all = compile("on", { ...CONTACT, logoAsset: LOGO_ASSET }).find((n) => n.key === graph.LOCKUP_NODE);
   assert.equal(all.dependsOn.length, 3);
+  assert.ok(all.dependsOn.includes(graph.LOGO_NODE));
+  assert.ok(!all.dependsOn.includes("logo.generate"));
 });
 
 test("nothing to place means no lockup node at all", () => {
