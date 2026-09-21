@@ -1,0 +1,199 @@
+name: Publish a pinned teaching example to atlas-examples
+
+# Puts ONE repo-versioned teaching asset into `wrap-files/atlas-examples/`,
+# byte for byte, against the hash its pinned constant already names.
+#
+# WHY IT EXISTS. A pinned Call-1 teaching input is read from storage by path and
+# refused unless its sha256 matches the constant in the source. So a sheet that
+# is committed at runtime/atlas-examples/ but never uploaded cannot be used at
+# all: the edge fails `panel_proof_input_missing` before it draws anything. That
+# is the state the Ridgeline Custom Pools 2D PRODUCTION PROOF was in -- in the
+# repo, pinned in `PANEL_PROOF_FORMAT_EXAMPLE`, absent from the bucket.
+#
+# WHY NOT THE QUALITY SEEDER. `seed-artboard-quality-examples.yml` re-encodes
+# anything over 2 MiB and sweeps its prefix to exactly what the run seeded. Both
+# are right for a quality reference and fatal for a pinned one: re-encoding
+# changes the hash the pin is, and `atlas-examples/` holds several unrelated
+# pinned objects a sweep would delete.
+#
+# THE HASH IS AN INPUT, NOT AN OUTPUT. `expect_sha256` is required and the bytes
+# must already hash to it, so this cannot mint a new pinned object -- only place
+# the exact bytes some constant already names. Publish and pin cannot drift.
+#
+# WHY IT RUNS ON THE DROPLET. wrap-files is private and there is no service-role
+# secret in GitHub; the key already lives in /opt/designproai-os/shared/runtime.env.
+# This runs inside the deployed runtime image exactly as the quality seeder does,
+# so no credential is ever fetched to a runner or to a laptop.
+#
+# It writes ONE object under atlas-examples/. No master, revision row, bucket
+# visibility, DAG node, orchestrator or edge function is touched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "PREVIEW_ONLY verifies the bytes and writes nothing. PUBLISH_THE_EXAMPLE uploads."
+        required: true
+        type: choice
+        default: DO_NOT_RUN
+        options:
+          - DO_NOT_RUN
+          - PREVIEW_ONLY
+          - PUBLISH_THE_EXAMPLE
+      name:
+        description: "Bare filename committed at runtime/atlas-examples/"
+        required: true
+        default: "ridgeline-panel-proof-gold.png"
+        type: string
+      expect_sha256:
+        description: "The sha256 the pinned constant names. The file must already hash to this."
+        required: true
+        default: "b81b4967e287633c80792f0eb49245ce3e188913e99e6109d922b301f8a4d600"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: designproai-atlas-example-publish
+  cancel-in-progress: false
+
+env:
+  TARGET_HOST: 137.184.0.4
+  EXPECTED_AUTOMATION_KEY_FINGERPRINT: SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+  EXPECTED_HOST_FINGERPRINT: SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.confirmation != 'DO_NOT_RUN'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+      ASSET_NAME: ${{ inputs.name }}
+      EXPECT_SHA: ${{ inputs.expect_sha256 }}
+      PUBLISH_WRITE: ${{ inputs.confirmation == 'PUBLISH_THE_EXAMPLE' && '--write' || '' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Fail closed on a withheld secret or a malformed input
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          if [[ -z ${SSH_PRIVATE_KEY:-} ]]; then
+            printf '::error title=Environment secret withheld::DESIGNPROAI_SSH_PRIVATE_KEY is empty for ref %s.\n' "$GITHUB_REF" >&2
+            exit 39
+          fi
+          # A BARE FILENAME, never a path: constrained here as well as in the
+          # script, so neither alone is the gate.
+          [[ $ASSET_NAME =~ ^[A-Za-z0-9._-]+\.(png|jpe?g|webp)$ ]] || {
+            printf '::error title=Bad asset name::name must be a bare image filename, not a path.\n' >&2
+            exit 43
+          }
+          [[ $EXPECT_SHA =~ ^[0-9a-f]{64}$ ]] || {
+            printf '::error title=Bad hash::expect_sha256 must be 64 lowercase hex characters.\n' >&2
+            exit 44
+          }
+          # THE FILE MUST BE IN THE CHECKOUT. A named example that is missing
+          # should say so on the runner rather than fail halfway across an SSH
+          # session with a remote exit code and no account of why.
+          [[ -f "runtime/atlas-examples/$ASSET_NAME" ]] || {
+            printf '::error title=Local example missing::runtime/atlas-examples/%s is not in the checkout.\n' "$ASSET_NAME" >&2
+            exit 47
+          }
+          observed=$(sha256sum "runtime/atlas-examples/$ASSET_NAME" | awk '{print $1}')
+          [[ $observed == "$EXPECT_SHA" ]] || {
+            printf '::error title=Hash mismatch::%s hashes %s but expect_sha256 says %s. Reconcile the pin and the file rather than publishing a sheet nobody chose.\n' \
+              "$ASSET_NAME" "$observed" "$EXPECT_SHA" >&2
+            exit 48
+          }
+          printf '%s: %s bytes, sha256 %s\n' "$ASSET_NAME" "$(stat -c%s "runtime/atlas-examples/$ASSET_NAME")" "$observed"
+
+      - name: Pin the droplet SSH identity
+        id: ssh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          key_file="$RUNNER_TEMP/designproai_ssh"
+          public_key="$RUNNER_TEMP/designproai_ssh.pub"
+          known_hosts="$RUNNER_TEMP/designproai_known_hosts"
+          fail() { local code="$1"; shift; printf '::error title=SSH identity pin::%s\n' "$*" >&2; exit "$code"; }
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$key_file"
+          ssh-keygen -y -f "$key_file" > "$public_key" 2>/dev/null || fail 31 "automation private key could not be parsed"
+          observed=$(ssh-keygen -lf "$public_key" -E sha256 2>/dev/null | awk 'NR == 1 {print $2}')
+          [[ $observed == "$EXPECTED_AUTOMATION_KEY_FINGERPRINT" ]] || fail 38 "automation key fingerprint does not match the protected pin"
+
+          ssh-keyscan -T 10 -t ed25519 "$TARGET_HOST" 2>/dev/null > "$known_hosts" || fail 33 "host-key scan failed"
+          [[ -s $known_hosts ]] || fail 34 "host-key scan returned nothing"
+          mapfile -t host_fingerprints < <(ssh-keygen -lf "$known_hosts" -E sha256 2>/dev/null | awk '{print $2}' | sort -u)
+          [[ ${#host_fingerprints[@]} -eq 1 ]] || fail 36 "ambiguous host key"
+          [[ ${host_fingerprints[0]} == "$EXPECTED_HOST_FINGERPRINT" ]] || fail 37 "host fingerprint does not match the protected pin"
+
+          echo "key_file=$key_file" >> "$GITHUB_OUTPUT"
+          echo "known_hosts=$known_hosts" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the example from inside the deployed runtime image
+        env:
+          KEY_FILE: ${{ steps.ssh.outputs.key_file }}
+          KNOWN_HOSTS: ${{ steps.ssh.outputs.known_hosts }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+                    -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
+
+          # THE PAYLOAD IS COPIED, NEVER PASSED AS AN ARGUMENT. Linux caps a
+          # single argument at MAX_ARG_STRLEN (128 KiB) separately from the ~2 MiB
+          # total; a base64 image is one argument and blows both. scp uses the
+          # same pinned key and known_hosts and has no such ceiling.
+          tar -cz scripts/publish-atlas-example.mjs "runtime/atlas-examples/$ASSET_NAME" \
+            > "$RUNNER_TEMP/publish-payload.tgz"
+          printf 'payload: %s bytes\n' "$(stat -c%s "$RUNNER_TEMP/publish-payload.tgz")"
+          scp "${ssh_args[@]}" "$RUNNER_TEMP/publish-payload.tgz" \
+            "root@$TARGET_HOST:/tmp/designpro-publish-payload.tgz"
+
+          # THE REMOTE STDERR IS THE ONLY ACCOUNT OF WHAT HAPPENED, so it is
+          # printed whatever the outcome -- `set -e` aborting before the `cat`
+          # is how a failing run shows an exit code and nothing else.
+          status=0
+          ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
+            "ASSET_NAME='$ASSET_NAME' EXPECT_SHA='$EXPECT_SHA' PUBLISH_WRITE='$PUBLISH_WRITE' bash -s" \
+            2>"$RUNNER_TEMP/publish.log" <<'REMOTE' || status=$?
+          set -Eeuo pipefail
+          release=/opt/designproai-os/current
+          test -d "$release" || { echo "no deployed release" >&2; exit 40; }
+          test -f /opt/designproai-os/shared/runtime.env || { echo "runtime.env missing" >&2; exit 41; }
+          sha=$(basename "$(readlink -f "$release")")
+          image="designproai-runtime:$sha"
+          docker image inspect "$image" >/dev/null 2>&1 || { echo "runtime image $image absent" >&2; exit 42; }
+
+          payload=/tmp/designpro-publish-payload.tgz
+          test -s "$payload" || { echo "payload was not copied to the droplet" >&2; exit 43; }
+
+          work=$(mktemp -d /tmp/designpro-publish.XXXXXX)
+          trap 'rm -rf "$work" "$payload"' EXIT
+          tar -C "$work" -xzf "$payload"
+          chmod -R 0777 "$work"
+
+          docker run --rm --network host \
+            --env-file /opt/designproai-os/shared/runtime.env \
+            -v "$work/scripts/publish-atlas-example.mjs:/app/publish.mjs:ro" \
+            -v "$work/runtime/atlas-examples:/examples:ro" \
+            "$image" node /app/publish.mjs --name "$ASSET_NAME" --expect "$EXPECT_SHA" $PUBLISH_WRITE >&2
+          REMOTE
+
+          echo "---- publish log (droplet stderr) ----"
+          cat "$RUNNER_TEMP/publish.log" || echo "(no stderr captured)"
+          if [[ $status -ne 0 ]]; then
+            printf '::error title=Publish failed on the droplet::ssh returned %s; the remote account is above.\n' "$status" >&2
+            exit "$status"
+          fi
