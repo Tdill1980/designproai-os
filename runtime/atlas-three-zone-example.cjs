@@ -186,19 +186,32 @@ function groundSvg(w, h, { seed = 0 } = {}) {
 }
 
 /**
- * WHAT EACH SURFACE CARRIES — the sheet's real lesson.
+ * WHAT EACH SURFACE CARRIES IN ZONE 1.
  *
- * Read off the reference: the roof is background alone, the front carries a
- * single line, the hood carries the mark, the rear carries mark plus contact,
- * and only the two flanks carry the full lockup with the service bar. A wrap
- * designer does not put the same amount on a 165" flank and a 50" bumper, and
- * an example that did would teach a customer's roof to be as busy as their door.
+ * ⚠️ EVERY SURFACE CARRIES BRANDING. THIS IS NOT A STYLE CHOICE.
+ *
+ * Owner, 2026-09-21: "Zone 1 is full design on panels, zone 2 is only
+ * backgrounds -- design elements, logos and text removed. Zone 3 is just
+ * design elements, text and logos."
+ *
+ * An earlier pass gave the roof nothing and the hood a bare mark, reasoning
+ * from the reference sheet that a small surface carries less. That is true of a
+ * REAL wrap and false of a TEACHING sheet: with four of six panels branded in
+ * neither zone, Zone 1 and Zone 2 rendered nearly identical and the sheet
+ * taught no separation at all. The whole document exists to show one thing --
+ * the same artwork with the liftable elements ON and then OFF -- and a panel
+ * that is bare in both shows it nowhere.
+ *
+ * So the treatments vary the LOCKUP FORM to suit the panel's shape, and every
+ * one of them is branded. Zone 2 is the identical ground with all of it gone.
  */
 const SURFACE_TREATMENT = Object.freeze({
   driver: { lockup: "full", services: true },
   passenger: { lockup: "full", services: true },
-  roof: { lockup: "none", services: false },
-  hood: { lockup: "mark", services: false },
+  // Tall and narrow: the stack fits where a horizontal lockup cannot.
+  roof: { lockup: "stacked", services: false },
+  hood: { lockup: "stacked", services: false },
+  // A 22"-tall strip holds one line and stays readable.
   front: { lockup: "line", services: false },
   rear: { lockup: "stacked", services: false },
 });

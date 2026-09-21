@@ -2486,6 +2486,27 @@ async function callAtlasLogoEdge(body, { ownerId, fetchImpl = fetch, signal, tim
 }
 
 /** Per call, like the author transport: one process serves every owner's runs. */
+/**
+ * The real three-zone example, if one has been built from an accepted master.
+ *
+ * Fails soft in every direction: no object, an unreadable one, or a bucket
+ * outage all yield null and the drawn sheet is used. A teaching input must
+ * never be able to cost a customer their design.
+ */
+const STAGED_THREE_ZONE_EXAMPLE = "atlas-examples/three-zone-example.png";
+async function readStagedThreeZoneExample(supabase, logger = () => {}) {
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).download(STAGED_THREE_ZONE_EXAMPLE);
+    if (error || !data) return null;
+    const bytes = Buffer.from(await data.arrayBuffer());
+    if (bytes.length < 10_000) return null;
+    logger(`atlas call 1: three-zone example from real artwork (${bytes.length} B)`);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
 function createAtlasLogoTransport({ callLogoEdge = callAtlasLogoEdge, ownerId: defaultOwnerId = null } = {}) {
   return async (body, { ownerId = defaultOwnerId } = {}) => callLogoEdge(body, { ownerId });
 }
@@ -3640,7 +3661,22 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // and the object is uploaded once and re-read forever after. It rides the
   // same `atlas-call1-inputs/<sha256>.png` allowlist the edge already enforces,
   // so a path the edge would refuse cannot leave this runtime.
-  const threeZoneBytes = await renderThreeZoneExample();
+  // ⚠️ THE DRAWN SHEET IS THE FALLBACK, NOT THE DESTINATION.
+  //
+  // Owner, 2026-09-21: "Why is it so generic and flat on design?? Why are you
+  // not using designpanelaigenerate???" -- and that is the right question. The
+  // three zones are drawn by code, but the ARTWORK inside them should be a real
+  // DesignPanelAI generation, not hand-written SVG. A hand-drawn ground teaches
+  // the separation correctly and teaches the design quality bar wrongly.
+  //
+  // So a REAL example is preferred whenever one is staged: a previously
+  // accepted master run through `assemblePanelProofMaster({documentOnly})` --
+  // the same derivation the customer's own proof uses, over real generated
+  // artwork. `seed-artboard-quality-examples.yml` builds and stores it.
+  // Until then the drawn sheet ships, which is honest about the format and
+  // silent about the quality rather than wrong about it.
+  const threeZoneBytes = await readStagedThreeZoneExample(supabase, logger)
+    || await renderThreeZoneExample();
   const teachingInputPath = `atlas-call1-inputs/${sha256(teachingBytes)}.png`;
   const guideInputPath = `atlas-call1-inputs/${sha256(authoringGuideBytes)}.png`;
   const threeZoneInputPath = `atlas-call1-inputs/${sha256(threeZoneBytes)}.png`;

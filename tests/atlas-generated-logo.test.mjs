@@ -141,12 +141,33 @@ test("the three-zone example is DRAWN IN CODE, not a stored screenshot", async (
   // service bar. An earlier pass gave all six equal complexity -- it degraded
   // the two flanks that were already right and taught a customer's roof to be
   // as busy as their door.
-  const treatments = new Set(Object.values(example.SURFACE_TREATMENT).map((t) => t.lockup));
-  assert.ok(treatments.size >= 4, "the six surfaces must not all carry the same treatment");
-  assert.equal(example.SURFACE_TREATMENT.roof.lockup, "none", "a roof is background");
+  // EVERY SURFACE IS BRANDED IN ZONE 1. Owner, 2026-09-21: "Zone 1 is full
+  // design on panels, zone 2 is only backgrounds -- design elements, logos and
+  // text removed."
+  //
+  // An earlier pass gave the roof `none` and the hood a bare mark, reasoning
+  // from a real wrap that a small surface carries less. True of a wrap, false
+  // of a TEACHING sheet: with four of six panels bare in BOTH zones, Zone 1 and
+  // Zone 2 rendered nearly identical and the sheet taught no separation at all.
+  for (const [surfaceKey, treatment] of Object.entries(example.SURFACE_TREATMENT)) {
+    assert.notEqual(treatment.lockup, "none", `${surfaceKey} must carry branding in Zone 1`);
+  }
+  // The FORM still varies -- a horizontal lockup does not fit a 22" bumper --
+  // so this is not one-size-fits-all either.
+  assert.ok(new Set(Object.values(example.SURFACE_TREATMENT).map((t) => t.lockup)).size >= 2);
   assert.equal(example.SURFACE_TREATMENT.driver.lockup, "full");
   assert.equal(example.SURFACE_TREATMENT.passenger.lockup, "full");
   assert.ok(!example.SURFACE_TREATMENT.front.services, "only a flank carries the service bar");
+
+  // AND PROVEN ON PIXELS, not on the treatment table: Zone 1 must differ from
+  // Zone 2 for EVERY surface, which is the one thing this document exists to
+  // show. A table can say "branded" while the renderer draws nothing.
+  for (const key of ["driver", "passenger", "roof", "hood", "front", "rear"]) {
+    const zone2 = example._test.groundSvg(400, 200, { seed: 1 });
+    const zone1 = example._test.brandedPanelSvg(400, 200, key);
+    assert.notEqual(zone1, zone2, `${key}: Zone 1 and Zone 2 must not render the same`);
+    assert.ok(zone1.length > 200, `${key}: Zone 1 must carry something liftable`);
+  }
   // And the SHARED ground stays shared: motif added there reaches all six, so a
   // small-panel fix lands on the flanks too. That is how the last one regressed.
   // Comments stripped first: the block carries a cautionary note naming the

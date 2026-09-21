@@ -104,7 +104,7 @@ jobs:
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
           command -v jq >/dev/null || { apt-get update -qq && apt-get install -y -qq jq; }
-          trap 'rm -f /tmp/artboard-seed-*.png /tmp/artboard-seed-*.json' EXIT
+          trap 'rm -f /tmp/artboard-seed-*' EXIT
 
           SB_URL=$(grep '^SUPABASE_URL=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-)
           SB_KEY=$(grep -E '^(SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SERVICE_KEY)=' /opt/designproai-os/shared/runtime.env | head -1 | cut -d= -f2-)
@@ -181,5 +181,72 @@ jobs:
           # Call 1 attaches at most two. Seeding fewer is legal; seeding none
           # means the run did nothing, which must not read as success.
           test "$seeded" -ge 1 || { echo "nothing was seeded"; exit 4; }
+
+          # ── THE THREE-ZONE EXAMPLE, BUILT FROM REAL ARTWORK ──────────────
+          #
+          # Owner, 2026-09-21: "Why is it so generic and flat on design?? Why
+          # are you not using designpanelaigenerate???"
+          #
+          # The runtime can DRAW the three zones, and that teaches the format
+          # correctly while teaching the quality bar wrongly -- the artwork
+          # inside is hand-written SVG. A real generation is the right filling,
+          # and the machinery to make one already exists: the FIRST seeded
+          # master goes through `assemblePanelProofMaster({documentOnly})`,
+          # which is the same derivation a customer's own proof uses.
+          #
+          # Built here rather than at request time because it is the same sheet
+          # for every customer: one build, stored, read thereafter.
+          first=$(echo "$GENERATION_IDS" | cut -d, -f1 | tr -d '[:space:]')
+          echo "--- three-zone example from $first ---"
+          cat > /tmp/artboard-seed-example.cjs <<'NODE'
+          const { createClient } = require("/opt/designproai-os/current/runtime/node_modules/@supabase/supabase-js");
+          const proof = require("/opt/designproai-os/current/runtime/atlas-panel-proof-topology.cjs");
+          const atlas = require("/opt/designproai-os/current/runtime/flat-first-atlas.cjs");
+          const { createHash } = require("node:crypto");
+          const sha = (b) => createHash("sha256").update(b).digest("hex");
+          (async () => {
+            const svc = createClient(process.env.SB_URL, process.env.SB_KEY);
+            const { data: rows } = await svc.from("designpro_flat_atlas_revisions")
+              .select("master_storage_path,master_content_hash,manifest,request_input")
+              .eq("generation_id", process.env.GEN_ID).not("master_storage_path", "is", null)
+              .order("created_at", { ascending: false }).limit(1);
+            if (!rows?.length) throw new Error("no revision row");
+            const row = rows[0];
+            const { data } = await svc.storage.from("wrap-files").download(row.master_storage_path);
+            const master = Buffer.from(await data.arrayBuffer());
+            if (sha(master) !== row.master_content_hash) throw new Error("master identity mismatch");
+            const manifest = row.manifest;
+            const panels = await atlas.cutCallOnePanels(master, manifest, row.master_content_hash);
+            const built = await proof.assemblePanelProofMaster({
+              sheet: { bytes: master, storagePath: row.master_storage_path,
+                contentHash: row.master_content_hash, byteSize: master.length },
+              zone2Panels: panels, documentOnly: true, cleanBaseZone2: false,
+              panelRows: proof.panelRowsFromManifest(manifest),
+              input: row.request_input || {}, manifest, logger: () => {},
+              store: { putImmutableBytes: async (o) => {
+                await svc.storage.from("wrap-files").upload(o.storagePath, o.bytes,
+                  { contentType: o.contentType, upsert: true });
+                return { storagePath: o.storagePath, contentHash: sha(o.bytes) };
+              } },
+              downloadAsset: async (id) => {
+                const { data } = await svc.storage.from("wrap-files").download(id.storagePath);
+                return Buffer.from(await data.arrayBuffer());
+              },
+            });
+            const path = built.provenance.proofStoragePath;
+            const { data: doc } = await svc.storage.from("wrap-files").download(path);
+            const bytes = Buffer.from(await doc.arrayBuffer());
+            await svc.storage.from("wrap-files")
+              .upload("atlas-examples/three-zone-example.png", bytes,
+                { contentType: "image/png", upsert: true });
+            console.log(`EXAMPLE_OK ${bytes.length} bytes from ${path}`);
+          })().catch((e) => { console.error(`EXAMPLE_FAILED ${e.message}`); process.exit(0); });
+          NODE
+          # Non-fatal on purpose: the quality artboards are the point of this
+          # run, and the drawn example is a working fallback. A failure here
+          # must not lose a successful seed.
+          SB_URL="$SB_URL" SB_KEY="$SB_KEY" GEN_ID="$first" \
+            node /tmp/artboard-seed-example.cjs || true
+
           echo "SEEDED_OK $seeded"
           REMOTE
