@@ -846,6 +846,21 @@ serve(async (req) => {
     }
 
     const t0 = Date.now();
+    // ⚠️ DECLARED HERE, ABOVE EVERY READER. It used to sit below `modelRequest`,
+    // which was fine while one request was built in one place -- and became a
+    // temporal dead zone the moment the anchored DESIGN turn, which runs first
+    // and needs this identity to key and authorise itself, was added above it.
+    // Live run 20 died in 25 seconds with "Cannot access 'providerRequest'
+    // before initialization", before one image request. Its long contract note
+    // stays where the durable call is made; this is only the binding.
+    const providerRequest = {
+      ...(body?.providerRequest && typeof body.providerRequest === "object" ? body.providerRequest : {}),
+      requestId: String(body?.requestId || body?.providerRequest?.requestId || ""),
+      generationId: String(body?.generationId || body?.providerRequest?.generationId || ""),
+      claimToken: body?.claimToken ?? body?.providerRequest?.claimToken,
+      attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
+      cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
+    };
 
     // ═══ THE ANCHORED PATH: ONE CONVERSATION, TWO TURNS ═══
     //
@@ -975,14 +990,6 @@ serve(async (req) => {
     // contract has. It is part of the identity, so candidate 2 is a different
     // operation and is still allowed to spend -- that is the bounded budget
     // working, not a cache miss.
-    const providerRequest = {
-      ...(body?.providerRequest && typeof body.providerRequest === "object" ? body.providerRequest : {}),
-      requestId: String(body?.requestId || body?.providerRequest?.requestId || ""),
-      generationId: String(body?.generationId || body?.providerRequest?.generationId || ""),
-      claimToken: body?.claimToken ?? body?.providerRequest?.claimToken,
-      attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
-      cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
-    };
     const logoPromise = body.separatedArtwork === true ? authorProofLogo({
       bucket: svc.storage.from(BUCKET), ownerId: caller.userId, providerRequest,
       input: { companyName: field("companyName"), logoAsset: body.hasCustomerLogo || body.logoAsset,
