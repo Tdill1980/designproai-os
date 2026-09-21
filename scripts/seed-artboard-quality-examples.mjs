@@ -286,6 +286,32 @@ for (const [index, selector] of selectors.entries()) {
   });
 }
 
+// THE PREFIX MUST HOLD EXACTLY WHAT THIS RUN SEEDED, AND NOTHING ELSE.
+//
+// Upload is an UPSERT BY NAME, so replacing a source leaves its predecessor
+// behind under the old name -- and the loaders take the first TWO entries of a
+// NAME-ORDERED listing. Live: swapping slot 2 from `02-1564c66da0a1c482.jpg` to
+// `02-forged-fitness-driver-panel.jpg` would have left both, and "1" sorts
+// before "f", so the model would have gone on being shown the file this run
+// replaced while every receipt said the new one was written.
+//
+// That is the silent-wrong-file shape this script exists to prevent, so the
+// sweep is part of seeding rather than a tidy-up: anything under the prefix
+// that this run did not write is removed.
+if (write) {
+  const keep = new Set(results.map((r) => r.objectPath));
+  const { data: existing, error: sweepListError } = await svc.storage.from(BUCKET).list(PREFIX, { limit: 100 });
+  if (sweepListError) throw new Error(`prefix sweep listing failed: ${sweepListError.message}`);
+  const stale = (existing || [])
+    .map((file) => `${PREFIX}/${file.name}`)
+    .filter((path) => !keep.has(path));
+  if (stale.length) {
+    const { error: removeError } = await svc.storage.from(BUCKET).remove(stale);
+    if (removeError) throw new Error(`prefix sweep failed: ${removeError.message}`);
+    for (const path of stale) console.error(`  swept         ${path} (not seeded by this run)`);
+  }
+}
+
 // VERIFY FROM THE BUCKET, NOT FROM THE UPLOAD CALL. A 200 on upload proves the
 // request was accepted; re-reading the prefix the way the loaders read it is
 // what proves the model will actually be shown these files.
