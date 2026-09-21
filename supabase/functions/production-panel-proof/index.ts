@@ -739,6 +739,20 @@ serve(async (req) => {
         if (error || !data) continue;
         const bytes = new Uint8Array(await data.arrayBuffer());
         if (!bytes.length || bytes.length > ARTBOARD_QUALITY_MAX_BYTES) continue;
+        // AN EXEMPLAR ALREADY IN THE REQUEST IS NOT A SECOND EXEMPLAR.
+        //
+        // Live 7a72951823648d27 attached four images of which TWO were byte
+        // identical: `atlas-examples/panel-proof-zones-filled.png` as the
+        // `format` anchor and `designpanel-artboard-examples/01-panel-proof-
+        // zones-filled.png` as a quality example, both sha256 9586710b. Google's
+        // own guidance is that reference images carry ROLES; the same bytes in
+        // two roles is one role diluted, and it spent one of only
+        // ARTBOARD_QUALITY_MAX=2 quality slots, leaving the model a single real
+        // exemplar of professional wrap work. The seeding is fixable in the
+        // bucket; this makes the request unable to carry the duplicate either
+        // way, because a bucket is edited by hand and this is not.
+        const qualityDigest = await sha256Hex(bytes);
+        if (attached.some((a) => a.sha256 === qualityDigest)) continue;
         const extension = String(file.name).toLowerCase().split(".").pop();
         const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg"
           : extension === "webp" ? "image/webp" : "image/png";
@@ -753,9 +767,8 @@ serve(async (req) => {
             + `The container template above alone controls topology, and the customer's own brief alone controls subject and colour.`,
         });
         parts.push({ inlineData: { mimeType, data: encodeBase64(bytes) } });
-        const digest = await sha256Hex(bytes);
-        qualityExamples.push({ path, sha256: digest, byteSize: bytes.length });
-        attached.push({ role: "artboard-quality", path, sha256: digest, byteSize: bytes.length });
+        qualityExamples.push({ path, sha256: qualityDigest, byteSize: bytes.length });
+        attached.push({ role: "artboard-quality", path, sha256: qualityDigest, byteSize: bytes.length });
       }
     } catch (_error) {
       // Examples improve quality; their absence never blocks authoring.

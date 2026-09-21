@@ -4740,6 +4740,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
         },
         zone2Panels: callOnePanels,
         documentOnly: true,
+        generationId,
         // OWNER RULING 2026-09-21: clean base OFF — DesignPanelAI draws the
         // logo and lettering into the artwork in one image call, which is the
         // Sept 17-18 configuration the accepted designs were made on. These

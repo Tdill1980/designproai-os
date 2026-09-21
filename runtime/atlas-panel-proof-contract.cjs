@@ -227,8 +227,8 @@ function panelProofCreativeHead(aceAssembly) {
 const INSTALLATION_FACT = [
   "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
-  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
-  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "panel here is a SOLID RECTANGLE of artwork — four straight edges, four square corners — and",
+  "the artwork runs straight through the places those openings will be. Type and logos stay clear of the",
   "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
   "all four sides.",
 ].join("\n");
@@ -334,8 +334,13 @@ function exactStrings(input = {}) {
  * the design's own vocabulary, which is a legitimate cut graphic.
  */
 const CUT_GRAPHIC_SLOTS = [
-  { caption: "PRIMARY LOGO", from: "logo", fallback: "the logo mark alone, without the wordmark" },
-  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name set as a one-line wordmark" },
+  // ⚠️ A SLOT FALLBACK MAY NAME A SLOT. IT MAY NEVER NAME A LOGO FORM.
+  // The twin comment in `_shared/atlas-panel-proof-prompt.ts` carries the
+  // evidence (live sheet 7a72951823648d27: a shield crest with an "I" monogram
+  // on all six panels, because this clause was the only form direction in the
+  // whole request and it said the logo is something OTHER than the name).
+  { caption: "PRIMARY LOGO", from: "logo", fallback: "this design's own logo, exactly as drawn on the panels" },
+  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name exactly as set on the panels" },
   { caption: "CONTACT LINE", from: "contact", fallback: "the web address alone" },
   { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "the services line set as one cut strip" },
   { caption: "ICONS / SERVICE GRAPHICS", from: "icons", fallback: "the design's own motifs drawn as plain cut shapes" },

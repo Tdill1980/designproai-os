@@ -163,8 +163,8 @@ export function panelProofCreativeHead(aceAssembly: string): string {
 export const INSTALLATION_FACT = [
   "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
-  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
-  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "panel here is a SOLID RECTANGLE of artwork — four straight edges, four square corners — and",
+  "the artwork runs straight through the places those openings will be. Type and logos stay clear of the",
   "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
   "all four sides.",
 ].join("\n");
@@ -233,9 +233,29 @@ export const VERSIONS = [
  * the defect the exact-text rule exists to prevent -- it is a drawn MARK from
  * the design's own vocabulary, which is a legitimate cut graphic.
  */
+// ⚠️ A SLOT FALLBACK MAY NAME A SLOT. IT MAY NEVER NAME A LOGO FORM.
+//
+// `fallback` used to read "the logo mark alone, without the wordmark", and that
+// single clause was the only form direction anywhere in the request -- which
+// made it the strongest. Live sheet 7a72951823648d27 (Ironclad Roofing, 2019
+// Transit): a shield crest with an "I" monogram, repeated on all six panels,
+// because Zone 3 must agree with Zone 1 and Zone 3 had been told the logo is
+// something OTHER than the name.
+//
+// `designiq-assembly.ts` refuses to prescribe a form on purpose, and says so at
+// length: every version that named one converged (custom lettering gave three
+// trades one lockup; a menu of "pictorial, monogram, abstract symbol or badge"
+// was the same pressure in different clothes). LOGO_REQUIREMENT is one sentence
+// -- "decide its form from this brief alone" -- and this file then overrode it
+// from downstream. A prescription the persona deliberately withheld must not be
+// reintroduced by the document contract.
+//
+// So both brand slots LIFT rather than specify. Zone 3 is a cut sheet of the
+// design's own marks; it is not a second brief.
+//
 export const CUT_GRAPHIC_SLOTS = [
-  { caption: "PRIMARY LOGO", from: "logo", fallback: "the logo mark alone, without the wordmark" },
-  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name set as a one-line wordmark" },
+  { caption: "PRIMARY LOGO", from: "logo", fallback: "this design's own logo, exactly as drawn on the panels" },
+  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name exactly as set on the panels" },
   { caption: "CONTACT LINE", from: "contact", fallback: "the web address alone" },
   { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "the services line set as one cut strip" },
   { caption: "ICONS / SERVICE GRAPHICS", from: "icons", fallback: "the design's own motifs drawn as plain cut shapes" },

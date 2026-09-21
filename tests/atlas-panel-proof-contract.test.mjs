@@ -120,12 +120,35 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // is the negative shape CLAUDE.md warns about in four places and which has
   // failed 4/4 on the field map.
   assert.match(runtime.INSTALLATION_FACT, /ONE CONTINUOUS PANEL/);
-  // THE SENTENCE THAT FORBIDS A DIE-CUT PANEL IS BACK, and this is the lock on
-  // it. I cut it to 90 characters for budget and live sheet 35389031759 came
-  // back with the windshield cut out of both flanks. RULE 0.32's acceptance
-  // contract is not a nice-to-have in this prompt; it IS the prompt.
+  // THE SENTENCE THAT RULES OUT A DIE-CUT PANEL IS PRESENT, and this is the
+  // lock on it. It was once cut to 90 characters for budget and live sheet
+  // 35389031759 came back with the windshield cut out of both flanks. RULE
+  // 0.32's acceptance contract is not a nice-to-have in this prompt; it IS the
+  // prompt.
   assert.match(runtime.INSTALLATION_FACT, /SOLID RECTANGLE of artwork/);
-  assert.match(runtime.INSTALLATION_FACT, /no holes and no vehicle-shaped outline/);
+
+  // ⚠️ THIS LOCK USED TO PIN THE NEGATIVE, UNDER A TEST NAMED "POSITIVE".
+  //
+  // It asserted the literal "no holes and no vehicle-shaped outline" while its
+  // own comment four lines above says a prohibition is "the negative shape
+  // CLAUDE.md warns about in four places and which has failed 4/4 on the field
+  // map". So the restoration after 35389031759 brought the sentence back in the
+  // form the file already knew was wrong, and the lock then held it there.
+  //
+  // THE EVIDENCE THAT IT DOES NOT WORK: live sheet 7a72951823648d27
+  // (2026-09-21) carried that exact clause and still returned both flanks
+  // die-cut to the van outline -- diecut.json, zone1 dieCut true, two enclosed
+  // openings, the windshield. Zone 2, drawn from the same design in the same
+  // pass, came back as clean rectangles. The clause is not what makes the
+  // difference, and naming "vehicle-shaped outline" is what the model drew.
+  //
+  // Google's own published guidance says the same thing under "semantic
+  // negative prompts": describe the scene you want rather than the thing to
+  // leave out. So the rule stays and its GRAMMAR changes -- the panel is
+  // described by what it IS, four straight edges, four square corners.
+  assert.match(runtime.INSTALLATION_FACT, /four straight edges, four square corners/);
+  assert.doesNotMatch(runtime.INSTALLATION_FACT, /no holes|vehicle-shaped outline/,
+    "the installation fact must state the panel's shape, never prohibit the vehicle's");
   assert.match(runtime.INSTALLATION_FACT, /artwork runs straight through the places those openings will be/);
 
   // AND THE OTHER HALF OF RULE 0.28 §3: "Filled edge to edge. Artwork runs off
