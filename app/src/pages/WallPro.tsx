@@ -1524,8 +1524,32 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           so the claim and its proof are one object. It clears the moment work
           starts -- a customer with their own wall on screen does not need to be
           told what the tool is. */}
-      {!photo && !artwork && bandProofs.length > 0 && (
-        <section className="mx-auto mt-5 grid max-w-6xl items-center gap-5 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      {/* ⚠️ THE HEADLINE IS NOT PART OF THE PROOF, AND GATING IT ON ONE ERASED
+          THE PAGE'S OWN MASTHEAD (2026-09-21, caused here).
+
+          This whole section used to require `bandProofs.length > 0`. That read
+          as "no example, no band", which is right for the SLIDER and wrong for
+          everything beside it: the headline, the sentence that says what the
+          tool does, and the two links to the case study and the prices do not
+          depend on anybody's photograph.
+
+          Two unrelated removals then emptied the list from both ends. The
+          owner's own home came out on 09-18 ("remove my photo ... just show the
+          others") -- two entries, because the spa pair and the slat pair are
+          the same room. The gym pair came out on 09-21 when its generated
+          "after" was found to carry a real company's trademark. WALL_PROOFS hit
+          zero, `WallProHeroProof` correctly rendered null, and the gate took
+          the masthead down with it. The tool opened on a bare "1. Upload your
+          wall" and looked unfinished (owner, 2026-09-22: "Wpw wallpro should
+          look like this", against a screenshot of the band).
+
+          So the two are separated. The copy renders whenever the customer has
+          not started; the slider renders only when there is something honest to
+          put in it, and the grid drops to one column when there is not. Nothing
+          is invented to fill the pane -- an empty showcase is still better than
+          a padded one, which is exactly why the list is empty. */}
+      {!photo && !artwork && (
+        <section className={`mx-auto mt-5 grid max-w-6xl items-center gap-5 ${bandProofs.length > 0 ? 'lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]' : ''}`}>
           <div>
             <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight wall-ink md:text-4xl">
               On-demand wall wrap<br />design &amp; file output
@@ -1560,10 +1584,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </Link>
             </div>
           </div>
+          {/* Renders null on an empty list by its own contract, so this is safe
+              to mount unconditionally; the grid above is what changes shape. */}
           <WallProHeroProof proofs={bandProofs} />
         </section>
       )}
-      {!photo && !artwork && bandProofs.length === 0 && <WallProHeroProof proofs={bandProofs} />}
       {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
           block is the only friction-free money on this page -- no sign-in, no
           token, no design -- and on a wrap printer's site "I already have
