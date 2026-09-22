@@ -113,12 +113,17 @@ export function WallPhotoEditor(p: Props) {
             fill={kept ? WALL_PROTECTED_FILL : 'transparent'}
             stroke={kept ? WALL_GLASS.protected.stroke : WALL_GLASS.area.stroke}
             strokeWidth={kept ? '.45' : '.35'}
-            strokeDasharray={kept ? undefined : '1.4 1'}
+            /* A BOX-ONLY ITEM IS DRAWN AS A BOX AND SAYS SO. The detector
+               located it but its mask outline never arrived, so the preview
+               covers the whole rectangle -- wider than the object. Shown
+               rather than hidden, because one tap paints it through, and an
+               item nobody can see is an item nobody can correct. */
+            strokeDasharray={!kept ? '1.4 1' : item.png ? undefined : '2.4 1.2'}
             style={{ pointerEvents: !p.marking && !p.busy && p.onToggleItem ? 'auto' : 'none', cursor: 'pointer' }}
             tabIndex={p.onToggleItem && !p.marking ? 0 : -1}
             role="button"
             aria-pressed={kept}
-            aria-label={`${item.label} — ${kept ? 'kept as photographed' : 'painted through'}. Tap to ${kept ? 'paint through it' : 'keep it'}.`}
+            aria-label={`${item.label} — ${kept ? 'kept as photographed' : 'painted through'}${item.png ? '' : ', as a rectangle rather than its exact outline'}. Tap to ${kept ? 'paint through it' : 'keep it'}.`}
             onPointerDown={e => { if (!p.onToggleItem || p.marking || p.busy) return; e.stopPropagation(); p.onToggleItem(item.id); }}
             onKeyDown={e => { if (!p.onToggleItem) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); p.onToggleItem(item.id); } }}
           />

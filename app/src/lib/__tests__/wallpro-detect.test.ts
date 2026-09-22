@@ -57,11 +57,27 @@ describe('Detect my wall', () => {
     expect(result.status).toBe(200);
     const body = await result.json();
     expect(body).toMatchObject({ model: DETECT_MODEL, openings: [{ label: 'window' }, { label: 'drapes' }] });
-    // Pixel masks: the speck and the malformed entry are dropped; boxes are normalized from the 0..1000 grid.
-    expect(body.masks.map((m: any) => m.label)).toEqual(['window with drapes', 'bed']);
+    // THIS ASSERTION USED TO ENCODE THE DEFECT (2026-09-22). It read "the
+    // speck and the malformed entry are dropped" and pinned exactly two
+    // survivors -- so an object the model LOCATED and then failed to outline
+    // was thrown away, box and label with it, and the customer who asked three
+    // times why masking was not working saw nothing at all.
+    //
+    // A bad BOX is still dropped: the speck is below the size floor and there
+    // is nothing to show. A bad MASK keeps its box, flagged `png: null`, and
+    // the client fills it as a rectangle. Boxes are normalized from 0..1000.
+    expect(body.masks.map((m: any) => m.label)).toEqual(['window with drapes', 'bed', 'bad']);
     expect(body.masks[0].box).toEqual({ y0: 0.25, x0: 0.4, y1: 0.7, x1: 0.6 }); expect(body.masks[0].png).toBe(png);
+    expect(body.masks[2].png).toBeNull();
+    expect(body.masks[2].box).toEqual({ y0: 0.1, x0: 0.1, y1: 0.3, x1: 0.3 });
+    // An oversized mask is the same case: too big to send, the box still counts.
+    expect(normalizeMasks([{ box_2d: [0, 0, 500, 500], mask: 'data:image/png;base64,' + 'A'.repeat(2_000_001), label: 'huge' }]))
+      .toEqual([{ label: 'huge', box: { y0: 0, x0: 0, y1: 0.5, x1: 0.5 }, png: null, class: 'fixed' }]);
+    // ...and a box that is missing or malformed still drops the whole item,
+    // because a rectangle is the fallback and there is no rectangle.
+    expect(normalizeMasks([{ mask: png, label: 'no box' }, { box_2d: [1, 2, 3], mask: png, label: 'short box' }])).toEqual([]);
     // Unclassified items default to fixed/protected -- the safer side of the error.
-    expect(body.masks.map((m: any) => m.class)).toEqual(['fixed', 'fixed']);
+    expect(body.masks.map((m: any) => m.class)).toEqual(['fixed', 'fixed', 'fixed']);
     expect(f.calls).toHaveLength(2);
     const request = f.calls[0];
     expect(request.generationConfig).toMatchObject({ temperature: 0, responseMimeType: 'application/json' });
