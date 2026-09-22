@@ -73,6 +73,47 @@ test("the A.T.L.A.S. master renders above the per-surface work area", () => {
   );
 });
 
+test("the Production Panel Proof and the version rail sit at the top of the control room", () => {
+  // Owner, 2026-09-22: "The human design team needs a way to review version
+  // history and production panel proof should be at top of panel pro studio."
+  // The three-zone sheet is Call 1 -- the source of every print panel -- so it
+  // is mounted directly under the identity strip, above the print-master card,
+  // and the version rail that switches it sits beside it, not only at the
+  // bottom of the page.
+  const header = board.slice(at(board, "function JobHeader", "job header"), at(board, "function LogoGallery", "logo gallery fn"));
+  const identity = at(header, "Generation ID", "identity block");
+  const rail = at(header, "<VersionRail", "version rail mount");
+  const proofCard = at(header, "<ProductionProofSourceCard", "production proof source card mount");
+  const atlasCard = at(header, "<AtlasProgressCard", "atlas card mount");
+  const versionHistory = at(header, "Version + prompt history", "version history section");
+
+  assert.ok(identity < rail, "the identity strip leads; the version rail follows it");
+  assert.ok(rail < proofCard, "the rail that selects the version sits beside the proof it selects");
+  assert.ok(proofCard < atlasCard, "the Production Panel Proof is above the print master card");
+  assert.ok(atlasCard < versionHistory, "the full prompt history stays below both");
+
+  // Keyed on the selected revision and labelled with its V-number, so V1 -> V2
+  // remounts the reader and the heading names what is on screen.
+  assert.match(
+    header,
+    /<ProductionProofSourceCard[\s\S]{0,120}key=\{atlas\.id\}[\s\S]{0,200}revisionId=\{atlas\.id\}[\s\S]{0,120}version=\{atlas\.revisionSequence\}/,
+    "the card binds to the selected revision's id and V-number",
+  );
+  // The rail is the SAME history and the SAME selector as the list below it --
+  // one source of versions, two placements.
+  const railFn = board.slice(at(board, "function VersionRail", "version rail fn"), at(board, "function JobHeader", "job header"));
+  assert.match(railFn, /onSelectVersion\(entry\.version\)/, "the rail selects through the same handler");
+  assert.match(railFn, /entry\.revisionId === selectedVersion\?\.revisionId/, "active state is the selected revision");
+  assert.match(header, /versions=\{history\.versions\}/, "the rail reads the job's own version history");
+  assert.doesNotMatch(railFn, /useQuery|dpApi/, "the rail holds no query of its own");
+
+  // One reader per artifact (RULE 0.21): the control room reaches the sheet
+  // only through the source card, and mounts it exactly once.
+  assert.equal(board.split("<ProductionProofSourceCard").length, 2, "the source card is mounted exactly once");
+  assert.doesNotMatch(board, /<AtlasPanelProofSheetLoader/, "the control room reads the sheet only through the source card");
+  assert.doesNotMatch(board, /import \{ AtlasPanelProofSheetLoader \}/, "no unused raw-reader import survives");
+});
+
 test("the master is rendered as an image, not merely described", () => {
   const card = board.slice(at(board, "function AtlasProgressCard", "atlas card"), at(board, "function SurfacePairRows", "surface rows fn"));
   assert.match(card, /<img[\s\S]{0,400}?src=\{atlas\.masterUrl\}/,

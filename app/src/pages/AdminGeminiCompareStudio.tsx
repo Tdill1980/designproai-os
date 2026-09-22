@@ -1,4 +1,4 @@
-import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { ProductionProofSourceCard } from "@/components/revisioniq/ProductionProofSourceCard";
 import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -813,19 +813,12 @@ function AtlasProgressCard({
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-      {/* Keyed on the selected version so switching V1 -> V2 remounts the
-          reader instead of leaving the previous version's proof on screen. */}
-      {/* Re-read while the run is doing automatic work so a sheet landing after
-          the board opened appears without a reload; a parked or finished run
-          cannot land one. */}
-      {atlas?.requestId && (
-        <AtlasPanelProofSheetLoader
-          key={atlas.id}
-          requestId={atlas.requestId}
-          revisionId={atlas.id}
-          pollWhilePending={job.state === "queued" || job.state === "running"}
-        />
-      )}
+      {/* The three-zone Production Panel Proof is NOT mounted here any more.
+          Owner (2026-09-22): "production panel proof should be at top of panel
+          pro studio." It sits at the top of JobHeader, as
+          ProductionProofSourceCard, directly under the identity strip and
+          above this card -- one reader per artifact (RULE 0.21), so this card
+          holds the print master and the Call-1 progress and nothing else. */}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
           Call 1
@@ -1356,6 +1349,78 @@ function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
   );
 }
 
+/**
+ * THE VERSION RAIL: every revision, selectable, at the top of the control room.
+ *
+ * Owner (Trish 2026-09-22): "The human design team needs a way to review
+ * version history and production panel proof should be at top of panel pro
+ * studio." RULE 0.22 already says V1, V2, V3... all stay inspectable and V1 is
+ * never silently replaced. The full list with each version's verbatim prompt
+ * text is still rendered further down the header; this rail is the
+ * SAME `history.versions` and the SAME `onSelectVersion`, placed where the
+ * reviewer's eye lands first, so switching the version switches the
+ * Production Panel Proof, the print master and every row below it together.
+ * It holds no query and no data of its own -- one reader per artifact.
+ */
+function VersionRail({
+  versions,
+  selectedVersion,
+  onSelectVersion,
+}: {
+  versions: DesignVersion[];
+  selectedVersion: DesignVersion | null;
+  onSelectVersion: (version: number) => void;
+}) {
+  if (versions.length === 0) return null;
+  return (
+    <div data-testid="version-rail" className="mt-4">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
+          Versions · {versions.length}
+        </span>
+        <span className="text-[10px] text-gray-400">
+          Pick one to review its proof, master and panels
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Design versions">
+        {versions.map((entry) => {
+          const active = entry.revisionId === selectedVersion?.revisionId;
+          const kind = entry.promptKind === "original-brief" ? "original brief" : "revision";
+          return (
+            <button
+              key={entry.revisionId}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onSelectVersion(entry.version)}
+              title={`${exactTimestamp(entry.createdAt)} · ${kind}`}
+              className={`rounded-md border px-2 py-1 text-left transition ${
+                active
+                  ? "border-blue-500 bg-blue-50/60 ring-1 ring-blue-300"
+                  : "border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              <span
+                className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                  active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                V{entry.version}
+              </span>
+              <span className="font-mono text-[10px] text-gray-500">
+                {exactTimestamp(entry.createdAt)}
+              </span>
+              <span className="ml-1.5 text-[10px] uppercase tracking-wider text-gray-400">
+                {kind}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function JobHeader({
   job,
   selectedVersion,
@@ -1367,6 +1432,12 @@ function JobHeader({
 }) {
   const vehicle = [job.vehicle_year, job.vehicle_make, job.vehicle_model].filter(Boolean).join(" ");
   const history = job.version_history;
+  // The revision the proof card and the master card both bind to: the SELECTED
+  // version, falling back to the newest, exactly as AtlasProgressCard resolves
+  // it -- so the two cards can never show different revisions.
+  const atlas = job.atlas_versions.find(
+    (entry) => entry.id === selectedVersion?.revisionId,
+  ) || job.atlas_versions[job.atlas_versions.length - 1] || null;
   // THE GENERATION ID IS THE FIRST PERMANENT IDENTITY OF A DESIGN.
   //
   // It is minted at Create Design and every later table carries it forward.
@@ -1415,6 +1486,34 @@ function JobHeader({
           </div>
         ))}
       </dl>
+
+      <VersionRail
+        versions={history.versions}
+        selectedVersion={selectedVersion}
+        onSelectVersion={onSelectVersion}
+      />
+
+      {/* THE PRODUCTION PANEL PROOF IS AT THE TOP. Owner (2026-09-22):
+          "production panel proof should be at top of panel pro studio" /
+          "Panel production proof is source." The three-zone sheet is Call 1
+          and every print panel below is cut from it, so it sits directly
+          under the identity strip and the version rail, ABOVE the print
+          master card and the per-surface rows. Keyed on the selected
+          revision so switching V1 -> V2 remounts the reader instead of
+          leaving the previous version's proof on screen; re-read while the
+          run is doing automatic work so a sheet landing after the board
+          opened appears without a reload. */}
+      {atlas?.requestId && (
+        <div className="mt-4">
+          <ProductionProofSourceCard
+            key={atlas.id}
+            requestId={atlas.requestId}
+            revisionId={atlas.id}
+            version={atlas.revisionSequence}
+            pollWhilePending={job.state === "queued" || job.state === "running"}
+          />
+        </div>
+      )}
 
       <AtlasProgressCard job={job} selectedVersion={selectedVersion} />
       <div className="mt-4"><DesignPromptRecord generationId={job.generation_id} /></div>
