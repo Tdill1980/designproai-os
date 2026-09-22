@@ -976,11 +976,15 @@ serve(async (req) => {
         // reference when the model reaches it, and it names every axis the
         // example may NOT influence. Wording preserved from the runtime port.
         parts.push({
-          text: `DESIGNPANEL GOLD-STANDARD ARTBOARD ${qualityExamples.length + 1} — PRODUCTION-QUALITY REFERENCE ONLY. `
+          // The engine's words ("artboard", "topology") left this sentence on
+          // 2026-09-22 (owner: "much harder for it to understand atlas"): the
+          // model is told what the picture IS -- a finished wrap design -- and
+          // what decides the layout -- the template above -- in plain words.
+          text: `FINISHED WRAP DESIGN ${qualityExamples.length + 1} — PRODUCTION-QUALITY REFERENCE ONLY. `
             + `Match its professional depth, finish, typographic hierarchy, connected-wrap coherence and gallery-grade execution: `
             + `this is the standard of design the output must reach. `
-            + `Copy none of its artwork, photography, palette, wording, logo, brand, industry, panel geometry or topology. `
-            + `The container template above alone controls topology, and the customer's own brief alone controls subject and colour.`,
+            + `Copy none of its artwork, photography, palette, wording, logo, brand, industry or panel layout. `
+            + `The template attached above alone decides where each panel sits, and the customer's own brief alone controls subject and colour.`,
         });
         const qualityPart = { inlineData: { mimeType, data: encodeBase64(bytes) } };
         parts.push(qualityPart);
