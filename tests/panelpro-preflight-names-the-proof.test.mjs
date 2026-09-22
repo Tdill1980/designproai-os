@@ -43,7 +43,8 @@ test("the three proof attestations are one key set on every layer", () => {
   assert.ok(gatewayList, "gateway declares PROOF_CHECKS");
   assert.deepEqual(gatewayList[1].match(/"([A-Za-z]+)"/g).map((s) => s.replace(/"/g, "")), KEYS);
   const stageList = stages.slice(at(stages, "export const PROOF_CHECKS", "stages PROOF_CHECKS"));
-  for (const key of KEYS) assert.match(stageList.slice(0, 900), new RegExp(`\\["${key}", "`), `stages lists ${key} with a label`);
+  // A label may be a plain string or a template that reads the product's name from PROOF_BRAND.
+  for (const key of KEYS) assert.match(stageList.slice(0, 900), new RegExp(`\\["${key}", [\`"]`), `stages lists ${key} with a label`);
   for (const key of KEYS) assert.match(api, new RegExp(`${key}\\?: boolean`), `PreflightQc carries ${key}`);
   for (const key of KEYS) assert.match(migration, new RegExp(`"${key}":true`), `the migration requires ${key}`);
 });
@@ -104,7 +105,7 @@ test("no submitter hard-codes a proof attestation as true", () => {
   assert.equal(controlRoom.split("...tickedProofChecks(").length, 3, "both submitters send only the ticked ones");
   const shortcut = controlRoom.slice(at(controlRoom, "const buildPrintFiles = useCallback", "shortcut"), at(controlRoom, "const uploadToSide", "next fn"));
   assert.match(shortcut, /proofRequiredRef\.current/, "the shortcut stops when the proof is on this revision and unsigned");
-  assert.match(shortcut, /Sign for the Production Panel Proof first/);
+  assert.match(shortcut, /Sign for the \$\{PROOF_BRAND\.full\} first/);
 });
 
 test("the two controls that always returned 400 no longer offer a submit they cannot complete", () => {

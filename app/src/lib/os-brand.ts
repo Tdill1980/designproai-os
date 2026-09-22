@@ -46,6 +46,40 @@ export const OS_BRAND = {
   titleSuffix: "DesignProAI — Prompt-Based Design + Production-Ready File Output",
 } as const;
 
+/**
+ * TRIZONE™ — the proprietary name of the three-zone Production Panel Proof.
+ *
+ * Owner, 2026-09-22: "fix remove atlas come up with a proprietary name for our
+ * ProductionPanelProof." The sheet Call 1 draws is the product's own artifact:
+ * one document, three zones — full print panels, the same panels without type
+ * or logos, and the logo, text and graphic elements — and every print-ready
+ * file is cut from it. "Production Panel Proof" describes it; TriZone™ names
+ * it, the way PanelPro, CutPro and WallPro name theirs, and it is ownable.
+ *
+ * This is the ONE place the word lives. Every heading, caption, error message,
+ * download name and file name inside the production ZIP reads from here (the
+ * runtime cannot import this file, so `fileStem` is mirrored there and a lock
+ * asserts the two agree). To change the name, change this object.
+ *
+ * Internal identifiers stay: `panelProofAuthoring`, `atlas-panel-proof/…`
+ * storage paths, `designpro_atlas_panel_proof_paths`, artifact `kind` values,
+ * receipt fields. Those are plumbing and stored rows, not copy.
+ */
+export const PROOF_BRAND = {
+  /** The name alone. */
+  name: "TriZone",
+  /** With the mark, for headings. */
+  mark: "TriZone™",
+  /** The full customer-facing name of the Call 1 sheet. */
+  full: "TriZone™ Production Panel Proof",
+  /** Short form for eyebrows and captions. */
+  short: "TriZone™ Proof",
+  /** File-name stem for downloads and the file inside the production ZIP. Mirrored in the runtime. */
+  fileStem: "trizone-production-panel-proof",
+  /** The one-line description under the name. */
+  blurb: "One sheet, three zones: full print panels, the same panels without type or logos, and your logo, text and graphic elements. Every print-ready file is cut from it.",
+} as const;
+
 export type OsToolKey = "vehiclepro" | "wallpro" | "cutpro";
 
 export interface OsTool {

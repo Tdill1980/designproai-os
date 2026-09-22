@@ -40,6 +40,7 @@ import {
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
 import { useAtlasPanelProof } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { PROOF_BRAND } from "@/lib/os-brand";
 import {
   exactTimestamp,
   type DesignVersion,
@@ -887,7 +888,7 @@ function AtlasProgressCard({
               </a>
               <a
                 href={atlas.masterUrl}
-                download={`atlas-master-v${atlas.revisionSequence}-${atlas.master.contentHash.slice(0, 12)}.png`}
+                download={`print-master-v${atlas.revisionSequence}-${atlas.master.contentHash.slice(0, 12)}.png`}
                 className="font-semibold text-blue-700 underline"
               >
                 Download master
@@ -2223,7 +2224,7 @@ function ProofSourceAttestations({
   if (absent) {
     return (
       <p data-testid="proof-attestations-not-required" className="mt-3 text-[11px] text-gray-500">
-        No three-zone Production Panel Proof on this revision: it was authored before
+        No {PROOF_BRAND.full} on this revision: it was authored before
         Call 1 drew one, so the three proof attestations are not asked.
       </p>
     );
@@ -2237,7 +2238,7 @@ function ProofSourceAttestations({
   const unreadable = query.status === "error" || (query.status === "success" && !proof?.panelProof);
   const evidence: Record<string, string> = {
     proofSheetReviewed: reading
-      ? "Reading the Production Panel Proof…"
+      ? `Reading the ${PROOF_BRAND.full}…`
       : unreadable
         ? "The proof could not be read here — open it at the top of this page before signing"
         : `Sheet ${String(proof?.sheet?.contentHash || "").slice(0, 12) || "—"} · V${proof?.revisionSequence ?? "?"}`,
@@ -2497,7 +2498,7 @@ function ProductionPackSection({
               />
             ) : (
               <p className="mt-3 text-[11px] text-amber-700">
-                This job carries no Call 1 revision to read a Production Panel Proof from.
+                This job carries no Call 1 revision to read a {PROOF_BRAND.full} from.
               </p>
             )}
             <Textarea
@@ -3580,7 +3581,7 @@ export default function AdminGeminiCompareStudio() {
       : [];
     if (proofMissing.length) {
       toast({
-        title: "Sign for the Production Panel Proof first",
+        title: `Sign for the ${PROOF_BRAND.full} first`,
         description: `In the Production Pack card, tick: ${proofMissing.join("; ")}.`,
         variant: "destructive",
       });

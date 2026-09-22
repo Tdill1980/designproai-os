@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { AtlasRefusal } from "@/lib/designpro-api";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 // Every Call-1 route the ledger can record, named in product words. A route
 // missing here rendered as the literal "undefined" on the failure screen: the
@@ -9,7 +10,7 @@ const TOPOLOGY_LABEL: Record<AtlasRefusal["topology"], string> = {
   "six-surface": "Six-surface sheet",
   field: "One-field fail-over",
   "hero-driver": "Hero-driver cascade",
-  "panel-proof": "Production panel proof",
+  "panel-proof": PROOF_BRAND.full,
 };
 
 const CODE_LABEL: Record<string, string> = {

@@ -1,10 +1,12 @@
+import { PROOF_BRAND } from "@/lib/os-brand";
+
 export const ATLAS_UNCONFIRMED_OUTCOME_CODE = "provider_outcome_unknown";
 export const GENERATION_ACTIVE_LIMIT_CODE = "generation_active_request_limit";
 export const GENERATION_ACTIVE_LIMIT_MESSAGE =
   "Wait for your current design to finish, then submit this brief. Your brief is still here; this design has not started.";
 
 export const ATLAS_UNCONFIRMED_OUTCOME_MESSAGE =
-  "Your production panel proof didn't finish because the image service response could not be confirmed. Open the saved run to inspect its recorded status.";
+  `Your ${PROOF_BRAND.full} didn't finish because the image service response could not be confirmed. Open the saved run to inspect its recorded status.`;
 
 export function isUnconfirmedProviderOutcome(error: unknown): boolean {
   const value = error as { code?: unknown; message?: unknown } | null;
@@ -31,7 +33,7 @@ export function isUnconfirmedProviderOutcome(error: unknown): boolean {
  * can act on it.
  */
 export const GENERATION_FAILED_FALLBACK_MESSAGE =
-  "Your production panel proof didn't finish. Your brief is still here — try it again.";
+  `Your ${PROOF_BRAND.full} didn't finish. Your brief is still here — try it again.`;
 
 const CUSTOMER_FACING_MESSAGES: Record<string, string> = {
   [GENERATION_ACTIVE_LIMIT_CODE]: GENERATION_ACTIVE_LIMIT_MESSAGE,
@@ -39,7 +41,7 @@ const CUSTOMER_FACING_MESSAGES: Record<string, string> = {
   flat_atlas_edge_topology_contract_mismatch:
     "Your design came back in a shape the production step couldn't accept. Try it again.",
   designpro_atlas_call1_graph_unavailable:
-    "The production panel proof service is busy right now. Try it again in a moment.",
+    `The ${PROOF_BRAND.full} service is busy right now. Try it again in a moment.`,
   flat_atlas_edge_master_path_missing:
     "The design service didn't return a finished proof. Try it again.",
   provider_private_request_invalid:
