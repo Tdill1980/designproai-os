@@ -2065,7 +2065,35 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   </Button>
                 </div>
 
-                {/* ROW 2 — what the design paints around. */}
+                {/* ROW 2 — what the design paints around.
+
+                    ⚠️ WHILE MARKING, THE ROW IS AN INSTRUCTION, NOT A STATUS
+                    (owner, 2026-09-22: "How do you mask the closet? It's not
+                    masking"). The button set `marking: 'rectangle'` and said
+                    NOTHING, while WallPhotoEditor expects TWO taps — one
+                    corner, then the opposite one. So the first tap looked like
+                    it had done nothing, and two taps landed close together
+                    produced a small box nowhere near the closet. An
+                    interaction the customer cannot guess is an interaction
+                    that does not work, however correct its geometry. */}
+                {marking === 'rectangle' || marking === 'exclude' ? (
+                  <div className="mt-2.5 rounded-lg border border-blue-500/60 bg-blue-500/10 p-2.5" role="status">
+                    <p className="text-xs font-semibold wall-ink">
+                      {marking === 'rectangle'
+                        ? excludeDraft.length === 0
+                          ? 'Tap ONE corner of the closet, door or window on the photo.'
+                          : 'Now tap the OPPOSITE corner — the box is drawn between the two.'
+                        : excludeDraft.length < 3
+                          ? `Tap around the area to outline it — ${3 - excludeDraft.length} more point${3 - excludeDraft.length === 1 ? '' : 's'} needed.`
+                          : 'Keep tapping to refine the outline, then press Finish mask.'}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {marking === 'exclude' && <Button size="sm" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish mask</Button>}
+                      <Button size="sm" variant="ghost" disabled={!!busy || !excludeDraft.length} onClick={() => setExcludeDraft(old => old.slice(0, -1))}>Undo point</Button>
+                      <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setExcludeDraft([]); setMarking(cornersValid ? null : 'wall'); }}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
                 <p className="mt-2.5 text-xs wall-muted">
                   <strong className="wall-ink">What we keep:</strong>{' '}
                   {detecting
@@ -2075,7 +2103,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       : wallReadMissed
                         ? 'We could not read this wall automatically, so nothing is protected yet. Mark the corners, then tell us what to keep — a closet opening, a doorway, a window.'
                         : 'Nothing needed protecting on this wall.'}
+                  {/* ORDER MATTERS, AND THE PAGE NEVER SAID SO. A mask only
+                      means anything once the design is placed inside the wall
+                      quad, so masking before the corners exist is work the
+                      customer cannot see the result of. */}
+                  {!wallLocated && <> <strong className="wall-ink">Mark the wall first</strong> — until it is set the design is not placed on the photo, so there is nothing for a mask to cut out of.</>}
                 </p>
+                )}
                 {/* The two masking actions, in the open. A closet opening or a
                     doorway is a rectangle; a cluttered wall is one rough shape
                     around the lot. Named for what the customer is looking at,

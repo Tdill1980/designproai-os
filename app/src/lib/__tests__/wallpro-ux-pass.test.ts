@@ -110,3 +110,49 @@ describe('C — one home for the photo\'s own work', () => {
     expect(page).not.toContain('Mask window / drapes');
   });
 });
+
+/**
+ * AN INTERACTION THE CUSTOMER CANNOT GUESS DOES NOT WORK.
+ *
+ * Owner, 2026-09-22, on the shipped block: "How do you mask the closet? It's
+ * not masking." The button was visible — that part of the previous pass
+ * worked — and pressing it set `marking: 'rectangle'` and said NOTHING, while
+ * WallPhotoEditor expects TWO taps: one corner, then the opposite one. So the
+ * first tap looked like it had done nothing, and two taps close together
+ * produced a small box nowhere near the closet.
+ *
+ * The second half is ordering: a mask only means something once the design is
+ * placed inside the wall quad, and the page never said the wall comes first.
+ */
+describe('masking tells you what to do while you are doing it', () => {
+  const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
+
+  it('names the two taps a rectangle mask actually needs', () => {
+    expect(page).toContain('Tap ONE corner of the closet, door or window on the photo.');
+    expect(page).toContain('Now tap the OPPOSITE corner');
+  });
+
+  it('advances the instruction after the first tap instead of repeating itself', () => {
+    expect(page).toMatch(/excludeDraft\.length === 0\n?\s*\? 'Tap ONE corner/);
+  });
+
+  it('counts the points a freehand outline still needs', () => {
+    expect(page).toMatch(/\$\{3 - excludeDraft\.length\} more point/);
+  });
+
+  it('offers Undo and Cancel where the instruction is, not in a hidden panel', () => {
+    // Searched FORWARD from the banner: the page has an unrelated Cancel
+    // earlier (the history panel), and indexOf would find that one first and
+    // make this assertion accidentally meaningless.
+    const banner = page.indexOf('Tap ONE corner of the closet');
+    expect(banner).toBeGreaterThan(-1);
+    const rest = page.slice(banner, banner + 1800);
+    expect(rest).toContain('>Undo point</Button>');
+    expect(rest).toContain('>Cancel</Button>');
+  });
+
+  it('says the wall comes first, because a mask before it cuts nothing', () => {
+    expect(page).toContain('Mark the wall first');
+    expect(page).toContain('there is nothing for a mask to cut out of');
+  });
+});
