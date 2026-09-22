@@ -223,7 +223,7 @@ test("Call 1 canonical panels publish in the primary rows before Call 9", () => 
   assert.match(rows, /atlas: FlatAtlasRevision \| null/);
   assert.match(rows, /atlas\?\.callOnePanels/);
   assert.match(rows, /side\?\.gemini_url \|\| callOnePanel\?\.signedUrl/);
-  assert.match(rows, /Call 1 A\.T\.L\.A\.S\. source panel/);
+  assert.match(rows, /Call 1 source panel/);
   assert.match(rows, /Call 1 canonical · view only/);
   assert.match(rows, /sourceMasterHash/);
   assert.match(board, /atlas=\{selectedVersion\?\.revision \|\| null\}/);
@@ -275,7 +275,7 @@ test("RevisionStudio shows the full Generation ID, not only the DID", () => {
   const studio = readFileSync(
     new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8",
   );
-  assert.match(studio, /A\.T\.L\.A\.S\. Generation ID — click to copy/);
+  assert.match(studio, /Generation ID — click to copy/);
   assert.match(studio, /Generation ID copied/);
   // And the DID badge stays: the two answer different questions.
   assert.match(studio, /formatDid\(genIdOf\(selectedRender\) \|\| selectedRender\?\.id\)/);
