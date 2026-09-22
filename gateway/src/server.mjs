@@ -15,6 +15,17 @@ const PREFLIGHT_CHECKS = [
   "logoInventoryVerified",
   "textLockVerified",
 ];
+// THE PREFLIGHT NAMES THE PROOF (owner, 2026-09-22: "must send production
+// panel proof and its assets to panel pro studio / For processing and qc").
+// Three human attestations about the three-zone Production Panel Proof: the
+// sheet was opened, Zone 2 is the same six panels without type, Zone 3 holds
+// the elements the brief called for. They are CONDITIONAL, and the database
+// decides the condition: `approve_designpro_human_gate` requires all three
+// only when the revision's frozen snapshot carries the proof, because a
+// six-surface / field revision has no three-zone document to attest to. The
+// gateway therefore forwards each one the browser sent as `true`, refuses a
+// request that sends one as anything else, and never fabricates one.
+const PROOF_CHECKS = ["proofSheetReviewed", "cleanPanelsMatchBranded", "cutGraphicsInventoried"];
 const FINAL_CHECKS = ["outputHashesVerified", "printDimensionsVerified", "colorModeVerified"];
 const PRODUCTION_SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
 // The physical judgements only a person standing at a vehicle template can
@@ -1983,10 +1994,22 @@ function exactQc(body, gate) {
       );
     }
   }
+  // The three proof attestations ride only when a person ticked them. A key
+  // that is present and not `true` is a refusal, not an omission: the receipt
+  // must never record a proof review that the reviewer declined to sign.
+  const proofChecks = [];
+  if (gate === "preflight") {
+    for (const key of PROOF_CHECKS) {
+      if (!(key in qc)) continue;
+      if (qc[key] !== true) return null;
+      proofChecks.push([key, true]);
+    }
+  }
   return Object.fromEntries([
     ["known", true],
     ["pass", true],
     ...required.map((key) => [key, true]),
+    ...proofChecks,
     ...(approvedSides ? [["approvedSides", approvedSides]] : []),
     ...(surfaceQc ? [["surfaceQc", surfaceQc]] : []),
     ["notes", String(body.notes || "").trim().slice(0, 2000)],
@@ -4029,7 +4052,11 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           const gate = match[3] === "preflight" ? "preflight" : "final";
           const stageKey = gate === "preflight" ? "await_panelpro_preflight_qc" : "await_final_human_qc";
           const qc = exactQc(await readBody(req), gate);
-          if (!qc) return json(res, 400, { error: `${gate}_qc_evidence_incomplete`, required: gate === "preflight" ? PREFLIGHT_CHECKS : FINAL_CHECKS });
+          if (!qc) return json(res, 400, {
+            error: `${gate}_qc_evidence_incomplete`,
+            required: gate === "preflight" ? PREFLIGHT_CHECKS : FINAL_CHECKS,
+            ...(gate === "preflight" ? { whenProofPresent: PROOF_CHECKS } : {}),
+          });
           if (gate === "final") Object.assign(qc, await businessIdentityForRun(fetchImpl, token, cfg, run));
           return json(res, 202, await rpc(fetchImpl, token, cfg, "approve_designpro_human_gate", {
             p_run_id: run.id,

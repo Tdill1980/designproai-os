@@ -41,7 +41,6 @@ import {
   FinalQc,
   FlatAtlasRevision,
   GenieSurfaceKey,
-  PreflightQc,
   PRODUCTION_SURFACES,
   SURFACE_LABEL,
   WorkflowArtifact,
@@ -55,7 +54,6 @@ import {
   OUTPUT_VARIANTS,
   outputFormatOf,
   outputVariantOf,
-  PREFLIGHT_CHECKS,
 } from "@/lib/designpro-stages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -737,10 +735,6 @@ export default function PanelProStudioBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [approvedSides, setApprovedSides] = useState<Set<string>>(new Set());
-  const [checks, setChecks] = useState<Record<string, boolean>>({});
-  const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
   const [finalChecks, setFinalChecks] = useState<Record<string, boolean>>({});
   const [finalNotes, setFinalNotes] = useState("");
   const [finalSubmitting, setFinalSubmitting] = useState(false);
@@ -1051,7 +1045,6 @@ export default function PanelProStudioBoard() {
 
   const producedCount = PRODUCTION_SURFACES.filter((side) => panelBySide.has(side)).length;
   const everySideApproved = PRODUCTION_SURFACES.every((side) => approvedSides.has(side));
-  const everyCheckTicked = PREFLIGHT_CHECKS.every(([key]) => checks[key]);
   const waitingForGate = job?.state === "waiting_for_preflight";
   const everyFinalTicked = FINAL_CHECKS.every(([key]) => finalChecks[key]);
   const waitingForFinal = job?.state === "waiting_for_final_qc";
@@ -1063,25 +1056,6 @@ export default function PanelProStudioBoard() {
       else updated.delete(side);
       return updated;
     });
-  };
-
-  const submit = async () => {
-    setSubmitting(true);
-    setSubmitError("");
-    try {
-      await dpApi.approvePreflight(
-        generationId,
-        // The per-side approvals travel with the checkboxes. They are what the
-        // board actually gates on, so the receipt should record them too.
-        { ...checks, approvedSides: [...approvedSides].sort() } as unknown as PreflightQc,
-        notes,
-      );
-      await load();
-    } catch (cause) {
-      setSubmitError(cause instanceof Error ? cause.message : "The preflight approval was refused.");
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   const submitFinal = async () => {
@@ -1692,10 +1666,20 @@ export default function PanelProStudioBoard() {
         onReport={setQcReport}
       />
 
+      {/* THE GATE IS RELEASED IN PANELPRO STUDIO, NOT HERE. This panel used to
+          offer the six attestations and an "Approve preflight" button that
+          submitted `{ ...checks, approvedSides }` -- with no per-surface
+          checklist (`surfaceQc`), which the gateway refuses outright. Every
+          click returned 400. A control that cannot complete the gate is not a
+          control; it reads as a broken app. The one working preflight submit is
+          the control room's Production Pack card, which carries the six
+          attestations, the per-surface checklists, the three Production Panel
+          Proof attestations and the approved sides together. This board keeps
+          its per-side review and points there. */}
       <Panel
         eyebrow="The gate"
         title="PanelPro preflight approval"
-        description="Every side approved above, then every attestation below. This is the one server gate; nothing reaches Topaz or the output files without it."
+        description="Every side approved above is carried into the release. The release itself -- the six attestations, the per-surface checklists and the Production Panel Proof attestations -- is signed in PanelPro Studio."
       >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -1704,38 +1688,15 @@ export default function PanelProStudioBoard() {
               {approvedSides.size}/{PRODUCTION_SURFACES.length} sides approved
             </span>
           </div>
-
-          <div className="space-y-3">
-            {PREFLIGHT_CHECKS.map(([key, label]) => (
-              <label key={key} className="flex items-start gap-3 text-sm">
-                <Checkbox
-                  checked={checks[key] === true}
-                  onCheckedChange={(value) => setChecks((current) => ({ ...current, [key]: value === true }))}
-                />
-                <span>{label}</span>
-              </label>
-            ))}
-          </div>
-
-          <Textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="Reviewer notes"
-            rows={3}
-          />
-
-          {submitError && <Notice tone="error">{submitError}</Notice>}
           {!waitingForGate && job && (
             <Notice tone="info">
               This run is not at the preflight gate yet (current state: {job.state}).
             </Notice>
           )}
-
-          <Button
-            disabled={!everySideApproved || !everyCheckTicked || submitting || !waitingForGate}
-            onClick={() => void submit()}
-          >
-            {submitting ? "Submitting…" : "Approve preflight"}
+          <Button asChild disabled={!everySideApproved}>
+            <Link to={`/designpro/jobs/${generationId}/panelpro`}>
+              Release preflight in PanelPro Studio
+            </Link>
           </Button>
         </div>
       </Panel>

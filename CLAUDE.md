@@ -87,6 +87,65 @@ PanelPro, keyed on the selected version. It wraps the one existing reader
 (`AtlasPanelProofSheetLoader`) and holds no query of its own — one reader per
 artifact, RULE 0.21. Locked by `tests/server-revision-studio.test.mjs`.
 
+## ✅ THE PANELPRO PREFLIGHT NAMES THE PRODUCTION PANEL PROOF — CONDITIONALLY, AND THE GATEWAY DEPLOYS BEFORE THE MIGRATION (owner, Trish 2026-09-22)
+
+Owner: *"must send production panel proof and its assets to panel pro studio /
+For processing and qc."* Traced in `docs/PANEL-PROOF-TO-PANELPRO.md`: the
+three-zone sheet, the six Zone 2 clean panels and the Zone 3 cut graphics
+already reached PanelPro Studio and the paid ZIP — and **no QC check asked
+about any of them.** Now three human attestations do, beside the six the
+preflight already required:
+
+| key | the reviewer signs that |
+|---|---|
+| `proofSheetReviewed` | the three-zone sheet for THIS revision was opened |
+| `cleanPanelsMatchBranded` | Zone 2 is the same six panels without the type |
+| `cutGraphicsInventoried` | Zone 3 holds the elements the brief called for |
+
+**Four things about them that a session will otherwise get wrong:**
+
+1. **They are conditional, and the DATABASE decides.**
+   `20260922130000` text-patches `approve_designpro_human_gate` to require all
+   three only when `jsonb_typeof(v_source.snapshot->'panelProofAuthoring')
+   ='object'`. A six-surface / field revision has no three-zone document and
+   is not asked; a key carrying JSON `null` is absence. Do not make the gateway
+   or the app decide this — they cannot see the frozen snapshot.
+2. **The gateway forwards, refuses, and never fabricates.** `exactQc` carries
+   each key the browser sent as `true`, returns 400 for one sent as anything
+   else, and omits an absent one. A `PROOF_CHECKS.map(k => [k, true])` is the
+   machine signing for a person and is asserted absent.
+3. **SHIP ORDER: web + gateway FIRST, migration SECOND.** The app and gateway
+   *supply* the keys; the migration *requires* them. Reversed, every three-zone
+   preflight fails `panelpro_proof_evidence_incomplete` until the deploy lands.
+   This is the opposite of the "migration before runtime" rule that applies
+   when a migration *schedules* a stage; here the migration *demands* input.
+4. **One reader.** The evidence beside each box (sheet hash, Zone 2 count,
+   Zone 3 inventory, thumbnails) comes from `useAtlasPanelProof`, the sheet
+   loader's own query exported from `AtlasPanelProofSheet.tsx` — one query key,
+   declared once. Do not add a second `getAtlasPanelProof` call.
+
+**Two controls that always returned 400 are gone.** `PanelProStudioBoard`
+submitted `{...checks, approvedSides}` with no per-surface checklist, and
+`ProductionWorkflow` mounted the generic `QcGate` for the preflight with the
+six keys alone; `exactQc` refuses both before the RPC. Each now links to the
+control room, the ONE place the preflight is submitted. Do not restore a
+preflight submit on either page without `approvedSides`, `surfaceQc` and the
+proof keys.
+
+**What the "Build Print Files" shortcut still does, recorded not repeated:** it
+sends the SIX pre-existing attestations as literal `true`. That predates this
+change and is a machine signing for a person on those six; the three proof
+keys are deliberately not added to that pattern. Fixing the six is a separate
+decision.
+
+**Not proven:** no reviewer has released a three-zone preflight through the new
+attestations on the live system. The first paid three-zone run through
+PanelPro proves the three layers agree in production; the suite does not.
+Locked by `tests/designpro-preflight-names-the-proof-db.test.mjs` (the real
+migration on PGlite; the `apply:false` case reproduces the defect),
+`tests/panelpro-preflight-names-the-proof.test.mjs`, a gateway case, and both
+reconcile locks.
+
 ## 🎨 CALL 1 IS THE DESIGNER'S THREE-ZONE PROOF. `separatedArtwork` IS THE DEFECT — NEVER SEND IT. (owner, Trish 2026-09-22)
 
 Owner, on the first real generation of this route (`0f53d4e7`, 2021 F150,

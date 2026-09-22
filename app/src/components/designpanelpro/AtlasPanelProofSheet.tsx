@@ -220,11 +220,16 @@ export function panelProofBelongsToOtherRevision(
   return Boolean(revisionId && proof?.panelProof && proof.revisionId && proof.revisionId !== revisionId);
 }
 
-export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePending = false, submittedAt }: {
-  requestId: string; revisionId?: string; pollWhilePending?: boolean; submittedAt?: number | null;
-}) {
-  const measured = useRef<string | null>(null);
-  const query = useQuery({
+/**
+ * THE ONE READER of the three-zone proof (RULE 0.21, one reader per artifact).
+ * The sheet loader below renders it; the PanelPro preflight card reads the
+ * SAME query -- same key, same cache entry -- to put the sheet hash, the Zone 2
+ * count and the Zone 3 inventory beside the three attestations that name them.
+ * Two components, one read: a second `getAtlasPanelProof` call anywhere else
+ * is a second reader and must not be added.
+ */
+export function useAtlasPanelProof(requestId: string, pollWhilePending = false) {
+  return useQuery({
     queryKey: ["designpro-atlas-panel-proof", requestId],
     queryFn: async () => (await import("@/lib/designpro-api")).dpApi.getAtlasPanelProof(requestId),
     staleTime: 0,
@@ -233,6 +238,13 @@ export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePen
     refetchIntervalInBackground: false,
     retry: false,
   });
+}
+
+export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePending = false, submittedAt }: {
+  requestId: string; revisionId?: string; pollWhilePending?: boolean; submittedAt?: number | null;
+}) {
+  const measured = useRef<string | null>(null);
+  const query = useAtlasPanelProof(requestId, pollWhilePending);
   // An operator inspecting a pinned revision must not see ANOTHER revision's
   // proof. An unbound one (revisionId null, row not landed yet) is this request's.
   if (panelProofBelongsToOtherRevision(query.data, revisionId)) {

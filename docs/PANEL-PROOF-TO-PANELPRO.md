@@ -9,8 +9,12 @@ session does not re-derive it, and so nothing here is claimed that a row or a
 line of code does not prove.
 
 **The headline, stated plainly: the assets DO reach PanelPro Studio and they DO
-ship in the paid ZIP. What is missing is that no QC check asks about any of
+ship in the paid ZIP. What was missing is that no QC check asked about any of
 them.** That is a narrower gap than "it isn't wired", and a different fix.
+
+**Status, later the same day:** steps 1–4 of §7 are built (see §7 for what each
+one is and where it is locked). Step 5 remains a product decision. §8 lists
+what is still unproven.
 
 ---
 
@@ -205,29 +209,69 @@ Nothing here adds a producer. Every step uses artifacts that already exist.
 `composition.contract`; record `composition.brandedSource`. Without these the
 workflow that carries the assets is never created for a logo-bearing order.
 
-**Step 2 — make the QC gate see the proof.** Add to the preflight evidence
-block, beside the six that exist:
+**Step 2 — make the QC gate see the proof. BUILT (2026-09-22).** Three keys
+join the six in the preflight evidence block:
 
 - `proofSheetReviewed` — the reviewer opened the three-zone sheet for this
   revision;
 - `cleanPanelsMatchBranded` — Zone 2 is the same six panels without type;
 - `cutGraphicsInventoried` — Zone 3 holds the elements the brief called for.
 
-These are **human attestations**, like the existing six. The evidence lines are
-auto-computed from `panelProofAuthoring` (which is already in the snapshot);
-the boxes are only ever ticked by a person. `approve_designpro_human_gate` is
-text-patched, never re-emitted, and the migration lands **before** the runtime
-that requires the new keys — otherwise every preflight fails closed.
+They are **human attestations**, like the existing six, and they are
+**conditional on the frozen snapshot**: migration
+`20260922130000_designpro_preflight_names_the_proof.sql` text-patches
+`approve_designpro_human_gate` (never re-emits it — that would revert
+`20260908193134`) so the three are required only when
+`jsonb_typeof(v_source.snapshot->'panelProofAuthoring')='object'`. A
+six-surface / field revision has no three-zone document and is not asked;
+a key present with a JSON `null` is absence. The refusal is
+`panelpro_proof_evidence_incomplete`, checked after the six-key
+`panelpro_preflight_evidence_incomplete` and before the Call 9/10 receipt
+check. The gateway (`PROOF_CHECKS` in `exactQc`) forwards each key the browser
+sent as `true`, refuses a request that sends one as anything else, and never
+fabricates one. `PROOF_CHECKS` in `app/src/lib/designpro-stages.ts` carries the
+labels; `PreflightQc` carries the optional keys.
 
-**Step 3 — surface the sheet inside the QC flow, not beside it.** The card is
-mounted on both surfaces already; what is missing is that the checklist does
-not reference it. Put the Zone 2 and Zone 3 thumbnails in the same card as the
-attestation that names them, so ticking the box and seeing the asset are one
-act.
+**Ship order is the REVERSE of what this paragraph first said.** The gateway
+and the app *supply* the keys; the database *requires* them. Deploy the web and
+gateway first, then apply the migration. Until it applies, the extra keys pass
+the six-key containment check unharmed. Applying it first would refuse every
+three-zone preflight until the deploy caught up.
 
-**Step 4 — fix the board's submit.** `PanelProStudioBoard` must send
-`surfaceQc` or stop offering the button. Today it offers a control that always
-400s.
+Locked by `tests/designpro-preflight-names-the-proof-db.test.mjs` (the real
+migration on PGlite over the real predecessor body: refuses six keys on a
+three-zone snapshot, accepts nine, releases a legacy snapshot on six, treats a
+null key as absence, and the `apply:false` case reproduces the defect),
+`tests/panelpro-preflight-names-the-proof.test.mjs` (one key set on every
+layer), the gateway case in `gateway/tests/gateway.test.mjs`, and the
+reconcile locks in `tests/schema-gateway-reconcile.test.mjs` and
+`supabase/tests/schema_gateway_reconcile.test.sql`.
+
+**Step 3 — surface the sheet inside the QC flow, not beside it. BUILT.**
+`ProofSourceAttestations` in the control room renders the three boxes inside
+the Production Pack card, under the six, with evidence read from the proof
+itself through **the same query the sheet loader uses** — `useAtlasPanelProof`,
+exported from `AtlasPanelProofSheet.tsx`, one query key declared once (RULE
+0.21, one reader per artifact): the sheet hash and V-number on the first row,
+the Zone 2 count on the second, the Zone 3 inventory on the third, and
+thumbnails of the Zone 2 and Zone 3 assets beside the box that signs for them.
+The boxes are required unless the read **positively** answers
+`panelProof: false`; a loading or failed read cannot prove absence. The release
+button waits on them. The "Build Print Files" shortcut, which submits the same
+gate, sends only the ticked ones and stops with *"Sign for the Production Panel
+Proof first"* when the proof is on this revision and they are not all signed —
+it never hard-codes them, unlike the six it already sends as literal `true`
+(recorded here, not repeated).
+
+**Step 4 — fix the board's submit. BUILT, by removal.** `PanelProStudioBoard`
+had no per-surface checklist state to send, and `ProductionWorkflow`'s generic
+`QcGate` sent the six keys alone; `exactQc` refused both before the RPC, so
+every click returned 400. Both now stop offering a submit they cannot complete
+and link to the control room (`/designpro/jobs/:id/panelpro`), which is the one
+place the preflight is submitted — with the six attestations, the per-surface
+checklists, the three proof attestations and the approved sides together. The
+workflow page's final gate was complete on its own and stays. Locked by
+`tests/panelpro-preflight-names-the-proof.test.mjs`.
 
 **Step 5 — decide about Zone 3 cut contours.** The builder exists
 (`_shared/cut-contour/`) and produces real `Separation /CutContour` PDFs. Zone 3
@@ -245,8 +289,13 @@ until this step is actually built.**
   owner's eye on the exported sheet against the seeded Ridgeline proof.
 - **No fresh paid run** has confirmed the v4 60-file set lands in a customer's
   ZIP.
-- Steps 2–5 above are **not built**. This document proposes them; it does not
-  describe them as existing.
+- Step 5 above is **not built**; it is a product decision. Steps 2–4 are built
+  and locked, but **no reviewer has released a three-zone preflight through
+  the new attestations on the live system.** The first paid three-zone run
+  through PanelPro is the proof that the migration, the gateway and the card
+  agree in production, not the green suite.
+- The pgTAP lock in `supabase/tests/schema_gateway_reconcile.test.sql` runs
+  only in the `supabase-shadow` job; it is not runnable in this sandbox.
 
 Probe on the **validated F250**. The 2022 Porsche 911 Turbo catalog row
 (`0c211a9d`) has never been operator-validated, so every 911 run fails at GENIE
