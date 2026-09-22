@@ -817,4 +817,12 @@ test("RevisionStudio presents the three-zone Production Panel Proof as THE sourc
   // PanelPro names the version on the same card, keyed on the selected revision.
   const board = readFileSync(new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url), "utf8");
   assert.match(board, /<ProductionProofSourceCard[\s\S]{0,200}key=\{selectedVersion\.revisionId\}[\s\S]{0,200}version=\{selectedVersion\.version\}/);
+  // The control room (the route actually mounted at /designpro/jobs/:id/panelpro)
+  // carries the same card at the TOP of its job header, keyed on the selected
+  // revision (owner 2026-09-22: "production panel proof should be at top of
+  // panel pro studio"). It reaches the sheet only through the card.
+  const controlRoom = readFileSync(new URL("../app/src/pages/AdminGeminiCompareStudio.tsx", import.meta.url), "utf8");
+  assert.match(controlRoom, /<ProductionProofSourceCard[\s\S]{0,120}key=\{atlas\.id\}[\s\S]{0,200}version=\{atlas\.revisionSequence\}/);
+  assert.equal(controlRoom.split("<ProductionProofSourceCard").length, 2, "control room mounts the card exactly once");
+  assert.doesNotMatch(controlRoom, /<AtlasPanelProofSheetLoader/, "the control room reads the sheet only through the source card");
 });
