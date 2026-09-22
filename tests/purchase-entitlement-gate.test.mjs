@@ -206,10 +206,15 @@ test("QC scope per purchase state", () => {
 });
 
 test("output.verify proves the purchased set and only that", () => {
-  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 30,
-    "six surfaces times PNG, TIFF, EPS, PDF and JPG");
-  assert.deepEqual([...manifestFor(["print_pack_entitlement"]).outputFormats], ["png", "tiff", "eps", "pdf", "jpg"]);
-  assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
+  const pack = manifestFor(["print_pack_entitlement"]);
+  assert.equal(pack.requiredOutputFiles, 60,
+    "six surfaces times PNG, TIFF, EPS, PDF and JPG, times the branded and the clean variant");
+  assert.deepEqual([...pack.outputFormats], ["png", "tiff", "eps", "pdf", "jpg"]);
+  assert.deepEqual([...pack.outputVariants], ["branded", "clean"]);
+  assert.equal(pack.outputFormatContract, "designpro.production-formats.v4");
+  const logos = manifestFor(["logo_pack"]);
+  assert.equal(logos.requiredOutputFiles, 0);
+  assert.equal("outputVariants" in logos, false, "a run that did not buy the pack is not told about variants");
   assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
   assert.match(claimant, /output_unpurchased_present/,
     "outputs on a run that did not buy them is a fault, not something to verify");
@@ -218,9 +223,11 @@ test("output.verify proves the purchased set and only that", () => {
 
 test("new paid builds require PDF while immutable completed legacy builds stay readable", () => {
   const current = manifestFor(["print_pack_entitlement"]);
+  // A purchase frozen before v4 named no contract, no formats and no variants.
   const legacy = { ...current, requiredOutputFiles: 18 };
   delete legacy.outputFormatContract;
   delete legacy.outputFormats;
+  delete legacy.outputVariants;
   const built = { verified: true, outputCount: 18, outputSetHash: "a".repeat(64) };
   assert.equal(_test.authorizedOutputFormats(legacy, built).requiredOutputFiles, 18);
   assert.throws(() => _test.authorizedOutputFormats(current, built), /immutable completed build receipt/);
@@ -230,8 +237,22 @@ test("new paid builds require PDF while immutable completed legacy builds stay r
   assert.equal(_test.authorizedOutputFormats(legacy, upgraded).outputFormatContract, "designpro.production-formats.v2");
   const withJpg = { ...built, outputCount: 30, outputFormatContract: "designpro.production-formats.v3", outputFormats: ["png", "tiff", "eps", "pdf", "jpg"] };
   assert.equal(_test.authorizedOutputFormats(legacy, withJpg).requiredOutputFiles, 30,
-    "a previously purchased but unbuilt run receives the JPG from the new builder");
+    "a v3 pack (a revision with no Zone 2) is verified as the thirty branded files it was built as");
+  assert.equal("outputVariants" in _test.authorizedOutputFormats(legacy, withJpg), false, "a one-variant tier never names its variant");
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputCount: 24 }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputVariants: ["branded"] }), /immutable completed build receipt/,
+    "a v3 receipt that starts naming a variant is not the receipt v3 wrote");
+  // v4: both variants, sixty files, and the receipt must say so.
+  const withClean = { ...withJpg, outputCount: 60, outputFormatContract: "designpro.production-formats.v4", outputVariants: ["branded", "clean"] };
+  const resolved = _test.authorizedOutputFormats(legacy, withClean);
+  assert.equal(resolved.requiredOutputFiles, 60);
+  assert.deepEqual(resolved.outputVariants, ["branded", "clean"]);
+  assert.equal(resolved.outputFormatContract, "designpro.production-formats.v4");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputVariants: undefined }), /immutable completed build receipt/,
+    "a v4 build that does not name its variants cannot be verified as sixty files");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputCount: 30 }), /immutable completed build receipt/,
+    "half a clean set is neither tier");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputVariants: ["branded"] }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputFormatContract: "designpro.production-formats.v9" }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...upgraded, outputCount: 18 }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, verified: false }), /immutable completed build receipt/);

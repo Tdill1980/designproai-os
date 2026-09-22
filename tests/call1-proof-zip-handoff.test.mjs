@@ -26,8 +26,12 @@ class StageError extends Error{constructor(code,message,retryable=true){super(me
 function fixture({cutGraphics}={}){
   const stored=new Map(),rows=[],downloads=[];
   const put=(path,bytes)=>{stored.set(path,bytes);return{storagePath:path,contentHash:hash(bytes),byteSize:bytes.length};};
-  // Thirty outputs: six surfaces times PNG, TIFF, EPS, PDF and JPG.
-  for(const [kind,count]of [['flat-proof',1],['panel',6],['qc-panel',6],['output',30],['stamp',10]])
+  // The complete output set the purchase manifest requires: six surfaces times
+  // PNG, TIFF, EPS, PDF and JPG, times the branded and the clean variant (60
+  // under contract v4) -- read off the manifest rather than hand-counted.
+  const outputCount=worker.authorizedAssetManifest(['print_pack_entitlement']).requiredOutputFiles;
+  assert.equal(outputCount,60);
+  for(const [kind,count]of [['flat-proof',1],['panel',6],['qc-panel',6],['output',outputCount],['stamp',10]])
     for(let i=0;i<count;i++){
       const ref=put(`designpro/user_${OWNER}/${RUN}/${kind}/file-${i}.png`,Buffer.from(`${kind}:${i}`));
       rows.push({artifact_kind:kind,surface_key:String(i),storage_path:ref.storagePath,content_hash:ref.contentHash,byte_size:ref.byteSize});

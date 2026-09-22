@@ -34,6 +34,7 @@ import {
   OUTPUT_FORMATS,
   PACK_PRESENCE_CHECKS,
   outputFormatOf,
+  outputVariantOf,
   PREFLIGHT_CHECKS,
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
@@ -2248,7 +2249,9 @@ function ProductionPackSection({
         )}
       </div>
 
-      {/* THE OUTPUT SET. Eighteen files: six surfaces times PNG, TIFF and EPS. */}
+      {/* THE OUTPUT SET. Sixty files: six surfaces times PNG, JPG, TIFF, EPS
+          and PDF, times the branded and the clean (logo-free) variant, every
+          one at 150 PPI with 5" bleed. A pack built before v4 holds fewer. */}
       <div className="mb-4 rounded-lg border border-gray-200 p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Print files</h3>
@@ -2336,10 +2339,15 @@ function ProductionPackSection({
                 <ul className="mt-1 space-y-1">
                   {files.map((file) => (
                     <li key={file.id} className="flex items-center justify-between gap-2 text-[11px]">
-                      <span className="truncate text-gray-700">{file.surfaceKey}</span>
+                      <span className="truncate text-gray-700">
+                        {file.surfaceKey}
+                        {outputVariantOf(file) === "clean" && (
+                          <span className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">clean</span>
+                        )}
+                      </span>
                       <a
                         href={file.signedUrl}
-                        download={`${file.surfaceKey}.${format}`}
+                        download={`${file.surfaceKey}${outputVariantOf(file) === "clean" ? "-clean" : ""}.${format}`}
                         className="shrink-0 font-medium text-blue-600 hover:underline"
                       >
                         Download

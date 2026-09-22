@@ -16,21 +16,51 @@ const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", 
 // twenty-four files; only a NEW build produces thirty. The JPG is a quality-92
 // sRGB encode of the verified PNG's own pixels -- the same raster, a second
 // container -- and it is bound to that PNG by hash, never accepted on its own.
+//
+// v4 (owner, 2026-09-22: "make sure ALL assets files are processed to 150 ppi
+// with bleed at 5\"") adds a second VARIANT of every file: the Zone 2 CLEAN
+// panel -- the authored logo-free background of the same surface -- finished
+// to the identical print rectangle (trim + 5" per edge at 150 PPI) and written
+// in the same five formats. Until v4 the blank panels shipped as the raw crop
+// off the proof sheet, a few hundred pixels wide with no bleed, in the ZIP's
+// qc-panel folder. Sixty files: six surfaces x five formats x two variants.
 const FORMATS = Object.freeze(["png", "tiff", "eps", "pdf", "jpg"]);
 const PDF_FORMATS = Object.freeze(["png", "tiff", "eps", "pdf"]);
 const LEGACY_FORMATS = Object.freeze(["png", "tiff", "eps"]);
-const OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v3";
+const VARIANTS = Object.freeze(["branded", "clean"]);
+const BRANDED_ONLY = Object.freeze(["branded"]);
+const OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v4";
+const JPG_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v3";
 const PDF_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v2";
 const LEGACY_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v1";
 const FORMAT_CONTRACTS = Object.freeze({
   [OUTPUT_FORMAT_CONTRACT]: FORMATS,
+  [JPG_OUTPUT_FORMAT_CONTRACT]: FORMATS,
   [PDF_OUTPUT_FORMAT_CONTRACT]: PDF_FORMATS,
   [LEGACY_OUTPUT_FORMAT_CONTRACT]: LEGACY_FORMATS,
+});
+const VARIANT_CONTRACTS = Object.freeze({
+  [OUTPUT_FORMAT_CONTRACT]: VARIANTS,
+  [JPG_OUTPUT_FORMAT_CONTRACT]: BRANDED_ONLY,
+  [PDF_OUTPUT_FORMAT_CONTRACT]: BRANDED_ONLY,
+  [LEGACY_OUTPUT_FORMAT_CONTRACT]: BRANDED_ONLY,
 });
 const JPEG_QUALITY = 92;
 
 function formatsForContract(contract) {
   return Object.prototype.hasOwnProperty.call(FORMAT_CONTRACTS, String(contract)) ? FORMAT_CONTRACTS[contract] : null;
+}
+
+/** The output variants a contract carries; a tier before v4 has only the branded panel. */
+function variantsForContract(contract) {
+  return Object.prototype.hasOwnProperty.call(VARIANT_CONTRACTS, String(contract)) ? VARIANT_CONTRACTS[contract] : null;
+}
+
+/** Files a contract's complete output set holds: six surfaces x formats x variants. */
+function outputFileCountForContract(contract) {
+  const formats = formatsForContract(contract);
+  const variants = variantsForContract(contract);
+  return formats && variants ? SURFACES.length * formats.length * variants.length : null;
 }
 const FULL_SCALE_PIXELS_PER_INCH = 150;
 const FILE_DPI = 1500;
@@ -736,7 +766,11 @@ function normalizeArtifact(row) {
   if (Number(metadata.dpi) !== FILE_DPI || Number(metadata.outputScale) !== OUTPUT_SCALE || Number(metadata.fullScaleBleedInches) !== BLEED_INCHES_PER_EDGE) {
     fail("output_artifact_physical_metadata_invalid", `${storagePath} metadata does not declare 1500 DPI, 1:10 scale, and 5-inch bleed`);
   }
-  return { row, metadata, surfaceKey, format, kind, storagePath, contentHash, byteSize };
+  // A file written before v4 names no variant and IS the branded panel; a v4
+  // file says which of the two it is, and anything else is not an output.
+  const variant = metadata.variant === undefined || metadata.variant === null ? "branded" : String(metadata.variant);
+  if (!VARIANTS.includes(variant)) fail("output_artifact_variant_invalid", `${storagePath} has an invalid variant identity`);
+  return { row, metadata, surfaceKey, format, variant, kind, storagePath, contentHash, byteSize };
 }
 
 async function artifactBytes(artifact, readBytes) {
@@ -748,29 +782,35 @@ async function artifactBytes(artifact, readBytes) {
 
 async function verifyProductionOutputSet({ artifacts, dimensionManifest, readBytes, outputFormatContract = OUTPUT_FORMAT_CONTRACT } = {}) {
   const formats = formatsForContract(outputFormatContract);
-  if (!formats) fail("output_format_contract_invalid", "Unknown production output format contract");
-  if (!Array.isArray(artifacts) || artifacts.length !== SURFACES.length * formats.length) {
-    fail("output_artifact_count_invalid", `Exactly ${SURFACES.length * formats.length} output artifacts are required`);
+  const variants = variantsForContract(outputFormatContract);
+  if (!formats || !variants) fail("output_format_contract_invalid", "Unknown production output format contract");
+  const expectedCount = SURFACES.length * formats.length * variants.length;
+  if (!Array.isArray(artifacts) || artifacts.length !== expectedCount) {
+    fail("output_artifact_count_invalid", `Exactly ${expectedCount} output artifacts are required`);
   }
   const manifest = parseManifest(dimensionManifest);
   const normalized = artifacts.map(normalizeArtifact);
   const identities = new Map();
   const paths = new Set();
   for (const artifact of normalized) {
-    const identity = `${artifact.surfaceKey}:${artifact.format}`;
+    // A tier without the clean variant is refused a clean file rather than
+    // having it counted as one branded file too many: the count check above
+    // would also catch it, but the reason would name the wrong defect.
+    if (!variants.includes(artifact.variant)) fail("output_artifact_variant_unexpected", `${artifact.storagePath} carries a variant this contract does not ship`);
+    const identity = `${artifact.surfaceKey}:${artifact.variant}:${artifact.format}`;
     if (identities.has(identity)) fail("output_artifact_duplicate", `Duplicate output artifact: ${identity}`);
     if (paths.has(artifact.storagePath)) fail("output_artifact_path_duplicate", `Duplicate output storage path: ${artifact.storagePath}`);
     identities.set(identity, artifact);
     paths.add(artifact.storagePath);
   }
   const files = [];
-  for (const surfaceKey of SURFACES) {
+  for (const surfaceKey of SURFACES) for (const variant of variants) {
     const geometry = manifest.get(surfaceKey);
     let expectedPdfHash;
     let sourcePngHash;
     for (const format of formats) {
-      const artifact = identities.get(`${surfaceKey}:${format}`);
-      if (!artifact) fail("output_artifact_missing", `Missing output artifact: ${surfaceKey}:${format}`);
+      const artifact = identities.get(`${surfaceKey}:${variant}:${format}`);
+      if (!artifact) fail("output_artifact_missing", `Missing output artifact: ${surfaceKey}:${variant}:${format}`);
       if (Number(artifact.metadata.width) !== geometry.widthPixels || Number(artifact.metadata.height) !== geometry.heightPixels) {
         fail("output_artifact_metadata_geometry_invalid", `${artifact.storagePath} metadata geometry is incorrect`);
       }
@@ -808,6 +848,9 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
       files.push(Object.freeze({
         surfaceKey,
         format,
+        // Stated only on a tier that carries two variants, so a v1/v2/v3
+        // receipt's shape -- and therefore its outputSetHash -- is unchanged.
+        ...(variants.length > 1 ? { variant } : {}),
         storagePath: artifact.storagePath,
         contentHash: observedHash,
         byteSize: bytes.length,
@@ -829,6 +872,7 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
     contract: "designpro.output-verification.v1",
     exactSurfaceSet: SURFACES,
     exactFormatSet: formats,
+    ...(variants.length > 1 ? { exactVariantSet: variants } : {}),
     fileCount: files.length,
     fullScalePixelsPerInch: FULL_SCALE_PIXELS_PER_INCH,
     fileDpi: FILE_DPI,
@@ -1091,12 +1135,17 @@ module.exports = Object.freeze({
   FORMATS,
   PDF_FORMATS,
   LEGACY_FORMATS,
+  VARIANTS,
   FORMAT_CONTRACTS,
+  VARIANT_CONTRACTS,
   JPEG_QUALITY,
   OUTPUT_FORMAT_CONTRACT,
+  JPG_OUTPUT_FORMAT_CONTRACT,
   PDF_OUTPUT_FORMAT_CONTRACT,
   LEGACY_OUTPUT_FORMAT_CONTRACT,
   formatsForContract,
+  variantsForContract,
+  outputFileCountForContract,
   FULL_SCALE_PIXELS_PER_INCH,
   MAX_EPS_ENCODED_BYTES,
   MAX_EPS_RAW_BYTES,

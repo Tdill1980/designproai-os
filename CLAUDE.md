@@ -229,17 +229,64 @@ production pack, which is where the cut-contour builder actually lives.
 - **No controlled real generation has run on the repaired path.** Every measurement
   above is a probe, a fixture, or a read of a live row. The owner's own standard:
   a real test, not source greps or synthetic fill tests.
-- **Zone 2 is not yet wired to `panels.delogo` (Call 11) and Zone 3 not to
-  `logos.extract` (Call 10).** Today Zone 2 replaces a white-box paint and Zone 3
-  a keyed-out lift; the model draws them, which is better than either, but the
-  two Calls still own those artifacts downstream.
-- ~~**PDF delivery is still absent from the paid contract.**~~ **Stale as of
-  2026-09-22.** `runtime/output-qc.cjs` `FORMATS` is now
-  `["png","tiff","eps","pdf"]` (`designpro.production-formats.v2`, with the
-  v1 triple kept as `LEGACY_FORMATS`), and `panelpro-file-output-contract.cjs`
-  is required by the claimant, the graph, the plan, the render and the service
-  modules. What has NOT changed: no fresh paid run has been opened to confirm
-  the PDF lands in the ZIP a customer downloads.
+- ~~**Zone 2 is not yet wired to `panels.delogo` (Call 11)**~~ **Stale as of
+  2026-09-22.** Call 11 copies the frozen Zone 2 bytes as the qc-panel when the
+  snapshot carries `panelProofAuthoring` (`backgroundsReused: true`), and
+  `20260922051200` makes the snapshot carry it on EVERY handoff, not only when
+  a logo was uploaded (three no-logo runs of 09-21 had none). Zone 3 → Call 10
+  is still the model's drawing plus the persisted cut graphics; Call 10 owns
+  the inventory downstream.
+- ~~**PDF delivery is still absent from the paid contract.**~~ **Stale.** See
+  the section below: the paid contract is v4 — five formats, two variants,
+  sixty files. What has NOT changed: no fresh paid run has been opened to
+  confirm the set lands in the ZIP a customer downloads.
+
+### EVERY PRINT ASSET IS 150 PPI WITH 5" BLEED — INCLUDING THE BLANK PANELS (owner, Trish 2026-09-22: "make sure ALL assets files are processed to 150 ppi with bleed at 5\"")
+
+Audited before touching anything. Until this date a paid pack held:
+
+| asset | shipped as | 150 PPI + 5" bleed? |
+|---|---|---|
+| six branded panels (Zone 1) | Topaz → (trim + 10") × 150 px → PNG/JPG/TIFF/EPS/PDF | yes |
+| six **blank panels (Zone 2)** | the raw crop off the proof sheet — a few hundred px wide, trim only, `bleed: null`, `printable: false` — in the ZIP's `qc-panel/` folder | **no** |
+| Zone 3 cut graphics | the frozen bytes: vector SVG (typeset/contact) or the customer's own uploaded logo | n/a — no inches by contract, sized at the plotter |
+| Logo Pack logos | as-is (separated cut assets) | n/a, by design |
+
+**Now: output contract `designpro.production-formats.v4`** — five formats ×
+two VARIANTS (`branded`, `clean`) × six surfaces = **60 files**. Call 12
+enhances the six frozen Zone 2 backgrounds to the identical
+(trim + 10") × 150 rectangle as `upscaled-clean-panel` artifacts, and
+`buildPrintOutputs` writes both variants (`…/outputs/<side>-clean.<ext>`,
+`metadata.variant: "clean"`). Registration with the branded panel is by
+construction: the clean crop is fitted into the branded panel's OWN pixel
+rectangle exactly as the Zone 1 crop was fitted into its master zone (resize
+inside, copy-extend the remainder — `fitCleanToBrandedRectangle`), then
+enhanced to the same target. This is RestylePro's worker behaviour
+(`panelKey_clean` from `background_url`, RULE 1), not a new producer.
+
+- **The Call 11 `qc-panel` is untouched.** RULE 0.25's "Topaz never runs on the
+  QC derivatives" still holds: the clean variant is Zone 2 SOURCE artwork from
+  the accepted Call 1 proof, not a derivative of the branded panel. The
+  qc-panel stays the on-screen QC instrument.
+- **A revision with no Zone 2** (authored before the three-zone proof) builds
+  the branded-only set under v3 (30 files) and its receipts say so; a v2 pack
+  still verifies as 24 and a v1 pack as 18 (`formatsForContract`,
+  `variantsForContract`, `outputFileCountForContract`). Half a clean set is
+  refused (`enhanced_clean_panels_missing` / `_unreceipted`).
+- **`output.verify` keys files by `surface:variant:format`**, binds a clean
+  PDF/JPG to the clean PNG of the same surface, and refuses a variant the
+  contract does not ship. The v4 receipt carries `exactVariantSet`; pre-v4
+  receipts are byte-identical to before, so their `outputSetHash` is unchanged.
+- **The DATABASE gate had to move too, and it was already refusing #600.**
+  `assert_production_output_build` (20260920113000) admitted ONLY contract v2 /
+  24 files, so the JPG tier (v3 / 30) would have raised
+  `production_pdf_output_build_required` on the first paid `output.build`.
+  `20260922060000` admits v2, v3 and v4, counts DISTINCT
+  (surface, variant, format), and re-patches the `output.verify` block's four
+  `6*cardinality(formats)` counts to `production_output_file_count(run)`.
+  Runtime tests cannot see this gate — check the migration when the format set
+  changes.
+- Cost: twelve Topaz calls per pack instead of six. The owner asked for it.
 - **`parseCustomerIntake` is a SECOND Flash call on the customer's critical path**
   inside Call 1. It is not timed separately and it is the next latency lever.
 
