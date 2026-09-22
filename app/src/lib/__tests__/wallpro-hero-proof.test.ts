@@ -162,4 +162,35 @@ describe('the restored gym pair', () => {
   it('carries the marking frame that the third stage renders', () => {
     expect(brand).toContain("src: '/wallpro/proof-gym-mask.jpg',");
   });
+
+  /**
+   * The pixels themselves, because a comment saying "the mark was removed"
+   * is not evidence and this file has twice been the place someone looked.
+   * Both regions are measured from the shipped frame, not asserted in prose.
+   */
+  it('has no ink left where either removed wordmark was', async () => {
+    const sharp = (await import('sharp')).default;
+    const file = fileURLToPath(new URL('../../../public/wallpro/proof-gym-after.jpg', import.meta.url));
+    const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
+    const lum = (x: number, y: number) => {
+      const i = (y * info.width + x) * 3;
+      return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    };
+    const ink = (x0: number, y0: number, x1: number, y1: number, t: number) => {
+      let n = 0;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (lum(x, y) > t) n++;
+      return n;
+    };
+    expect(info.width).toBe(1400);
+    expect(info.height).toBe(803);
+    // The third-party wordmark in the MURAL -- the one that forced the
+    // retraction. Zero, or the retracted frame is back in the build.
+    expect(ink(1207, 393, 1320, 410, 120), 'mural wordmark region').toBe(0);
+    // The plyo box's manufacturer mark.
+    expect(ink(1039, 467, 1070, 474, 105), 'plyo wordmark region').toBe(0);
+    // And the two size markings must NOT have been scrubbed with them: they
+    // are what a plyo box says, not a brand, and a frame with them missing
+    // means somebody widened a patch rectangle.
+    expect(ink(1095, 520, 1140, 540, 120), '20-inch size marking').toBeGreaterThan(100);
+  });
 });
