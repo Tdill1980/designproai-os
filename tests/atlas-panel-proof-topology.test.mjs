@@ -1287,6 +1287,23 @@ test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () =
   assert.equal(original.contentHash,contentHash);
   assert.equal(original.storagePath,logoAsset.storagePath);
   assert.equal(original.byteSize,bytes.length);
+  // `assetRole` IS WHAT THE HANDOFF SELECTS ON, and `91d0b8e` deleted it while
+  // `tests/panel-proof-logo-handoff.test.mjs:24` kept HARDCODING it into its own
+  // fixture — so the SQL gate was proven against a field no producer emitted,
+  // and the live rows show it: 2026-09-20 carried ["logo","typography",
+  // "contact"], 2026-09-22 carried []. `panel_proof_logo_inventory`
+  // (20260920022906:43) needs exactly one, or every logo-bearing handoff raises
+  // `generation_logo_original_identity_mismatch` and no workflow is created.
+  // Assert it HERE, at the producer, not only where a fixture can supply it.
+  assert.equal(original.assetRole,"logo",
+    "the handoff selects the customer's original logo by assetRole");
+  for (const asset of result.provenance.quadrants.cutGraphics) {
+    assert.equal(typeof asset.assetRole,"string",
+      `every Zone 3 entry names its role (${asset.surfaceKey})`);
+  }
+  assert.equal(
+    result.provenance.quadrants.cutGraphics.filter(a => a.assetRole === "logo").length, 1,
+    "exactly one logo, which is what the SQL gate counts");
   assert.ok(!Object.hasOwn(calls[0],"separatedArtwork"));
   assert.equal(calls[0].customerAssets.length,0,
     "a protected Zone-3 original never enters the generation request");

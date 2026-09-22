@@ -245,7 +245,10 @@ async function sheetDrawnCutGraphic({ sheetBytes, rect, slotKey, slotIndex, shar
   const stored = await persist({ storagePath: `atlas-elements/${contentHash}.png`, bytes, contentType: "image/png" });
   return { element: {
     ...stored, contentHash, byteSize: bytes.length, contentType: "image/png", width, height,
-    surfaceKey: slotKey, slotIndex, role: "cut-graphic", persisted: true, vector: false,
+    // `assetRole` names WHICH element this is (logo / typography / contact /
+    // promo / icon); `role` says it is a cut graphic. Both are needed: the
+    // handoff's logo inventory and zip.build's archive filename read the first.
+    surfaceKey: slotKey, assetRole: slotKey, slotIndex, role: "cut-graphic", persisted: true, vector: false,
     source: "sheet-drawn", fit: Number(fit.toFixed(4)), widthIn: null, heightIn: null, bytes,
   } };
 }
@@ -1052,6 +1055,16 @@ async function assemblePanelProofMaster({
   // Keep byte identities on the receipt, never the in-memory asset buffers.
   // These are the same originals used in both the branded panels and Zone 3.
   zone3 = assets.map(({bytes, role, ...asset}) => ({
+    // `assetRole` IS LOAD-BEARING AND IT WAS DELETED BY `91d0b8e`, the same
+    // commit that introduced `separatedArtwork`. `panel_proof_logo_inventory`
+    // (20260920022906:43) requires EXACTLY ONE cutGraphics entry with
+    // assetRole = 'logo' and raises `generation_logo_original_identity_mismatch`
+    // otherwise — inside `IF v_logo IS NOT NULL`, so every handoff carrying a
+    // customer logo fails and the entice workflow is never created. The live
+    // rows show it exactly: 2026-09-20 carried ["logo","typography","contact"],
+    // 2026-09-22 carried []. It only went unnoticed because the runs since had
+    // no uploaded logo. `zip.build` reads it too, for the archive filename.
+    assetRole: role,
     ...asset, surfaceKey: role, role: "cut-graphic", persisted: true,
   }));
   // The design's own drawn elements fill every slot the code-owned assets left
