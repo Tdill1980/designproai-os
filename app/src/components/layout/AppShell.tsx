@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useIsAppRoute } from "@/hooks/useIsAppRoute";
+import { useIsAppRoute, isEmbeddedInIframe } from "@/hooks/useIsAppRoute";
 import { AppSidebar } from "./AppSidebar";
 import { AppBottomTabs } from "./AppBottomTabs";
 import { cn } from "@/lib/utils";
@@ -41,9 +41,10 @@ export const AppShell = ({ children }: AppShellProps) => {
   };
 
   // Embedded in an iframe (ApprovePro's WPW proof / DesignPro panels): no
-  // sidebar or bottom tabs — the page fills the frame.
-  let inIframe = false;
-  try { inIframe = typeof window !== "undefined" && window.self !== window.top; } catch { inIframe = true; }
+  // sidebar or bottom tabs — the page fills the frame. The check lives in
+  // useIsAppRoute so a PAGE can ask the same question and get the same answer;
+  // ShopFlow has to know whether its own rail would be a second sidebar.
+  const inIframe = isEmbeddedInIframe();
 
   if (!isAppRoute || inIframe) {
     return <>{children}</>;
