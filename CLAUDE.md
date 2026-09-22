@@ -123,6 +123,43 @@ bodies back → one live generation on the New Aura brief → tick the checklist
 **NOT PROVEN:** no live generation has run on this code. Acceptance is the
 owner's eye on the exported TriZone™ sheet against the Ridgeline standard.
 
+## 💳 THE PAID PATH ASKED THE RUN TABLE FOR A COLUMN IT HAS NEVER HAD (found on production 2026-09-22)
+
+`public.confirm_designpro_revision_purchase` (`20260920042000`) selects the
+entice run with `... AND owner_id=p_owner_id AND generation_id=p_generation_id`.
+**`designpro_workflow_runs` has no `generation_id`.** `20260806180000` creates it
+without one, no migration adds one, and production's `information_schema` lists
+twenty-one columns, none of them that. `supabase db lint` reported 42703 on every
+gate since 2026-09-20 and the gate treats lint as advisory, so nothing failed.
+
+**It is the live customer path, not a corner.** `runtime/index.js` picks this RPC
+whenever the webhook body carries `revision`, and the gateway writes
+`metadata[atlas_revision_id|revision_id|revision_snapshot_hash|entice_run_id]`
+on EVERY Production Pack checkout session, which `checkoutRevisionFromMetadata`
+turns into exactly that `revision`. PL/pgSQL compiles a statement the first time
+it is EVALUATED, so it raises on the first call: Stripe pays, the runtime answers
+400, no entitlement row is written, `manifest.resolve` never opens. Two
+entitlements exist, both 2026-09-20, none since.
+
+`20260922160000` text-patches the one predicate out. **This is not a
+relaxation:** the EXISTS immediately below is untouched and still requires
+`s.generation_id=p_generation_id` on the revision source that owns this revision
+id and snapshot hash, plus `a.generation_id=s.generation_id` on its Atlas
+revision, so a run cannot satisfy the SELECT and belong to another generation.
+
+**THE FIXTURE HID IT, AND THAT IS THE SIXTH TIME THIS FILE HAS RECORDED THAT
+SHAPE.** `tests/revision-pinned-purchase.test.mjs` hand-wrote
+`designpro_workflow_runs` **with** a `generation_id` column, so nineteen tests
+were green over a table that exists nowhere but in that file. It now slices the
+real DDL from `20260806180000` plus the ALTERs from `20260806180400`, and a case
+asserts the sliced text carries no such column. Measured: with the new migration
+neutered, the new case AND the pre-existing end-to-end webhook case both fail —
+**the suite would have caught this from the start had the fixture been the real
+table.** When a fixture stands in for a schema, build it FROM the migrations.
+
+**Not proven:** no purchase has been confirmed on production since the patch.
+Tick it when an entitlement row appears for a real checkout.
+
 ## ™ THE THREE-ZONE SHEET IS THE **TriZone™ Production Panel Proof** — ONE NAME, DECLARED ONCE (owner, Trish 2026-09-22: "fix remove atlas come up with a proprietary name for our ProductionPanelProof")
 
 The sheet Call 1 draws now has a name of its own, the way PanelPro, CutPro
