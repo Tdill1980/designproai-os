@@ -116,3 +116,66 @@ export function WallProSidebar({
     </aside>
   );
 }
+
+/**
+ * THE SAME STEPS, ACROSS THE TOP (owner, 2026-09-22: "it's currently confusing
+ * and has bad ux").
+ *
+ * Measured before building: the rail is `hidden ... lg:block`, and it is
+ * mounted as `{theme.showPrintOffer && <WallProSidebar/>}` -- true only for
+ * WePrintWraps. So on DesignProAI there was NO progress indication at any
+ * width, and on a phone there was none on either brand, on a page this file's
+ * own neighbour describes as four thousand pixels long. The one thing that
+ * answers "where am I and what is left" was built, correct, reading real
+ * state, and switched off for the brand the owner actually uses.
+ *
+ * ⚠️ WHY A STRIP RATHER THAN JUST UNGATING THE RAIL. On DesignProAI this page
+ * is INSIDE the OS AppShell, which already owns a 240px rail. A second one
+ * beside it is the double-sidebar defect fixed on ShopFlow the same day -- and
+ * is almost certainly why the mount was brand-gated in the first place. So the
+ * shape follows the chrome: a horizontal strip where a rail already exists, the
+ * rail where none does.
+ *
+ * It is the SAME `steps` array either way. Two lists of the page's progress
+ * would drift the first time a step moved.
+ */
+export function WallProStepStrip({ steps, top, className = '' }: { steps: WallStep[]; top: number; className?: string }) {
+  const jump = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  return (
+    <nav
+      aria-label="WallPro steps"
+      className={`sticky z-20 -mx-4 mb-4 border-b wall-edge bg-[hsl(var(--wall-ground))]/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8 ${className}`}
+      style={{ top }}
+    >
+      {/* Horizontally scrollable rather than wrapped: five chips wrapping to
+          three lines on a phone is a block of furniture, not a progress bar. */}
+      <ol className="flex snap-x gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {steps.map((step, i) => (
+          <li key={step.id} className="snap-start">
+            <button
+              type="button"
+              onClick={() => jump(step.id)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                step.done
+                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700'
+                  : 'wall-edge bg-[hsl(var(--wall-card))] wall-muted hover:wall-ink'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
+                  step.done ? 'bg-emerald-600 text-white' : 'border wall-edge'
+                }`}
+              >
+                {step.done ? <Check className="h-2.5 w-2.5" /> : i + 1}
+              </span>
+              {step.label}
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}

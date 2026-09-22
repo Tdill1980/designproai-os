@@ -19,7 +19,7 @@ import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSumma
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
-import { useStickyOffset } from '@/lib/use-sticky-offset';
+import { useStickyOffset, useElementHeight } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, WALL_HERO_PROOF, type WallBrandKey } from '@/lib/wallpro-brand';
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
@@ -27,7 +27,8 @@ import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
 import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
-import { WallProSidebar } from '@/components/wallpro/WallProSidebar';
+import { WallProSidebar, WallProStepStrip } from '@/components/wallpro/WallProSidebar';
+import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
@@ -264,6 +265,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // photo pane stays on the photo and says what it needs. Print files never
   // wait on this; they are built from the flat master.
   const wallLocated = cornersValidNow && cornerSource !== 'default';
+  /** Whether the OS AppShell already owns a rail around this page. Read, never
+   *  re-derived: it is the same predicate AppShell itself branches on. */
+  const insideOsShell = useInsideAppShell();
   // The AI picture is for one design, one photo and one pattern size; a step
   // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
   // and the tab offers to repaint.
@@ -314,6 +318,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // descendant sticky entirely -- so this header was correctly offset and still
   // scrolled away on a phone. It is `overflow-x: clip` there now.
   const stickyTop = useStickyOffset('wallpro-header');
+  /** The page header's own height, so the step strip stacks BELOW it rather
+   *  than overlapping it — two sticky bars at one offset do not stack. */
+  const headerHeight = useElementHeight('wallpro-header');
   // A comparison needs both halves: the untouched photo and a real composite.
   const canCompare = !!photo && !!artwork && wallLocated && !!preview;
   const billing = wallBilling(width, height, printSettings, WALLPRO_PRINT_WIDTH);
@@ -839,14 +846,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           // a wall had been chosen. Ask for the four taps instead.
           : 'Tap the four corners of your wall, clockwise from the top left.';
     if (accent) setNotice(cornersNote + (removeCount ? ` Anything standing in front of it will be painted through (${[...new Set(removeLabels)].slice(0, 4).join(', ')}).` : '') + ' Nothing here is auto-protected: this zone exists to cover it.');
-    else if (!applyMasks) setNotice(cornersNote + ' Use Mask window / drapes for a single item, or Protect a busy area to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
+    else if (!applyMasks) setNotice(cornersNote + ' Use "Mask a closet, door or window" for a single item, or "Protect a busy area" to draw one shape around a whole cluttered wall -- a gallery of frames, a mantel, a shelf -- at once. Masks affect the preview only; print panels stay full.');
     else if (maskCount || removeCount) {
       const parts: string[] = [];
       if (maskCount) parts.push(`kept ${maskCount} area${maskCount === 1 ? '' : 's'} exactly as photographed (${[...new Set(labels)].slice(0, 6).join(', ')})`);
       if (removeCount) parts.push(`the AI picture will paint through ${removeCount} item${removeCount === 1 ? '' : 's'} that would be moved before install (${[...new Set(removeLabels)].slice(0, 6).join(', ')})`);
       setNotice(cornersNote + ' ' + parts.join('; ') + '. Clear detected areas removes them. Masks affect the preview only; print panels stay full.' + (found.notes ? ' ' + found.notes : ''));
     }
-    else setNotice(cornersNote + ' The objects could not be outlined precisely, so nothing was masked. Use Mask window / drapes for the window, Protect a busy area for a cluttered wall, or the AI picture, which keeps the room as photographed without masks.');
+    else setNotice(cornersNote + ' The objects could not be outlined precisely, so nothing was masked. Use "Mask a closet, door or window" for the opening, "Protect a busy area" for a cluttered wall, or the AI picture, which keeps the room as photographed without masks.');
   }
   /** Detection never holds the form: it is a preview aid, so it runs beside the
    * customer's typing and a signed-out session or a model failure leaves the
@@ -1417,7 +1424,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // DesignProAI page is dark WITHOUT a second component. Scoped here rather
   // than on :root because the OS shell around this page has its own palette.
   return <div data-wall-theme={theme.surface} className={`min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
-    {theme.showPrintOffer && <WallProSidebar
+    {/* THE RAIL FOLLOWS THE CHROME, NOT THE BRAND (owner, 2026-09-22: "it's
+        currently confusing and has bad ux").
+        It used to be `theme.showPrintOffer &&`, which is true only for
+        WePrintWraps -- so DesignProAI had no progress indication at all. The
+        real constraint is not the brand: it is that on DesignProAI this page
+        sits INSIDE the OS AppShell, which already owns a 240px rail, and a
+        second one beside it is the double-sidebar defect fixed on ShopFlow the
+        same day. So a rail only where no rail exists; the strip everywhere
+        else, from the SAME steps array. */}
+    {!insideOsShell && <WallProSidebar
       theme={theme} steps={wallSteps} top={stickyTop + 16} busy={!!busy} freeReason={freeReason}
       onHistory={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}
       onStartFresh={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}
@@ -1499,6 +1515,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             much that it becomes a band of its own. */}
         <WallProHeaderRule />
       </header>
+      {/* The progress strip, directly under the header it sticks below. Shown
+          at every width inside the OS shell (where there is no WallPro rail)
+          and below lg on the partner page (where the rail takes over). One
+          `steps` array feeds both -- two lists of the page's own progress
+          would drift the first time a step moved. */}
+      <WallProStepStrip steps={wallSteps} top={stickyTop + headerHeight} className={insideOsShell ? '' : 'lg:hidden'} />
       {/* PICK UP WHERE YOU LEFT OFF — one click, never automatically.
           This is what replaced the silent auto-restore: the customer lands on
           a blank wall ready for a NEW design, and the one they were last in is
@@ -1898,7 +1920,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   over a wall-scale render read as though the wall were 4096
                   square, and over a bare tile it invited the "my pattern came
                   back small" reading the flatView comment above explains. */}
-              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">1 · {artwork ? 'Flat design — the print master' : 'Your uploaded design — not print-ready yet'}{artwork && flatView !== 'tile' ? ` · across your ${width} × ${height} in wall` : previewArt.width && previewArt.height ? ` · ${previewArt.width} × ${previewArt.height} px` : ''}</p>}
+              {/* ⚠️ THESE PANES CARRY NO NUMBER (owner, 2026-09-22: "it's
+                  currently confusing and has bad ux").
+                  They used to read "1 ·" and "2 ·" while the page's STEPS are
+                  also numbered 1-4 -- and these two live INSIDE step 4. Her
+                  screenshot shows "2 · IMPOSED ON YOUR WALL", which reads as
+                  step 2, and step 2 is "Choose your design". One numbering
+                  system per page: the steps have it, because they are a
+                  sequence; these are two views of one result, which is not. */}
+              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">{artwork ? 'Flat design — the print master' : 'Your uploaded design — not print-ready yet'}{artwork && flatView !== 'tile' ? ` · across your ${width} × ${height} in wall` : previewArt.width && previewArt.height ? ` · ${previewArt.width} × ${previewArt.height} px` : ''}</p>}
               {/* Pattern size, as PatternPro's slider: the design itself drawn
                   smaller or bigger across the wall, 30% to 300%, with no new
                   generation (owner, 2026-09-12). The panels do not change. */}
@@ -1970,7 +2000,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {parentProjectId && <p className="mb-2 rounded-lg border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
                 Wrapping <strong>{zoneLabel || 'this area'}</strong> only. Mark its four corners and enter <strong>its</strong> real size, not the whole wall's — the design scales from those inches. It prints and is purchased separately from the main wall.
               </p>}
-              {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">2 · {view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
+              {artwork && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">{view === 'compare' ? 'Before & after' : view === 'after' && preview ? 'Imposed on your wall' : cornersValid ? 'Your wall' : 'Your wall — mark the four corners to impose the design'}</p>}
               {view === 'compare' && canCompare && preview ? <BeforeAfter before={photo.url} after={preview} alt="Your design on your wall, compared with the original" name={name} /> :
               view === 'ai' && aiView ? <div className="overflow-hidden rounded-xl border wall-edge bg-[hsl(var(--wall-ground))]">
                 <div className="relative">
@@ -1997,25 +2027,47 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} · {WALLPRO_PRINT_WIDTH}″ roll · {billing.panelLengthIn}″ long · {printSettings.minPpi} PPI · seams {seamReceipt ? 'verified' : 'checked on export'}
                 </p>
               </div>}
-              {/* The corners default to the WHOLE PHOTO so a missed detection never
-                  blocks the on-wall view — but then the design covers the ceiling,
-                  the floor and the furniture, which reads as "it didn't work"
-                  (owner, 2026-09-12). Say which it is instead of leaving her to
-                  guess from the picture. */}
-              {artwork && !wallLocated && <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-                {detecting
-                  ? 'Tap the four corners of your wall, clockwise from the top left — "On your wall" switches on the moment they are set. We are looking too, but you do not have to wait for us.'
-                  : 'Tap "Re-mark wall corners", then tap the four corners of the wall, clockwise from the top left. It takes about five seconds and switches on the on-wall view.'}
-                {' '}Your print files do not wait for this — they are already correct.
-              </p>}
+              {/* The amber "mark your corners" notice that stood here is gone.
+                  It said the same thing as the card above step 1, in a second
+                  place, worded as an instruction to find a third control
+                  ("tap Re-mark wall corners"). One prompt, at the top; the
+                  CONTROLS live in the block below, attached to the photo. */}
               {/* Masking runs automatically now, so the page states what it
                   DID instead of asking the customer to do it. The manual tools
                   stay one tap away for a correction, but they no longer read
                   as a required step (owner, 2026-09-12: "system should be auto
                   masking behind the scenes... still shows buttons asking to
                   mask, very confusing"). */}
-              <div className="mt-3 rounded-lg border wall-edge bg-[hsl(var(--wall-field))] p-2.5">
-                <p className="text-xs wall-muted">
+              {/* ── ONE BLOCK FOR THE PHOTO'S OWN WORK (owner, 2026-09-22) ─────
+                  Corners and masking were in THREE places: the card above
+                  step 1, a "Change what we keep" text link buried in a
+                  paragraph, and the buttons that link revealed. "How do I mask
+                  closet?" had no visible answer anywhere on the page.
+                  Now: one titled block under the photo, with the two jobs
+                  named and their state stated. Nothing hides behind a link —
+                  a control the customer cannot see is a control that does not
+                  exist. */}
+              <div className="mt-3 rounded-xl border wall-edge bg-[hsl(var(--wall-field))] p-3">
+                <h3 className="text-xs font-bold uppercase tracking-wide wall-ink">Your wall photo</h3>
+
+                {/* ROW 1 — the wall area itself. */}
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-b wall-edge pb-2.5">
+                  <p className="min-w-0 text-xs wall-muted">
+                    <strong className="wall-ink">Wall area:</strong>{' '}
+                    {marking === 'wall'
+                      ? `marking — ${4 - corners.length} corner${4 - corners.length === 1 ? '' : 's'} to go`
+                      : wallLocated
+                        ? `set${cornerSource === 'detected' ? ' automatically' : ' by you'} — the design is imposed inside it`
+                        : detecting ? 'looking…' : 'not set — the design cannot be placed on the photo yet'}
+                  </p>
+                  <Button size="sm" variant={wallLocated ? 'outline' : 'default'} disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}>
+                    <RotateCcw className="mr-1.5 h-3 w-3" />{wallLocated ? 'Re-mark' : 'Mark the corners'}
+                  </Button>
+                </div>
+
+                {/* ROW 2 — what the design paints around. */}
+                <p className="mt-2.5 text-xs wall-muted">
+                  <strong className="wall-ink">What we keep:</strong>{' '}
                   {detecting
                     ? 'Finding what to protect on this wall…'
                     : detectedMask || removeMask || exclusions.length
@@ -2023,15 +2075,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                       : wallReadMissed
                         ? 'We could not read this wall automatically, so nothing is protected yet. Mark the corners, then tell us what to keep — a closet opening, a doorway, a window.'
                         : 'Nothing needed protecting on this wall.'}
-                  {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done' : 'Change what we keep'}</button>
                 </p>
+                {/* The two masking actions, in the open. A closet opening or a
+                    doorway is a rectangle; a cluttered wall is one rough shape
+                    around the lot. Named for what the customer is looking at,
+                    not for the tool. */}
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Mask a closet, door or window</Button>
+                  <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Protect a busy area</Button>
+                  <button type="button" className="text-xs font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Fewer options' : 'More options'}</button>
+                </div>
               </div>
               {showMaskTools && <>
               <label className="mt-3 flex items-center gap-2 text-xs wall-muted"><input type="checkbox" checked={showMasks} onChange={e => setShowMasks(e.target.checked)} />Show glass mask overlay and editing handles</label>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}><RotateCcw className="mr-1 h-3 w-3" />Re-mark wall corners</Button>
-                <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Mask window / drapes</Button>
-                <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Protect a busy area</Button>
+                {/* Re-mark, Mask-a-closet and Protect-a-busy-area were HERE,
+                    behind a text link, which is why "how do I mask closet?"
+                    had no visible answer. They are promoted into the block
+                    above; what stays here is the per-mask editing that only
+                    matters once a mask is being drawn. */}
                 {marking === 'exclude' && <Button size="sm" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish mask</Button>}
                 {(marking === 'exclude' || marking === 'rectangle') && <>
                   <Button size="sm" variant="ghost" disabled={!!busy || !excludeDraft.length} onClick={() => setExcludeDraft(old => old.slice(0,-1))}>Undo mask point</Button>
