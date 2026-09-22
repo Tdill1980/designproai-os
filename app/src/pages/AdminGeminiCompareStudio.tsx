@@ -29,10 +29,12 @@ import {
 } from "@/lib/designpro-api";
 import {
   EXPECTED_OUTPUT_FILES,
+  MIN_VERIFIED_OUTPUT_FILES,
   FINAL_CHECKS,
   OUTPUT_FORMATS,
   PACK_PRESENCE_CHECKS,
   outputFormatOf,
+  outputVariantOf,
   PREFLIGHT_CHECKS,
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
@@ -811,10 +813,22 @@ function AtlasProgressCard({
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-      {atlas?.requestId && <AtlasPanelProofSheetLoader requestId={atlas.requestId} revisionId={atlas.id} />}
+      {/* Keyed on the selected version so switching V1 -> V2 remounts the
+          reader instead of leaving the previous version's proof on screen. */}
+      {/* Re-read while the run is doing automatic work so a sheet landing after
+          the board opened appears without a reload; a parked or finished run
+          cannot land one. */}
+      {atlas?.requestId && (
+        <AtlasPanelProofSheetLoader
+          key={atlas.id}
+          requestId={atlas.requestId}
+          revisionId={atlas.id}
+          pollWhilePending={job.state === "queued" || job.state === "running"}
+        />
+      )}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-          A.T.L.A.S.
+          Call 1
         </span>
         <span className="text-[10px] text-gray-400">
           {atlas ? `V${atlas.revisionSequence} · ${atlas.promptVersion}` : "authoring"}
@@ -852,7 +866,7 @@ function AtlasProgressCard({
           data-testid="atlas-master-missing"
           className="mt-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800"
         >
-          A.T.L.A.S. master not available for this revision. Every panel and proof
+          Print master not available for this revision. Every panel and proof
           descends from it, so this job cannot be validated until it loads.
         </div>
       )}
@@ -865,7 +879,7 @@ function AtlasProgressCard({
         <div data-testid="atlas-master" className="mt-3 border-t border-gray-200 pt-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-              Flattened A.T.L.A.S. master · V{atlas.revisionSequence}
+              Print master · V{atlas.revisionSequence}
             </span>
             <span className="flex items-center gap-3 text-[10px]">
               <a
@@ -898,7 +912,7 @@ function AtlasProgressCard({
           <a href={atlas.masterUrl} target="_blank" rel="noreferrer" className="block">
             <img
               src={atlas.masterUrl}
-              alt={`Flattened A.T.L.A.S. master, revision ${atlas.revisionSequence}`}
+              alt={`Print master, revision ${atlas.revisionSequence}`}
               loading="lazy"
               className="max-h-[26rem] w-full rounded border border-gray-200 bg-white object-contain"
             />
@@ -972,7 +986,7 @@ function SurfacePairRows({
         </div>
         <div className="text-[11px] text-gray-500">
           Left is that side's 3D proof. Right publishes the canonical Call&nbsp;1
-          A.T.L.A.S. source immediately, then identifies the Call&nbsp;9 promoted
+          source immediately, then identifies the Call&nbsp;9 promoted
           production artifact when it exists. Print rectangles include background
           artwork through installation cut areas; masks belong to the review overlay.
         </div>
@@ -1076,7 +1090,7 @@ function SurfacePairRows({
                     {promoted
                       ? "Call 9 promoted production panel"
                       : callOnePanel
-                        ? "Call 1 A.T.L.A.S. source panel"
+                        ? "Call 1 source panel"
                         : "Print panel"}
                   </div>
                   {panelUrl ? (
@@ -1097,7 +1111,7 @@ function SurfacePairRows({
                           no declared dimensions. */}
                       <img
                         src={panelUrl}
-                        alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical A.T.L.A.S. source"} panel`}
+                        alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical source"} panel`}
                         loading="lazy"
                         style={widthInches && heightInches
                           ? { aspectRatio: `${widthInches} / ${heightInches}` }
@@ -1219,7 +1233,7 @@ function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
         <Fact label="Prompt hash" value={provenance?.promptHash ? provenance.promptHash.slice(0, 16) : null} />
         <Fact label="Pipeline mode" value={provenance?.pipelineMode || null} />
         <Fact label="Input contract" value={provenance?.inputContract || null} />
-        <Fact label="Topology" value={provenance?.topology || null} />
+        <Fact label="Call 1 route" value={provenance?.topology || null} />
         <Fact label="Provider contract" value={provenance?.providerContract || null} />
         <Fact label="Requested size" value={provenance?.requestedImageSize || null} />
         <Fact
@@ -1382,7 +1396,7 @@ function JobHeader({
           ["Revision ID", history.current?.revisionId || job.revision_id || "—"],
           ["Design Order #", job.order_number || awaitingPurchase],
           ["Customer vehicle", vehicle || "—"],
-          ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],
+          ["Current version", history.current ? `V${history.current.version}` : "—"],
           ["Job status", `${job.state}${job.current_stage ? ` · ${job.current_stage}` : ""}`],
           ["Created", exactTimestamp(job.created_at)],
         ].map(([label, value]) => (
@@ -1416,7 +1430,7 @@ function JobHeader({
         </div>
         {history.versions.length === 0 ? (
           <p className="text-[11px] text-gray-500">
-            No A.T.L.A.S. revision has been recorded for this design yet.
+            No revision has been recorded for this design yet.
           </p>
         ) : (
           <ol className="space-y-1.5">
@@ -1834,7 +1848,7 @@ function SurfaceQcPanel({
                       It is never a tick and never counts toward the thirteen. */}
                   {row.evidence && (
                     <ul className="mb-3 space-y-0.5 rounded bg-gray-50 p-2 text-[10px] text-gray-600">
-                      <li>Panel is from the selected A.T.L.A.S. version: {row.evidence.derived.version ? "yes" : "no"}</li>
+                      <li>Panel is from the selected version: {row.evidence.derived.version ? "yes" : "no"}</li>
                       <li>Proof and panel share one master: {row.evidence.derived.lineage ? "yes" : "no"}</li>
                       <li>
                         Effective resolution:{" "}
@@ -1878,7 +1892,7 @@ function SurfaceQcPanel({
                       {row.complete && !row.approvable && (
                         <p className="rounded bg-amber-50 p-2 text-[10px] text-amber-800">
                           The checklist is complete, but this panel does not bind
-                          to the selected A.T.L.A.S. version and its proof. The
+                          to the selected version and its proof. The
                           server refuses the approval for the same reason.
                         </p>
                       )}
@@ -2245,7 +2259,9 @@ function ProductionPackSection({
         )}
       </div>
 
-      {/* THE OUTPUT SET. Eighteen files: six surfaces times PNG, TIFF and EPS. */}
+      {/* THE OUTPUT SET. Sixty files: six surfaces times PNG, JPG, TIFF, EPS
+          and PDF, times the branded and the clean (logo-free) variant, every
+          one at 150 PPI with 5" bleed. A pack built before v4 holds fewer. */}
       <div className="mb-4 rounded-lg border border-gray-200 p-3">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700">Print files</h3>
@@ -2333,10 +2349,15 @@ function ProductionPackSection({
                 <ul className="mt-1 space-y-1">
                   {files.map((file) => (
                     <li key={file.id} className="flex items-center justify-between gap-2 text-[11px]">
-                      <span className="truncate text-gray-700">{file.surfaceKey}</span>
+                      <span className="truncate text-gray-700">
+                        {file.surfaceKey}
+                        {outputVariantOf(file) === "clean" && (
+                          <span className="ml-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">clean</span>
+                        )}
+                      </span>
                       <a
                         href={file.signedUrl}
-                        download={`${file.surfaceKey}.${format}`}
+                        download={`${file.surfaceKey}${outputVariantOf(file) === "clean" ? "-clean" : ""}.${format}`}
                         className="shrink-0 font-medium text-blue-600 hover:underline"
                       >
                         Download
@@ -2381,15 +2402,15 @@ function ProductionPackSection({
             <Button
               size="sm"
               className="mt-2 gap-1.5"
-              disabled={!finalReady || job.outputs.length < EXPECTED_OUTPUT_FILES || busy === "final"}
+              disabled={!finalReady || job.outputs.length < MIN_VERIFIED_OUTPUT_FILES || busy === "final"}
               onClick={() => void submitFinal()}
             >
               <Check className="h-4 w-4" />
               {busy === "final" ? "Approving…" : "Approve Production Pack"}
             </Button>
-            {job.outputs.length < EXPECTED_OUTPUT_FILES && (
+            {job.outputs.length < MIN_VERIFIED_OUTPUT_FILES && (
               <p className="mt-1 text-[11px] text-gray-500">
-                All {EXPECTED_OUTPUT_FILES} output files have to exist before the pack can be approved.
+                Every verified output file has to exist before the pack can be approved (at least {MIN_VERIFIED_OUTPUT_FILES}; {EXPECTED_OUTPUT_FILES} on the current contract).
               </p>
             )}
           </>

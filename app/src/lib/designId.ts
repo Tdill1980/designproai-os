@@ -26,6 +26,45 @@ export function formatDid(canonicalId?: string | null): string | null {
   return `DID-${hex.slice(0, 8).toUpperCase()}`;
 }
 
+/**
+ * THE ID LADDER (owner ruling). The Generation ID is minted at Call 1 — the
+ * moment the vehicle is entered and Generate is pressed. The Design ID
+ * (`DID-` + the first 8 hex of that generation id) and the Order ID are minted
+ * when the Production Pack is PURCHASED. Before that purchase a customer surface
+ * has exactly one identity to show, and it is the Generation ID.
+ *
+ * `formatDid` above stays the one DID derivation for the post-purchase
+ * surfaces (WrapBox, the vault, the QC certificate). These two helpers are
+ * what a PRE-purchase customer surface uses instead.
+ */
+
+/** Short Generation ID for a customer chip: the first 8 hex, upper-case, no `DID-`. */
+export function shortGenerationId(generationId?: string | null): string | null {
+  const hex = String(generationId || "").replace(/-/g, "");
+  if (hex.length < 8) return null;
+  return hex.slice(0, 8).toUpperCase();
+}
+
+export type CustomerDesignIdentity = { label: "Design ID" | "Generation ID"; value: string };
+
+/**
+ * The one identity chip a customer surface shows for a design.
+ *
+ * `purchasedDesignId` is the DID a PURCHASE minted (a WrapBox / production-pack
+ * row's `design_id`), never one derived on the spot from the generation id —
+ * deriving it is what printed a DID before anything was bought. With no
+ * purchase signal the chip is the Generation ID, and nothing else.
+ */
+export function customerDesignIdentity(args: {
+  generationId?: string | null;
+  purchasedDesignId?: string | null;
+}): CustomerDesignIdentity | null {
+  const did = String(args.purchasedDesignId || "").trim();
+  if (/^DID-[0-9A-F]{8}$/.test(did)) return { label: "Design ID", value: did };
+  const short = shortGenerationId(args.generationId);
+  return short ? { label: "Generation ID", value: short } : null;
+}
+
 /** Tolerant admin_notes parse (string or object). */
 export function parseAdminNotes(raw: unknown): Record<string, any> {
   try {

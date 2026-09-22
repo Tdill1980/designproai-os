@@ -92,7 +92,7 @@ const { graphEnabled: atlasCall1GraphEnabled } = require("./atlas-call1-graph.cj
 // typed refusal, so everything downstream of acceptance is untouched.
 const { renderThreeZoneExample } = require("./atlas-three-zone-example.cjs");
 const {
-  PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT,
+  PANEL_PROOF_TOPOLOGY, PANEL_PROOF_TOPOLOGY_CONTRACT, CALL1_INPUT_PATH,
   authorPanelProofMaster, panelProofEnabled, createPanelProofTransport,
   // The three-zone document, derived from the accepted master on every
   // topology. Same functions the panel-proof pass runs -- a second producer of
@@ -395,7 +395,7 @@ function normalizedGeometryAuthority(authority) {
     };
   }
   if (authority.contract !== GEOMETRY_AUTHORITY_CONTRACT) {
-    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority contract is invalid");
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "Geometry authority contract is invalid");
   }
   // THREE PROVENANCE CLASSES, NOT TWO.
   //
@@ -420,13 +420,13 @@ function normalizedGeometryAuthority(authority) {
     || (status === "validated" && authority.operatorValidated !== true)
     || (status === "genie-catalog" && authority.operatorValidated !== false)
     || (status === "provisional" && (authority.operatorValidated !== false || !authority.estimatorContract))) {
-    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority state is invalid");
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "Geometry authority state is invalid");
   }
   const sourceUrls = Array.isArray(authority.sourceUrls)
     ? [...new Set(authority.sourceUrls.map(String).filter((url) => /^https:\/\//.test(url)))]
     : [];
   if (status === "provisional" && (!authority.candidateId || !sourceUrls.length)) {
-    throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional A.T.L.A.S. geometry requires a candidate identity and citations");
+    throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional geometry requires a candidate identity and citations");
   }
   // A measured row must say WHICH row, or the dimensions on the panels cannot be
   // traced back to anything.
@@ -1957,16 +1957,88 @@ async function callAtlasArtboardEdge(body, { logger = () => {}, fetchImpl = fetc
     const expectedTeaching = body?.teachingProofIdentity;
     const actualTeaching = payload?.teachingProofIdentity;
     const customerImageCount = Array.isArray(body?.referenceImagesBase64) ? body.referenceImagesBase64.length : 0;
-    if (payload?.fieldContract || !body?.teachingProofStoragePath || !body?.guideStoragePath
-      || !expectedTeaching || !actualTeaching
-      || payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION
-      || Number(payload?.modelInputImageCount) !== customerImageCount + 2
-      || ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]
-        .some((key) => actualTeaching[key] !== expectedTeaching[key])) {
-      throw new FlatAtlasError(
-        "flat_atlas_edge_topology_contract_mismatch",
-        "Six-surface authoring requires the pinned teaching proof, target guide, matching prompt version and no field contract",
-      );
+    // ⛔ THE GOLD-STANDARD ARTBOARDS COUNT. THEY ARE MODEL INPUTS TOO.
+    //
+    // This read `customerImageCount + 2` — the teaching proof and the target
+    // guide — and the edge ALSO attaches up to two `designpanel-artboard-
+    // examples/` quality references as `inlineData`. `modelInputImageCount` is
+    // a count of every inline image in the request, so the moment that bucket
+    // was populated every six-surface Call 1 came back one or two over and was
+    // refused HERE, after the image call had already been made and paid for.
+    //
+    // Live, designproai-os-prod 2026-09-21: `52a75e92` reached outputs_ready at
+    // 02:14, and every six-surface request after the edge began attaching them
+    // failed `flat_atlas_edge_topology_contract_mismatch`, non-retryable, while
+    // the edge's own log recorded a finished master ("gemini responded in
+    // 39560ms … 11 parts", 40268ms total, 9.5 MB). The design existed; the
+    // runtime threw it away.
+    //
+    // The guard stays EXACT rather than becoming a range: the edge reports how
+    // many it applied, so the expected count is still a single number and an
+    // unexplained extra image is still a refusal.
+    const qualityArtboardCount = Number(payload?.qualityArtboardsApplied || 0);
+    // ⛔ THE GUARD NAMES THE RULE IT ENFORCED.
+    //
+    // These eight conditions all threw ONE code with ONE sentence, so from
+    // outside — a failed row, a customer's screen, a log line — they are
+    // indistinguishable. #590 fixed the image count, correctly, and the next
+    // failure looked identical to the one it fixed, so it read as "the fix did
+    // not work" rather than "a different rule fired". Live, 2026-09-21: the
+    // owner hit this at 23:07:42 on a build carrying that fix.
+    //
+    // Naming the rule costs nothing and leaks nothing: these are contract
+    // facts, not secrets, and the counts are already reported by the edge.
+    const mismatches = [];
+    if (payload?.fieldContract) mismatches.push("field_contract_present");
+    if (!body?.teachingProofStoragePath) mismatches.push("teaching_proof_path_absent");
+    if (!body?.guideStoragePath) mismatches.push("guide_path_absent");
+    if (!expectedTeaching) mismatches.push("expected_teaching_identity_absent");
+    if (!actualTeaching) mismatches.push("returned_teaching_identity_absent");
+    if (payload?.promptVersion !== ATLAS_ARTBOARD_EDGE_PROMPT_VERSION) {
+      // A STALE EDGE DEPLOY LOOKS EXACTLY LIKE THIS, and it is the one cause a
+      // reader cannot act on from the token alone: `deploy-production.yml` does
+      // not ship Supabase edge functions -- `deploy-edge-functions.yml` does,
+      // by dispatch only -- so the runtime can roll while the edge stays behind.
+      mismatches.push(`prompt_version(expected=${ATLAS_ARTBOARD_EDGE_PROMPT_VERSION},got=${payload?.promptVersion || "none"}`
+        + ",hint=redeploy_the_edge_function)");
+    }
+    if (!Number.isInteger(qualityArtboardCount) || qualityArtboardCount < 0 || qualityArtboardCount > 2) {
+      mismatches.push(`quality_artboard_count(${payload?.qualityArtboardsApplied})`);
+    } else if (Number(payload?.modelInputImageCount) !== customerImageCount + 2 + qualityArtboardCount) {
+      mismatches.push(`model_input_image_count(expected=${customerImageCount + 2 + qualityArtboardCount}`
+        + `,got=${payload?.modelInputImageCount},customer=${customerImageCount},quality=${qualityArtboardCount})`);
+    }
+    if (expectedTeaching && actualTeaching) {
+      for (const key of ["contract", "purpose", "version", "flattenedTopViewContentHash", "flattenedTopViewByteSize"]) {
+        if (actualTeaching[key] !== expectedTeaching[key]) mismatches.push(`teaching_identity.${key}`);
+      }
+    }
+    // ⛔ A CONTRACT MISMATCH NEVER DISCARDS A DESIGN. Owner ruling, 2026-09-21.
+    //
+    // Every rule above describes METADATA about the response -- how many inline
+    // images the edge counted, which prompt version it stamped, whether the
+    // teaching identity echoes byte for byte. Not one of them inspects the
+    // artwork. Throwing here destroyed designs that `design-panel-ai-generate`
+    // had already authored AND BILLED: #590 recorded "gemini responded in
+    // 42604ms ... 9.5 MB" and the runtime refused it anyway over a count that
+    // was off by one.
+    //
+    // It protected nothing the steps below do not already protect.
+    // `masterStoragePath` must be present, the master must download, and every
+    // gate after this judges the PIXELS. A response with no usable master still
+    // fails, loudly, a few lines down.
+    //
+    // So the mismatch is recorded and carried, never fatal. The design
+    // survives; the log says exactly which rule disagreed.
+    if (mismatches.length) {
+      logger(`atlas call 1: six-surface contract mismatch (kept, not fatal): ${mismatches.join(", ")}`);
+      // `generationId` is NOT in this function's scope -- it takes (body,
+      // options) and options carries no generation id. Reading it here would
+      // throw a ReferenceError on the very path this block exists to rescue,
+      // turning a tolerated mismatch into a crash. The body carries it.
+      logger?.warn?.("flat_atlas_edge_topology_contract_mismatch_tolerated", {
+        generationId: body?.generationId ?? null, mismatches,
+      });
     }
   }
   // The master comes back by STORAGE PATH and is read with the server client:
@@ -2207,7 +2279,7 @@ function assertMasterRequestWithinLimit(parts, maxBytes = MASTER_REQUEST_MAX_BYT
   if (byteSize > boundedMax) {
     throw new FlatAtlasError(
       "flat_atlas_master_request_too_large",
-      `The one A.T.L.A.S. design request is ${byteSize} bytes, above the bounded ${boundedMax}-byte Gemini request budget`,
+      `The one Call 1 design request is ${byteSize} bytes, above the bounded ${boundedMax}-byte Gemini request budget`,
     );
   }
   return byteSize;
@@ -2795,7 +2867,7 @@ function assertAtlasGeometryBasis(atlas, expectedManifestHash) {
   if (atlas?.manifestAsset?.contentHash !== expectedManifestHash) {
     throw new FlatAtlasError(
       "flat_atlas_geometry_basis_changed",
-      "The immutable A.T.L.A.S. geometry basis changed; start a new design revision instead of reusing stale artwork",
+      "The immutable geometry basis changed; start a new design revision instead of reusing stale artwork",
     );
   }
   return atlas;
@@ -2831,7 +2903,7 @@ function assertAtlasReuseContract(atlas, {
   if (!current) {
     throw new FlatAtlasError(
       "flat_atlas_master_contract_stale",
-      "The saved A.T.L.A.S. master predates the current DesignPanel prompt/provider/master-QC contract; start a new design request instead of reusing it",
+      "The saved print master predates the current DesignPanel prompt/provider/master-QC contract; start a new design request instead of reusing it",
     );
   }
   return atlas;
@@ -3272,38 +3344,337 @@ async function recordAtlasRefusal(supabase, row, logger = () => {}) {
 }
 
 /**
+ * THE SIX-SURFACE MASTER GATES, RECORDED ON THE PANEL PROOF AS ADVICE.
+ *
+ * `deterministicMasterChecks` and `classifyAtlasCandidate` were built to
+ * convict a model drawing a VEHICLE into a six-surface sheet (silhouettes,
+ * die-cut flanks, a layout map printed as ink). The panel production proof is
+ * a different document with its own refusals (`PanelProofRefusal`: a
+ * transposed crop, a blank cell, a wrong-shaped sheet, a missing store), and
+ * its assembled master is six code-cut panels placed into the GENIE zones. On
+ * that master the vehicle gates measured `rear edgeHoleRatio=0.42` on
+ * 2026-09-21 and killed the run -- a refusal of a document the gate was never
+ * calibrated on. Owner: "System must not issue fails because of no atlas."
+ *
+ * So on the panel-proof topology both gates still RUN and both verdicts are
+ * RECORDED here, beside the accepted master, for PanelPro's human QC to read;
+ * neither refuses, neither writes a ledger row, and the deterministic cut-out
+ * FILL still runs because it is repair, not a gate.
+ */
+const MASTER_GATE_ADVISORY_CONTRACT = "designpro.atlas-master-gate-advisory.v1";
+function panelProofGateAdvisory({ candidate, deterministic, outputClass, stage = "candidate", prior = null }) {
+  const blocking = Array.isArray(deterministic?.blockingFailures) ? deterministic.blockingFailures.map(String) : [];
+  const cutouts = Array.isArray(deterministic?.cutoutFindings)
+    ? deterministic.cutoutFindings.map((item) => ({ surfaceKey: String(item?.surfaceKey || ""), finding: String(item?.finding || "") }))
+    : [];
+  const classBlocking = outputClass?.blocking === true;
+  const findings = [
+    ...blocking.map((finding) => ({ code: "flat_atlas_master_deterministic_failed", finding })),
+    ...(classBlocking ? [{
+      code: outputClass.disposition === "map_drawn" ? "flat_atlas_master_map_drawn" : "flat_atlas_master_output_class_invalid",
+      finding: `output class ${outputClass.disposition} (confidence ${outputClass.confidence ?? "n/a"}): ${outputClass.evidence || ""}`.trim(),
+    }] : []),
+  ];
+  return {
+    contract: MASTER_GATE_ADVISORY_CONTRACT,
+    topology: PANEL_PROOF_TOPOLOGY,
+    advisory: true,
+    refused: false,
+    stage,
+    candidate: Number(candidate) || 1,
+    deterministic: {
+      contract: MASTER_QC_CONTRACT,
+      accepted: deterministic?.accepted === true,
+      blockingFailures: blocking,
+      cutoutFindings: cutouts,
+      zones: (Array.isArray(deterministic?.zones) ? deterministic.zones : []).map((zone) => ({
+        surfaceKey: zone.surfaceKey,
+        edgeHoleRatio: Number(zone.edgeHoleRatio ?? 0),
+        nonBlackFraction: Number(zone.nonBlackFraction ?? 0),
+        opaqueRatio: Number(zone.opaqueRatio ?? 0),
+      })),
+    },
+    outputClass: outputClass ? {
+      contract: outputClass.contract || null, disposition: outputClass.disposition || null,
+      blocking: classBlocking, confidence: outputClass.confidence ?? null,
+      evidence: outputClass.evidence || null, candidateSha256: outputClass.candidateSha256 || null,
+    } : null,
+    findings,
+    // The verdicts on the candidate BEFORE the fill, when this receipt is the
+    // post-repair one. Never lost, never merged: a reader can see what the
+    // sheet arrived as and what the repair made of it.
+    prior: prior && prior.stage !== stage ? { stage: prior.stage, findings: prior.findings, deterministic: prior.deterministic, outputClass: prior.outputClass } : (prior?.prior || null),
+  };
+}
+
+/**
+ * THE ADVISORY INSPECTOR RUNS OFF THE CRITICAL PATH ON THE PANEL PROOF.
+ * (Latency, 2026-09-22: measured p50 request->master 89 s against a 60 s SLO,
+ * with the output-class inspector -- one Gemini Flash call, ~11 s p50 -- awaited
+ * INSIDE the candidate loop before acceptance, on a topology where its verdict
+ * refuses nothing.)
+ *
+ * On six-surface / field / hero-driver the inspector is a GATE and stays where
+ * it is: deterministic checks, then the class question, then acceptance, in
+ * that order, awaited. Nothing here touches that branch.
+ *
+ * On the panel proof both verdicts are ADVISORY (`panelProofGateAdvisory`):
+ * recorded on the receipt for PanelPro's human QC, never a refusal. So the
+ * DETERMINISTIC findings -- already measured, free -- are recorded the moment
+ * the candidate is accepted, and the class question is asked in the background
+ * while the fill, the checkpoint, the panel cut and the Driver photographer
+ * request proceed. The verdict is JOINED before the revision row is written,
+ * so the row carries exactly the receipt it carried when the call was awaited
+ * inline: same `masterGateAdvisory` shape, same `stage`/`prior` chain, same
+ * `masterOutputClass`.
+ *
+ * What changes on the receipt while the verdict is in flight: the advisory
+ * carries `outputClass: null` and `outputClassReceipt` is null. That interim
+ * state is a VALID panel-proof acceptance -- `writeAcceptedCheckpoint` requires
+ * the advisory receipt itself (contract, advisory:true, refused:false), not the
+ * class verdict -- so a checkpoint written in that window resumes, and the
+ * resumed worker asks the class question again on the accepted bytes rather
+ * than recording null as fact.
+ *
+ * The queue is sequential (candidate, then repaired when the fill changed the
+ * sheet), so a repaired run still records two verdicts on two sheets exactly as
+ * before. Only the LAST enqueued stage is published, so a checkpoint can never
+ * carry a candidate-stage receipt over a repaired master.
+ */
+function createPanelProofAdvisoryClassifier({ classify = classifyAtlasCandidate, provider, zones, timings, logger, publish }) {
+  const queue = [];
+  let index = 0;
+  let running = null;
+  let prior = null;
+  let lastReceipt = null;
+  const record = timings && typeof timings.advisoryClass === "object" && timings.advisoryClass
+    ? timings.advisoryClass : null;
+  const drain = async () => {
+    while (index < queue.length) {
+      const entry = queue[index];
+      const startedAt = Date.now();
+      let receipt = null;
+      try {
+        receipt = await classify({ provider, bytes: entry.bytes, zones });
+      } catch (cause) {
+        // `classifyAtlasCandidate` already fails OPEN with an `unavailable`
+        // receipt on transport failure; a throw here is a programming fault.
+        // It is logged and the receipt stays null ("not measured") -- it is
+        // never allowed to reject into the accepted design.
+        logger?.(`atlas call 1: advisory output-class inspector failed on the ${entry.stage} sheet `
+          + `(recorded as not measured): ${String(cause?.message || cause).slice(0, 200)}`);
+      }
+      if (record) {
+        record.ms += Date.now() - startedAt;
+        record.calls += 1;
+      }
+      prior = panelProofGateAdvisory({
+        candidate: entry.candidate, deterministic: entry.deterministic, outputClass: receipt,
+        stage: entry.stage, prior: entry.prior !== undefined ? entry.prior : prior,
+      });
+      lastReceipt = receipt;
+      index += 1;
+      if (receipt?.blocking) {
+        logger?.(`atlas call 1: output class ${receipt.disposition} on the ${entry.stage} panel proof `
+          + `(advisory, recorded, not refused): ${String(receipt.evidence || "").slice(0, 200)}`);
+      }
+      if (index === queue.length) publish({ outputClassReceipt: lastReceipt, masterGateAdvisory: prior });
+    }
+  };
+  const kick = () => {
+    if (running || index >= queue.length) return;
+    running = drain().finally(() => { running = null; kick(); });
+  };
+  return {
+    /** `{ stage, candidate, deterministic, bytes, prior? }` -- verdicts are asked in enqueue order. */
+    enqueue(entry) { queue.push(entry); kick(); },
+    /** True while a verdict is still owed. */
+    pending() { return running !== null || index < queue.length; },
+    /** Waits for every enqueued verdict; the last publish has already landed when this resolves. */
+    async settle() {
+      while (running || index < queue.length) {
+        kick();
+        await running;
+      }
+      return { outputClassReceipt: lastReceipt, masterGateAdvisory: prior, calls: index };
+    },
+  };
+}
+
+/**
+ * THE PARENT PROOF, STAGED WHERE THE PROOF EDGE WILL ATTACH IT (owner,
+ * 2026-09-22: "Revisions should auto generate edits directly to panel pro
+ * production proof").
+ *
+ * A revision's reference is the parent's ACCEPTED three-zone proof sheet --
+ * the document the customer approved and is now asking to change -- read off
+ * the parent revision row (`metadata.panelProofAuthoring`, the same identity
+ * `readStoredRevision` reconstructs `proofSheet` from). A parent authored on
+ * an older topology has no sheet; its accepted MASTER (already hash-verified
+ * by the revision intake as `revisionContext.parentMaster`) stands in, so a
+ * V2 of a six-surface V1 is still an edit of that design and not a fresh one.
+ *
+ * It is downscaled to a 2048px long edge and written under the edge's own
+ * `atlas-call1-inputs/<sha256>.png` allowlist (the `stageHeroView` pattern:
+ * `CALL1_INPUT_PATH` is asserted here so a path the edge would refuse never
+ * leaves), and crosses as `{storagePath, contentHash, byteSize}` -- an
+ * identity, never pixels (RULE 0.39). Deterministic, so a resumed revision
+ * re-uploads nothing.
+ */
+async function stageParentProofReference({ supabase, store, parentRevisionId, revisionContext, logger = () => {} }) {
+  const readParentSheet = async () => {
+    try {
+      const { data, error } = await supabase.from("designpro_flat_atlas_revisions")
+        .select("metadata").eq("id", parentRevisionId).maybeSingle();
+      if (error || !data) return null;
+      const authoring = data.metadata?.panelProofAuthoring;
+      const storagePath = authoring?.proofStoragePath;
+      const contentHash = String(authoring?.proofSha256 || "").toLowerCase();
+      const byteSize = Number(authoring?.proofByteSize || 0);
+      if (!storagePath || !HASH_RE.test(contentHash) || !byteSize) return null;
+      return { storagePath, contentHash, byteSize, source: "parent-proof-sheet" };
+    } catch {
+      return null;
+    }
+  };
+  const parentMaster = revisionContext?.parentMaster;
+  const candidates = [
+    await readParentSheet(),
+    parentMaster?.storagePath && HASH_RE.test(String(parentMaster.contentHash || ""))
+      ? { storagePath: parentMaster.storagePath, contentHash: String(parentMaster.contentHash).toLowerCase(),
+          byteSize: Number(parentMaster.byteSize || 0), source: "parent-master" }
+      : null,
+  ].filter(Boolean);
+  let lastFailure = null;
+  for (const source of candidates) {
+    try {
+      const bytes = await downloadVerified(supabase, source.storagePath, source.contentHash, source.byteSize);
+      const staged = await sharp(bytes, { limitInputPixels: false })
+        .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true })
+        .png().toBuffer();
+      const contentHash = sha256(staged);
+      const storagePath = `atlas-call1-inputs/${contentHash}.png`;
+      if (!CALL1_INPUT_PATH.test(storagePath)) {
+        throw new FlatAtlasError("flat_atlas_parent_proof_path_invalid", `parent proof path the edge would refuse: ${storagePath}`);
+      }
+      await store.putImmutableBytes({ storagePath, bytes: staged, contentType: "image/png" });
+      logger(`atlas call 1: parent ${source.source} staged as ${contentHash.slice(0, 12)} for the revision`);
+      return { storagePath, contentHash, byteSize: staged.length, source: source.source,
+        sourceStoragePath: source.storagePath, sourceContentHash: source.contentHash };
+    } catch (cause) {
+      lastFailure = cause;
+      logger(`atlas call 1: parent ${source.source} could not be staged (${String(cause?.message || cause).slice(0, 160)})`);
+    }
+  }
+  throw new FlatAtlasError("flat_atlas_parent_proof_unavailable",
+    `The revision's parent proof could not be staged as a reference: ${String(lastFailure?.message || "no parent artifact")}`.slice(0, 400),
+    true);
+}
+
+/**
+ * The revision's own edit assets (a reference photo, a logo, an edited panel
+ * the customer uploaded with the instruction), as Gemini parts, so the
+ * panel-proof pass stages them beside the VisionBoard references. Best effort:
+ * these are optional extra references; the parent proof above is the
+ * load-bearing one, and a reference that cannot be read is logged, not fatal.
+ */
+async function revisionEditAssetParts({ supabase, revisionContext, logger = () => {} }) {
+  const parts = [];
+  for (const asset of Array.isArray(revisionContext?.editAssets) ? revisionContext.editAssets : []) {
+    try {
+      const bytes = await downloadVerified(supabase, asset.storagePath, String(asset.contentHash || "").toLowerCase(), Number(asset.byteSize));
+      const png = await sharp(bytes, { limitInputPixels: false })
+        .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+        .png().toBuffer();
+      parts.push({ inlineData: { mimeType: "image/png", data: png.toString("base64") } });
+    } catch (cause) {
+      logger(`atlas call 1: revision edit asset ${String(asset?.storagePath || "").slice(-48)} skipped (${String(cause?.message || cause).slice(0, 120)})`);
+    }
+  }
+  return parts;
+}
+
+/**
  * Topology selection is the ONLY thing this wrapper does. A caller that names a
- * topology (the fail-over recursions below, a harness) gets exactly that; a
- * caller that names none gets hero-driver when the deploy flag says so and a
- * first-generation is being authored, otherwise the six-surface default.
- * Revision edits keep their parent's topology, exactly as the field fail-over
- * does.
+ * topology (the legacy-resume dispatch, a harness) gets exactly that; a caller
+ * that names none gets THE PANEL PRODUCTION PROOF, for a first generation and
+ * for every revision alike (owner ruling 2026-09-22, below).
  */
 async function generateOrReuseFlatAtlas(options) {
-  // ⛔ THE PANEL-PROOF ROUTING IS GONE FROM CALL 1 (owner ruling, Trish
-  // 2026-09-21: "kill the production-panel-proof bypass — put Call 1 back on
-  // the real DesignPanelAI brain where the enriched brief, style descriptors
-  // and visual quality references are actually consumed").
+  // THE PANEL PRODUCTION PROOF IS CALL 1 (owner, Trish 2026-09-21: "Put this
+  // in call 1" — "immediately seeded with the vehicle make and model entered by
+  // customer hard wired then ace is fed the panel production proof example and
+  // designer persona edge functions to create the graphics for the 3 zone
+  // proof, all using DAG orchestration").
   //
-  // `production-panel-proof` is its own Call-1 endpoint and, as its own header
-  // says, "cannot reach design-panel-ai-generate at all". Routing Call 1
-  // through it on 2026-09-19 did not revert the DesignPanelAI work — it
-  // BYPASSED it, and with it every input the brain reads: the enriched brief,
-  // `styleDescriptors`, the VisionBoard branch, LOGO_REQUIREMENT,
-  // COMMERCIAL_DEPTH and the gold-standard artboards. The owner judged the
-  // output against the Sept 17-18 designs and it is not the same product.
+  // ⚠️ THIS REVERSES `c1dbe30e`, AND ITS STATED REASON IS THE THING THAT
+  // CHANGED. That commit pulled this routing out because `production-panel-proof`
+  // "BYPASSED" the brain and lost "the enriched brief, `styleDescriptors`, the
+  // VisionBoard branch, LOGO_REQUIREMENT, COMMERCIAL_DEPTH and the gold-standard
+  // artboards". That was TRUE when it was written and is FALSE now, measured in
+  // the function rather than inferred: it executes the shared DesignIQ prompt
+  // assembly (named in `_shared/designiq-assembly.ts`, never in this file — the
+  // "no in-runtime creative builder" lock is what keeps it that way) with
+  // `atlasFlatMaster: true` — the same branch Call 1 runs, so LOGO_REQUIREMENT,
+  // COMMERCIAL_DEPTH, the concept translation, the layered build order and the
+  // customer's FINISH_SPEC all fire — and passes `creativeDirection`,
+  // `styleDescriptors`, `visionboard_intent`, `visionBoardImages`, `brandColors`
+  // and the hard-wired `vehicleYear`/`vehicleMake`/`vehicleModel`/`vehicleType`,
+  // plus up to two `designpanel-artboard-examples/` gold-standard sheets.
   //
-  // So Call 1 falls through to the contracts that DO execute the real
-  // DesignPanelAI creative assembly through the deployed edge (RULE 0.26): field-first
-  // when the flag says so, six-surface otherwise.
+  // The seam that made the old claim true closed underneath it:
+  // `_shared/designiq-assembly.ts` is now generated by
+  // `scripts/build-designiq-shared.mjs` as a mechanical slice of
+  // `design-panel-ai-generate/index.ts`, asserted byte-identical to a fresh
+  // slice by `tests/designiq-shared-assembly.test.mjs`. It is the same A.C.E.,
+  // not a copy of it, so this is no longer a brain-less path and the sentence
+  // "a flag must not be able to put the customer back on one" no longer
+  // describes this route.
   //
-  // WHAT IS NOT DELETED: `atlas-panel-proof-topology.cjs`, the
-  // `production-panel-proof` function, the three-zone document and its read
-  // path all stay, and `authoringTopology: "panel-proof"` still runs them for a
-  // probe or a caller that names it. The three-zone proof is a PRODUCTION
-  // DOCUMENT; it was never the design authority. `DESIGNPRO_ATLAS_PANEL_PROOF`
-  // no longer selects Call 1 — a flag must not be able to put the customer back
-  // on a brain-less path, which is exactly how this shipped unnoticed.
+  // ⛔ THE PANEL PRODUCTION PROOF IS THE ONLY CALL 1 (owner ruling, Trish
+  // 2026-09-22, verbatim: "There isn't any other Call 1 — the only call is
+  // panel pro production proof, which is source for all print-ready files and
+  // assets." "Revisions should auto generate edits directly to panel pro
+  // production proof." "System must not issue fails because of no atlas."
+  // "Nothing may block orchestration.")
+  //
+  // So this selects the panel proof for EVERY new authoring AND every revision
+  // (sequence > 1 carries its parent's accepted proof sheet and the customer's
+  // instruction into the same pass -- see `stageParentProofReference`).
+  // `panelProofEnabled()` is NO LONGER A ROUTER: the flag is read and logged so
+  // the deploy receipt stays honest, and every deploy-workflow lock on it still
+  // holds, but `off` cannot put a customer on another contract, because there
+  // is no other contract to put them on.
+  //
+  // HERO-DRIVER, FIELD-FIRST AND SIX-SURFACE BELOW ARE DEAD BUT RETAINED. They
+  // are unreachable from this routing (the unconditional return above them),
+  // and they are NOT deleted: the resume/read paths keyed on a stored
+  // `manifest.topology`, `metadata.authoringTopology` and the accepted
+  // checkpoints still dispatch to them so an in-flight or historical request
+  // authored on one of them stays readable and resumable (owner protection #1,
+  // `tests/atlas-historical-read.test.mjs`). A caller that NAMES a topology (a
+  // harness, or the legacy-resume dispatch inside the panel-proof pass) still
+  // gets exactly that.
+  if (options?.authoringTopology === undefined) {
+    if (!panelProofEnabled()) {
+      options?.logger?.("atlas call 1: DESIGNPRO_ATLAS_PANEL_PROOF reads off; the panel production proof is the only Call 1 and runs regardless");
+    }
+    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: PANEL_PROOF_TOPOLOGY });
+  }
+  return generateOrReuseFlatAtlasResolved(options);
+}
+
+/**
+ * DEAD BUT RETAINED: the routing that selected hero-driver, field-first and
+ * six-surface before 2026-09-22. Nothing in production calls it -- the entry
+ * point above routes every unnamed request to the panel proof -- and it is
+ * kept, byte for byte, so the retained mechanics behind it (the six-surface
+ * candidate loop, the one-field fail-over, the field-first hand-off, the
+ * hero cascade's fail-over) stay executable by their own locks and stay
+ * available to the legacy-resume dispatch inside the panel-proof pass.
+ * Exported under `_test` only.
+ */
+async function generateOrReuseFlatAtlasLegacyRouting(options) {
   if (options?.authoringTopology === undefined && heroDriverEnabled()
     && options?.parentManifest == null && (options?.revisionSequence ?? 1) === 1) {
     return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY });
@@ -3391,10 +3762,10 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // hands back one assembled master; unlike it, one image call does all six and
   // the cut is deterministic.
   const panelProof = authoringTopology === PANEL_PROOF_TOPOLOGY;
-  if (panelProof && parentManifest) {
-    throw new FlatAtlasError("flat_atlas_panel_proof_edit_unsupported",
-      "A revision edit keeps its parent's topology; the panel-proof pass is for first authoring only");
-  }
+  // A revision edit runs THROUGH the panel-proof pass (owner, 2026-09-22):
+  // same manifest as its parent, the parent's accepted proof sheet as a
+  // reference, the instruction folded into the brief. The former
+  // `flat_atlas_panel_proof_edit_unsupported` guard is gone on purpose.
   if (heroDriver && parentManifest) {
     throw new FlatAtlasError("flat_atlas_hero_edit_unsupported",
       "A revision edit keeps its parent's topology; the hero-driver cascade is for first authoring only");
@@ -3535,6 +3906,27 @@ async function generateOrReuseFlatAtlasResolved(options) {
       : panelProof ? PANEL_PROOF_TOPOLOGY_CONTRACT : undefined,
   }));
   const existing = await loadLatestAtlasRevision(supabase, requestId);
+  // LEGACY RESUME (owner protection #1). A request whose stored revision was
+  // accepted on six-surface, field or hero-driver -- in flight when the
+  // routing became panel-proof-only, or simply historical -- is dispatched to
+  // THAT pass, whose own reuse checks (manifest, prompt and example-set hashes)
+  // then run on the contract that authored it. Measuring a six-surface
+  // revision against the panel-proof prompt hash would refuse the customer's
+  // own accepted artwork.
+  if (panelProof && existing) {
+    const storedTopology = existing.metadata?.authoringTopology
+      || (existing.manifest?.topology === FIELD_TOPOLOGY ? "field" : null)
+      || (existing.metadata?.masterPromptHash && existing.metadata.masterPromptHash !== promptHash ? "six-surface" : null);
+    if (storedTopology && storedTopology !== PANEL_PROOF_TOPOLOGY) {
+      logger(`atlas call 1: stored revision ${existing.revisionSequence} was authored on ${storedTopology}; resuming it on that contract`);
+      return generateOrReuseFlatAtlasResolved({
+        ...options, authoringTopology: storedTopology,
+        ...(storedTopology === "field"
+          ? { maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS, failoverFrom: existing.metadata?.authoringFailover || null }
+          : {}),
+      });
+    }
+  }
   if (existing && fieldResumable && existing.manifest?.topology === FIELD_TOPOLOGY) {
     // The stored design was accepted on the one-field fail-over. Its own reuse
     // checks (manifest, prompt and example-set hashes) run on that contract.
@@ -3549,7 +3941,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
-      throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
+      throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved print master does not match the identity reserved for this request");
     }
     if (existing.revisionSequence !== revisionSequence || existing.parentRevisionId !== parentRevisionId
       || (existing.metadata?.revisionContextHash ?? null) !== revisionContextHash) {
@@ -3574,6 +3966,32 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // the fail-over before the revision row landed; prove that with the field
     // identity before resuming on that contract, and otherwise refuse as before.
     if (cause?.code !== "flat_atlas_checkpoint_identity_mismatch") throw cause;
+    if (panelProof) {
+      // LEGACY CHECKPOINT (owner protection #1): the accepted checkpoint at
+      // this request's path belongs to a six-surface, field or hero-driver
+      // pass whose revision row never landed. Proven against each legacy
+      // identity in turn, then resumed on that contract -- the same move the
+      // field-first routing makes for its six-surface tail below.
+      const envFinishing = String(process.env.DESIGNPRO_ATLAS_PANEL_FINISH || "").trim().toLowerCase() === "on" ? "on" : "off";
+      const legacyIdentities = [
+        ["six-surface", { ...checkpointIdentity, finishingMode: envFinishing }],
+        ["field", { ...checkpointIdentity, finishingMode: envFinishing,
+          manifestHash: sha256(canonicalBytes(fieldManifestFrom(sixSurfaceManifest))) }],
+        [HERO_DRIVER_TOPOLOGY, { ...checkpointIdentity, finishingMode: HERO_DRIVER_TOPOLOGY }],
+      ];
+      for (const [topology, identity] of legacyIdentities) {
+        const legacy = await readAcceptedCheckpoint({ supabase, bucket: BUCKET, identity }).catch(() => null);
+        if (!legacy) continue;
+        logger(`atlas call 1: resuming the accepted ${topology} checkpoint for ${requestId} on its own contract`);
+        return generateOrReuseFlatAtlasResolved({
+          ...options, authoringTopology: topology,
+          ...(topology === "field"
+            ? { maxAuthoringAttempts: FIELD_FAILOVER_ATTEMPTS, failoverFrom: legacy.state?.authoringFailover || null }
+            : {}),
+        });
+      }
+      throw cause;
+    }
     if (fieldFirstRouted) {
       // A field-first request whose six-surface tail was accepted before its
       // revision row landed. Proven against the six-surface identity first,
@@ -3688,7 +4106,31 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const customerImageParts = [
     ...(panelProof ? [] : await verifiedCustomerLogoPart(supabase, input)),
     ...customerReferenceParts,
+    // A revision's own uploaded edit assets ride beside the references on the
+    // panel-proof pass. Best effort; see `revisionEditAssetParts`.
+    ...(panelProof && revisionContext ? await revisionEditAssetParts({ supabase, revisionContext, logger }) : []),
   ].filter((part) => part?.inlineData?.data);
+  // THE REVISION, FOR THE PANEL-PROOF PASS: the parent's accepted proof sheet
+  // staged as a reference, the instruction, the affected surfaces, and the
+  // identities that make V2 its own durable run (see `authorPanelProof`).
+  // Null on a first generation.
+  const panelProofRevision = panelProof && revisionContext
+    ? {
+        sequence: revisionSequence,
+        parentRevisionId,
+        contextHash: revisionContextHash,
+        instruction: String(revisionContext.instruction || "").trim(),
+        affectedSurfaces: [...revisionContext.affectedSurfaces],
+        parentProof: await stageParentProofReference({ supabase, store, parentRevisionId, revisionContext, logger }),
+      }
+    : null;
+  // The Zone-3 originals reader, shared by the in-process panel-proof pass and
+  // the derived document below.
+  const proofAssetDownloader = async (identity) => {
+    const { data, error } = await supabase.storage.from("wrap-files").download(identity.storagePath);
+    if (error || !data) throw new Error(`${identity.storagePath}: ${error?.message || "missing"}`);
+    return Buffer.from(await data.arrayBuffer());
+  };
   // Both pinned image inputs are still built, stored and OFFERED. They remain
   // the human installer map and the durable forensic record, and the legacy
   // six-container branch consumes them. `atlasEdgeRequestBody` drops them when
@@ -3722,6 +4164,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // 2026-09-01): flat_atlas, or unavailable when the inspector transport
   // failed. A vehicle_depiction verdict never reaches acceptance.
   let outputClassReceipt = recoveredState?.outputClassReceipt || null;
+  // The six-surface gates' verdicts on the panel proof, ADVISORY (see
+  // `panelProofGateAdvisory`). Null on every other topology.
+  let masterGateAdvisory = recoveredState?.masterGateAdvisory || null;
   const edgeProvenance = recoveredState?.edgeProvenance ? [...recoveredState.edgeProvenance] : [];
   // New requests reserve this before Call 1. Historical requests keep their
   // checkpoint identity (or the original fallback if no checkpoint exists).
@@ -3755,14 +4200,30 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // stopwatch against a browser tab.
     outputClassMs: 0,
     passengerMirrorMs: 0,
+    // The panel proof's ADVISORY inspector runs concurrently with the fill,
+    // the checkpoint, the cut and the Driver request, so its duration is not
+    // wall-clock spent by the customer. Recorded as an object rather than an
+    // `*Ms` bucket on purpose: `unattributedMs` subtracts every `*Ms` key from
+    // the total, and subtracting overlapped time would make it lie.
+    advisoryClass: { offCriticalPath: true, ms: 0, calls: 0 },
     ...(recoveredState?.timings || {}),
   };
+  // The panel proof's off-critical-path inspector (see
+  // `createPanelProofAdvisoryClassifier`). Null on every other topology, where
+  // the class question stays a blocking gate inside the loop.
+  const advisoryClass = panelProof ? createPanelProofAdvisoryClassifier({
+    provider, zones: manifest.zones, timings, logger,
+    publish: (next) => {
+      outputClassReceipt = next.outputClassReceipt;
+      masterGateAdvisory = next.masterGateAdvisory;
+    },
+  }) : null;
   const checkpointState = () => {
     const { bytes: _providerBytes, ...generatedReceipt } = generated;
     const { bytes: _deliveryBytes, ...deliveryReceipt } = masterDelivery || {};
     const { bytes: _mirrorBytes, ...mirrorReceipt } = passengerMirror || {};
     return { generated: generatedReceipt, masterDelivery: deliveryReceipt, masterDeterministic,
-      outputClassReceipt, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
+      outputClassReceipt, masterGateAdvisory, edgeProvenance, masterRequestByteSize, masterAuthoringAttempts,
       maxAuthoringAttemptsAllowed: maxAuthoringAttempts,
       authoringTopology, authoringFailover: failoverFrom || null,
       passengerMirror: mirrorReceipt, preMirrorMasterHash, masterFinishing, timings, callOneStartedAt };
@@ -3882,31 +4343,96 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // twelve proven stages a second shape is the greenfield move RULE 0
       // forbids; this earns acceptance through the existing gates instead.
       let proof;
+      const proofArgs = {
+        manifest, input: authoringInput, requestId, generationId, ownerId,
+        customerImageParts,
+        providerRequest: { requestId, generationId, claimToken,
+          ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
+        // THE REVISION AND THE CANDIDATE INDEX are part of the durable
+        // operation identity (definition hash + attemptKey), so V2 never
+        // resumes V1's run and candidate 2 never reads candidate 1's sheet.
+        revision: panelProofRevision, candidate: attempt,
+        logger,
+      };
+      const onProofSheetReady = typeof options.onProofSheetReady === "function"
+        ? (payload) => options.onProofSheetReady({ ...payload, revisionId: mintedRevisionId })
+        : null;
       try {
-        // The existing durable graph owns both proof.sheet and proof.assemble.
-        // Missing graph support is a refusal, not an in-process escape hatch.
+        // THE DURABLE GRAPH OWNS proof.sheet AND proof.assemble when the node
+        // worker is wired and the deploy has not switched it off. THE
+        // IN-PROCESS PASS IS THE FALLBACK, NOT A REFUSAL (owner, 2026-09-22:
+        // "Nothing may block orchestration"): `authorPanelProofMaster` is the
+        // SAME two functions the graph's nodes execute, and it does not touch
+        // the node worker's `tick()`, so `CALL1_GRAPH=off` and a database
+        // without the graph migration run Call 1 in this process -- logged and
+        // recorded on the receipt as `provenance.graph.unavailable`, never
+        // silent, exactly as the hero cascade already degrades. This used to
+        // throw `designpro_atlas_call1_graph_unavailable`, and with the panel
+        // proof the only Call 1 that one flag bricked every generation.
         const proofGraph = options.atlasCall1Graph && atlasCall1GraphEnabled()
           && typeof options.atlasCall1Graph.authorPanelProof === "function"
           ? options.atlasCall1Graph : null;
-        if (!proofGraph) {
-          throw new FlatAtlasError("designpro_atlas_call1_graph_unavailable",
-            "Panel proof requires the durable Call 1 graph");
+        const inProcess = async (graphCause) => {
+          logger(`atlas call 1: durable graph ${graphCause ? `unavailable (${String(graphCause.message || graphCause.code || "").slice(0, 160)})` : "off"}; running the panel proof in-process`);
+          const result = await authorPanelProofMaster({
+            ...proofArgs, store,
+            callProofEdge: typeof options.callProofEdge === "function"
+              ? options.callProofEdge : createPanelProofTransport({ supabase, ownerId, logger }),
+            downloadAsset: proofAssetDownloader, assembleFinishedMaster,
+          });
+          result.provenance = { ...(result.provenance || {}), execution: "in-process",
+            // WHY the graph did not run, on the receipt: the migration/RPC
+            // failure it reported, the deploy flag, or a process built
+            // without the node worker.
+            graph: { unavailable: true, code: graphCause?.code
+              || (atlasCall1GraphEnabled() ? "designpro_atlas_call1_graph_unwired" : "designpro_atlas_call1_graph_off") } };
+          if (onProofSheetReady && result.provenance.proofStoragePath && result.provenance.proofSha256) {
+            void Promise.resolve(onProofSheetReady({
+              graphRunId: null,
+              sheet: {
+                storagePath: result.provenance.proofStoragePath, contentHash: result.provenance.proofSha256,
+                byteSize: result.provenance.proofByteSize, contentType: result.provenance.proofContentType || "image/png",
+                proofContract: result.provenance.proofContract,
+              },
+              panelRows: [], customerAssets: result.provenance.customerAssets || [],
+            })).catch((cause) => logger(`atlas call 1: composed proof fan-out failed non-fatally: ${String(cause?.message || cause)}`));
+          }
+          return result;
+        };
+        if (proofGraph) {
+          try {
+            proof = await proofGraph.authorPanelProof({ ...proofArgs, onProofSheetReady });
+          } catch (graphCause) {
+            if (graphCause?.code !== "designpro_atlas_call1_graph_unavailable") throw graphCause;
+            proof = await inProcess(graphCause);
+          }
+        } else {
+          proof = await inProcess(null);
         }
-        proof = await proofGraph.authorPanelProof({
-          manifest, input: authoringInput, requestId, generationId, ownerId,
-          customerImageParts,
-          providerRequest: { requestId, generationId, claimToken,
-            ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
-          onProofSheetReady: typeof options.onProofSheetReady === "function"
-            ? (payload) => options.onProofSheetReady({ ...payload, revisionId: mintedRevisionId })
-            : null,
-          logger,
-        });
       } catch (cause) {
         timings.authoringMs += Date.now() - authoringStartedAt;
         const code = cause?.code || "flat_atlas_panel_proof_failed";
         const reason = String(cause?.reason || cause?.message || cause).slice(0, 1000);
-        logger(`atlas call 1: panel proof stopped (${code}): ${reason}`);
+        // A CREATIVE refusal (the sheet was drawn and this pass refused it, or
+        // the edge refused to draw it) spends the bounded second candidate. A
+        // transport fault, a lost lease or a graph RPC failure is NOT
+        // re-rolled: that spends the budget against a wall, and its own
+        // `retryable` says whether the claim should come back.
+        //
+        // "Creative" means A CANDIDATE WAS SPENT: the refusal names the sheet
+        // it judged (this pass refused an assembled sheet) or the edge answered
+        // the request with a non-5xx status (it refused to draw, or drew and
+        // its own gates refused). A `PanelProofRefusal` raised BEFORE the edge
+        // was reached -- no service key, no store, the container could not be
+        // staged -- or an edge 5xx is infrastructure, and a second candidate
+        // against it is a second spend against the same wall.
+        const edgeStatus = Number(cause?.details?.status);
+        const creativeRefusal = code === "flat_atlas_panel_proof_refused"
+          && (HASH_RE.test(String(cause?.details?.sheet?.contentHash || ""))
+            || (Number.isFinite(edgeStatus) && edgeStatus > 0 && edgeStatus < 500));
+        logger(`atlas call 1: panel proof candidate ${attempt}/${maxAuthoringAttempts} stopped (${code}): ${reason}`);
+        // BOTH SHEETS REACH THE LEDGER: every refused candidate is recorded
+        // with the sheet it judged, so the owner can open it.
         await recordAtlasRefusal(supabase, {
           requestId, generationId, ownerId, tenantKey,
           authoringTopology: PANEL_PROOF_TOPOLOGY, topology: PANEL_PROOF_TOPOLOGY,
@@ -3917,8 +4443,21 @@ async function generateOrReuseFlatAtlasResolved(options) {
           contentType: cause?.details?.sheet?.contentType || cause?.details?.contentType || null,
           model: cause?.details?.sheet?.model || null,
         }, logger);
-        const refusal = new FlatAtlasError(code, reason);
-        refusal.retryable = false;
+        if (creativeRefusal && attempt < maxAuthoringAttempts) {
+          logger(`atlas call 1: spending panel proof candidate ${attempt + 1} of ${maxAuthoringAttempts}`);
+          continue;
+        }
+        // TERMINAL, WITH THE GATE'S REAL REASON, AND NO FALLBACK CONTRACT.
+        // There is no other Call 1 to fail over to (owner, 2026-09-22), so a
+        // refused budget stops here: `retryable` is false only once the last
+        // candidate is spent; a non-creative fault before that keeps its own
+        // retryability so the claim can resume this same candidate.
+        const refusal = new FlatAtlasError(code,
+          creativeRefusal && attempt > 1
+            ? `The Call 1 panel production proof was refused ${attempt} times. ${reason}`.slice(0, 1000)
+            : reason);
+        refusal.retryable = creativeRefusal || attempt >= maxAuthoringAttempts ? false
+          : (cause?.retryable === true || (Number.isFinite(edgeStatus) && edgeStatus >= 500));
         refusal.cause = cause;
         throw refusal;
       }
@@ -4001,6 +4540,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // vehicle_depiction verdict always refuses. All other subjective semantic
       // review remains advisory. Passenger continuity telemetry never enters
       // this refusal set.
+      if (!panelProof) {
       stillBlocking = [...(deterministic.blockingFailures || [])];
       refusalCode = "flat_atlas_master_deterministic_failed";
       if (masterCutoutSurfaces.length && stillBlocking.length) {
@@ -4029,6 +4569,28 @@ async function generateOrReuseFlatAtlasResolved(options) {
               : " -- Call 1 must return ONE flat A.T.L.A.S. panel-layout sheet, never a vehicle image"),
           );
         }
+      }
+      } else {
+        // ADVISORY ON THE PANEL PROOF (owner, 2026-09-22; see
+        // `panelProofGateAdvisory`). Both verdicts are measured and recorded on
+        // the receipt; neither refuses, neither writes a ledger row. The
+        // cut-out surfaces above still feed the deterministic FILL after the
+        // loop, because the fill is repair, not a gate.
+        //
+        // THE DETERMINISTIC FINDINGS ARE RECORDED NOW; THE CLASS QUESTION IS
+        // ASKED OFF THE CRITICAL PATH (see `createPanelProofAdvisoryClassifier`):
+        // a verdict that refuses nothing is not allowed to hold the Driver
+        // proof for a Flash round trip. It is joined before the revision row.
+        masterGateAdvisory = panelProofGateAdvisory({
+          candidate: attempt, deterministic, outputClass: null, stage: "candidate",
+        });
+        if (masterGateAdvisory.findings.length) {
+          logger(`atlas call 1: six-surface master gates report ${masterGateAdvisory.findings.length} finding(s) on the panel proof `
+            + `(advisory, recorded, not refused): ${masterGateAdvisory.findings.map((f) => f.finding).join("; ").slice(0, 400)}`);
+        }
+        advisoryClass.enqueue({ stage: "candidate", candidate: attempt, deterministic, bytes: masterBytes });
+        stillBlocking = [];
+        refusalCode = null;
       }
     }
     const refusalReason = stillBlocking.join("; ").slice(0, 600);
@@ -4063,20 +4625,22 @@ async function generateOrReuseFlatAtlasResolved(options) {
       contentType: generated?.provenance?.masterContentType || generated?.contentType,
       model: generated?.model,
     }, logger);
-    if (panelProof) {
-      // A later master gate may refuse an assembled proof too. Do not reroll
-      // or enter the legacy fallback after the refusal has been recorded.
-      const refusal = new FlatAtlasError(refusalCode, refusalReason);
-      refusal.retryable = false;
-      throw refusal;
-    }
     if (attempt === maxAuthoringAttempts) {
       const refusal = new FlatAtlasError(
         refusalCode,
-        (`The flattened A.T.L.A.S. design call failed acceptance ${attempt} times. `
+        (`The Call 1 design call failed acceptance ${attempt} times. `
           + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
           + refusalReason).slice(0, 1000),
       );
+      if (panelProof) {
+        // THE PANEL PROOF NEVER ENTERS A FALLBACK CONTRACT: there is no other
+        // Call 1 (owner, 2026-09-22). Its budget is spent, the refusal is in
+        // the ledger with every sheet, and this is terminal. (The master gates
+        // are advisory on this topology, so the only way here is a candidate
+        // that drew no image at all.)
+        refusal.retryable = false;
+        throw refusal;
+      }
       if (!failoverEnabled) {
         if (!sixSurfaceFallbackEnabled) throw refusal;
         logger(`atlas call 1: field-first budget refused (${refusalCode}); failing over to the six-surface contract`);
@@ -4248,7 +4812,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // customer sees anything.
   if (cutoutFill.changed) {
     const repaired = await deterministicMasterChecks(surfaceSourceBytes, manifest);
-    if (repaired.blockingFailures.length || repaired.cutoutFindings.length) {
+    if (!panelProof && (repaired.blockingFailures.length || repaired.cutoutFindings.length)) {
       throw new FlatAtlasError(
         "flat_atlas_repaired_master_invalid",
         "The deterministic repair did not produce six valid printable regions: "
@@ -4262,6 +4826,22 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // question on the pre-repair sheet already passed; asking it again of a
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
+    if (panelProof) {
+      // ADVISORY on the repaired panel-proof master too: recorded, with the
+      // pre-repair verdicts kept under `prior`, never refused. The repaired
+      // sheet's class verdict is queued behind the candidate's and joined
+      // before the revision row; the deterministic findings are on the receipt
+      // now, so a checkpoint written meanwhile describes the repaired sheet.
+      masterGateAdvisory = panelProofGateAdvisory({
+        candidate: masterAuthoringAttempts, deterministic: repaired, outputClass: null,
+        stage: "repaired", prior: masterGateAdvisory,
+      });
+      if (masterGateAdvisory.findings.length) {
+        logger(`atlas call 1: six-surface master gates report ${masterGateAdvisory.findings.length} finding(s) on the repaired panel proof `
+          + `(advisory, recorded, not refused): ${masterGateAdvisory.findings.map((f) => f.finding).join("; ").slice(0, 400)}`);
+      }
+      advisoryClass.enqueue({ stage: "repaired", candidate: masterAuthoringAttempts, deterministic: repaired, bytes: surfaceSourceBytes });
+    } else {
     const repairedClassStartedAt = Date.now();
     outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes, zones: manifest.zones });
     timings.outputClassMs += Date.now() - repairedClassStartedAt;
@@ -4273,6 +4853,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
         `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "refused by the output-class gate"}`,
       );
     }
+    }
+  }
+  // A RESUMED PANEL-PROOF CHECKPOINT WHOSE CLASS VERDICT WAS STILL IN FLIGHT
+  // when the previous worker stopped carries the advisory with `outputClass:
+  // null`. The verdict is asked again here, on the accepted bytes, so the
+  // revision row records a measurement rather than the absence of one. (Not
+  // reached on a fresh run: the loop above enqueued the candidate stage.)
+  if (advisoryClass && recoveredCheckpoint && !outputClassReceipt
+    && masterGateAdvisory && !advisoryClass.pending()) {
+    advisoryClass.enqueue({
+      stage: masterGateAdvisory.stage || "candidate", candidate: Math.max(1, masterAuthoringAttempts),
+      deterministic: masterDeterministic, bytes: surfaceSourceBytes, prior: masterGateAdvisory.prior || null,
+    });
   }
 
   // Optional finishing is PRIVATE preparation until the entire composed sheet
@@ -4740,6 +5333,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
         },
         zone2Panels: callOnePanels,
         documentOnly: true,
+        generationId,
         // OWNER RULING 2026-09-21: clean base OFF — DesignPanelAI draws the
         // logo and lettering into the artwork in one image call, which is the
         // Sept 17-18 configuration the accepted designs were made on. These
@@ -4748,11 +5342,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
         cleanBaseZone2: cleanBaseEnabled(),
         panelRows: panelRowsFromManifest(manifest),
         input: authoringInput, manifest, store, logger,
-        downloadAsset: async (identity) => {
-          const { data, error } = await supabase.storage.from("wrap-files").download(identity.storagePath);
-          if (error || !data) throw new Error(`${identity.storagePath}: ${error?.message || "missing"}`);
-          return Buffer.from(await data.arrayBuffer());
-        },
+        downloadAsset: proofAssetDownloader,
       });
       timings.panelProofDocumentMs = Date.now() - proofAt;
       logger(`atlas call 1: production panel proof `
@@ -4796,6 +5386,16 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const uploadWaitStartedAt = Date.now();
   await persistImmutableAssets();
   timings.uploadWaitMs += Date.now() - uploadWaitStartedAt;
+  // THE ADVISORY CLASS VERDICT IS JOINED HERE, after the panels are durable and
+  // the Driver request has long since been dispatched, and before the revision
+  // row is built -- so `masterOutputClass` and `masterGateAdvisory` below carry
+  // exactly what an inline inspector would have recorded. Only the panel proof
+  // has a classifier; every other topology already awaited its gate.
+  if (advisoryClass) {
+    const advisoryJoinStartedAt = Date.now();
+    await advisoryClass.settle();
+    timings.advisoryClass.joinWaitMs = (Number(timings.advisoryClass.joinWaitMs) || 0) + (Date.now() - advisoryJoinStartedAt);
+  }
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
   const callOnePanelRecords = callOnePanels.map((panel) => ({
@@ -4943,6 +5543,11 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // Semantic design judgement is advisory and is not run on this blocking
       // path; any panel cut-out remains durable evidence for PanelPro human QC.
       masterQcPassed: true,
+      // THE SIX-SURFACE GATES' VERDICTS ON THE PANEL PROOF, ADVISORY (owner,
+      // 2026-09-22). Null on every other topology. `masterQcPassed` above is
+      // the design passing the panel proof's OWN gates; this is what the
+      // vehicle-sheet gates measured on it, for PanelPro's human QC to read.
+      masterGateAdvisory: masterGateAdvisory || null,
       // OWNER RULING 2026-09-01: Call 1 is A.T.L.A.S. authority only. The
       // output-class receipt for the ACCEPTED candidate — "flat_atlas", or
       // "unavailable" when the inspector transport failed (fail-open, but
@@ -5202,6 +5807,16 @@ module.exports = {
   _test: {
     FIELD_FAILOVER_ATTEMPTS, FIELD_FIRST_ATTEMPTS, fieldFirstReason, AUTHORING_FAILOVER_CONTRACT, recordAtlasRefusal,
     activeZoneMaskSvg,
+    // The panel-proof-only Call 1 (owner, 2026-09-22): the advisory receipt
+    // the six-surface gates write on it, and the revision's parent-proof
+    // staging, exported so both can be EXECUTED by the lock.
+    MASTER_GATE_ADVISORY_CONTRACT, panelProofGateAdvisory, stageParentProofReference, revisionEditAssetParts,
+    // The panel proof's off-critical-path inspector, exported so the lock can
+    // EXECUTE the advisory branch with a verdict still in flight.
+    createPanelProofAdvisoryClassifier,
+    // The pre-2026-09-22 router (hero-driver / field-first / six-surface),
+    // retained so its mechanics stay executable; production never calls it.
+    generateOrReuseFlatAtlasLegacyRouting,
     // Exported so the composition can be EXECUTED on real bytes rather than
     // asserted about as source text. A guard that has never run is a comment.
     composePassengerFromDriver,

@@ -41,7 +41,7 @@ test("the identity block names the generation, design AND revision", () => {
   const generationId = at(board, "Generation ID", "generation id label");
   const designId = at(board, '["Design ID"', "design id row");
   const revisionId = at(board, '["Revision ID"', "revision id row");
-  const version = at(board, '["Current A.T.L.A.S. version"', "atlas version row");
+  const version = at(board, '["Current version"', "atlas version row");
 
   assert.ok(
     generationId < designId,
@@ -88,7 +88,7 @@ test("a missing A.T.L.A.S. master is stated, never silent", () => {
     "absence must render an explicit state, not nothing at all");
   assert.match(card, /data-testid="atlas-master-missing"/,
     "the missing state must be addressable so a DCA can fail on it");
-  assert.match(card, /A\.T\.L\.A\.S\. master not available/,
+  assert.match(card, /Print master not available/,
     "the missing state must say what is missing in plain words");
 });
 

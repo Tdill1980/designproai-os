@@ -142,7 +142,7 @@ export function VersionAssetManifest({
 
       <Section title="Master sheet" count={atlas ? "1" : "0"}>
         <AssetRow
-          label="Flattened master"
+          label="Print master"
           detail={atlas?.master
             ? `${atlas.master.widthPx}×${atlas.master.heightPx} px · ${atlas.master.effectivePpi} PPI · ${bytesLabel(atlas.master.byteSize)}`
             : "Call 1 has not produced an accepted master yet"}

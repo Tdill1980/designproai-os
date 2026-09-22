@@ -55,6 +55,7 @@ import {
   PANEL_PROOF_CONTAINER_TEMPLATE,
   PANEL_PROOF_FORMAT_EXAMPLE,
   buildPanelProofPrompt,
+  buildPanelProofTurns,
   panelProofCreativeHead,
 } from "../_shared/atlas-panel-proof-prompt.ts";
 import { parsePanelRows, stageProofContainer } from "../_shared/atlas-proof-container-render.ts";
@@ -83,6 +84,16 @@ import {
   INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
   extractDeterministic, intakePrompt, mergeIntake,
 } from "../_shared/atlas-intake-parse.ts";
+// A REVISION IS AN EDIT OF THE APPROVED SHEET, NOT A FRESH DRAW. The runtime
+// sends the parent's accepted proof as a verified reference plus the revision
+// identity; this module reads, verifies, attaches and receipts it, and folds it
+// into the provider-cache identity so V2 can never read V1's cached sheet.
+// Pure and tested in `parent-proof.test.ts`; the wiring order is asserted there
+// against this file's own source.
+import {
+  attachParentProof, providerCacheMaterial, readRevisionFields, revisionCacheKey,
+  revisionProvenance, sha256Hex, verifyParentProof,
+} from "./parent-proof.ts";
 
 /**
  * NODE 0 — INTAKE. Raw customer text in, the structured schema out.
@@ -209,6 +220,47 @@ const ATLAS_PANELS = [
  * that same structure. Both sheets are 1536x1024, which is also the request's
  * aspectRatio, so nothing has to be re-flowed to be read.
  */
+/**
+ * ⚠️ EVERY PINNED INPUT CARRIES ITS ROLE IN WORDS, IMMEDIATELY BEFORE IT.
+ *
+ * Owner, 2026-09-21: "Should just be using to see how it needs to feed
+ * rectangle panels in the zones. Not the design. For design it uses designer
+ * persona in design panel ai generate ... it capitalizes on Gemini's native
+ * Google knowledge, it knows what a pro level dentist wrap should look like, it
+ * uses the natural language prompt and designs it like a real graphic
+ * designer."
+ *
+ * This attachment had NO framing text. It went into `parts` as bare
+ * `inlineData` while every gold-standard artboard beside it got a sentence
+ * naming what it may and may not teach. The pinned sheet is the FILLED twin of
+ * the container -- a finished Bright Smiles Dental wrap on a 2012 Prius -- so
+ * an unlabelled copy of it is the single strongest visual instruction in the
+ * request, and nothing anywhere told the model its artwork was off limits.
+ *
+ * That is the failure mode CLAUDE.md already records twice: canary 33389124918,
+ * where an unlabelled installed proof "was the strongest visual instruction"
+ * and taught wheel wells back into the source rectangles; and RULE 0.24, which
+ * says a STRUCTURAL reference may teach how a composition occupies the
+ * rectangles and may NEVER contribute artwork, wording, logo, colour, brand or
+ * style. The rule was written down and the request did not implement it.
+ *
+ * So the role is stated, in the same shape the artboards use: text first, image
+ * second, both moving together. FORMAT means the zone bands, the panel
+ * rectangles and how artwork fills them edge to edge -- nothing about what is
+ * drawn. The design comes from the customer's own brief through A.C.E., which
+ * is what already knows what a professional dentist wrap looks like.
+ */
+const PINNED_INPUT_FRAMING: Record<string, string> = {
+  format: "PANEL PRODUCTION PROOF — FORMAT AND TOPOLOGY REFERENCE ONLY. "
+    + "Read it for STRUCTURE alone: how the three zone bands are laid out, how the panel rectangles sit inside them, "
+    + "how each rectangle is filled corner to corner with artwork that runs off all four edges, "
+    + "and where the dimensions row, template notes and legend sit. "
+    + "It is an example of the DOCUMENT, not of the design. "
+    + "Copy none of its artwork, photography, palette, wording, company name, logo, brand, industry or typography — "
+    + "that identity belongs to the business on that sheet, not to this customer. "
+    + "The subject, colour and every design decision come from this customer's own brief and from your own judgement as the designer.",
+};
+
 const PINNED_INPUTS = [
   { path: PANEL_PROOF_FORMAT_EXAMPLE.path, role: "format", sha256: PANEL_PROOF_FORMAT_EXAMPLE.sha256 },
 ] as const;
@@ -393,11 +445,6 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const sha256Hex = async (bytes: Uint8Array) => {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -426,6 +473,10 @@ serve(async (req) => {
   let requestId = crypto.randomUUID();
   try {
     const body = await req.json();
+    // THE REVISION IDENTITY, READ BEFORE ANYTHING IS SPENT. A malformed
+    // sequence or a parent proof on a first generation is refused here (400),
+    // before the intake Flash call and before any image request.
+    const revision = readRevisionFields(body);
 
     // NODE 0 RUNS FIRST, and only when the caller sent raw text. A caller that
     // already holds structured fields — the real order form, once it exists —
@@ -637,6 +688,16 @@ serve(async (req) => {
     // Live 2026-08-27: a 2.2MB request as inline base64 killed the worker 25s
     // in, twice, with a bodiless 504.
     const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+    // THE SAME IMAGE OBJECTS, ALSO FILED BY RULE 0.24 CLASS.
+    //
+    // Every inlineData part below is pushed into `parts` (the single-turn ask,
+    // unchanged) AND into exactly one of these. The anchored path then sends
+    // the CREATIVE class with turn 1 and the STRUCTURAL class with turn 2, so a
+    // customer's reference photograph is never weighed in the same breath as a
+    // blank container template. Google's guidance is that reference images
+    // carry roles; ours all arrived in one undifferentiated bag.
+    const creativeParts: Array<Record<string, unknown>> = [];
+    const structuralParts: Array<Record<string, unknown>> = [];
     const attached: Array<Record<string, unknown>> = [];
     // Reported separately from `attachedInputs` so "did Call 1 see a
     // gold standard, and which one" is a field rather than a grep. The
@@ -695,7 +756,9 @@ serve(async (req) => {
       if (digest !== containerHash) {
         throw new Error(`panel_proof_container_hash_mismatch:${digest.slice(0, 16)}`);
       }
-      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
+      const containerPart = { inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } };
+      parts.push(containerPart);
+      structuralParts.push(containerPart);
       attached.push({
         role: "container", path: containerPath, sha256: digest, byteSize: bytes.length,
         contract: PANEL_PROOF_CONTAINER_TEMPLATE.contract,
@@ -719,8 +782,57 @@ serve(async (req) => {
       if (pinned.sha256 && digest !== pinned.sha256) {
         throw new Error(`panel_proof_format_example_mismatch:${pinned.role}:${digest.slice(0, 16)}`);
       }
-      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
-      attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length });
+      // THE ROLE GOES FIRST so the image is already framed as format-only when
+      // the model reaches it, exactly as each gold-standard artboard is framed.
+      // Text and image move together or the sheet arrives unlabelled, which is
+      // the state this fixed. A role with no framing is a bug, not a default.
+      const framing = PINNED_INPUT_FRAMING[pinned.role];
+      if (!framing) throw new Error(`panel_proof_pinned_input_unframed:${pinned.role}`);
+      parts.push({ text: framing });
+      const pinnedPart = { inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } };
+      parts.push(pinnedPart);
+      structuralParts.push(pinnedPart);
+      attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length, framed: true });
+    }
+
+    // ═══ THE APPROVED PARENT PROOF, ON A REVISION ═══
+    //
+    // Owner, 2026-09-22: "Revisions should auto generate edits directly to
+    // panel pro production proof." Before this the edge ignored every revision
+    // field the runtime sent and drew V2 from scratch with the instruction in
+    // the brief -- a new design that mentioned the change, not an edit of the
+    // sheet the customer approved.
+    //
+    // WHERE IT SITS, and why: immediately after the structural inputs and
+    // before every creative one. On the product route (`separatedArtwork`,
+    // which is what the runtime sends) the pinned format sheet is not attached
+    // and the prompt names the container "Attachment 1", so the parent is the
+    // very next image after the container. On the probe route the prompt
+    // enumerates "(1) the BLANK CONTAINER TEMPLATE ... (2) a FINISHED PROOF",
+    // so the parent goes after that pinned pair rather than between them --
+    // the numbering stays true and neither pinned input moves. Either way it
+    // precedes the gold-standard artboards and the customer's references, so
+    // the sheet to reproduce is in front of the model before anything that
+    // might be mistaken for it.
+    //
+    // It is VERIFIED exactly as the container and the customer assets are
+    // (allowlisted path, bytes hash to the filename, bytes hash to the claim,
+    // byte count), and refused as `panel_proof_parent_invalid` at 400: a
+    // caller naming bytes this side did not verify is a request defect.
+    //
+    // ONE short framing text, then the image, moving together. No negatives
+    // and no restated instruction -- the brief already carries it. It does not
+    // touch `structuralParts`: on the anchored path the parent conditions the
+    // DESIGN turn (it IS the approved design) and the layout turn continues
+    // that conversation, so a second copy would double a 4K sheet in one
+    // request.
+    let parentAttached: Record<string, unknown> | null = null;
+    if (revision.parentProof && revision.revisionSequence > 1) {
+      const verified = await verifyParentProof(svc.storage.from(BUCKET), revision.parentProof);
+      parentAttached = attachParentProof({ parts, creativeParts, attached }, {
+        revisionSequence: revision.revisionSequence, parentProof: revision.parentProof,
+        bytes: verified.bytes, sha256: verified.sha256, encodeBase64,
+      });
     }
 
     // The gold-standard artboards. Quality reference ONLY -- never topology,
@@ -730,15 +842,42 @@ serve(async (req) => {
     try {
       const { data: listed } = await svc.storage.from(BUCKET)
         .list(ARTBOARD_QUALITY_PREFIX.replace(/\/$/, ""), { limit: 10 });
+      // ⚠️ DO NOT PRE-SLICE TO ARTBOARD_QUALITY_MAX. COUNT WHAT IS ACCEPTED.
+      //
+      // The previous form took the first two names and then skipped the ones
+      // that were unusable -- a duplicate, an oversized file, a failed
+      // download -- which meant a rejected candidate SPENT a slot instead of
+      // yielding it to the next file. With `01-panel-proof-zones-filled.png`
+      // being byte-identical to the pinned format sheet, the request carried
+      // ONE real exemplar however many good files sat behind it in the bucket.
+      // That is the same defect the dedupe guard was written to fix, one layer
+      // up, and it would have silently eaten the owner's first upload.
+      //
+      // So the ceiling is on ACCEPTED examples and the listing is walked until
+      // it is reached. `limit: 10` still bounds the work.
       const candidates = (listed || [])
-        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")))
-        .slice(0, ARTBOARD_QUALITY_MAX);
+        .filter((file: { name?: string }) => /\.(png|jpe?g|webp)$/i.test(String(file?.name || "")));
       for (const file of candidates) {
+        if (qualityExamples.length >= ARTBOARD_QUALITY_MAX) break;
         const path = `${ARTBOARD_QUALITY_PREFIX}${file.name}`;
         const { data, error } = await svc.storage.from(BUCKET).download(path);
         if (error || !data) continue;
         const bytes = new Uint8Array(await data.arrayBuffer());
         if (!bytes.length || bytes.length > ARTBOARD_QUALITY_MAX_BYTES) continue;
+        // AN EXEMPLAR ALREADY IN THE REQUEST IS NOT A SECOND EXEMPLAR.
+        //
+        // Live 7a72951823648d27 attached four images of which TWO were byte
+        // identical: `atlas-examples/panel-proof-zones-filled.png` as the
+        // `format` anchor and `designpanel-artboard-examples/01-panel-proof-
+        // zones-filled.png` as a quality example, both sha256 9586710b. Google's
+        // own guidance is that reference images carry ROLES; the same bytes in
+        // two roles is one role diluted, and it spent one of only
+        // ARTBOARD_QUALITY_MAX=2 quality slots, leaving the model a single real
+        // exemplar of professional wrap work. The seeding is fixable in the
+        // bucket; this makes the request unable to carry the duplicate either
+        // way, because a bucket is edited by hand and this is not.
+        const qualityDigest = await sha256Hex(bytes);
+        if (attached.some((a) => a.sha256 === qualityDigest)) continue;
         const extension = String(file.name).toLowerCase().split(".").pop();
         const mimeType = extension === "jpg" || extension === "jpeg" ? "image/jpeg"
           : extension === "webp" ? "image/webp" : "image/png";
@@ -752,10 +891,13 @@ serve(async (req) => {
             + `Copy none of its artwork, photography, palette, wording, logo, brand, industry, panel geometry or topology. `
             + `The container template above alone controls topology, and the customer's own brief alone controls subject and colour.`,
         });
-        parts.push({ inlineData: { mimeType, data: encodeBase64(bytes) } });
-        const digest = await sha256Hex(bytes);
-        qualityExamples.push({ path, sha256: digest, byteSize: bytes.length });
-        attached.push({ role: "artboard-quality", path, sha256: digest, byteSize: bytes.length });
+        const qualityPart = { inlineData: { mimeType, data: encodeBase64(bytes) } };
+        parts.push(qualityPart);
+        // Its framing text is the part immediately before it in `parts`; both
+        // move together or the image arrives unlabelled in turn 1.
+        creativeParts.push(parts[parts.length - 2], qualityPart);
+        qualityExamples.push({ path, sha256: qualityDigest, byteSize: bytes.length });
+        attached.push({ role: "artboard-quality", path, sha256: qualityDigest, byteSize: bytes.length });
       }
     } catch (_error) {
       // Examples improve quality; their absence never blocks authoring.
@@ -794,11 +936,103 @@ serve(async (req) => {
       if (claimed && digest !== claimed) {
         throw new Error(`panel_proof_customer_asset_hash_mismatch:${digest.slice(0, 16)}`);
       }
-      parts.push({ inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } });
+      const customerPart = { inlineData: { mimeType: "image/png", data: encodeBase64(bytes) } };
+      parts.push(customerPart);
+      creativeParts.push(customerPart);
       attached.push({ role: "customer-asset", path, sha256: digest, byteSize: bytes.length });
     }
 
     const t0 = Date.now();
+    // ⚠️ DECLARED HERE, ABOVE EVERY READER. It used to sit below `modelRequest`,
+    // which was fine while one request was built in one place -- and became a
+    // temporal dead zone the moment the anchored DESIGN turn, which runs first
+    // and needs this identity to key and authorise itself, was added above it.
+    // Live run 20 died in 25 seconds with "Cannot access 'providerRequest'
+    // before initialization", before one image request. Its long contract note
+    // stays where the durable call is made; this is only the binding.
+    const providerRequest = {
+      ...(body?.providerRequest && typeof body.providerRequest === "object" ? body.providerRequest : {}),
+      requestId: String(body?.requestId || body?.providerRequest?.requestId || ""),
+      generationId: String(body?.generationId || body?.providerRequest?.generationId || ""),
+      claimToken: body?.claimToken ?? body?.providerRequest?.claimToken,
+      attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
+      cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
+    };
+
+    // ═══ THE ANCHORED PATH: ONE CONVERSATION, TWO TURNS ═══
+    //
+    // Owner, 2026-09-21: "do the multitodal thought signatures". The full
+    // reasoning is on `buildPanelProofTurns`; what happens HERE is the wiring.
+    //
+    // Scoped to the three-zone sheet. `separatedArtwork` already asks for
+    // artwork alone with no document and no container, so it has nothing to
+    // split and stays a single turn byte for byte. `anchorTurns: false` on the
+    // request restores the single turn on this path too, which is what a
+    // side-by-side needs and what a rollback is.
+    const anchorTurns = body.separatedArtwork !== true && body.anchorTurns !== false;
+    const turns = anchorTurns
+      ? buildPanelProofTurns({
+        creativeHead,
+        companyName: field("companyName"), tagline: field("tagline"),
+        phone: field("phone"), website: field("website"),
+        services: (body?.services ?? intake?.services), promo: field("promo"),
+        vehicleYear: field("vehicleYear"), vehicleMake: field("vehicleMake"),
+        vehicleModel: field("vehicleModel"), creativeDirection, panelRows,
+      })
+      : null;
+    const imageConfig = { aspectRatio: "3:2", imageSize: "4K" };
+    let designTurnRequestId: string | null = null;
+    let designExchange: { user: Record<string, unknown>; model: Record<string, unknown> } | null = null;
+    let designTurnMs = 0;
+    if (turns) {
+      const designAt = Date.now();
+      const designUser = { role: "user", parts: [{ text: turns.design }, ...creativeParts] };
+      const designRequest = JSON.stringify({
+        contents: [designUser],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig },
+      });
+      // ITS OWN CACHE KEY. The two turns are two paid requests, so a recovery
+      // that re-reads the design must not be handed the layout's bytes or
+      // spend a second design -- `attemptKey` is what keys the durable record.
+      const designCached = await runDurableImageProviderRequest({
+        bucket: svc.storage.from(BUCKET),
+        identity: {
+          ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof",
+          attemptKey: `${providerRequest.attemptKey}:design`,
+        },
+        requestHash: await providerSha256(JSON.stringify(providerCacheMaterial({
+          model: PRIMARY_IMAGE_MODEL, promptVersion: ATLAS_PANEL_PROOF_CONTRACT,
+          turn: "design", modelRequest: designRequest, revision: revisionCacheKey(revision),
+        }))),
+        privateRequest: designRequest,
+        outputRequestId: requestId,
+        cacheOnly: providerRequest.cacheOnly === true,
+        authorize: () => authorizeAtlasProviderRequest(svc, {
+          ...providerRequest, attemptKey: `${providerRequest.attemptKey}:design`,
+        }, caller.userId),
+        invoke: () => captureGeminiHttpExchange(async () => await fetch(
+          geminiImageUrl(getGeminiKey(), PRIMARY_IMAGE_MODEL),
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: designRequest },
+        )),
+      });
+      designTurnRequestId = designCached.requestId;
+      // THE MODEL'S REPLY IS REPLAYED VERBATIM. `thoughtSignature` is opaque
+      // metadata that belongs to the part it arrived on -- never summarise,
+      // truncate, merge or relabel it (`gemini-image-history.mjs` says so in
+      // its first line, and that module is the proven transport for exactly
+      // this). Rebuilding a tidier model turn is how the continuation silently
+      // becomes a fresh conversation that happens to contain an image.
+      const designContent = designCached.payload?.candidates?.[0]?.content;
+      if (!designContent?.parts?.length) {
+        throw new Error(`panel_proof_design_turn_no_content:${designCached.payload?.candidates?.[0]?.finishReason || "unknown"}`);
+      }
+      if (!designContent.parts.some((p: Record<string, unknown>) => (p as { inlineData?: unknown }).inlineData)) {
+        throw new Error(`panel_proof_design_turn_no_image:${designCached.payload?.candidates?.[0]?.finishReason || "unknown"}`);
+      }
+      designExchange = { user: designUser, model: designContent };
+      designTurnMs = Date.now() - designAt;
+    }
+
     const modelRequest = JSON.stringify({
       ...(body.separatedArtwork === true ? { systemInstruction: { parts: [{ text:
         "Follow the A.C.E. commercial-wrap creative direction in the user request. You author the imagery and background artwork for a complete three-zone Studio production proof. "
@@ -806,7 +1040,14 @@ serve(async (req) => {
         + "The compositor builds Zone 1 from your art plus protected brand assets, Zone 2 from your same art, and Zone 3 from isolated brand assets. "
         + "Document headings, dimensions, panel labels, borders and other sheet annotations are drawn by code. Never paint document annotations into panel textures. Return only the requested clean artwork canvas."
       }] } } : {}),
-      contents: [{ role: "user", parts }],
+      contents: designExchange
+        // The layout turn CONTINUES the design turn: its user parts, the
+        // model's reply with its signature intact, then the layout ask with the
+        // structural references. The design is in the conversation, so this
+        // turn decomposes it instead of inventing it again.
+        ? [designExchange.user, designExchange.model,
+          { role: "user", parts: [{ text: String(turns?.layout || "") }, ...structuralParts] }]
+        : [{ role: "user", parts }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
         // 3:2 BECAUSE THE PINNED REFERENCE IS 3:2 (1536x1024, exactly 1.5).
@@ -846,14 +1087,6 @@ serve(async (req) => {
     // contract has. It is part of the identity, so candidate 2 is a different
     // operation and is still allowed to spend -- that is the bounded budget
     // working, not a cache miss.
-    const providerRequest = {
-      ...(body?.providerRequest && typeof body.providerRequest === "object" ? body.providerRequest : {}),
-      requestId: String(body?.requestId || body?.providerRequest?.requestId || ""),
-      generationId: String(body?.generationId || body?.providerRequest?.generationId || ""),
-      claimToken: body?.claimToken ?? body?.providerRequest?.claimToken,
-      attemptKey: String(body?.attemptKey || body?.providerRequest?.attemptKey || "panel-proof:1"),
-      cacheOnly: body?.cacheOnly === true || body?.providerRequest?.cacheOnly === true,
-    };
     const logoPromise = body.separatedArtwork === true ? authorProofLogo({
       bucket: svc.storage.from(BUCKET), ownerId: caller.userId, providerRequest,
       input: { companyName: field("companyName"), logoAsset: body.hasCustomerLogo || body.logoAsset,
@@ -870,9 +1103,14 @@ serve(async (req) => {
     const [cached, generatedLogo] = await Promise.all([runDurableImageProviderRequest({
       bucket: svc.storage.from(BUCKET),
       identity: { ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof" },
-      requestHash: await providerSha256(JSON.stringify({
+      // THE REVISION IS IN THE CACHE IDENTITY. `revisionCacheKey` is null on a
+      // first generation (byte-identical material to before), and carries the
+      // sequence, the context hash and the parent proof's hash on a revision,
+      // so a V2 request can never be answered with V1's cached sheet.
+      requestHash: await providerSha256(JSON.stringify(providerCacheMaterial({
         model: PRIMARY_IMAGE_MODEL, promptVersion: ATLAS_PANEL_PROOF_CONTRACT, modelRequest,
-      })),
+        revision: revisionCacheKey(revision),
+      }))),
       privateRequest: modelRequest,
       outputRequestId: requestId,
       cacheOnly: providerRequest.cacheOnly === true,
@@ -914,7 +1152,25 @@ serve(async (req) => {
       proofByteSize: bytes.length,
       sheetShape,
       generatedElements: generatedLogo ? [generatedLogo] : [],
-      imageRequestCount: generatedLogo ? 2 : 1,
+      imageRequestCount: (turns ? 2 : 1) + (generatedLogo ? 1 : 0),
+      // WHAT SHAPE THE ASK ACTUALLY HAD, on the receipt rather than inferred
+      // from a count. `anchoredTurns` false is the single-turn request this
+      // function has always sent; true is the design -> layout conversation.
+      anchoredTurns: Boolean(turns),
+      designTurn: turns ? {
+        requestId: designTurnRequestId,
+        promptChars: turns.design.length,
+        prompt: turns.design,
+        elapsedMs: designTurnMs,
+        // Whether the reply carried reasoning for the layout turn to continue.
+        // Zero here means the second turn replayed an image and nothing else,
+        // which is the difference between a continuation and a fresh request
+        // that happens to contain a picture.
+        thoughtSignatureCount: (designExchange?.model?.parts as Array<Record<string, unknown>> | undefined)
+          ?.filter((p) => typeof p?.thoughtSignature === "string").length ?? 0,
+      } : null,
+      layoutPromptChars: turns ? turns.layout.length : null,
+      layoutPrompt: turns ? turns.layout : null,
       // The whole assembled ask, so a disagreement about the design is settled
       // on the REQUEST rather than on impressions of the output -- the reason
       // the designiq A/B harness exists at all.
@@ -924,6 +1180,10 @@ serve(async (req) => {
       // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
       // sheet just quietly carries the wrong company or the wrong truck.
       intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
+      // THE EDIT, BOUND TO ITS PARENT. Sequence, parent revision id, context
+      // hash and the parent proof's content hash, so the runtime's receipt can
+      // prove V2 was drawn against V1's approved sheet and not from scratch.
+      provenance: revisionProvenance(revision, parentAttached),
       attachedInputs: attached,
       artboardQualityExamplesApplied: qualityExamples.length,
       artboardQualityExampleIdentities: qualityExamples,
@@ -947,7 +1207,10 @@ serve(async (req) => {
       retryable: providerError?.retryable === true,
       providerRetryDisposition: providerError?.providerRetryDisposition ?? "operator_required",
       storageDiagnostic,
-    }, providerError?.status || 500);
+      // A request defect (`PanelProofRequestError`, e.g. `panel_proof_parent_invalid`)
+      // carries its own status -- 400 -- so the caller sees a refused request,
+      // not a broken function.
+    }, providerError?.status || Number((error as { status?: unknown })?.status) || 500);
   }
 });
 

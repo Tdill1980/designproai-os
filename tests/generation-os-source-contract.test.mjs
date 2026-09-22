@@ -35,7 +35,7 @@ test("the canonical snapshot includes versions, runs, artifacts, receipts and ev
 });
 
 test("PanelPro QC names Call-1 ATLAS panels as production authority, never Call-8 proof regions", () => {
-  assert.match(stages, /frozen Call-1 A\.T\.L\.A\.S\. panel/);
-  assert.match(stages, /promoted production panel hash matches its frozen Call-1 A\.T\.L\.A\.S\. source panel/);
+  assert.match(stages, /frozen Call-1 panel/);
+  assert.match(stages, /promoted production panel hash matches its frozen Call-1 source panel/);
   assert.doesNotMatch(stages, /come from their own Call 8 proof region/);
 });

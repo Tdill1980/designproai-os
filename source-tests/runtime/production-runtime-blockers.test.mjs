@@ -142,8 +142,20 @@ test("final QC is readable and output.verify cannot reinsert artifacts", () => {
 });
 
 test("production artifact metadata matches the exact output and repeated-logo SQL contracts", () => {
-  for (const key of ["format", "width", "height", "dpi", "outputScale", "fullScaleBleedInches"]) {
-    assert.match(claimantSource, new RegExp(`artifact\\(\\"output\\"[\\s\\S]*?${key}:`), `output metadata is missing ${key}`);
+  // Every output file of both variants states the same physical facts once,
+  // through the shared `physical` object, and every `artifact("output", ...)`
+  // call spreads it beside its format.
+  const physical = claimantSource.match(/const physical = \{([\s\S]*?)\n\s*\};/);
+  assert.ok(physical, "output.build must assemble the physical metadata once");
+  for (const key of ["width", "height", "dpi", "outputScale", "fullScaleBleedInches", "colorMode", "physicalWidthInches", "physicalHeightInches", "productionWidthInches", "productionHeightInches"]) {
+    assert.match(physical[1], new RegExp(`\\b${key}[,:]`), `output metadata is missing ${key}`);
+  }
+  // The clean file says which variant it is (and what Call 12 kind it came
+  // from) only on a tier that ships two variants, so v3 metadata is unchanged.
+  assert.match(physical[1], /\.\.\.\(outputVariants\.length > 1 \? \{ variant, sourceEnhancedKind: panel\.artifact_kind \} : \{\}\)/);
+  assert.equal((claimantSource.match(/artifact\("output"/g) || []).length, 5, "png, jpg, pdf, tiff and eps");
+  for (const format of ["png", "jpg", "pdf", "tiff", "eps"]) {
+    assert.match(claimantSource, new RegExp(`artifact\\("output"[^;]*?format: "${format}", \\.\\.\\.physical`), `${format} output must spread the shared physical metadata`);
   }
   for (const key of ["placementKey", "identityKey", "displayName", "targetSurfaceKey", "separationContract", "sourceRegionHash", "contentType"]) {
     assert.match(claimantSource, new RegExp(`metadata: \\{[\\s\\S]{0,300}${key}`), `Call 10 metadata is missing ${key}`);
@@ -158,7 +170,13 @@ test("production preserves Call 10 logos through source verify, ZIP, and WrapBox
   // Pack. Call 10's logos still flow -- when the customer bought them.
   assert.match(claimantSource, /const rows = await artifacts\(sb, run\.id, zipKinds\)/);
   assert.match(claimantSource, /zipKinds: Object\.freeze\(\[[\s\S]{0,200}logos \? \["logo"\] : \[\]/);
-  assert.match(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
+  // The manifest states the full Call 10 ledger regardless of purchase: both
+  // `validateManifest` and `commit_designpro_wrapbox_pack` compare it to every
+  // logo artifact, and a purchase-scoped list made the publisher refuse the
+  // first run that carried a logo (de0cdc52). Logo BYTES still ship only via
+  // `zipKinds`, asserted just above.
+  assert.match(claimantSource, /const logoRows = await artifacts\(sb, run\.id, \["logo"\]\);/);
+  assert.doesNotMatch(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
   assert.match(claimantSource, /contract: MANIFEST_CONTRACT[\s\S]*?logos,[\s\S]*?files/);
   assert.match(claimantSource, /revisionId: run\.revision_id, sourceEnticeRunId: sourceRunId, designId:/,
     "WrapBox must bind the manifest to executeProduction's validated source Entice run ID");
@@ -322,11 +340,14 @@ test("heavy output, lease-loss abort, structural output QC, deterministic stamp 
   assert.doesNotMatch(claimantSource, /p_ttl_seconds/);
   assert.doesNotMatch(claimantSource, /sb\.rpc\("release_designpro_heavy_lease"/);
   assert.match(claimantSource, /database stage transition releases the exact slot atomically/);
-  // New Production Packs have six sides x four formats, including PDF. A run
-  // that did not buy it must not be asked to prove it, and one that did still
-  // fails closed without the complete set.
+  // New Production Packs have six sides x five formats x two variants (the
+  // branded panel and the Zone 2 clean panel), sixty files. A run that did not
+  // buy it must not be asked to prove it, and one that did still fails closed
+  // without the complete set.
   assert.match(claimantSource, /exactSurfaceFormatCount: authorized\.requiredOutputFiles/);
-  assert.match(claimantSource, /requiredOutputFiles: production \? SURFACE_KEYS\.length \* OUTPUT_FORMATS\.length : 0/);
+  assert.match(claimantSource, /requiredOutputFiles: production \? SURFACE_KEYS\.length \* OUTPUT_FORMATS\.length \* OUTPUT_VARIANTS\.length : 0/);
+  assert.match(claimantSource, /outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS, outputVariants: OUTPUT_VARIANTS/);
+  assert.match(claimantSource, /"upscaled-panel", "upscaled-clean-panel",/, "the enhanced clean panel is its own artifact kind");
   assert.match(claimantSource, /createDeterministicZip64Stream/);
   assert.match(claimantSource, /uploadSpoolWithTus/);
   assert.match(claimantSource, /stamped-call8-proof\.png/);

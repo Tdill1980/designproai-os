@@ -58,7 +58,10 @@ test('one authored topology preserves all six distinct source regions through pe
   const query={select(){return this},eq(){return this},order(){return this},limit(){return this},
     async maybeSingle(){return {data:null,error:null}},
     insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
-  const result=await atlas.generateOrReuseFlatAtlas({
+  // THE RETAINED SIX-SURFACE ROUTER (owner 2026-09-22: the panel production proof is the only
+  // Call 1; production never routes here). These mechanics are kept executable through the
+  // legacy router exported for exactly this purpose.
+  const result=await atlas._test.generateOrReuseFlatAtlasLegacyRouting({
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
@@ -121,16 +124,57 @@ for (const format of ['png', 'jpeg', 'webp']) test(`${format}: six-surface trans
   assert.equal(downloaded.contentType,`image/${format}`);
   assert.equal(downloaded.provenance.masterContentType,`image/${format}`);
   assert.equal(downloads,1);
+  // ⛔ A CONTRACT MISMATCH NEVER DISCARDS A DESIGN. Owner ruling, 2026-09-21:
+  // "use my actual edge function designpanelai generate ... these are what I
+  // built my system on."
+  //
+  // This block asserted the OPPOSITE until today, and #590's note below records
+  // what that cost. Not one of these overrides touches the ARTWORK -- each
+  // changes a count, a version string, or an echoed identity -- while `reply`
+  // carries the same valid master every time. Refusing them destroyed designs
+  // `design-panel-ai-generate` had already authored AND BILLED ("gemini
+  // responded in 42604ms ... 9.5 MB"), and it protected nothing: the master
+  // path check, the download, and every gate that judges the PIXELS all still
+  // run below.
+  //
+  // Requests 4cf16b58, 3b45f349, 664890a2 and 7fe1ffd9 died this way on
+  // 2026-09-21, and so did the owner's own run at 23:07:42. The design must now
+  // SURVIVE each of them, byte for byte.
   for(const override of [{fieldContract:'designpro.atlas-field-prompt.v2'}, {teachingProofIdentity:null},
     {modelInputImageCount:0},{promptVersion:'stale'},
-    {teachingProofIdentity:{...teaching.identity,flattenedTopViewContentHash:'f'.repeat(64)}}]){
-    await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
-      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,...override})})}),
-      error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
+    {teachingProofIdentity:{...teaching.identity,flattenedTopViewContentHash:'f'.repeat(64)}},
+    {qualityArtboardsApplied:1,modelInputImageCount:4},
+    {qualityArtboardsApplied:0,modelInputImageCount:3},
+    {qualityArtboardsApplied:3,modelInputImageCount:5}]){
+    const kept=await atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,...override})})});
+    assert.equal(sha(kept.bytes),sha(bytes),
+      `a metadata mismatch must not discard the design: ${JSON.stringify(override)}`);
   }
-  await assert.rejects(atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport),
-    error=>error.code==='flat_atlas_edge_topology_contract_mismatch');
-  assert.equal(downloads,1,'invalid responses must fail before master download');
+  // A MISSING GUIDE PATH is metadata about the request we sent, not the artwork
+  // that came back, so it is carried too.
+  const keptWithoutGuide=await atlas._test.callAtlasArtboardEdge({...body,guideStoragePath:undefined},transport);
+  assert.equal(sha(keptWithoutGuide.bytes),sha(bytes),
+    'a missing guide path must not discard the design');
+  // WHAT STILL REFUSES: a response with no usable master. That check is real
+  // and sits a few lines below the tolerated mismatches.
+  await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
+    fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,masterStoragePath:''})})}),
+    error=>error.code==='flat_atlas_edge_master_path_missing',
+    'a response carrying no master is still a refusal');
+  for(const applied of [1,2]){
+    const accepted=await atlas._test.callAtlasArtboardEdge(body,{...transport,
+      fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,
+        qualityArtboardsApplied:applied,modelInputImageCount:2+applied})})});
+    assert.equal(sha(accepted.bytes),sha(bytes),
+      `${applied} gold-standard artboard(s) must not refuse a master the edge already produced`);
+  }
+  // 12 = the first valid reply, the EIGHT tolerated metadata mismatches, the
+  // missing guide path, and the two accounted-for quality artboards. It read 3
+  // while a mismatch was refused BEFORE the download; every design that now
+  // survives fetches the master the edge already produced, which is the whole
+  // point. The master-path refusal above downloads nothing, and is not counted.
+  assert.equal(downloads,12,'a tolerated mismatch still downloads the master the edge produced');
   await assert.rejects(atlas._test.callAtlasArtboardEdge(body,{...transport,
     fetchImpl:async()=>({ok:true,status:200,json:async()=>({...reply,masterContentType:format==='png'?'image/jpeg':'image/png'})})}),
     error=>error.code==='flat_atlas_edge_master_mime_mismatch');
@@ -205,7 +249,7 @@ function runCutoutLoop(candidates) {
     async maybeSingle(){return {data:null,error:null}},
     insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
   const paths=candidates.map((_,i)=>`atlas-call1/55555555-5555-4555-8555-55555555555${i}.png`);
-  const done=atlas.generateOrReuseFlatAtlas({
+  const done=atlas._test.generateOrReuseFlatAtlasLegacyRouting({
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',

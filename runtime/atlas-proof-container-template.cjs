@@ -354,11 +354,25 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // states the difference between the rectangle the shop CUTS and the rectangle
   // it PRINTS. Zone 1 had the captions without it, so a reader of the blank
   // template learned the panel names and not the numbers under them.
+  //
+  // PER-PANEL SQUARE FOOTAGE, added 2026-09-21. The owner's own gold-standard
+  // sheets carry it on every panel ("with 5\" bleed - 101.4 sq ft"), and she
+  // asked for it directly: "if it knows make and model it must calculate sq ft
+  // on PanelProductionSheet document". It is the figure a shop actually orders
+  // material by, and the sheet stated a total while stating no part of it.
+  //
+  // It is the PRINT area -- the rectangle that goes on the roll, bleed
+  // included -- because that is what is bought. The header's TOTAL COVERAGE is
+  // the TRIM area, what lands on the vehicle, and the two are DIFFERENT
+  // NUMBERS ON PURPOSE. So the header now also states the material total, or a
+  // reader would reasonably try to sum these and find they do not reach it.
+  // Both are computed from the GENIE manifest; neither is ever copied.
   const panelDetail = (s) => {
     const p = printOf(s);
-    return [`TRIM ${r1(trimOf(s).w)}" x ${r1(trimOf(s).h)}"`,
-      `PRINT ${r1(p.w)}" x ${r1(p.h)}"`,
-      `${bleedInches}" bleed all edges`];
+    const t = trimOf(s);
+    return [`${r1(p.w)}" W x ${r1(p.h)}" H`,
+      `(TRIM: ${r1(t.w)}" x ${r1(t.h)}")`,
+      `with ${bleedInches}" bleed — ${((p.w * p.h) / 144).toFixed(1)} sq ft`];
   };
 
   // TOTAL COVERAGE IS COMPUTED, NEVER COPIED. The owner's filled sheet carries
@@ -368,6 +382,9 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // them. This one is the sum of the GENIE trim areas and nothing else, so the
   // blank template can never teach arithmetic that does not close.
   const totalTrimSqFt = surfaces.reduce((sum, s) => sum + (trimOf(s).w * trimOf(s).h) / 144, 0);
+  // The material total, which the per-panel figures DO sum to.
+  const totalPrintSqFt = surfaces.reduce(
+    (sum, s) => sum + (printOf(s).w * printOf(s).h) / 144, 0);
   const m = [];
 
   // ── the knock-out, in chrome mode only ──────────────────────────────────
@@ -401,7 +418,8 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   m.push(text(WIDTH / 2, 44, "2D PRODUCTION PROOF", { size: 21, weight: 700, anchor: "middle", spacing: 0.4 }));
   m.push(text(WIDTH / 2, 61, vehicle || "VEHICLE", { size: 10, fill: MUTED, anchor: "middle", spacing: 0.6 }));
   m.push(text(WIDTH / 2, 77, `TOTAL COVERAGE (TRIM): ${totalTrimSqFt.toFixed(2)} SQ FT`
-    + `  |  EVERY PANEL DIMENSIONED BY GENIE  |  ${bleedInches}" BLEED ON ALL FOUR EDGES`,
+    + `  |  MATERIAL (WITH ${bleedInches}" BLEED): ${totalPrintSqFt.toFixed(2)} SQ FT`
+    + `  |  EVERY PANEL DIMENSIONED BY GENIE`,
     { size: 8.5, fill: MUTED, anchor: "middle", spacing: 0.3 }));
   m.push(`<rect x="1180" y="22" width="302" height="62" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   // THE JOB BLOCK IS FILLED BY CODE WHEN THE REQUEST CARRIES IT, and left as a
@@ -420,7 +438,7 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // ── zone 1: the finished panels ──────────────────────────────────────────
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
-    "6 PANELS — COMPLETE WRAP ARTWORK"));
+    `${surfaces.length} PANELS — COMPLETE WRAP ARTWORK (RECTANGLE PANELS)`));
   m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail, fill: ground }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
@@ -429,14 +447,14 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
       ? "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)"
       : "ZONE 2 — PRINT PANELS AS AUTHORED",
     cleanBase
-      ? "6 PANELS — BACKGROUND ARTWORK ONLY"
-      : "6 PANELS — ARTWORK, LETTERING AND LOGO AS DESIGNED"));
+      ? `${surfaces.length} PANELS — BACKGROUND ARTWORK ONLY (MATCHES ZONE 1 EXACTLY)`
+      : `${surfaces.length} PANELS — ARTWORK, LETTERING AND LOGO AS DESIGNED`));
   m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,
     "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
-    "VECTOR CUT PATHS — NO BACKGROUND"));
+    "VECTOR CUT ELEMENTS — NO BACKGROUND"));
   for (const slot of layoutCutGraphics()) {
     m.push(`<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" fill="${ground}"`
       + ` stroke="${FRAME}" stroke-width="1" stroke-dasharray="5 4"/>`);
@@ -463,8 +481,8 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   ].forEach((line, i) => m.push(text(838, 862 + i * 12, line, { size: 8, fill: MUTED })));
   m.push(`<rect x="1204" y="836" width="278" height="74" fill="none" stroke="${RULE}" stroke-width="1"/>`);
   m.push(text(1216, 851, "GUIDE (FOR REFERENCE ONLY)", { size: 8.5, weight: 700 }));
-  [["#ec4899", "Panel size (with bleed)"], ["#16a34a", "Trim line (finished size)"],
-    ["#2563eb", "Safe zone (keep critical elements inside)"]].forEach(([colour, label], i) => {
+  [["#ec4899", "Panel Trim Line (Actual Size)"], ["#16a34a", `${bleedInches}" Bleed Area`],
+    ["#2563eb", "Safe Zone (Keep Text/Logos Inside)"]].forEach(([colour, label], i) => {
     m.push(`<rect x="1216" y="${860 + i * 15}" width="24" height="10" fill="none" stroke="${colour}"`
       + ` stroke-width="1.2" stroke-dasharray="4 3"/>`);
     m.push(text(1248, 869 + i * 15, `= ${label}`, { size: 8, fill: MUTED }));

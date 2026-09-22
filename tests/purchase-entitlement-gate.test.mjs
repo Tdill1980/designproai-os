@@ -206,8 +206,15 @@ test("QC scope per purchase state", () => {
 });
 
 test("output.verify proves the purchased set and only that", () => {
-  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 24);
-  assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
+  const pack = manifestFor(["print_pack_entitlement"]);
+  assert.equal(pack.requiredOutputFiles, 60,
+    "six surfaces times PNG, TIFF, EPS, PDF and JPG, times the branded and the clean variant");
+  assert.deepEqual([...pack.outputFormats], ["png", "tiff", "eps", "pdf", "jpg"]);
+  assert.deepEqual([...pack.outputVariants], ["branded", "clean"]);
+  assert.equal(pack.outputFormatContract, "designpro.production-formats.v4");
+  const logos = manifestFor(["logo_pack"]);
+  assert.equal(logos.requiredOutputFiles, 0);
+  assert.equal("outputVariants" in logos, false, "a run that did not buy the pack is not told about variants");
   assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
   assert.match(claimant, /output_unpurchased_present/,
     "outputs on a run that did not buy them is a fault, not something to verify");
@@ -216,15 +223,37 @@ test("output.verify proves the purchased set and only that", () => {
 
 test("new paid builds require PDF while immutable completed legacy builds stay readable", () => {
   const current = manifestFor(["print_pack_entitlement"]);
+  // A purchase frozen before v4 named no contract, no formats and no variants.
   const legacy = { ...current, requiredOutputFiles: 18 };
   delete legacy.outputFormatContract;
   delete legacy.outputFormats;
+  delete legacy.outputVariants;
   const built = { verified: true, outputCount: 18, outputSetHash: "a".repeat(64) };
   assert.equal(_test.authorizedOutputFormats(legacy, built).requiredOutputFiles, 18);
   assert.throws(() => _test.authorizedOutputFormats(current, built), /immutable completed build receipt/);
   const upgraded = { ...built, outputCount: 24, outputFormatContract: "designpro.production-formats.v2", outputFormats: ["png", "tiff", "eps", "pdf"] };
   assert.equal(_test.authorizedOutputFormats(legacy, upgraded).requiredOutputFiles, 24,
-    "a previously purchased but unbuilt run receives PDF from the new builder");
+    "a pack completed under the v2 contract is verified as the twenty-four it was built as, not as thirty");
+  assert.equal(_test.authorizedOutputFormats(legacy, upgraded).outputFormatContract, "designpro.production-formats.v2");
+  const withJpg = { ...built, outputCount: 30, outputFormatContract: "designpro.production-formats.v3", outputFormats: ["png", "tiff", "eps", "pdf", "jpg"] };
+  assert.equal(_test.authorizedOutputFormats(legacy, withJpg).requiredOutputFiles, 30,
+    "a v3 pack (a revision with no Zone 2) is verified as the thirty branded files it was built as");
+  assert.equal("outputVariants" in _test.authorizedOutputFormats(legacy, withJpg), false, "a one-variant tier never names its variant");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputCount: 24 }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputVariants: ["branded"] }), /immutable completed build receipt/,
+    "a v3 receipt that starts naming a variant is not the receipt v3 wrote");
+  // v4: both variants, sixty files, and the receipt must say so.
+  const withClean = { ...withJpg, outputCount: 60, outputFormatContract: "designpro.production-formats.v4", outputVariants: ["branded", "clean"] };
+  const resolved = _test.authorizedOutputFormats(legacy, withClean);
+  assert.equal(resolved.requiredOutputFiles, 60);
+  assert.deepEqual(resolved.outputVariants, ["branded", "clean"]);
+  assert.equal(resolved.outputFormatContract, "designpro.production-formats.v4");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputVariants: undefined }), /immutable completed build receipt/,
+    "a v4 build that does not name its variants cannot be verified as sixty files");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputCount: 30 }), /immutable completed build receipt/,
+    "half a clean set is neither tier");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withClean, outputVariants: ["branded"] }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputFormatContract: "designpro.production-formats.v9" }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...upgraded, outputCount: 18 }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, verified: false }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, outputSetHash: null }), /immutable completed build receipt/);
@@ -250,8 +279,20 @@ test("the ZIP carries the purchased deliverable and not the other one", () => {
 });
 
 test("delivery ships only authorized artifacts and keeps the products distinct", () => {
-  assert.match(claimant, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/,
-    "Call 10 logos exist for the preview; a Production-Pack-only run must not deliver them");
+  // THE LEDGER IS STATED; THE PRODUCT IS NOT DELIVERED. This used to pin
+  // `authorized.logoPackAuthorized ? await artifacts(...) : []`, which kept the
+  // separated logos OUT of the manifest on a Production-Pack-only run. Both
+  // readers of the manifest -- `validateManifest` in wrapbox-delivery.cjs and
+  // `commit_designpro_wrapbox_pack` -- require the full Call 10 ledger, so on the
+  // first run whose brief carried a logo (de0cdc52, five logos, Production Pack
+  // only) the reconciler refused with wrapbox_manifest_logo_mismatch and no
+  // WrapBox pack row or customer email was ever created. The manifest names the
+  // lineage; delivery of the logo BYTES is decided by `zipKinds`, which still
+  // carries `logo` only when the Logo Pack was bought (asserted above).
+  assert.match(claimant, /const logoRows = await artifacts\(sb, run\.id, \["logo"\]\);/,
+    "the WrapBox manifest states the immutable Call 10 ledger regardless of purchase");
+  assert.doesNotMatch(claimant, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/,
+    "a purchase-scoped ledger makes the publisher refuse every run with a logo");
   assert.match(claimant, /const expectedSourceViews = authorized\.zipIncludesSourceViews \? 7 : 0/);
   assert.match(claimant, /products: authorized\.products, deliverables: authorized\.deliverables/);
   const both = manifestFor(["logo_pack", "print_pack_entitlement"]);

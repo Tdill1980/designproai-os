@@ -145,7 +145,7 @@ function panelChecks(panel: FlatAtlasCallOnePanel, masterContentHash: string): Q
     "Master ancestry",
     ancestryOk ? "pass" : "fail",
     ancestryOk
-      ? `Cut from A.T.L.A.S. master ${masterContentHash.slice(0, 12)}`
+      ? `Cut from print master ${masterContentHash.slice(0, 12)}`
       : `Panel names master ${String(panel.sourceMasterHash || "none").slice(0, 12)}, this revision's master is ${masterContentHash.slice(0, 12)}`,
     key,
   ));
@@ -304,7 +304,7 @@ export function buildPanelQcReport(input: {
   // MASTER IDENTITY, and the master's own QC verdict from authoring time.
   checks.push(check(
     "job.master",
-    "Accepted A.T.L.A.S. master",
+    "Accepted print master",
     HASH_RE.test(masterContentHash) ? "pass" : "fail",
     HASH_RE.test(masterContentHash)
       ? `${masterContentHash.slice(0, 16)}… · ${revision.master.widthPx}×${revision.master.heightPx}px · ${revision.promptVersion}`

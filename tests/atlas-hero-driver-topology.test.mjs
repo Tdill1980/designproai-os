@@ -186,9 +186,21 @@ test("the default topology is unchanged; hero-driver is opt-in by deploy flag an
   assert.match(runtimeSrc, /authoringTopology = "six-surface"/, "the destructured default stays six-surface");
   assert.match(runtimeSrc, /options\?\.authoringTopology === undefined && heroDriverEnabled\(\)\s*\n\s*&& options\?\.parentManifest == null && \(options\?\.revisionSequence \?\? 1\) === 1/);
   assert.match(runtimeSrc, /\["six-surface", "field", HERO_DRIVER_TOPOLOGY, PANEL_PROOF_TOPOLOGY\]\.includes\(authoringTopology\)/);
-  // Six legacy hero/field fallback doors remain. Panel proof now refuses loudly.
+  // THE SIX LEGACY HERO/FIELD FALLBACK DOORS REMAIN, DEAD BUT RETAINED (owner
+  // 2026-09-22: "There isn't any other Call 1"). The hero-driver line matched
+  // above now lives in `generateOrReuseFlatAtlasLegacyRouting`, which
+  // production never calls; the six doors below it are reachable only from a
+  // hero/field/six-surface pass, which only the legacy-resume dispatch and the
+  // harnesses can enter. None of the six is reachable from a panel-proof run:
+  // `tests/panel-proof-is-the-only-call1.test.mjs` proves that by execution.
+  // The count is pinned so a door is neither silently added nor silently lost.
   const seam = runtimeSrc.slice(runtimeSrc.indexOf("async function generateOrReuseFlatAtlasResolved("));
   assert.equal((seam.match(/return failOverToSixSurface\(/g) || []).length, 6);
+  const routingHead = runtimeSrc.slice(runtimeSrc.indexOf("async function generateOrReuseFlatAtlas(options) {"),
+    runtimeSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"));
+  assert.ok(!routingHead.includes("heroDriverEnabled()") && !routingHead.includes("fieldFirstReason("),
+    "the live router reads no hero-driver or field-first flag; those selectors are dead but retained");
+  assert.match(routingHead, /authoringTopology: PANEL_PROOF_TOPOLOGY/);
   assert.ok(seam.includes("field-first budget refused"), "the spent field-first budget hands over");
   assert.ok(seam.includes("resuming the accepted six-surface tail for"), "the checkpoint resume mirror exists");
   assert.match(seam, /existing && fieldFirstRouted && existing\.manifest\?\.topology !== FIELD_TOPOLOGY/);

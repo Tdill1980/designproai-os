@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
-import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS } from "@/lib/os-brand";
 import { ToolHeader } from "@/components/layout/ToolHeader";
 import { WallProHeroProof } from "@/components/wallpro/WallProHeroProof";
 import { useToolProofBand } from "@/hooks/useToolProofBand";
@@ -8,7 +8,7 @@ import { FolderOpen, ListChecks } from "lucide-react";
 import { Link as ToolHeaderLink } from "react-router-dom";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
 import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
-import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { AtlasPanelProofSheetLoader, panelProofStillLanding } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
@@ -95,7 +95,6 @@ import { PersonaPipelineProgress } from "@/components/designpanelpro/PersonaPipe
 import { DesignPipelineProgress, type PipelineStage } from "@/components/designpanelpro/DesignPipelineProgress";
 import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { DesignIQShowcase, GenerationWizard, DESIGNPANELPRO_TIPS } from "@/components/tools/GenerationWizard";
-import { formatDid } from "@/lib/designId";
 import { BuildTag } from "@/components/BuildTag";
 import {
   dpApi,
@@ -307,7 +306,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generateFromPrompt,
     designName,
     designDnaId,
-    renderDid,
     renderPt,
     // Persona pipeline
     runPersonaPipeline,
@@ -484,7 +482,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!flatFirstAtlasSupportedVehicleType(vehicle.type)) {
       if (!silent) {
         toast({
-          title: "A.T.L.A.S. topology unavailable",
+          title: "Design layout unavailable",
           description: "Current Design Prep supports cars, trucks, SUVs, and vans.",
           variant: "destructive",
         });
@@ -1295,7 +1293,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const handlePipelineStart = async (params: DesignIQParams) => {
     proofSubmissionTimeRef.current = performance.now();
     if (atlasResponseUnconfirmed) {
-      toast({ title: "ATLAS response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
+      toast({ title: "Design response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
       return;
     }
     const requestedPipelineMode = pipelineModeRef.current;
@@ -1321,7 +1319,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "MyVehicle is unavailable for ATLAS generation",
+        title: "MyVehicle is unavailable for this design",
         description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
@@ -1342,7 +1340,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       }
       if (!flatFirstAtlasSupportedVehicleType(vehicleType)) {
         toast({
-          title: "A.T.L.A.S. topology unavailable",
+          title: "Design layout unavailable",
           description: "Current DesignProAI supports cars, trucks, SUVs, and vans.",
           variant: "destructive",
         });
@@ -1832,7 +1830,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "Revisions are unavailable for this ATLAS run",
+        title: "Revisions are unavailable for this design run",
         description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
@@ -2009,7 +2007,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // it is a production instrument and it lives on the PanelPro Studio board.
   const previewDisplayUrl = mainDisplayUrl;
   const atlasNewRunRequired = isFlatFirstDiagnostic
-    && Boolean(generationError?.includes("Start a new ATLAS run"));
+    && Boolean(generationError?.includes("Start a new design"));
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
@@ -2170,14 +2168,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         </button>
                       </div>
                       <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
-                        {/* Atlas is the intelligence layer, not a fourth product: it
-                            gets "Powered by Atlas" and one line, never a competing
-                            wordmark (os-brand.ts, Trish 2026-09-16). */}
+                        {/* The product, in the owner's words (Trish 2026-09-22): the
+                            three-zone Production Panel Proof is Call 1 and the source of
+                            every print-ready file. No engine name is presented here. */}
                         <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                          {ATLAS_BRAND.poweredBy}
+                          Production Panel Proof
                         </div>
                         <p className="mt-2 text-[10px] leading-4 text-white/65">
-                          {ATLAS_BRAND.explanation} One canonical design releases labeled vehicle surfaces and their matched 3D proofs, and the same artifact lineage continues into production.
+                          Call 1 draws one sheet in three zones — full print panels, the same panels without type or logos, and your logo, text and graphic elements. Every print-ready file, labeled vehicle surface and matched 3D proof is cut from that one source and carried into production unchanged.
                         </p>
                       </div>
                       {/* Input area */}
@@ -2200,7 +2198,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     <AiPanelGenerator
                       onPanelGenerated={setSelectedPanel}
                       isGenerating={isGeneratingPanel}
-                      generationBlockedReason={atlasResponseUnconfirmed ? "ATLAS response unconfirmed" : undefined}
+                      generationBlockedReason={atlasResponseUnconfirmed ? "Design response unconfirmed" : undefined}
                       onGenerate={handlePipelineStart}
                       initialPrompt={pushedRender?.originalPrompt || acePrompt || undefined}
                       autoGenerate={!!acePrompt && !pushedRender}
@@ -2481,7 +2479,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <AtlasPanelProofSheetLoader
                         key={generationRequestState.requestId}
                         requestId={generationRequestState.requestId}
-                        pollWhilePending={pipelineActive || ["queued", "leased", "retryable"].includes(generationRequestState.state)}
+                        pollWhilePending={pipelineActive || panelProofStillLanding(generationRequestState.state)}
                         submittedAt={proofSubmissionTimeRef.current}
                       />
                     )}
@@ -2672,11 +2670,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </>
                               )}
                               {/* Hide DesignIDBadge on mobile — info bar below shows same data */}
+                              {/* THE ID LADDER: this page is pre-purchase (Order Production
+                                  Pack leaves for Stripe and returns to /productionflow), so
+                                  the only identity it may show is the Generation ID minted at
+                                  Call 1. The DID and Order ID are minted by the purchase and
+                                  are shown by the post-purchase surfaces, never derived here. */}
                               {!isMobile && (
                                 <DesignIDBadge
                                   toolName={showMvpHero ? "MyVehiclePro™" : "DesignProAI™"}
                                   designName={designName || selectedPanel?.ai_generated_name || selectedPanel?.name}
-                                  did={formatDid(generationIdRef.current) || renderDid || undefined}
+                                  generationId={generationIdRef.current || undefined}
                                   pt={renderPt || undefined}
                                   showPT={true}
                                 />
@@ -2693,7 +2696,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             {/* Info Bar removed \u2014 it added a black text strip below the
                                 KONVA canvas that ate vertical space and made the render
                                 look condensed. The DesignIDBadge overlay on the canvas
-                                already shows tool name, design name, and DID. */}
+                                already shows tool name, design name, and Generation ID. */}
                           </div>
                         ) : (
                           // Idle + generating deliberately do NOT use the Konva
@@ -3111,7 +3114,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable for this ATLAS run.</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable for this design run.</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
                           Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
@@ -3213,7 +3216,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="space-y-1">
                           <p className="text-sm text-amber-200">
                             {isFlatFirstDiagnostic
-                              ? `${allViews.length} of ${requiredViewCount} views generated. The ATLAS proof set is incomplete; individual views cannot be retried here. Open the saved job to inspect its status.`
+                              ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete; individual views cannot be retried here. Open the saved job to inspect its status.`
                               : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
                           </p>
                           {/* NAME THE VIEW AND SAY WHY. A short count told the
@@ -3253,7 +3256,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <img src={view.url} alt={VIEW_LABEL_MAP[view.type] || view.type} className="w-full h-full object-cover" />
                             <DesignIDBadge
                               toolName="DesignProAI™"
-                              did={formatDid(generationIdRef.current) || renderDid || undefined}
+                              generationId={generationIdRef.current || undefined}
                             />
                             <div className="absolute bottom-2 left-2 bg-background/90 px-2 py-1 rounded text-xs font-medium z-20">
                               {VIEW_LABEL_MAP[view.type] || view.type}
@@ -3295,7 +3298,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </p>
                               )}
                               {isFlatFirstDiagnostic ? (
-                                <p className="text-xs text-amber-300">Open the saved ATLAS job to inspect this view.</p>
+                                <p className="text-xs text-amber-300">Open the saved job to inspect this view.</p>
                               ) : (
                                 <Button
                                   size="sm"

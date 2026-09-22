@@ -513,7 +513,7 @@ function StudioWorkspace({
             <Link to={revisionUrl}>Continue in RevisionStudioIQ</Link>
           </Button>
           <p className="mt-2 text-[10px] leading-4 text-zinc-600">
-            A revision is a new current-architecture A.T.L.A.S. run. It never
+            A revision is a new Call 1 run. It never
             mutates approved files or reopens fulfillment on this design.
           </p>
         </div>

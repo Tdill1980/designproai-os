@@ -363,22 +363,120 @@ test("composed proof header preserves brand and vehicle parsed from the customer
     "code-owned header must use parsed intake rather than generic COMPANY NAME / VEHICLE placeholders");
 });
 
-test("panel-proof refusals are recorded and terminal, without a substitute authoring route", () => {
+test("panel-proof refusals are recorded, re-rolled ONCE, then terminal — never a substitute authoring route", () => {
+  // THE CONTRACT (owner, 2026-09-22): two candidates, then terminal with the
+  // gate's real reason and both sheets in the refusal ledger. Never
+  // `failOverToSixSurface` -- there is no other Call 1 to fail over to.
   const error = new proof.PanelProofRefusal("the proof edge returned no sheet");
   assert.equal(error.code, "flat_atlas_panel_proof_refused");
   const start = atlasSrc.indexOf("} else if (panelProof) {");
   const end = atlasSrc.indexOf("generated = { bytes: proof.bytes", start);
   const branch = atlasSrc.slice(start, end);
-  assert.doesNotMatch(branch, /failOverToSixSurface|authorPanelProofMaster\(/);
+  assert.doesNotMatch(branch, /failOverToSixSurface/, "a panel-proof run never enters the six-surface contract");
+  // The durable graph is preferred; a missing graph runs the SAME two functions
+  // in-process (D) and records it, rather than throwing
+  // designpro_atlas_call1_graph_unavailable at the customer.
   assert.match(branch, /designpro_atlas_call1_graph_unavailable/);
+  assert.match(branch, /authorPanelProofMaster\(\{/, "the in-process fallback is the same pass the graph's nodes execute");
+  assert.match(branch, /graph: \{ unavailable: true/);
+  // Every refused candidate reaches the ledger WITH its sheet, then the next
+  // candidate is spent (`continue`), then the last one is terminal.
   const recordAt = branch.indexOf("recordAtlasRefusal(supabase, {");
-  const stopAt = branch.indexOf("throw refusal;");
-  assert.ok(recordAt > 0 && stopAt > recordAt);
-  assert.match(branch, /refusal\.retryable = false/);
+  const continueAt = branch.indexOf("continue;", recordAt);
+  const stopAt = branch.indexOf("throw refusal;", continueAt);
+  assert.ok(recordAt > 0 && continueAt > recordAt && stopAt > continueAt,
+    "record the ledger row, spend the next candidate, and only then stop");
   for (const field of ["storagePath", "sha256", "byteSize"]) {
-    assert.ok(branch.slice(recordAt, stopAt).includes(`${field}: cause?.details?.sheet?`));
+    assert.ok(branch.slice(recordAt, continueAt).includes(`${field}: cause?.details?.sheet?`));
   }
-  assert.match(atlasSrc, /if \(panelProof\) \{[\s\S]{0,400}refusal\.retryable = false;[\s\S]{0,50}throw refusal;/);
+  assert.match(branch, /creativeRefusal && attempt < maxAuthoringAttempts/);
+  // The candidate index is part of the durable identity, or the second
+  // candidate is a cache read of the first.
+  assert.match(branch, /candidate: attempt/);
+  // THE OLD SHAPE IS GONE: an unconditional `if (panelProof) { retryable = false; throw }`
+  // ahead of the attempt budget gave a panel-proof run exactly ONE candidate.
+  assert.doesNotMatch(atlasSrc, /if \(panelProof\) \{\n\s*\/\/ A later master gate may refuse an assembled proof too/);
+  const tail = atlasSrc.slice(atlasSrc.indexOf("const refusalReason = stillBlocking.join"),
+    atlasSrc.indexOf("// No corrective-note text is carried into the next attempt"));
+  const terminalAt = tail.indexOf("if (attempt === maxAuthoringAttempts) {");
+  const panelTerminalAt = tail.indexOf("if (panelProof) {", terminalAt);
+  assert.ok(terminalAt > 0 && panelTerminalAt > terminalAt,
+    "the panel-proof terminal throw sits INSIDE the exhausted-budget branch");
+  assert.match(tail.slice(panelTerminalAt, panelTerminalAt + 700), /refusal\.retryable = false;\s*\n\s*throw refusal;/);
+  assert.ok(!tail.slice(0, terminalAt).includes("if (panelProof)"),
+    "no panel-proof throw ahead of the attempt budget");
+});
+
+test("Zone 3 degrades instead of refusing: no assets or text is an EMPTY band, recorded", async () => {
+  // Owner, 2026-09-22: "System must not issue fails because of no atlas ...
+  // Nothing may block orchestration." A brief with no company name, no contact
+  // line, no wordmark and no logo has nothing to cut. That used to refuse the
+  // whole Call 1 ("Zone 3 requires original assets or customer text") -- the
+  // design, its DesignID and every proof lost over an absent contact bar.
+  const { callProofEdge } = edgeStub(await paintedSheet());
+  const out = await proof.authorPanelProofMaster({
+    ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
+    input: { brief: "a clean blue wave wrap", vehicle: { year: "2012", make: "Toyota", model: "Prius" } },
+  });
+  assert.ok(out.contentHash, "the master is still produced");
+  assert.equal(out.provenance.threeZoneLayout.graphics, 0);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "none");
+  assert.equal(out.provenance.threeZoneLayout.branded, 6);
+  assert.equal(out.provenance.threeZoneLayout.backgrounds, 6);
+  assert.deepEqual(out.provenance.quadrants.cutGraphics, []);
+  // The empty band is a RECORDED state, never a silent one.
+  const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3");
+  assert.ok(omitted, "an empty Zone 3 must be named in composition.omitted");
+  assert.equal(omitted.reason, "no_original_assets_or_customer_text");
+  assert.deepEqual(out.provenance.composition.placements, []);
+  // Zone 1 is then the authored panels exactly as Zone 2 carries them.
+  for (const panel of out.provenance.composition.panels) {
+    assert.equal(panel.contentHash, panel.backgroundContentHash, `${panel.surfaceKey}: nothing composited, nothing changed`);
+    assert.deepEqual(panel.applied, []);
+  }
+  // And the master is what the six Zone-1 panels assemble into: 4096 square.
+  const meta = await sharp(out.bytes).metadata();
+  assert.equal(meta.width, 4096);
+});
+
+test("Zone 3 degrades the other way: a generated logo without alpha is dropped and named, not refused", async () => {
+  const opaque = await sharp({ create: { width: 120, height: 40, channels: 3, background: "#123456" } }).png().toBuffer();
+  const contentHash = createHash("sha256").update(opaque).digest("hex");
+  const logo = { role: "logo", storagePath: `atlas-elements/${contentHash}.png`, contentHash,
+    byteSize: opaque.length, contentType: "image/png" };
+  const { callProofEdge } = edgeStub(await paintedSheet(), { generatedElements: [logo], imageRequestCount: 2 });
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
+    downloadAsset: async () => opaque });
+  assert.ok(out.contentHash);
+  // The opaque mark is not a cut graphic; the outlined typography and contact
+  // line still are, so Zone 3 carries two and the design proceeds.
+  assert.ok(!out.provenance.quadrants.cutGraphics.some((a) => a.surfaceKey === "logo"));
+  assert.equal(out.provenance.quadrants.cutGraphics.length, 2);
+  const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3" && o.role === "logo");
+  assert.ok(omitted, "the dropped mark must be named");
+  assert.equal(omitted.reason, "generated_logo_has_no_transparent_channel");
+  assert.equal(omitted.contentHash, contentHash);
+});
+
+test("a SUPPLIED logo that cannot be read or hash-verified still refuses", async () => {
+  // The customer's own file is not a degradable extra: shipping a design
+  // without it is a WRONG design, not a degraded one.
+  const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>');
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+  const logoAsset = { storagePath: `users/test/revisions/test/inputs/logo/${contentHash}.svg`, contentHash,
+    byteSize: bytes.length, contentType: "image/svg+xml" };
+  for (const [label, downloadAsset] of [
+    ["unreadable", async () => { throw new Error("storage unavailable"); }],
+    ["hash mismatch", async () => Buffer.from(bytes.toString() + " ")],
+  ]) {
+    const { callProofEdge } = edgeStub(await paintedSheet());
+    await assert.rejects(
+      () => proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
+        input: { ...AUTHOR_ARGS.input, logoAsset }, downloadAsset }),
+      (error) => label === "unreadable" ? /storage unavailable/.test(String(error.message))
+        : error.code === "flat_atlas_panel_proof_refused" && /original logo identity mismatch/.test(error.reason),
+      `${label}: a supplied logo is never silently dropped`);
+  }
 });
 
 test("THE PASSENGER IS NOT MIRRORED — its cell is authored", async () => {
@@ -541,35 +639,60 @@ test("a blank generated graphics band is replaced with original outlined assets"
   assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "vector-originals");
 });
 
-test("the flag is OFF unless a deploy says on, and the routing is first-authoring only", () => {
-  assert.equal(proof.panelProofEnabled({}), false, "unset is OFF: four probe sheets, none on a customer run");
+test("the flag is a deploy receipt, not a router: the panel proof is the ONLY Call 1, for first authoring and revisions", () => {
+  // The reader still reads the flag exactly (the deploy-workflow lock walks
+  // it from this file to the writer), so the deploy receipt stays honest...
+  assert.equal(proof.panelProofEnabled({}), false);
   assert.equal(proof.panelProofEnabled({ DESIGNPRO_ATLAS_PANEL_PROOF: "ON " }), true);
-  assert.equal(proof.panelProofEnabled({ DESIGNPRO_ATLAS_PANEL_PROOF: "no" }), false,
-    "a typo fails to the SAFE side, which for an unproven routing is off");
+  assert.equal(proof.panelProofEnabled({ DESIGNPRO_ATLAS_PANEL_PROOF: "no" }), false);
 
-  // ⛔ AND IT NO LONGER SELECTS CALL 1 AT ALL (owner ruling, Trish 2026-09-21:
-  // "kill the production-panel-proof bypass").
+  // ...BUT IT NO LONGER SELECTS A CONTRACT (owner, Trish 2026-09-22: "There
+  // isn't any other Call 1 — the only call is panel pro production proof").
   //
-  // This test used to assert the opposite — that the flag is read FIRST, ahead
-  // of hero-driver, so it alone decides Call 1. That routing is what bypassed
-  // 58 commits of DesignPanelAI work: `production-panel-proof` is its own
-  // Call-1 endpoint and, by its own header, "cannot reach
-  // design-panel-ai-generate at all", so it reached neither the enriched brief,
-  // nor `styleDescriptors`, nor the VisionBoard branch, nor the gold-standard
-  // artboards. The owner judged the result against the Sept 17-18 designs.
-  //
-  // So the lock is inverted: no flag may put a customer's Call 1 on a path that
-  // cannot reach the brain. The topology is still REACHABLE — a probe or any
-  // caller naming `authoringTopology` still runs it, and every other assertion
-  // in this file still holds — it is simply never SELECTED.
+  // THE HISTORY MATTERS, BECAUSE THIS ASSERTION HAS NOW POINTED THREE WAYS.
+  // `c1dbe30e` said "no flag may select this route" because the edge bypassed
+  // the brain; 2026-09-21 restored the flag as the FIRST selector once
+  // `_shared/designiq-assembly.ts` made that false; and 2026-09-22 removed the
+  // selection altogether. The property the route was once banned for lacking
+  // is still locked below, because a future edit that takes any of those
+  // inputs away would ship a brain-less Call 1 with nothing behind it.
   const head = atlasSrc.slice(atlasSrc.indexOf("async function generateOrReuseFlatAtlas(options) {"),
+    atlasSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"));
+  assert.ok(head.includes("panelProofEnabled()"), "the flag is still read, as a receipt");
+  assert.match(head, /if \(options\?\.authoringTopology === undefined\) \{[\s\S]{0,400}authoringTopology: PANEL_PROOF_TOPOLOGY/,
+    "an unnamed topology is the panel proof, unconditionally");
+  assert.ok(!head.includes("heroDriverEnabled()") && !head.includes("fieldFirstReason("),
+    "no other selector is read on the live router");
+  assert.ok(!/revisionSequence \?\? 1\) === 1/.test(head),
+    "revisions are not routed elsewhere: sequence > 1 is the panel proof too");
+  // The old selectors are DEAD BUT RETAINED, by name, behind the legacy router
+  // production never calls (owner protection #1: resume/read paths stay).
+  const legacy = atlasSrc.slice(atlasSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"),
     atlasSrc.indexOf("async function generateOrReuseFlatAtlasResolved"));
-  assert.ok(!head.includes("panelProofEnabled()"),
-    "no flag routes Call 1 to the panel-proof endpoint; the brain is not optional");
-  assert.ok(head.includes("heroDriverEnabled()") && head.includes("fieldFirstReason("),
-    "the routings that DO reach the deployed design-panel-ai-generate edge are untouched");
-  // The pass still refuses a revision edit outright rather than half-running.
-  assert.match(atlasSrc, /flat_atlas_panel_proof_edit_unsupported/);
+  assert.ok(legacy.includes("heroDriverEnabled()") && legacy.includes("fieldFirstReason("),
+    "the other routings are retained, not deleted");
+  assert.ok(!atlasSrc.includes("await generateOrReuseFlatAtlasLegacyRouting(")
+    && !atlasSrc.includes("return generateOrReuseFlatAtlasLegacyRouting("),
+    "and nothing in production calls the legacy router");
+
+  // THE BRAIN, AND EVERY INPUT c1dbe30e SAID THIS PATH LOST. A route that stops
+  // carrying one of these is the defect that commit correctly described, so it
+  // fails here rather than reaching a customer.
+  const fn = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  assert.match(fn, /from "\.\.\/_shared\/designiq-assembly\.ts"/,
+    "A.C.E. itself, through the slice pinned to the deployed design-panel-ai-generate");
+  assert.match(fn, /buildDesignIQPrompt\(\{/, "and it is EXECUTED, not described");
+  assert.match(fn, /atlasFlatMaster:\s*true/,
+    "the same branch Call 1 runs, so LOGO_REQUIREMENT and COMMERCIAL_DEPTH fire");
+  for (const input of ["styleDescriptors", "visionboard_intent", "visionBoardImages",
+    "brandColors", "creativeDirection", "vehicleMake", "vehicleModel", "vehicleYear"]) {
+    assert.ok(fn.includes(input), `the panel-proof Call 1 must still carry ${input}`);
+  }
+  assert.match(fn, /designpanel-artboard-examples\//,
+    "the gold-standard artboards reach it too");
+  // A revision edit runs THROUGH the pass now; the outright refusal is gone.
+  assert.ok(!atlasSrc.includes('"flat_atlas_panel_proof_edit_unsupported"'),
+    "a revision must not be refused by the panel-proof pass");
   assert.match(atlasSrc, /PANEL_PROOF_TOPOLOGY\].includes\(authoringTopology\)/,
     "an explicitly named panel-proof topology is still a legal, runnable contract");
 });
@@ -747,9 +870,63 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
   // Scoped to `geminiImageUrl` on purpose: the other `fetch` in this file is
   // `parseCustomerIntake`, a Flash TEXT call, and counting every fetch convicted
   // it. The contract here is about the billed image generation.
+  //
+  // THREE SINCE THE ANCHORED PATH (2026-09-21): the DESIGN turn, the LAYOUT
+  // turn and the explicit custom-logo call. The design turn is a real third
+  // paid generation and this lock's whole subject is that a paid generation
+  // cannot be bought twice -- so raising the number is not enough, and the
+  // assertions below prove the new one carries the same contract as the others:
+  // its own stable attemptKey (`:design`, so a recovery cannot be handed the
+  // layout's bytes or made to re-buy the design), the caller's cacheOnly, and
+  // the lease authorisation.
   const imageCalls = [...edge.matchAll(/await fetch\(\s*\n?\s*geminiImageUrl\(/g)].length;
-  assert.equal(imageCalls, 2,
-    `only the artwork and explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
+  assert.equal(imageCalls, 3,
+    `only the design turn, the layout turn and the explicit custom-logo durable invocations may fetch images; found ${imageCalls}`);
+  assert.match(edge, /attemptKey: `\$\{providerRequest\.attemptKey\}:design`/,
+    "the design turn needs its OWN durable key, or a recovery reads the layout turn's record");
+  const designBlock = edge.slice(edge.indexOf("const designRequest = JSON.stringify({"),
+    edge.indexOf("designTurnRequestId = designCached.requestId"));
+  assert.match(designBlock, /runDurableImageProviderRequest\(\{/,
+    "the design turn must go through the durable module, not a bare fetch");
+  assert.match(designBlock, /cacheOnly: providerRequest\.cacheOnly === true/,
+    "a RECOVERY must not buy the design turn a second time");
+  assert.match(designBlock, /authorize: \(\) => authorizeAtlasProviderRequest\(/,
+    "the design turn is a paid provider request and still needs the lease (RULE 0.26)");
+
+  // A REJECTED QUALITY CANDIDATE MUST NOT SPEND A SLOT.
+  //
+  // The loader used to `.slice(0, ARTBOARD_QUALITY_MAX)` the LISTING and then
+  // skip the unusable ones inside the loop -- so a duplicate, an oversized
+  // file or a failed download consumed one of only two exemplar slots instead
+  // of yielding it to the next file in the bucket. With the seeded
+  // `01-panel-proof-zones-filled.png` being byte-identical to the pinned
+  // format sheet, every request carried ONE real exemplar of professional wrap
+  // work no matter how many good files sat behind it.
+  assert.doesNotMatch(edge, /\.slice\(0, ARTBOARD_QUALITY_MAX\)/,
+    "the ceiling belongs on ACCEPTED examples, never on the listing");
+  assert.match(edge, /if \(qualityExamples\.length >= ARTBOARD_QUALITY_MAX\) break;/,
+    "walk the listing until the accepted count is reached");
+
+  // ⚠️ EVERY READER OF `providerRequest` COMES AFTER ITS DECLARATION.
+  //
+  // This is a temporal-dead-zone lock, and it exists because live run 20 died
+  // in 25 seconds on "Cannot access 'providerRequest' before initialization"
+  // -- before one image request -- while 88 tests were green.
+  //
+  // THEY WERE GREEN BECAUSE THEY ALL GREP THIS FILE AND NONE EXECUTES IT. A
+  // source-level assertion cannot see a TDZ; only running the handler can, and
+  // nothing here runs the handler. So the cheap structural invariant is pinned
+  // instead: the identity is BOUND before the design turn that keys itself with
+  // it, which is bound before the layout request that continues it. Move the
+  // declaration back down and this fails where the suite previously could not.
+  const iDecl = edge.indexOf("const providerRequest = {");
+  const iDesign = edge.indexOf("const designAt = Date.now();");
+  const iModel = edge.indexOf("const modelRequest = JSON.stringify({");
+  assert.ok(iDecl > 0 && iDesign > 0 && iModel > 0, "all three anchors must exist");
+  assert.ok(iDecl < iDesign,
+    "providerRequest must be declared before the design turn that authorises against it");
+  assert.ok(iDesign < iModel,
+    "the design turn must run before the layout request that replays it");
   const wrappedCalls = [...edge.matchAll(/invoke: (?:\(\)|\(request: string\)) => captureGeminiHttpExchange\(async \(\) => await fetch\(\s*geminiImageUrl\(/g)].length;
   assert.equal(wrappedCalls,imageCalls,
     "each image fetch must sit inside captureGeminiHttpExchange so an interrupted exchange is recoverable");
@@ -763,10 +940,39 @@ test("a RECOVERY cannot buy a second paid generation — the edge honours cacheO
   const sheet = await paintedSheet();
   const { callProofEdge, calls } = edgeStub(sheet);
   await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge });
-  assert.equal(calls[0].attemptKey, "panel-proof:1",
+  assert.equal(calls[0].attemptKey, "panel-proof:1:1",
     "the attempt key must be stable across recoveries of the same candidate");
   assert.match(calls[0].attemptKey, /^[a-z][a-z0-9:._-]{0,119}$/,
     "the key must satisfy the provider module's own identity pattern");
+  // AND DISTINCT ACROSS CANDIDATES AND REVISIONS. The literal "panel-proof:1"
+  // made a re-roll a cache read of the refused sheet and a revision a cache
+  // read of its parent. `<revisionSequence>:<candidate>` is the identity.
+  const second = edgeStub(sheet);
+  await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge: second.callProofEdge, candidate: 2 });
+  assert.equal(second.calls[0].attemptKey, "panel-proof:1:2");
+  const revised = edgeStub(sheet);
+  await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge: revised.callProofEdge,
+    revision: { sequence: 2, parentRevisionId: "55555555-5555-4555-8555-555555555555", contextHash: "c".repeat(64),
+      instruction: "Move the phone number to the rear door.", affectedSurfaces: ["driver", "passenger"],
+      parentProof: { storagePath: `atlas-call1-inputs/${"d".repeat(64)}.png`, contentHash: "d".repeat(64), byteSize: 10 } } });
+  const body = revised.calls[0];
+  assert.equal(body.attemptKey, "panel-proof:2:1");
+  assert.equal(body.revisionSequence, 2);
+  assert.equal(body.revisionInstruction, "Move the phone number to the rear door.");
+  assert.match(body.customerPrompt, /REVISION V2 — apply this change to the approved parent production proof[\s\S]*Move the phone number/,
+    "the instruction is folded into the brief the model reads");
+  assert.ok(body.customerPrompt.startsWith(AUTHOR_ARGS.input.brief), "after the customer's own brief, never instead of it");
+  assert.deepEqual(body.affectedSurfaces, ["driver", "passenger"]);
+  assert.equal(body.parentAtlasRevisionId, "55555555-5555-4555-8555-555555555555");
+  assert.equal(body.revisionContextHash, "c".repeat(64));
+  assert.deepEqual(body.parentProof, { storagePath: `atlas-call1-inputs/${"d".repeat(64)}.png`,
+    contentHash: "d".repeat(64), byteSize: 10, role: "parent-production-proof" });
+  assert.match(body.parentProof.storagePath, proof.CALL1_INPUT_PATH, "the parent proof rides the edge's own input allowlist");
+  // A first generation sends none of the revision fields.
+  assert.equal(calls[0].revisionSequence, 1);
+  for (const field of ["parentProof", "revisionInstruction", "parentAtlasRevisionId", "affectedSurfaces"]) {
+    assert.ok(!Object.hasOwn(calls[0], field), `${field} must be absent on a first generation`);
+  }
 });
 
 test("two customers can NEVER share a cached sheet, even on identical ids", async () => {
@@ -999,4 +1205,37 @@ test("Porsche brief lettering and race roundel share one original asset across Z
     .every(p=>p.contentHash===graphic.contentHash && p.storagePath===graphic.storagePath));
   assert.equal(out.provenance.threeZoneLayout.branded,6);
   assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
+});
+
+test("every pinned teaching input states its ROLE before the image, and FORMAT never teaches design", () => {
+  // Owner, 2026-09-21: "Should just be using to see how it needs to feed
+  // rectangle panels in the zones. Not the design. For design it uses designer
+  // persona in design panel ai generate ... it knows what a pro level dentist
+  // wrap should look like."
+  //
+  // The pinned format sheet went into `parts` as bare `inlineData` with NO
+  // framing text, while every gold-standard artboard beside it carried a
+  // sentence naming what it may not teach. That sheet is the FILLED twin of the
+  // container -- a finished Bright Smiles Dental wrap -- so unlabelled it was
+  // the strongest visual instruction in the request. Same failure as canary
+  // 33389124918, and RULE 0.24 had already forbidden it in prose.
+  const fn = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+
+  assert.match(fn, /PINNED_INPUT_FRAMING/, "pinned inputs carry framing text");
+  assert.match(fn, /panel_proof_pinned_input_unframed/,
+    "a role with no framing REFUSES rather than shipping the sheet unlabelled");
+
+  // Text before image, in that order, or the sheet arrives unlabelled anyway.
+  const loop = fn.slice(fn.indexOf("for (const pinned of"), fn.indexOf("// The gold-standard artboards"));
+  assert.ok(loop.indexOf("parts.push({ text: framing })") < loop.indexOf("parts.push(pinnedPart)"),
+    "the role is stated BEFORE the image it describes");
+
+  // FORMAT is topology only. These are the axes the sheet's own business owns.
+  const framing = fn.slice(fn.indexOf("const PINNED_INPUT_FRAMING"), fn.indexOf("const PINNED_INPUTS"));
+  assert.match(framing, /FORMAT AND TOPOLOGY REFERENCE ONLY/);
+  for (const forbidden of ["artwork", "palette", "company name", "logo", "brand", "industry", "typography"]) {
+    assert.ok(framing.includes(forbidden), `FORMAT must not teach ${forbidden}`);
+  }
+  assert.match(framing, /come from this customer's own brief/,
+    "the design comes from the brief through A.C.E., never from the example");
 });

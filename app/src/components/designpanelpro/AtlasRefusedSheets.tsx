@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import type { AtlasRefusal } from "@/lib/designpro-api";
 
+// Every Call-1 route the ledger can record, named in product words. A route
+// missing here rendered as the literal "undefined" on the failure screen: the
+// three-zone route (`panel-proof`) was recorded by the runtime and admitted by
+// nothing that showed it.
 const TOPOLOGY_LABEL: Record<AtlasRefusal["topology"], string> = {
-  "six-surface": "Six-surface ATLAS sheet",
+  "six-surface": "Six-surface sheet",
   field: "One-field fail-over",
   "hero-driver": "Hero-driver cascade",
+  "panel-proof": "Production panel proof",
 };
 
 const CODE_LABEL: Record<string, string> = {
@@ -32,7 +37,7 @@ export function AtlasRefusedSheets({ refusals, status }: { refusals: AtlasRefusa
     return <p className="text-xs text-gray-500 text-center max-w-md">No candidate reached the acceptance gates on this run.</p>;
   }
   return (
-    <section aria-label="Refused ATLAS candidates" className="mt-2 w-full max-w-4xl">
+    <section aria-label="Refused Call 1 candidates" className="mt-2 w-full max-w-4xl">
       <p className="text-sm text-gray-300 text-center mb-3">
         What the model drew on this run, and why each sheet was refused ({refusals.length})
       </p>

@@ -174,7 +174,7 @@ function call8ProofMaterialHash({ panels, surfaces, revisionId, textLock, tenant
     }
   }
   const masters = new Set(panelSet.map((panel) => panel.sourceMasterHash).filter(Boolean));
-  if (masters.size > 1) throw new Error("Call 8 panel set names multiple A.T.L.A.S. masters");
+  if (masters.size > 1) throw new Error("Call 8 panel set names multiple print masters");
   return hashJson({
     contract: CALL8_PROOF_CONTRACT,
     revisionId: String(revisionId || "").trim().toLowerCase(),

@@ -100,17 +100,24 @@ const PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
  * craft has missed the point of pinning it.
  *
  * ONE CARVE-OUT, and it is about ownership rather than style: the identity on
- * this sheet belongs to Bright Smiles Dental. A customer's proof carries the
+ * this sheet belongs to Ridgeline Custom Pools. A customer's proof carries the
  * name, tagline, logo and contact strings in their own request and no others,
  * which the EXACT TEXT block already states. Nothing else here is off limits.
  *
  * (It was produced by ChatGPT, so it is a target rather than a demonstration of
  * what this model will draw. That is what the probe measures.)
+ *
+ * ⚠️ THIS CONSTANT HAS A TWIN at
+ * `supabase/functions/_shared/atlas-panel-proof-prompt.ts` and the two must
+ * move together. CLAUDE.md records four separate changes that had to land in
+ * both, caught each time by the byte-identity locks -- and repinning this sheet
+ * to Ridgeline was the fifth, caught by `atlas-panel-proof-contract` asserting
+ * the edge carries the same hash. Changing one home is never the change.
  */
 const PANEL_PROOF_FORMAT_EXAMPLE = Object.freeze({
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-  byteSize: 1870997,
+  path: "atlas-examples/ridgeline-panel-proof-gold.png",
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 });
@@ -227,8 +234,8 @@ function panelProofCreativeHead(aceAssembly) {
 const INSTALLATION_FACT = [
   "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
-  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
-  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "panel here is a SOLID RECTANGLE of artwork — four straight edges, four square corners — and",
+  "the artwork runs straight through the places those openings will be. Type and logos stay clear of the",
   "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
   "all four sides.",
 ].join("\n");
@@ -334,8 +341,13 @@ function exactStrings(input = {}) {
  * the design's own vocabulary, which is a legitimate cut graphic.
  */
 const CUT_GRAPHIC_SLOTS = [
-  { caption: "PRIMARY LOGO", from: "logo", fallback: "the logo mark alone, without the wordmark" },
-  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name set as a one-line wordmark" },
+  // ⚠️ A SLOT FALLBACK MAY NAME A SLOT. IT MAY NEVER NAME A LOGO FORM.
+  // The twin comment in `_shared/atlas-panel-proof-prompt.ts` carries the
+  // evidence (live sheet 7a72951823648d27: a shield crest with an "I" monogram
+  // on all six panels, because this clause was the only form direction in the
+  // whole request and it said the logo is something OTHER than the name).
+  { caption: "PRIMARY LOGO", from: "logo", fallback: "this design's own logo, exactly as drawn on the panels" },
+  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name exactly as set on the panels" },
   { caption: "CONTACT LINE", from: "contact", fallback: "the web address alone" },
   { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "the services line set as one cut strip" },
   { caption: "ICONS / SERVICE GRAPHICS", from: "icons", fallback: "the design's own motifs drawn as plain cut shapes" },

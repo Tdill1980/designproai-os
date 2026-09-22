@@ -26,28 +26,47 @@
 export const ATLAS_PANEL_PROOF_CONTRACT = "designpro.atlas-panel-production-proof.v1";
 
 /**
- * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18).
+ * THE OWNER'S FORMAT SHEET, HASH-PINNED. "Must use this" (Trish 2026-09-18);
+ * "It's supposed to use the production panel proof for Ridgeline Pools"
+ * (2026-09-21).
  *
- * The Bright Smiles Dental 2012 Toyota Prius 2D PRODUCTION PROOF, 1536x1024:
- * header and TOTAL COVERAGE, three full-width ZONE bands, the PANEL DIMENSIONS
- * REFERENCE row, TEMPLATE NOTES, GUIDE legend, footer. It is the FILLED TWIN of
- * the container template, which is why it replaced the two-column sheet pinned
- * earlier the same day -- two layouts cannot both be "the template filled in".
- * Pinned exactly as the Flamingo
- * teaching proof is pinned, for the same reason: a teaching input that silently
- * changes teaches something nobody chose (canary 33389124918). NEVER recreate,
- * crop, relabel or re-encode it.
+ * The RIDGELINE CUSTOM POOLS 2024 Ford F-250 Crew Cab 2D PRODUCTION PROOF,
+ * 1536x1024: header with ORDER #, DESIGNER, VERSION and TOTAL COVERAGE, then
+ * the three full-width ZONE bands the product is named for --
+ *   ZONE 1  FULL DESIGN PANELS (photo + design + text + logo), 6 panels
+ *   ZONE 2  BACKGROUNDS ONLY (no text or logo), matching Zone 1 exactly
+ *   ZONE 3  CUT GRAPHICS (logo, text and icons only), vector, no background
+ * -- each panel dimensioned in inches with its trim size and 5" bleed, then the
+ * PANEL DIMENSIONS REFERENCE row, TEMPLATE NOTES and the GUIDE legend.
+ *
+ * It replaced the Bright Smiles Dental 2012 Prius sheet, which taught the same
+ * structure from a different job. Pinned exactly as the Flamingo teaching proof
+ * is pinned, for the same reason: a teaching input that silently changes
+ * teaches something nobody chose (canary 33389124918). NEVER recreate, crop,
+ * relabel or re-encode it.
+ *
+ * ⚠️ THE HASH PIN IS WHAT MAKES "USE THIS SHEET" TRUE. Swapping the sheet means
+ * changing this constant AND `byteSize` together, and seeding the object at the
+ * path above; it does not mean deleting the check. Without it any object that
+ * happens to sit at that path becomes the format authority, which is exactly
+ * how a sheet nobody chose ends up teaching Call 1. The bytes are versioned at
+ * `runtime/atlas-examples/ridgeline-panel-proof-gold.png` so the pin is
+ * reproducible from the checkout alone.
+ *
+ * SIX PANELS, REAR AS ONE PIECE -- matching `SURFACE_KEYS` exactly. The first
+ * Ridgeline sheet drew seven (rear split plus a rear bumper), which maps onto no
+ * canonical surface; #592 corrected it and this pins the corrected bytes.
  *
  * IT IS THE STANDARD, NOT JUST THE GRID (owner correction, 2026-09-18). The
  * layout AND the quality of the work on it are the bar -- finish, type, the
  * depth of the artwork. One carve-out, about ownership rather than style: the
- * identity on the sheet is Bright Smiles Dental's, and a customer's proof
+ * identity on the sheet is Ridgeline Custom Pools', and a customer's proof
  * carries only the strings in their own request.
  */
 export const PANEL_PROOF_FORMAT_EXAMPLE = {
-  path: "atlas-examples/panel-proof-zones-filled.png",
-  sha256: "9586710b026e22b3b2c5f80379382b31a211852c7c5128d10d0d356a0534d108",
-  byteSize: 1870997,
+  path: "atlas-examples/ridgeline-panel-proof-gold.png",
+  sha256: "e53f39a371205b61ade688a8a7ed7494cfa9fea7541be4bcf64bc844b4b1bafa",
+  byteSize: 1894054,
   width: 1536,
   height: 1024,
 } as const;
@@ -163,8 +182,8 @@ export function panelProofCreativeHead(aceAssembly: string): string {
 export const INSTALLATION_FACT = [
   "One side is wrapped with ONE CONTINUOUS PANEL: the installer lays that whole printed rectangle on",
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
-  "panel here is a SOLID RECTANGLE of artwork with no holes and no vehicle-shaped outline, and the",
-  "artwork runs straight through the places those openings will be. Type and logos stay clear of the",
+  "panel here is a SOLID RECTANGLE of artwork — four straight edges, four square corners — and",
+  "the artwork runs straight through the places those openings will be. Type and logos stay clear of the",
   "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
   "all four sides.",
 ].join("\n");
@@ -233,9 +252,29 @@ export const VERSIONS = [
  * the defect the exact-text rule exists to prevent -- it is a drawn MARK from
  * the design's own vocabulary, which is a legitimate cut graphic.
  */
+// ⚠️ A SLOT FALLBACK MAY NAME A SLOT. IT MAY NEVER NAME A LOGO FORM.
+//
+// `fallback` used to read "the logo mark alone, without the wordmark", and that
+// single clause was the only form direction anywhere in the request -- which
+// made it the strongest. Live sheet 7a72951823648d27 (Ironclad Roofing, 2019
+// Transit): a shield crest with an "I" monogram, repeated on all six panels,
+// because Zone 3 must agree with Zone 1 and Zone 3 had been told the logo is
+// something OTHER than the name.
+//
+// `designiq-assembly.ts` refuses to prescribe a form on purpose, and says so at
+// length: every version that named one converged (custom lettering gave three
+// trades one lockup; a menu of "pictorial, monogram, abstract symbol or badge"
+// was the same pressure in different clothes). LOGO_REQUIREMENT is one sentence
+// -- "decide its form from this brief alone" -- and this file then overrode it
+// from downstream. A prescription the persona deliberately withheld must not be
+// reintroduced by the document contract.
+//
+// So both brand slots LIFT rather than specify. Zone 3 is a cut sheet of the
+// design's own marks; it is not a second brief.
+//
 export const CUT_GRAPHIC_SLOTS = [
-  { caption: "PRIMARY LOGO", from: "logo", fallback: "the logo mark alone, without the wordmark" },
-  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name set as a one-line wordmark" },
+  { caption: "PRIMARY LOGO", from: "logo", fallback: "this design's own logo, exactly as drawn on the panels" },
+  { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name exactly as set on the panels" },
   { caption: "CONTACT LINE", from: "contact", fallback: "the web address alone" },
   { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "the services line set as one cut strip" },
   { caption: "ICONS / SERVICE GRAPHICS", from: "icons", fallback: "the design's own motifs drawn as plain cut shapes" },
@@ -288,6 +327,112 @@ export interface PanelProofParams {
    * edge function, and that is where it is executed.
    */
   creativeHead?: string;
+}
+
+/**
+ * THE SAME ASK, SPLIT INTO THE TWO TURNS OF ONE CONVERSATION.
+ *
+ * Owner, 2026-09-21: "do the multitodal thought signatures", after "Like a real
+ * graphic designer creates a cohesive design. design each element seperatley,
+ * then put togetehr".
+ *
+ * WHY A SECOND TURN AND NOT A LONGER PROMPT. Live sheet 7a72951823648d27 sent
+ * ONE user turn carrying 5,106 characters and four images, of which roughly
+ * three lines were the design and forty-five were the document. The model had
+ * to invent a wrap AND decompose it into clean backgrounds AND decompose it
+ * into cut graphics AND lay eighteen cells out, in one pass, with the creative
+ * references and the structural references in the same undifferentiated bag.
+ * Google's own guidance names both halves of that: "iterate and refine" (the
+ * documented multi-turn example generates an infographic, then revises it) and
+ * reference images that carry ROLES. We were doing neither.
+ *
+ * TURN 1 IS THE DESIGN. Persona, brief, the exact strings, the six panel
+ * shapes, and the physical fact that a panel is a solid rectangle -- all
+ * properties of the ARTWORK. Its attachments are the CREATIVE class: the
+ * customer's own references and the gold-standard artboards. The word
+ * "document", the three bands and the container never appear, so nothing
+ * competes with designing.
+ *
+ * TURN 2 IS THE LAYOUT, and it is a continuation rather than a new request:
+ * turn 1's user turn and the model's reply are replayed with the reply's
+ * thoughtSignature intact on the part it arrived on, exactly as
+ * `gemini-image-history.mjs` already does for the hero cascade. So turn 2 does
+ * not re-invent the wrap -- it has it in the conversation and decomposes it.
+ * Its attachments are the STRUCTURAL class: the container template and the
+ * pinned format sheet. RULE 0.24's three classes stop sharing one bag.
+ *
+ * THE HONEST COST: two image requests instead of one, so roughly double the
+ * ~40 s authoring leg. That is the trade, and it is not hidden -- the receipt
+ * reports `imageRequestCount` and both turns' prompts.
+ *
+ * `buildPanelProofPrompt` below is UNCHANGED and still assembles the
+ * single-turn ask byte for byte. Neither is derived from the other, so
+ * `panelProofTurnsCoverTheSinglePrompt` in the contract test asserts the two
+ * turns still carry every section the one prompt does.
+ */
+export function buildPanelProofTurns(params: PanelProofParams): { design: string; layout: string } {
+  const pick = (v: unknown) => String(v == null ? "" : v).trim();
+  const list = (v: unknown) => (Array.isArray(v) ? v.map(pick).filter(Boolean).join(", ") : pick(v));
+  const head = pick(params.creativeHead);
+  const vehicle = [params.vehicleYear, params.vehicleMake, params.vehicleModel]
+    .map(pick).filter(Boolean).join(" ");
+  const rows = (params.panelRows || []).filter((row) => pick(row).length > 0);
+  const strings: Array<[string, string]> = ([
+    ["Company name", pick(params.companyName)],
+    ["Tagline", pick(params.tagline)],
+    ["Phone", pick(params.phone)],
+    ["Web address", pick(params.website)],
+    ["Services", list(params.services)],
+    ["Promotional text", pick(params.promo)],
+  ] as Array<[string, string]>)
+    .filter(([, value]) => value.length > 0)
+    .filter(([label]) => !(head && ["Company name", "Phone", "Web address"].includes(label)));
+
+  const design: string[] = [];
+  if (head) design.push(head, "");
+  else design.push(`VEHICLE: ${vehicle || "the vehicle named in the brief"}`, "");
+  design.push(INSTALLATION_FACT);
+  if (rows.length) {
+    design.push("", "THE SIX PANELS, left to right, each drawn at this shape:",
+      ...rows.map((row) => `  ${row}`));
+  }
+  if (strings.length) {
+    design.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
+      ...strings.map(([label, value]) => `  ${label}: ${value}`));
+  }
+  design.push("", "THE SMALL PANELS (hood, front, rear) carry the logo and ONE line at most, set LARGE.",
+    "The longer copy belongs on the flanks, which have the room to read it.");
+  // The turn-1 ask, stated last so it is the instruction the model leaves with.
+  // It names the six panels and nothing about a document.
+  design.push("", "Draw those six panels of finished wrap artwork, one cohesive design across all of them,",
+    "each panel filled corner to corner. Nothing else on the canvas.");
+
+  const layout: string[] = [
+    "Keep that exact design — every colour, motif, photograph, logo and line of type as you just drew it.",
+    "Now lay it out as the production proof document.",
+    "",
+    SYSTEM_JOB,
+    "",
+    "THE THREE BANDS, in this order:",
+    ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`),
+  ];
+  const supplied: Record<string, string> = {
+    logo: "",
+    tagline: pick(params.tagline) ? "the tagline above" : "",
+    contact: [pick(params.phone), pick(params.website)].filter(Boolean).length
+      ? "the phone and web address above, on one line" : "",
+    promo: pick(params.promo) ? "the promotional text above" : "",
+    icons: "",
+  };
+  layout.push("", "ZONE 3'S FIVE BOXES, every one filled:",
+    ...CUT_GRAPHIC_SLOTS.map((slot) => `  ${slot.caption}: ${supplied[slot.from] || slot.fallback}`));
+  layout.push("", SHEET_LAYOUT);
+  layout.push("",
+    "ATTACHED NOW: (1) the BLANK CONTAINER TEMPLATE — it is drawn for THIS vehicle, so every panel's",
+    "shape and position comes from it; (2) a FINISHED PROOF — the standard for the QUALITY of the",
+    "work, on a different vehicle and another company's brand, so take no shape or figure from it.",
+    "The only shapes anywhere are Zone 3's cut graphics.");
+  return { design: design.join("\n"), layout: layout.join("\n") };
 }
 
 export function buildPanelProofPrompt(params: PanelProofParams): string {

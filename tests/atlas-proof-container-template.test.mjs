@@ -295,9 +295,19 @@ test("Call 1 labels GENIE trim and print once without changing print artwork geo
   const options = { manifest, dimensionManifest, bleedInches: 5, companyName: "Northline Solar & Battery" };
   const actual = runtimeTemplate.containerSvg(options);
   assert.equal(actual, (await edge()).containerSvg(options), "runtime and edge must label the same inches");
-  assert.match(actual, /TRIM 222\.7&quot; x 54\.4&quot;/);
-  assert.match(actual, /PRINT 232\.7&quot; x 64\.4&quot;/);
-  assert.doesNotMatch(actual, /PRINT 242\.7&quot; x 74\.4&quot;/);
+  // THE OWNER'S READING ORDER (2026-09-21, against her Ridgeline gold standard):
+  // the PRINTED size is the headline because it is what goes on the roll, the
+  // trim follows in parentheses, and the bleed line carries the footage. The
+  // wording changed; the two numbers and the "once each" contract did not.
+  assert.match(actual, /232\.7&quot; W x 64\.4&quot; H/);
+  assert.match(actual, /\(TRIM: 222\.7&quot; x 54\.4&quot;\)/);
+  assert.doesNotMatch(actual, /242\.7&quot; W x 74\.4&quot; H/);
+  // The bleed is never double-counted into the printed rectangle.
+  // FOUR, not two: driver and passenger carry the same inches on this fixture,
+  // so the string lands twice per band across two bands. Counting it as two was
+  // my own arithmetic error, not a defect in the sheet.
+  assert.equal((actual.match(/232\.7&quot; W x 64\.4&quot; H/g) || []).length, 4,
+    "driver and passenger in zone 1 and again in zone 2, and nowhere else");
   const sqft = Object.values(dimensions).reduce((sum, [w, h]) => sum + w * h / 144, 0).toFixed(2);
   assert.ok(actual.includes(`TOTAL COVERAGE (TRIM): ${sqft} SQ FT`));
   // Only document labels change: both versions retain identical artwork boxes.

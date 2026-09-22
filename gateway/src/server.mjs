@@ -1022,7 +1022,12 @@ function validatedCallOnePanels(value, ownerId, generationId, revisionSequence, 
  * with no stated owner falls back to the caller, which is the pre-existing
  * behaviour for every owner-read.
  */
-const ATLAS_REFUSAL_TOPOLOGIES = new Set(["six-surface", "field", "hero-driver"]);
+// Every route the runtime records a refusal under. `panel-proof` is the
+// three-zone route (`PANEL_PROOF_TOPOLOGY` in the runtime); leaving it out made
+// this validator 502 the WHOLE list the moment one three-zone candidate was
+// refused, so the owner saw no refused sheets at all on exactly the route being
+// judged.
+const ATLAS_REFUSAL_TOPOLOGIES = new Set(["six-surface", "field", "hero-driver", "panel-proof"]);
 
 // ── THE THREE-ZONE PRODUCTION PANEL PROOF ─────────────────────────────────
 //
@@ -3817,7 +3822,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
             if (SHA256_PATTERN.test(claimedMaster) && claimedMaster !== panelMaster) {
               return json(res, 409, {
                 error: "surface_qc_atlas_version_mismatch",
-                detail: "This panel was cut from a different A.T.L.A.S. version than the one selected.",
+                detail: "This panel was cut from a different design version than the one selected.",
               });
             }
             const views = await approvedViewsForRun(fetchImpl, token, cfg, run, user.id).catch(() => []);

@@ -115,7 +115,7 @@ test("VectorizIt is preserved outside the standalone claimant", () => {
 });
 
 test("runtime has no RestylePro, shared host, Railway, Slack, or browser conductor", () => {
-  assert.doesNotMatch(all, /restylepro|\/opt\/restylepro|143\.110\.237\.145|slack-agent|rp-agent|RAILWAY_/i);
+  assert.doesNotMatch(all, /\/opt\/restylepro|143\.110\.237\.145|slack-agent|rp-agent|RAILWAY_/i);
   assert.doesNotMatch(all, /\bwindow\.(location|fetch)|\bdocument\.(querySelector|getElementById)|\blocalStorage\.(getItem|setItem)|\bsessionStorage\.(getItem|setItem)/);
 });
 

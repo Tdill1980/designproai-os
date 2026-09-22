@@ -76,6 +76,33 @@ test("the three-zone production proof is built from the accepted master's own pa
   );
   assert.ok(result.provenance.quadrants.clean.every((p) => p.persisted && p.contentHash));
 
+  // ⛔ THE ROLE NAME IS THE CONTRACT WITH THE GATEWAY, and it is read from the
+  // gateway's own source here rather than retyped.
+  //
+  // This assertion did not exist, and that is the whole reason the owner never
+  // saw a production panel proof. The derived Zone-2 panels carried
+  // `role: "clean-panel"`; `PANEL_PROOF_ROLES` in gateway/src/server.mjs
+  // accepts only branded | clean | cut-graphic, so
+  // `validatedPanelProofQuadrantPanel` threw
+  // `atlas_panel_proof_response_invalid` (502) and `AtlasPanelProofSheet`
+  // rendered `null`. Three correctly-wired surfaces showed a silent blank for
+  // a week. The assertions above passed the whole time, because they checked
+  // length, `persisted` and `contentHash` and never the one field that mattered.
+  const gatewaySource = fs.readFileSync(
+    new URL("../gateway/src/server.mjs", import.meta.url), "utf8");
+  const declared = gatewaySource.match(/const PANEL_PROOF_ROLES = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(declared, "the gateway must still declare PANEL_PROOF_ROLES as a literal set");
+  const accepted = new Set(declared[1].match(/"([^"]+)"/g).map((s) => s.replaceAll('"', "")));
+  assert.ok(accepted.has("clean") && accepted.has("cut-graphic"),
+    "the gateway's accepted roles must still be the ones this proof emits");
+  for (const panel of result.provenance.quadrants.clean) {
+    assert.equal(panel.role, "clean", `Zone 2 role must be canonical, got ${panel.role}`);
+    assert.ok(accepted.has(panel.role), `the gateway would 502 on role ${panel.role}`);
+  }
+  for (const element of result.provenance.quadrants.cutGraphics) {
+    assert.ok(accepted.has(element.role), `the gateway would 502 on role ${element.role}`);
+  }
+
   // The document itself exists, is stored, and is a real raster.
   assert.match(result.provenance.proofStoragePath, /^atlas-panel-proof\/[0-9a-f]{64}\.png$/);
   assert.match(result.provenance.proofSha256, /^[0-9a-f]{64}$/);
@@ -88,12 +115,39 @@ test("the three-zone production proof is built from the accepted master's own pa
   assert.match(result.provenance.sourceArtwork.contentHash, /^[0-9a-f]{64}$/);
 });
 
+test("the derived receipt carries the four fields the logo-placement handoff requires", async () => {
+  // `designpro_private.panel_proof_logo_inventory` (migration 20260920022906)
+  // requires `threeZoneLayout`, `composition.contract`,
+  // `composition.sourceAssetsPreserved` and `masterSha256`. The derived receipt
+  // omitted all four, so every REVISION of a logo design failed its handoff
+  // with `generation_logo_placement_manifest_required` -- live, 2026-09-22.
+  // They mirror the authored receipt field for field.
+  const { result } = await derive();
+  const p = result.provenance;
+  assert.deepEqual(Object.keys(p.threeZoneLayout).sort(),
+    ["backgrounds", "branded", "graphics", "graphicsFormat", "productionApproved", "required"]);
+  assert.equal(p.threeZoneLayout.required, true);
+  assert.equal(p.threeZoneLayout.branded, 6);
+  assert.equal(p.threeZoneLayout.backgrounds, 6);
+  assert.equal(p.threeZoneLayout.graphics, 2);
+  assert.equal(p.threeZoneLayout.graphicsFormat, "vector-originals");
+  assert.equal(p.composition.contract, "designpro.production-zone-composite.v1");
+  assert.equal(p.composition.sourceAssetsPreserved, true);
+  assert.ok(Array.isArray(p.composition.panels) && p.composition.panels.length === 6);
+  assert.ok(Array.isArray(p.composition.omitted));
+  // `masterSha256` names the accepted master the document was derived FROM.
+  assert.equal(p.masterSha256, p.sourceArtwork.contentHash);
+  assert.match(p.masterSha256, /^[0-9a-f]{64}$/);
+});
+
 test("the derived proof can never be mistaken for a master", async () => {
   const { result } = await derive();
   // `bytes` and `contentHash` are how a caller names a master. This path has no
   // master to name -- the accepted one already exists and is already the
   // authority -- and a receipt carrying them is the two-master ambiguity the
   // 2026-08-31 ruling retired and the v28 composite shipped again.
+  // (`provenance.masterSha256` names the accepted master it was derived from;
+  // it is not a top-level `contentHash`, and the topology still says derived.)
   assert.equal(result.bytes, undefined);
   assert.equal(result.contentHash, undefined);
   assert.equal(result.provenance.topology, "derived-from-accepted-master");

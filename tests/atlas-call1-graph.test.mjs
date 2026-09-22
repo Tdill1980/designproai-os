@@ -1098,12 +1098,72 @@ test("P4. a worker built without the panel-proof seams fails the node by name, n
   const atlasSrc = fs.readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
   assert.match(atlasSrc, /authorPanelProof\(\{/);
   assert.match(atlasSrc, /typeof options\.atlasCall1Graph\.authorPanelProof === "function"/);
-  // Missing graph support must refuse; it cannot silently bypass durability.
+  // MISSING GRAPH SUPPORT DEGRADES, IT DOES NOT REFUSE (owner, 2026-09-22:
+  // "Nothing may block orchestration"). With the panel proof the only Call 1,
+  // `CALL1_GRAPH=off` or a database without the migration used to brick every
+  // generation on designpro_atlas_call1_graph_unavailable. The caller now runs
+  // the SAME two functions in-process -- `authorPanelProofMaster` is
+  // `requestProofSheet` + `assemblePanelProofMaster`, the exact functions the
+  // two nodes execute, and it never touches this worker's `tick()` -- and
+  // records `provenance.graph.unavailable` so the receipt says which path ran.
   const branch = atlasSrc.slice(atlasSrc.indexOf("} else if (panelProof) {"), atlasSrc.indexOf("generated = { bytes: proof.bytes"));
-  assert.match(branch, /designpro_atlas_call1_graph_unavailable/);
+  assert.match(branch, /graphCause\?\.code !== "designpro_atlas_call1_graph_unavailable"\) throw graphCause;/,
+    "only the graph-unavailable code degrades; every other graph failure still throws");
+  assert.match(branch, /proof = await inProcess\(graphCause\);/);
+  assert.match(branch, /proof = await inProcess\(null\);/, "the kill switch runs in-process too");
+  assert.match(branch, /authorPanelProofMaster\(\{/);
+  assert.match(branch, /graph: \{ unavailable: true, code: graphCause\?\.code\s*\n?\s*\|\| \(atlasCall1GraphEnabled\(\) \? "designpro_atlas_call1_graph_unwired" : "designpro_atlas_call1_graph_off"\) \}/);
   assert.match(branch, /await recordAtlasRefusal/);
-  assert.match(branch, /refusal\.retryable = false/);
-  assert.doesNotMatch(branch, /failOverToSixSurface|authorPanelProofMaster/);
+  assert.match(branch, /refusal\.retryable = /);
+  assert.doesNotMatch(branch, /failOverToSixSurface/, "there is no other Call 1 to fail over to");
+});
+
+test("P5. candidate 2 and revision 2 mint DISTINCT runs — a re-roll and a revision each buy their own sheet", async () => {
+  // The definition hash keys the run. Without the candidate index and the
+  // revision in it, "re-roll" resumed the refused run and "revise" resumed the
+  // parent's, so the second sheet was never bought (the attemptKey was the
+  // literal "panel-proof:1" as well, so even a fresh run read the same bytes).
+  const db = await createAtlasCall1Database();
+  const files = new Map();
+  const adapter = createAtlasCall1Adapter(db, files);
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const sheetBytes = await paintedProofSheet(manifest);
+  const calls = [];
+  const worker = graph.createAtlasCall1NodeWorker({
+    supabase: adapter.supabase, workerId: "solo", callEdge: syntheticEdge([]),
+    callProofEdge: proofEdgeStub(files, calls, { sheetBytes }),
+    assembleFinishedMaster, concurrency: 2, pollMs: 25, heartbeatMs: 200, logger: () => {},
+  });
+  const author = (extra) => worker.authorPanelProof({
+    manifest, input: INPUT, requestId: REQUEST, generationId: GENERATION, ownerId: OWNER,
+    providerRequest: { requestId: REQUEST, generationId: GENERATION },
+    logger: () => {}, pollMs: 20, timeoutMs: 60_000, ...extra,
+  });
+  try {
+    const first = await author({});
+    const second = await author({ candidate: 2 });
+    const revision = await author({ revision: { sequence: 2, parentRevisionId: "55555555-5555-4555-8555-555555555555",
+      contextHash: "c".repeat(64), instruction: "Move the phone number.", affectedSurfaces: ["driver"],
+      parentProof: { storagePath: `atlas-call1-inputs/${"d".repeat(64)}.png`, contentHash: "d".repeat(64), byteSize: 10 } } });
+    assert.equal(calls.length, 3, "three distinct operations, three sheets bought");
+    assert.deepEqual(calls.map((c) => c.body.attemptKey), ["panel-proof:1:1", "panel-proof:1:2", "panel-proof:2:1"]);
+    assert.equal(calls[2].body.revisionInstruction, "Move the phone number.");
+    assert.equal(calls[2].body.parentProof.contentHash, "d".repeat(64));
+    const runIds = new Set([first, second, revision].map((r) => r.provenance.graph.runId));
+    assert.equal(runIds.size, 3, "three distinct run rows");
+    const rows = await db.query("SELECT id, definition FROM public.designpro_atlas_call1_runs ORDER BY created_at");
+    assert.equal(rows.rows.length, 3);
+    assert.equal(rows.rows[0].definition.candidate, undefined, "candidate 1 hashes as it always did");
+    assert.equal(rows.rows[1].definition.candidate, 2);
+    assert.equal(rows.rows[2].definition.revision.sequence, 2);
+    assert.equal(JSON.stringify(rows.rows[2].definition).includes("base64"), false, "the revision rides as identities, never pixels");
+    // And a resume of candidate 1 still finds its own run and spends nothing.
+    const again = await author({});
+    assert.equal(calls.length, 3);
+    assert.equal(again.provenance.graph.runId, first.provenance.graph.runId);
+  } finally {
+    worker.stop?.();
+  }
 });
 
 test("cache-only proof sheet reuses only matching hash-verified completed checkpoints without Edge", async () => {

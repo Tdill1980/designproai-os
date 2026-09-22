@@ -95,7 +95,33 @@ const {
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
 const HEARTBEAT_MS = 120_000;
-const POLL_MS = 5_000;
+/**
+ * THE CLAIM POLL IS ON THE CUSTOMER'S CRITICAL PATH. (Latency, 2026-09-22.)
+ *
+ * `tick()` is the only thing that picks a queued generation up, so its interval
+ * is dead time between the customer's click and Call 1 starting: at 5 s that
+ * was 0-5 s (2.5 s mean) of nothing, in front of a request->master p50 already
+ * at 89 s against a 60 s SLO. One `claim_designpro_generation_request_v2` RPC
+ * per second per replica is a trivial load; the idle-tick GENIE reclaim below
+ * keeps its own, slower cadence so a faster claim poll does not multiply it.
+ *
+ * `DESIGNPRO_WORKER_POLL_MS` overrides it (250-60000 ms). Anything else --
+ * unset, empty, non-numeric, out of range -- resolves to the default, so a
+ * typo can only ever restore the default and never stall the poll. It is
+ * permitted, never required, by ops/validate-env.py.
+ */
+const DEFAULT_POLL_MS = 1_000;
+const MIN_POLL_MS = 250;
+const MAX_POLL_MS = 60_000;
+function resolveWorkerPollMs(env = process.env) {
+  const raw = String(env?.DESIGNPRO_WORKER_POLL_MS ?? "").trim();
+  if (!/^\d{1,6}$/.test(raw)) return DEFAULT_POLL_MS;
+  const value = Number(raw);
+  return value >= MIN_POLL_MS && value <= MAX_POLL_MS ? value : DEFAULT_POLL_MS;
+}
+const POLL_MS = resolveWorkerPollMs();
+/** The idle-tick GENIE prep reclaim keeps the cadence it had at the old 5 s poll. */
+const IDLE_RECLAIM_MS = 5_000;
 
 /**
  * The design brief the customer typed, plus the vehicle it goes on.
@@ -373,7 +399,7 @@ function generationIdentity(claim) {
     || (reserved && (!identity.atlasRevisionId || !identity.handoffRevisionId
       || identity.designId !== expectedDesignId || !identity.atlasIdentityMintedAt
       || !Number.isFinite(Date.parse(identity.atlasIdentityMintedAt))));
-  if (invalid) throw Object.assign(new Error("The claimed ATLAS identity differs from its reserved design"), {
+  if (invalid) throw Object.assign(new Error("The claimed design identity differs from its reserved design"), {
     code: "generation_reserved_identity_invalid", retryable: false,
   });
   // Older claims had neither field. Retain their deterministic handoff fallback;
@@ -583,7 +609,7 @@ const ATLAS_VIEW_ROLES = Object.freeze({
 });
 
 function atlasLineageError(reason) {
-  return Object.assign(new Error(`A.T.L.A.S. proof lineage is invalid: ${reason}`), {
+  return Object.assign(new Error(`Proof lineage is invalid: ${reason}`), {
     code: "generation_atlas_lineage_invalid",
     retryable: false,
   });
@@ -817,7 +843,7 @@ async function runAtlasProofStages({
   slots,
 }) {
   if (!provider?.generateImage || typeof provider.hydrateDriver !== "function") {
-    throw new Error("A.T.L.A.S. requires the DesignPanel projection provider");
+    throw new Error("Call 1 requires the DesignPanel projection provider");
   }
   // A FULL SET STILL LEADS WITH DRIVER; A RETRY NEED NOT BE A FULL SET.
   //
@@ -830,13 +856,13 @@ async function runAtlasProofStages({
   // The full-set shape is still enforced, so the customer-facing run cannot
   // quietly start without Driver first and lose its priority.
   if (!Array.isArray(slots) || !slots.length) {
-    throw new Error("A.T.L.A.S. requires at least one proof slot");
+    throw new Error("Call 1 requires at least one proof slot");
   }
   if (slots.length === 7 && slots[0]?.sourceViewType !== "side") {
-    throw new Error("A.T.L.A.S. requires Driver first in a full seven-proof set");
+    throw new Error("Call 1 requires Driver first in a full seven-proof set");
   }
   if (slots.length > 7) {
-    throw new Error("A.T.L.A.S. accepts at most seven proof slots");
+    throw new Error("Call 1 accepts at most seven proof slots");
   }
 
   // PRIORITY IS NOT PREREQUISITE.
@@ -1025,6 +1051,7 @@ function createGenerationWorker({
   let timer = null;
   let busy = false;
   let stopped = false;
+  let lastIdleReclaimAt = 0;
 
   async function rpc(name, args) {
     const { data, error } = await supabase.rpc(name, args);
@@ -1138,7 +1165,7 @@ function createGenerationWorker({
           const slots = slotsFrom(plan, executionInput, instructions, atlas, [])
             .map((slot) => ({ ...slot, validate: validator }));
           if (slots.length !== 1) {
-            throw new Error(`A.T.L.A.S. progressive release could not resolve ${sourceViewType}`);
+            throw new Error(`Progressive release could not resolve ${sourceViewType}`);
           }
           return runAtlasProofStages({
             runRequest: engine.runRequest,
@@ -1222,7 +1249,7 @@ function createGenerationWorker({
           },
           onSurfaceReady: (release) => {
             const atlas = release?.atlas || progressiveAtlas;
-            if (!atlas) throw new Error("A.T.L.A.S. surface released before its master");
+            if (!atlas) throw new Error("Surface released before its master");
             const node = {
               atlas,
               prerequisites: [release.projectionReady, release.panelPersisted],
@@ -1282,7 +1309,7 @@ function createGenerationWorker({
         }
         const runs = await Promise.all(claim.viewPlan.map((entry) => {
           const task = progressiveProofRuns.get(entry.sourceViewType);
-          if (!task) throw new Error(`A.T.L.A.S. proof node ${entry.sourceViewType} was not released`);
+          if (!task) throw new Error(`Proof node ${entry.sourceViewType} was not released`);
           return task;
         }));
         result = combineAtlasProofRuns(runs, claim.viewPlan);
@@ -1497,8 +1524,14 @@ function createGenerationWorker({
       if (!claim) {
         // Idle tick: recover a GENIE prep whose lease expired (a runtime
         // restart mid-resolution). The claim is awaited; the resolution is
-        // not, so a customer's Generate is never queued behind it.
-        await geniePrep.reclaimOne().catch(() => null);
+        // not, so a customer's Generate is never queued behind it. Throttled
+        // to IDLE_RECLAIM_MS so the faster claim poll does not turn one
+        // recovery RPC per 5 s into one per second.
+        const now = Date.now();
+        if (now - lastIdleReclaimAt >= IDLE_RECLAIM_MS) {
+          lastIdleReclaimAt = now;
+          await geniePrep.reclaimOne().catch(() => null);
+        }
         return null;
       }
       return await processClaim(claim);
@@ -1529,7 +1562,10 @@ function createGenerationWorker({
 
 module.exports = {
   HEARTBEAT_MS,
+  DEFAULT_POLL_MS,
+  IDLE_RECLAIM_MS,
   POLL_MS,
+  resolveWorkerPollMs,
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
   assertAtlasViewLineage,

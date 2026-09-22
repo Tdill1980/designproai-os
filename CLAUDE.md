@@ -1,6 +1,6 @@
 # CLAUDE.md — designproai-os
 
-## 🏷️ CUSTOMER-FACING NAMES: DESIGNPROAI IS THE OS; VEHICLEPRO, WALLPRO, CUTPRO RUN INSIDE IT; "POWERED BY ATLAS" (owner ruling, Trish 2026-09-16)
+## 🏷️ CUSTOMER-FACING NAMES: DESIGNPROAI IS THE OS; VEHICLEPRO, WALLPRO, CUTPRO RUN INSIDE IT; NO ENGINE IS NAMED (owner ruling, Trish 2026-09-16; "Powered by Atlas" retired 2026-09-22)
 
 Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
 `app/src/lib/os-brand.ts`. Locked by `tests/os-brand-naming.test.mjs`.
@@ -15,10 +15,20 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   tool called VehiclePro"*. **CutPro** replaces "GraphicsPro" in every
   customer-facing word. **WallPro** keeps its name. Inside a tool the header
   names the tool BENEATH the DesignProAI lockup, never instead of it.
-- **Atlas is not a fourth product.** Customer copy says *Powered by Atlas* and,
-  with room, *The intelligence layer behind DesignProAI.* The A.T.L.A.S.
-  vocabulary in this file, the runtime, the gateway, tests and admin/QC
-  surfaces is engineering vocabulary and stays.
+- **No engine is named to a customer.** This bullet used to read *"Customer
+  copy says Powered by Atlas and, with room, The intelligence layer behind
+  DesignProAI."* That ruling is RETIRED — owner, 2026-09-22: *"Remove all UI
+  Powered by Atlas"* / *"Remove and hide atlas"* / *"Panel production proof is
+  source."* `ATLAS_BRAND` is deleted from `os-brand.ts` (no empty object left
+  behind), the tagline is gone from `DesignProAIHome`, `DesignPanelProPremium`,
+  `GenerateDesign`, BOTH SEO meta descriptions (`app/index.html`, `Index.tsx`)
+  and the FAQ answer, and nothing replaces it. What the customer reads instead
+  is what the product does: **Call 1 draws the three-zone Production Panel
+  Proof, and every print-ready file is cut from it.** The A.T.L.A.S. vocabulary
+  in this file, the runtime, the gateway and tests is engineering vocabulary
+  and stays — but it no longer reaches a screen, an alt text, a meta tag or a
+  crawler (`tests/no-atlas-on-human-surfaces.test.mjs` now convicts the tagline
+  in any case, and the word "topology" wherever it is visible text).
 - **This was copy, not a rename.** Keys (`designpro`, `graphicspro`,
   `wallpro`), routes (`/designpro/*`, `/graphics-pro*`, `/printpro/wallpro`),
   buckets, edge functions, tier gates, logic keys (`<FAQ productName="GraphicsPro">`,
@@ -29,7 +39,55 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
-## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND OFF FOR CUSTOMERS (2026-09-19)
+## 🚫 NO HUMAN-READ SURFACE SAYS "ATLAS" — AND THE IDENTIFIERS STAY (owner, Trish 2026-09-21/22)
+
+Owner, looking at the live PanelPro board: *"My 3-zone is Call 1. Delete ATLAS."*
+then *"Remove all atlas references."* #596 and #597 each removed a handful of
+labels by hand and each missed the next handful, because nothing looked for
+the word. Now something does: **`tests/no-atlas-on-human-surfaces.test.mjs`**
+scans `app/src` and `gateway/src`, strips comments, and fails on any
+`A.T.L.A.S.` or word-bounded `ATLAS` that can render, toast, throw to a
+screen or land in an alt/aria/title. Verified to fail against the pre-fix
+tree (it listed 27 strings across 11 files the two hand passes had missed,
+including six multi-line JSX texts no grep for a quote could see).
+
+The words to use instead: **print master** (the sheet), **Call 1** (the
+step), **design / revision** (the lineage). Runtime error MESSAGES that reach
+a screen (StageError text, worker refusals, proof-QC reasons) were rewritten
+in the same change; runtime PROMPT text that names A.T.L.A.S. to the model is
+hash-pinned and untouched.
+
+**The scope line, and do not cross it:** this is copy, not a rename. Table
+names (`designpro_atlas_call1_runs`), storage paths (`atlas-call1-inputs/…`),
+env flags (`DESIGNPRO_ATLAS_*`), stage keys, edge modes (`atlas-artboard`),
+identifiers (`atlasBinding`, `isAtlas`, `AtlasRefusal`) and file names all
+stay. Renaming any of them touches stored rows and the deployed edge
+function, and removes no confusion a customer can see. The lock is
+case-sensitive and word-bounded precisely so it never asks for that.
+
+**"Powered by Atlas" IS in scope now, and it is removed (2026-09-22).** This
+paragraph used to exempt the tagline as the owner's own 2026-09-16 brand
+ruling. The owner retired it the same day this section was written: *"Remove
+all UI Powered by Atlas"*. The lock was extended rather than a hand pass made:
+it now convicts `/powered\s+by\s+atlas/i` on every line, scans `app/index.html`
+as well (a crawler reads that meta description), and convicts **"topology"**
+wherever it is VISIBLE text — a quoted string literal, JSX text or HTML text —
+while leaving identifiers (`authoringTopology`, `TOPOLOGY_LABEL`, `.topology`,
+`topology:` keys) legal, because those are stored-row and gateway-contract
+names. `AtlasRefusedSheets` maps every route the ledger can record — including
+`panel-proof`, which used to render as the literal "undefined" — to product
+words; the admin fact reads "Call 1 route", never "Topology".
+
+**"Panel production proof is source"** is the companion ruling, and it is a
+placement, not a word: the three-zone sheet is mounted ONCE per surface, as
+`ProductionProofSourceCard` ("Production Panel Proof · V{n} — the source of
+every print panel below"), directly ABOVE `ProductionFlowLayersCard` and the
+Order Production Files button in RevisionStudio, and above the panel board in
+PanelPro, keyed on the selected version. It wraps the one existing reader
+(`AtlasPanelProofSheetLoader`) and holds no query of its own — one reader per
+artifact, RULE 0.21. Locked by `tests/server-revision-studio.test.mjs`.
+
+## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND ON (2026-09-19; flag corrected 2026-09-22)
 
 Owner, on the architecture: *"Production panel proof is source it has the 3
 zones / For panels, panels with seperated and logos and text."* Then, on the
@@ -37,10 +95,14 @@ work: *"Finish crop correctness, durable DAG execution, and immediate three-zone
 display."* — *"Keep the three-zone route off for customers until the repaired
 path passes a controlled real-generation test."*
 
-**FLAG STATE: `atlas_panel_proof: off` on the droplet** (contained at `e540012`,
-run 35460623843, `VERIFIED_WORKING`). Everything below is built and locked; none
-of it is on a customer's critical path until a controlled real generation with
-uploaded assets has passed.
+**FLAG STATE: `atlas_panel_proof: ON` on the droplet.** This paragraph used to
+say `off` (contained at `e540012`, run 35460623843). That is stale: deploy run
+**1876**'s resolved-flag banner prints `DESIGNPRO_ATLAS_PANEL_PROOF=on`, so the
+three-zone route IS the customer's Call 1 today. Read the flag line in the
+deploy log before judging a run's route — the same lesson this file records
+for `atlas_field_first`. Everything below is built and locked; the controlled
+real generation with uploaded assets that was to gate the flip is still the
+owner's acceptance standard for calling the pixels good.
 
 ### Five defects, all of them live, all found by measurement
 
@@ -167,13 +229,64 @@ production pack, which is where the cut-contour builder actually lives.
 - **No controlled real generation has run on the repaired path.** Every measurement
   above is a probe, a fixture, or a read of a live row. The owner's own standard:
   a real test, not source greps or synthetic fill tests.
-- **Zone 2 is not yet wired to `panels.delogo` (Call 11) and Zone 3 not to
-  `logos.extract` (Call 10).** Today Zone 2 replaces a white-box paint and Zone 3
-  a keyed-out lift; the model draws them, which is better than either, but the
-  two Calls still own those artifacts downstream.
-- **PDF delivery is still absent from the paid contract.** `output-qc.cjs`'s
-  `FORMATS` is `["png","tiff","eps"]`; `runtime/panelpro-file-output-contract.cjs`
-  exists and is not wired in.
+- ~~**Zone 2 is not yet wired to `panels.delogo` (Call 11)**~~ **Stale as of
+  2026-09-22.** Call 11 copies the frozen Zone 2 bytes as the qc-panel when the
+  snapshot carries `panelProofAuthoring` (`backgroundsReused: true`), and
+  `20260922051200` makes the snapshot carry it on EVERY handoff, not only when
+  a logo was uploaded (three no-logo runs of 09-21 had none). Zone 3 → Call 10
+  is still the model's drawing plus the persisted cut graphics; Call 10 owns
+  the inventory downstream.
+- ~~**PDF delivery is still absent from the paid contract.**~~ **Stale.** See
+  the section below: the paid contract is v4 — five formats, two variants,
+  sixty files. What has NOT changed: no fresh paid run has been opened to
+  confirm the set lands in the ZIP a customer downloads.
+
+### EVERY PRINT ASSET IS 150 PPI WITH 5" BLEED — INCLUDING THE BLANK PANELS (owner, Trish 2026-09-22: "make sure ALL assets files are processed to 150 ppi with bleed at 5\"")
+
+Audited before touching anything. Until this date a paid pack held:
+
+| asset | shipped as | 150 PPI + 5" bleed? |
+|---|---|---|
+| six branded panels (Zone 1) | Topaz → (trim + 10") × 150 px → PNG/JPG/TIFF/EPS/PDF | yes |
+| six **blank panels (Zone 2)** | the raw crop off the proof sheet — a few hundred px wide, trim only, `bleed: null`, `printable: false` — in the ZIP's `qc-panel/` folder | **no** |
+| Zone 3 cut graphics | the frozen bytes: vector SVG (typeset/contact) or the customer's own uploaded logo | n/a — no inches by contract, sized at the plotter |
+| Logo Pack logos | as-is (separated cut assets) | n/a, by design |
+
+**Now: output contract `designpro.production-formats.v4`** — five formats ×
+two VARIANTS (`branded`, `clean`) × six surfaces = **60 files**. Call 12
+enhances the six frozen Zone 2 backgrounds to the identical
+(trim + 10") × 150 rectangle as `upscaled-clean-panel` artifacts, and
+`buildPrintOutputs` writes both variants (`…/outputs/<side>-clean.<ext>`,
+`metadata.variant: "clean"`). Registration with the branded panel is by
+construction: the clean crop is fitted into the branded panel's OWN pixel
+rectangle exactly as the Zone 1 crop was fitted into its master zone (resize
+inside, copy-extend the remainder — `fitCleanToBrandedRectangle`), then
+enhanced to the same target. This is RestylePro's worker behaviour
+(`panelKey_clean` from `background_url`, RULE 1), not a new producer.
+
+- **The Call 11 `qc-panel` is untouched.** RULE 0.25's "Topaz never runs on the
+  QC derivatives" still holds: the clean variant is Zone 2 SOURCE artwork from
+  the accepted Call 1 proof, not a derivative of the branded panel. The
+  qc-panel stays the on-screen QC instrument.
+- **A revision with no Zone 2** (authored before the three-zone proof) builds
+  the branded-only set under v3 (30 files) and its receipts say so; a v2 pack
+  still verifies as 24 and a v1 pack as 18 (`formatsForContract`,
+  `variantsForContract`, `outputFileCountForContract`). Half a clean set is
+  refused (`enhanced_clean_panels_missing` / `_unreceipted`).
+- **`output.verify` keys files by `surface:variant:format`**, binds a clean
+  PDF/JPG to the clean PNG of the same surface, and refuses a variant the
+  contract does not ship. The v4 receipt carries `exactVariantSet`; pre-v4
+  receipts are byte-identical to before, so their `outputSetHash` is unchanged.
+- **The DATABASE gate had to move too, and it was already refusing #600.**
+  `assert_production_output_build` (20260920113000) admitted ONLY contract v2 /
+  24 files, so the JPG tier (v3 / 30) would have raised
+  `production_pdf_output_build_required` on the first paid `output.build`.
+  `20260922060000` admits v2, v3 and v4, counts DISTINCT
+  (surface, variant, format), and re-patches the `output.verify` block's four
+  `6*cardinality(formats)` counts to `production_output_file_count(run)`.
+  Runtime tests cannot see this gate — check the migration when the format set
+  changes.
+- Cost: twelve Topaz calls per pack instead of six. The owner asked for it.
 - **`parseCustomerIntake` is a SECOND Flash call on the customer's critical path**
   inside Call 1. It is not timed separately and it is the next latency lever.
 

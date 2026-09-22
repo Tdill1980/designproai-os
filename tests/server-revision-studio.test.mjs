@@ -783,3 +783,38 @@ test("RevisionStudio and PanelPro reach each other on the same generation", () =
   assert.match(studio, /\/revision-studio\?id=\$\{encodeURIComponent\(generationId\)\}/);
   assert.match(versionCard, /\/designpro\/jobs\/\$\{encodeURIComponent\(id\)\}\/panelpro/);
 });
+
+test("RevisionStudio presents the three-zone Production Panel Proof as THE source, once, directly above the print panels", () => {
+  // Owner (2026-09-22): "Panel production proof is source." The sheet used to
+  // be buried inside InlineStoredProof, above the version record and the
+  // approve card, so the print panels read as the primary artifact and the
+  // proof they were cut from as an afterthought. Now it is mounted ONCE, by
+  // ProductionProofSource, immediately above ProductionFlowLayersCard and the
+  // Order button -- and the Call-8 2D proof stays where it was.
+  const studio = readFileSync(new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8");
+  const inlineStart = studio.indexOf("function InlineStoredProof(");
+  const sourceStart = studio.indexOf("function ProductionProofSource(");
+  assert.ok(inlineStart > 0 && sourceStart > inlineStart, "InlineStoredProof precedes ProductionProofSource");
+  const inline = studio.slice(inlineStart, sourceStart);
+  assert.doesNotMatch(inline, /AtlasPanelProofSheetLoader|ProductionProofSourceCard/, "the sheet is no longer inside InlineStoredProof");
+  assert.match(inline, /2D Production Proof/, "the Call-8 proof stays in InlineStoredProof");
+  const source = studio.slice(sourceStart, sourceStart + 900);
+  assert.match(source, /panelProofSource/, "fed from the existing per-revision panelProofSource");
+  assert.match(source, /version=\{source\.version\}/);
+  const mount = studio.indexOf("<ProductionProofSource render={selectedInspectionRender} />");
+  const layers = studio.indexOf("<ProductionFlowLayersCard");
+  const order = studio.indexOf("Order Production Files");
+  const record = studio.indexOf("<DesignPromptRecord generationId={productionLayersId} />");
+  assert.ok(mount > 0, "the source card is mounted");
+  assert.ok(record < mount && mount < layers && layers < order, `record ${record} < source ${mount} < panels ${layers} < order ${order}`);
+  assert.equal(studio.split("<ProductionProofSource render=").length, 2, "mounted exactly once");
+  assert.doesNotMatch(studio, /<AtlasPanelProofSheetLoader/, "RevisionStudio reads the sheet only through the source card");
+  const card = readFileSync(new URL("../app/src/components/revisioniq/ProductionProofSourceCard.tsx", import.meta.url), "utf8");
+  assert.match(card, /Production Panel Proof · V\$\{version\}/);
+  assert.match(card, /the source of every print panel below/);
+  assert.match(card, /<AtlasPanelProofSheetLoader/, "one reader per artifact: the card wraps it, it does not re-read");
+  assert.doesNotMatch(card, /useQuery|dpApi/, "the card holds no query of its own");
+  // PanelPro names the version on the same card, keyed on the selected revision.
+  const board = readFileSync(new URL("../app/src/pages/designpro/PanelProStudioBoard.tsx", import.meta.url), "utf8");
+  assert.match(board, /<ProductionProofSourceCard[\s\S]{0,200}key=\{selectedVersion\.revisionId\}[\s\S]{0,200}version=\{selectedVersion\.version\}/);
+});

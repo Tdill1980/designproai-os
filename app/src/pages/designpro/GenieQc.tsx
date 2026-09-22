@@ -120,7 +120,7 @@ function CandidateForm({
             ))}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            GENIE uses these Google-grounded OEM dimensions, including wheelbase, to calculate and store the provisional six-panel A.T.L.A.S. layout with 5-inch bleed. Exact production fields below still require operator validation.
+            GENIE uses these Google-grounded OEM dimensions, including wheelbase, to calculate and store the provisional six-panel layout with 5-inch bleed. Exact production fields below still require operator validation.
           </p>
         </div>
 

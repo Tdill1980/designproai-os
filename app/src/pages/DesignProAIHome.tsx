@@ -21,7 +21,7 @@ import {
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
-import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS } from "@/lib/os-brand";
 
 /**
  * DesignProAIHome — the /designpro front door (matches the DesignProAI mockup).
@@ -317,7 +317,7 @@ export default function DesignProAIHome() {
             <p className="text-[11px] text-white/70">Pick a vehicle, add make & model, describe it.</p>
 
             <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5 text-[10px] text-cyan-200">
-              {ATLAS_BRAND.poweredBy} — {ATLAS_BRAND.explanation} One prepared vehicle topology, one master, six labeled panels and seven proof views.
+              Call 1 draws your Production Panel Proof — one sheet, three zones — and every print-ready file is cut from it: six labeled panels, seven proof views, one source.
             </div>
 
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}
