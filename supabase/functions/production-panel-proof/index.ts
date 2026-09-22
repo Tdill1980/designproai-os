@@ -84,6 +84,16 @@ import {
   INTAKE_CONTRACT, INTAKE_MODEL, INTAKE_SCHEMA,
   extractDeterministic, intakePrompt, mergeIntake,
 } from "../_shared/atlas-intake-parse.ts";
+// A REVISION IS AN EDIT OF THE APPROVED SHEET, NOT A FRESH DRAW. The runtime
+// sends the parent's accepted proof as a verified reference plus the revision
+// identity; this module reads, verifies, attaches and receipts it, and folds it
+// into the provider-cache identity so V2 can never read V1's cached sheet.
+// Pure and tested in `parent-proof.test.ts`; the wiring order is asserted there
+// against this file's own source.
+import {
+  attachParentProof, providerCacheMaterial, readRevisionFields, revisionCacheKey,
+  revisionProvenance, sha256Hex, verifyParentProof,
+} from "./parent-proof.ts";
 
 /**
  * NODE 0 — INTAKE. Raw customer text in, the structured schema out.
@@ -435,11 +445,6 @@ const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-const sha256Hex = async (bytes: Uint8Array) => {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
-};
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -468,6 +473,10 @@ serve(async (req) => {
   let requestId = crypto.randomUUID();
   try {
     const body = await req.json();
+    // THE REVISION IDENTITY, READ BEFORE ANYTHING IS SPENT. A malformed
+    // sequence or a parent proof on a first generation is refused here (400),
+    // before the intake Flash call and before any image request.
+    const revision = readRevisionFields(body);
 
     // NODE 0 RUNS FIRST, and only when the caller sent raw text. A caller that
     // already holds structured fields — the real order form, once it exists —
@@ -786,6 +795,46 @@ serve(async (req) => {
       attached.push({ role: pinned.role, path: pinned.path, sha256: digest, byteSize: bytes.length, framed: true });
     }
 
+    // ═══ THE APPROVED PARENT PROOF, ON A REVISION ═══
+    //
+    // Owner, 2026-09-22: "Revisions should auto generate edits directly to
+    // panel pro production proof." Before this the edge ignored every revision
+    // field the runtime sent and drew V2 from scratch with the instruction in
+    // the brief -- a new design that mentioned the change, not an edit of the
+    // sheet the customer approved.
+    //
+    // WHERE IT SITS, and why: immediately after the structural inputs and
+    // before every creative one. On the product route (`separatedArtwork`,
+    // which is what the runtime sends) the pinned format sheet is not attached
+    // and the prompt names the container "Attachment 1", so the parent is the
+    // very next image after the container. On the probe route the prompt
+    // enumerates "(1) the BLANK CONTAINER TEMPLATE ... (2) a FINISHED PROOF",
+    // so the parent goes after that pinned pair rather than between them --
+    // the numbering stays true and neither pinned input moves. Either way it
+    // precedes the gold-standard artboards and the customer's references, so
+    // the sheet to reproduce is in front of the model before anything that
+    // might be mistaken for it.
+    //
+    // It is VERIFIED exactly as the container and the customer assets are
+    // (allowlisted path, bytes hash to the filename, bytes hash to the claim,
+    // byte count), and refused as `panel_proof_parent_invalid` at 400: a
+    // caller naming bytes this side did not verify is a request defect.
+    //
+    // ONE short framing text, then the image, moving together. No negatives
+    // and no restated instruction -- the brief already carries it. It does not
+    // touch `structuralParts`: on the anchored path the parent conditions the
+    // DESIGN turn (it IS the approved design) and the layout turn continues
+    // that conversation, so a second copy would double a 4K sheet in one
+    // request.
+    let parentAttached: Record<string, unknown> | null = null;
+    if (revision.parentProof && revision.revisionSequence > 1) {
+      const verified = await verifyParentProof(svc.storage.from(BUCKET), revision.parentProof);
+      parentAttached = attachParentProof({ parts, creativeParts, attached }, {
+        revisionSequence: revision.revisionSequence, parentProof: revision.parentProof,
+        bytes: verified.bytes, sha256: verified.sha256, encodeBase64,
+      });
+    }
+
     // The gold-standard artboards. Quality reference ONLY -- never topology,
     // never artwork. A bucket outage or an empty prefix must not cost a design,
     // so every failure here is swallowed and simply yields no examples, exactly
@@ -951,10 +1000,10 @@ serve(async (req) => {
           ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof",
           attemptKey: `${providerRequest.attemptKey}:design`,
         },
-        requestHash: await providerSha256(JSON.stringify({
+        requestHash: await providerSha256(JSON.stringify(providerCacheMaterial({
           model: PRIMARY_IMAGE_MODEL, promptVersion: ATLAS_PANEL_PROOF_CONTRACT,
-          turn: "design", modelRequest: designRequest,
-        })),
+          turn: "design", modelRequest: designRequest, revision: revisionCacheKey(revision),
+        }))),
         privateRequest: designRequest,
         outputRequestId: requestId,
         cacheOnly: providerRequest.cacheOnly === true,
@@ -1054,9 +1103,14 @@ serve(async (req) => {
     const [cached, generatedLogo] = await Promise.all([runDurableImageProviderRequest({
       bucket: svc.storage.from(BUCKET),
       identity: { ...providerRequest, ownerId: caller.userId, mode: "atlas-panel-proof" },
-      requestHash: await providerSha256(JSON.stringify({
+      // THE REVISION IS IN THE CACHE IDENTITY. `revisionCacheKey` is null on a
+      // first generation (byte-identical material to before), and carries the
+      // sequence, the context hash and the parent proof's hash on a revision,
+      // so a V2 request can never be answered with V1's cached sheet.
+      requestHash: await providerSha256(JSON.stringify(providerCacheMaterial({
         model: PRIMARY_IMAGE_MODEL, promptVersion: ATLAS_PANEL_PROOF_CONTRACT, modelRequest,
-      })),
+        revision: revisionCacheKey(revision),
+      }))),
       privateRequest: modelRequest,
       outputRequestId: requestId,
       cacheOnly: providerRequest.cacheOnly === true,
@@ -1126,6 +1180,10 @@ serve(async (req) => {
       // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
       // sheet just quietly carries the wrong company or the wrong truck.
       intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
+      // THE EDIT, BOUND TO ITS PARENT. Sequence, parent revision id, context
+      // hash and the parent proof's content hash, so the runtime's receipt can
+      // prove V2 was drawn against V1's approved sheet and not from scratch.
+      provenance: revisionProvenance(revision, parentAttached),
       attachedInputs: attached,
       artboardQualityExamplesApplied: qualityExamples.length,
       artboardQualityExampleIdentities: qualityExamples,
@@ -1149,7 +1207,10 @@ serve(async (req) => {
       retryable: providerError?.retryable === true,
       providerRetryDisposition: providerError?.providerRetryDisposition ?? "operator_required",
       storageDiagnostic,
-    }, providerError?.status || 500);
+      // A request defect (`PanelProofRequestError`, e.g. `panel_proof_parent_invalid`)
+      // carries its own status -- 400 -- so the caller sees a refused request,
+      // not a broken function.
+    }, providerError?.status || Number((error as { status?: unknown })?.status) || 500);
   }
 });
 
