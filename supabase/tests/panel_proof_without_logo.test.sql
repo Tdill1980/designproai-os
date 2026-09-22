@@ -151,11 +151,11 @@ select pg_temp.seed(
   pg_temp.proof(pg_temp.sha('nologo-master'),'nologo',NULL)
 );
 
--- Generation B: a logo, uploaded under an intake revision id, with the proof
+-- Generation B: a logo, uploaded under its generation id (the asset-binding trigger requires it), with the proof
 -- the compositor authored from it.
 create temporary table logo_b on commit drop as
 select jsonb_build_object(
-  'storagePath','users/61000000-0000-4000-8000-000000000001/revisions/66000000-0000-4000-8000-00000000000b/inputs/logo/'||pg_temp.sha('logo-b')||'.png',
+  'storagePath','users/61000000-0000-4000-8000-000000000001/revisions/63000000-0000-4000-8000-00000000000b/inputs/logo/'||pg_temp.sha('logo-b')||'.png',
   'contentHash',pg_temp.sha('logo-b'),'byteSize',2137,'contentType','image/png') as logo;
 select pg_temp.seed(
   '62000000-0000-4000-8000-00000000000b','63000000-0000-4000-8000-00000000000b',

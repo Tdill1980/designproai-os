@@ -204,7 +204,7 @@ select throws_ok($k2$
   values('91000000-0000-4000-8000-000000000001',(select v4 from gates),'zone2-panel','driver',
     'designpro/user_91000000-0000-4000-8000-0000000000a1/91000000-0000-4000-8000-000000000001/enhanced/driver-zone2.png',
     repeat('f',64),4096)
-$k2$,'23514','an artifact kind the contract does not name is still refused');
+$k2$,'23514',NULL,'an artifact kind the contract does not name is still refused');
 
 -- 4. The output.build gate, contract by contract.
 select lives_ok($b1$
