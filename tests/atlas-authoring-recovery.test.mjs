@@ -902,13 +902,17 @@ function proofEdgeStub(run, { sheets = [], refuse = [] } = {}) {
   return { calls, callProofEdge };
 }
 
-test("PANEL PROOF: the live router selects it for a first generation, and a refused candidate spends a second — never six-surface", async t => {
+// THE PANEL-PROOF ROUTE IS DEAD BUT RETAINED (2026-09-22): the live router
+// selects the hero-first cascade (tests/hero-first-is-the-only-call1.test.mjs),
+// and these cases now NAME the topology so the retained pass stays executable
+// end to end -- a stored run authored on it must remain readable and resumable.
+test("PANEL PROOF (named): the pass runs for a first generation, and a refused candidate spends a second — never six-surface", async t => {
   finishFlag(t, "off"); failoverFlag(t, undefined);
   const { source, manifest } = await fixture();
   const sheet = await paintedProofSheet(manifest);
   const run = harness(source);
   const edge = proofEdgeStub(run, { sheets: [sheet], refuse: ["the model drew a vehicle"] });
-  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge });
+  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: edge.callProofEdge });
   assert.deepEqual(edge.calls.map(body => body.attemptKey), ["panel-proof:1:1", "panel-proof:1:2"],
     "candidate 1 refused, candidate 2 spent under its OWN identity");
   assert.equal(run.masterCalls.length, 0, "the six-surface edge is never reached from a panel-proof run");
@@ -922,7 +926,7 @@ test("PANEL PROOF: the live router selects it for a first generation, and a refu
   assert.equal(Object.keys(result.viewAuthorities).length, 7);
   assert.equal(run.publicMasters.length, 1);
   // Resume: reused without another sheet.
-  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge,
+  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: edge.callProofEdge,
     claimToken: "55555555-5555-4555-8555-555555555555" });
   assert.equal(reused.reused, true);
   assert.equal(edge.calls.length, 2);
@@ -934,7 +938,7 @@ test("PANEL PROOF: two refused candidates are TERMINAL with the real reason; no 
   const run = harness(source);
   const edge = proofEdgeStub(run, { sheets: [await paintedProofSheet(manifest)],
     refuse: ["the model drew a vehicle", "the model drew a vehicle again"] });
-  await assert.rejects(run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge }),
+  await assert.rejects(run.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: edge.callProofEdge }),
     error => error.code === "flat_atlas_panel_proof_refused" && error.retryable === false
       && /refused 2 times/.test(error.message) && /drew a vehicle again/.test(error.message));
   assert.deepEqual(edge.calls.map(body => body.attemptKey), ["panel-proof:1:1", "panel-proof:1:2"]);
@@ -948,7 +952,7 @@ test("PANEL PROOF: the six-surface master gates are advisory — a silhouette th
   const { source, manifest } = await fixture();
   const run = harness(source);
   const edge = proofEdgeStub(run, { sheets: [await paintedProofSheet(manifest, { silhouette: ["zone2:rear"] })] });
-  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge });
+  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: edge.callProofEdge });
   assert.equal(edge.calls.length, 1, "accepted on the first candidate");
   assert.equal(result.metadata.masterQcPassed, true);
   const advisory = result.metadata.masterGateAdvisory;
@@ -963,7 +967,7 @@ test("PANEL PROOF: the six-surface master gates are advisory — a silhouette th
   const record = JSON.parse(run.bytes.get(checkpointPath)).record;
   assert.equal(record.state.authoringTopology, "panel-proof");
   assert.ok(record.state.masterGateAdvisory, "the advisory is checkpointed");
-  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge,
+  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: edge.callProofEdge,
     claimToken: "55555555-5555-4555-8555-555555555555" });
   assert.equal(reused.reused, true);
   assert.equal(edge.calls.length, 1);
@@ -975,7 +979,7 @@ test("PANEL PROOF: a revision routes through the same pass — parent proof stag
   const parentRun = harness(source);
   const parentSheet = await paintedProofSheet(manifest);
   const parentEdge = proofEdgeStub(parentRun, { sheets: [parentSheet] });
-  const parent = await parentRun.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: parentEdge.callProofEdge });
+  const parent = await parentRun.run({ router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof", callProofEdge: parentEdge.callProofEdge });
   assert.equal(parent.metadata.authoringTopology, "panel-proof");
   const child = harness(source);
   for (const [path, bytes] of parentRun.bytes) child.bytes.set(path, Buffer.from(bytes));
@@ -990,7 +994,7 @@ test("PANEL PROOF: a revision routes through the same pass — parent proof stag
     history: { mode: "image-reference" },
   };
   const options = {
-    router: atlas.generateOrReuseFlatAtlas,
+    router: atlas.generateOrReuseFlatAtlas, authoringTopology: "panel-proof",
     requestId: "88888888-8888-4888-8888-888888888888",
     revisionSequence: 2, parentAtlasRevisionId: parent.revisionId,
     revisionContext, revisionContextHash: sha256(atlas._test.canonicalBytes(revisionContext)),

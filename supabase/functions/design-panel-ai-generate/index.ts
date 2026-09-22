@@ -2662,13 +2662,23 @@ Output a single structured paragraph that another AI could use to recreate this 
 // runtime still resizes the return to the exact zone and refuses drift.
 // 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
 // same surface's share of a 4096² six-surface sheet, and returns faster.
-const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
-// Mirrors the runtime's HERO_VIEW_SURFACES (atlas-hero-driver.cjs). Add a
-// surface here only on the same evidentiary bar it was added there: a real,
-// measured aspect_drift refusal, never speculatively.
-const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set(["driver", "front"]);
+const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260922.v6-every-surface-hero-view";
+// Mirrors the runtime's HERO_VIEW_SURFACES (atlas-hero-driver.cjs). EVERY AI
+// surface is a view then a flatten (owner, 2026-09-22, "This is my quality"):
+// driver is the HERO drawn on the vehicle; hood, front, rear and roof are
+// photographed FROM that hero and then flattened. Passenger is never authored.
+const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set(["driver", "hood", "front", "rear", "roof"]);
+// The locked camera each view is photographed from -- the persona's viewType,
+// i.e. view-angles-os keys. Mirrors the runtime's VIEW_TYPES.
+const ATLAS_HERO_VIEW_TYPES: Record<string, string> = { driver: "side", hood: "hood_detail", front: "front", rear: "rear", roof: "roof" };
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
+// THE HERO IS 4K. It is the design -- the one image the customer judges first
+// and the source every flank is derived from -- and RestylePro's hero has
+// always been 4K (`imageSize: "4K"`, the golden config). Views and flattens
+// stay 2K: a view is a photograph the flatten reads, a flatten is resized to
+// its zone, and Topaz reaches print resolution downstream.
+const ATLAS_HERO_IMAGE_SIZE = "4K";
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
 const ATLAS_AUTHOR_MAX_PRIOR_TURNS = 10;
 const ATLAS_AUTHOR_ASPECTS: Array<[string, number]> = [
@@ -2724,6 +2734,25 @@ function atlasHeroTextLock(body: Record<string, unknown>): string {
     .filter(Boolean);
   if (!literals.length) return "";
   return ` The lettering reads exactly: ${literals.map((value) => `"${value}"`).join(", ")}. Copy these strings character for character; invent nothing.`;
+}
+
+/**
+ * A VIEW OF THE HERO. The persona's scene + locked camera + studio precede
+ * this; it is the last part because the camera must win, and it says the one
+ * thing that matters: same wrap, different camera. No design description --
+ * repeating the artwork in prose gives the model a second interpretation
+ * channel (DID-134FC3CA), and the attached hero IS the artwork.
+ */
+function atlasHeroViewContinuityPrompt(surfaceLabel: string, vehicleName: string, textLock: string): string {
+  return `IMAGE 1 is this ${vehicleName}'s APPROVED wrap design, photographed from the driver side. It is the finished artwork and the only design authority. Photograph the SAME vehicle wearing the SAME finished wrap from the ${surfaceLabel} camera described above: identical artwork, colours, gradients, imagery, logo lockup and every line of lettering, in the same places on the body, continued naturally onto the surfaces this camera reveals. Nothing is redesigned, added, removed, re-lettered or recoloured — only the camera moves.${textLock}`;
+}
+
+/**
+ * A REVISION OF THE HERO. The parent hero is attached as the design being
+ * edited; the customer's instruction is applied to it and nothing else moves.
+ */
+function atlasHeroRevisionPrompt(vehicleName: string, instruction: string): string {
+  return `IMAGE 1 is the customer's current APPROVED design for this ${vehicleName}. REVISION REQUEST, in the customer's own words: "${instruction}". Apply exactly that change and keep everything else identical — the same artwork, palette, composition, logo and lettering in the same places, from the same driver-side camera. This is an edit of an approved design, not a new design.`;
 }
 
 function atlasAuthorAspect(width: number, height: number): string {
@@ -2823,6 +2852,24 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     // the same persona, the same lease and the same durable provider cache.
     const heroFlatten = first && String(body.heroViewStoragePath || "").trim().length > 0;
     let heroViewHash: string | null = null;
+    // STAGE 1 IS A VEHICLE VIEW, and there are two kinds of it:
+    //   - the DRIVER HERO: from scratch, the persona brain, the raw brief, no
+    //     reference and no history (a revision hands it the parent hero and
+    //     the customer's instruction instead);
+    //   - every other surface's view: a PHOTOGRAPH OF THAT HERO from its own
+    //     locked camera, so it REQUIRES the hero reference -- a from-scratch
+    //     view there would be a second design of the same wrap (RULE 0.0).
+    const heroView = first && !heroFlatten;
+    const viewType = heroView ? String(ATLAS_HERO_VIEW_TYPES[surfaceKey] || "side") : "side";
+    const heroReferenceIn = String(body.heroReferenceStoragePath || "").trim();
+    if (heroView && surfaceKey !== "driver" && !heroReferenceIn) throw new Error("atlas_author_view_requires_hero_reference");
+    if (heroReferenceIn && !(heroView && surfaceKey !== "driver")) throw new Error("atlas_author_hero_reference_misplaced");
+    const revisionInstruction = String(body.revisionInstruction || "").trim().slice(0, 1200);
+    const parentViewIn = String(body.parentViewStoragePath || "").trim();
+    if ((revisionInstruction || parentViewIn) && !(heroView && surfaceKey === "driver")) throw new Error("atlas_author_revision_only_on_hero");
+    if (Boolean(revisionInstruction) !== Boolean(parentViewIn)) throw new Error("atlas_author_revision_incomplete");
+    let heroReferenceHash: string | null = null;
+    let parentViewHash: string | null = null;
     const targetWidthPx = Number(body.targetWidthPx);
     const targetHeightPx = Number(body.targetHeightPx);
     const widthInches = Number(body.widthInches);
@@ -2927,30 +2974,34 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         vehicleMake: String(body.vehicleMake || "").trim(),
         vehicleModel: String(body.vehicleModel || "").trim(),
         vehicleType: String(body.vehicleType || "").trim(),
-        viewType: "side",
+        // THE VIEW'S OWN LOCKED CAMERA (view-angles-os): side for the hero,
+        // hood_detail / front / rear / roof for the views photographed from it.
+        viewType,
         visionBoardImages: references.map((_, i) => ({ slotLabel: `reference-${i + 1}` })),
         visionboard_intent: body.visionboard_intent === "exact_reference" ? "exact_reference" : "style_inspiration",
         styleDescriptors: String(body.styleDescriptors || "").trim() || undefined,
-        // HERO-FIRST STAGE 1 ASKS FOR THE VEHICLE, NOT THE FLAT STRIP.
+        // STAGE 1 ASKS FOR THE VEHICLE, NOT THE FLAT STRIP -- AND NOW IT DOES.
         //
         // `atlasFlatMaster` swaps the presentation tail: true gives the
-        // flat-sheet contract, false gives the LOCKED CAMERA ANGLE + commercial
-        // scene + studio environment. Everything above it -- the persona, the
-        // brief, buildLogoArchitecture, the contact lock, the finish, the
-        // customer references -- is byte-identical either way, so this changes
-        // what is asked for and nothing about who is asking.
+        // flat-sheet contract, false gives the LOCKED CAMERA ANGLE + the
+        // restyle/commercial scene + the studio environment -- RestylePro's
+        // golden hero prompt. Everything above it -- the persona, the brief,
+        // buildLogoArchitecture, the contact lock, the finish, the customer
+        // references -- is byte-identical either way.
         //
-        // Why it must be the vehicle: a driver flank is ~3.6:1 and this model's
-        // widest emittable aspectRatio is 21:9, so asking for the flat strip
-        // directly is an ask it CANNOT answer -- MAX_ASPECT_DRIFT_RATIO refuses
-        // every driver tile before the artwork is looked at (0/3 on real
-        // vehicles). A 16:9 photograph is an ask it answers every day, and
-        // composing against real vehicle geometry is where hierarchy comes
-        // from: name on the door area, contact along the rocker, a clear zone
-        // for a photo. Stage 2 then flattens that approved view to the flank.
-        atlasFlatMaster: !heroFlatten,
+        // ⚠️ UNTIL 2026-09-22 THIS WAS THE NEGATION OF heroFlatten, i.e.
+        // TRUE on the view leg, which with `atlasHeroSurface` set selected
+        // `atlasHeroScene` -- "ONE FLAT PRINTED SHEET" -- at 16:9. The comment
+        // beside it said "asks for the vehicle"; the code asked for a flat
+        // sheet, so the "hero view" hero-first measured 0/3 on was never a
+        // photograph of the vehicle at all, and the "flatten" flattened a flat
+        // sheet. The owner's quality bar (the Forged Fitness van hero, the
+        // McLaren seven-view proof) is the vehicle photograph. So: FALSE, on
+        // both legs. The flatten leg builds this prompt only for its char
+        // count; its own instruction is atlasHeroFlattenPrompt below.
+        atlasFlatMaster: false,
         atlasPanels: [],
-        atlasHeroSurface: heroFlatten ? undefined : { label: surfaceLabel, widthInches, heightInches },
+        atlasHeroSurface: undefined,
         // Layer 0. Set on BOTH halves of hero-first: a vehicle view carrying a
         // painted name would flatten into a flank carrying it, so the clean
         // base has to start at the render.
@@ -2969,10 +3020,38 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
             Number(body.heroFlattenTier) > 0 ? 1 : 0,
           ),
         });
+      } else if (surfaceKey !== "driver") {
+        // A VIEW OF THE HERO. The approved driver hero rides FIRST (the
+        // artwork), the persona's own scene + locked camera + studio next, and
+        // the continuity instruction LAST -- the order RestylePro's photographer
+        // uses, because the model weights the last part and the camera must
+        // win. Customer references are not re-sent: the hero already honoured
+        // them, and re-attaching them invites a second interpretation.
+        heroReferenceHash = await attach(heroReferenceIn, body.heroReferenceContentHash);
+        parts.push({ text: prompt });
+        parts.push({
+          text: atlasHeroViewContinuityPrompt(
+            surfaceLabel,
+            [body.vehicleYear, body.vehicleMake, body.vehicleModel].map((v) => String(v || "").trim()).filter(Boolean).join(" ") || "vehicle",
+            atlasHeroTextLock(body),
+          ),
+        });
       } else {
+        // THE HERO. On a revision the parent hero rides first and the
+        // customer's instruction last; a first generation is the golden hero
+        // request exactly as RestylePro sends it.
+        if (parentViewIn) parentViewHash = await attach(parentViewIn, body.parentViewContentHash);
         parts.push({ text: prompt });
         for (const ref of references) {
           if (typeof ref === "string" && ref.length > 0) parts.push({ inlineData: { mimeType: "image/png", data: ref } });
+        }
+        if (parentViewIn) {
+          parts.push({
+            text: atlasHeroRevisionPrompt(
+              [body.vehicleYear, body.vehicleMake, body.vehicleModel].map((v) => String(v || "").trim()).filter(Boolean).join(" ") || "vehicle",
+              revisionInstruction,
+            ),
+          });
         }
       }
     } else {
@@ -2992,8 +3071,10 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     // 16:9 the locked camera angle is written for -- never the flank's ratio,
     // which is the ask that cannot be emitted. Stage 2 and every continuation
     // ask for the surface's own nearest supported aspect, as before.
-    const heroView = first && !heroFlatten;
     const aspectRatio = heroView ? "16:9" : atlasAuthorAspect(targetWidthPx, targetHeightPx);
+    // The driver HERO is 4K (the design, and the source of every flank);
+    // every view of it and every flatten is 2K.
+    const imageSize = heroView && surfaceKey === "driver" ? ATLAS_HERO_IMAGE_SIZE : ATLAS_AUTHOR_IMAGE_SIZE;
     const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const modelRequest = JSON.stringify({
@@ -3001,7 +3082,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
       generationConfig: {
         temperature: 1.0,
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE },
+        imageConfig: { aspectRatio, imageSize },
       },
     });
     const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
@@ -3027,7 +3108,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
-    console.log(`atlas-author ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts, ${priorTurns.length} prior turns, ${aspectRatio} ${ATLAS_AUTHOR_IMAGE_SIZE})`);
+    console.log(`atlas-author ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts, ${priorTurns.length} prior turns, ${aspectRatio} ${imageSize}${heroView ? `, ${viewType} view` : ""})`);
     const payload = cached.payload;
     const { candidateParts, imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_author");
     const { bytes: panelBytes, mimeType: panelContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "atlas_author");
@@ -3072,6 +3153,11 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         // was shown. "vehicle-view" is not a panel and must never be cut as one.
         heroStage: first ? (heroFlatten ? "flatten" : "vehicle-view") : null,
         heroViewContentHash: heroViewHash,
+        // Which camera a view was photographed from, which hero it photographed,
+        // and (on a revision) which parent hero it edited -- all by hash.
+        viewType: heroView ? viewType : null,
+        heroReferenceContentHash: heroReferenceHash,
+        parentViewContentHash: parentViewHash,
         aspectRatio,
         first,
         imageRequestCount: 1,
@@ -3081,7 +3167,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         modelRequestByteSize,
         modelInputImageCount: totalInputImageCount,
         aspectRatio,
-        imageSize: ATLAS_AUTHOR_IMAGE_SIZE,
+        imageSize,
         neighbourCount: neighboursIn.length,
         neighbourHashes,
         priorTurnsApplied: priorTurns.length,

@@ -94,13 +94,21 @@ function heroFirst(t, value) {
 test("the driver is the ONLY from-scratch request, through the real persona brain, and passenger is never authored", () => {
   const author = edgeSrc.slice(edgeSrc.indexOf("async function handleAtlasAuthor("), edgeSrc.indexOf("async function handleAtlasArtboard("));
   assert.ok(author.length > 0, "the atlas-author handler must sit above the artboard handler");
-  // HERO-VIEW-ELIGIBLE, not driver-only: front joined driver on the same
-  // measured aspect-drift evidence. `first` may be true for either; every
-  // other surface still refuses it (a from-scratch call there is a second
-  // creative authority, RULE 0.26).
-  assert.match(edgeSrc, /const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set\(\["driver", "front"\]\);/);
+  // EVERY AI SURFACE IS HERO-VIEW-ELIGIBLE (2026-09-22, "This is my quality"):
+  // driver is the hero, drawn from scratch; hood/front/rear/roof are VIEWS of
+  // that hero -- `first`, but they REQUIRE the hero reference, so a
+  // from-scratch call there is still impossible (RULE 0.26 / RULE 0.0).
+  assert.match(edgeSrc, /const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set\(\["driver", "hood", "front", "rear", "roof"\]\);/);
   assert.match(author, /if \(first && !ATLAS_HERO_VIEW_ELIGIBLE_SURFACES\.has\(surfaceKey\)\) \{/);
   assert.match(author, /throw new Error\("atlas_author_first_surface_not_hero_view_eligible"\);/);
+  assert.match(author, /if \(heroView && surfaceKey !== "driver" && !heroReferenceIn\) throw new Error\("atlas_author_view_requires_hero_reference"\);/,
+    "a non-driver view without the hero is refused before a request is spent");
+  assert.match(author, /if \(heroReferenceIn && !\(heroView && surfaceKey !== "driver"\)\) throw new Error\("atlas_author_hero_reference_misplaced"\);/,
+    "and the driver hero never takes one");
+  assert.match(author, /atlasHeroViewContinuityPrompt\(/, "a view is told: same wrap, different camera");
+  assert.match(author, /atlasHeroRevisionPrompt\(/, "a revision edits the parent hero");
+  assert.match(edgeSrc, /const ATLAS_HERO_VIEW_TYPES: Record<string, string> = \{ driver: "side", hood: "hood_detail", front: "front", rear: "rear", roof: "roof" \};/);
+  assert.deepEqual(hero.VIEW_TYPES, { driver: "side", hood: "hood_detail", front: "front", rear: "rear", roof: "roof" }, "both homes name the same cameras");
   // The neighbours guard is scoped to the VIEW leg only, exactly like the
   // priorTurns guard below it -- a flatten legitimately needs neighbours
   // (front's flatten sees driver + passenger), a from-scratch view never does.
@@ -110,13 +118,22 @@ test("the driver is the ONLY from-scratch request, through the real persona brai
   assert.match(author, /buildDesignIQPrompt\(\{/);
   // HERO-FIRST (2026-09-16) makes the driver TWO stages, and this lock's intent
   // is unchanged by it: ONE from-scratch request through the real persona brain.
-  // Stage 1 asks that persona for the vehicle view (atlasFlatMaster FALSE, so
-  // the tail is the locked camera angle + studio); stage 2 FLATTENS that
-  // approved view rather than drawing anything new. Everything above the swap
-  // -- persona, brief, logo architecture, contact lock, finish, references --
-  // is byte-identical on both stages, which is what "through the real persona
-  // brain" means and what the probe's raw-provider flatten did NOT have.
-  assert.match(author, /atlasFlatMaster: !heroFlatten,\s*\n\s*atlasPanels: \[\],\s*\n\s*atlasHeroSurface: heroFlatten \? undefined :/);
+  // Stage 1 asks that persona for the VEHICLE view -- atlasFlatMaster FALSE,
+  // so the tail is the locked camera angle + scene + studio, RestylePro's
+  // golden hero; stage 2 FLATTENS that approved view rather than drawing
+  // anything new. Everything above the swap -- persona, brief, logo
+  // architecture, contact lock, finish, references -- is byte-identical.
+  //
+  // ⚠️ THIS USED TO PIN `atlasFlatMaster: !heroFlatten` -- TRUE on the view
+  // leg -- while the comment beside it said "asks for the vehicle". With
+  // atlasHeroSurface set, TRUE selected atlasHeroScene ("ONE FLAT PRINTED
+  // SHEET") at 16:9, so the "hero view" hero-first measured 0/3 on was never
+  // a photograph of the vehicle. The lock encoded the bug (the sixth time
+  // CLAUDE.md records that shape). FALSE, on both legs, with the camera
+  // chosen per surface.
+  assert.match(author, /viewType,\s*\n\s*visionBoardImages:/, "the view's own camera reaches the persona");
+  assert.match(author, /atlasFlatMaster: false,\s*\n\s*atlasPanels: \[\],\s*\n\s*atlasHeroSurface: undefined,/);
+  assert.ok(!author.includes("atlasFlatMaster: !heroFlatten"), "the flat-sheet contract must never be asked for on the view leg again");
   assert.match(author, /const heroFlatten = first && String\(body\.heroViewStoragePath \|\| ""\)\.trim\(\)\.length > 0;/);
   // The flatten is the PORTED renderFlatTile wording, tiered, and it copies the
   // customer's own strings rather than guessing lettering.
@@ -156,7 +173,12 @@ test("the hero prompt branch leaves the six-surface and field assemblies byte-id
 test("the locked model, 2K at the closest native aspect, no Flash fallback, no Vertex, no Imagen", () => {
   assert.match(edgeSrc, /const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image"/);
   assert.match(edgeSrc, /const ATLAS_AUTHOR_IMAGE_SIZE = "2K"/);
-  assert.match(edgeSrc, /imageConfig: \{ aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE \}/);
+  // THE HERO IS 4K -- the design itself and the source of every flank, as
+  // RestylePro's golden config has always rendered it. Every view of it and
+  // every flatten stays 2K.
+  assert.match(edgeSrc, /const ATLAS_HERO_IMAGE_SIZE = "4K"/);
+  assert.match(edgeSrc, /const imageSize = heroView && surfaceKey === "driver" \? ATLAS_HERO_IMAGE_SIZE : ATLAS_AUTHOR_IMAGE_SIZE;/);
+  assert.match(edgeSrc, /imageConfig: \{ aspectRatio, imageSize \}/);
   assert.match(edgeSrc, /responseModalities: \["TEXT", "IMAGE"\]/);
   assert.ok(!/flash-image/i.test(heroSrc), "no Flash model in the cascade");
   // Code only: the module's header QUOTES the owner's "DO NOT USE VERTEX or
@@ -200,7 +222,17 @@ test("the default topology is unchanged; hero-driver is opt-in by deploy flag an
     runtimeSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"));
   assert.ok(!routingHead.includes("heroDriverEnabled()") && !routingHead.includes("fieldFirstReason("),
     "the live router reads no hero-driver or field-first flag; those selectors are dead but retained");
-  assert.match(routingHead, /authoringTopology: PANEL_PROOF_TOPOLOGY/);
+  // THE LIVE ROUTER IS HERO-FIRST, EXPLICITLY (2026-09-22): the routing names
+  // the cascade AND `heroFirst: true`, so the deploy flag cannot silently put a
+  // customer back on a flat-sheet contract. The panel proof is no longer
+  // selected here; it is derived from the hero's master.
+  assert.match(routingHead, /authoringTopology: HERO_DRIVER_TOPOLOGY, heroFirst: true/);
+  assert.ok(!routingHead.includes("authoringTopology: PANEL_PROOF_TOPOLOGY"));
+  // A revision runs the same cascade; only the retained single-call shape still refuses an edit.
+  assert.match(seam, /if \(heroDriver && parentManifest && !heroFirst\) \{/);
+  assert.match(seam, /parentView: await stageParentHeroViewReference\(/);
+  // And the element graph never composites over brain-lettered flanks.
+  assert.match(seam, /skipped: "hero_first_authors_its_own_lettering"/);
   assert.ok(seam.includes("field-first budget refused"), "the spent field-first budget hands over");
   assert.ok(seam.includes("resuming the accepted six-surface tail for"), "the checkpoint resume mirror exists");
   assert.match(seam, /existing && fieldFirstRouted && existing\.manifest\?\.topology !== FIELD_TOPOLOGY/);
@@ -342,21 +374,31 @@ test("the ruling is recorded where the next session will read it", () => {
 // the flatten is shown the approved view by path AND hash, the continuations
 // are unchanged (they still see the finished FLANK), and passenger is still a
 // code flop.
-test("hero-first, OPT-IN, runs driver AND front as vehicle-view then flatten, and changes nothing after it", async (t) => {
-  // `undefined` used to mean this path. The owner's Call-1 order is flat 2D
-  // first, so the default is single-call now and the two-stage path is asked
-  // for by name -- it stays fully working and fully measured, just not default.
-  heroFirst(t, "on");
+test("hero-first runs EVERY surface as vehicle-view then flatten: the driver hero, four views of it, five flattens, passenger a flop", async (t) => {
+  // THIS IS THE LIVE CALL 1 (2026-09-22): the router passes `heroFirst: true`
+  // by name. It is asserted through that argument, not the flag, because the
+  // flag is no longer what selects it.
+  heroFirst(t, undefined);
   const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
   const calls = [];
-  const store = { async putImmutableBytes() {} };
+  const staged = new Map();
+  const store = { async putImmutableBytes({ storagePath, bytes }) { staged.set(storagePath, bytes); } };
   const paint = async (w, h, tint) => sharp({ create: { width: w, height: h, channels: 3, background: tint } }).png().toBuffer();
   const callEdge = async (body) => {
     calls.push(body);
-    // GENERALIZED, not driver-only: front is hero-view-eligible on the same
-    // measured evidence (hero.HERO_VIEW_SURFACES), so any surface's own
-    // from-scratch request is its vehicle view, not just driver's.
+    // THE EDGE'S OWN DOORS, mirrored: a non-driver view without the hero
+    // reference is refused; a hero reference anywhere else is refused; a
+    // reference path outside the content-addressed prefix is refused.
     const vehicleView = body.first === true && !body.heroViewStoragePath;
+    if (vehicleView && body.surfaceKey !== "driver" && !body.heroReferenceStoragePath) {
+      throw Object.assign(new Error("atlas_author_view_requires_hero_reference"), { code: "flat_atlas_author_edge_call_failed" });
+    }
+    if (body.heroReferenceStoragePath && !(vehicleView && body.surfaceKey !== "driver")) {
+      throw Object.assign(new Error("atlas_author_hero_reference_misplaced"), { code: "flat_atlas_author_edge_call_failed" });
+    }
+    if (body.heroReferenceStoragePath && !/^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/.test(String(body.heroReferenceStoragePath))) {
+      throw Object.assign(new Error(`atlas_author_input_path_invalid:${body.heroReferenceStoragePath}`), { code: "flat_atlas_author_edge_call_failed" });
+    }
     const tint = { driver: "#2255aa", hood: "#3366bb", front: "#4477cc", rear: "#5588dd", roof: "#6699ee" }[body.surfaceKey];
     // Stage 1 answers at 16:9 -- deliberately NOT the flank's shape, which is
     // the whole point: the model cannot return the flank's ratio.
@@ -381,80 +423,113 @@ test("hero-first, OPT-IN, runs driver AND front as vehicle-view then flatten, an
   };
   const result = await hero.authorHeroDriverMaster({
     manifest, input: { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } },
-    store, callEdge,
+    store, callEdge, heroFirst: true,
   });
 
-  // Seven requests, not five: TWO extras -- driver's vehicle view and front's.
-  assert.equal(calls.length, 7);
-  assert.equal(result.imageRequestCount, 7);
-  const driverView = calls.find((c) => c.surfaceKey === "driver" && c.first === true && !c.heroViewStoragePath);
-  const driverFlatten = calls.find((c) => c.surfaceKey === "driver" && Boolean(c.heroViewStoragePath));
-  const frontView = calls.find((c) => c.surfaceKey === "front" && c.first === true && !c.heroViewStoragePath);
-  const frontFlatten = calls.find((c) => c.surfaceKey === "front" && Boolean(c.heroViewStoragePath));
-  for (const c of [driverView, driverFlatten, frontView, frontFlatten]) assert.ok(c, "every expected call landed");
-  assert.equal(driverView.heroViewStoragePath, undefined, "stage 1 is from scratch and is shown no view");
-  assert.equal(frontView.heroViewStoragePath, undefined, "front's stage 1 is likewise from scratch");
-  // THIS PINNED THE PANEL PATH, WHICH IS THE ONE PATH THE EDGE REFUSES.
-  // `attach()` in design-panel-ai-generate attaches only from the
-  // content-addressed prefix and answers `atlas_author_input_path_invalid` to
-  // anything else -- so this fixture asserted the exact shape that killed node 3
-  // on its first live request (generation 2099d17d, 2026-09-17, HTTP 500). The
-  // contract is the PREFIX, not whatever string the stub happened to return.
-  // True for BOTH eligible surfaces.
-  for (const flatten of [driverFlatten, frontFlatten]) {
+  // TEN REQUESTS: the hero, four views of it, five flattens. Passenger is code.
+  assert.equal(calls.length, 10);
+  assert.equal(result.imageRequestCount, 10);
+  const viewOf = (key) => calls.find((c) => c.surfaceKey === key && c.first === true && !c.heroViewStoragePath);
+  const flattenOf = (key) => calls.find((c) => c.surfaceKey === key && Boolean(c.heroViewStoragePath));
+  const OTHERS = ["hood", "front", "rear", "roof"];
+  const driverView = viewOf("driver"), driverFlatten = flattenOf("driver");
+  for (const key of ["driver", ...OTHERS]) { assert.ok(viewOf(key), `${key} view landed`); assert.ok(flattenOf(key), `${key} flatten landed`); }
+
+  // THE HERO: from scratch, no reference, no history, the side camera.
+  assert.equal(driverView.heroViewStoragePath, undefined);
+  assert.equal(driverView.heroReferenceStoragePath, undefined, "the hero is shown nothing -- it IS the design");
+  assert.deepEqual(driverView.priorTurns, []);
+  assert.deepEqual(driverView.neighbours, []);
+  assert.equal(driverView.viewType, "side");
+  assert.equal(driverView.cleanBase, undefined, "the hero authors its own lettering: no clean base is asked for");
+
+  // EVERY OTHER VIEW IS A PHOTOGRAPH OF THAT HERO, from its own camera, by the
+  // hero's content-addressed identity -- the path the edge attaches from.
+  for (const key of OTHERS) {
+    const view = viewOf(key);
+    assert.equal(view.viewType, hero.VIEW_TYPES[key], `${key} is photographed from its own locked camera`);
+    assert.match(view.heroReferenceStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
+    assert.equal(view.heroReferenceStoragePath, driverFlatten.heroViewStoragePath, `${key}'s view is shown the SAME staged hero the driver flatten reads`);
+    assert.equal(view.heroReferenceContentHash, driverFlatten.heroViewContentHash);
+    assert.deepEqual(view.priorTurns, [], "a view opens no conversation of its own");
+    assert.deepEqual(view.neighbours, []);
+  }
+
+  // EVERY FLATTEN IS SHOWN ITS OWN VIEW AND NOTHING ELSE, and continues that
+  // view's conversation with its thought signature (two execution paths, one
+  // contract -- the graph asserts the same arrival).
+  for (const key of ["driver", ...OTHERS]) {
+    const flatten = flattenOf(key);
     assert.match(flatten.heroViewStoragePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/,
       "stage 2 must be shown the approved view by a path the edge will attach");
-    assert.match(String(flatten.heroViewContentHash || ""), /^[0-9a-f]{64}$/,
-      "and by hash -- a flatten of unverified bytes is a second producer");
     assert.equal(flatten.heroViewStoragePath, `atlas-call1-inputs/${flatten.heroViewContentHash}.jpg`,
       "content-addressed: the path IS the hash, so the edge can verify what it read");
     assert.equal(flatten.heroFlattenTier, 0, "first flatten asks the complete instruction");
+    assert.equal(flatten.priorTurns.length, 2, `${key}'s flatten continues only its own view`);
+    assert.equal(flatten.priorTurns[1].parts[0].thoughtSignature, `sig-${key}-view`, "with the VIEW's signature on the part it arrived on");
+    assert.deepEqual(flatten.neighbours, [], "a flatten sends no neighbour images -- that combination OOM'd the edge worker (9c6008ec)");
+    assert.equal(flatten.heroReferenceStoragePath, undefined);
   }
-  // THE IN-PROCESS CASCADE REPLAYS IT TOO, not only the graph path -- two
-  // execution paths, one contract (owner, 2026-09-17: thought signatures).
-  assert.equal(driverFlatten.priorTurns.length, 2, "driver's flatten continues only its own view -- it has no other history");
-  assert.equal(driverFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-driver-view",
-    "with the VIEW's thought signature on the model part it arrived on");
-  assert.deepEqual(driverView.priorTurns, [], "the vehicle view itself still draws from scratch");
-  assert.deepEqual(frontView.priorTurns, [], "front's vehicle view also draws from scratch");
-  // A FLATTEN REPLAYS ONLY ITS OWN VIEW, exactly like driver's. Replaying
-  // driver's flank too meant carrying the one exchange trimAuthoringHistory
-  // PINS outside the byte budget, on top of an undownscaled view render --
-  // live 9c6008ec, HTTP 546 edge OOM, all eight attempts.
-  assert.equal(frontFlatten.priorTurns.length, 2, "front's flatten continues its own view and nothing else");
-  assert.equal(frontFlatten.priorTurns[1].parts[0].thoughtSignature, "sig-front-view", "its own view's signature");
-  assert.ok(!frontFlatten.priorTurns.some((t) => (t.parts || []).some((p) => p.thoughtSignature === "sig-driver")),
-    "driver's flank is not replayed into a flatten -- it is the pinned, unbudgeted image that exhausted the worker");
-  // A FLATTEN CARRIES NO NEIGHBOUR IMAGES (live 9c6008ec, HTTP 546 edge OOM on
-  // surface.front): view render + driver + passenger + replayed turns in one
-  // invocation exhausted the worker. Driver's flatten escaped only because its
-  // neighbour list is empty.
-  assert.deepEqual(frontFlatten.neighbours, [],
-    "a flatten sends no neighbour images -- that combination OOM'd the edge worker");
 
-  // Everything else is untouched: hood and rear still see the finished FLANK,
-  // never any vehicle view, and roof still sees everyone.
-  const hood = calls.find((c) => c.surfaceKey === "hood");
-  const rear = calls.find((c) => c.surfaceKey === "rear");
-  const roof = calls.find((c) => c.surfaceKey === "roof");
-  for (const c of [hood, rear, roof]) {
-    assert.equal(c.heroViewStoragePath, undefined, "no continuation is shown a vehicle view");
-    assert.notEqual(c.first, true, `${c.surfaceKey} is never hero-view-eligible -- a from-scratch call there would be a second creative authority`);
-  }
+  // THREE WAVES: the hero alone; then driver's flatten beside the four views;
+  // then the four flattens beside the passenger flop.
   const at = (c) => calls.indexOf(c);
-  assert.ok(at(driverView) < at(driverFlatten) && at(frontView) < at(frontFlatten), "each view precedes its own flatten");
-  assert.ok(at(driverFlatten) < at(frontFlatten), "front's flatten waits for driver's flank");
-  // Roof no longer waits on its siblings: it is in the SAME parallel wave, so
-  // it only has to follow the driver it replays.
-  assert.ok(at(driverFlatten) < at(roof), "roof still follows the driver it replays");
+  for (const key of OTHERS) {
+    assert.ok(at(driverView) < at(viewOf(key)), `${key}'s view waits for the hero it photographs`);
+    assert.ok(at(viewOf(key)) < at(flattenOf(key)), `${key}'s view precedes its own flatten`);
+  }
+  assert.ok(at(driverView) < at(driverFlatten));
+  assert.deepEqual(result.provenance.cascade, [["driver.view"], ["driver", "hood.view", "front.view", "rear.view", "roof.view"], ["passenger", "hood", "front", "rear", "roof"]]);
+  assert.equal(result.provenance.heroFirst, true);
   // Passenger is still code, never a request.
   assert.ok(!calls.some((call) => call.surfaceKey === "passenger"));
   const passenger = result.surfaces.find((surface) => surface.surfaceKey === "passenger");
   assert.equal(passenger.method, "hero_driver_passenger_flop");
   assert.equal(passenger.imageRequestCount, 0);
-  // Both hero-view-eligible surfaces' own receipts name which path drew them.
-  assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "driver").method, "hero_first_flattened");
-  assert.equal(result.surfaces.find((surface) => surface.surfaceKey === "front").method, "hero_first_flattened");
+  // Every AI surface's receipt names the flatten, and the VIEW it was flattened
+  // from rides provenance by identity -- what a revision edits, what the
+  // customer saw first.
+  for (const key of ["driver", ...OTHERS]) {
+    assert.equal(result.surfaces.find((surface) => surface.surfaceKey === key).method, "hero_first_flattened");
+    assert.match(result.provenance.views[key].storagePath, /^atlas-call1-inputs\/[0-9a-f]{64}\.jpg$/);
+    assert.equal(result.provenance.views[key].viewType, hero.VIEW_TYPES[key]);
+  }
+  assert.equal(result.provenance.views.passenger, undefined, "the flop has no view of its own");
+  // The staged hero is NOT downscaled: it is the flatten's subject and every view's reference.
+  const heroBytes = staged.get(driverFlatten.heroViewStoragePath);
+  const heroMeta = await sharp(heroBytes).metadata();
+  assert.equal(heroMeta.width, 1920, "the hero is staged at full size");
+});
+
+test("a revision of a hero-first design edits the PARENT HERO: attached by identity, with the customer's instruction, on the driver only", async () => {
+  const manifest = atlas.buildAtlasManifest(SURFACES, undefined, "truck");
+  const calls = [];
+  const store = { async putImmutableBytes() {} };
+  const paint = async (w, h, tint) => sharp({ create: { width: w, height: h, channels: 3, background: tint } }).png().toBuffer();
+  const callEdge = async (body) => {
+    calls.push(body);
+    const vehicleView = body.first === true && !body.heroViewStoragePath;
+    const bytes = vehicleView ? await paint(1920, 1080, "#2255aa") : await paint(Math.round(body.targetWidthPx * 0.97), body.targetHeightPx, "#2255aa");
+    const contentHash = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
+    const name = vehicleView ? `${body.surfaceKey}-view` : body.surfaceKey;
+    return { bytes, imageRequestCount: 1, heroStage: body.first === true ? (vehicleView ? "vehicle-view" : "flatten") : null,
+      panelStoragePath: `atlas-author/${name}.png`, panelSha256: contentHash, panelByteSize: bytes.length,
+      userTurn: { role: "user", parts: [{ text: name }] }, modelTurn: { role: "model", parts: [{ imageRef: { storagePath: `atlas-author/${name}.png`, contentHash }, thoughtSignature: `sig-${name}` }] } };
+  };
+  const parentView = { storagePath: `atlas-call1-inputs/${"7".repeat(64)}.jpg`, contentHash: "7".repeat(64), byteSize: 10 };
+  await hero.authorHeroDriverMaster({
+    manifest, input: { mode: "commercial", brief: "test", vehicle: { year: "2022", make: "Ford", model: "F250", type: "truck" } },
+    store, callEdge, heroFirst: true,
+    revision: { sequence: 2, instruction: "Move the phone number to the rear door.", parentView },
+  });
+  const heroCall = calls.find((c) => c.surfaceKey === "driver" && c.first === true && !c.heroViewStoragePath);
+  assert.equal(heroCall.parentViewStoragePath, parentView.storagePath, "the parent hero is what is edited");
+  assert.equal(heroCall.parentViewContentHash, parentView.contentHash);
+  assert.equal(heroCall.revisionInstruction, "Move the phone number to the rear door.");
+  for (const c of calls.filter((c) => c !== heroCall)) {
+    assert.equal(c.parentViewStoragePath, undefined, `${c.surfaceKey}: only the hero takes the revision`);
+    assert.equal(c.revisionInstruction, undefined);
+  }
 });
 
 // A stage-1 return that is not the vehicle view is refused rather than flattened.
@@ -467,14 +542,16 @@ test("hero-first, OPT-IN, runs driver AND front as vehicle-view then flatten, an
 // evidence (`front: aspect_drift:1.342`/`1.354`, live F250 canary, two
 // separate real generations); hood, rear and roof measure well under the
 // 21:9 ceiling on every catalog vehicle inspected and stay single-step.
-test("HERO_VIEW_SURFACES names exactly the surfaces measured to need the split -- driver and front, nothing more", () => {
-  assert.deepEqual([...hero.HERO_VIEW_SURFACES].sort(), ["driver", "front"]);
-  for (const surfaceKey of ["hood", "rear", "roof", "passenger"]) {
-    assert.ok(!hero.HERO_VIEW_SURFACES.has(surfaceKey), `${surfaceKey} has no measured aspect_drift evidence and must stay single-step`);
-  }
+test("HERO_VIEW_SURFACES names EVERY AI surface -- the hero and the four views of it; passenger is never one", () => {
+  // Superseded 2026-09-22: membership is no longer decided by aspect-drift
+  // evidence. Every surface the model draws is a view then a flatten, because
+  // that is the order the owner's quality comes from (hero on the vehicle,
+  // flats derived from real views). Passenger is the driver flank flopped.
+  assert.deepEqual([...hero.HERO_VIEW_SURFACES].sort(), ["driver", "front", "hood", "rear", "roof"]);
+  assert.ok(!hero.HERO_VIEW_SURFACES.has("passenger"));
   // Both homes -- the runtime and the deployed edge -- name the identical set,
-  // by the same evidentiary rule, so they cannot silently drift apart.
-  assert.match(edgeSrc, /const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set\(\["driver", "front"\]\);/);
+  // so they cannot silently drift apart.
+  assert.match(edgeSrc, /const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set\(\["driver", "hood", "front", "rear", "roof"\]\);/);
 });
 
 test("hero-first refuses a stage-1 return that does not identify itself as the vehicle view", async (t) => {

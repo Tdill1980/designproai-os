@@ -71,7 +71,14 @@ test("the canary records display latency and defers its hard SLO gate until the 
   // the old total would have failed such a run -- discarding its master, its six
   // panels and every stage after them to convict a fail-over that worked. Both
   // halves of the real bound are still asserted, where they actually live.
-  assert.match(canary, /const maxImageRequests = failedOver \? 4 : 2;/);
+  // HERO-FIRST (2026-09-22) spends up to fifteen bounded requests on one
+  // contract (hero + four views + five flattens at two attempts each); the
+  // single-call contracts keep their bound of two.
+  assert.match(canary, /const heroFirst = atlasRow\.metadata\?\.heroDriverAuthoring\?\.heroFirst === true;/);
+  assert.match(canary, /const maxImageRequests = heroFirst \? \(failedOver \? 17 : 15\) : \(failedOver \? 4 : 2\);/);
+  assert.match(canary, /const sequentialImageCalls = heroFirst \? 3 : imageRequestCount;/, "the latency budget scales by the critical path, not the request total");
+  assert.match(canary, /if \(panelProof && heroFirst\) \{/, "the derived three-zone document is checked on its own shape");
+  assert.match(canary, /composited a typeset lockup over a hero-first master/, "the element graph must not letter twice");
   assert.match(canary, /imageRequestCount < 1 \|\| imageRequestCount > maxImageRequests/);
   assert.match(canary, /Number\(atlasRow\.metadata\?\.masterAuthoringAttempts\) > 2/,
     "more than two candidates on ONE contract is still a budget that was never bounded");

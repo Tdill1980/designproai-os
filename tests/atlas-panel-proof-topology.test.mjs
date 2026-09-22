@@ -767,15 +767,24 @@ test("the flag is a deploy receipt, not a router: the panel proof is the ONLY Ca
   // selection altogether. The property the route was once banned for lacking
   // is still locked below, because a future edit that takes any of those
   // inputs away would ship a brain-less Call 1 with nothing behind it.
+  //
+  // AND THEN THE OWNER'S PIXELS SUPERSEDED THAT RULING THE SAME DAY (2026-09-22,
+  // request 0f53d4e7: "quality is shit" / "This is my quality"). The live
+  // router now selects the HERO-FIRST cascade for every unnamed request; the
+  // panel-proof route is dead but retained (a caller that names it still gets
+  // it), and the three-zone document is DERIVED from the hero's master. See
+  // tests/hero-first-is-the-only-call1.test.mjs for the routing by execution.
   const head = atlasSrc.slice(atlasSrc.indexOf("async function generateOrReuseFlatAtlas(options) {"),
     atlasSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"));
   assert.ok(head.includes("panelProofEnabled()"), "the flag is still read, as a receipt");
-  assert.match(head, /if \(options\?\.authoringTopology === undefined\) \{[\s\S]{0,400}authoringTopology: PANEL_PROOF_TOPOLOGY/,
-    "an unnamed topology is the panel proof, unconditionally");
+  assert.match(head, /if \(options\?\.authoringTopology === undefined\) \{[\s\S]{0,400}authoringTopology: HERO_DRIVER_TOPOLOGY, heroFirst: true/,
+    "an unnamed topology is the hero-first cascade, unconditionally");
+  assert.ok(!head.includes("authoringTopology: PANEL_PROOF_TOPOLOGY"),
+    "the panel proof is no longer selected by the live router");
   assert.ok(!head.includes("heroDriverEnabled()") && !head.includes("fieldFirstReason("),
-    "no other selector is read on the live router");
+    "no flag selector is read on the live router");
   assert.ok(!/revisionSequence \?\? 1\) === 1/.test(head),
-    "revisions are not routed elsewhere: sequence > 1 is the panel proof too");
+    "revisions are not routed elsewhere: sequence > 1 runs the same cascade");
   // The old selectors are DEAD BUT RETAINED, by name, behind the legacy router
   // production never calls (owner protection #1: resume/read paths stay).
   const legacy = atlasSrc.slice(atlasSrc.indexOf("async function generateOrReuseFlatAtlasLegacyRouting(options) {"),

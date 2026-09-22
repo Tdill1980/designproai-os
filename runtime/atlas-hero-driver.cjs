@@ -56,7 +56,7 @@ const { fillMasterCutouts } = require("./atlas-cutout-fill.cjs");
 const HERO_DRIVER_TOPOLOGY = "hero-driver";
 const HERO_DRIVER_CONTRACT = "designpro.atlas-hero-driver.v1";
 // Must equal the edge's ATLAS_AUTHOR_PROMPT_VERSION; callAtlasAuthorEdge refuses a mismatch.
-const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
+const HERO_DRIVER_PROMPT_VERSION = "atlas-author-hero-first.20260922.v6-every-surface-hero-view";
 const CANVAS_PX = 4096;
 
 /**
@@ -140,7 +140,35 @@ const AUTHOR_ATTEMPTS = 2;
 // genuinely buys is what RULE 0.39 says elsewhere: node 1 runs once and its
 // render survives a refused flatten. The aspect gap is closed by contain-fit
 // + edge-extend in `evaluateAuthored`, not by this set.
-const HERO_VIEW_SURFACES = Object.freeze(new Set(["driver", "front"]));
+//
+// ⚠️ SUPERSEDED 2026-09-22 — EVERY AI SURFACE IS A VIEW THEN A FLATTEN (owner,
+// Trish, on the first real panel-proof generation: "these are not my design
+// edge functions my system created incredible designs this did not follow my
+// prompt and quality is shit!", then five reference images: "This is my
+// quality" — the Forged Fitness van HERO and its flat driver panel, the
+// McLaren seven-view approval proof, two three-zone sheets). The quality she
+// is pointing at is the working RestylePro order: the design brain draws the
+// wrap ON THE VEHICLE, the other views are photographed from that hero, and
+// the flat panels are DERIVED from those views by a flatten. A flat-sheet
+// continuation prompt ("the HOOD sheet of this design, 71.5 × 56 inches") has
+// no vehicle to compose against and no photograph to derive from, which is
+// exactly the generic result every flat-first contract measured.
+//
+// So the aspect-drift evidence no longer decides membership: the set is every
+// surface the model draws. Driver is the HERO (from scratch, the persona brain,
+// the customer's raw brief); hood, front, rear and roof are VIEWS of that hero
+// (shown the driver view, told to photograph the same finished wrap from their
+// own locked camera — `VIEW_TYPES`), then each view is flattened into its own
+// zone. Passenger stays the driver flank flopped in code.
+const HERO_VIEW_SURFACES = Object.freeze(new Set(["driver", "hood", "front", "rear", "roof"]));
+/**
+ * The locked camera each surface's VIEW is photographed from — the persona's
+ * `viewType`, i.e. the keys of view-angles-os. Hood uses the top-down hood
+ * detail (the flatten needs to see the hood, not the grille); roof the
+ * orthographic top-down. These are the same seven-view keys RestylePro's
+ * generate-2d-proof flattened per tile.
+ */
+const VIEW_TYPES = Object.freeze({ driver: "side", hood: "hood_detail", front: "front", rear: "rear", roof: "roof" });
 /**
  * How far the returned canvas may sit from the zone's own shape before the
  * sheet is refused, now that the gap is closed by contain-fit + edge-extend
@@ -522,18 +550,41 @@ function heroFirstEnabled() {
   return String(process.env.DESIGNPRO_ATLAS_HERO_FIRST || "").trim().toLowerCase() === "on";
 }
 
+/**
+ * NODE 1 for any surface. Driver is the HERO: from scratch, the persona brain,
+ * no reference and no history. Every other surface's view is a PHOTOGRAPH OF
+ * THAT HERO from its own locked camera: `heroReference` (the driver view's
+ * staged identity) is attached and the edge tells the model to photograph the
+ * same finished wrap, changing only the camera. A non-driver view without a
+ * hero reference is refused here before a request is spent — five independent
+ * from-scratch views would be five designs, which RULE 0.0 forbids by name.
+ *
+ * `revision` (a sequence > 1) carries the parent's driver view as the design
+ * being EDITED plus the customer's instruction; only the driver hero takes it.
+ */
 async function authorHeroVehicleView({
   surfaceKey = "driver", zone, heroRequest, creativeContext, callEdge, providerRequest, store, logger = () => {},
+  heroReference = null, revision = null,
 }) {
   if (!store || typeof store.putImmutableBytes !== "function") {
     throw new HeroDriverRefusal(surfaceKey, "hero_view_store_missing");
   }
+  const viewType = VIEW_TYPES[surfaceKey];
+  if (!viewType) throw new HeroDriverRefusal(surfaceKey, "hero_view_surface_has_no_camera");
+  if (surfaceKey !== "driver") {
+    if (!heroReference?.storagePath || !CALL1_INPUT_PATH.test(String(heroReference.storagePath))
+      || !/^[0-9a-f]{64}$/.test(String(heroReference.contentHash || ""))) {
+      throw new HeroDriverRefusal(surfaceKey, "hero_view_requires_hero_reference");
+    }
+  }
+  const parentView = surfaceKey === "driver" && revision?.parentView?.storagePath ? revision.parentView : null;
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const candidate = await callEdge({
     mode: "atlas-author",
     surfaceKey,
     surfaceLabel: SURFACE_LABELS[surfaceKey] || surfaceKey.toUpperCase(),
     first: true,
+    viewType,
     targetWidthPx: pixelWidth,
     targetHeightPx: pixelHeight,
     widthInches: Number(zone.printWidthIn || zone.trimWidthIn),
@@ -542,6 +593,15 @@ async function authorHeroVehicleView({
     priorTurns: [],
     creativeContext,
     ...(heroRequest || {}),
+    ...(surfaceKey !== "driver" ? {
+      heroReferenceStoragePath: heroReference.storagePath,
+      heroReferenceContentHash: heroReference.contentHash,
+    } : {}),
+    ...(parentView ? {
+      revisionInstruction: String(revision.instruction || "").trim(),
+      parentViewStoragePath: parentView.storagePath,
+      parentViewContentHash: parentView.contentHash,
+    } : {}),
     ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: `author:${surfaceKey}-view:1` } } : {}),
   }, { attempt: 1 });
   if (String(candidate?.heroStage || "") !== "vehicle-view") {
@@ -554,11 +614,15 @@ async function authorHeroVehicleView({
   if (!CALL1_INPUT_PATH.test(staged.storagePath)) {
     throw new HeroDriverRefusal(surfaceKey, `hero_view_path_invalid:${staged.storagePath.slice(0, 80)}`);
   }
-  logger(`hero-first ${surfaceKey}: vehicle view ${staged.contentHash.slice(0, 12)} staged (${candidate.aspectRatio || "?"})`);
+  logger(`hero-first ${surfaceKey}: vehicle view ${staged.contentHash.slice(0, 12)} staged (${candidate.aspectRatio || "?"}, ${viewType}${heroReference ? `, from hero ${String(heroReference.contentHash).slice(0, 12)}` : ""}${parentView ? ", revision" : ""})`);
   return Object.freeze({
+    surfaceKey,
+    viewType,
     storagePath: staged.storagePath,
     contentHash: staged.contentHash,
     byteSize: staged.byteSize,
+    heroReferenceHash: heroReference?.contentHash || null,
+    parentViewHash: parentView?.contentHash || null,
     bytes: candidate.bytes,
     imageRequestCount: Number(candidate?.imageRequestCount || 0),
     providerCacheHit: candidate?.providerCacheHit === true,
@@ -654,6 +718,13 @@ async function authorSurface({
         // edge extended for bleed. A reviewer looking at a wide front should be
         // able to read that from the row rather than from the pixels.
         containment: verdict.containment || null,
+        // THE VIEW THIS PANEL WAS FLATTENED FROM, by identity. It is what the
+        // customer sees first, what a revision edits, and what the derived
+        // proof cites -- so it rides the surface receipt into provenance.
+        view: heroView ? {
+          storagePath: heroView.storagePath, contentHash: heroView.contentHash,
+          byteSize: Number(heroView.byteSize || 0), viewType: heroView.viewType || VIEW_TYPES[surfaceKey] || null,
+        } : null,
         exchange, providerRequestKey: candidate?.providerRequestKey || null,
         rawStoragePath: candidate?.panelStoragePath || null, rawSha256: candidate?.panelSha256 || null,
       });
@@ -724,7 +795,7 @@ async function composeSurfaceFromNeighbour(surfaceKey, donor, zone, reason) {
  */
 async function authorHeroDriverMaster({
   manifest, input, store, callEdge, providerRequest = null, creativeContext = "", logger = () => {},
-  onSurfaceAuthored = null,
+  onSurfaceAuthored = null, heroFirst = heroFirstEnabled(), revision = null,
 }) {
   if (!manifest?.zones || !store?.putImmutableBytes || typeof callEdge !== "function") {
     throw Object.assign(new Error("hero-driver authoring requires the manifest, store and edge transport"), { code: "flat_atlas_hero_runtime_missing" });
@@ -734,11 +805,80 @@ async function authorHeroDriverMaster({
     if (!zone) throw Object.assign(new Error(`${key} zone missing`), { code: "flat_atlas_hero_zone_invalid" });
     return zone;
   };
-  const heroRequest = heroRequestBody(input);
+  const heroRequest = heroRequestBody(input, { heroFirst });
   const authored = new Map();
   const exchanges = new Map();
   const stageTimings = [];
   const startedAt = Date.now();
+  const record = async (result) => {
+    authored.set(result.surfaceKey, result);
+    if (result.exchange) exchanges.set(result.surfaceKey, result.exchange);
+    if (typeof onSurfaceAuthored === "function") {
+      try { await onSurfaceAuthored(result); } catch (cause) { logger(`hero-driver onSurfaceAuthored(${result.surfaceKey}) failed: ${String(cause?.message || cause).slice(0, 160)}`); }
+    }
+  };
+  if (heroFirst) {
+    // ── HERO FIRST, EVERY SURFACE (owner, 2026-09-22: "This is my quality") ──
+    //
+    // The working RestylePro order, as three waves:
+    //   1. the HERO -- the persona brain draws the wrap on the vehicle, driver
+    //      side, from the customer's raw brief (one image request);
+    //   2. in parallel: the driver FLATTEN of that hero, and the hood, front,
+    //      rear and roof VIEWS photographed from it (five requests at once);
+    //   3. in parallel: the passenger flop (code) and the four FLATTENS of
+    //      those views (four requests at once).
+    // Critical path: three sequential model calls, the same as the single-call
+    // cascade it replaces, for a design that was composed on the vehicle and
+    // flats that were derived from real views instead of drawn as strips.
+    const others = [...HERO_VIEW_SURFACES].filter((key) => key !== "driver");
+    const heroStartedAt = Date.now();
+    const driverView = await authorHeroVehicleView({
+      surfaceKey: "driver", zone: zoneOf("driver"), heroRequest, creativeContext, callEdge, providerRequest, store, logger, revision,
+    });
+    stageTimings.push({ surfaces: ["driver.view"], durationMs: Date.now() - heroStartedAt });
+
+    const waveTwoStartedAt = Date.now();
+    const heroReference = { storagePath: driverView.storagePath, contentHash: driverView.contentHash };
+    const [driver, ...views] = await Promise.all([
+      authorSurface({
+        surfaceKey: "driver", zone: zoneOf("driver"), first: true, neighbours: [], priorExchanges: [],
+        heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView: driverView,
+      }),
+      ...others.map((surfaceKey) => authorHeroVehicleView({
+        surfaceKey, zone: zoneOf(surfaceKey), heroRequest, creativeContext, callEdge, providerRequest, store, logger, heroReference,
+      }).catch((cause) => {
+        // ONE LOST VIEW MUST NOT DISCARD THE HERO. The surface is continued
+        // deterministically from the driver flank in wave three and the reason
+        // is recorded on its receipt; the driver itself still fails the run.
+        const reason = `${String(cause?.code || cause?.reason || "view_failed")}:${String(cause?.reason || cause?.message || cause).slice(0, 160)}`;
+        logger(`hero-first ${surfaceKey}: vehicle view failed (${reason}); the flank will be continued deterministically`);
+        return { surfaceKey, refused: reason };
+      })),
+    ]);
+    await record(driver);
+    stageTimings.push({ surfaces: ["driver", ...others.map((key) => `${key}.view`)], durationMs: Date.now() - waveTwoStartedAt });
+
+    const waveThreeStartedAt = Date.now();
+    const results = await Promise.all([
+      composePassengerPlaceholder(driver, zoneOf("passenger")),
+      ...views.map((view) => (view.refused
+        ? composeSurfaceFromNeighbour(view.surfaceKey, driver, zoneOf(view.surfaceKey), view.refused)
+        : authorSurface({
+          surfaceKey: view.surfaceKey, zone: zoneOf(view.surfaceKey), first: true, neighbours: [], priorExchanges: [],
+          heroRequest, creativeContext, store, callEdge, providerRequest, logger, heroView: view,
+        }).catch(async (cause) => {
+          if (!(cause instanceof HeroDriverRefusal)) throw cause;
+          logger(`hero-first ${view.surfaceKey} refused (${cause.reason}); continuing deterministically from driver`);
+          return composeSurfaceFromNeighbour(view.surfaceKey, driver, zoneOf(view.surfaceKey), cause.reason);
+        }))),
+    ]);
+    for (const result of results) await record(result);
+    stageTimings.push({ surfaces: ["passenger", ...others], durationMs: Date.now() - waveThreeStartedAt });
+    return assembleHeroMaster({ manifest, authored, stageTimings, startedAt, execution: "in-process", heroFirst: true });
+  }
+  // DEAD BUT RETAINED: the single-call cascade (`heroFirst` off). Kept byte for
+  // byte so a stored run authored on it stays resumable and its locks stay
+  // executable; production routes every unnamed request hero-first.
   for (const stage of AUTHOR_CASCADE) {
     const stageStartedAt = Date.now();
     const results = await Promise.all(stage.map(async (surfaceKey) => {
@@ -753,12 +893,9 @@ async function authorHeroDriverMaster({
       // Everything else in the cascade is unchanged, because what the
       // continuations are shown and replay is the finished FLANK either way.
       // `DESIGNPRO_ATLAS_HERO_FIRST=off` runs every surface single-call.
-      let heroView = null;
-      if (HERO_VIEW_SURFACES.has(surfaceKey) && heroFirstEnabled()) {
-        heroView = await authorHeroVehicleView({
-          surfaceKey, zone: zoneOf(surfaceKey), heroRequest, creativeContext, callEdge, providerRequest, store, logger,
-        });
-      }
+      // No view+flatten pair on this path: hero-first runs the wave
+      // orchestration above, and this loop is only reached with it off.
+      const heroView = null;
       // Driver is ALWAYS the design's from-scratch origin on the edge, split
       // or not (`first` there also gates the full persona assembly). A surface
       // that only sometimes runs the view+flatten pair -- front -- is `first`
@@ -793,16 +930,10 @@ async function authorHeroDriverMaster({
         return composeSurfaceFromNeighbour(surfaceKey, donor, zoneOf(surfaceKey), cause.reason);
       });
     }));
-    for (const result of results) {
-      authored.set(result.surfaceKey, result);
-      if (result.exchange) exchanges.set(result.surfaceKey, result.exchange);
-      if (typeof onSurfaceAuthored === "function") {
-        try { await onSurfaceAuthored(result); } catch (cause) { logger(`hero-driver onSurfaceAuthored(${result.surfaceKey}) failed: ${String(cause?.message || cause).slice(0, 160)}`); }
-      }
-    }
+    for (const result of results) await record(result);
     stageTimings.push({ surfaces: [...stage], durationMs: Date.now() - stageStartedAt });
   }
-  return assembleHeroMaster({ manifest, authored, stageTimings, startedAt, execution: "in-process" });
+  return assembleHeroMaster({ manifest, authored, stageTimings, startedAt, execution: "in-process", heroFirst: false });
 }
 
 /**
@@ -812,7 +943,7 @@ async function authorHeroDriverMaster({
  * whichever ran the surfaces. `authored` maps surfaceKey -> the frozen surface
  * result (with bytes); `execution` names which orchestration produced it.
  */
-async function assembleHeroMaster({ manifest, authored, stageTimings = [], startedAt = Date.now(), execution = "in-process", graph = null }) {
+async function assembleHeroMaster({ manifest, authored, stageTimings = [], startedAt = Date.now(), execution = "in-process", graph = null, heroFirst = null }) {
   const canvas = await sharp({ create: { width: CANVAS_PX, height: CANVAS_PX, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   const assembled = await assembleFinishedMaster(canvas, manifest, manifest.zones.map((zone) => {
     const surface = authored.get(zone.surfaceKey);
@@ -831,8 +962,16 @@ async function assembleHeroMaster({ manifest, authored, stageTimings = [], start
     provenance: {
       contract: HERO_DRIVER_CONTRACT, topology: HERO_DRIVER_TOPOLOGY, promptVersion: HERO_DRIVER_PROMPT_VERSION,
       execution, ...(graph ? { graph } : {}),
+      // Which orchestration drew this sheet, and every vehicle VIEW it was
+      // derived from, by identity: the driver hero the customer saw first, and
+      // the view each flank was flattened from. A revision reads
+      // `views.driver` off its parent as the design being edited.
+      ...(heroFirst === null ? {} : { heroFirst }),
+      views: Object.fromEntries(surfaces.filter((s) => s.view?.storagePath).map((s) => [s.surfaceKey, s.view])),
       imageRequestCount, masterSha256: assembled.contentHash, masterStoragePath: null,
-      cascade: AUTHOR_CASCADE.map((stage) => [...stage]),
+      cascade: heroFirst
+        ? [["driver.view"], ["driver", "hood.view", "front.view", "rear.view", "roof.view"], ["passenger", "hood", "front", "rear", "roof"]]
+        : AUTHOR_CASCADE.map((stage) => [...stage]),
       surfaces: surfaces.map((s) => ({ surfaceKey: s.surfaceKey, method: s.method, contentHash: s.contentHash,
         attempts: s.attempts, imageRequestCount: s.imageRequestCount, signaturesReplayed: s.signaturesReplayed,
         thoughtSignatureCount: s.thoughtSignatureCount, rawStoragePath: s.rawStoragePath || null, rawSha256: s.rawSha256 || null,
@@ -844,7 +983,7 @@ async function assembleHeroMaster({ manifest, authored, stageTimings = [], start
 }
 
 /** The creative fields the hero (driver) request hands the persona brain, verbatim from the frozen input. */
-function heroRequestBody(input) {
+function heroRequestBody(input, { heroFirst = false } = {}) {
   const vehicle = input?.vehicle || {};
   const pick = (value) => (value == null ? undefined : String(value));
   return {
@@ -870,7 +1009,14 @@ function heroRequestBody(input) {
     // name, logo and contact bar are separate deterministic artifacts, so every
     // authored surface is asked for BACKGROUND ARTWORK ONLY. Off, this is
     // undefined and the request is byte-identical to before.
-    cleanBase: cleanBaseEnabled() ? true : undefined,
+    // HERO-FIRST AUTHORS ITS OWN LETTERING. The hero is the persona brain
+    // composing on the vehicle -- the logo, the name and the contact bar are
+    // designed there, in the register buildLogoArchitecture chooses, which is
+    // the quality the owner is pointing at. A clean base plus a typeset
+    // lockup is the "generic typeset text" she rejected on 0f53d4e7, so the
+    // element graph is never asked for on this path (and never compiled: see
+    // compileHeroDriverGraph). Off hero-first the request is byte-identical.
+    cleanBase: !heroFirst && cleanBaseEnabled() ? true : undefined,
   };
 }
 
@@ -918,6 +1064,7 @@ module.exports = {
   AUTHOR_HISTORY,
   AUTHOR_ATTEMPTS,
   HERO_VIEW_SURFACES,
+  VIEW_TYPES,
   MAX_AUTHORED_HOLE_RATIO,
   MAX_CONTAIN_DRIFT_RATIO,
   CONTAIN_EXTEND_CONTRACT,

@@ -51,7 +51,7 @@ test("the runtime and the edge advance their prompt version TOGETHER", () => {
   const edgeVersion = /const ATLAS_AUTHOR_PROMPT_VERSION = "([^"]+)"/.exec(EDGE)?.[1];
   assert.equal(edgeVersion, hero.HERO_DRIVER_PROMPT_VERSION,
     "a runtime that sends one version to an edge pinned to another is refused at the door");
-  assert.match(edgeVersion, /v5-front-view-flatten$/, "the request contract changed again, so the version must say so");
+  assert.match(edgeVersion, /v6-every-surface-hero-view$/, "the request contract changed again, so the version must say so");
 });
 
 test("the element graph's own flag decides the clean base", () => {
@@ -158,7 +158,9 @@ test("it reaches BOTH halves of hero-first, not just the flatten", () => {
   // atlasHeroSurface is undefined on the flatten, so a flag hung off that
   // object would silently skip stage 2. It is its own top-level param.
   assert.match(EDGE, /atlasCleanBase: body\.cleanBase === true,/);
-  const assembly = EDGE.slice(EDGE.indexOf("atlasFlatMaster: !heroFlatten,"));
+  // Since 2026-09-22 the view leg asks for the VEHICLE (atlasFlatMaster false
+  // on both legs); the clean-base flag still sits beside it on the one assembly.
+  const assembly = EDGE.slice(EDGE.indexOf("atlasFlatMaster: false,"));
   assert.ok(assembly.slice(0, 600).includes("atlasCleanBase:"),
     "the clean base must be set on the shared assembly, beside atlasFlatMaster");
 });

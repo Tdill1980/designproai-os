@@ -1011,7 +1011,12 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   // from a total.
   const imageRequestCount = Number(atlasRow.metadata?.geminiImageRequestCount);
   const failedOver = Boolean(atlasRow.metadata?.authoringFailover);
-  const maxImageRequests = failedOver ? 4 : 2;
+  // HERO-FIRST (2026-09-22, the live Call 1): one hero, four views of it and
+  // five flattens, each flatten bounded at two attempts -- at most 15 on the
+  // contract, plus the six-surface fail-over's two. The single-call contracts
+  // keep their bound of two candidates (+2 across a fail-over).
+  const heroFirst = atlasRow.metadata?.heroDriverAuthoring?.heroFirst === true;
+  const maxImageRequests = heroFirst ? (failedOver ? 17 : 15) : (failedOver ? 4 : 2);
   if (!Number.isInteger(imageRequestCount) || imageRequestCount < 1 || imageRequestCount > maxImageRequests) {
     throw new Error(`A.T.L.A.S. spent ${String(atlasRow.metadata?.geminiImageRequestCount || "unknown")} creative image requests; `
       + `at most ${maxImageRequests} are bounded on this path`
@@ -1024,7 +1029,41 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   // Verify their exact identities in the completed proof, not Gemini's inputs.
   const panelProof = atlasRow.metadata?.panelProofAuthoring;
   const composedProof = panelProof?.composition?.contract === "designpro.production-zone-composite.v1";
-  if (panelProof) {
+  if (panelProof && heroFirst) {
+    // HERO-FIRST: the three-zone document is DERIVED from the hero's accepted
+    // master, never drawn by the model. Zone 1 is the six flattened panels
+    // (they carry the brain's own lettering, so no pristine-logo placement is
+    // expected on them); Zone 2 is the clean set; Zone 3 the persisted assets.
+    // The receipt is the derived shape, and the hero receipt names every view.
+    if (panelProof.topology !== "derived-from-accepted-master" || !composedProof
+      || !panelProof.proofStoragePath || !/^[0-9a-f]{64}$/.test(panelProof.proofSha256 || "")
+      || panelProof.threeZoneLayout?.branded !== 6 || panelProof.threeZoneLayout?.backgrounds !== 6) {
+      throw new Error("hero-first Call 1 has no derived, persisted three-zone document over its six panels");
+    }
+    const clean = panelProof.quadrants?.clean || [];
+    if (clean.length !== 6 || new Set(clean.map(p => p.surfaceKey)).size !== 6
+      || clean.some(p => !p.persisted || !p.storagePath || !p.contentHash)) {
+      throw new Error("hero-first Call 1 clean set has incomplete or unverified panel identities");
+    }
+    const views = atlasRow.metadata?.heroDriverAuthoring?.views || {};
+    for (const surface of ["driver", "hood", "front", "rear", "roof"]) {
+      if (!views[surface]?.storagePath || !/^[0-9a-f]{64}$/.test(views[surface]?.contentHash || "")) {
+        throw new Error(`hero-first Call 1 recorded no ${surface} view: the flank was not derived from a photograph of the design`);
+      }
+    }
+    const originals = panelProof.quadrants?.cutGraphics || [];
+    const logo = originals.find(a => a.assetRole === "logo" || a.surfaceKey === "logo");
+    if (!logo || logo.contentHash !== customerLogo.contentHash) {
+      throw new Error("Zone 3 does not preserve the exact uploaded customer logo");
+    }
+    evidence.threeZoneProof = {
+      derived: true, proofStoragePath: panelProof.proofStoragePath, proofHash: panelProof.proofSha256,
+      sourceAssetsPreserved: true, designerApproved: false, logoHash: logo.contentHash,
+      views: Object.fromEntries(Object.entries(views).map(([k, v]) => [k, { storagePath: v.storagePath, contentHash: v.contentHash, viewType: v.viewType }])),
+      panels: clean.map(p => ({ surfaceKey: p.surfaceKey, fit: p.fit, identity: p.identity })),
+    };
+    step(`hero-first: derived three-zone proof over six flattened panels, five views recorded, preserved logo ${logo.contentHash.slice(0, 12)}`);
+  } else if (panelProof) {
     if (!composedProof || panelProof.composition.sourceAssetsPreserved !== true
       || panelProof.threeZoneLayout?.required !== true
       || !panelProof.proofStoragePath || !/^[0-9a-f]{64}$/.test(panelProof.proofSha256 || "")) {
@@ -1094,7 +1133,16 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   // owner judges that sheet on pixels. Silence is what is forbidden.
   const elementGraph = atlasRow.metadata?.elementGraph;
   const declaredBranding = Boolean(COMPANY_NAME || COMPANY_PHONE || COMPANY_WEBSITE);
-  if (declaredBranding && !composedProof) {
+  // HERO-FIRST AUTHORS ITS OWN LETTERING: the element graph must NOT have
+  // composited a lockup over flanks that already carry the brain's name and
+  // contact bar (that prints the name twice), and the skip must be recorded
+  // rather than left as the bare null the branch below convicts.
+  if (heroFirst) {
+    if (elementGraph?.changed === true) {
+      throw new Error("the element graph composited a typeset lockup over a hero-first master that already carries its own lettering");
+    }
+    step(`hero-first: element graph ${elementGraph?.skipped ? `skipped (${elementGraph.skipped})` : "not run"}; the hero carries its own lettering`);
+  } else if (declaredBranding && !composedProof) {
     if (elementGraph === null || elementGraph === undefined) {
       throw new Error("the element graph never ran on a brief that declares a company name and contact details: "
         + "with the clean base on, Call 1 authored no lettering and nothing composited it, "
@@ -1291,7 +1339,11 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
   if (!driverRow?.created_at) throw new Error("Driver proof has no durable availability timestamp");
   const atlasSeconds = elapsedSeconds(row.created_at, atlasRow.created_at, "A.T.L.A.S. latency");
   const driverSeconds = elapsedSeconds(row.created_at, driverRow.created_at, "Driver latency");
-  const extraCandidates = Math.max(0, imageRequestCount - 1);
+  // HERO-FIRST spends its requests in three sequential waves (hero; views +
+  // driver flatten; flattens), so its critical path is three model calls
+  // whatever the total -- the budget scales by that, not by the ten requests.
+  const sequentialImageCalls = heroFirst ? 3 : imageRequestCount;
+  const extraCandidates = Math.max(0, sequentialImageCalls - 1);
   const usedFallback = extraCandidates > 0;
   const atlasSloSeconds = ATLAS_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * ATLAS_SLO_SECONDS_PER_CANDIDATE;
   const driverSloSeconds = DRIVER_FIRST_ATTEMPT_SLO_SECONDS + extraCandidates * DRIVER_SLO_SECONDS_PER_CANDIDATE;
