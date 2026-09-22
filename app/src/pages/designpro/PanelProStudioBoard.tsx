@@ -437,7 +437,7 @@ function SideCard({
           {!lineageKnown
             ? "No master binding on this pair"
             : lineageMatches
-              ? "Proof and panel share one print master"
+              ? "Proof and panel share one design lineage"
               : "DIFFERENT MASTERS — this panel was not cut from the proof's design"}
         </div>
       )}
@@ -1160,13 +1160,12 @@ export default function PanelProStudioBoard() {
         return (
           <Panel
             eyebrow="Call 1"
-            title="The canonical master every panel was cut from"
-            description="The design team's authority, never the customer's. The buyer sees the seven 3D proofs and, in RevisionStudio, the six panels cut from this sheet."
+            title="The vehicle layout the panels were cut against"
+            description="The design team's reference, never the customer's. The source of every panel is the Production Panel Proof above; the buyer sees the seven 3D proofs and, in RevisionStudio, the six panels cut from it."
           >
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: "Vehicle layout", url: selected.guideUrl, name: "atlas-vehicle-layout.png" },
-                { label: "Print master", url: selected.masterUrl, name: "print-master.png" },
+                { label: "Vehicle layout", url: selected.guideUrl, name: "vehicle-layout.png" },
               ].map(({ label, url, name }) => (
                 <div key={label} className="rounded-lg border border-border p-2">
                   <div className="mb-1 text-xs font-semibold">{label}</div>
@@ -1189,7 +1188,6 @@ export default function PanelProStudioBoard() {
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>{selected.master.widthPx}×{selected.master.heightPx} px</span>
               <span>{Math.round(selected.master.effectivePpi * 10) / 10} effective PPI</span>
-              <span>{selected.promptVersion}</span>
               <ContentHash value={selected.master.contentHash || ""} chars={14} />
             </div>
 
@@ -1223,7 +1221,6 @@ export default function PanelProStudioBoard() {
                 <div><dt className="text-muted-foreground">Vehicle type</dt><dd className="font-semibold">{job?.vehicle?.type || "—"}</dd></div>
                 <div><dt className="text-muted-foreground">Pipeline</dt><dd className="font-mono text-[11px]">{selected.provenance?.pipelineMode || "—"}</dd></div>
                 <div><dt className="text-muted-foreground">Authoring model</dt><dd className="font-mono text-[11px]">{selected.model || "—"}</dd></div>
-                <div><dt className="text-muted-foreground">Prompt contract</dt><dd className="font-mono text-[11px]">{selected.promptVersion || "—"}</dd></div>
                 <div><dt className="text-muted-foreground">Prompt hash</dt><dd>{selected.provenance?.promptHash ? <ContentHash value={selected.provenance.promptHash} chars={14} /> : "—"}</dd></div>
                 <div><dt className="text-muted-foreground">Master QC</dt><dd className={selected.qc?.masterQcPassed === true ? "font-semibold text-emerald-600 dark:text-emerald-400" : "font-semibold text-destructive"}>{selected.qc?.masterQcPassed === true ? "Passed" : selected.qc?.masterQcPassed === false ? "Failed" : "—"}</dd></div>
                 <div><dt className="text-muted-foreground">QC confidence</dt><dd className="font-semibold">{selected.qc?.masterQcConfidence == null ? "—" : selected.qc.masterQcConfidence}</dd></div>

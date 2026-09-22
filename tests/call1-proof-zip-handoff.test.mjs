@@ -77,17 +77,20 @@ test('paid ZIP archives exact complete Call1 proof and Atlas with all seven unch
   const f=fixture();await f.execute();const{zipped,completed}=f.result(),files=unzip(zipped),receipt=completed.receipt;
   // Customer-readable file names carry the product's own name, never the engine's (owner, 2026-09-22).
   assert.deepEqual(files.get('proofs/trizone-production-panel-proof.png'),f.stored.get(f.proof.storagePath));
-  assert.deepEqual(files.get('proofs/print-master.png'),f.stored.get(f.master.storagePath));
+  // THE ASSEMBLED SHEET IS NOT IN THE PACK (owner, 2026-09-22: "still generating a now retired atlas design — this needs to go").
+  // This lock used to require `proofs/print-master.png`; the TriZone(TM) sheet is the customer's source and the only sheet shipped.
+  assert.equal(files.has('proofs/print-master.png'),false,'the retired assembled sheet is never packaged');
+  assert.equal([...files.keys()].some(name=>/master/i.test(name)),false,'no master sheet inside the ZIP');
   assert.equal([...files.keys()].some(name=>/atlas/i.test(name)),false,'no file inside the ZIP is named after the engine');
   assert.equal([...files.keys()].filter(name=>name.startsWith('source-views/')).length,7);
-  assert.equal(receipt.includedKinds['production-panel-proof'],1);assert.equal(receipt.includedKinds['atlas-master'],1);assert.equal(receipt.sourceProofs.length,2);
+  assert.equal(receipt.includedKinds['production-panel-proof'],1);assert.equal(receipt.includedKinds['atlas-master'],undefined);assert.equal(receipt.sourceProofs.length,1);
   assert.equal(receipt.archiveManifest.length,files.size);assert.equal(completed.artifacts[0].metadata.archiveManifest.length,files.size);
   for(const file of receipt.archiveManifest){assert.equal(hash(files.get(file.archivePath)),file.contentHash);assert.equal(files.get(file.archivePath).length,file.byteSize);}
   const again=fixture();await again.execute();assert.deepEqual(again.result().zipped,zipped,'same immutable inputs produce the same ZIP');
 });
 
 test('changed proof or master bytes, source binding, missing zones and graph-path drift fail before ZIP publication',async()=>{
-  for(const change of [f=>f.stored.set(f.proof.storagePath,Buffer.from('changed sheet')),f=>f.stored.set(f.master.storagePath,Buffer.from('changed master')),f=>f.source.snapshot_hash='b'.repeat(64),f=>f.source.owner_id=RUN,f=>f.source.snapshot.panelProofAuthoring.quadrants.clean.pop(),f=>f.source.snapshot.panelProofAuthoring.masterStoragePath='provider-cache/foreign.png',f=>f.source.snapshot.panelProofAuthoring=null]){
+  for(const change of [f=>f.stored.set(f.proof.storagePath,Buffer.from('changed sheet')),f=>f.source.snapshot.panelProofAuthoring.masterSha256='c'.repeat(64),f=>f.source.snapshot_hash='b'.repeat(64),f=>f.source.owner_id=RUN,f=>f.source.snapshot.panelProofAuthoring.quadrants.clean.pop(),f=>f.source.snapshot.panelProofAuthoring.masterStoragePath='provider-cache/foreign.png',f=>f.source.snapshot.panelProofAuthoring=null]){
     const f=fixture();change(f);await assert.rejects(f.execute(),error=>/^zip_(call1_proof_(changed|incomplete)|revision_source_changed)$/.test(error.code)&&error.retryable===false);assert.equal(f.result().completed,undefined);
   }
 });
@@ -113,7 +116,12 @@ test('persisted Zone 3 cut graphics ship in the ZIP as their exact frozen bytes,
   assert.deepEqual(files.get(`proofs/cut-graphics/logo-${logo.contentHash.slice(0,12)}.png`),f.stored.get(logo.storagePath));
   assert.deepEqual(files.get(`proofs/cut-graphics/typography-${type.contentHash.slice(0,12)}.svg`),f.stored.get(type.storagePath));
   assert.equal([...files.keys()].filter(name=>name.startsWith('proofs/cut-graphics/')).length,2,'an unpersisted entry has no bytes to package');
-  assert.equal(receipt.includedKinds['cut-graphic'],2);assert.equal(receipt.sourceProofs.length,4);
+  assert.equal(receipt.includedKinds['cut-graphic'],2);
+  // The sheet plus the two persisted cut graphics. This used to be 4: the
+  // assembled print master rode along as a fourth source proof until the owner
+  // retired it from every human surface (2026-09-22, "Production panel proof is
+  // source"); it is internal lineage identity now and ships in no ZIP.
+  assert.equal(receipt.sourceProofs.length,3);
   const listed=receipt.archiveManifest.filter(file=>file.kind==='cut-graphic');
   // The receipt is built inside the vm realm, so compare values, not prototypes.
   assert.equal(JSON.stringify(listed.map(file=>[file.surfaceKey,file.contentHash])),JSON.stringify([['logo',logo.contentHash],['typography',type.contentHash]]));

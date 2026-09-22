@@ -180,9 +180,9 @@ export function publicGenerationProgress(snapshot) {
   const stages = [
     {
       key: "generation.artwork",
-      label: "Print master",
+      label: "Production Panel Proof",
       explanation: masterSaved
-        ? "Your print master has been saved. Vehicle proofs and production checks continue separately."
+        ? "Your Production Panel Proof has been saved. Vehicle proofs and production checks continue separately."
         : "Creating your artwork for the six vehicle surfaces.",
       state: masterSaved
         ? "complete"

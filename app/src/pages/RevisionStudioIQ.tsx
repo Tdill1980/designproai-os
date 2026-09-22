@@ -16,6 +16,7 @@ import {
 // this grid beside vehicle designs, keyed by DesignID, with the 150 PPI panels
 // downloadable from the card (owner, 2026-09-11).
 import { listWallDesignsForStudio } from "@/lib/wallpro-api";
+import { PROOF_BRAND } from "@/lib/os-brand";
 import { wallDesignOf, wallProjectPath, wallStudioRow } from "@/lib/wallpro-studio";
 import { renderClient } from "@/integrations/supabase/renderClient";
 import { downscaleStorageImage } from "@/lib/storage-image";
@@ -1276,7 +1277,7 @@ function StoredOrGenerated2DProof({
       const code = String(error?.message || error);
       if (code === "flat_first_production_gate_required" || code === "generation_not_ready_for_production") {
         toast.error(
-          "The print master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
+          `The ${PROOF_BRAND.full} for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.`,
         );
         return;
       }

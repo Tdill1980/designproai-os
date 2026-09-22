@@ -132,7 +132,7 @@ export function VersionAssetManifest({
           Design assets · {version}
         </span>
         <span className="text-[10px] text-gray-400">
-          {atlas ? `master ${shortHash(atlas.master?.contentHash)}` : "no accepted master"}
+          {atlas ? `lineage ${shortHash(atlas.master?.contentHash)}` : "no accepted Call 1"}
         </span>
       </div>
       <p className="mt-1 text-[10px] text-gray-500">
@@ -140,17 +140,10 @@ export function VersionAssetManifest({
         says so rather than showing a substitute.
       </p>
 
-      <Section title="Master sheet" count={atlas ? "1" : "0"}>
-        <AssetRow
-          label="Print master"
-          detail={atlas?.master
-            ? `${atlas.master.widthPx}×${atlas.master.heightPx} px · ${atlas.master.effectivePpi} PPI · ${bytesLabel(atlas.master.byteSize)}`
-            : "Call 1 has not produced an accepted master yet"}
-          hash={atlas?.master?.contentHash}
-          meta={atlas ? `${atlas.model} · ${atlas.promptVersion}` : undefined}
-          href={atlas?.masterUrl}
-          filename={`atlas-master-${version}-${shortHash(atlas?.master?.contentHash)}.png`}
-        />
+      {/* The assembled sheet is no longer offered (owner, 2026-09-22): the source
+          every panel is cut from is the TriZone(TM) Production Panel Proof,
+          read through ProductionProofSourceCard on the control room. */}
+      <Section title="Authoring guide" count={atlas?.guide ? "1" : "0"}>
         <AssetRow
           label="Authoring guide"
           detail={atlas?.guide

@@ -1240,7 +1240,12 @@ CLIENT BRIEF:`;
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
   // requirement, flat print-production output. Camera + studio are 3D-proof
   // presentation and belong to Calls 2-7, never to the flat master.
-  const atlasRestyleScene = atlasHero
+  // The three-zone Production Panel Proof names its own object, exactly as the
+  // commercial branch does above: the panels themselves, as printed, one design
+  // across all of them — restyle's layered-depth brief intact.
+  const atlasRestyleScene = atlasProofSheet
+    ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) — the panels themselves, as they look coming off the printer. ONE design across all of them. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes.`
+    : atlasHero
     ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, false)
     : atlasField
     ? `Design the printed wrap artwork for a ${vehicle} (${atlasBodyClass}) as ONE continuous full-bleed field of pure printed vinyl artwork — the way the vinyl looks coming off the printer before anything is cut or applied, never an on-vehicle photograph. This is the single design authority for the complete vehicle — one design, one composition. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes on bare vinyl.`

@@ -89,7 +89,7 @@ test("the Production Panel Proof and the version rail sit at the top of the cont
 
   assert.ok(identity < rail, "the identity strip leads; the version rail follows it");
   assert.ok(rail < proofCard, "the rail that selects the version sits beside the proof it selects");
-  assert.ok(proofCard < atlasCard, "the Production Panel Proof is above the print master card");
+  assert.ok(proofCard < atlasCard, "the Production Panel Proof is above the Call 1 progress card");
   assert.ok(atlasCard < versionHistory, "the full prompt history stays below both");
 
   // Keyed on the selected revision and labelled with its V-number, so V1 -> V2
@@ -114,34 +114,22 @@ test("the Production Panel Proof and the version rail sit at the top of the cont
   assert.doesNotMatch(board, /import \{ AtlasPanelProofSheetLoader \}/, "no unused raw-reader import survives");
 });
 
-test("the master is rendered as an image, not merely described", () => {
+test("the retired assembled sheet is not rendered, offered for download, or described as the source", () => {
+  // Owner, 2026-09-22: "why is it showing an atlas — delete this out of
+  // system." Three locks here used to REQUIRE the assembled master card, its
+  // "Download master" link and its missing-state notice. The source of every
+  // panel is the TriZone(TM) Production Panel Proof, mounted once above as
+  // ProductionProofSourceCard; the assembled master survives only as the
+  // lineage hash the panels and proofs bind to.
   const card = board.slice(at(board, "function AtlasProgressCard", "atlas card"), at(board, "function SurfacePairRows", "surface rows fn"));
-  assert.match(card, /<img[\s\S]{0,400}?src=\{atlas\.masterUrl\}/,
-    "the board must render the master sheet itself");
-  assert.match(card, /data-testid="atlas-master"/,
-    "the master container must be addressable for acceptance checks");
-  assert.match(card, /Download master/, "the master must be downloadable");
-});
-
-test("a missing A.T.L.A.S. master is stated, never silent", () => {
-  const card = board.slice(at(board, "function AtlasProgressCard", "atlas card"), at(board, "function SurfacePairRows", "surface rows fn"));
-  assert.match(card, /\{!atlas\?\.masterUrl && \(/,
-    "absence must render an explicit state, not nothing at all");
-  assert.match(card, /data-testid="atlas-master-missing"/,
-    "the missing state must be addressable so a DCA can fail on it");
-  assert.match(card, /Print master not available/,
-    "the missing state must say what is missing in plain words");
-});
-
-test("no proof or panel image may substitute for the master", () => {
-  const card = board.slice(at(board, "function AtlasProgressCard", "atlas card"), at(board, "function SurfacePairRows", "surface rows fn"));
-  // The master slot binds to atlas.masterUrl and nothing else. A fallback to a
-  // proof render would make an absent master invisible again, which is the
-  // whole failure this file exists to catch.
-  assert.doesNotMatch(card, /src=\{atlas\?\.masterUrl \|\|/,
-    "the master image must not fall back to another source");
-  assert.doesNotMatch(card, /masterUrl \|\| proofUrls/,
-    "a proof must never stand in for the master");
+  assert.doesNotMatch(card, /src=\{atlas\.masterUrl\}/, "the assembled sheet is not rendered");
+  assert.doesNotMatch(card, /Download master/, "the assembled sheet is not offered for download");
+  assert.doesNotMatch(card, /data-testid="atlas-master"/);
+  assert.doesNotMatch(card, /Print master/, "the words are gone with the card");
+  assert.match(card, /"Design lineage"/, "the lineage hash the panels bind to is still stated");
+  // And the rail carries the version and its date, never the engine's prompt-version string.
+  assert.doesNotMatch(card, /\$\{atlas\.promptVersion\}/);
+  assert.match(card, /V\$\{atlas\.revisionSequence\}/);
 });
 
 test("the loader hydrates the A.T.L.A.S. revisions the master comes from", () => {

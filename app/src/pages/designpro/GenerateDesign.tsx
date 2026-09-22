@@ -444,7 +444,7 @@ export default function GenerateDesign() {
 
       setProgress(
         pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-          ? "Queueing the print master and seven proof views…"
+          ? `Queueing the ${PROOF_BRAND.full} and seven proof views…`
           : "Queueing the seven-view generation…",
       );
       setRequest(
@@ -522,7 +522,7 @@ export default function GenerateDesign() {
             className="order-1"
             eyebrow="DesignProAI operating system"
             title="One artifact graph"
-            description="One prepared vehicle manifest drives one canonical master, six extracted panels, seven matched 3D proofs, and the production handoff."
+            description={`One prepared vehicle manifest drives one ${PROOF_BRAND.full}, six extracted panels, seven matched 3D proofs, and the production handoff.`}
           />
 
           <Panel className="order-3" eyebrow="The design">
@@ -650,7 +650,7 @@ export default function GenerateDesign() {
           <Panel
             className="order-5"
             eyebrow="Design identity"
-            description="This name stays bound to the print master, six panels, seven proofs, and production artifacts."
+            description={`This name stays bound to the ${PROOF_BRAND.full}, six panels, seven proofs, and production artifacts.`}
           >
             <Field label="Design name" name="designName" maxLength={240} required wide />
           </Panel>
@@ -663,7 +663,7 @@ export default function GenerateDesign() {
               {busy
                 ? "Working…"
                 : pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-                  ? "Generate print master + seven proofs"
+                  ? `Generate ${PROOF_BRAND.short} + seven proofs`
                   : "Generate seven views"}
             </Button>
           </div>
@@ -723,8 +723,8 @@ export default function GenerateDesign() {
           {isAtlasRequest && (
             <Panel
               eyebrow="Call 1 · immutable lineage"
-              title={latestAtlas ? `Revision ${latestAtlas.revisionSequence}` : "Building the canonical master"}
-              description="The guide is the deterministic before state. The master is the single painted print master and the only visual source passed into the seven proof calls."
+              title={latestAtlas ? `Revision ${latestAtlas.revisionSequence}` : `Drawing the ${PROOF_BRAND.short}`}
+              description={`The template is drawn by code from the vehicle's own dimensions before the designer paints. The ${PROOF_BRAND.full} above is the single source every panel and proof is cut from.`}
               aside={
                 <StatePill state={latestAtlas ? "ready" : request.state === "failed" ? "failed" : "running"} />
               }
@@ -733,9 +733,11 @@ export default function GenerateDesign() {
                 <Notice tone="error">{atlasLoadError} Nothing was handed to production.</Notice>
               ) : latestAtlas ? (
                 <div className="grid gap-4 sm:grid-cols-2">
+                  {/* The assembled print master is internal lineage identity and is
+                      shown on no human surface (owner, 2026-09-22: "Production panel
+                      proof is source"); the sheet itself renders above this panel. */}
                   {[
-                    { label: "Before · deterministic guide", asset: latestAtlas.guide, signedUrl: latestAtlas.guideUrl },
-                    { label: "After · canonical master", asset: latestAtlas.master, signedUrl: latestAtlas.masterUrl },
+                    { label: "Production panel template · drawn by code", asset: latestAtlas.guide, signedUrl: latestAtlas.guideUrl },
                   ].map(({ label, asset, signedUrl }) => (
                     <article key={label} className="overflow-hidden rounded-xl border border-border bg-card">
                       <div className="border-b border-border px-4 py-3 text-sm font-semibold">{label}</div>
@@ -756,14 +758,14 @@ export default function GenerateDesign() {
                   ))}
                   <div className="sm:col-span-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                     <span className="font-semibold text-foreground">Canonical graph lineage.</span>{" "}
-                    {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; prompt {latestAtlas.promptVersion}; structural example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "awaiting geometry validation"}.
+                    {atlasRevisions.length} immutable version{atlasRevisions.length === 1 ? "" : "s"} saved. Model {latestAtlas.model}; structural example conditioning {latestAtlas.exampleUsed ? "locked" : "not used"}; manifest sha256 {latestAtlas.manifest.contentHash.slice(0, 16)}…. Production eligibility: {latestAtlas.productionEligible ? "passed" : "awaiting geometry validation"}.
                   </div>
                   <FlatAtlasPanelSchedule panels={latestAtlas.panelMap} className="sm:col-span-2" />
                 </div>
               ) : request.state === "failed" ? (
-                <Notice tone="error">No print master was promoted. Nothing was handed to production.</Notice>
+                <Notice tone="error">No {PROOF_BRAND.short} was accepted. Nothing was handed to production.</Notice>
               ) : (
-                <Loading label="Waiting for the runtime to store and sign the guide and canonical master…" />
+                <Loading label={`Waiting for the runtime to store and sign the ${PROOF_BRAND.short}…`} />
               )}
             </Panel>
           )}

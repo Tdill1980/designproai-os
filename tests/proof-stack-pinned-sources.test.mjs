@@ -72,15 +72,30 @@ test("the photographer's adaptation touches the artwork input and nothing else",
 
   // PRESENTATION AUTHORITY COMES FROM MODULES, NEVER FROM THIS FILE.
   //
-  // The WORDS changed on 2026-09-01 by owner ruling: atlas-proof sends the
-  // canonical 3D proof contract -- three fixed sentences plus structured OS
-  // inputs -- instead of buildPhotographerPrompt's prose. What did NOT change
-  // is that this file assembles none of it: the instruction, the camera anchor
-  // and the studio/lighting anchor are all produced by shared modules.
-  assert.match(atlas, /buildAtlasProofPresentationPrompt\(\{/,
-    "atlas-proof must build the anchors-only contract from the shared module");
-  assert.ok(!atlas.includes("buildPhotographerPrompt"),
-    "atlas-proof must not also send the creative photographer prose");
+  // THE PHOTOGRAPHER PHOTOGRAPHS AGAIN (owner, 2026-09-22: "Restore the
+  // photographer persona"). From 2026-09-01 this lock REQUIRED the
+  // three-sentence anchors-only contract and FORBADE buildPhotographerPrompt on
+  // this mode; the owner judged the proofs against her RestylePro proofs and
+  // reversed it. So atlas-proof now calls the pinned builder exactly as the
+  // hero mode does, handed the designer's own DESIGN ANCHOR from Call 1 and
+  // the surface's panel as the only artwork input. What did NOT change is that
+  // this file assembles no presentation text of its own: the words, the camera
+  // anchor and the studio/lighting anchor are the pinned modules'.
+  const atlasCode = atlas
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n").map((line) => line.replace(/\/\/.*$/, "")).join("\n");
+  assert.match(atlasCode, /buildPhotographerPrompt\(\{/,
+    "atlas-proof must photograph with the pinned photographer prompt");
+  assert.match(atlasCode, /designAnchorText,?\n/, "the designer's anchor is the anchor text");
+  assert.match(atlasCode, /body\.designAnchorText/, "the anchor arrives from Call 1's receipt, on the request");
+  assert.ok(!atlasCode.includes("buildAtlasProofPresentationPrompt"),
+    "the retired three-sentence contract must not also be sent");
+  assert.match(atlasCode, /atlasProofOsInputs\(\{/,
+    "the surface, bed clause and roof qualification are structured OS inputs from the shared module");
+  // No customer brief and no second creative authority may enter Call 2.
+  for (const creative of ["body.brief", "body.prompt", "body.customerPrompt", "buildDesignIQPrompt", "buildDesignerPrompt"]) {
+    assert.ok(!atlasCode.includes(creative), `atlas-proof must not read ${creative}`);
+  }
   assert.match(atlas, /PRIMARY_IMAGE_MODEL/);
 
   // THE MODEL COMES FROM model-config, AND IT IS PRO ON EVERY ATTEMPT.
@@ -112,10 +127,10 @@ test("the photographer's adaptation touches the artwork input and nothing else",
     assert.ok(!atlas.includes(invented),
       `atlas-proof restates presentation text that belongs to the pinned modules: ${invented}`);
   }
-  // buildPhotographerPrompt still serves the historical hero mode, so the pin
-  // above must still hold -- it is not dead, just no longer on this path.
-  assert.match(source, /buildPhotographerPrompt\(\{/,
-    "the pinned prompt builder must still serve the hero mode");
+  // buildPhotographerPrompt serves the hero mode AND atlas-proof: two callers
+  // of one pinned builder, never a second copy of its words.
+  assert.equal((source.match(/buildPhotographerPrompt\(\{/g) || []).length, 2,
+    "the pinned prompt builder serves both modes");
 
   // ARTWORK AUTHORITY, SWAPPED. The panel is read by storage path and hash —
   // never a hero render, and never a public URL of a private bucket.

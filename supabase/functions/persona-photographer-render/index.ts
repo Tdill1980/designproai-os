@@ -18,14 +18,17 @@ import {
   buildPhotographerPrompt,
   PHOTOGRAPHER_SHOT_SEQUENCE,
 } from "../_shared/persona-photographer-prompt.ts";
-// THE CANONICAL 3D PROOF CONTRACT (owner, 2026-09-01). atlas-proof mode builds
-// its prompt from OS anchors only; `buildPhotographerPrompt` still serves the
-// historical six-shot hero mode below and stays byte-pinned.
+// THE PHOTOGRAPHER PHOTOGRAPHS EVERY PROOF AGAIN (owner, 2026-09-22: "Restore
+// the photographer persona"). atlas-proof mode builds its prompt with
+// `buildPhotographerPrompt` — the pinned identity, studio, camera and colour
+// block — handed the designer's DESIGN ANCHOR from Call 1. The shared module
+// lends only the structured OS inputs the pinned builder lacks and the
+// shot-to-surface map; its 2026-09-01 three-sentence contract stays documented
+// there, unwired.
 import {
-  ATLAS_PROOF_PROMPT_CONTRACT,
   ATLAS_REAL_SURFACES,
   ATLAS_SHOT_SURFACES,
-  buildAtlasProofPresentationPrompt,
+  atlasProofOsInputs,
 } from "../_shared/atlas-proof-presentation.ts";
 import { geminiImageUrl, PRIMARY_IMAGE_MODEL, FALLBACK_IMAGE_MODEL } from "../_shared/model-config.ts";
 import { upscaleImageBytes } from "../_shared/topaz-upscale.ts";
@@ -53,6 +56,14 @@ const corsHeaders = {
 // string (migration 20260828100000). Bumping it would make the fence refuse
 // every proof. The PROMPT identity rides alongside as `promptContract`.
 const ATLAS_PROOF_CONTRACT = "designpro.atlas-photographer-proof.v1";
+/**
+ * WHICH WORDS PRODUCED THE PROOF. Additive to the wire contract above (the
+ * database fence checks `proofContract`, never this), and folded into the
+ * provider cache's request hash, so a proof rendered under the retired
+ * three-sentence contract (`designpro.atlas-proof-anchors.v1`) is never read
+ * back as one rendered by the photographer.
+ */
+const ATLAS_PROOF_PROMPT_CONTRACT = "designpro.atlas-proof-photographer.v2";
 const ATLAS_PROOF_SOURCE_COMMIT = "113d137dbe8813ca3bf70c8d7265ad081ebd4524";
 
 
@@ -416,11 +427,17 @@ serve(async (req) => {
 // view-angles-os owns the camera, studio-os owns the room and the light,
 // model-config owns the model and its fallback.
 //
-// THE WORDS CHANGED ON 2026-09-01, BY OWNER RULING. atlas-proof no longer
-// calls buildPhotographerPrompt: it builds the anchors-only contract from
-// _shared/atlas-proof-presentation.ts, whose instruction is three fixed
-// sentences that never describe the design. buildPhotographerPrompt still
-// owns the historical six-shot hero mode above and stays byte-pinned.
+// THE WORDS ARE THE PHOTOGRAPHER'S AGAIN (owner, 2026-09-22). From 2026-09-01
+// to this date atlas-proof sent three fixed sentences from
+// _shared/atlas-proof-presentation.ts and never the pinned photographer, and
+// the owner judged the proofs against her RestylePro proofs and chose the
+// photographer: "Restore the photographer persona." So this mode calls
+// buildPhotographerPrompt exactly as the hero mode above does, with ONE input
+// swapped: `designAnchorText` is the DESIGN ANCHOR the designer emitted on
+// Call 1 (carried on the receipt as `panelProofAuthoring.designAnchor`), not a
+// hero render's anchor — and absent, a one-line pointer at the attached panel.
+// No customer brief and no second creative authority enters here; the panel
+// stays the only artwork input on every attempt.
 //
 // THREE THINGS THE HERO PATH DID THAT THIS MUST NOT.
 //
@@ -509,29 +526,32 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
 
     if (!hasGeminiKey()) return fail("atlas_proof_no_api_key", 500);
 
-    // THE CANONICAL 3D PROOF CONTRACT. (owner ruling, Trish 2026-09-01)
-    //
-    // Owner, verbatim: "A.T.L.A.S. designs. GENIE maps. Anchors control
-    // camera/studio/lighting. The proof renderer photographs." The model
-    // instruction is three fixed sentences and never describes the design:
-    // repeating the panel's visual content in prose gives Gemini a second
-    // interpretation channel that competes with the panel itself, which is
-    // how a proof ends up redesigning the wrap (DID-134FC3CA).
-    //
-    // Everything the model needs that is NOT artwork arrives as a structured
-    // OS input -- exact GENIE vehicle, canonical surface, finish, and the
-    // pinned camera/studio/lighting anchors. Nothing from Call 1's creative
-    // brain follows it downstream.
-    const prompt = buildAtlasProofPresentationPrompt({
-      vehicle: [body.vehicleYear, body.vehicleMake, body.vehicleModel]
-        .map((v) => String(v || "").trim()).filter(Boolean).join(" "),
-      surfaceKey,
-      viewType: shotKey,
-      finish: body.finish == null ? null : String(body.finish),
-      isPickup: body.isPickup === true,
-      pickupRoofQualification: typeof body.pickupRoofQualification === "string"
-        ? body.pickupRoofQualification : undefined,
-    });
+    // THE PHOTOGRAPHER'S OWN PROMPT (RULE 0.29: words, camera, studio and
+    // lighting are the pinned stack; only the artwork input changes). The
+    // designer's DESIGN ANCHOR describes the design the panel already shows;
+    // it is the same field the hero mode fills from the design pass, and it is
+    // never the customer's brief. When Call 1 recorded none, the anchor points
+    // at the attached panel and describes nothing.
+    const anchorFromDesigner = typeof body.designAnchorText === "string" ? body.designAnchorText.trim().slice(0, 2000) : "";
+    const designAnchorText = anchorFromDesigner
+      || `The finished ${surfaceKey} print panel attached as IMAGE 1 — reproduce it exactly as printed.`;
+    const prompt = [
+      buildPhotographerPrompt({
+        designAnchorText,
+        vehicleYear: String(body.vehicleYear || "").trim(),
+        vehicleMake: String(body.vehicleMake || "").trim(),
+        vehicleModel: String(body.vehicleModel || "").trim(),
+        finish: body.finish == null ? "Gloss" : String(body.finish),
+        shotKey,
+      }),
+      // Structured OS inputs the pinned builder does not carry: the canonical
+      // surface, the pickup bed clause, the pickup roof qualification.
+      atlasProofOsInputs({
+        surfaceKey, viewType: shotKey, isPickup: body.isPickup === true,
+        pickupRoofQualification: typeof body.pickupRoofQualification === "string"
+          ? body.pickupRoofQualification : undefined,
+      }),
+    ].join("\n\n");
 
     // THE ARTWORK FIRST, THE CAMERA LAST. On the panel-proof topology IMAGE 1
     // is the complete customer-visible three-zone Production Panel Proof.
@@ -703,6 +723,9 @@ Photograph IMAGE 1's design on the exact vehicle from the requested camera view.
         contract: ATLAS_PROOF_CONTRACT,
         // Which WORDS produced this proof, additive to the wire contract.
         promptContract: ATLAS_PROOF_PROMPT_CONTRACT,
+        // Whether the designer's own anchor reached the photographer, or the
+        // one-line pointer at the panel stood in for it.
+        designAnchorApplied: Boolean(anchorFromDesigner),
         sourceCommit: ATLAS_PROOF_SOURCE_COMMIT,
         provider: "google",
         model: modelUsed,

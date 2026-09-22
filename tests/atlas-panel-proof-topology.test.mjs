@@ -585,13 +585,13 @@ test("Zone 3 degrades the other way: a generated logo without alpha is dropped a
   const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
     downloadAsset: async () => opaque });
   assert.ok(out.contentHash);
-  // The opaque mark is not a cut graphic; the outlined typography and contact
-  // line still are, and the three slots no original claims (the logo slot
-  // included) carry what the sheet drew, so Zone 3 carries five and the
+  // The opaque mark is not a cut graphic, and on the sheet path no slot is
+  // typeset by code (owner, 2026-09-22: "never generic fonts"), so all five
+  // slots -- the logo slot included -- carry what the sheet drew, and the
   // design proceeds.
   assert.ok(!out.provenance.quadrants.cutGraphics.some((a) => a.contentHash === contentHash),
     "the opaque generated mark never reaches Zone 3");
-  assert.equal(out.provenance.quadrants.cutGraphics.filter((a) => a.source !== "sheet-drawn").length, 2);
+  assert.equal(out.provenance.quadrants.cutGraphics.filter((a) => a.source !== "sheet-drawn").length, 0);
   assert.equal(out.provenance.quadrants.cutGraphics.length, 5);
   const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3" && o.role === "logo");
   assert.ok(omitted, "the dropped mark must be named");
@@ -661,12 +661,20 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // panels, and the blank panels are what PanelPro lays on a vehicle template.
   assert.equal(q.branded.length, 6);
   assert.equal(q.clean.length, 6);
+  // ZONE 3 LETTERING IS THE DESIGN'S OWN ON THE SHEET PATH (owner, 2026-09-22:
+  // "it's never supposed to use generic fonts. Ace creates a logo font, uses
+  // that throughout"). This lock used to require TWO typeset SVG originals --
+  // the company name and the contact line set by code in a vendored font,
+  // claiming their slots before the sheet's own marks could be read. That was
+  // the defect written down as a requirement. Now every slot the customer's
+  // uploaded logo leaves empty is read off the sheet.
   const originals = q.cutGraphics.filter((a) => a.source !== "sheet-drawn");
   const drawn = q.cutGraphics.filter((a) => a.source === "sheet-drawn");
-  assert.equal(originals.length, 2, "original outlined brand and contact assets");
-  assert.ok(originals.every(a => a.vector && a.contentType === "image/svg+xml"));
-  assert.equal(drawn.length, 3, "the design's own elements fill the three slots the originals left");
+  assert.equal(originals.length, 0, "no code-typeset lettering on the sheet path");
+  assert.equal(drawn.length, 5, "the design's own elements fill all five slots");
   assert.ok(drawn.every(a => !a.vector && a.contentType === "image/png"));
+  assert.equal(out.provenance.zone3LetteringSource, "sheet-drawn");
+  assert.ok(!["typography", "contact"].some((role) => originals.some((a) => a.assetRole === role)));
   for (const panel of [...q.branded, ...q.clean]) {
     assert.ok(panel.rect && Number.isFinite(panel.fit), `${panel.surfaceKey} must carry its rect and fit`);
   }
@@ -776,14 +784,23 @@ test("mandatory quadrants refuse instead of publishing a partial proof", async (
   }
 });
 
-test("a blank generated graphics band is replaced with original outlined assets", async () => {
+test("a blank Zone 3 on the sheet is an honest gap, never typeset by code", async () => {
+  // This used to assert that an empty band was "replaced with original outlined
+  // assets" -- code lettering the company name and contact line in a vendored
+  // font. A designer who drew nothing in Zone 3 is a fact the receipt states;
+  // it is not a licence for code to design the lettering (owner, 2026-09-22).
   const layout = container.containerLayout(container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)));
   const { callProofEdge } = edgeStub(await paintedSheet({
     empty: layout.zone3.map((cell) => `zone3:${cell.surfaceKey}`),
   }));
   const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, callProofEdge });
-  assert.equal(out.provenance.quadrants.cutGraphics.length, 2);
-  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "vector-originals");
+  assert.equal(out.provenance.quadrants.cutGraphics.length, 0);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "none");
+  assert.equal(out.provenance.zone3LetteringSource, "sheet-drawn");
+  const empties = out.provenance.composition.omitted.filter((o) => o.zone === "zone3" && o.reason !== "no_original_assets_or_customer_text");
+  assert.equal(empties.length, 5, "each empty box is named on the receipt");
+  // The company name WAS supplied, so the absence is the designer's, not the customer's.
+  assert.ok(!out.provenance.composition.omitted.some((o) => o.reason === "no_original_assets_or_customer_text"));
 });
 
 test("the flag is a deploy receipt, not a router: the panel proof is the ONLY Call 1, for first authoring and revisions", () => {
@@ -1391,14 +1408,22 @@ test("Porsche brief lettering and race roundel share one original asset across Z
     input:{brief,vehicle:{year:"2022",make:"Porsche",model:"911 Turbo"}}});
   assert.equal(calls.length,1,"uses saved artwork response with no separate logo generation");
   assert.equal(out.imageRequestCount,1);
-  const graphic=out.provenance.quadrants.cutGraphics.find(a=>a.surfaceKey==="typography");
-  assert.deepEqual(graphic.textContent,["MARTINI RACING","23"]);
-  const svg=store.objects.get(graphic.storagePath).bytes.toString();
-  assert.match(svg,/<circle[^>]*fill="#ffffff"/);
-  assert.match(svg,/<path/);
-  assert.doesNotMatch(svg,/<text/);
-  assert.ok(out.provenance.composition.placements.filter(p=>p.role==="typography")
-    .every(p=>p.contentHash===graphic.contentHash && p.storagePath===graphic.storagePath));
+  // THE WORDMARK AND THE ROUNDEL ARE THE DESIGNER'S, READ OFF THE SHEET. This
+  // lock used to require a code-typeset "MARTINI RACING" SVG with a drawn
+  // roundel -- code designing the livery's own lettering in a vendored font,
+  // which is exactly what the owner rejected on 2026-09-22 ("Ace creates a
+  // logo font, uses that throughout"). The typography slot now carries what
+  // the sheet drew, and nothing is composited onto Zone 1.
+  assert.ok(!out.provenance.quadrants.cutGraphics.some(a=>a.surfaceKey==="typography"),
+    "no code-typeset typography asset on the sheet path");
+  const graphic=out.provenance.quadrants.cutGraphics.find(a=>a.surfaceKey==="tagline");
+  assert.equal(graphic.source,"sheet-drawn");
+  assert.equal(graphic.vector,false);
+  assert.equal(graphic.textContent,undefined,"no code-authored text content");
+  assert.ok(![...store.objects.values()].some((o) => o.contentType === "image/svg+xml"),
+    "no typeset SVG is stored on the sheet path");
+  assert.equal(out.provenance.composition.placements.length,0);
+  assert.equal(out.provenance.zone3LetteringSource,"sheet-drawn");
   assert.equal(out.provenance.threeZoneLayout.branded,6);
   assert.equal(out.provenance.threeZoneLayout.backgrounds,6);
 });
@@ -1426,9 +1451,18 @@ test("every pinned teaching input states its ROLE before the image, and FORMAT n
   assert.ok(loop.indexOf("parts.push({ text: framing })") < loop.indexOf("parts.push(pinnedPart)"),
     "the role is stated BEFORE the image it describes");
 
-  // FORMAT is topology only. These are the axes the sheet's own business owns.
+  // THE RIDGELINE SHEET IS THE STANDARD -- format AND the quality of the work
+  // (owner, 2026-09-18: "It is the standard, not just the grid"; 2026-09-22,
+  // looking at the live run: "That's not the standard of design my system did
+  // before"). This framing used to read "FORMAT AND TOPOLOGY REFERENCE ONLY",
+  // which contradicted the prompt's own "(2) a FINISHED PROOF -- the standard
+  // for the QUALITY of the work" one attachment later. One role, and it names
+  // both halves. The axes the sheet's own business owns are still excluded.
   const framing = fn.slice(fn.indexOf("const PINNED_INPUT_FRAMING"), fn.indexOf("const PINNED_INPUTS"));
-  assert.match(framing, /FORMAT AND TOPOLOGY REFERENCE ONLY/);
+  assert.match(framing, /THE STANDARD, FOR ANOTHER COMPANY ON ANOTHER VEHICLE/);
+  assert.match(framing, /FORMAT:/);
+  assert.match(framing, /QUALITY:/);
+  assert.ok(!framing.includes("TOPOLOGY REFERENCE ONLY"), "the sheet is the quality standard, not a grid");
   for (const forbidden of ["artwork", "palette", "company name", "logo", "brand", "industry", "typography"]) {
     assert.ok(framing.includes(forbidden), `FORMAT must not teach ${forbidden}`);
   }

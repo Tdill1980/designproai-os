@@ -827,16 +827,20 @@ function AtlasProgressCard({
           Call 1
         </span>
         <span className="text-[10px] text-gray-400">
-          {atlas ? `V${atlas.revisionSequence} · ${atlas.promptVersion}` : "authoring"}
+          {/* The version and when it was authored. The engine's prompt-version
+              string used to print here (owner, 2026-09-22: "why is it showing
+              an atlas — delete this out of system"); it is a stored identifier
+              and stays in the forensic record, never on the rail. */}
+          {atlas ? `V${atlas.revisionSequence}${atlas.createdAt ? ` · ${exactTimestamp(atlas.createdAt)}` : ""}` : "authoring"}
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {step(
-          "Accepted master",
+          "Design lineage",
           Boolean(atlas?.master?.contentHash),
           atlas?.master?.contentHash
-            ? `${atlas.master.contentHash.slice(0, 16)} · ${atlas.master.widthPx}×${atlas.master.heightPx}`
-            : "Call 1 has not produced an accepted master yet",
+            ? `${atlas.master.contentHash.slice(0, 16)} · every panel and proof below binds to it`
+            : "Call 1 has not been accepted yet",
         )}
         {step(counts.panelLabel, counts.panelDone, counts.panelDetail)}
         {step(
@@ -849,79 +853,12 @@ function AtlasProgressCard({
         {step(counts.proofLabel, counts.proofDone, counts.proofDetail)}
       </div>
 
-      {/* A MISSING MASTER IS STATED, NEVER SILENT. (Owner, 2026-08-31: "Treat
-          absence of A.T.L.A.S. in PanelProStudio as DCA failure.")
-          This block used to be `{atlas?.masterUrl && ...}` alone, so a job whose
-          A.T.L.A.S. failed to load rendered NOTHING here and the board looked
-          merely quiet. That is exactly how source can be green while the one
-          artifact everything descends from is absent from the screen. No proof
-          image may stand in for it -- the master is the only thing that belongs
-          in this slot. */}
-      {!atlas?.masterUrl && (
-        <div
-          data-testid="atlas-master-missing"
-          className="mt-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800"
-        >
-          Print master not available for this revision. Every panel and proof
-          descends from it, so this job cannot be validated until it loads.
-        </div>
-      )}
-
-      {/* THE SHEET ITSELF. Everything above is a status line about the master;
-          this is the master. It is the design authority every proof and every
-          panel is cut from, so the production board has to render it rather
-          than describe it. */}
-      {atlas?.masterUrl && (
-        <div data-testid="atlas-master" className="mt-3 border-t border-gray-200 pt-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-              Print master · V{atlas.revisionSequence}
-            </span>
-            <span className="flex items-center gap-3 text-[10px]">
-              <a
-                href={atlas.masterUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="font-semibold text-blue-700 underline"
-              >
-                Open full size
-              </a>
-              <a
-                href={atlas.masterUrl}
-                download={`print-master-v${atlas.revisionSequence}-${atlas.master.contentHash.slice(0, 12)}.png`}
-                className="font-semibold text-blue-700 underline"
-              >
-                Download master
-              </a>
-              {atlas.guideUrl && (
-                <a
-                  href={atlas.guideUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-gray-500 underline"
-                >
-                  Installer map
-                </a>
-              )}
-            </span>
-          </div>
-          <a href={atlas.masterUrl} target="_blank" rel="noreferrer" className="block">
-            <img
-              src={atlas.masterUrl}
-              alt={`Print master, revision ${atlas.revisionSequence}`}
-              loading="lazy"
-              className="max-h-[26rem] w-full rounded border border-gray-200 bg-white object-contain"
-            />
-          </a>
-          <p className="mt-1 text-[10px] text-gray-500">
-            {atlas.master.widthPx}×{atlas.master.heightPx} ·{" "}
-            {(atlas.master.byteSize / 1_048_576).toFixed(1)} MB ·{" "}
-            {atlas.master.effectivePpi.toFixed(1)} PPI at design size · sha256{" "}
-            <span className="font-mono">{atlas.master.contentHash.slice(0, 16)}</span>
-            {" · "}links are signed for 5 minutes; reload the page if an image stops loading
-          </p>
-        </div>
-      )}
+      {/* THE OLD ASSEMBLED SHEET IS NOT SHOWN HERE ANY MORE (owner, 2026-09-22:
+          "Also still generating a now retired atlas design — this needs to go").
+          The source of every print panel is the TriZone(TM) Production Panel
+          Proof, mounted once above as ProductionProofSourceCard. The assembled
+          master survives only as the lineage hash the panels and proofs bind to
+          (the step above); it is not rendered, offered for download, or shipped. */}
 
       {/* THE MASTER'S OWN RECORD.
           Every value below was written by Call 1 at authoring time and sat on
@@ -1171,86 +1108,24 @@ function SurfacePairRows({
 }
 
 /** Rows that render only when the server actually stated a value. */
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
-  if (value === null || value === undefined || value === "" ) return null;
-  return (
-    <div className="min-w-0">
-      <dt className="text-[10px] text-gray-500">{label}</dt>
-      <dd className="truncate text-[11px] font-semibold text-gray-900" title={typeof value === "string" ? value : undefined}>
-        {value}
-      </dd>
-    </div>
-  );
-}
 
 function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
   const qc = atlas.qc || null;
-  const provenance = atlas.provenance || null;
   const cutoutSurfaces = Array.isArray(qc?.masterCutoutSurfaces) ? qc!.masterCutoutSurfaces : [];
   const findings = Array.isArray(qc?.masterCutoutFindings) ? qc!.masterCutoutFindings : [];
   const fills = Array.isArray(qc?.cutoutFillApplied) ? qc!.cutoutFillApplied! : [];
-  // Equal on a clean sheet; different when cut-outs were filled before the
-  // panels were cut. Saying which is the difference between "the panel came
-  // from another design" and "the sheet was repaired first".
-  const repaired = Boolean(
-    qc?.panelSourceHash
-    && qc.canonicalMasterHash
-    && qc.panelSourceHash !== qc.canonicalMasterHash,
-  );
-  if (!qc && !provenance) return null;
+  // THE ENGINE'S OWN RECORD IS NOT ON THE SCREEN ANY MORE (owner, 2026-09-22,
+  // looking at this block on the live board: "Delete defunct atlas"). The
+  // master QC verdict, its contract, the authoring model, the prompt hash, the
+  // route and the size the retired sheet was requested at are engine
+  // provenance for the assembled master, which is internal lineage identity
+  // now, not a document a person reviews. They still ride the forensic-record
+  // download for the design team. What stays visible is the one thing a human
+  // must act on before a panel prints: a surface that arrived holed.
+  if (cutoutSurfaces.length === 0 && fills.length === 0) return null;
 
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-        Master QC &amp; provenance
-      </div>
-
-      <dl className="mt-2 grid gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
-        <Fact
-          label="Master QC"
-          value={
-            qc?.masterQcPassed === true ? "Passed"
-              : qc?.masterQcPassed === false ? "Failed"
-                : qc ? "Not recorded" : null
-          }
-        />
-        <Fact
-          label="QC confidence"
-          value={typeof qc?.masterQcConfidence === "number" ? qc.masterQcConfidence.toFixed(2) : null}
-        />
-        <Fact label="QC model" value={qc?.masterQcModel || null} />
-        <Fact label="QC contract" value={qc?.masterQcContract || null} />
-        <Fact
-          label="Authoring attempts"
-          value={typeof qc?.masterAuthoringAttempts === "number" ? String(qc.masterAuthoringAttempts) : null}
-        />
-        <Fact label="Authoring model" value={atlas.model} />
-        <Fact label="Prompt version" value={atlas.promptVersion} />
-        <Fact label="Prompt hash" value={provenance?.promptHash ? provenance.promptHash.slice(0, 16) : null} />
-        <Fact label="Pipeline mode" value={provenance?.pipelineMode || null} />
-        <Fact label="Input contract" value={provenance?.inputContract || null} />
-        <Fact label="Call 1 route" value={provenance?.topology || null} />
-        <Fact label="Provider contract" value={provenance?.providerContract || null} />
-        <Fact label="Requested size" value={provenance?.requestedImageSize || null} />
-        <Fact
-          label="Delivered"
-          value={
-            provenance?.deliveredWidthPx && provenance?.deliveredHeightPx
-              ? `${provenance.deliveredWidthPx}×${provenance.deliveredHeightPx}${provenance.nativelyFourK ? " · native 4K" : ""}`
-              : null
-          }
-        />
-        <Fact label="Artboard port" value={provenance?.artboardPortVersion || null} />
-        <Fact
-          label="Canonical master"
-          value={qc?.canonicalMasterHash ? qc.canonicalMasterHash.slice(0, 16) : null}
-        />
-        <Fact
-          label="Panels cut from"
-          value={qc?.panelSourceHash ? `${qc.panelSourceHash.slice(0, 16)}${repaired ? " · repaired sheet" : " · same as master"}` : null}
-        />
-      </dl>
-
       {/* A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN. The design and its
           proofs are unaffected; the hole only becomes real at the panel cut, so
           these surfaces must not print until a human has seen them on a
