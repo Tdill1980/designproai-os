@@ -215,10 +215,29 @@ const WALL_PROOFS: WallProof[] = [
      * already there, invent nothing. The headline "WE MOVE AS ONE" is generic
      * copy and stays; what was removed is somebody else's mark, not the design.
      *
-     * NOTE FOR WHOEVER LOOKS NEXT: the gym equipment carries a manufacturer's
-     * name on the sled and the plyo box. That is a photographed room, not our
-     * artwork, so it is a different question from the mural and is left alone
-     * pending the owner's call.
+     * THE EQUIPMENT MARKS, DECIDED 2026-09-22 (owner: "fix the things open").
+     * The room also carries a manufacturer's wordmark on the plyo box and on
+     * the sled beam. Both were measured; only ONE was removed, and the split is
+     * deliberate:
+     *
+     *   plyo box (x 1039-1070, y 467-474)  REMOVED. Its face is flat -- rows
+     *     466 and 476 read 45.8 and 41.9 -- so the same two-anchor blend lands
+     *     inside the face's own tone and the patch is not findable at 4x.
+     *
+     *   sled beam (x 143-188, y 710-727)   LEFT IN PLACE, and this is the
+     *     interesting one. That text sits ON the beam's lit band: the column
+     *     mean climbs 14.6 (y703) -> 57.8 (y714) -> 13.4 (y728), and the beam
+     *     runs at -0.267 y per x, so a vertical blend flattens a highlight the
+     *     eye reads as the shape of the beam. The first attempt did exactly
+     *     that and the patch was MORE visible than the wordmark it removed.
+     *     Cloning along the slope would work and was not done, because the
+     *     trade does not justify it: on a band that renders ~600px wide this
+     *     mark is ~19px and unreadable, and it is on photographed EQUIPMENT,
+     *     not on artwork we claim to have designed -- which is the whole reason
+     *     the mural's mark had to go and this one does not.
+     *
+     * The 20" and 24" size markings stay in both cases. They are what a plyo
+     * box says, not a brand.
      */
     before: '/wallpro/proof-gym-before.jpg',
     after: '/wallpro/proof-gym-after.jpg',
