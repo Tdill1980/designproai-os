@@ -87,6 +87,50 @@ PanelPro, keyed on the selected version. It wraps the one existing reader
 (`AtlasPanelProofSheetLoader`) and holds no query of its own — one reader per
 artifact, RULE 0.21. Locked by `tests/server-revision-studio.test.mjs`.
 
+## ⏱️ NO MORE LONG TESTS: CI NO LONGER RUNS THE SUITE. RUN THE LOCKS YOU TOUCH LOCALLY, BEFORE YOU PUSH. (owner ruling, Trish 2026-09-22)
+
+Owner, verbatim: *"I'm rewriting rules no more long tests"* → *"Remove"* →
+chose **"Delete the npm test step"** over the two alternatives offered (take
+the suite off the deploy path but keep running it; shard it in parallel).
+
+**What changed in `release.yml`:** the `executable-contracts` job no longer
+runs `npm test`. It proves the checkout and parses the Compose structure, and
+nothing else. What still gates a merge to `main`:
+
+| job | proves |
+|---|---|
+| `supabase-shadow` | every migration applies to a fresh database; pgTAP green |
+| `immutable-archive` | the app builds; the archive and both images build reproducibly |
+
+**What no longer runs anywhere in CI:** the ~1,570-test repository suite, the
+64 runtime contract files, the gateway, web and app suites, and
+`ops/validate-package.sh`. The locks are still in the tree and `npm test`
+still runs them on a developer's machine. **Nothing runs them for you now.**
+
+**Why this section exists:** this file records, by count, eight times a lock
+was written to catch a defect and was *verified to fail against the pre-fix
+tree* — and several times a suite that was green over wrong pixels. With CI
+no longer running them, the only moment a lock can catch anything is on the
+machine of the person pushing. So, the rule for every session:
+
+1. **Before you push, run the locks your change touches** —
+   `node --test tests/<the files>`, `npm test --prefix gateway` when the
+   gateway moved, `cd app && npx tsc --noEmit && npx vitest run` when the app
+   moved — and say in the commit which ones ran. A green suite you did not run
+   is not a green suite.
+2. **Still write the lock, and still verify it fails against the pre-fix
+   tree.** The rule about locks is unchanged; only who runs them changed.
+3. **A red on `main` is now invisible until someone runs the suite.** Run the
+   whole suite locally at least once per session before merging anything that
+   touches the runtime or the gateway.
+4. **The migration gate is NOT affected.** `supabase-shadow` still applies
+   every migration and runs pgTAP, and `production-migrate` still dry-runs the
+   plan. Migration discipline is unchanged.
+
+The measured cost of the deleted step, for the record: 9m39s of `npm test` on
+the last green gate, all serial; the shadow job beside it took 2m50s. A
+release gate now takes about four minutes, then the deploy's eight.
+
 ## ✅ THE PANELPRO PREFLIGHT NAMES THE PRODUCTION PANEL PROOF — CONDITIONALLY, AND THE GATEWAY DEPLOYS BEFORE THE MIGRATION (owner, Trish 2026-09-22)
 
 Owner: *"must send production panel proof and its assets to panel pro studio /
