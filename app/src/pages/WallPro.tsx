@@ -265,6 +265,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // photo pane stays on the photo and says what it needs. Print files never
   // wait on this; they are built from the flat master.
   const wallLocated = cornersValidNow && cornerSource !== 'default';
+  /**
+   * A FROZEN SENTENCE NEXT TO LIVE STATE WILL EVENTUALLY LIE (2026-09-22).
+   *
+   * The owner photographed one screen carrying BOTH "Corners set. Nothing on
+   * this wall needs keeping — the design covers it all" and, underneath it,
+   * "Mark your wall to see the design on it". Two statements about the same
+   * wall that cannot both be true.
+   *
+   * The card is DERIVED — it re-reads `wallLocated` every render and is always
+   * right. The notice is a string written once and left there, so any path that
+   * later invalidates the corners strands a claim about them on screen. Rather
+   * than hunt the one ordering that did it, the contradiction is made
+   * structurally impossible: a notice cannot outlive the wall state it was
+   * written against.
+   *
+   * ONLY on the FALSE edge, deliberately. `markPoint` writes "Corners set…"
+   * in the same tick that flips this true, and clearing on the true edge would
+   * wipe the message the customer is meant to read. Losing the corners is what
+   * turns such a message into a lie, and that is the edge this catches.
+   */
+  const wasLocated = useRef(wallLocated);
+  useEffect(() => {
+    if (wasLocated.current && !wallLocated) setNotice('');
+    wasLocated.current = wallLocated;
+  }, [wallLocated]);
   /** Whether the OS AppShell already owns a rail around this page. Read, never
    *  re-derived: it is the same predicate AppShell itself branches on. */
   const insideOsShell = useInsideAppShell();
@@ -1752,7 +1777,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         <span className="shrink-0 font-semibold text-white">Order film &rarr;</span>
       </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
-      {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
+      {/* WHITE ON WHITE. The owner photographed it on 2026-09-22: a notice card
+          with no readable text in it at all.
+
+          `bg-sky-50` is near-white and this element set NO colour, so it
+          inherited the page's — which under `data-wall-theme="designpro"` is
+          `--wall-ink` at 98% lightness. Light text on a light card. On the
+          WePrintWraps theme the inherited ink is near-black and it read fine,
+          which is exactly why it survived: the defect only exists on one of the
+          two brands this one component serves.
+
+          Every other surface on this page states its colour through the wall
+          tokens. This one hardcoded Tailwind sky and therefore opted out of the
+          theme while still living inside it. It uses the card tokens now, with
+          a blue rule rather than a blue fill, so it is legible on both. */}
+      {notice && <p role="status" className="rounded-xl border border-l-4 border-blue-500/70 wall-card p-3 text-sm wall-ink">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{history.projects.map((p: any) => <Button key={p.id} disabled={!!busy} variant="outline" className="justify-start truncate" onClick={() => void run('Opening project', () => restore(p.config, p.id, p.name))}>{p.name}</Button>)}</div>
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
@@ -1796,10 +1835,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     {' '}<strong className="wall-ink">Your print files do not wait for this</strong> — they are already correct.
                   </p>
                   {/* Her actual question, answered where it was asked. */}
+                  {/* IT NAMED A BUTTON THAT NO LONGER EXISTS (2026-09-22).
+                      "Change what we keep" was the collapsed text link that hid
+                      the masking tools; the UX pass that promoted those tools
+                      into the open DELETED it, and this sentence kept pointing
+                      at it. So the one card that answers "how do I mask the
+                      closet?" sent her looking for a control that is not on the
+                      page — the same defect as the print export telling
+                      customers to choose a repeat mode with no such control,
+                      found the same hour. Name the buttons that are really
+                      there, in the words printed on them. */}
                   <p className="mt-2 max-w-[60ch] text-xs wall-muted">
-                    A closet opening, a doorway or a window inside the wall:
-                    mark the wall first, then use <em>Change what we keep</em> under
-                    the photo to paint around it.
+                    A closet opening, a doorway or a window inside the wall: mark
+                    the wall first, then use <strong className="wall-ink">Mask a closet,
+                    door or window</strong> under the photo and tap its two opposite
+                    corners.
                   </p>
                 </div>
                 {marking !== 'wall' && (
