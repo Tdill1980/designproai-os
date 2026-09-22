@@ -170,6 +170,29 @@ this pipeline, so the block holding the only link to `/revision-studio` never
 rendered — RULE 0.23's "then ask" half, deleted. The reveal and revise actions
 are no longer gated together.
 
+**VERIFIED AGAINST THE LIVE SYSTEM BEFORE SHIPPING** (read back, not assumed):
+
+- the **deployed** `production-panel-proof` body already carries the three-zone
+  path (`Fill the attached template`), the Ridgeline pin
+  (`e53f39a371205b61…`) and `anchorTurns`. It does NOT carry `panelTrimRows`
+  or `panelDimensionManifest`, which are new — so the runtime change alone
+  already restores the persona, the example and the dimensioned template on the
+  edge that is live today, and the edge deploy is needed only for the trim
+  labels.
+- `wrap-files/atlas-examples/ridgeline-panel-proof-gold.png` **exists at
+  exactly 1,894,054 bytes**, the pinned `byteSize`. This mattered: the flag was
+  SKIPPING that attachment, so a missing or re-encoded object would have turned
+  `panel_proof_input_missing` into a hard Call-1 failure the moment it was
+  attached again.
+- every other `separatedArtwork` branch falls coherently to the three-zone
+  side: `fontStyle` reaches the designer again, `atlasCleanBase` goes false so
+  the lettering is asked for, the "never paint document annotations" system
+  instruction is replaced by `SYSTEM_JOB`'s own positive sentence, and
+  `authorProofLogo` stops running — the designer draws its own mark into Zone 1
+  and Zone 3, and a separately authored logo beside it is a second producer.
+  The customer's UPLOADED logo still never enters the generation request; it is
+  downloaded by the compositor and placed in Zone 3 only.
+
 **NOT PROVEN:** no live generation has run on this path. Acceptance is the
 owner's eye on the exported sheet against the seeded Ridgeline proof — the
 company name on both flanks in the design's own typeface, one logo per panel,
