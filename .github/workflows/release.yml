@@ -49,22 +49,27 @@ env:
 
 jobs:
   executable-contracts:
-    # Owner-authorized one-release test skip; later pushes run normally.
+    # THE TEST SUITE NO LONGER RUNS HERE. Owner, 2026-09-22, verbatim:
+    # "I'm rewriting rules no more long tests" / "Remove", choosing "Delete
+    # the npm test step" over taking the suite off the deploy path or sharding
+    # it. Until this date the job ran `npm test` -- runtime syntax, 64 runtime
+    # contract files, the ~1,570-test repository suite, gateway, web tests and
+    # build, app tests and build, package validation -- serially on one
+    # runner, 10 minutes on a good day, and on 2026-09-22 a 25-minute timeout
+    # that blocked a deploy behind an unrelated merge.
     #
-    # RE-PINNED 2026-09-21 (owner, verbatim: "IF UNRELATED ... Immediately
-    # re-push/merge with [owner-skip-tests-pr567] [dark-deploy] to trigger the
-    # 90s deploy"). The marker alone does nothing: this condition also requires
-    # an exact parent SHA, and the previous pin was spent, so the instruction
-    # could not execute. Re-pinned to the parent of THIS release only.
+    # What still gates a release: `supabase-shadow` (every migration applied
+    # to a fresh database, pgTAP green) and `immutable-archive` (the app and
+    # both images build reproducibly). What no longer runs anywhere in CI:
+    # every node, gateway, web and app test. `npm test` still exists for a
+    # developer's machine, and CLAUDE.md now requires the locks a change
+    # touches to be run locally before it is pushed.
     #
-    # It is one release, by construction -- `github.event.before` is the main
-    # head this push replaced, so the very next push cannot match it. That is
-    # what stopped the last pin becoming permanent, and it is why ten merges
-    # each needed their own re-pin. The suite is NOT disabled; it runs on every
-    # later push, and the failure this skip steps over is recorded in #570.
-    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.before == '468ce05608fe63aa3b7eb254e99b1f6da894e92a' && contains(github.event.head_commit.message, '[owner-skip-tests-pr567]')) }}
+    # The job keeps its name because `immutable-archive` and
+    # `production-migrate` depend on it; what it proves now is the checkout
+    # and the Compose structure.
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -72,23 +77,6 @@ jobs:
           persist-credentials: false
       - name: Prove checkout is the exact requested head
         run: test "$(git rev-parse HEAD)" = "$EXACT_SHA"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            runtime/package-lock.json
-            gateway/package-lock.json
-            web/package-lock.json
-            app/package-lock.json
-      - run: npm ci --prefix runtime
-      - run: npm ci --prefix gateway
-      - run: npm ci --prefix web
-      # The branded operator shell. Installed here so `npm test` gates its
-      # production build -- the shell is the only browser-operable surface,
-      # so a shell that no longer builds is a broken release, not a warning.
-      - run: npm ci --prefix app
-      - run: npm test
       - name: Parse the exact production Compose structure
         run: |
           sudo install -d -m 0700 /opt/designproai-os/shared
