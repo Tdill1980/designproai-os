@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, type LucideIcon } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, ArrowRight, PlayCircle, Sparkles, Scaling, FileText, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -1548,41 +1548,109 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           put in it, and the grid drops to one column when there is not. Nothing
           is invented to fill the pane -- an empty showcase is still better than
           a padded one, which is exactly why the list is empty. */}
+      {/* ── THE HERO (owner, 2026-09-22, against a mockup of this exact block:
+             "This is design/order page must look fix it") ──────────────────
+
+          The masthead this replaces was four lines of copy. What the owner
+          drew is a HERO: an eyebrow, a three-line headline with the last line
+          in the brand gradient, the sentence, two actions, and a row of four
+          claims, beside a before/after of a wall this tool actually did.
+
+          THE ACTIONS ARE NOT NEW DOORS. "Start designing" scrolls to step 1,
+          which is on this same page a few hundred pixels down; "Watch how it
+          works" is the case study that already exists per brand. Neither
+          invents a route, and neither is a second way to do something the
+          tool already does -- RULE 0.27, one source, never a second
+          reconstruction of the product's own front half.
+
+          IT IS ONE COMPONENT ON TWO SURFACES. Every colour here resolves from
+          the `wall-*` tokens that `data-wall-theme` selects, so this is the
+          dark hero on DesignProAI and the white one on the WePrintWraps page
+          without a second copy of the markup. The only per-brand text is the
+          sentence that names the printer, which is the whole reason the brand
+          table exists. */}
       {!photo && !artwork && (
-        <section className={`mx-auto mt-5 grid max-w-6xl items-center gap-5 ${bandProofs.length > 0 ? 'lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]' : ''}`}>
+        <section className={`mx-auto mt-5 grid max-w-6xl items-center gap-6 lg:gap-10 ${bandProofs.length > 0 ? 'lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]' : ''}`}>
           <div>
-            <h2 className="text-3xl font-extrabold leading-[1.05] tracking-tight wall-ink md:text-4xl">
-              On-demand wall wrap<br />design &amp; file output
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500 md:text-xs">
+              From idea to installed
+            </p>
+            {/* The line break is authored, not left to the measure: "Design a
+                wall." must land alone, because it is the promise and the rest
+                is the payoff. `text-balance` would re-wrap it per viewport. */}
+            <h2 className="mt-3 text-4xl font-extrabold leading-[1.03] tracking-tight wall-ink md:text-5xl">
+              Design a wall.<br />Leave with{' '}
+              <span className="bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent">
+                production files.
+              </span>
             </h2>
-            <p className="mt-3 max-w-[42ch] text-sm wall-muted">
+            <p className="mt-4 max-w-[46ch] text-sm wall-muted md:text-base">
               {/* The partner's name belongs on the partner's page. On DesignProAI
                   the same sentence would promise a printer this page does not
                   sell -- and the whole point of the brand table is that one
                   component can say the true thing on either domain. */}
               {theme.showPrintOffer
-                ? <>Designed in WallPro, printed by WePrintWraps. Measure the wall, design it
-                    in minutes, and take the print-ready files — whether we print them or you do.</>
-                : <>Measure the wall, design it in minutes, and take the print-ready files —
-                    production panels at 150 PPI, ready for any printer.</>}
+                ? <>Designed in WallPro, printed by WePrintWraps. Upload a wall, describe your
+                    vision, and take print-ready wall wrap designs — scaled, panelized and ready
+                    for production, whether we print them or you do.</>
+                : <>Upload a wall, describe your vision, and let WallPro generate print-ready
+                    wall wrap designs — scaled, panelized and ready for production.</>}
             </p>
-            {/* The one question the tool cannot answer about itself: what
-                actually happens after the button. The case study answers it on
-                a real wall, so the link belongs beside the claim it backs. */}
-            {/* Each brand's own case study. Sending a DesignProAI customer to
-                the partner's version put a printer's logo, a printer's film
-                price and "Order printed film" in front of somebody who came
-                here for the files (owner, 2026-09-16). */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5">
-              <Link to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
-                See a real wall, bare to installed <span aria-hidden="true">&rarr;</span>
-              </Link>
-              {/* The FAQ answers what the case study deliberately does not: the
-                  price ladder, the 24-hour human check, and what the coloured
-                  glass on the photo actually means. Same brand, same rule. */}
-              <Link to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'} className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
-                Prices &amp; questions <span aria-hidden="true">&rarr;</span>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {/* An anchor, not a router link: step 1 is on this page. */}
+              <a
+                href="#upload-wall"
+                className={`inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 ${WALL_GRADIENT}`}
+              >
+                Start designing <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </a>
+              {/* Each brand's own case study. Sending a DesignProAI customer to
+                  the partner's version put a printer's logo, a printer's film
+                  price and "Order printed film" in front of somebody who came
+                  here for the files (owner, 2026-09-16). */}
+              <Link
+                to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'}
+                className="inline-flex items-center gap-2 rounded-full border wall-edge px-6 py-3 text-sm font-semibold wall-ink transition hover:border-blue-500"
+              >
+                <PlayCircle className="h-4 w-4" aria-hidden="true" /> See a real wall, bare to installed
               </Link>
             </div>
+            {/* THE FOUR CLAIMS, AND WHY THESE FOUR. Each one is something this
+                repository can actually point at: the generator, autoWallScale,
+                the 150-PPI production floor, and -- on the partner brand only
+                -- the printer standing behind it. The DesignProAI page gets a
+                fourth claim about the file formats instead, because "trusted by
+                installers" is the PRINTER's claim to make and this page does
+                not sell installation. A badge the product cannot back is how a
+                tool page starts reading as marketing. */}
+            <ul className="mt-7 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
+              {[
+                { icon: Sparkles, title: 'AI-powered', text: 'design' },
+                { icon: Scaling, title: 'Accurate scaling', text: '& panelization' },
+                { icon: FileText, title: '150 PPI', text: 'print-ready files' },
+                theme.showPrintOffer
+                  ? { icon: ShieldCheck, title: 'Trusted by', text: 'installers' }
+                  : { icon: ShieldCheck, title: 'TIFF, PDF', text: '& PNG output' },
+              ].map(({ icon: Icon, title, text }) => (
+                <li key={title} className="flex items-start gap-2">
+                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
+                  <span className="text-xs leading-tight wall-muted">
+                    <strong className="block font-semibold wall-ink">{title}</strong>{text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {/* The FAQ answers what the case study deliberately does not: the
+                price ladder, the 24-hour human check, and what the coloured
+                glass on the photo actually means. Same brand, same rule. It is
+                a text link and stays one: a third button here would compete
+                with Start designing, which is the only action that matters. */}
+            <Link
+              to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'}
+              className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 underline-offset-4 hover:underline"
+            >
+              Prices &amp; questions <span aria-hidden="true">&rarr;</span>
+            </Link>
           </div>
           {/* Renders null on an empty list by its own contract, so this is safe
               to mount unconditionally; the grid above is what changes shape. */}

@@ -59,9 +59,32 @@ describe('the WallPro masthead', () => {
   });
 
   it('still says what the tool is, and still links to the proof and the prices', () => {
-    expect(page).toContain('On-demand wall wrap');
+    // The HEADLINE moved 2026-09-22 ("Design a wall. / Leave with production
+    // files.", owner's own mockup) and is free to move again -- what this file
+    // locks is the CONDITION, not the wording. So the assertion is that the
+    // hero says something and still carries its two links, not that it says one
+    // particular sentence forever.
+    expect(page).toContain('Design a wall.');
+    expect(page).toContain('From idea to installed');
     expect(page).toContain('See a real wall, bare to installed');
     expect(page).toContain('Prices &amp; questions');
+  });
+
+  it('starts designing on THIS page rather than inventing a second door', () => {
+    // "Start designing" is an in-page anchor to step 1, which is a few hundred
+    // pixels below it. A router link to a second upload surface would be the
+    // reconstructed front half RULE 0.27 forbids, and the landing already
+    // learned that lesson once.
+    expect(page).toContain('href="#upload-wall"');
+    expect(page).toContain('<section id="upload-wall"');
+  });
+
+  it('does not put a printer\'s claim on the page that has no printer', () => {
+    // "Trusted by installers" is WePrintWraps' claim to make; DesignProAI sells
+    // the files. A badge the brand cannot back is how a tool page starts
+    // reading as marketing, so the fourth claim is brand-conditional.
+    expect(page).toMatch(/theme\.showPrintOffer\s*\n?\s*\?\s*\{ icon: ShieldCheck, title: 'Trusted by', text: 'installers' \}/);
+    expect(page).toContain("{ icon: ShieldCheck, title: 'TIFF, PDF', text: '& PNG output' }");
   });
 
   it('keeps the partner sentence on the partner brand and off DesignProAI', () => {
@@ -77,10 +100,15 @@ describe('the WallPro masthead', () => {
   });
 
   it('drops to one column when there is no proof to sit beside the copy', () => {
-    // Two columns with an empty second one is a masthead stranded in a 26rem
+    // Two columns with an empty second one is a hero stranded in a narrow
     // gutter. The grid template is therefore conditional where the SECTION is
     // not -- which is the whole separation this fix makes.
-    expect(page).toMatch(/bandProofs\.length > 0 \? 'lg:grid-cols-\[minmax\(0,26rem\)_minmax\(0,1fr\)\]' : ''/);
+    //
+    // The track WIDTH is deliberately not pinned: it is a layout choice that
+    // moved once already (26rem -> 30rem when the headline grew to three
+    // lines) and pinning it made an unrelated test fail for a legitimate
+    // change. The CONDITION is the contract.
+    expect(page).toMatch(/bandProofs\.length > 0 \? 'lg:grid-cols-\[minmax\(0,\d+rem\)_minmax\(0,1fr\)\]' : ''/);
   });
 
   it('mounts the slider unconditionally inside the section, trusting its own empty contract', () => {

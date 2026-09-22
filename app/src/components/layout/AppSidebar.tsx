@@ -1,4 +1,3 @@
-import { WpwShopflowNavLink } from "./WpwShopflowNavLink";
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
@@ -116,7 +115,14 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
   return (
     <TooltipProvider delayDuration={150}>
     <nav className="flex flex-col gap-5 px-3 py-4 text-sm font-inter h-full">
-      <WpwShopflowNavLink onNavigate={onNavigate} />
+      {/* THE WPW SHOPFLOW BANNER WAS HERE, AND IT WAS THE WHOLE RAIL'S FIRST
+          IMPRESSION (removed 2026-09-22). A 72px gradient card above the plan
+          pill and outside every group heading is not a navigation row -- it is
+          a second product's masthead sitting on top of this one's, which is
+          exactly what the owner reported ("the navigation is showing ShopFlow
+          instead of DesignPro"). It also opened a DIFFERENT HOST.
+          ShopFlow is now one ordinary row in the HOME group, pointing at the
+          /shopflow this app serves. See dashboard-nav.ts. */}
       {/* ── Compact tier pill (replaces Current Plan KPI) ── */}
       <SidebarTooltip
         title={`Current plan: ${TIER_LABELS[userTier] || "Free"}`}

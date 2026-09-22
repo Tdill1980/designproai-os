@@ -30,6 +30,7 @@ import {
   LayoutDashboard,
   CreditCard,
   Grid3x3,
+  Store,
   FileCheck2,
   type LucideIcon,
 } from "lucide-react";
@@ -226,6 +227,43 @@ const staticHomeGroup: NavGroup = {
       route: "/dashboard",
       icon: LayoutDashboard,
       description: "Your main dashboard — design output and profit at a glance",
+    },
+    {
+      /**
+       * THE PARTNER DASHBOARD IS BACK IN THE LIST (owner, 2026-09-22: "It's
+       * also missing the WPW shopflow link in navigation").
+       *
+       * Two commits, forty minutes apart, left it half-removed. #9bc62304
+       * separated the products by deleting the entire WPW nav GROUP from this
+       * registry, which was right. #e540012a then restored only a BANNER --
+       * mounted above the plan pill, outside every group heading, in a loud
+       * gradient card -- which is why the same owner reported both "the
+       * navigation is showing ShopFlow instead of DesignPro" AND "it's missing
+       * the WPW shopflow link" in one breath. Both were true: the banner was
+       * the loudest thing in the rail and it was not a navigation row.
+       *
+       * AND IT POINTED AT THE WRONG HOST. WPW_SHOPFLOW_URL is an absolute
+       * https://www.restyleproai.com/shopflow, so from os.designproai.com it
+       * was a cross-domain page load to a different product -- while THIS app
+       * mounts /shopflow itself (App.tsx). Because the destination lived in a
+       * string variable rather than a `route:` literal, the release gate in
+       * tests/app-shell-routing.test.mjs could not see it to check it.
+       *
+       * So it is an ordinary internal link now: one row, in HOME, beside the
+       * OS dashboard it is the partner twin of. The separation ruling stands --
+       * the tenant GROUP and its tool rows (wallpro_wpw, patternpro_wpw) stay
+       * excluded.
+       *
+       * `type: "link"` and no `key`, deliberately: link items carry no tier and
+       * no role, which matches /shopflow being public on purpose (its access
+       * check lives in wpw-shopflow, not the route), and a `key` would demand a
+       * ToolWordmark entry it should not have.
+       */
+      type: "link",
+      label: "WPW ShopFlow",
+      route: "/shopflow",
+      icon: Store,
+      description: "WePrintWraps orders, reorders, rewards and files",
     },
     {
       type: "link",

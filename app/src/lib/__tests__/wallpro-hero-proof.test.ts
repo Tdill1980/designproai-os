@@ -65,7 +65,13 @@ describe('the hero proof band', () => {
     const page = source('../../pages/WallPro.tsx');
     // The band sits in the same grid as the headline copy. If this ever stops
     // being true the lock above is merely harmless rather than load-bearing.
-    expect(page).toMatch(/grid[^\n]*lg:grid-cols-\[minmax\(0,26rem\)_minmax\(0,1fr\)\]/);
+    //
+    // The COPY TRACK'S WIDTH IS NOT THE CONTRACT. It was pinned at a literal
+    // 26rem and widened to 30rem on 2026-09-22 when the masthead became a full
+    // hero with a three-line headline -- a legitimate layout change that failed
+    // a test about something else entirely. What matters here is the SHAPE: a
+    // capped copy column beside a 1fr track the band has to stretch into.
+    expect(page).toMatch(/grid[^\n]*lg:grid-cols-\[minmax\(0,\d+rem\)_minmax\(0,1fr\)\]/);
     expect(page).toContain('<WallProHeroProof proofs={bandProofs} />');
   });
 });
