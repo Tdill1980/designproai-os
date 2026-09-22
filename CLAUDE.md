@@ -87,6 +87,118 @@ PanelPro, keyed on the selected version. It wraps the one existing reader
 (`AtlasPanelProofSheetLoader`) and holds no query of its own — one reader per
 artifact, RULE 0.21. Locked by `tests/server-revision-studio.test.mjs`.
 
+## 🎨 CALL 1 IS THE DESIGNER'S THREE-ZONE PROOF. `separatedArtwork` IS THE DEFECT — NEVER SEND IT. (owner, Trish 2026-09-22)
+
+Owner, on the first real generation of this route (`0f53d4e7`, 2021 F150,
+botanical brief with a home photo and a custom logo): *"these are not my design
+edge functions my system created incredible designs this did not follow my
+prompt and quality is shit!"* — gradient panels, generic lettering, a doubled
+logo, 115 s.
+
+**The contract, verbatim:** *"It gets the production panel template with vehicle
+make and model info including dimension of rectangle panels and it takes
+customer prompt and designs a cohesive set of 6 wrap panels using our persona
+based edge functions, and is shown the ridgeline pools 3 zone proof so it does
+the same — it creates the zone 1, 2, and 3 all at one time."* And: *"Call 1 is
+from our designer persona and Gemini using its own brain to create the flat
+panel production proof using our example."*
+
+**ALL OF IT WAS CODED AND NONE OF IT RAN.** `requestProofSheet` sent
+`separatedArtwork: true` on every customer Call 1, and that ONE FIELD made the
+edge do the opposite of every clause:
+
+| `production-panel-proof/index.ts` | what the flag did |
+|---|---|
+| 640–660 | the three-zone prompt is assembled at :621 and **discarded** for *"six clean printed background artworks"* — Zone 2 alone, no lettering, no logo, no bands, no panel inches, no exact-text block |
+| 643–648 | **every A.C.E. line containing no / not / never / without / don't is stripped**, which is most of the designer's own rules |
+| 773 | the hash-pinned **Ridgeline gold sheet is not attached** |
+| 717–728 | the container is drawn `mode: "artwork"` — six plain grey rectangles, no vehicle, no dimensions — and the caller's dimensioned template is refused as a fallback |
+| 972, 1090 | single turn, plus a second paid image request for the logo |
+
+The assembler then rebuilt Zone 1 from those unlettered backgrounds plus a
+`typeset.renderLockup` wordmark and the uploaded logo. Gradients, generic type,
+two logos — exactly what the owner rejected.
+
+**Where it came from:** `separatedArtwork`, the background-only prompt and the
+comment *"THE CUSTOMER-VISIBLE CALL 1 IS BUILT BY CODE, NEVER BY GEMINI"* all
+arrived together in **`91d0b8e`** (2026-09-20, whose own bullets read *"Make
+Gemini author backgrounds only, never the proof sheet"* and *"Never expose raw
+Gemini artwork as customer Call 1"*). That decision is reversed and the comment
+is deleted, so it cannot be restored from a note in the code.
+
+**CODE BUILT ONLY THE PRODUCTION PANEL PROOF DOCUMENT.** The template, header,
+job block, zone bands, panel rectangles, dimension callouts, PANEL DIMENSIONS
+REFERENCE table, notes and legend are drawn from GENIE, so a dimension can never
+be invented. **The artwork in Zone 1, Zone 2 and Zone 3 is the designer's**,
+created in one pass through the design edge functions and published as drawn.
+Code owns the document. It does not own the design.
+
+- Zone 1 and Zone 2 are read off the returned sheet (`cutProofPanels`
+  `["zone1","zone2"]`). Zone 3 keeps `sheetDrawnCutGraphic`, which reads its five
+  boxes off the same sheet and trims them to their ink — a raw box crop beside it
+  would be a second producer of one artifact (RULE 0.21).
+- `planProductionPanelLockup` / `compositeProductionPanels` **do not run on the
+  sheet path**. They are untouched for the DERIVED path (`zone2Panels` supplied),
+  where a legacy six-surface or field revision has no authored sheet and code
+  must build its document. Asserted byte-identical.
+- `threeZoneLayout.brandedSource` is `sheet-drawn` or `composited`. Reporting one
+  as the other is the receipts-green/pixels-wrong shape this file records four
+  times.
+- The absence of a customer logo or contact line is recorded for EVERY path, not
+  inside the compositor branch — it is a fact about the customer's input, and it
+  had silently stopped being written.
+
+**THE SHEET'S DIMENSIONS ARE THE VEHICLE'S.** `panelRowsFromManifest` states
+PRINT inches on purpose (its aspect reproduces the zone exactly) and the edge had
+no other dimension source, so `containerSvg` read them as trim and added the 5″
+bleed a second time: a 222.5 × 53 driver drawn as `242.5" W x 73.0" H (TRIM:
+232.5" x 63.0")`. Both numbers wrong, on the sheet the designer is shown.
+`panelTrimRows` now travels beside the print rows and `panelDimensionManifest`
+labels from both; absent, the drawing is byte-identical to before.
+
+**THREE LOCKS ENCODED THE DEFECT** — the sixth, seventh and eighth time this file
+has recorded that shape. `separatedArtwork === true` was asserted as the
+contract; *"clean-background generation leaves typography to the compositor"* sat
+beside a `BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND` assertion; and
+*"Zone 1 derives from green Zone 2, never blue generated Zone 1"* pinned five
+composited logo placements, which is the doubled logo written down as a
+requirement. All three are inverted and were verified to fail against the
+pre-fix tree.
+
+**REVISIONSTUDIO WAS UNREACHABLE.** `viewsVisible` is unconditionally true on
+this pipeline, so the block holding the only link to `/revision-studio` never
+rendered — RULE 0.23's "then ask" half, deleted. The reveal and revise actions
+are no longer gated together.
+
+**VERIFIED AGAINST THE LIVE SYSTEM BEFORE SHIPPING** (read back, not assumed):
+
+- the **deployed** `production-panel-proof` body already carries the three-zone
+  path (`Fill the attached template`), the Ridgeline pin
+  (`e53f39a371205b61…`) and `anchorTurns`. It does NOT carry `panelTrimRows`
+  or `panelDimensionManifest`, which are new — so the runtime change alone
+  already restores the persona, the example and the dimensioned template on the
+  edge that is live today, and the edge deploy is needed only for the trim
+  labels.
+- `wrap-files/atlas-examples/ridgeline-panel-proof-gold.png` **exists at
+  exactly 1,894,054 bytes**, the pinned `byteSize`. This mattered: the flag was
+  SKIPPING that attachment, so a missing or re-encoded object would have turned
+  `panel_proof_input_missing` into a hard Call-1 failure the moment it was
+  attached again.
+- every other `separatedArtwork` branch falls coherently to the three-zone
+  side: `fontStyle` reaches the designer again, `atlasCleanBase` goes false so
+  the lettering is asked for, the "never paint document annotations" system
+  instruction is replaced by `SYSTEM_JOB`'s own positive sentence, and
+  `authorProofLogo` stops running — the designer draws its own mark into Zone 1
+  and Zone 3, and a separately authored logo beside it is a second producer.
+  The customer's UPLOADED logo still never enters the generation request; it is
+  downloaded by the compositor and placed in Zone 3 only.
+
+**NOT PROVEN:** no live generation has run on this path. Acceptance is the
+owner's eye on the exported sheet against the seeded Ridgeline proof — the
+company name on both flanks in the design's own typeface, one logo per panel,
+Zone 2 the same panels without type, and callouts reading the vehicle's real
+trim.
+
 ## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND ON (2026-09-19; flag corrected 2026-09-22)
 
 Owner, on the architecture: *"Production panel proof is source it has the 3

@@ -5,14 +5,36 @@ import test from "node:test";
 const source = readFileSync(new URL("../app/src/pages/DesignPanelProPremium.tsx", import.meta.url), "utf8");
 
 test("See All Views is available as soon as Driver Side exists", () => {
-  // The reveal now sits inside the decision the customer is asked the moment
-  // Driver Side lands -- see all sides, or revise -- so the guard it is
-  // conditioned on is a little further above the label than it used to be. The
-  // condition itself is unchanged and is what this asserts.
+  // ⚠️ THIS ASSERTION USED TO READ `mainDisplayUrl && !viewsVisible` ON THE
+  // WHOLE BLOCK, AND THAT PINNED A DEFECT. `viewsVisible` is unconditionally
+  // true on the panel-proof pipeline, so gating the container on it deleted
+  // the ONLY navigation to RevisionStudio from this screen -- RULE 0.23's
+  // "then ask" half -- on every run the product actually serves.
+  //
+  // The two actions answer different questions, so they no longer share a
+  // gate: the container appears as soon as there is a design, "See All Views"
+  // alone carries `!viewsVisible`, and the revise action is offered either way.
   const label = source.lastIndexOf("See All Views");
   assert.ok(label > 0, "the See All Views action is missing");
   const button = source.slice(label - 2500, label + 2200);
-  assert.match(button, /mainDisplayUrl\s*&&\s*!viewsVisible/);
+  assert.doesNotMatch(
+    button,
+    /mainDisplayUrl\s*&&\s*!viewsVisible/,
+    "the reveal gate must not be back on the block that holds the revise action",
+  );
+  assert.match(button, /\{mainDisplayUrl && \(/);
+  assert.match(button, /\{!viewsVisible && \(\s*<Button\s+onClick=\{handleGenerateAllViews\}/);
+
+  // And the reveal's gate CLOSES before the revise button, so that button is
+  // outside it -- the thing the old contiguous regex could never tell apart.
+  const gateOpen = source.indexOf("{!viewsVisible && (", label - 2500);
+  const gateClose = source.indexOf(")}", label);
+  const reviseAt = source.indexOf("Open in RevisionStudio", label);
+  assert.ok(
+    gateOpen > 0 && gateOpen < label && label < gateClose && gateClose < reviseAt,
+    "Open in RevisionStudio must sit outside the !viewsVisible conditional",
+  );
+
   // And the customer can say no there, without waiting out six more proofs.
   // THAT DECISION is what RULE 0.23 protects, and it is unchanged. The label
   // was "Revise This Design" until 2026-08-29, when the owner renamed it to

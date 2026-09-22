@@ -305,6 +305,13 @@ function surfacesFrom(manifest = {}) {
 function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInches = 5,
   mode = "template", job = {}, dimensionManifest,
   /**
+   * Per-slot Zone 3 captions, by slot index, or null to keep the slot's own.
+   * A slot filled with an element the DESIGN drew (a Restyle's ship, badge or
+   * stripe set) must not be captioned "PRIMARY LOGO" or "CONTACT LINE"; the
+   * caller names what it actually placed there. Geometry never changes.
+   */
+  zone3Captions = null,
+  /**
    * DOES A LETTERING-FREE CLEAN BASE ACTUALLY EXIST FOR THIS DESIGN?
    *
    * Zone 2's bar used to assert "BACKGROUNDS ONLY (NO TEXT OR LOGO)"
@@ -427,7 +434,13 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   // values; once the document became the code's job that instruction was one the
   // model is told to ignore, and deleting it without drawing them here would
   // have silently dropped a supplied order number off the sheet.
-  [["DATE:", job.date], ["ORDER #:", job.order], ["DESIGNER:", job.designer],
+  // THE ID LADDER (owner, 2026-09-22): the Generation ID is minted at Call 1;
+  // the Design ID and the Order ID are minted at purchase. Before a purchase
+  // the second row names the Generation ID, never a derived DID and never a
+  // blank line with a misleading label. A real order number still wins.
+  const orderRow = job.order ? ["ORDER #:", job.order]
+    : job.generationId ? ["GENERATION ID:", job.generationId] : ["ORDER #:", ""];
+  [["DATE:", job.date], orderRow, ["DESIGNER:", job.designer],
     ["VERSION:", job.version]].forEach(([k, v], i) => {
     m.push(text(1192, 38 + i * 14, k, { size: 8.5, fill: MUTED }));
     if (v) m.push(text(1262, 38 + i * 14, v, { size: 8.5 }));
@@ -455,12 +468,15 @@ function containerSvg({ manifest = {}, companyName = "", vehicle = "", bleedInch
   m.push(zoneBand(54, 648, 1428, ZONE3,
     "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
     "VECTOR CUT ELEMENTS — NO BACKGROUND"));
-  for (const slot of layoutCutGraphics()) {
+  layoutCutGraphics().forEach((slot, index) => {
+    const custom = Array.isArray(zone3Captions) ? zone3Captions[index] : null;
+    const caption = custom?.caption || slot.caption;
+    const note = custom?.note || slot.note;
     m.push(`<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" fill="${ground}"`
       + ` stroke="${FRAME}" stroke-width="1" stroke-dasharray="5 4"/>`);
-    m.push(text(slot.x + slot.w / 2, 792, slot.caption, { size: 9.5, weight: 700, anchor: "middle" }));
-    m.push(text(slot.x + slot.w / 2, 803, slot.note, { size: 7.5, fill: MUTED, anchor: "middle" }));
-  }
+    m.push(text(slot.x + slot.w / 2, 792, caption, { size: 9.5, weight: 700, anchor: "middle" }));
+    m.push(text(slot.x + slot.w / 2, 803, note, { size: 7.5, fill: MUTED, anchor: "middle" }));
+  });
 
   // ── trim table, notes, legend ────────────────────────────────────────────
   m.push(`<line x1="0" y1="826" x2="${WIDTH}" y2="826" stroke="${RULE}" stroke-width="1"/>`);

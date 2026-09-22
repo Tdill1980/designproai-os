@@ -536,6 +536,9 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       // The run row already holds the identity Call 1 minted; the sheet prints
       // it as DID-XXXXXXXX when no shop order number was supplied.
       generationId: run.generation_id,
+      // V1 on a first generation; a revision's own sequence otherwise. Read off
+      // the run DEFINITION so both workers print the same VERSION.
+      revisionSequence: Number(definition.revision?.sequence || 1),
       startedAt: Date.parse(run.created_at) || startedAt,
       // The sheet node's own timing travels forward, so the receipt keeps ONE
       // shape whether Call 1 ran as a graph or in process.
