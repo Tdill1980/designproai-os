@@ -971,11 +971,12 @@ test("P2. authorPanelProof runs end to end across two workers, and a resume buys
     // ALL THREE QUADRANTS ARE ON THE RECEIPT, and the two siblings are stored.
     assert.equal(result.provenance.quadrants.branded.length, 6);
     assert.equal(result.provenance.quadrants.clean.length, 6);
-    // One original (the typeset company name) plus the four drawn elements the
-    // sheet's other Zone 3 boxes carry (owner, 2026-09-22: a design's own
-    // elements end up in Zone 3).
+    // All five Zone 3 boxes carry what the sheet drew (owner, 2026-09-22: a
+    // design's own elements end up in Zone 3, and "never generic fonts" -- the
+    // typeset company name that used to claim slot 1 is gone from the sheet path).
     assert.equal(result.provenance.quadrants.cutGraphics.length, 5);
-    assert.equal(result.provenance.quadrants.cutGraphics.filter((a) => a.source !== "sheet-drawn").length, 1);
+    assert.equal(result.provenance.quadrants.cutGraphics.filter((a) => a.source !== "sheet-drawn").length, 0);
+    assert.equal(result.provenance.zone3LetteringSource, "sheet-drawn");
     for (const panel of [...result.provenance.quadrants.clean, ...result.provenance.quadrants.cutGraphics]) {
       assert.equal(panel.persisted, true, `${panel.role}:${panel.surfaceKey} must be stored, not described`);
       assert.match(panel.storagePath, panel.role === "cut-graphic"

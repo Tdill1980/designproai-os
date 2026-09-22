@@ -39,6 +39,90 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
+## 🎯 CALLS 1 AND 2 RUN THE DESIGN EDGE FUNCTIONS ON THE CUSTOMER'S WORDS; THE PRINT MASTER LEAVES EVERY HUMAN SURFACE; THE VIEW GATE LEARNS THE SHEET (owner, Trish 2026-09-22 — the checklist is `docs/TRIZONE-PRODUCTION-PANEL-PROOF-CHECKLIST.md`)
+
+Owner, on her own live run (New Aura Day Spa, `21dc0312`, revision
+`2449ccf8`): *"very apparent it's not using our custom design edge functions
+in Call 1 or 2"*, *"still generating a now retired atlas design"*, *"Ace
+creates a logo font, uses that throughout — never generic fonts"*, *"It
+created a 3 zone, you realize that right??? Don't break what works."* and
+*"Get all this in a markdown and check off as complete. Especially the edge
+functions."* That markdown is the checklist above; **a box there is ticked
+only with evidence read back from the live system**, never from a green test.
+What this pass measured and changed, so it is not re-derived:
+
+- **Call 1 ran A.C.E., but on the WRONG WORDS and in ONE mode.**
+  `parseCustomerIntake` (a homegrown Flash pass) REPLACED the brief whenever
+  its rewrite kept 66% of the words, so the row carried a sentence the customer
+  never typed; and `mode: "commercial"` was HARDCODED, so the restyle persona
+  (`Lead Vehicle Wrap Designer` + DESIGN AMPLIFICATION) could never run although
+  the app already sends `mode`. Now `briefText = rawBrief` always (Flash skipped
+  when the form supplied the company; receipt `intake.briefSource: "raw"`,
+  `intake.flashSkipped`), `mode` comes from the request and `panelProofCreativeHead`
+  accepts both identities. Zone 3 `typography` / `contact` were code-typeset
+  SVGs claiming their slots BEFORE the sheet's own drawn marks; on the sheet
+  path all five slots are read off the sheet (`zone3LetteringSource:
+  "sheet-drawn"`) — the design's own font, as the owner ruled. The uploaded
+  logo still wins its slot; the derived (legacy) path keeps the typeset SVGs.
+  The "hood, front, rear carry the logo and ONE line at most" line is deleted
+  from both byte-locked twins, and the Ridgeline sheet is framed as THE
+  STANDARD for the quality of the work on another vehicle for another company.
+  Not changed: one image call, single turn, the code-drawn colour-coded
+  template, the six-across sheet, the cutter, the gates, Calls 8–12.
+- **Call 2 did not run the photographer.** By the 2026-09-01 ruling the proofs
+  got three fixed sentences from `_shared/atlas-proof-presentation.ts`, with
+  `buildPhotographerPrompt` imported and unused. The owner chose to restore
+  the photographer persona: `handleAtlasProof` now builds its prompt with the
+  pinned `buildPhotographerPrompt` (identity, `view-angles-os` camera,
+  `studio-os` lighting) plus `atlasProofOsInputs` (surface, pickup bed clause,
+  roof qualification), handed the designer's own DESIGN ANCHOR text from Call 1
+  (`panelProofAuthoring.designAnchor` → `designAnchorText`). The surface's panel
+  stays the ONLY artwork input on every attempt; hashes, gates and receipts are
+  untouched; prompt contract `designpro.atlas-proof-photographer.v2`.
+  `atlas-proof-presentation.ts` stays as the documented contract, unwired.
+- **The assembled 4096² "print master" left every human surface and the ZIP.**
+  PanelPro's card and "Download master", the manifest row, the board download,
+  `proofs/print-master.png` and `includedKinds["atlas-master"]`,
+  `GenerateDesign`'s "After · canonical master" card — gone; the copy reads
+  `PROOF_BRAND`. **It is kept INTERNALLY** for hash binding
+  (`master_content_hash`, the Call-1 run CHECK, `productionAuthority:
+  "atlas-master"`); rebinding every gate to the sheet hash is a migration series
+  and is the first open item in the checklist, not silently skipped.
+- **The stamp seals the TriZone™ sheet too.** `stamp.build` renders the seal
+  onto the frozen sheet (bytes re-verified against `panelProofAuthoring.proofSha256`,
+  exact content-addressed path only) as `stamped-production-panel-proof`;
+  `zip.build` expects the eleventh stamp when the receipt names it. The DB gate
+  pins the exact stamp set, so `20260922151000` admits the fourth stamp
+  conditionally on the snapshot's sheet, binds it, and **admits its absence** —
+  ship order is migration first, runtime second, and a gate that REQUIRED the
+  stamp would fail every stamp.build in the window. Tightening it is a one-line
+  follow-up, listed open.
+- **The engine string on the rail** (`V1 · designpro-flat-first-atlas-…`) was a
+  STORED value printed at runtime, invisible to the text lock. Removed from
+  both PanelPro screens and `GenerateDesign`; `tests/no-atlas-on-human-surfaces.test.mjs`
+  now convicts any JSX interpolation of `promptVersion` / `prompt_version` /
+  `authoringTopology` into visible text, mid-sentence included — verified to
+  fail pre-fix (it listed two more sites in `PanelProStudioBoard.tsx` the hand
+  pass had missed).
+- **The view gate refused EVERY three-zone run, and the customer saw it.**
+  `flat_first_atlas_view_set_valid` demanded `sourcePanelHash =
+  atlasZoneContentHash` on each view; on this route the photographer is handed
+  the SHEET as its artwork source, so the completed run answered
+  `flat_first_atlas_new_run_required` → gateway 409 → the create page latched
+  "cannot be reused / Start a new design". The runtime worker already branched
+  on `flatAtlas.proofSheet.contentHash`; the SQL twin (`20260922150000`,
+  text-patch of that ONE clause into the worker's rule) and the paid-path twin
+  (`lateAtlasViewSet`) now do too. Both locked on the real migration chain on
+  PGlite / a three-zone runtime fixture, both verified to fail pre-fix.
+
+**SHIP ORDER:** merge WITHOUT `[dark-deploy]` → push gate green → dispatch
+`release.yml` (`APPLY_DESIGNPRO_PRODUCTION`) → dispatch `deploy-production.yml`
+with `exact_sha` → dispatch `deploy-edge-functions.yml` for
+`production-panel-proof` AND `persona-photographer-render` → read both deployed
+bodies back → one live generation on the New Aura brief → tick the checklist.
+**NOT PROVEN:** no live generation has run on this code. Acceptance is the
+owner's eye on the exported TriZone™ sheet against the Ridgeline standard.
+
 ## ™ THE THREE-ZONE SHEET IS THE **TriZone™ Production Panel Proof** — ONE NAME, DECLARED ONCE (owner, Trish 2026-09-22: "fix remove atlas come up with a proprietary name for our ProductionPanelProof")
 
 The sheet Call 1 draws now has a name of its own, the way PanelPro, CutPro

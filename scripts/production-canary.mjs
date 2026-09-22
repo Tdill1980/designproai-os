@@ -398,6 +398,19 @@ function preflightQc() {
     panelHashesVerified: true,
     logoInventoryVerified: true,
     textLockVerified: true,
+    // THE PREFLIGHT NAMES THE PRODUCTION PANEL PROOF (20260922130000). When the
+    // frozen snapshot carries `panelProofAuthoring` -- which every three-zone
+    // run does -- `approve_designpro_human_gate` requires these three beside the
+    // six, and refuses `panelpro_proof_evidence_incomplete` without them. On a
+    // customer run a reviewer ticks them in PanelPro Studio beside the sheet's
+    // own evidence; this harness is the operator signing its OWN canary run,
+    // exactly as it already signs the six above, so it carries them the same
+    // way. It is not a customer surface and never fabricates a signature for
+    // a person (the lock in tests/panelpro-preflight-names-the-proof.test.mjs
+    // covers the three product pages, on purpose).
+    proofSheetReviewed: true,
+    cleanPanelsMatchBranded: true,
+    cutGraphicsInventoried: true,
   };
 }
 function finalQc(designId) {
@@ -1047,12 +1060,31 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     }
     const requiredRoles = ["logo", ...(COMPANY_NAME ? ["typography"] : []),
       ...(COMPANY_PHONE || COMPANY_WEBSITE ? ["contact"] : [])];
+    // WHO DREW ZONE 1 DECIDES WHAT THE PLACEMENT RECEIPT CAN PROVE. On the
+    // customer's Call 1 (owner, 2026-09-22: "it creates the zone 1, 2, and 3
+    // all at one time") the designer draws the six branded panels in the same
+    // pass as Zone 2 and Zone 3, so `composition.placements` is `[]` by
+    // construction -- code placed nothing -- and `threeZoneLayout.brandedSource`
+    // says `sheet-drawn`. The composited placement loop below was written for
+    // the code-built Zone 1 and asserted the doubled logo as a requirement;
+    // demanding it here would fail the exact route being proven. On the
+    // DERIVED path (`composited`) the loop still holds every element to its
+    // pristine identity on every flank. A source this receipt does not name is
+    // neither, and is refused rather than guessed.
+    const brandedSource = panelProof.threeZoneLayout?.brandedSource;
+    if (brandedSource !== "sheet-drawn" && brandedSource !== "composited") {
+      throw new Error(`Call 1 does not say who drew Zone 1 (threeZoneLayout.brandedSource=${JSON.stringify(brandedSource)})`);
+    }
+    if (brandedSource === "sheet-drawn" && panelProof.composition.placements.length !== 0) {
+      throw new Error("Zone 1 is recorded as the designer's own drawing, yet code recorded placements onto it");
+    }
     for (const role of requiredRoles) {
       const asset = originals.find(a => a.assetRole === role || a.surfaceKey === role);
       if (!asset?.persisted || !asset.storagePath || !asset.contentHash
         || (role !== "logo" && (asset.vector !== true || asset.contentType !== "image/svg+xml"))) {
         throw new Error(`Zone 3 is missing the original ${role} asset`);
       }
+      if (brandedSource !== "composited") continue;
       for (const surfaceKey of CALL_ONE_SURFACES.filter(s => s !== "roof")) {
         if (!panelProof.composition.placements.some(p => p.surfaceKey === surfaceKey && p.role === role
           && p.contentHash === asset.contentHash && p.storagePath === asset.storagePath
@@ -1063,11 +1095,11 @@ async function runCallsOneToSeven({ operator, operatorId, generationId, resumeRe
     }
     evidence.threeZoneProof = {
       proofStoragePath: panelProof.proofStoragePath, proofHash: panelProof.proofSha256,
-      sourceAssetsPreserved: true, designerApproved: false,
+      sourceAssetsPreserved: true, designerApproved: false, brandedSource,
       logoHash: logo.contentHash, placements: panelProof.composition.placements,
       panels: panelProof.quadrants.clean.map(p => ({surfaceKey:p.surfaceKey,fit:p.fit,identity:p.identity})),
     };
-    step(`completed three-zone proof: six panels, preserved logo ${logo.contentHash.slice(0,12)}, ${originals.length} separate original assets`);
+    step(`completed three-zone proof (Zone 1 ${brandedSource}): six panels, preserved logo ${logo.contentHash.slice(0,12)}, ${originals.length} separate original assets`);
   } else {
     const referenceCount = Number(atlasRow.metadata?.verifiedCustomerReferenceCount);
     const loggedIdentity = atlasRow.metadata?.brandIdentity?.logo || atlasRow.metadata?.logoAsset;

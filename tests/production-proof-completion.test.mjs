@@ -311,6 +311,31 @@ test("late seven-view reconciliation only admits the same owner, accepted master
   assert.throws(() => worker.lateAtlasViewSet({ ...fixture, rows: fixture.rows.slice(1) }), (error) => error.code === "production_proofs_pending" && error.retryable === true);
 });
 
+test("late seven-view reconciliation on a three-zone revision binds the proof sheet, not the panel, as the artwork input (live 21dc0312)", async () => {
+  // The photographer on the TriZone route is handed the accepted production
+  // panel proof SHEET (sourcePanelHash = sheet sha) with the surface's own
+  // panel still bound as atlasZoneContentHash. The paid-path twin demanded
+  // sourcePanelHash === panel hash and refused every three-zone run.
+  const fixture = await lateProofFixture();
+  const sheetHash = hash("three-zone-production-panel-proof");
+  const atlas = { ...fixture.atlas, metadata: { ...fixture.atlas.metadata, panelProofAuthoring: { proofSha256: sheetHash } } };
+  const threeZone = (row) => ({ ...row, metadata: { ...row.metadata, provider: { ...row.metadata.provider,
+    sourcePanelHash: sheetHash, proofArtworkAuthorityContract: photographer.ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
+    proofArtworkAuthorityRole: "three-zone-production-proof", proofArtworkAuthorityHash: sheetHash } } });
+  const rows = fixture.rows.map(threeZone);
+  const joined = worker.lateAtlasViewSet({ ...fixture, atlas, rows });
+  assert.equal(joined.views.length, 7);
+  for (const row of rows) assert.notEqual(row.metadata.provider.sourcePanelHash, row.metadata.provider.atlasZoneContentHash);
+  // Legacy panel equality on a three-zone revision is a proof of a DIFFERENT
+  // artwork input and is refused; so is a sheet hash the revision never recorded.
+  assert.throws(() => worker.lateAtlasViewSet({ ...fixture, atlas }), (error) => error.code === "production_late_view_lineage_invalid");
+  assert.throws(() => worker.lateAtlasViewSet({ ...fixture, rows }), (error) => error.code === "production_late_view_lineage_invalid");
+  assert.throws(() => worker.lateAtlasViewSet({ ...fixture, atlas, rows: rows.map((row, i) => i ? row : { ...row, metadata: { ...row.metadata, provider: { ...row.metadata.provider, proofArtworkAuthorityHash: "0".repeat(64) } } }) }), (error) => error.code === "production_late_view_lineage_invalid");
+  assert.throws(() => worker.lateAtlasViewSet({ ...fixture, atlas, rows: rows.map((row, i) => i ? row : { ...row, metadata: { ...row.metadata, provider: { ...row.metadata.provider, proofArtworkAuthorityRole: "surface-panel" } } }) }), (error) => error.code === "production_late_view_lineage_invalid");
+  // The six-surface fixture is byte-for-byte unaffected.
+  assert.equal(worker.lateAtlasViewSet(fixture).views.length, 7);
+});
+
 test("output verification pins the complete late set without overwriting the early receipt; approval never rereads mutable views", async () => {
   const fixture = await lateProofFixture();
   const originalFrozen = structuredClone(fixture.frozen);
@@ -411,6 +436,46 @@ test("Production Pack stage execution stamps Call 8 and all seven pinned proofs 
   assert.equal(worker.assertStampedViewSet({ sourceViews: release.sourceViews, rows: sb.tables.designpro_artifacts, stampReceipt: stamped.p_receipt }).length, 7);
   for (const [path, contentHash] of originalHashes) assert.equal(hash(sb.bytes.get(path)), contentHash);
   for (const item of stamped.p_artifacts) assert.equal(hash(sb.bytes.get(item.storagePath)), item.contentHash);
+});
+
+test("on a three-zone revision stamp.build also seals the TriZone production panel proof, bound to the frozen sheet hash", async () => {
+  const fixture = await logoOnlyExecutionFixture(); const release = await releaseFixture();
+  const { sb, run } = fixture;
+  run.manifest_hash = release.manifestHash;
+  sb.tables.designpro_workflow_stages[0].output.authorizedAssetManifest = worker.authorizedAssetManifest(["print_pack_entitlement"]);
+  const proofRow = sb.tables.designpro_artifacts[0];
+  const receipt = { ...release.call8.receipt, sourceProofHash: proofRow.content_hash };
+  const call8 = { receiptKind: "call8.flat-proof", receiptHash: hashJson(receipt), receipt };
+  proofRow.metadata = { sourceReceiptHash: call8.receiptHash, manifestHash: run.manifest_hash };
+  sb.tables.designpro_workflow_stages.push({ run_id: runId, stage_key: "source.verify", status: "completed", verification: { verified: true }, output: { call8 } });
+  const proofJoin = worker.assertProductionProofJoin({ call8, proofRows: [proofRow], sourceViews: release.sourceViews, manifestHash: run.manifest_hash });
+  sb.tables.designpro_stage_receipts.push({ run_id: runId, receipt_kind: "output.verified", receipt_hash: hashJson({ proofJoin }), receipt: { proofJoin } });
+  for (const [path, bytes] of release.viewBytes) sb.bytes.set(path, bytes);
+  // The frozen snapshot names the sheet Call 1 drew, by content hash.
+  const sheetBytes = await sharp({ create: { width: 600, height: 400, channels: 3, background: { r: 240, g: 236, b: 228 } } }).png().toBuffer();
+  const sheetHash = hash(sheetBytes); const sheetPath = `atlas-panel-proof/${sheetHash}.png`;
+  sb.bytes.set(sheetPath, sheetBytes);
+  sb.tables.designpro_revision_sources[0].snapshot.panelProofAuthoring = { proofSha256: sheetHash, proofStoragePath: sheetPath, proofByteSize: sheetBytes.length };
+  const stage = (key) => ({ id: `fixture:${key}`, stage_key: key, lease_token: "fixture-lease", run_id: runId });
+  await worker.executeProduction(sb, stage("await_final_human_qc"), run, {});
+  await worker.executeProduction(sb, stage("stamp.build"), run, {});
+  const stamped = sb.calls.at(-1).args;
+  assert.equal(stamped.p_artifacts.length, 11);
+  const sheetStamp = stamped.p_artifacts.find((item) => item.surfaceKey === "stamped-production-panel-proof");
+  assert.ok(sheetStamp, "the sealed sheet is its own stamp artifact");
+  assert.equal(sheetStamp.kind, "stamp");
+  assert.equal(sheetStamp.metadata.sourceProofHash, sheetHash);
+  assert.equal(sheetStamp.metadata.sourceProofPath, sheetPath);
+  assert.equal(sheetStamp.metadata.sealHash, stamped.p_receipt.sealHash);
+  assert.ok(sheetStamp.storagePath.endsWith("/stamped-trizone-production-panel-proof.png"));
+  assert.deepEqual(stamped.p_receipt.stampedProductionPanelProof, { storagePath: sheetStamp.storagePath, contentHash: sheetStamp.contentHash, byteSize: sheetStamp.byteSize, sourceProofHash: sheetHash, sourceProofPath: sheetPath });
+  // The stamped copy is a different image; the frozen sheet is untouched.
+  assert.notEqual(sheetStamp.contentHash, sheetHash);
+  assert.equal(hash(sb.bytes.get(sheetPath)), sheetHash);
+  assert.equal(hash(sb.bytes.get(sheetStamp.storagePath)), sheetStamp.contentHash);
+  // A sheet whose bytes drifted from the frozen hash is refused, never sealed.
+  sb.bytes.set(sheetPath, await sharp({ create: { width: 600, height: 400, channels: 3, background: { r: 10, g: 10, b: 10 } } }).png().toBuffer());
+  await assert.rejects(worker.executeProduction(sb, stage("stamp.build"), run, {}));
 });
 
 test("automatic canary QC is visibly unapproved and cannot look like a designer signature", async () => {

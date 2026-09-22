@@ -39,8 +39,12 @@ test("the control room mounts the asset manifest against the SELECTED version", 
 });
 
 test("every downloadable artifact class is offered", () => {
+  // "Master sheet" is gone (owner, 2026-09-22): the source is the TriZone(TM)
+  // Production Panel Proof on the control room, and the assembled sheet is not
+  // offered for download anywhere a person reads.
+  assert.ok(!manifest.includes("Master sheet"), "the retired assembled sheet is not offered");
+  assert.ok(!manifest.includes('label="Print master"'), "no print-master row");
   for (const section of [
-    "Master sheet",
     "Authoring guide",
     "Print panels",
     "3D proofs",

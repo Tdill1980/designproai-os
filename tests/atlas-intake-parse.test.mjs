@@ -153,14 +153,21 @@ test("both homes parse identically and carry the same contract", async () => {
 test("the edge runs intake as node 0, deterministic-first and failing soft", () => {
   const fn = readFileSync(join(REPO, "supabase/functions/production-panel-proof/index.ts"), "utf8");
   assert.match(fn, /import \{[\s\S]*extractDeterministic[\s\S]*\} from "\.\.\/_shared\/atlas-intake-parse\.ts"/);
-  assert.match(fn, /const intake = customerPrompt \? await parseCustomerIntake\(customerPrompt\) : null;/,
-    "intake must run before the design, and only on raw text");
+  // Intake runs before the design and only on raw text — and the Flash
+  // reader runs only when the form left the company name blank (owner,
+  // 2026-09-22: "it's not using designer brain"). With the company stated the
+  // deterministic pass is everything intake can add, and the customer's own
+  // words are the brief either way (`briefSource: "raw"`).
+  assert.match(fn, /const intake = !customerPrompt \? null\n\s*: flashSkipped\n\s*\? \{ \.\.\.mergeIntake\(extractDeterministic\(customerPrompt\), \{ creativeDirection: customerPrompt \}\),\n\s*intakeRead: "skipped:company_name_supplied" \}\n\s*: await parseCustomerIntake\(customerPrompt\);/,
+    "intake must run before the design, only on raw text, and skip the Flash reader when the company is stated");
+  assert.match(fn, /const flashSkipped = Boolean\(customerPrompt\) && Boolean\(explicitCompany\);/);
+  assert.match(fn, /const briefText = rawBrief \|\| extracted;/, "the customer's words are the brief; intake never replaces them");
   assert.match(fn, /temperature: 0/, "the reader is a form, so it is deterministic");
   assert.match(fn, /responseSchema: INTAKE_SCHEMA/, "it must be schema-bound, not prose");
   assert.match(fn, /intakeRead: `unavailable:/,
     "a reader that is down must not cost a design — it fails soft and says so");
-  assert.match(fn, /intake: intake \? \{ contract: INTAKE_CONTRACT, \.\.\.intake \} : null/,
-    "what the raw message became must be on the receipt; a wrong parse is otherwise invisible");
+  assert.match(fn, /intake: intake\n\s*\? \{ contract: INTAKE_CONTRACT, \.\.\.intake, briefSource, flashSkipped \}\n\s*: \{ briefSource, flashSkipped: false \}/,
+    "what the raw message became must be on the receipt, with briefSource and flashSkipped; a wrong parse is otherwise invisible");
   // The explicit field wins: intake is a convenience for free text, not an
   // override of a caller that stated a value.
   assert.match(fn, /return explicit \|\| String\(\(intake as Record<string, unknown>\)/);

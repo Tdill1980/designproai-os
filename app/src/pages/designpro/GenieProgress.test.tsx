@@ -52,7 +52,7 @@ const progress: GenerationProgress = {
   stages: [
     {
       key: "generation.artwork",
-      label: "Print master",
+      label: "Production Panel Proof",
       explanation: "Your artwork has been saved.",
       state: "complete",
       dependsOn: [],
@@ -122,7 +122,7 @@ describe("GENIE generation and production reporting", () => {
     const html = renderToStaticMarkup(
       <GenieBuildRail progress={progress} availableViewCount={2} />,
     );
-    expect(html).toContain("Print master");
+    expect(html).toContain("Production Panel Proof");
     expect(html).toContain("Vehicle proofs");
     expect(html).toContain("2 of 7 vehicle angles available");
     expect(html).toContain("In progress");

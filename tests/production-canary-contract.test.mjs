@@ -415,6 +415,29 @@ test("the canary uploads a real customer logo and convicts a Call 1 that did not
   assert.match(canary, /p\.flipped === false/);
   assert.match(canary, /Zone 1 \$\{surfaceKey\} did not receive pristine/);
   assert.match(canary, /declaredBranding && !composedProof/);
+  // THE CANARY ASSERTED THE DOUBLED LOGO AS A REQUIREMENT. The pristine
+  // placement loop pinned five composited placements per element -- the
+  // code-built Zone 1 that `separatedArtwork` produced and the owner rejected
+  // on 0f53d4e7. On the repaired Call 1 the designer draws Zone 1 in the same
+  // pass as Zones 2 and 3, `placements` is `[]` by construction and
+  // `threeZoneLayout.brandedSource` reads `sheet-drawn`; the loop would have
+  // failed the first run on the exact route this canary exists to prove. So it
+  // reads the source, refuses one it does not name, forbids placements on a
+  // sheet-drawn Zone 1, and holds the composited (derived) path to the loop.
+  const zoneBlock = canary.slice(canary.indexOf("const requiredRoles = ["), canary.indexOf("evidence.threeZoneProof = {"));
+  assert.match(zoneBlock, /const brandedSource = panelProof\.threeZoneLayout\?\.brandedSource;/);
+  assert.match(zoneBlock, /brandedSource !== "sheet-drawn" && brandedSource !== "composited"/, "an unnamed source is refused");
+  assert.match(zoneBlock, /brandedSource === "sheet-drawn" && panelProof\.composition\.placements\.length !== 0/,
+    "a designer-drawn Zone 1 carries no code placements");
+  assert.match(zoneBlock, /if \(brandedSource !== "composited"\) continue;/,
+    "the pristine-placement loop is the derived path's, never the sheet path's");
+  const loopAt = zoneBlock.indexOf("did not receive pristine");
+  const skipAt = zoneBlock.indexOf('if (brandedSource !== "composited") continue;');
+  assert.ok(skipAt > 0 && skipAt < loopAt, "the skip precedes the loop it guards");
+  // The Zone 3 originals are still required on BOTH paths: the logo is the
+  // customer's exact upload, and typography/contact remain code-built vectors.
+  const rolesAt = zoneBlock.indexOf("Zone 3 is missing the original");
+  assert.ok(rolesAt > 0 && rolesAt < skipAt, "the originals are checked before the path-specific skip");
   assert.doesNotMatch(canary, /const panelProofAssets =/,
     "original protected logos are composited after generation, not sent to Gemini");
 
@@ -447,4 +470,21 @@ test("catalog validation executes using the submitted vehicle, including ambiguo
   assert.ok(messages.some((message) => message.includes("GROUNDED/PROVISIONAL: no Ford F250")));
   rows = [{ model: "F250 Crew Cab Chassis Cab", year_range: "2020", side_width: 153 }];
   await assert.rejects(validate(vehicle, service, atlas, () => {}), /no Ford F250 configuration/);
+});
+
+// THE PREFLIGHT NAMES THE PRODUCTION PANEL PROOF, AND THE CANARY MUST SIGN FOR IT.
+// 20260922130000 makes `approve_designpro_human_gate` require the three proof
+// attestations whenever the frozen snapshot carries `panelProofAuthoring` --
+// every three-zone run. A canary that sends only the six parks forever at
+// `panelpro_proof_evidence_incomplete` after Call 1, the panels, the proofs and
+// Call 8 have all succeeded, and reports the route as failed for a signature it
+// never offered. This harness is the operator signing its own run, the same way
+// it already signs the six; it is not one of the three product pages the
+// no-fabrication lock covers.
+test("the canary's preflight signs the three production-panel-proof attestations beside the six", () => {
+  const fn = canary.slice(canary.indexOf("function preflightQc()"), canary.indexOf("function finalQc("));
+  for (const key of ["dimensionsVerified", "sourceRegionsVerified", "fiveInchBleed", "panelHashesVerified",
+    "logoInventoryVerified", "textLockVerified", "proofSheetReviewed", "cleanPanelsMatchBranded", "cutGraphicsInventoried"]) {
+    assert.match(fn, new RegExp(`${key}: true,`), `preflightQc signs ${key}`);
+  }
 });

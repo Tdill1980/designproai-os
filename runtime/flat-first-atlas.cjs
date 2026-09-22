@@ -2692,6 +2692,10 @@ async function rowIdentity(row, manifest, masterBytes, surfaceSourceBytes, proje
           byteSize: Number(row.metadata.panelProofAuthoring.proofByteSize || 0),
           contentType: row.metadata.panelProofAuthoring.proofContentType || "image/png",
           contract: row.metadata.panelProofAuthoring.proofContract || null,
+          // The designer's DESIGN ANCHOR, for the photographer. Null on
+          // sheets authored before it was recorded; Call 2 then names the panel.
+          designAnchor: typeof row.metadata.panelProofAuthoring.designAnchor === "string"
+            ? row.metadata.panelProofAuthoring.designAnchor : null,
         }
       : null,
     guide: {
@@ -5170,6 +5174,8 @@ async function generateOrReuseFlatAtlasResolved(options) {
           byteSize: Number(generated.panelProof.proofByteSize || 0),
           contentType: generated.panelProof.proofContentType || "image/png",
           contract: generated.panelProof.proofContract || null,
+          designAnchor: typeof generated.panelProof.designAnchor === "string"
+            ? generated.panelProof.designAnchor : null,
         }
       : null,
     callOnePanels: [],

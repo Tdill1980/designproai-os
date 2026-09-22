@@ -108,7 +108,14 @@ test("the two anchored turns still carry every section the single prompt does", 
   assert.match(design, /INSTALLATION_FACT/);
   assert.match(design, /THE SIX PANELS/);
   assert.match(design, /EXACT TEXT, character for character/);
-  assert.match(design, /THE SMALL PANELS/);
+  // THE SMALL-PANELS LINE IS GONE FROM BOTH ASSEMBLIES (owner, 2026-09-22:
+  // "Ace creates a logo font, uses that throughout"). It was a composition
+  // rule written by code -- hood, front and rear "carry the logo and ONE line
+  // at most" -- standing between the persona and its own judgement. This lock
+  // used to REQUIRE it; a lock that pins a defect is the shape this repo has
+  // recorded eight times.
+  assert.doesNotMatch(design, /THE SMALL PANELS/, "no code-authored composition rule in turn 1");
+  assert.doesNotMatch(layout, /THE SMALL PANELS/, "no code-authored composition rule in turn 2");
   for (const documentOnly of ["SYSTEM_JOB", "VERSIONS", "CUT_GRAPHIC_SLOTS", "SHEET_LAYOUT"]) {
     assert.doesNotMatch(design, new RegExp(documentOnly),
       `${documentOnly} is document vocabulary and must not compete with designing in turn 1`);
@@ -183,8 +190,15 @@ test("the owner's format sheet is pinned by hash, and the file on disk IS it", a
 
 test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // The object class is the whole point of this contract: every previous
-  // experiment changed the ask while keeping the object a bare artboard.
-  assert.match(runtime.SYSTEM_JOB, /VEHICLE WRAP PANEL PRODUCTION PROOF/);
+  // experiment changed the ask while keeping the object a bare artboard. The
+  // object is a FILE — the designer's PNG/TIFF for the printer, in the form
+  // of the attached finished proof (owner, 2026-09-22: "as they look coming
+  // off the printer" read as a photograph of printed film, and the model
+  // drew a piece of wrap film on a table).
+  assert.match(runtime.SYSTEM_JOB, /THE DELIVERABLE IS A PRINT FILE: six flat vehicle-wrap design panels/);
+  assert.match(runtime.SYSTEM_JOB, /in exactly the form of the attached finished proof/);
+  assert.match(runtime.SYSTEM_JOB, /the PNG or TIFF\na wrap-shop graphic designer hands to the printer/);
+  assert.ok(!/coming off the printer|as printed|printed panels/.test(runtime.SYSTEM_JOB), "the job names a file, never how printed film looks");
 
   // THE ASK IS NOW THE ARTWORK, NOT THE DOCUMENT — and that is the fix for the
   // owner's "dimension hallucination", so it is asserted rather than assumed.
@@ -891,4 +905,53 @@ test("a panel-proof budget spent is TERMINAL with the gate's real reason, and ne
   // throw, so candidate 1 of 2 proceeds to candidate 2.
   const ahead = source.slice(source.indexOf("const refusalReason = stillBlocking"), start);
   assert.ok(!ahead.includes("if (panelProof)"), "no panel-proof throw ahead of the attempt budget");
+});
+
+// ═══ CALL 1 READS THE CUSTOMER'S OWN WORDS, IN THE CUSTOMER'S MODE (owner, 2026-09-22) ═══
+//
+// Owner, on the live New Aura run: "it's not using designer brain" / "Design
+// functions not being used or are used improperly." Three things the edge did:
+// it let a Flash paraphrase REPLACE the brief whenever it kept 66% of the
+// words; it hard-coded `mode: "commercial"` so the restyle persona never ran;
+// and it threw away the designer's own DESIGN ANCHOR text, which the
+// RestylePro photographer stage has always been handed as `designAnchorText`.
+test("Call 1 reads the raw brief, selects the persona by the customer's mode, and keeps the designer's anchor", () => {
+  const fn = readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
+  const handler = fn.slice(fn.indexOf("serve(async (req)"));
+  // The raw brief is the brief. No word-count rule may substitute a paraphrase.
+  assert.match(handler, /const briefText = rawBrief \|\| extracted;/, "the customer's own sentence is the brief");
+  assert.ok(!/0\.66/.test(handler), "the 66% paraphrase rule is gone");
+  assert.match(handler, /briefSource: "raw"|briefSource = rawBrief \? "raw"/, "the receipt says which brief the designer read");
+  // The Flash reader is skipped when the form supplied the company.
+  assert.match(handler, /flashSkipped = Boolean\(customerPrompt\) && Boolean\(explicitCompany\)/);
+  assert.match(handler, /skipped:company_name_supplied/);
+  // The mode is the customer's, never a literal.
+  const ace = handler.slice(handler.indexOf("panelProofCreativeHead(buildDesignIQPrompt({"), handler.indexOf("atlasProofSheet: true"));
+  assert.ok(!/mode: "commercial"/.test(ace), "the persona is selected by the request's mode, not a literal");
+  assert.match(ace, /\n\s*mode,\n/, "buildDesignIQPrompt receives the resolved mode");
+  assert.match(handler, /const mode = String\(body\?\.mode \|\| ""\)\.trim\(\)\.toLowerCase\(\) === "restyle" \? "restyle" : "commercial";/);
+  // The phase-1 audit proves the persona the mode selects, on the payload.
+  assert.match(handler, /Lead Vehicle Wrap Designer\/\.test\(prompt\)/);
+  assert.match(handler, /DESIGN AMPLIFICATION: Elevate and enhance the brief\/\.test\(prompt\)/);
+  // The designer's text part is captured and returned for the photographer.
+  assert.match(handler, /const designAnchor = candidateParts/);
+  assert.match(handler, /\n\s*designAnchor,\n/);
+  assert.match(handler, /\n\s*mode,\n\s*designAnchor,/);
+});
+
+test("the head accepts either persona: the commercial designer or the restyle Lead Vehicle Wrap Designer", () => {
+  const restyle = buildDesignIQPrompt({
+    mode: "restyle", prompt: "Martini racing livery, white base, navy and red stripes", finish: "Gloss",
+    substrate: "standard", vehicleYear: "2022", vehicleMake: "Porsche", vehicleModel: "911 Turbo",
+    vehicleType: "car", viewType: "side", atlasFlatMaster: true, atlasProofSheet: true, atlasPanels: ATLAS_PANELS,
+  });
+  const head = runtime.panelProofCreativeHead(restyle);
+  assert.match(head, /You are WePrintWraps\.com Lead Vehicle Wrap Designer/);
+  assert.match(head, /DESIGN AMPLIFICATION: Elevate and enhance the brief/);
+  // The restyle branch names the proof's own object, as the commercial one does.
+  assert.match(head, /six flat design panels, laid out the way a wrap-shop graphic designer builds the PNG or TIFF that goes to the printer — flat artwork on the sheet, in exactly the form of the attached finished proof\. ONE design across all of them/);
+  assert.ok(!/coming off the printer/.test(head), "the object is a FILE, never how printed film looks (owner, 2026-09-22)");
+  assert.ok(!head.includes("OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"), "the artboard tail is cut on restyle too");
+  assert.throws(() => runtime.panelProofCreativeHead("no designer here\nOUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"),
+    /panel_proof_ace_persona_missing/);
 });

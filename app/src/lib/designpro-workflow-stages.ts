@@ -154,7 +154,7 @@ export function computeWorkflowStages(input: {
     design: { ok: Boolean(generationId), reason: generationId ? null : "No design yet." },
     revise: {
       ok: designDone,
-      reason: designDone ? null : "Waiting for Call 1 to accept the print master.",
+      reason: designDone ? null : "Waiting for Call 1 to accept the Production Panel Proof.",
     },
     panels: {
       ok: panelsDone,

@@ -196,7 +196,7 @@ test("the customer DesignPanel page enters the one production chain on both pipe
     /queryKey: \["designpro-production-job"[\s\S]{0,200}?activePipelineMode !== FLAT_FIRST_ATLAS_PIPELINE_MODE/,
   );
   // One master owns the A.T.L.A.S. proof set; a single view is never re-rolled.
-  assert.match(hook, /Proof views are locked to one print master/);
+  assert.match(hook, /Proof views are locked to one \$\{PROOF_BRAND\.short\}/);
 });
 
 test("A.T.L.A.S. streams signed proof views without new generation calls, and never shows the customer the master", () => {

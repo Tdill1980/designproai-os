@@ -62,6 +62,20 @@ const PATTERNS = [
   { name: "A.T.L.A.S.", re: /A\.T\.L\.A\.S/ },
   { name: "ATLAS", re: /\bATLAS\b/ },
   { name: "Powered by Atlas", re: /powered\s+by\s+atlas/i },
+  // A STORED ENGINE STRING PRINTED AT RUNTIME. `promptVersion` values read
+  // `designpro-flat-first-atlas-…` and `authoringTopology` reads `six-surface`
+  // / `field`; neither is source text, so the word locks above never saw them,
+  // and the PanelPro rail printed "V1 · designpro-flat-first-atlas-20260919…"
+  // for three days (owner, 2026-09-22: "why is it showing an atlas — delete
+  // this out of system"). A template interpolation or a JSX prop/child that
+  // carries one of those fields is visible text and is convicted here.
+  { name: "engine version string interpolated into visible text",
+    re: /(?:\$\{|=\{|>\s*\{)[^}]*\b(?:promptVersion|prompt_version|authoringTopology)\b/ },
+  // The same value dropped mid-sentence into JSX text ("…; prompt {x.promptVersion};
+  // …"), where no `>` precedes the brace. A bare `{ identifier }` expression
+  // after prose; a code block (`else {`, `=> {`) never reads this shape.
+  { name: "engine version string interpolated into visible text",
+    re: /(?:[;:.,]|\b[a-z]{2,})\s+\{\s*[\w.?!]*\b(?:promptVersion|prompt_version|authoringTopology)\b(?:\s*\|\|\s*"[^"]*")?\s*\}/ },
 ];
 
 /** Visible-text-only pattern: convicted in string literals and JSX/HTML text, never in identifiers. */
@@ -212,7 +226,8 @@ test("no file a customer or designer downloads is named after the engine, and th
   assert.ok(stem, "PROOF_BRAND.fileStem is declared");
   const claimant = fs.readFileSync(path.join(root, "runtime/designpro-standalone-claimant.cjs"), "utf8");
   assert.ok(claimant.includes(`archivePath: "proofs/${stem}.png"`), `the ZIP names the sheet proofs/${stem}.png, as os-brand.ts spells it`);
-  assert.ok(claimant.includes('archivePath: "proofs/print-master.png"'), "the master inside the ZIP is the print master");
+  assert.ok(!claimant.includes('archivePath: "proofs/print-master.png"'),
+    "the retired assembled sheet is not packaged at all (owner, 2026-09-22)");
 });
 
 test("the visible-word check convicts prose and spares identifiers", () => {

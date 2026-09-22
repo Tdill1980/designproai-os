@@ -1,4 +1,23 @@
 /**
+ * ⚠️ NO LONGER THE WIRED CALL-2 PROMPT (owner ruling, Trish 2026-09-22).
+ *
+ * Owner, 2026-09-22, choosing between keeping these three sentences and the
+ * pinned photographer: "Restore the photographer persona." The 3D proofs are
+ * photographed by `buildPhotographerPrompt` (`persona-photographer-prompt.ts`,
+ * byte-pinned, RULE 0.29) again — the identity, the studio, the camera angle
+ * and the colour-fidelity block RestylePro's proofs were always made with —
+ * handed the designer's own DESIGN ANCHOR text from Call 1 and, exactly as
+ * before, the surface's panel as the ONLY artwork input.
+ *
+ * What survives from here is the STRUCTURED OS INPUT the pinned builder does
+ * not carry: the canonical surface, the pickup bed clause and the pickup roof
+ * qualification (`atlasProofOsInputs`), plus `ATLAS_SHOT_SURFACES`, which both
+ * proof surfaces read. `buildAtlasProofPresentationPrompt` and
+ * `ATLAS_PROOF_INSTRUCTION` stay as the documented 2026-09-01 contract, tested
+ * and unwired, so the decision can be read and reversed in one line.
+ *
+ * ─── the 2026-09-01 contract, as it was written ───
+ *
  * THE CANONICAL 3D PROOF CONTRACT. (owner ruling, Trish 2026-09-01)
  *
  * ─────────────────────────────────────────────────────────────────────────
@@ -116,6 +135,23 @@ function cameraSpecFor(viewType: string): string {
   return viewType === "close-up"
     ? "Canon EOS R5, 85mm f/2.8, shallow depth of field with rich bokeh. Razor-sharp focus on vinyl surface texture showing depth, material quality, and fine detail. Vibrant colors."
     : "Canon EOS R5, 35mm f/8, tack-sharp. 16:9 landscape. Razor-sharp details, perfect exposure, vibrant colors.";
+}
+
+/**
+ * THE OS INPUTS THE PINNED PHOTOGRAPHER DOES NOT CARRY. Surface identity, the
+ * pickup bed clause and the pickup roof qualification are vehicle configuration
+ * and canonical identity — never a description of the artwork. Appended after
+ * `buildPhotographerPrompt`'s own text so the pinned words are untouched.
+ */
+export function atlasProofOsInputs(input: {
+  surfaceKey: string; viewType: string; isPickup?: boolean; pickupRoofQualification?: string;
+}): string {
+  const lines = [`SURFACE: ${String(input.surfaceKey || "").toUpperCase()}`];
+  if (input.isPickup === true) lines.push(`COVERAGE: ${TRUCK_BED_RULE}`);
+  if (input.isPickup === true && input.viewType === "roof" && input.pickupRoofQualification) {
+    lines.push(input.pickupRoofQualification);
+  }
+  return lines.join("\n");
 }
 
 export function buildAtlasProofPresentationPrompt(input: AtlasProofPresentationInput): string {

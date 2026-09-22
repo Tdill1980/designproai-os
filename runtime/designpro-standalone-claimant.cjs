@@ -33,7 +33,7 @@ const { CERTIFICATE_CONTRACT, buildQcCertificatePng } = require("./qc-certificat
 const { isHonestNoOp, locateLogoElements, logoBoxesToPixelRects } = require("./logo-removal.cjs");
 const { CONTRACT: PANELPRO_FILE_OUTPUT_CONTRACT, SOURCE_APPS: PANELPRO_FILE_OUTPUT_APPS } = require("./panelpro-file-output-contract.cjs");
 const { ATLAS_CONTRACT, VIEW_AUTHORITY_CONTRACT, surfaceForProofView } = require("./flat-first-atlas.cjs");
-const { ATLAS_PANEL_AUTHORITY_CONTRACT, ATLAS_PHOTOGRAPHER_PROOF_CONTRACT, ATLAS_PROOF_EXECUTION, ATLAS_PROOF_STAGE, ATLAS_SERVER_PROVIDER_CONTRACT } = require("./designpanel-server-provider.cjs");
+const { ATLAS_PANEL_AUTHORITY_CONTRACT, ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT, ATLAS_PHOTOGRAPHER_PROOF_CONTRACT, ATLAS_PROOF_EXECUTION, ATLAS_PROOF_STAGE, ATLAS_SERVER_PROVIDER_CONTRACT } = require("./designpanel-server-provider.cjs");
 const { loadPanelProfileAttachments, assertPinnedPanelProfileAttachments, attachmentArchiveFiles } = require("./panelpro-production-attachment.cjs");
 const { QC_CONTRACT: ATLAS_PROOF_QC_CONTRACT, ADVISORY_POLICY_CONTRACT: ATLAS_PROOF_ADVISORY_POLICY_CONTRACT, VIEW_CONTRACTS: ATLAS_QC_VIEW_CONTRACTS } = require("./atlas-proof-qc.cjs");
 
@@ -2405,6 +2405,19 @@ function lateAtlasViewSet({ source, run, atlas, rows }) {
     throw new StageError("production_proofs_pending", "Waiting for all seven proofs of the accepted revision", true);
   }
   if (rows.length !== VIEW_KEYS.length) throw new StageError("production_late_view_set_invalid", "The accepted revision has an ambiguous active proof set", false);
+  // THE THREE-ZONE ROUTE HANDS THE PHOTOGRAPHER THE SHEET, NOT THE PANEL.
+  //
+  // On a TriZone revision the artwork input to every proof is the accepted
+  // production panel proof sheet (`panelProofAuthoring.proofSha256`), with the
+  // surface's own panel still bound as `atlasZoneContentHash`. The worker's
+  // lineage assert (`generation-worker.cjs`, "THE ARTWORK BINDING IS THE
+  // PANEL") already reads it that way; this paid-path twin did not, so every
+  // three-zone run failed `production_late_view_lineage_invalid` on a set of
+  // seven correct proofs (live 21dc0312, 2026-09-22). A sheet hash is the
+  // rule ONLY when the revision recorded one; a six-surface / field revision
+  // keeps the legacy panel equality byte for byte.
+  const sheetHash = HASH_RE.test(String(atlas?.metadata?.panelProofAuthoring?.proofSha256 || ""))
+    ? String(atlas.metadata.panelProofAuthoring.proofSha256).toLowerCase() : null;
   const views = [];
   for (const row of rows) {
     const sourceViewType = row.source_view_type;
@@ -2431,7 +2444,13 @@ function lateAtlasViewSet({ source, run, atlas, rows }) {
       || provider.atlasMasterContentHash !== atlas.master_content_hash || provider.atlasProjectionContentHash !== atlas.projection_content_hash
       || provider.atlasManifestContentHash !== atlas.manifest_content_hash
       || provider.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT || provider.atlasZoneSurfaceKey !== surfaceKey
-      || provider.atlasZoneContentHash !== panel.contentHash || provider.sourcePanelHash !== panel.contentHash
+      || provider.atlasZoneContentHash !== panel.contentHash
+      || (sheetHash
+        ? (provider.proofArtworkAuthorityContract !== ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT
+          || provider.proofArtworkAuthorityRole !== "three-zone-production-proof"
+          || provider.proofArtworkAuthorityHash !== sheetHash
+          || provider.sourcePanelHash !== sheetHash)
+        : provider.sourcePanelHash !== panel.contentHash)
       || validation.contract !== ATLAS_PROOF_QC_CONTRACT || validation.proofHash !== row.content_hash
       || validation.expectedView !== ATLAS_QC_VIEW_CONTRACTS[sourceViewType]?.label
       || validation.atlasHash !== atlas.projection_content_hash || validation.zoneSurfaceKey !== surfaceKey
@@ -3317,6 +3336,45 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const certificate = artifact("stamp", certificateStored.storagePath, certificateStored.hash, certificateStored.bytes, "certificate", { contract: CERTIFICATE_CONTRACT, designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, preflightQc: preflightReceipt.receipt?.qc || {}, finalQc: finalQc.receipt?.qc || {}, surfaces: certificateSurfaces, approvedProducts: authorized.products });
     const stamped = artifact("stamp", stampedStored.storagePath, stampedStored.hash, stampedStored.bytes, "stamped-proof", { designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, sourceProofHash: proofRows[0].content_hash, sealHash: sealStored.hash, composition: "deterministic-southeast-overlay.v1" });
     const stampArtifacts = [seal, stamped, certificate];
+    // THE SEAL LANDS ON THE TRIZONE(TM) PRODUCTION PANEL PROOF TOO (owner,
+    // 2026-09-22: "We still need QC checks, stamp, zip file creator — it's just
+    // now on TriZone Production panel proof"). The Call 8 dimensioned sheet and
+    // the seven views were the only things stamped; the customer's source sheet
+    // shipped unsealed. The frozen snapshot's `panelProofAuthoring` names the
+    // sheet by content hash, the bytes are re-verified against it before the
+    // overlay (renderStampedProof refuses drift), and the stamped copy is its
+    // own artifact, `stamped-production-panel-proof`, bound to the source hash.
+    // A revision authored before the three-zone proof has no sheet and gets no
+    // fourth stamp; the DATABASE gate admits the artifact conditionally on the
+    // same snapshot field, as the preflight attestations are.
+    let stampedProductionPanelProof = null;
+    const frozenProof = revisionSource.snapshot?.panelProofAuthoring;
+    if (frozenProof && typeof frozenProof === "object" && HASH_RE.test(String(frozenProof.proofSha256 || ""))) {
+      // The sheet is content-addressed outside the generic production prefix
+      // (the ZIP arm reads it the same way): admit ONLY the exact frozen path,
+      // never a path the snapshot merely names, and re-verify the bytes
+      // against the frozen hash before the seal is laid on.
+      if (frozenProof.proofStoragePath !== `atlas-panel-proof/${frozenProof.proofSha256}.png`) {
+        throw new StageError("stamp_call1_proof_path_invalid", "The frozen production panel proof must be content-addressed", false);
+      }
+      const { data: sheetData, error: sheetError } = await sb.storage.from(BUCKET).download(frozenProof.proofStoragePath);
+      if (sheetError || !sheetData) throw new StageError("stamp_call1_proof_unavailable", "The frozen production panel proof could not be read", true);
+      if (sheetData.size > 128 * 1024 * 1024) throw new StageError("stamp_call1_proof_size_invalid", "The frozen production panel proof is too large to seal", false);
+      const sheetBytes = Buffer.from(await sheetData.arrayBuffer());
+      if (!sheetBytes.length || hashBytes(sheetBytes) !== frozenProof.proofSha256) {
+        throw new StageError("stamp_call1_proof_changed", "The production panel proof bytes differ from the frozen Call 1 identity", false);
+      }
+      const sheetStamped = await renderStampedProof({ sourceBytes: sheetBytes, sourceHash: frozenProof.proofSha256, sourceByteSize: frozenProof.proofByteSize ?? sheetBytes.length, sealBytes: png });
+      // The file name mirrors PROOF_BRAND.fileStem (the runtime cannot import
+      // os-brand.ts; the ZIP stem lock asserts the two agree).
+      const sheetStored = await uploadProducedBytes(sb, run, stage, runtimeConfig, `designpro/${tenantKey(run.tenant_key)}/${run.id}/stamped-trizone-production-panel-proof.png`, sheetStamped.bytes, "image/png");
+      stampedProductionPanelProof = { storagePath: sheetStored.storagePath, contentHash: sheetStored.hash, byteSize: sheetStored.bytes, sourceProofHash: frozenProof.proofSha256, sourceProofPath: frozenProof.proofStoragePath };
+      stampArtifacts.push(artifact("stamp", sheetStored.storagePath, sheetStored.hash, sheetStored.bytes, "stamped-production-panel-proof", {
+        role: "qc-approved-production-panel-proof", designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval,
+        sourceProofHash: frozenProof.proofSha256, sourceProofPath: frozenProof.proofStoragePath, sealHash: sealStored.hash,
+        widthPx: sheetStamped.width, heightPx: sheetStamped.height, composition: sheetStamped.composition,
+      }));
+    }
     const stampedViews = [];
     const viewSpools = [];
     // Process one proof at a time: stamping needs no provider call and must not
@@ -3338,7 +3396,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         widthPx: derived.width, heightPx: derived.height, composition: derived.composition,
       }));
     }
-    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables, proofJoin, stampedViews, panelProfileAttachments }, stampedStored.hash, stampArtifacts);
+    const completed = await complete(sb, stage, run, { verified: true, receiptKind: "stamp", designId, orderNumber, verifiedBy, approvalRef, approvedAt, ...testApproval, stampHash: stampedStored.hash, sealHash: sealStored.hash, sourceProofHash: proofRows[0].content_hash, certificateHash: certificateStored.hash, approvedProducts: authorized.products, approvedDeliverables: authorized.deliverables, proofJoin, stampedViews, stampedProductionPanelProof, panelProfileAttachments }, stampedStored.hash, stampArtifacts);
     if (stampedStored.spool) await removeCommittedSpool(stampedStored.spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-proof spool cleanup failed: ${error.message}`));
     for (const spool of viewSpools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed stamped-view spool cleanup failed: ${error.message}`));
     return completed;
@@ -3357,7 +3415,11 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     const zipKinds = [...new Set([...(authorized.zipKinds || []), ...(authorized.productionPackAuthorized ? ["qc-panel"] : [])])];
     const rows = await artifacts(sb, run.id, zipKinds);
     const counts = Object.fromEntries(zipKinds.map((kind) => [kind, rows.filter((item) => item.artifact_kind === kind).length]));
-    if (counts.stamp !== (authorized.zipIncludesSourceViews ? 10 : 3)) throw new StageError("zip_artifacts_incomplete", "Every delivered pack requires all of its QC stamped proofs, seal and certificate", false);
+    // Three stamps (seal, stamped Call 8 proof, certificate), seven stamped views
+    // on a production pack, and the stamped TriZone(TM) Production Panel Proof
+    // when the revision carries one -- the stamp receipt says whether it does.
+    const expectedStamps = (authorized.zipIncludesSourceViews ? 10 : 3) + (stampReceipt.receipt?.stampedProductionPanelProof ? 1 : 0);
+    if (counts.stamp !== expectedStamps) throw new StageError("zip_artifacts_incomplete", "Every delivered pack requires all of its QC stamped proofs, seal and certificate", false);
     if (authorized.productionPackAuthorized
       && (counts["flat-proof"] !== 1 || counts.panel !== SURFACE_KEYS.length || counts["qc-panel"] !== SURFACE_KEYS.length || counts.output !== authorized.requiredOutputFiles)) {
       throw new StageError("zip_artifacts_incomplete", "The Production Pack ZIP requires Call 8, six Call 9 masters, six nonprinting QC duplicates and the complete output set", false);
@@ -3424,7 +3486,12 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           // import that file) and a lock asserts the two agree. The `kind`
           // values are receipt identifiers and stay.
           { archivePath: "proofs/trizone-production-panel-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize, contentType: "image/png" },
-          { archivePath: "proofs/print-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256, contentType: "image/png" },
+          // THE ASSEMBLED SHEET NO LONGER SHIPS (owner, 2026-09-22: "still
+          // generating a now retired atlas design — this needs to go"). It
+          // used to travel here as `proofs/print-master.png`. The customer's
+          // source is the TriZone(TM) sheet above; the assembled master stays
+          // an internal lineage identity, verified in the check above and
+          // never packaged.
           // ZONE 3 SHIPS WITH THE PACK. Every persisted cut graphic -- the
           // customer's own logo, the typeset name, the contact bar -- goes in
           // beside the sheet it was separated from, as the exact frozen bytes
@@ -3478,7 +3545,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
     const cutGraphicCount = sourceProofFiles.filter((file) => file.kind === "cut-graphic").length;
-    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1, "cut-graphic": cutGraphicCount } : {}) };
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "cut-graphic": cutGraphicCount } : {}) };
 
     // THE ZIP SAYS WHAT IS IN IT, FILE BY FILE. (Trish 2026-08-28)
     //

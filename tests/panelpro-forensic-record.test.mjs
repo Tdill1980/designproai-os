@@ -53,15 +53,22 @@ test("PanelPro exposes the master's QC verdict and provenance", () => {
   // …typed for the client…
   assert.match(api, /masterQcPassed\?: boolean \| null/);
   assert.match(api, /masterCutoutSurfaces\?: string\[\]/);
-  // …and rendered.
+  // …and carried to the board, where ONLY the cut-out record is rendered.
+  // The engine's own provenance (its QC verdict and contract, the authoring
+  // model, the prompt hash, the route, the requested size, the master hashes)
+  // left the screen on 2026-09-22 (owner, on the live board: "Delete defunct
+  // atlas"): the assembled master is internal lineage identity, not a document
+  // a person reviews. Those values still ride the forensic-record download.
   assert.match(panelPro, /function AtlasForensicRecord/);
   assert.match(panelPro, /<AtlasForensicRecord atlas=\{atlas\} \/>/);
+  assert.match(panelPro, /if \(cutoutSurfaces\.length === 0 && fills\.length === 0\) return null;/);
   for (const fact of [
-    "Master QC", "QC confidence", "QC model", "Authoring attempts",
-    "Authoring model", "Prompt version", "Pipeline mode", "Provider contract",
-    "Canonical master", "Panels cut from",
+    "Master QC &amp; provenance", "QC confidence", "QC model", "Authoring attempts",
+    "Authoring model", "Prompt version", "Prompt contract", "Pipeline mode", "Provider contract",
+    "Canonical master", "Panels cut from", "Artboard port",
   ]) {
-    assert.ok(panelPro.includes(fact), `PanelPro must state ${fact}`);
+    assert.ok(!panelPro.includes(`label="${fact}"`) && !panelPro.includes(`>${fact}<`) && !panelPro.includes(`        ${fact}\n`),
+      `PanelPro must no longer render the engine fact ${fact}`);
   }
 });
 
@@ -77,9 +84,6 @@ test("PanelPro states the cut-out and fill record per surface", () => {
   for (const column of ["Surface", "Share of zone", "Pixels", "Shapes", "Unresolved"]) {
     assert.ok(panelPro.includes(column), `the fill table must state ${column}`);
   }
-  // The panels' true source is named, and whether it differs from the master.
-  assert.match(panelPro, /repaired sheet/);
-  assert.match(panelPro, /same as master/);
 });
 
 /**
