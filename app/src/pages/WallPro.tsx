@@ -32,7 +32,7 @@ import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
-import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
@@ -515,17 +515,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       ctx.drawImage(image, 0, 0);
       const pixels = ctx.getImageData(0, 0, tile.width, tile.height);
       const before = measureSeam(pixels.data, tile.width, tile.height);
-      const method = chooseSeamlessMethod(before, seamPreference);
-      let after: SeamReport | null = null, tiled: WallAsset = artwork;
-      if (method === 'blend') {
-        const blended = blendSeamless(pixels.data, tile.width, tile.height);
+      // THE BLEND IS ATTEMPTED BEFORE MIRROR IS CHOSEN, NOT AFTER (2026-09-22).
+      // `seamLadder` cannot prefer the blend over the flip on a promise — the
+      // crossfade has to be run and MEASURED, because whether it closes this
+      // particular tile is a fact about these pixels. It is ~one pass over the
+      // tile on a canvas she is already looking at, and it is what stands
+      // between her design and a kaleidoscope.
+      let blended: Uint8ClampedArray | null = null, after: SeamReport | null = null;
+      if (shouldTryBlend(before, seamPreference)) {
+        blended = blendSeamless(pixels.data, tile.width, tile.height);
         after = measureSeam(blended, tile.width, tile.height);
+      }
+      const method = seamLadder(before, after, seamPreference);
+      let tiled: WallAsset = artwork;
+      if (method === 'blend' && blended) {
         ctx.putImageData(new ImageData(blended, tile.width, tile.height), 0, 0);
         const blob = await canvasBlob(tile);
         if (!active) return;
         owned = URL.createObjectURL(blob);
         // Derived deterministically from the stored artwork; never uploaded itself.
         tiled = { url: owned, aspect: artwork.aspect };
+      } else {
+        // A measured blend that did not close the tile is evidence about the
+        // blend, not about what prints. The receipt carries `before` alone so
+        // nothing downstream reads a rejected repair as the shipped pixels.
+        after = null;
       }
       tile.width = 1; tile.height = 1;
       if (!active) return;
@@ -1978,6 +1992,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 </p>}
                 <p className="mt-1 text-xs wall-muted">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
               </div>
+              {/* MIRROR CHANGES HER ARTWORK, SO IT HAS TO SAY SO (2026-09-22).
+                  `verified: true` is correct for a mirrored tile -- the join is
+                  a column against its own copy -- and that is exactly why the
+                  receipt alone could never surface this: every gate read
+                  "seamless" and stayed quiet while alternate tiles printed
+                  flipped. The method, not the verdict, is what the customer
+                  needs, and only in the one case where the wall will not look
+                  like the design she approved. */}
+              {seamReceipt?.method === 'mirror' && <div className="mb-2 rounded-lg border border-amber-400/60 bg-amber-50/80 px-3 py-2 text-xs dark:bg-amber-500/10">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">This tile is being mirrored to join.</p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Every other tile is flipped, so your wall will read symmetrically — fine on texture, visible on leaves, figures or lettering. The tile did not join on its own and the blended repair did not close it either.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2 h-7 px-2 text-xs" disabled={!!busy} onClick={() => setSeamPreference(seamPreference === 'blend' ? 'auto' : 'blend')}>
+                  {seamPreference === 'blend' ? 'Back to automatic' : 'Use the blended repeat anyway'}
+                </Button>
+              </div>}
               <div className="flex min-h-80 items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-4"><div className="relative inline-block">
               {flatView === 'css' && draftTile
                 ? <div role="img" aria-label={`Print master across your ${width} by ${height} inch wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || previewArt).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />

@@ -6,7 +6,7 @@
 //   GenerationID  the wallpro_generations row whose master was approved.
 //   SynthID       Google's pixel provenance; expected on every master, never a key.
 // Rules: docs/wallpro/WALLPRO-BATCH-PRODUCTION-RULES.md
-import { seamlessReceipt, type SeamlessReceipt, type SeamReport } from './wallpro-seamless';
+import { seamLadder, seamlessReceipt, type SeamlessReceipt, type SeamReport } from './wallpro-seamless';
 // The professional design-domain classifier is the SAME module the edge
 // function uses to pick Persona 2 (supabase/functions/generate-wall-design/
 // domain.ts) — one classifier, not a second copy that can drift. It is a
@@ -324,11 +324,14 @@ export function briefForEntry(entry: Pick<WallPromptEntry, 'prompt' | 'designTyp
  * does not measure clean. Mirror flips alternate tiles, which is invisible on
  * abstract texture and plainly wrong on cranes, leaves or lettering; it used
  * to be the only fallback.
+ *
+ * DELEGATED TO `seamLadder` 2026-09-22 — it is the same ladder the customer's
+ * own designer now climbs, and two copies of it is how the customer path spent
+ * a week reaching straight for mirror while the batch did not.
  */
 export function batchSeamDecision(before: SeamReport, blendedAfter: SeamReport | null): SeamlessReceipt {
-  if (before.seamless) return seamlessReceipt('auto', before, null, 'verified');
-  if (blendedAfter?.seamless) return seamlessReceipt('auto', before, blendedAfter, 'blend');
-  return seamlessReceipt('auto', before, null, 'mirror');
+  const method = seamLadder(before, blendedAfter, 'auto');
+  return seamlessReceipt('auto', before, method === 'blend' ? blendedAfter : null, method);
 }
 
 /** Effective print resolution of a catalog master at its default placement:
