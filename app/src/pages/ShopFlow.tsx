@@ -51,6 +51,7 @@ import {
   type WpwOrder,
 } from "@/hooks/useWpwOrders";
 import { useWallProDesignCredits, WALLPRO_WELCOME_DESIGNS } from "@/hooks/useWallProDesignCredits";
+import { useInsideAppShell } from "@/hooks/useIsAppRoute";
 import { SHOPFLOW_APPS, shopflowApp } from "@/lib/shopflow-apps";
 import { useAutoSyncWpw } from "@/hooks/useAutoSyncWpw";
 import { SignInWithWPWButton } from "@/components/SignInWithWPWButton";
@@ -616,6 +617,24 @@ export default function ShopFlow() {
     catch { return true; }
   }, []);
 
+  /**
+   * ONE SIDEBAR PER SCREEN (owner, 2026-09-22: "still showing the blue
+   * shopflow side bar", after the banner that was blamed for it had already
+   * been removed from the build).
+   *
+   * On the OS host /shopflow is now an app route, so AppShell puts the
+   * DesignProAI rail around this page and THIS rail would be a second one --
+   * the chrome swap she was reporting, just doubled. On the partner host, and
+   * inside an iframe, AppShell renders nothing and this rail is the only
+   * navigation there is, so it stays.
+   *
+   * The condition is not re-derived here: `useInsideAppShell` is the same
+   * expression AppShell itself branches on. Two copies of it would drift the
+   * first time either moved, and this page's app list has already been wrong
+   * three times for exactly that reason.
+   */
+  const insideOsShell = useInsideAppShell();
+
   const forgetGuest = () => { writeGuestShopflowToken(null); setGuestToken(null); setGuestJob(null); };
 
   const handleSync = async () => {
@@ -680,8 +699,9 @@ export default function ShopFlow() {
       <main className="min-h-screen bg-gray-50">
         <div className="mx-auto flex max-w-[1440px]">
           {/* One rail, and only for someone who is actually in. At the door
-              there is nothing to navigate between. */}
-          {!atTheDoor && <ShopflowSidebar credits={wallPro.data?.remaining ?? null} locked={signedIn !== true} commercialPro={data?.commercialpro === true}
+              there is nothing to navigate between -- and never beside the
+              DesignProAI rail, which is what `insideOsShell` stands down for. */}
+          {!atTheDoor && !insideOsShell && <ShopflowSidebar credits={wallPro.data?.remaining ?? null} locked={signedIn !== true} commercialPro={data?.commercialpro === true}
               points={data?.loyalty?.points_balance ?? null} />}
           <div className="min-w-0 flex-1 px-4 pb-16 sm:px-6 lg:px-10">
         {/* The apps, on a phone. The rail above is `lg:flex` and this is
