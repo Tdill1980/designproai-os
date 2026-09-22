@@ -222,7 +222,7 @@ test("the pair states whether both halves came from the same master", () => {
 test("Call 1 canonical panels publish in the primary rows before Call 9", () => {
   const rows = board.slice(
     board.indexOf("function SurfacePairRows("),
-    board.indexOf("function Fact("),
+    board.indexOf("function AtlasForensicRecord("),
   );
   assert.match(rows, /atlas: FlatAtlasRevision \| null/);
   assert.match(rows, /atlas\?\.callOnePanels/);
@@ -236,7 +236,7 @@ test("Call 1 canonical panels publish in the primary rows before Call 9", () => 
 test("Call 1 visibility never unlocks Call 9 production controls", () => {
   const rows = board.slice(
     board.indexOf("function SurfacePairRows("),
-    board.indexOf("function Fact("),
+    board.indexOf("function AtlasForensicRecord("),
   );
   assert.match(rows, /Call 9 promoted production panel/);
   assert.match(rows, /Human QC, correction, and\s+production enhancement remain locked until Call 9 promotes/);
