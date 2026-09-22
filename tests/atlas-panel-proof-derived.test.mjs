@@ -38,8 +38,10 @@ async function derive(overrides = {}) {
   const master = await sharp({ create: { width: 4096, height: 4096, channels: 4, background: "#14345a" } })
     .png().toBuffer();
   const stored = [];
+  const bytesByPath = new Map();
   return {
     stored,
+    bytesByPath,
     result: await proof.assemblePanelProofMaster({
       sheet: { bytes: master, storagePath: "atlas/master.png", contentHash: sha(master), byteSize: master.length },
       zone2Panels: await callOnePanels(),
@@ -51,7 +53,7 @@ async function derive(overrides = {}) {
         vehicle: { year: "2022", make: "Ford", model: "F250" },
       },
       manifest: MANIFEST, logger: () => {},
-      store: { putImmutableBytes: async (o) => { stored.push(o.storagePath); return { storagePath: o.storagePath, contentHash: sha(o.bytes) }; } },
+      store: { putImmutableBytes: async (o) => { stored.push(o.storagePath); bytesByPath.set(o.storagePath, o.bytes); return { storagePath: o.storagePath, contentHash: sha(o.bytes) }; } },
       downloadAsset: async () => { throw new Error("no customer assets in this fixture"); },
       ...overrides,
     }),
@@ -59,7 +61,7 @@ async function derive(overrides = {}) {
 }
 
 test("the three-zone production proof is built from the accepted master's own panels, with no image call", async () => {
-  const { result, stored } = await derive();
+  const { result, stored, bytesByPath } = await derive();
 
   // ZERO MODEL CALLS. Only Zone 2 ever came out of a sheet, and the brain now
   // authors those six clean backgrounds as the accepted master.
@@ -102,6 +104,34 @@ test("the three-zone production proof is built from the accepted master's own pa
   for (const element of result.provenance.quadrants.cutGraphics) {
     assert.ok(accepted.has(element.role), `the gateway would 502 on role ${element.role}`);
   }
+
+  // ⛔ ZONE 1 IS DESCRIBED, WITH THE GEOMETRY THAT LETS IT RENDER. The gateway
+  // reads `quadrants.branded[].rect` against `sheet.{width,height}` and emits
+  // `sheetRect` only when the rect is bounded by the sheet; the UI then crops
+  // each Zone 1 card out of the composed proof. Before this, the derived
+  // receipt carried neither, so every derived proof showed Zones 2 and 3 with
+  // Zone 1 -- the print panels, the ones the customer pays for -- blank.
+  const { branded } = result.provenance.quadrants;
+  const geometry = result.provenance.sheet;
+  assert.ok(geometry && geometry.width > 0 && geometry.height > 0, "the receipt must carry the sheet geometry");
+  assert.equal(branded.length, 6);
+  assert.deepEqual(branded.map((p) => p.surfaceKey).sort(),
+    ["driver", "front", "hood", "passenger", "rear", "roof"]);
+  for (const panel of branded) {
+    assert.equal(panel.role, "branded", `Zone 1 role must be canonical, got ${panel.role}`);
+    assert.ok(accepted.has(panel.role), `the gateway would 502 on role ${panel.role}`);
+    const r = panel.rect;
+    assert.ok(r && r.left >= 0 && r.top >= 0 && r.width > 0 && r.height > 0
+      && r.left + r.width <= geometry.width && r.top + r.height <= geometry.height,
+      `${panel.surfaceKey}: rect ${JSON.stringify(r)} must sit inside the ${geometry.width}x${geometry.height} sheet`);
+    assert.ok(panel.identity && panel.positionalPremiseVerified === true);
+    assert.equal(panel.widthIn, SURFACES.find((s) => s.surfaceKey === panel.surfaceKey).widthInches);
+  }
+  // The composed document really is that size, so a crop by `rect` lands on
+  // the pixels the receipt names rather than on a scaled neighbour.
+  const proofRaster = await sharp(bytesByPath.get(result.provenance.proofStoragePath)).metadata();
+  assert.equal(proofRaster.width, geometry.width);
+  assert.equal(proofRaster.height, geometry.height);
 
   // The document itself exists, is stored, and is a real raster.
   assert.match(result.provenance.proofStoragePath, /^atlas-panel-proof\/[0-9a-f]{64}\.png$/);

@@ -953,7 +953,28 @@ async function assemblePanelProofMaster({
           contentHash: sheet.contentHash || null,
           byteSize: sheet.byteSize || null,
         },
-        quadrants: { clean: cleanOnly, cutGraphics: zone3 },
+        // THE COMPOSED DOCUMENT'S OWN GEOMETRY. The gateway serves this
+        // receipt's `proofStoragePath` as the sheet and `sheet` as its
+        // geometry (designpro_atlas_panel_proof_paths), and the UI crops each
+        // Zone 1 card out of that sheet by `rect`. Without both, Zone 1 was
+        // a silent blank on every derived proof -- the one Call 1 composes from
+        // the accepted master -- while Zones 2 and 3 rendered. `proofBytes`
+        // is drawn at exactly `cut.sheet`, so `displayRect` is already in
+        // sheet pixels (scale 1 on this path, see the cut above).
+        sheet: cut.sheet,
+        quadrants: {
+          // Zone 1 is described, never stored twice: its six composites are
+          // painted into the document above, and the master remains the
+          // artwork authority. Same shape as the authored path emits.
+          branded: zone1.map((p) => ({
+            surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit,
+            rect: p.displayRect, backgroundRect: p.rect,
+            widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
+            identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
+          })),
+          clean: cleanOnly,
+          cutGraphics: zone3,
+        },
         composition: { placements: productionLayout.placements, omitted: productionLayout.omitted || [] },
         surfaces: zone1.map((p) => ({ surfaceKey: p.surfaceKey, byteSize: p.byteSize,
           widthIn: p.widthIn, heightIn: p.heightIn })),
