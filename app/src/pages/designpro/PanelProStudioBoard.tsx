@@ -1126,14 +1126,14 @@ export default function PanelProStudioBoard() {
         const selected = selectedVersion.revision;
         return (
           <Panel
-            eyebrow="Call 1 · A.T.L.A.S."
+            eyebrow="Call 1"
             title="The canonical master every panel was cut from"
             description="The design team's authority, never the customer's. The buyer sees the seven 3D proofs and, in RevisionStudio, the six panels cut from this sheet."
           >
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { label: "Vehicle layout", url: selected.guideUrl, name: "atlas-vehicle-layout.png" },
-                { label: "Flattened top-view master", url: selected.masterUrl, name: "atlas-master.png" },
+                { label: "Print master", url: selected.masterUrl, name: "print-master.png" },
               ].map(({ label, url, name }) => (
                 <div key={label} className="rounded-lg border border-border p-2">
                   <div className="mb-1 text-xs font-semibold">{label}</div>

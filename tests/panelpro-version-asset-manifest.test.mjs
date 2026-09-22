@@ -223,7 +223,7 @@ test("Call 1 canonical panels publish in the primary rows before Call 9", () => 
   assert.match(rows, /atlas: FlatAtlasRevision \| null/);
   assert.match(rows, /atlas\?\.callOnePanels/);
   assert.match(rows, /side\?\.gemini_url \|\| callOnePanel\?\.signedUrl/);
-  assert.match(rows, /Call 1 A\.T\.L\.A\.S\. source panel/);
+  assert.match(rows, /Call 1 source panel/);
   assert.match(rows, /Call 1 canonical · view only/);
   assert.match(rows, /sourceMasterHash/);
   assert.match(board, /atlas=\{selectedVersion\?\.revision \|\| null\}/);
