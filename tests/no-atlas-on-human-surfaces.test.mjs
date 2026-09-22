@@ -179,6 +179,42 @@ test("no customer or designer surface in app/src, gateway/src or app/index.html 
   );
 });
 
+test("no file a customer or designer downloads is named after the engine, and the ZIP carries the product's own name", () => {
+  // Owner, 2026-09-22: "fix remove atlas come up with a proprietary name for
+  // our ProductionPanelProof." The text lock above never looked at a
+  // `download=` attribute or at the file names the runtime writes into the
+  // production ZIP, which is how `proofs/atlas-master.png` reached customers
+  // while every screen was clean. Both are scanned here. Storage paths and
+  // artifact `kind` values are identifiers and are not in scope.
+  const offenders = [];
+  for (const file of scanTargets()) {
+    const rel = path.relative(root, file);
+    if (SKIP_FILE(rel)) continue;
+    stripComments(fs.readFileSync(file, "utf8")).split("\n").forEach((line, index) => {
+      const m = line.match(/\bdownload=\{?\s*([`"'])((?:(?!\1)[^\n])*)\1/);
+      // `${…}` holes carry identifiers (`${atlas.revisionSequence}`), not text a
+      // person reads -- the same cut the string-literal scanner makes above.
+      if (m && /atlas/i.test(m[2].replace(/\$\{[^}]*\}/g, " "))) offenders.push(`${rel}:${index + 1}  [download name]  ${line.trim().slice(0, 120)}`);
+    });
+  }
+  for (const rel of ["runtime/designpro-standalone-claimant.cjs", "runtime/zip-spool.cjs", "runtime/wrapbox-delivery.cjs"]) {
+    stripComments(fs.readFileSync(path.join(root, rel), "utf8")).split("\n").forEach((line, index) => {
+      const m = line.match(/archivePath\s*[:=]\s*([`"'])([^`"'\n]*)\1/);
+      if (m && /atlas/i.test(m[2])) offenders.push(`${rel}:${index + 1}  [archive path]  ${line.trim().slice(0, 120)}`);
+    });
+  }
+  assert.deepEqual(offenders, [], `A file name a person downloads still names the engine:\n  ${offenders.join("\n  ")}`);
+
+  // The runtime cannot import os-brand.ts, so the ZIP's file stem is mirrored
+  // there by hand. This is what keeps the two from drifting.
+  const brand = fs.readFileSync(path.join(root, "app/src/lib/os-brand.ts"), "utf8");
+  const stem = brand.match(/fileStem:\s*"([a-z0-9-]+)"/)?.[1];
+  assert.ok(stem, "PROOF_BRAND.fileStem is declared");
+  const claimant = fs.readFileSync(path.join(root, "runtime/designpro-standalone-claimant.cjs"), "utf8");
+  assert.ok(claimant.includes(`archivePath: "proofs/${stem}.png"`), `the ZIP names the sheet proofs/${stem}.png, as os-brand.ts spells it`);
+  assert.ok(claimant.includes('archivePath: "proofs/print-master.png"'), "the master inside the ZIP is the print master");
+});
+
 test("the visible-word check convicts prose and spares identifiers", () => {
   // Identifiers and object keys: legal, because renaming them touches stored rows.
   for (const line of [

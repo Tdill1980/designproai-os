@@ -56,6 +56,7 @@ import {
   Panel,
   StatePill,
 } from "@/components/designpro/surface";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 const VEHICLE_TYPES: Array<{ value: GenerationVehicle["type"]; label: string }> = [
   { value: "car", label: "Car" },
@@ -697,7 +698,7 @@ export default function GenerateDesign() {
               )}
               {isAtlasRequest && (
                 <p className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-3 text-cyan-100">
-                  Call 1 draws your Production Panel Proof; its six print panels and their matched proofs are cut from that one sheet, then the same files are handed to production.
+                  Call 1 draws your {PROOF_BRAND.full}; its six print panels and their matched proofs are cut from that one sheet, then the same files are handed to production.
                 </p>
               )}
               {handingOff && <Loading label="Freezing the revision and starting the production workflow…" />}

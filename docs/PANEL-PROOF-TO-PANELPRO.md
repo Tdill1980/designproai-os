@@ -109,8 +109,8 @@ only `callOnePanels`), `logos.extract` (Call 10 reads only
 The paid ZIP carries:
 
 ```
-proofs/call1-three-zone-production-proof.png
-proofs/atlas-master.png
+proofs/trizone-production-panel-proof.png    the TriZone™ Production Panel Proof (renamed 2026-09-22)
+proofs/print-master.png                      the print master (was atlas-master.png)
 proofs/cut-graphics/<role>-<hash12>.<ext>
 flat-proof/…                 the Call 8 dimensioned production proof
 qc-panel/…                   the six Zone 2 duplicates

@@ -21,7 +21,7 @@ import {
 } from "@/lib/designpro-api";
 import { runGeniePrep, geniePrepCopy } from "@/lib/genie-prep";
 import type { VehicleType } from "@/components/tools/VehicleTypeSelector";
-import { OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS, PROOF_BRAND } from "@/lib/os-brand";
 
 /**
  * DesignProAIHome — the /designpro front door (matches the DesignProAI mockup).
@@ -109,7 +109,7 @@ const PRODUCTIONPACK_FEATURES = [
   "All print-ready panel files · 2″ bleed",
   "2D Production Proof + 3D Realistic Proof",
   "7 Hi-Res Proof Angles",
-  "Production Panel Proof artboard (PNG)",
+  `${PROOF_BRAND.full} (PNG)`,
   "Vector overlays + background files",
   "Real human QC · delivered in 48h",
 ];
@@ -317,7 +317,7 @@ export default function DesignProAIHome() {
             <p className="text-[11px] text-white/70">Pick a vehicle, add make & model, describe it.</p>
 
             <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-2.5 text-[10px] text-cyan-200">
-              Call 1 draws your Production Panel Proof — one sheet, three zones — and every print-ready file is cut from it: six labeled panels, seven proof views, one source.
+              Call 1 draws your {PROOF_BRAND.full} — one sheet, three zones — and every print-ready file is cut from it: six labeled panels, seven proof views, one source.
             </div>
 
             {/* Primary CTA at the top so it's always visible — fill the info below, then Create. */}

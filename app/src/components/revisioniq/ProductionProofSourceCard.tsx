@@ -1,4 +1,5 @@
 import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 /**
  * THE SOURCE ARTIFACT, PRESENTED AS SUCH. Owner (Trish 2026-09-22): "Panel
@@ -30,8 +31,8 @@ export function ProductionProofSourceCard({
   pollWhilePending?: boolean;
 }) {
   const heading = Number.isFinite(version) && (version as number) > 0
-    ? `Production Panel Proof · V${version}`
-    : "Production Panel Proof";
+    ? `${PROOF_BRAND.full} · V${version}`
+    : PROOF_BRAND.full;
   return (
     <section
       aria-label={heading}

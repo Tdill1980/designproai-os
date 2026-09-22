@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 /**
  * Display the completed three-zone document independently of 3D views.
@@ -104,7 +105,7 @@ export function AtlasPanelProofSheet({
   onSheetLoad?: () => void;
 }) {
   if (status === "pending") {
-    return <p className="text-xs text-gray-500 text-center">Loading your production panel proof…</p>;
+    return <p className="text-xs text-gray-500 text-center">Loading your {PROOF_BRAND.full}…</p>;
   }
   // An error here must not obscure the design: the master and its proofs are
   // read through their own surfaces and are unaffected.
@@ -115,18 +116,17 @@ export function AtlasPanelProofSheet({
 
   const quadrants = proof.quadrants;
   return (
-    <section aria-label="Production panel proof" className="w-full max-w-5xl rounded-lg border border-gray-200 bg-white p-4">
-      <h3 className="text-base font-semibold text-gray-900 text-center">Your production panel proof</h3>
+    <section aria-label={PROOF_BRAND.full} className="w-full max-w-5xl rounded-lg border border-gray-200 bg-white p-4">
+      <h3 className="text-base font-semibold text-gray-900 text-center">Your {PROOF_BRAND.full}</h3>
       <p className="text-xs text-gray-600 text-center mt-1 max-w-2xl mx-auto">
-        One sheet, three zones: full design panels, background artwork, and original brand assets.
-        Backgrounds and brand assets remain separate for production.
+        {PROOF_BRAND.blurb} Backgrounds and brand assets remain separate for production.
       </p>
 
       {proof.sheet?.signedUrl ? (
         <a href={proof.sheet.signedUrl} target="_blank" rel="noreferrer" className="block mt-3">
           <img
             src={proof.sheet.signedUrl}
-            alt="The three-zone production panel proof"
+            alt={`The ${PROOF_BRAND.full}`}
             loading="eager"
             onLoad={onSheetLoad}
             className="w-full rounded-lg border border-gray-200 bg-gray-50"

@@ -75,8 +75,10 @@ function unzip(bytes){let offset=0;const files=new Map();while(bytes.readUInt32L
 
 test('paid ZIP archives exact complete Call1 proof and Atlas with all seven unchanged vehicle proofs, and lists every byte hash',async()=>{
   const f=fixture();await f.execute();const{zipped,completed}=f.result(),files=unzip(zipped),receipt=completed.receipt;
-  assert.deepEqual(files.get('proofs/call1-three-zone-production-proof.png'),f.stored.get(f.proof.storagePath));
-  assert.deepEqual(files.get('proofs/atlas-master.png'),f.stored.get(f.master.storagePath));
+  // Customer-readable file names carry the product's own name, never the engine's (owner, 2026-09-22).
+  assert.deepEqual(files.get('proofs/trizone-production-panel-proof.png'),f.stored.get(f.proof.storagePath));
+  assert.deepEqual(files.get('proofs/print-master.png'),f.stored.get(f.master.storagePath));
+  assert.equal([...files.keys()].some(name=>/atlas/i.test(name)),false,'no file inside the ZIP is named after the engine');
   assert.equal([...files.keys()].filter(name=>name.startsWith('source-views/')).length,7);
   assert.equal(receipt.includedKinds['production-panel-proof'],1);assert.equal(receipt.includedKinds['atlas-master'],1);assert.equal(receipt.sourceProofs.length,2);
   assert.equal(receipt.archiveManifest.length,files.size);assert.equal(completed.artifacts[0].metadata.archiveManifest.length,files.size);
@@ -92,7 +94,7 @@ test('changed proof or master bytes, source binding, missing zones and graph-pat
 
 test('an honest empty Zone 3 packages the proof and master with no cut graphics and no refusal (#599 degrade)',async()=>{
   const f=fixture({cutGraphics:[]});await f.execute();const{zipped,completed}=f.result(),files=unzip(zipped),receipt=completed.receipt;
-  assert.deepEqual(files.get('proofs/call1-three-zone-production-proof.png'),f.stored.get(f.proof.storagePath));
+  assert.deepEqual(files.get('proofs/trizone-production-panel-proof.png'),f.stored.get(f.proof.storagePath));
   assert.equal([...files.keys()].some(name=>name.startsWith('proofs/cut-graphics/')),false);
   assert.equal(receipt.includedKinds['cut-graphic'],0);assert.equal(receipt.includedKinds['production-panel-proof'],1);
   assert.equal(receipt.archiveManifest.length,files.size);
@@ -130,5 +132,5 @@ test('persisted Zone 3 cut graphics ship in the ZIP as their exact frozen bytes,
 test('legacy source without a three-zone receipt keeps its original archive contract and never invents a proof',async()=>{
   const f=fixture();delete f.source.snapshot.panelProofAuthoring;await f.execute();const{completed,zipped}=f.result();
   assert.equal(completed.receipt.sourceProofs.length,0);assert.equal(completed.receipt.includedKinds['production-panel-proof'],undefined);
-  assert.equal(unzip(zipped).has('proofs/call1-three-zone-production-proof.png'),false);assert.equal(completed.receipt.sourceViews.length,7);
+  assert.equal(unzip(zipped).has('proofs/trizone-production-panel-proof.png'),false);assert.equal(completed.receipt.sourceViews.length,7);
 });

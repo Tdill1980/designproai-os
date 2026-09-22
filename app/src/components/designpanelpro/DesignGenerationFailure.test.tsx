@@ -35,7 +35,7 @@ describe("DesignPro ATLAS failure UI", () => {
   });
   it("offers only saved-record navigation for an unconfirmed provider outcome", () => {
     const { html, onStartNew } = render();
-    expect(html).toContain("Your production panel proof didn&#x27;t finish.");
+    expect(html).toContain("Your TriZone™ Production Panel Proof didn&#x27;t finish.");
     expect(html).not.toMatch(/ATLAS/);
     expect(html).toContain("image service response could not be confirmed");
     // THE ID LADDER: a failed run was never purchased, so it has no Design ID.
@@ -60,7 +60,7 @@ describe("DesignPro ATLAS failure UI", () => {
     });
     expect(html).not.toMatch(/ATLAS/);
     expect(html).not.toMatch(/flat_atlas_edge_topology_contract_mismatch/);
-    expect(html).toContain("Your production panel proof didn&#x27;t finish.");
+    expect(html).toContain("Your TriZone™ Production Panel Proof didn&#x27;t finish.");
     expect(html).toContain("couldn&#x27;t accept");
   });
 

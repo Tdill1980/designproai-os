@@ -57,7 +57,7 @@ describe("refused ATLAS candidates on the failure screen", () => {
     const html = renderToStaticMarkup(<AtlasRefusedSheets status="success" refusals={[{
       ...refusals[1], id: "50000000-0000-4000-8000-000000000003", topology: "panel-proof",
     }]} />);
-    expect(html).toContain("Production panel proof · try 1");
+    expect(html).toContain("TriZone™ Production Panel Proof · try 1");
     expect(html).not.toContain("undefined");
     expect(html).not.toMatch(/topolog/i);
   });

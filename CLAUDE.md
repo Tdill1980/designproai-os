@@ -39,6 +39,44 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
+## ™ THE THREE-ZONE SHEET IS THE **TriZone™ Production Panel Proof** — ONE NAME, DECLARED ONCE (owner, Trish 2026-09-22: "fix remove atlas come up with a proprietary name for our ProductionPanelProof")
+
+The sheet Call 1 draws now has a name of its own, the way PanelPro, CutPro
+and WallPro do: **TriZone™**, for the three zones that make it what it is.
+The full customer-facing form is **TriZone™ Production Panel Proof**. The
+word was proposed by the session at the owner's request; it is the owner's to
+keep or swap, and swapping it is one edit:
+
+- **`app/src/lib/os-brand.ts` → `PROOF_BRAND`** is the ONLY place the word is
+  spelled in the app. Every heading, caption, error message, attestation label
+  and download name reads `PROOF_BRAND.full` / `.short` / `.fileStem`.
+  `tests/os-brand-naming.test.mjs` asserts each surface reads it from there
+  and that none hard-codes the word.
+- **The runtime cannot import that file**, so the file name inside the
+  production ZIP (`proofs/trizone-production-panel-proof.png`) mirrors
+  `PROOF_BRAND.fileStem` by hand, and `tests/no-atlas-on-human-surfaces.test.mjs`
+  asserts the two agree. Change the stem in both places or the lock fails.
+
+**The engine's name left the last two places a person could read it.** The
+text lock had never looked at `download=` attributes or at the file names the
+runtime writes into the ZIP, so `proofs/atlas-master.png` shipped to customers
+and the PanelPro master downloaded as `atlas-master-v…png` while every screen
+was clean. Now: the ZIP carries `proofs/print-master.png`, the download is
+`print-master-v…png`, the forensic record is `…-call1-forensic-record.json`,
+and the lock scans both classes. Existing ZIPs keep their names; only new
+packs change.
+
+**What did NOT change, on purpose (the standing scope line):** storage paths
+(`atlas-panel-proof/…`, `atlas-call1-graph/…`), artifact `kind` values
+(`atlas-master`, `production-panel-proof`), receipt fields
+(`productionAuthority: "atlas-master"`), table and function names, env flags,
+edge modes, component and file names (`AtlasPanelProofSheet`,
+`atlas-panel-proof-topology.cjs`). They are identifiers and stored rows;
+renaming them touches the deployed edge and every existing pack and removes
+nothing a person can see. `GenieProgress` still labels the Call 8 GENIE
+dimensioned sheet "Production panel proof" — that is a different document and
+was left alone rather than widened into this change.
+
 ## 🚫 NO HUMAN-READ SURFACE SAYS "ATLAS" — AND THE IDENTIFIERS STAY (owner, Trish 2026-09-21/22)
 
 Owner, looking at the live PanelPro board: *"My 3-zone is Call 1. Delete ATLAS."*

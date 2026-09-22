@@ -61,6 +61,34 @@ test("os-brand.ts states the hierarchy the customer must read at a glance", () =
   assert.match(BRAND, /OS_TOOL_ORDER[^=]*=\s*\["vehiclepro", "wallpro", "cutpro"\]/);
 });
 
+test("the three-zone Production Panel Proof carries its own name, declared once", () => {
+  // Owner, 2026-09-22: "come up with a proprietary name for our
+  // ProductionPanelProof." TriZone™ is that name, declared once in os-brand.ts
+  // and read everywhere the sheet is named to a person.
+  assert.match(BRAND, /export const PROOF_BRAND = \{/);
+  assert.match(BRAND, /name: "TriZone"/);
+  assert.match(BRAND, /full: "TriZone™ Production Panel Proof"/);
+  assert.match(BRAND, /fileStem: "trizone-production-panel-proof"/);
+  for (const rel of [
+    "app/src/components/designpanelpro/AtlasPanelProofSheet.tsx",
+    "app/src/components/revisioniq/ProductionProofSourceCard.tsx",
+    "app/src/components/designpanelpro/AtlasRefusedSheets.tsx",
+    "app/src/components/designpanelpro/DesignGenerationFailure.tsx",
+    "app/src/lib/designpro-generation-error.ts",
+    "app/src/lib/designpro-stages.ts",
+    "app/src/pages/AdminGeminiCompareStudio.tsx",
+    "app/src/pages/DesignPanelProPremium.tsx",
+    "app/src/pages/designpro/GenerateDesign.tsx",
+    "app/src/pages/DesignProAIHome.tsx",
+    "app/src/pages/Index.tsx",
+  ]) {
+    const source = readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+    assert.match(source, /PROOF_BRAND\.full/, `${rel} names the sheet through PROOF_BRAND`);
+    // No surface spells the name by hand: one place to change it.
+    assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""), /TriZone/, `${rel} does not hard-code the name`);
+  }
+});
+
 test("the persistent header carries the OS positioning line, never a tool's", () => {
   assert.match(HEADER, /\{OS_BRAND\.positioning\}/, "the lockup subtitle reads from os-brand.ts");
   assert.doesNotMatch(HEADER, /Vehicle Wrap Design System/, "the OS header must not wear the vehicle tool's old subtitle");
@@ -152,7 +180,8 @@ test("no surface names an engine to the customer: the tagline is retired everywh
   // What replaced it is the product, in the owner's words: the three-zone
   // Production Panel Proof is Call 1 and the source of every print-ready file.
   for (const path of ["app/src/pages/DesignPanelProPremium.tsx", "app/src/pages/DesignProAIHome.tsx", "app/src/pages/designpro/GenerateDesign.tsx"]) {
-    assert.match(stripComments(read(path)), /Production Panel Proof/, `${path} names the source artifact`);
+    // Through PROOF_BRAND now (TriZone™ Production Panel Proof), never a hand-spelled literal.
+    assert.match(stripComments(read(path)), /PROOF_BRAND\.full/, `${path} names the source artifact`);
   }
 });
 

@@ -112,7 +112,7 @@ describe("DesignPro recovery respects the latest owner-read refusal", () => {
     );
     expect(result.generationId).toBe(accepted.generationId);
     expect(result.directRender).toBe(false);
-    expect(result.error).toContain("Your production panel proof didn't finish");
+    expect(result.error).toContain("Your TriZone™ Production Panel Proof didn't finish");
     expect(result.error).not.toMatch(/Start a new|Precision|paused|recovering/);
     const display = renderHook();
     expect(display.generationRequestState?.state).toBe("failed");
