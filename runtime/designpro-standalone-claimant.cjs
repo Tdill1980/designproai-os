@@ -1267,7 +1267,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
         sevenViewsVerified: false,
         missingViewRoles: viewSet.missingRoles,
         productionAuthority: "atlas-master",
-        note: "One or more 3D proofs were refused. A.T.L.A.S. is the manufacturing authority and Call 1 had already cut the six panels, so the refused view is recorded and the panels and Logo Pack still publish.",
+        note: "One or more 3D proofs were refused. Call 1 is the manufacturing authority and had already cut the six panels, so the refused view is recorded and the panels and Logo Pack still publish.",
       }),
     });
   }
@@ -1335,7 +1335,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
           call: 8,
           proofKind: "flattened-2d-proof",
           productionAuthority: "atlas-master",
-          note: "The 2D Production Proof is a later value-add artifact. A.T.L.A.S. is the manufacturing authority, so this failure is recorded and production continues.",
+          note: "The 2D Production Proof is a later value-add artifact. Call 1 is the manufacturing authority, so this failure is recorded and production continues.",
           failure: { code, message },
         }, null, []);
       }
@@ -1514,7 +1514,7 @@ async function executeEntice(sb, baseUrl, secret, supabaseUrl, stage, run, runti
     // truck under a print-file heading.
     throw new StageError(
       "production_panels_not_created",
-      "No deterministic Call-1 panel set exists for this revision. Production panels are only ever a geometric crop of the accepted A.T.L.A.S. master; nothing is derived from a 3D proof.",
+      "No deterministic Call-1 panel set exists for this revision. Production panels are only ever a geometric crop of the accepted print master; nothing is derived from a 3D proof.",
       false,
     );
   }
@@ -2224,7 +2224,7 @@ function lateAtlasViewSet({ source, run, atlas, rows }) {
     || atlas?.owner_id !== run.owner_id || atlas?.tenant_key !== run.tenant_key
     || atlas?.request_id !== source.visualization_id || atlas?.generation_id !== source.generation_id
     || atlas?.master_content_hash !== [...masterHashes][0] || atlas?.metadata?.masterQcPassed !== true) {
-    throw new StageError("production_late_view_revision_mismatch", "Late proofs must bind the exact accepted A.T.L.A.S. revision and owner", false);
+    throw new StageError("production_late_view_revision_mismatch", "Late proofs must bind the exact accepted design revision and owner", false);
   }
   if (!Array.isArray(rows) || rows.length < VIEW_KEYS.length) {
     throw new StageError("production_proofs_pending", "Waiting for all seven proofs of the accepted revision", true);
@@ -2267,7 +2267,7 @@ function lateAtlasViewSet({ source, run, atlas, rows }) {
       || authority.masterContentHash !== atlas.master_content_hash || authority.manifestContentHash !== atlas.manifest_content_hash
       || authority.projectionContentHash !== atlas.projection_content_hash || authority.zoneSurfaceKey !== surfaceKey
       || authority.projectionSourceMasterHash !== (atlas.metadata.panelSourceHash || atlas.master_content_hash)) {
-      throw new StageError("production_late_view_lineage_invalid", `${row.consumer_role || "unknown"} late proof is not bound to its own accepted A.T.L.A.S. surface`, false);
+      throw new StageError("production_late_view_lineage_invalid", `${row.consumer_role || "unknown"} late proof is not bound to its own accepted surface`, false);
     }
     views.push({ viewKey: expected.consumerRole, storagePath: row.storage_path, contentHash: row.content_hash, byteSize: Number(row.byte_size), contentType: row.content_type });
   }
@@ -2302,7 +2302,7 @@ async function resolveProductionProofViews(sb, run, sourceRunId) {
     .eq("request_id", source.visualization_id).eq("generation_id", source.generation_id)
     .eq("owner_id", run.owner_id).eq("tenant_key", run.tenant_key).eq("master_content_hash", [...masters][0]).limit(2);
   if (atlasError) throw new StageError("production_late_view_lookup_failed", atlasError.message, true);
-  if (!Array.isArray(candidates) || candidates.length !== 1) throw new StageError("production_late_view_revision_ambiguous", "The frozen panel set must resolve exactly one accepted A.T.L.A.S. revision", false);
+  if (!Array.isArray(candidates) || candidates.length !== 1) throw new StageError("production_late_view_revision_ambiguous", "The frozen panel set must resolve exactly one accepted design revision", false);
   const { data: rows, error: viewError } = await sb.from("designpro_generation_views")
     .select("request_id,source_view_type,consumer_role,storage_path,content_hash,byte_size,content_type,metadata,superseded_at")
     .eq("request_id", source.visualization_id).is("superseded_at", null);
@@ -2529,7 +2529,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       // panels of two different designs.
       const masters = new Set(sourcePanels.map((row) => String(row.metadata?.sourceMasterHash || "").toLowerCase()));
       if (masters.size !== 1 || !HASH_RE.test([...masters][0])) {
-        throw new StageError("production_atlas_master_binding_invalid", "The six panels are not all bound to one A.T.L.A.S. master", false);
+        throw new StageError("production_atlas_master_binding_invalid", "The six panels are not all bound to one print master", false);
       }
       const boundMaster = [...masters][0];
       // WHICH MASTER THIS REVISION ACCEPTED, READ ACROSS THE SEAM.
@@ -3120,7 +3120,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           || !UUID_RE.test(String(proof.graph?.runId || ""))
           || proof.proofStoragePath !== `atlas-panel-proof/${proof.proofSha256}.png`
           || proof.masterStoragePath !== `atlas-call1-graph/${proof.graph.runId}/panel-proof-master-${proof.masterSha256}.png`) {
-          throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching A.T.L.A.S. master", false);
+          throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching print master", false);
         }
         const frozenFiles = [
           { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize },

@@ -41,7 +41,7 @@ test("the identity block names the generation, design AND revision", () => {
   const generationId = at(board, "Generation ID", "generation id label");
   const designId = at(board, '["Design ID"', "design id row");
   const revisionId = at(board, '["Revision ID"', "revision id row");
-  const version = at(board, '["Current A.T.L.A.S. version"', "atlas version row");
+  const version = at(board, '["Current version"', "atlas version row");
 
   assert.ok(
     generationId < designId,

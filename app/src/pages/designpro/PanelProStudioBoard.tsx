@@ -388,7 +388,7 @@ function SideCard({
           {!lineageKnown
             ? "No master binding on this pair"
             : lineageMatches
-              ? "Proof and panel share one A.T.L.A.S. master"
+              ? "Proof and panel share one print master"
               : "DIFFERENT MASTERS — this panel was not cut from the proof's design"}
         </div>
       )}
@@ -1170,7 +1170,7 @@ export default function PanelProStudioBoard() {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                    Vehicle, prompt and A.T.L.A.S. QC record
+                    Vehicle, prompt and QC record
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Canonical metadata for this exact GenerationID and revision.
@@ -1233,7 +1233,7 @@ export default function PanelProStudioBoard() {
                 <dd className="font-mono text-[11px]">{selectedVersion.generationId}</dd>
               </div>
               <div className="flex gap-2">
-                <dt className="text-muted-foreground">A.T.L.A.S. revision</dt>
+                <dt className="text-muted-foreground">Revision</dt>
                 <dd className="font-mono text-[11px]">{selectedVersion.revisionId}</dd>
               </div>
               <div className="flex gap-2">

@@ -6,10 +6,10 @@
  * information, not something to swallow.
  */
 export const STAGE_LABEL: Record<string, string> = {
-  "revision.freeze": "Accepted A.T.L.A.S. revision locked",
+  "revision.freeze": "Accepted design revision locked",
   "manifest.resolve": "GENIE dimensions and square footage",
   "proof.build": "Call 8 · Flat 2D proof",
-  "panels.build": "Call 9 · Promote exact Call-1 A.T.L.A.S. panels",
+  "panels.build": "Call 9 · Promote exact Call-1 panels",
   "logos.extract": "Call 10 · Exact logo inventory",
   "pack.verify": "Production preview verification",
   "pack.activate": "Production preview active",
@@ -31,9 +31,9 @@ export const STAGE_LABEL: Record<string, string> = {
  */
 export const PREFLIGHT_CHECKS: Array<[string, string]> = [
   ["dimensionsVerified", "GENIE trim dimensions and total square footage match the approved vehicle record"],
-  ["sourceRegionsVerified", "Driver, passenger, hood, roof, front and rear each match their frozen Call-1 A.T.L.A.S. panel and accepted master lineage"],
+  ["sourceRegionsVerified", "Driver, passenger, hood, roof, front and rear each match their frozen Call-1 panel and accepted master lineage"],
   ["fiveInchBleed", "Every production surface contains exactly 5 inches of bleed on all four edges"],
-  ["panelHashesVerified", "Every promoted production panel hash matches its frozen Call-1 A.T.L.A.S. source panel"],
+  ["panelHashesVerified", "Every promoted production panel hash matches its frozen Call-1 source panel"],
   ["logoInventoryVerified", "Call 10 logo count, identity and surface assignment exactly match the frozen inventory"],
   ["textLockVerified", "Every required body-text character matches the frozen revision text lock"],
 ];
@@ -60,7 +60,7 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
 export const PACK_PRESENCE_CHECKS: Array<[string, string]> = [
   ["atlasPresent", "Print master present, with its Generation ID"],
   ["designIdPresent", "Design ID present"],
-  ["sevenProofsPresent", "All 7 3D proofs present and descended from this A.T.L.A.S. revision"],
+  ["sevenProofsPresent", "All 7 3D proofs present and descended from this design revision"],
   ["proofsIndividuallyPresent", "Each 3D proof is its own file, individually downloadable"],
   ["resolutionPresent", "Resolution stated on every panel"],
   ["dimensionsPresent", "Trim, print and bleed dimensions stated on every panel"],

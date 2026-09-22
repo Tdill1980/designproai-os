@@ -484,7 +484,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!flatFirstAtlasSupportedVehicleType(vehicle.type)) {
       if (!silent) {
         toast({
-          title: "A.T.L.A.S. topology unavailable",
+          title: "Design layout unavailable",
           description: "Current Design Prep supports cars, trucks, SUVs, and vans.",
           variant: "destructive",
         });
@@ -1295,7 +1295,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   const handlePipelineStart = async (params: DesignIQParams) => {
     proofSubmissionTimeRef.current = performance.now();
     if (atlasResponseUnconfirmed) {
-      toast({ title: "ATLAS response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
+      toast({ title: "Design response unconfirmed", description: ATLAS_UNCONFIRMED_OUTCOME_MESSAGE });
       return;
     }
     const requestedPipelineMode = pipelineModeRef.current;
@@ -1321,7 +1321,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       !myVehiclePhotoFlowEnabledForPipeline(requestedPipelineMode)
     ) {
       toast({
-        title: "MyVehicle is unavailable for ATLAS generation",
+        title: "MyVehicle is unavailable for this design",
         description: "Turn off MyVehicle or choose Production mode before starting.",
         variant: "destructive",
       });
@@ -1342,7 +1342,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
       }
       if (!flatFirstAtlasSupportedVehicleType(vehicleType)) {
         toast({
-          title: "A.T.L.A.S. topology unavailable",
+          title: "Design layout unavailable",
           description: "Current DesignProAI supports cars, trucks, SUVs, and vans.",
           variant: "destructive",
         });
@@ -1832,7 +1832,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     if (!request.revisionText.trim()) return;
     if (!inlineRevisionEnabledForPipeline(activePipelineMode)) {
       toast({
-        title: "Revisions are unavailable for this ATLAS run",
+        title: "Revisions are unavailable for this design run",
         description: "Your design and vehicle views remain saved. Start a new design to explore another direction.",
         variant: "destructive",
       });
@@ -2009,7 +2009,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
   // it is a production instrument and it lives on the PanelPro Studio board.
   const previewDisplayUrl = mainDisplayUrl;
   const atlasNewRunRequired = isFlatFirstDiagnostic
-    && Boolean(generationError?.includes("Start a new ATLAS run"));
+    && Boolean(generationError?.includes("Start a new design"));
   // When a precision modification has been stacked on the render,
   // show the modified image instead. Other workflows (PDF proof,
   // All Views, etc.) keep using mainDisplayUrl as the unmodified base.
@@ -2200,7 +2200,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                     <AiPanelGenerator
                       onPanelGenerated={setSelectedPanel}
                       isGenerating={isGeneratingPanel}
-                      generationBlockedReason={atlasResponseUnconfirmed ? "ATLAS response unconfirmed" : undefined}
+                      generationBlockedReason={atlasResponseUnconfirmed ? "Design response unconfirmed" : undefined}
                       onGenerate={handlePipelineStart}
                       initialPrompt={pushedRender?.originalPrompt || acePrompt || undefined}
                       autoGenerate={!!acePrompt && !pushedRender}
@@ -3111,7 +3111,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
 
                     {mainDisplayUrl && !pipelineActive && isFlatFirstDiagnostic && (
                       <Card className="border-amber-400/30 bg-amber-400/10 p-4">
-                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable for this ATLAS run.</p>
+                        <p className="text-sm font-semibold text-amber-100">Revisions are unavailable for this design run.</p>
                         <p className="mt-1 text-xs leading-5 text-amber-100/70">
                           Your design and vehicle views remain saved. Start a new design to explore another direction.
                         </p>
@@ -3213,7 +3213,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         <div className="space-y-1">
                           <p className="text-sm text-amber-200">
                             {isFlatFirstDiagnostic
-                              ? `${allViews.length} of ${requiredViewCount} views generated. The ATLAS proof set is incomplete; individual views cannot be retried here. Open the saved job to inspect its status.`
+                              ? `${allViews.length} of ${requiredViewCount} views generated. The proof set is incomplete; individual views cannot be retried here. Open the saved job to inspect its status.`
                               : `${allViews.length} of ${requiredViewCount} views generated. ${failedViews.length} view${failedViews.length > 1 ? 's' : ''} failed - retry below or regenerate all.`}
                           </p>
                           {/* NAME THE VIEW AND SAY WHY. A short count told the
@@ -3295,7 +3295,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </p>
                               )}
                               {isFlatFirstDiagnostic ? (
-                                <p className="text-xs text-amber-300">Open the saved ATLAS job to inspect this view.</p>
+                                <p className="text-xs text-amber-300">Open the saved job to inspect this view.</p>
                               ) : (
                                 <Button
                                   size="sm"

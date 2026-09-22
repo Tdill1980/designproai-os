@@ -102,7 +102,7 @@ export function FullQcPanel({ generationId, revision, artifacts, onReport }: Ful
 
       {!revision && (
         <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-          PRODUCTION PANELS NOT CREATED — this design has no A.T.L.A.S. revision, so there is
+          PRODUCTION PANELS NOT CREATED — this design has no Call 1 revision, so there is
           nothing to check.
         </p>
       )}
@@ -147,7 +147,7 @@ export function FullQcPanel({ generationId, revision, artifacts, onReport }: Ful
           </details>
 
           <p className="text-[11px] text-gray-400">
-            Master {report.masterContentHash.slice(0, 16)}… · A.T.L.A.S. revision{" "}
+            Master {report.masterContentHash.slice(0, 16)}… · Revision{" "}
             {report.atlasRevisionId} · {new Date(report.checkedAt).toLocaleString()}
           </p>
 

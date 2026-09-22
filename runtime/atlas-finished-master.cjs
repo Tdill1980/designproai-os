@@ -15,7 +15,7 @@ async function assembleFinishedMaster(masterBytes, manifest, finishedPanels) {
   const panels = Array.isArray(finishedPanels) ? finishedPanels : [];
   if (panels.length !== 6 || new Set(panels.map((panel) => panel.surfaceKey)).size !== 6
     || SURFACES.some((key) => !panels.some((panel) => panel.surfaceKey === key))) {
-    throw Object.assign(new Error("Finishing must preserve all six original ATLAS surfaces"), { code: "flat_atlas_finished_surface_set_invalid" });
+    throw Object.assign(new Error("Finishing must preserve all six original surfaces"), { code: "flat_atlas_finished_surface_set_invalid" });
   }
   if (!panels.some((panel) => panel.finish?.applied === true)) {
     return { contract: CONTRACT, bytes: masterBytes, contentHash: sha256(masterBytes), changed: false };

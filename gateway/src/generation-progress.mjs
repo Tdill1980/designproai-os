@@ -180,9 +180,9 @@ export function publicGenerationProgress(snapshot) {
   const stages = [
     {
       key: "generation.artwork",
-      label: "ATLAS artwork",
+      label: "Print master",
       explanation: masterSaved
-        ? "Your ATLAS artwork has been saved. Vehicle proofs and production checks continue separately."
+        ? "Your print master has been saved. Vehicle proofs and production checks continue separately."
         : "Creating your artwork for the six vehicle surfaces.",
       state: masterSaved
         ? "complete"

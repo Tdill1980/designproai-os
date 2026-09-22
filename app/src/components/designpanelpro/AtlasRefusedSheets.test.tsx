@@ -38,7 +38,7 @@ describe("refused ATLAS candidates on the failure screen", () => {
     const html = renderToStaticMarkup(<AtlasRefusedSheets refusals={refusals} status="success" />);
     expect(html).toContain("why each sheet was refused (2)");
     expect(html).toContain('src="https://dp-project.supabase.co/storage/v1/object/sign/wrap-files/sheet?token=one"');
-    expect(html).toContain("Six-surface ATLAS sheet · try 2");
+    expect(html).toContain("Six-surface sheet · try 2");
     expect(html).toContain("vehicle shapes cut out of the panel");
     expect(html).toContain("one wheel/glass/bed shape cut out of the panel");
     // The field candidate had no signed URL: listed with its verdict, no <img>.

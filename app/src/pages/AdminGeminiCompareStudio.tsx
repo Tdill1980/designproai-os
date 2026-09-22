@@ -972,7 +972,7 @@ function SurfacePairRows({
         </div>
         <div className="text-[11px] text-gray-500">
           Left is that side's 3D proof. Right publishes the canonical Call&nbsp;1
-          A.T.L.A.S. source immediately, then identifies the Call&nbsp;9 promoted
+          source immediately, then identifies the Call&nbsp;9 promoted
           production artifact when it exists. Print rectangles include background
           artwork through installation cut areas; masks belong to the review overlay.
         </div>
@@ -1382,7 +1382,7 @@ function JobHeader({
           ["Revision ID", history.current?.revisionId || job.revision_id || "—"],
           ["Design Order #", job.order_number || awaitingPurchase],
           ["Customer vehicle", vehicle || "—"],
-          ["Current A.T.L.A.S. version", history.current ? `V${history.current.version}` : "—"],
+          ["Current version", history.current ? `V${history.current.version}` : "—"],
           ["Job status", `${job.state}${job.current_stage ? ` · ${job.current_stage}` : ""}`],
           ["Created", exactTimestamp(job.created_at)],
         ].map(([label, value]) => (
@@ -1416,7 +1416,7 @@ function JobHeader({
         </div>
         {history.versions.length === 0 ? (
           <p className="text-[11px] text-gray-500">
-            No A.T.L.A.S. revision has been recorded for this design yet.
+            No revision has been recorded for this design yet.
           </p>
         ) : (
           <ol className="space-y-1.5">
@@ -1834,7 +1834,7 @@ function SurfaceQcPanel({
                       It is never a tick and never counts toward the thirteen. */}
                   {row.evidence && (
                     <ul className="mb-3 space-y-0.5 rounded bg-gray-50 p-2 text-[10px] text-gray-600">
-                      <li>Panel is from the selected A.T.L.A.S. version: {row.evidence.derived.version ? "yes" : "no"}</li>
+                      <li>Panel is from the selected version: {row.evidence.derived.version ? "yes" : "no"}</li>
                       <li>Proof and panel share one master: {row.evidence.derived.lineage ? "yes" : "no"}</li>
                       <li>
                         Effective resolution:{" "}
@@ -1878,7 +1878,7 @@ function SurfaceQcPanel({
                       {row.complete && !row.approvable && (
                         <p className="rounded bg-amber-50 p-2 text-[10px] text-amber-800">
                           The checklist is complete, but this panel does not bind
-                          to the selected A.T.L.A.S. version and its proof. The
+                          to the selected version and its proof. The
                           server refuses the approval for the same reason.
                         </p>
                       )}

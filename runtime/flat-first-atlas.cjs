@@ -395,7 +395,7 @@ function normalizedGeometryAuthority(authority) {
     };
   }
   if (authority.contract !== GEOMETRY_AUTHORITY_CONTRACT) {
-    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority contract is invalid");
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "Geometry authority contract is invalid");
   }
   // THREE PROVENANCE CLASSES, NOT TWO.
   //
@@ -420,13 +420,13 @@ function normalizedGeometryAuthority(authority) {
     || (status === "validated" && authority.operatorValidated !== true)
     || (status === "genie-catalog" && authority.operatorValidated !== false)
     || (status === "provisional" && (authority.operatorValidated !== false || !authority.estimatorContract))) {
-    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "A.T.L.A.S. geometry authority state is invalid");
+    throw new FlatAtlasError("flat_atlas_geometry_authority_invalid", "Geometry authority state is invalid");
   }
   const sourceUrls = Array.isArray(authority.sourceUrls)
     ? [...new Set(authority.sourceUrls.map(String).filter((url) => /^https:\/\//.test(url)))]
     : [];
   if (status === "provisional" && (!authority.candidateId || !sourceUrls.length)) {
-    throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional A.T.L.A.S. geometry requires a candidate identity and citations");
+    throw new FlatAtlasError("flat_atlas_provisional_authority_incomplete", "Provisional geometry requires a candidate identity and citations");
   }
   // A measured row must say WHICH row, or the dimensions on the panels cannot be
   // traced back to anything.
@@ -2279,7 +2279,7 @@ function assertMasterRequestWithinLimit(parts, maxBytes = MASTER_REQUEST_MAX_BYT
   if (byteSize > boundedMax) {
     throw new FlatAtlasError(
       "flat_atlas_master_request_too_large",
-      `The one A.T.L.A.S. design request is ${byteSize} bytes, above the bounded ${boundedMax}-byte Gemini request budget`,
+      `The one Call 1 design request is ${byteSize} bytes, above the bounded ${boundedMax}-byte Gemini request budget`,
     );
   }
   return byteSize;
@@ -2867,7 +2867,7 @@ function assertAtlasGeometryBasis(atlas, expectedManifestHash) {
   if (atlas?.manifestAsset?.contentHash !== expectedManifestHash) {
     throw new FlatAtlasError(
       "flat_atlas_geometry_basis_changed",
-      "The immutable A.T.L.A.S. geometry basis changed; start a new design revision instead of reusing stale artwork",
+      "The immutable geometry basis changed; start a new design revision instead of reusing stale artwork",
     );
   }
   return atlas;
@@ -2903,7 +2903,7 @@ function assertAtlasReuseContract(atlas, {
   if (!current) {
     throw new FlatAtlasError(
       "flat_atlas_master_contract_stale",
-      "The saved A.T.L.A.S. master predates the current DesignPanel prompt/provider/master-QC contract; start a new design request instead of reusing it",
+      "The saved print master predates the current DesignPanel prompt/provider/master-QC contract; start a new design request instead of reusing it",
     );
   }
   return atlas;
@@ -3637,7 +3637,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   }
   if (existing) {
     if (reservedRevisionId && existing.revisionId !== reservedRevisionId) {
-      throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved ATLAS does not match the identity reserved for this request");
+      throw new FlatAtlasError("flat_atlas_reserved_revision_conflict", "The saved print master does not match the identity reserved for this request");
     }
     if (existing.revisionSequence !== revisionSequence || existing.parentRevisionId !== parentRevisionId
       || (existing.metadata?.revisionContextHash ?? null) !== revisionContextHash) {
@@ -4161,7 +4161,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
     if (attempt === maxAuthoringAttempts) {
       const refusal = new FlatAtlasError(
         refusalCode,
-        (`The flattened A.T.L.A.S. design call failed acceptance ${attempt} times. `
+        (`The Call 1 design call failed acceptance ${attempt} times. `
           + (rawCandidates ? `Raw candidates: ${rawCandidates}. ` : "")
           + refusalReason).slice(0, 1000),
       );

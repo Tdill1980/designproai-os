@@ -1251,7 +1251,7 @@ function StoredOrGenerated2DProof({
       const code = String(error?.message || error);
       if (code === "flat_first_production_gate_required" || code === "generation_not_ready_for_production") {
         toast.error(
-          "The A.T.L.A.S. master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
+          "The print master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
         );
         return;
       }

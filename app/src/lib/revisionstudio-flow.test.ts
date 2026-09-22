@@ -35,7 +35,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     expect(api.createGenerationRequest).not.toHaveBeenCalled();
   });
   it("refuses an unknown named parent and a receipt for another design, without starting a fresh generation", async () => {
-    expect(() => revisionParent([current, parent], parent.generationId, "missing")).toThrow(/selected ATLAS/);
+    expect(() => revisionParent([current, parent], parent.generationId, "missing")).toThrow(/selected design version/);
     api.createGenerationRevision.mockResolvedValue({ ...receipt, generationId: "other" });
     await expect(submitDesignRevision(input())).rejects.toThrow(/existing design and parent/);
     expect(api.createGenerationRequest).not.toHaveBeenCalled();

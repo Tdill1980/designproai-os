@@ -331,8 +331,8 @@ export default function GenerateDesign() {
       .catch((cause) => {
         setAtlasLoadError(
           cause instanceof ApiError
-            ? `The A.T.L.A.S. record could not be loaded (${cause.code}).`
-            : "The A.T.L.A.S. record could not be loaded.",
+            ? `The design record could not be loaded (${cause.code}).`
+            : "The design record could not be loaded.",
         );
       });
   }, [requestId, isAtlasRequest]);
@@ -390,7 +390,7 @@ export default function GenerateDesign() {
   async function regenerate(role: RenderRole, instruction: string) {
     if (!requestId) return;
     if (isAtlasRequest) {
-      setError("An A.T.L.A.S. proof cannot be regenerated independently. Start a new A.T.L.A.S. run.");
+      setError("A proof cannot be regenerated on its own. Start a new design.");
       return;
     }
     setBusy(true);
@@ -444,7 +444,7 @@ export default function GenerateDesign() {
 
       setProgress(
         pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-          ? "Queueing the canonical A.T.L.A.S. master and seven proof views…"
+          ? "Queueing the print master and seven proof views…"
           : "Queueing the seven-view generation…",
       );
       setRequest(
@@ -521,7 +521,7 @@ export default function GenerateDesign() {
           <Panel
             className="order-1"
             eyebrow="DesignProAI operating system"
-            title="One A.T.L.A.S. artifact graph"
+            title="One artifact graph"
             description="One prepared vehicle manifest drives one canonical master, six extracted panels, seven matched 3D proofs, and the production handoff."
           />
 
@@ -639,7 +639,7 @@ export default function GenerateDesign() {
                     </Notice>
                   ) : (
                     <Notice tone="warning">
-                      Vehicle received. GENIE needs an exact configuration match; A.T.L.A.S. will keep this geometry provisional and production-locked until it is validated.
+                      Vehicle received. GENIE needs an exact configuration match; Call 1 will keep this geometry provisional and production-locked until it is validated.
                     </Notice>
                   )
                 )}
@@ -650,7 +650,7 @@ export default function GenerateDesign() {
           <Panel
             className="order-5"
             eyebrow="Design identity"
-            description="This name stays bound to the A.T.L.A.S. master, six panels, seven proofs, and production artifacts."
+            description="This name stays bound to the print master, six panels, seven proofs, and production artifacts."
           >
             <Field label="Design name" name="designName" maxLength={240} required wide />
           </Panel>
@@ -663,7 +663,7 @@ export default function GenerateDesign() {
               {busy
                 ? "Working…"
                 : pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-                  ? "Generate A.T.L.A.S. + seven proofs"
+                  ? "Generate print master + seven proofs"
                   : "Generate seven views"}
             </Button>
           </div>
@@ -722,9 +722,9 @@ export default function GenerateDesign() {
 
           {isAtlasRequest && (
             <Panel
-              eyebrow="A.T.L.A.S. · immutable lineage"
+              eyebrow="Call 1 · immutable lineage"
               title={latestAtlas ? `Revision ${latestAtlas.revisionSequence}` : "Building the canonical master"}
-              description="The guide is the deterministic before state. The master is Gemini's single painted A.T.L.A.S. and the only visual source passed into the seven proof calls."
+              description="The guide is the deterministic before state. The master is the single painted print master and the only visual source passed into the seven proof calls."
               aside={
                 <StatePill state={latestAtlas ? "ready" : request.state === "failed" ? "failed" : "running"} />
               }
@@ -761,7 +761,7 @@ export default function GenerateDesign() {
                   <FlatAtlasPanelSchedule panels={latestAtlas.panelMap} className="sm:col-span-2" />
                 </div>
               ) : request.state === "failed" ? (
-                <Notice tone="error">No A.T.L.A.S. master was promoted. Nothing was handed to production.</Notice>
+                <Notice tone="error">No print master was promoted. Nothing was handed to production.</Notice>
               ) : (
                 <Loading label="Waiting for the runtime to store and sign the guide and canonical master…" />
               )}
@@ -787,7 +787,7 @@ export default function GenerateDesign() {
                   onRegenerate={(instruction) => regenerate(role, instruction)}
                   regenerationDisabledReason={
                     isAtlasRequest
-                      ? "A.T.L.A.S. authority is locked. Start a new A.T.L.A.S. run to regenerate its master and seven-view proof set."
+                      ? "The design authority is locked. Start a new design to regenerate its master and seven-view proof set."
                       : role === "hero3d"
                         ? "This immutable historical Hero proof is read-only and cannot be regenerated."
                         : undefined

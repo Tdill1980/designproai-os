@@ -164,7 +164,7 @@ export function revisionParent(
     ? candidates.find((revision) => revision.id === requestedId)
     : [...candidates].sort((left, right) => right.revisionSequence - left.revisionSequence)[0];
   if (!parent || !/^[a-f0-9]{64}$/i.test(parent.master?.contentHash || "")) {
-    throw new Error("The selected ATLAS version could not be verified. Reload its version history before revising.");
+    throw new Error("The selected design version could not be verified. Reload its version history before revising.");
   }
   return parent;
 }

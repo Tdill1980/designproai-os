@@ -3817,7 +3817,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
             if (SHA256_PATTERN.test(claimedMaster) && claimedMaster !== panelMaster) {
               return json(res, 409, {
                 error: "surface_qc_atlas_version_mismatch",
-                detail: "This panel was cut from a different A.T.L.A.S. version than the one selected.",
+                detail: "This panel was cut from a different design version than the one selected.",
               });
             }
             const views = await approvedViewsForRun(fetchImpl, token, cfg, run, user.id).catch(() => []);

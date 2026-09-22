@@ -373,7 +373,7 @@ function generationIdentity(claim) {
     || (reserved && (!identity.atlasRevisionId || !identity.handoffRevisionId
       || identity.designId !== expectedDesignId || !identity.atlasIdentityMintedAt
       || !Number.isFinite(Date.parse(identity.atlasIdentityMintedAt))));
-  if (invalid) throw Object.assign(new Error("The claimed ATLAS identity differs from its reserved design"), {
+  if (invalid) throw Object.assign(new Error("The claimed design identity differs from its reserved design"), {
     code: "generation_reserved_identity_invalid", retryable: false,
   });
   // Older claims had neither field. Retain their deterministic handoff fallback;
@@ -583,7 +583,7 @@ const ATLAS_VIEW_ROLES = Object.freeze({
 });
 
 function atlasLineageError(reason) {
-  return Object.assign(new Error(`A.T.L.A.S. proof lineage is invalid: ${reason}`), {
+  return Object.assign(new Error(`Proof lineage is invalid: ${reason}`), {
     code: "generation_atlas_lineage_invalid",
     retryable: false,
   });
@@ -817,7 +817,7 @@ async function runAtlasProofStages({
   slots,
 }) {
   if (!provider?.generateImage || typeof provider.hydrateDriver !== "function") {
-    throw new Error("A.T.L.A.S. requires the DesignPanel projection provider");
+    throw new Error("Call 1 requires the DesignPanel projection provider");
   }
   // A FULL SET STILL LEADS WITH DRIVER; A RETRY NEED NOT BE A FULL SET.
   //
@@ -830,13 +830,13 @@ async function runAtlasProofStages({
   // The full-set shape is still enforced, so the customer-facing run cannot
   // quietly start without Driver first and lose its priority.
   if (!Array.isArray(slots) || !slots.length) {
-    throw new Error("A.T.L.A.S. requires at least one proof slot");
+    throw new Error("Call 1 requires at least one proof slot");
   }
   if (slots.length === 7 && slots[0]?.sourceViewType !== "side") {
-    throw new Error("A.T.L.A.S. requires Driver first in a full seven-proof set");
+    throw new Error("Call 1 requires Driver first in a full seven-proof set");
   }
   if (slots.length > 7) {
-    throw new Error("A.T.L.A.S. accepts at most seven proof slots");
+    throw new Error("Call 1 accepts at most seven proof slots");
   }
 
   // PRIORITY IS NOT PREREQUISITE.
@@ -1138,7 +1138,7 @@ function createGenerationWorker({
           const slots = slotsFrom(plan, executionInput, instructions, atlas, [])
             .map((slot) => ({ ...slot, validate: validator }));
           if (slots.length !== 1) {
-            throw new Error(`A.T.L.A.S. progressive release could not resolve ${sourceViewType}`);
+            throw new Error(`Progressive release could not resolve ${sourceViewType}`);
           }
           return runAtlasProofStages({
             runRequest: engine.runRequest,
@@ -1222,7 +1222,7 @@ function createGenerationWorker({
           },
           onSurfaceReady: (release) => {
             const atlas = release?.atlas || progressiveAtlas;
-            if (!atlas) throw new Error("A.T.L.A.S. surface released before its master");
+            if (!atlas) throw new Error("Surface released before its master");
             const node = {
               atlas,
               prerequisites: [release.projectionReady, release.panelPersisted],
@@ -1282,7 +1282,7 @@ function createGenerationWorker({
         }
         const runs = await Promise.all(claim.viewPlan.map((entry) => {
           const task = progressiveProofRuns.get(entry.sourceViewType);
-          if (!task) throw new Error(`A.T.L.A.S. proof node ${entry.sourceViewType} was not released`);
+          if (!task) throw new Error(`Proof node ${entry.sourceViewType} was not released`);
           return task;
         }));
         result = combineAtlasProofRuns(runs, claim.viewPlan);

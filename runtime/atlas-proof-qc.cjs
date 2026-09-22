@@ -634,7 +634,7 @@ function rejectionFor(review, expected, confidenceThreshold) {
     .filter((field) => /Contract$/.test(field) && field !== "contract" && review[field] !== "pass" && review[field] !== "not_applicable")
     .map((field) => `${field}=${review[field]}`);
   const reason = [...statuses, ...modelReasons].join("; ").slice(0, 500)
-    || `A.T.L.A.S. proof inspection rejected ${expected.expectedView}`;
+    || `Proof inspection rejected ${expected.expectedView}`;
   // The inspector's own findings, addressed to the next attempt. Without this
   // the ladder re-sends a byte-identical prompt and re-rolls the same dice --
   // live evidence 2026-08-23: Hood and Close-Up were each rejected twice for
@@ -740,7 +740,7 @@ function createAtlasProofValidator({
         accepted: false,
         structuralInvalid: true,
         code: known ? error.code : "atlas_qc_preflight_failed",
-        reason: cleanText(known ? error.message : `A.T.L.A.S. proof preflight failed: ${error?.message || error}`, 500),
+        reason: cleanText(known ? error.message : `Proof preflight failed: ${error?.message || error}`, 500),
       };
     }
 
@@ -758,7 +758,7 @@ function createAtlasProofValidator({
           semanticDisposition: "unavailable",
           semanticCode: known ? error.code : "atlas_qc_analyzer_failed",
           semanticReason: cleanText(
-            known ? error.message : `A.T.L.A.S. proof inspector failed: ${error?.message || error}`,
+            known ? error.message : `Proof inspector failed: ${error?.message || error}`,
             500,
           ),
           semanticReview: null,

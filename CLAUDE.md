@@ -29,6 +29,37 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
+## 🚫 NO HUMAN-READ SURFACE SAYS "ATLAS" — AND THE IDENTIFIERS STAY (owner, Trish 2026-09-21/22)
+
+Owner, looking at the live PanelPro board: *"My 3-zone is Call 1. Delete ATLAS."*
+then *"Remove all atlas references."* #596 and #597 each removed a handful of
+labels by hand and each missed the next handful, because nothing looked for
+the word. Now something does: **`tests/no-atlas-on-human-surfaces.test.mjs`**
+scans `app/src` and `gateway/src`, strips comments, and fails on any
+`A.T.L.A.S.` or word-bounded `ATLAS` that can render, toast, throw to a
+screen or land in an alt/aria/title. Verified to fail against the pre-fix
+tree (it listed 27 strings across 11 files the two hand passes had missed,
+including six multi-line JSX texts no grep for a quote could see).
+
+The words to use instead: **print master** (the sheet), **Call 1** (the
+step), **design / revision** (the lineage). Runtime error MESSAGES that reach
+a screen (StageError text, worker refusals, proof-QC reasons) were rewritten
+in the same change; runtime PROMPT text that names A.T.L.A.S. to the model is
+hash-pinned and untouched.
+
+**The scope line, and do not cross it:** this is copy, not a rename. Table
+names (`designpro_atlas_call1_runs`), storage paths (`atlas-call1-inputs/…`),
+env flags (`DESIGNPRO_ATLAS_*`), stage keys, edge modes (`atlas-artboard`),
+identifiers (`atlasBinding`, `isAtlas`, `AtlasRefusal`) and file names all
+stay. Renaming any of them touches stored rows and the deployed edge
+function, and removes no confusion a customer can see. The lock is
+case-sensitive and word-bounded precisely so it never asks for that.
+
+**"Powered by Atlas" is NOT in scope and NOT removed.** It is the owner's own
+brand ruling of 2026-09-16 (section above, `os-brand.ts`, locked by
+`tests/os-brand-naming.test.mjs`). Mixed case, so the lock does not match it.
+If the owner retires the tagline, change the brand file — not this lock.
+
 ## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND OFF FOR CUSTOMERS (2026-09-19)
 
 Owner, on the architecture: *"Production panel proof is source it has the 3
