@@ -206,7 +206,9 @@ test("QC scope per purchase state", () => {
 });
 
 test("output.verify proves the purchased set and only that", () => {
-  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 24);
+  assert.equal(manifestFor(["print_pack_entitlement"]).requiredOutputFiles, 30,
+    "six surfaces times PNG, TIFF, EPS, PDF and JPG");
+  assert.deepEqual([...manifestFor(["print_pack_entitlement"]).outputFormats], ["png", "tiff", "eps", "pdf", "jpg"]);
   assert.equal(manifestFor(["logo_pack"]).requiredOutputFiles, 0);
   assert.match(claimant, /if \(!authorized\.requiredOutputFiles\) \{/);
   assert.match(claimant, /output_unpurchased_present/,
@@ -224,7 +226,13 @@ test("new paid builds require PDF while immutable completed legacy builds stay r
   assert.throws(() => _test.authorizedOutputFormats(current, built), /immutable completed build receipt/);
   const upgraded = { ...built, outputCount: 24, outputFormatContract: "designpro.production-formats.v2", outputFormats: ["png", "tiff", "eps", "pdf"] };
   assert.equal(_test.authorizedOutputFormats(legacy, upgraded).requiredOutputFiles, 24,
-    "a previously purchased but unbuilt run receives PDF from the new builder");
+    "a pack completed under the v2 contract is verified as the twenty-four it was built as, not as thirty");
+  assert.equal(_test.authorizedOutputFormats(legacy, upgraded).outputFormatContract, "designpro.production-formats.v2");
+  const withJpg = { ...built, outputCount: 30, outputFormatContract: "designpro.production-formats.v3", outputFormats: ["png", "tiff", "eps", "pdf", "jpg"] };
+  assert.equal(_test.authorizedOutputFormats(legacy, withJpg).requiredOutputFiles, 30,
+    "a previously purchased but unbuilt run receives the JPG from the new builder");
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputCount: 24 }), /immutable completed build receipt/);
+  assert.throws(() => _test.authorizedOutputFormats(legacy, { ...withJpg, outputFormatContract: "designpro.production-formats.v9" }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...upgraded, outputCount: 18 }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, verified: false }), /immutable completed build receipt/);
   assert.throws(() => _test.authorizedOutputFormats(legacy, { ...built, outputSetHash: null }), /immutable completed build receipt/);
@@ -250,8 +258,20 @@ test("the ZIP carries the purchased deliverable and not the other one", () => {
 });
 
 test("delivery ships only authorized artifacts and keeps the products distinct", () => {
-  assert.match(claimant, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/,
-    "Call 10 logos exist for the preview; a Production-Pack-only run must not deliver them");
+  // THE LEDGER IS STATED; THE PRODUCT IS NOT DELIVERED. This used to pin
+  // `authorized.logoPackAuthorized ? await artifacts(...) : []`, which kept the
+  // separated logos OUT of the manifest on a Production-Pack-only run. Both
+  // readers of the manifest -- `validateManifest` in wrapbox-delivery.cjs and
+  // `commit_designpro_wrapbox_pack` -- require the full Call 10 ledger, so on the
+  // first run whose brief carried a logo (de0cdc52, five logos, Production Pack
+  // only) the reconciler refused with wrapbox_manifest_logo_mismatch and no
+  // WrapBox pack row or customer email was ever created. The manifest names the
+  // lineage; delivery of the logo BYTES is decided by `zipKinds`, which still
+  // carries `logo` only when the Logo Pack was bought (asserted above).
+  assert.match(claimant, /const logoRows = await artifacts\(sb, run\.id, \["logo"\]\);/,
+    "the WrapBox manifest states the immutable Call 10 ledger regardless of purchase");
+  assert.doesNotMatch(claimant, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/,
+    "a purchase-scoped ledger makes the publisher refuse every run with a logo");
   assert.match(claimant, /const expectedSourceViews = authorized\.zipIncludesSourceViews \? 7 : 0/);
   assert.match(claimant, /products: authorized\.products, deliverables: authorized\.deliverables/);
   const both = manifestFor(["logo_pack", "print_pack_entitlement"]);

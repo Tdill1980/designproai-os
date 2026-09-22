@@ -29,6 +29,7 @@ import {
 } from "@/lib/designpro-api";
 import {
   EXPECTED_OUTPUT_FILES,
+  MIN_VERIFIED_OUTPUT_FILES,
   FINAL_CHECKS,
   OUTPUT_FORMATS,
   PACK_PRESENCE_CHECKS,
@@ -2383,15 +2384,15 @@ function ProductionPackSection({
             <Button
               size="sm"
               className="mt-2 gap-1.5"
-              disabled={!finalReady || job.outputs.length < EXPECTED_OUTPUT_FILES || busy === "final"}
+              disabled={!finalReady || job.outputs.length < MIN_VERIFIED_OUTPUT_FILES || busy === "final"}
               onClick={() => void submitFinal()}
             >
               <Check className="h-4 w-4" />
               {busy === "final" ? "Approving…" : "Approve Production Pack"}
             </Button>
-            {job.outputs.length < EXPECTED_OUTPUT_FILES && (
+            {job.outputs.length < MIN_VERIFIED_OUTPUT_FILES && (
               <p className="mt-1 text-[11px] text-gray-500">
-                All {EXPECTED_OUTPUT_FILES} output files have to exist before the pack can be approved.
+                Every verified output file has to exist before the pack can be approved (at least {MIN_VERIFIED_OUTPUT_FILES}; {EXPECTED_OUTPUT_FILES} on the current contract).
               </p>
             )}
           </>

@@ -24,7 +24,7 @@ const {
 // served -- see `buildCall8Proof` and the fail-closed arm in `panels.build`.
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
-const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources, FORMATS: OUTPUT_FORMATS, LEGACY_FORMATS, OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT } = require("./output-qc.cjs");
+const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources, FORMATS: OUTPUT_FORMATS, LEGACY_FORMATS, OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT, JPEG_QUALITY, formatsForContract } = require("./output-qc.cjs");
 const { buildPanelProProductionPdf } = require("./panelpro-file-output-render.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -960,16 +960,24 @@ async function readAuthorizedAssets(sb, runId) {
 }
 
 function authorizedOutputFormats(authorized, built) {
+  // THE BUILD RECEIPT NAMES ITS TIER, AND EVERY TIER EVER SHIPPED RESOLVES.
+  //
+  // v1 receipts carried no contract at all (eighteen files); v2 named itself
+  // and carried twenty-four; v3 carries thirty. A completed pack is verified
+  // against the set it was actually built as -- never against whatever the
+  // runtime would build today -- so a v2 pack that has already passed final QC
+  // does not become "six files short" the day the JPG ships.
   const legacy = built?.outputFormatContract == null && authorized.outputFormatContract == null
     && authorized.requiredOutputFiles === 18 && built?.outputCount === 18;
-  const current = built?.outputFormatContract === OUTPUT_FORMAT_CONTRACT
-    && built.outputCount === SURFACE_KEYS.length * OUTPUT_FORMATS.length
-    && JSON.stringify(built.outputFormats) === JSON.stringify(OUTPUT_FORMATS);
-  if (built?.verified !== true || !HASH_RE.test(String(built?.outputSetHash || "")) || (!legacy && !current)) {
+  const contract = legacy ? LEGACY_OUTPUT_FORMAT_CONTRACT : built?.outputFormatContract;
+  const outputFormats = formatsForContract(contract);
+  const current = !legacy && outputFormats
+    && built.outputCount === SURFACE_KEYS.length * outputFormats.length
+    && JSON.stringify(built.outputFormats) === JSON.stringify(outputFormats);
+  if (built?.verified !== true || !HASH_RE.test(String(built?.outputSetHash || "")) || !outputFormats || (!legacy && !current)) {
     throw new StageError("output_build_format_contract_invalid", "Output formats require the immutable completed build receipt", false);
   }
-  const outputFormats = legacy ? LEGACY_FORMATS : OUTPUT_FORMATS;
-  return { ...authorized, outputFormatContract: legacy ? LEGACY_OUTPUT_FORMAT_CONTRACT : OUTPUT_FORMAT_CONTRACT,
+  return { ...authorized, outputFormatContract: contract,
     outputFormats, requiredOutputFiles: SURFACE_KEYS.length * outputFormats.length };
 }
 
@@ -1850,6 +1858,21 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     const png = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.png`, raster, "image/png");
     if (png.spool) spools.push(png.spool);
     produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, { format: "png", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    // THE JPG BESIDE EVERY PNG (owner, 2026-09-22). The same verified print
+    // rectangle -- trim plus 5" on every edge, full print geometry -- encoded
+    // once at quality 92 with no chroma subsampling, carrying the JFIF density
+    // and sRGB profile the verifier demands. It is bound to its PNG by hash so
+    // output.verify can refuse a JPG that is not that PNG's own pixels.
+    const jpgBytes = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb")
+      .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: "4:4:4" }).withMetadata({ density: 1500 }).toBuffer();
+    const jpg = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.jpg`, jpgBytes, "image/jpeg");
+    if (jpg.spool) spools.push(jpg.spool);
+    produced.push(artifact("output", jpg.storagePath, jpg.hash, jpg.bytes, panel.surface_key, {
+      format: "jpg", width, height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
+      jpegQuality: JPEG_QUALITY, sourcePngHash: png.hash, sourceEnhancedHash: panel.content_hash,
+      physicalWidthInches: width / 1500, physicalHeightInches: height / 1500,
+      productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
+    }));
     const pdfBytes = await buildPanelProProductionPdf({ png: raster, surfaceKey: panel.surface_key,
       trimWidthInches: Number(dims.widthInches), trimHeightInches: Number(dims.heightInches) });
     const pdf = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.pdf`, pdfBytes, "application/pdf");
@@ -2099,6 +2122,45 @@ function zipArtifactEntries(sb, rows) {
     entries.push({ name, byteSize: Number(row.byte_size), open: () => verifiedArtifactChunks(sb, row) });
   }
   return entries;
+}
+
+// Where a frozen Zone 3 asset may live, and nowhere else: the customer's own
+// uploaded logo under the revision it was uploaded to, or a content-addressed
+// element the compositor persisted. The filename IS the sha256, so a path
+// that names one hash and carries another is refused before a byte is read.
+const CUT_GRAPHIC_EXTENSIONS = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/svg+xml": "svg", "image/webp": "webp", "application/pdf": "pdf" });
+const CUT_GRAPHIC_PATH_RE = /^(?:atlas-elements|atlas-panel-proof\/quadrants|users\/[0-9a-f-]{36}\/revisions\/[0-9a-f-]{36}\/inputs\/logo)\/([0-9a-f]{64})\.(png|jpe?g|svg|webp|pdf)$/;
+
+/**
+ * The persisted Zone 3 cut graphics of a frozen three-zone proof, as archive
+ * files. An entry the compositor never persisted has no bytes to package and is
+ * skipped -- the proof sheet itself still shows it -- so an honest empty Zone 3
+ * yields an empty list rather than a refusal (#599). A persisted entry with a
+ * malformed identity is refused: packaging the wrong bytes under a logo's name
+ * is worse than packaging none.
+ */
+function cutGraphicArchiveFiles(cutGraphics) {
+  const files = [];
+  const names = new Set();
+  for (const [index, item] of (Array.isArray(cutGraphics) ? cutGraphics : []).entries()) {
+    if (!item || typeof item !== "object" || item.persisted !== true) continue;
+    const contentHash = String(item.contentHash || "").toLowerCase();
+    const storagePath = String(item.storagePath || "");
+    const match = CUT_GRAPHIC_PATH_RE.exec(storagePath);
+    const extension = CUT_GRAPHIC_EXTENSIONS[item.contentType];
+    const extensionMatches = match && (match[2] === extension || (extension === "jpg" && match[2] === "jpeg"));
+    if (!HASH_RE.test(contentHash) || !match || match[1] !== contentHash || !extensionMatches
+      || !Number.isSafeInteger(item.byteSize) || item.byteSize < 1) {
+      throw new StageError("zip_cut_graphic_identity_invalid", `cutGraphics[${index}] is not a persisted content-addressed Zone 3 asset`, false);
+    }
+    const role = String(item.assetRole || item.surfaceKey || "graphic").replace(/[^A-Za-z0-9_-]+/g, "-");
+    const archivePath = `proofs/cut-graphics/${role}-${contentHash.slice(0, 12)}.${extension}`;
+    if (names.has(archivePath)) throw new StageError("zip_entry_collision", archivePath, false);
+    names.add(archivePath);
+    files.push({ archivePath, kind: "cut-graphic", surfaceKey: role, storagePath, contentHash, byteSize: item.byteSize,
+      contentType: item.contentType, vector: item.vector === true, assetRole: item.assetRole ?? null });
+  }
+  return files;
 }
 
 function bufferZipEntry(name, bytes) {
@@ -3109,11 +3171,16 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       // A named panel-proof receipt must be complete; never silently omit it.
       if (Object.prototype.hasOwnProperty.call(frozen, "panelProofAuthoring")) {
         const proof = frozen.panelProofAuthoring;
+        // Zone 3 may honestly be EMPTY: a brief with no logo, no company name
+        // and no contact bar has no cut graphics to separate (#599 made that a
+        // degrade, not a refusal). The array must still exist -- a proof that
+        // cannot say what Zone 3 held is incomplete; one that says "nothing"
+        // is not.
         if (!proof || proof.contract !== "designpro.atlas-panel-proof-topology.v2"
           || proof.composition?.contract !== "designpro.production-zone-composite.v1"
           || proof.composition?.sourceAssetsPreserved !== true
           || proof.quadrants?.branded?.length !== 6 || proof.quadrants?.clean?.length !== 6
-          || !Array.isArray(proof.quadrants?.cutGraphics) || !proof.quadrants.cutGraphics.length
+          || !Array.isArray(proof.quadrants?.cutGraphics)
           || !HASH_RE.test(String(proof.proofSha256 || "")) || !HASH_RE.test(String(proof.masterSha256 || ""))
           || proof.masterSha256 !== frozen.sourceMasterContentHash
           || !Number.isSafeInteger(proof.proofByteSize) || proof.proofByteSize < 1
@@ -3123,8 +3190,14 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching print master", false);
         }
         const frozenFiles = [
-          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize },
-          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256 },
+          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize, contentType: "image/png" },
+          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256, contentType: "image/png" },
+          // ZONE 3 SHIPS WITH THE PACK. Every persisted cut graphic -- the
+          // customer's own logo, the typeset name, the contact bar -- goes in
+          // beside the sheet it was separated from, as the exact frozen bytes
+          // (SVG or raster) the compositor placed. Content-addressed and hash
+          // verified like the two sheets above; nothing is re-rendered.
+          ...cutGraphicArchiveFiles(proof.quadrants.cutGraphics),
         ];
         for (const file of frozenFiles) {
           // These content-addressed graph paths are intentionally outside the
@@ -3137,7 +3210,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
             || (file.byteSize !== undefined && bytes.length !== file.byteSize)) {
             throw new StageError("zip_call1_proof_changed", `${file.kind} bytes differ from the frozen Call 1 identity`, false);
           }
-          sourceProofFiles.push({ ...file, byteSize: bytes.length, contentType: "image/png", revisionSnapshotHash: run.revision_snapshot_hash });
+          sourceProofFiles.push({ ...file, byteSize: bytes.length, revisionSnapshotHash: run.revision_snapshot_hash });
           sourceProofEntries.push(bufferZipEntry(file.archivePath, bytes));
         }
       }
@@ -3171,7 +3244,8 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
-    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1 } : {}) };
+    const cutGraphicCount = sourceProofFiles.filter((file) => file.kind === "cut-graphic").length;
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1, "cut-graphic": cutGraphicCount } : {}) };
 
     // THE ZIP SAYS WHAT IS IN IT, FILE BY FILE. (Trish 2026-08-28)
     //
@@ -3205,7 +3279,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         contentHash: view.contentHash, byteSize: Number(view.byteSize) || null,
       })),
       ...panelProfileFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, role: file.role, surfaceKey: file.pieceId || null, contentHash: file.contentHash, byteSize: file.byteSize, attachmentId: file.attachmentId })),
-      ...sourceProofFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, surfaceKey: null, contentHash: file.contentHash, byteSize: file.byteSize })),
+      ...sourceProofFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, surfaceKey: file.surfaceKey ?? null, contentHash: file.contentHash, byteSize: file.byteSize })),
       { archivePath: dimensionArchivePath, kind: "dimension-manifest", surfaceKey: null, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length },
       { archivePath: businessIdentityArchivePath, kind: "design-order-identity", surfaceKey: null, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length },
     ];
@@ -3263,10 +3337,24 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       || zipReceipt.receipt?.businessIdentity?.designId !== businessIdentity.designId || zipReceipt.receipt?.businessIdentity?.orderNumber !== businessIdentity.orderNumber) {
       throw new StageError("delivery_business_identity_drift", "ZIP DesignID or Order # no longer matches the immutable revision", false);
     }
-    // Separated logos are the Logo Pack's deliverable. On a Production-Pack-only
-    // run they exist -- Call 10 produced them for the entice preview -- and must
-    // not be delivered.
-    const logoRows = authorized.logoPackAuthorized ? await artifacts(sb, run.id, ["logo"]) : [];
+    // THE MANIFEST STATES THE LOGO LEDGER; THE ZIP DECIDES WHAT IS DELIVERED.
+    //
+    // This read `authorized.logoPackAuthorized ? artifacts(...) : []`, on the
+    // theory that listing the separated logos on a Production-Pack-only run
+    // gave away the $29 product. The archive is where that line is drawn --
+    // `zipKinds` carries `logo` only when the Logo Pack was bought, and that
+    // is unchanged. The manifest is the immutable record of the lineage, and
+    // both readers of it require the ledger unconditionally: the runtime
+    // publisher compares `manifest.logos` to every `logo` artifact on this run
+    // (`validateManifest`, `wrapbox_manifest_logo_mismatch`) and
+    // `commit_designpro_wrapbox_pack` compares it to the Call 10 ledger of the
+    // entice run (`manifest_logo_inventory_does_not_match_ledger`). So on the
+    // first panel-proof run whose brief carried a logo -- de0cdc52,
+    // 2026-09-20, five separated logos, Production Pack only -- the stage
+    // completed, the reconciler refused the manifest, and no WrapBox pack row
+    // and no customer email ever existed. Every earlier completed run had zero
+    // logos, which is the only reason the mismatch never fired before.
+    const logoRows = await artifacts(sb, run.id, ["logo"]);
     const logos = logoRows.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey, storagePath: safePath(row.storage_path, "logo storagePath"), contentHash: row.content_hash, byteSize: row.byte_size, contentType: row.metadata?.contentType || null })).sort((left, right) => String(left.placementKey).localeCompare(String(right.placementKey)));
     const packRows = await artifacts(sb, run.id, [...new Set([...(authorized.delivery || []), ...(authorized.zipKinds || []), ...(authorized.productionPackAuthorized ? ["qc-panel"] : []), "zip"])]);
     const files = packRows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: safePath(row.storage_path, "pack storagePath"), contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`));

@@ -158,7 +158,13 @@ test("production preserves Call 10 logos through source verify, ZIP, and WrapBox
   // Pack. Call 10's logos still flow -- when the customer bought them.
   assert.match(claimantSource, /const rows = await artifacts\(sb, run\.id, zipKinds\)/);
   assert.match(claimantSource, /zipKinds: Object\.freeze\(\[[\s\S]{0,200}logos \? \["logo"\] : \[\]/);
-  assert.match(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
+  // The manifest states the full Call 10 ledger regardless of purchase: both
+  // `validateManifest` and `commit_designpro_wrapbox_pack` compare it to every
+  // logo artifact, and a purchase-scoped list made the publisher refuse the
+  // first run that carried a logo (de0cdc52). Logo BYTES still ship only via
+  // `zipKinds`, asserted just above.
+  assert.match(claimantSource, /const logoRows = await artifacts\(sb, run\.id, \["logo"\]\);/);
+  assert.doesNotMatch(claimantSource, /authorized\.logoPackAuthorized \? await artifacts\(sb, run\.id, \["logo"\]\) : \[\]/);
   assert.match(claimantSource, /contract: MANIFEST_CONTRACT[\s\S]*?logos,[\s\S]*?files/);
   assert.match(claimantSource, /revisionId: run\.revision_id, sourceEnticeRunId: sourceRunId, designId:/,
     "WrapBox must bind the manifest to executeProduction's validated source Entice run ID");

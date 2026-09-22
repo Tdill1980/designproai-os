@@ -72,22 +72,30 @@ export const PACK_PRESENCE_CHECKS: Array<[string, string]> = [
 ];
 
 export const FINAL_CHECKS: Array<[string, string]> = [
-  ["outputHashesVerified", "Every PNG, TIFF and EPS output hash matches the verified output receipt"],
+  ["outputHashesVerified", "Every PNG, JPG, TIFF, EPS and PDF output hash matches the verified output receipt"],
   ["printDimensionsVerified", "Final print dimensions, resolution and bleed match GENIE"],
   ["colorModeVerified", "Final production color-mode requirements are verified"],
 ];
 
 /**
  * Production output is three formats per printed surface — six surfaces times
- * PNG, TIFF and EPS is the eighteen verified files the final gate signs off.
+ * PNG, TIFF, EPS, PDF and JPG is the thirty verified files the final gate
+ * signs off (runtime `output-qc.cjs` FORMATS, contract v3). A pack completed
+ * under an earlier contract shows fewer, and the board counts what the run
+ * actually holds against this ceiling rather than hiding the older set.
  */
-export const OUTPUT_FORMATS = ["png", "tiff", "eps"] as const;
-export const EXPECTED_OUTPUT_FILES = 18;
+export const OUTPUT_FORMATS = ["png", "tiff", "eps", "pdf", "jpg"] as const;
+export const EXPECTED_OUTPUT_FILES = 30;
+/** The smallest output set `output.verify` still certifies (contract v2: png/tiff/eps/pdf × 6). A pack
+ * verified under an earlier tier is approvable; the server, not this constant, decided its exact count. */
+export const MIN_VERIFIED_OUTPUT_FILES = 24;
 
 export function outputFormatOf(storagePath: string): (typeof OUTPUT_FORMATS)[number] | null {
   const lower = storagePath.toLowerCase();
   if (lower.endsWith(".png")) return "png";
   if (lower.endsWith(".tiff")) return "tiff";
   if (lower.endsWith(".eps")) return "eps";
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".jpg")) return "jpg";
   return null;
 }

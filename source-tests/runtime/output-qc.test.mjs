@@ -11,6 +11,7 @@ const {
   FIXED_ZIP_DATE,
   FIXED_ZIP_MODE,
   FORMATS,
+  JPEG_QUALITY,
   SURFACES,
   buildDeterministicRasterEps,
   buildDeterministicZip,
@@ -77,6 +78,21 @@ function corruptFirstIdatWithValidCrc(bytes) {
   throw new Error("fixture contains no usable IDAT chunk");
 }
 
+// Drop every APP2 ICC_PROFILE segment from a JPEG, leaving the rest byte for byte.
+function stripJpegIcc(bytes) {
+  const parts = [bytes.subarray(0, 2)];
+  let offset = 2;
+  while (offset + 4 <= bytes.length && bytes[offset] === 0xff && bytes[offset + 1] !== 0xda) {
+    const length = bytes.readUInt16BE(offset + 2);
+    const end = offset + 2 + length;
+    const isIcc = bytes[offset + 1] === 0xe2 && bytes.toString("ascii", offset + 4, offset + 16) === "ICC_PROFILE\0";
+    if (!isIcc) parts.push(bytes.subarray(offset, end));
+    offset = end;
+  }
+  parts.push(bytes.subarray(offset));
+  return Buffer.concat(parts);
+}
+
 function expectCode(code) {
   return (error) => {
     assert.equal(error?.code, code, error?.stack || String(error));
@@ -103,25 +119,29 @@ before(async () => {
     rgb[offset + 2] = 194;
   }
   const eps = buildDeterministicRasterEps({ rgb, widthPixels, heightPixels, trimWidthInches, trimHeightInches });
-  formatBytes = { png, tiff, eps };
+  // The JPG the way output.build makes it: the PNG's pixels, quality 92, no
+  // chroma subsampling, JFIF density and the sRGB profile carried through.
+  const jpg = await sharp(png).removeAlpha().toColourspace("srgb").jpeg({ quality: JPEG_QUALITY, chromaSubsampling: "4:4:4" }).withMetadata({ density: FILE_DPI }).toBuffer();
+  formatBytes = { png, tiff, eps, jpg };
   validArtifacts = [];
   for (const surfaceKey of SURFACES) {
     const pdf = await buildPanelProProductionPdf({ png, surfaceKey, trimWidthInches, trimHeightInches });
     for (const format of FORMATS) {
       const row = artifact(surfaceKey, format, format === "pdf" ? pdf : formatBytes[format]);
-      if (format === "pdf") row.metadata.sourcePngHash = sha256(png);
+      if (format === "pdf" || format === "jpg") row.metadata.sourcePngHash = sha256(png);
       validArtifacts.push(row);
     }
   }
 });
 
-test("accepts exactly six surfaces times PNG/TIFF/EPS/PDF and returns a canonical stable receipt", async () => {
+test("accepts exactly six surfaces times PNG/TIFF/EPS/PDF/JPG and returns a canonical stable receipt", async () => {
   const first = await verifyProductionOutputSet({ artifacts: validArtifacts, dimensionManifest });
   const second = await verifyProductionOutputSet({ artifacts: [...validArtifacts].reverse(), dimensionManifest });
   assert.equal(first.verified, true);
-  assert.equal(first.fileCount, 24);
+  assert.equal(first.fileCount, 30);
   assert.deepEqual(first.exactSurfaceSet, ["driver", "passenger", "hood", "roof", "front", "rear"]);
-  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps", "pdf"]);
+  assert.deepEqual(first.exactFormatSet, ["png", "tiff", "eps", "pdf", "jpg"]);
+  assert.equal(first.jpegQuality, 92);
   assert.equal(first.outputSetHash, second.outputSetHash);
   assert.deepEqual(first.files.map(({ surfaceKey, format }) => `${surfaceKey}:${format}`), SURFACES.flatMap((surface) => FORMATS.map((format) => `${surface}:${format}`)));
   assert.ok(first.files.every((file) => file.widthPixels === widthPixels && file.heightPixels === heightPixels && file.dpi === 1500 && file.colorSpace === "sRGB"));
@@ -131,7 +151,39 @@ test("supports server-side byte loading without trusting artifact metadata", asy
   const rows = validArtifacts.map(({ bytes, ...row }) => row);
   const byPath = new Map(validArtifacts.map((row) => [row.storagePath, row.bytes]));
   const receipt = await verifyProductionOutputSet({ artifacts: rows, dimensionManifest, readBytes: async (row) => byPath.get(row.storagePath) });
-  assert.equal(receipt.fileCount, 24);
+  assert.equal(receipt.fileCount, 30);
+});
+
+test("JPG is the verified PNG's pixels in a second container: bound by hash, 1500 DPI JFIF, embedded sRGB", async () => {
+  const jpgIndex = validArtifacts.findIndex((row) => row.surfaceKey === "driver" && row.metadata.format === "jpg");
+  const unbound = cloneArtifacts();
+  delete unbound[jpgIndex].metadata.sourcePngHash;
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: unbound, dimensionManifest }), expectCode("output_jpg_source_mismatch"));
+  const otherPng = cloneArtifacts();
+  otherPng[jpgIndex].metadata.sourcePngHash = "0".repeat(64);
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: otherPng, dimensionManifest }), expectCode("output_jpg_source_mismatch"));
+  const wrongMagic = cloneArtifacts();
+  replaceBytes(wrongMagic[jpgIndex], formatBytes.png);
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: wrongMagic, dimensionManifest }), expectCode("output_jpg_magic_invalid"));
+  const lowDensity = cloneArtifacts();
+  replaceBytes(lowDensity[jpgIndex], await sharp(formatBytes.png).jpeg({ quality: JPEG_QUALITY }).withMetadata({ density: 300 }).toBuffer());
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: lowDensity, dimensionManifest }), expectCode("output_jpg_density_invalid"));
+  const noProfile = cloneArtifacts();
+  replaceBytes(noProfile[jpgIndex], await sharp(formatBytes.png).jpeg({ quality: JPEG_QUALITY }).withMetadata({ density: FILE_DPI, icc: undefined }).toBuffer().then(stripJpegIcc));
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: noProfile, dimensionManifest }), expectCode("output_jpg_srgb_missing"));
+  const wrongGeometry = cloneArtifacts();
+  replaceBytes(wrongGeometry[jpgIndex], await sharp({ create: { width: widthPixels + 1, height: heightPixels, channels: 3, background: "red" } }).jpeg({ quality: JPEG_QUALITY }).withMetadata({ density: FILE_DPI }).toBuffer());
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts: wrongGeometry, dimensionManifest }), expectCode("output_raster_geometry_invalid"));
+});
+
+test("a completed v2 pack still verifies as exactly twenty-four files under its own frozen contract", async () => {
+  const artifacts = validArtifacts.filter((row) => row.metadata.format !== "jpg");
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts, dimensionManifest }), expectCode("output_artifact_count_invalid"));
+  const verified = await verifyProductionOutputSet({ artifacts, dimensionManifest, outputFormatContract: "designpro.production-formats.v2" });
+  assert.equal(verified.fileCount, 24);
+  assert.deepEqual(verified.exactFormatSet, ["png", "tiff", "eps", "pdf"]);
+  assert.equal(verified.jpegQuality, undefined, "a v2 receipt keeps its pre-JPG shape and hash");
+  await assert.rejects(() => verifyProductionOutputSet({ artifacts, dimensionManifest, outputFormatContract: "designpro.production-formats.v9" }), expectCode("output_format_contract_invalid"));
 });
 
 test("PDF reuses exact PNG pixels with tenth-scale trim and five-inch bleed geometry", () => {
@@ -164,7 +216,7 @@ test("PDF cannot be replaced by PNG and cannot omit its source identity", async 
 });
 
 test("legacy eighteen-file output requires an explicit frozen legacy format contract", async () => {
-  const artifacts = validArtifacts.filter((row) => row.metadata.format !== "pdf");
+  const artifacts = validArtifacts.filter((row) => row.metadata.format !== "pdf" && row.metadata.format !== "jpg");
   await assert.rejects(() => verifyProductionOutputSet({ artifacts, dimensionManifest }), expectCode("output_artifact_count_invalid"));
   const verified = await verifyProductionOutputSet({ artifacts, dimensionManifest, outputFormatContract: "designpro.production-formats.v1" });
   assert.equal(verified.fileCount, 18);

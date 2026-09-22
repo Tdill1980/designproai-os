@@ -7,10 +7,31 @@ const sharp = require("sharp");
 const { buildPanelProProductionPdf } = require("./panelpro-file-output-render.cjs");
 
 const SURFACES = Object.freeze(["driver", "passenger", "hood", "roof", "front", "rear"]);
-const FORMATS = Object.freeze(["png", "tiff", "eps", "pdf"]);
+// THE FORMAT SET IS VERSIONED, AND EVERY VERSION EVER SHIPPED STAYS VERIFIABLE.
+//
+// v1 shipped PNG/TIFF/EPS, v2 added the PDF, v3 adds a JPG beside every PNG
+// (owner, 2026-09-22: "files created with 5\" bleed and png, and jpg, to zip
+// file, to WrapBox"). A completed output.build receipt binds the contract it
+// was built under, so a pack finished on v2 still verifies as exactly
+// twenty-four files; only a NEW build produces thirty. The JPG is a quality-92
+// sRGB encode of the verified PNG's own pixels -- the same raster, a second
+// container -- and it is bound to that PNG by hash, never accepted on its own.
+const FORMATS = Object.freeze(["png", "tiff", "eps", "pdf", "jpg"]);
+const PDF_FORMATS = Object.freeze(["png", "tiff", "eps", "pdf"]);
 const LEGACY_FORMATS = Object.freeze(["png", "tiff", "eps"]);
-const OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v2";
+const OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v3";
+const PDF_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v2";
 const LEGACY_OUTPUT_FORMAT_CONTRACT = "designpro.production-formats.v1";
+const FORMAT_CONTRACTS = Object.freeze({
+  [OUTPUT_FORMAT_CONTRACT]: FORMATS,
+  [PDF_OUTPUT_FORMAT_CONTRACT]: PDF_FORMATS,
+  [LEGACY_OUTPUT_FORMAT_CONTRACT]: LEGACY_FORMATS,
+});
+const JPEG_QUALITY = 92;
+
+function formatsForContract(contract) {
+  return Object.prototype.hasOwnProperty.call(FORMAT_CONTRACTS, String(contract)) ? FORMAT_CONTRACTS[contract] : null;
+}
 const FULL_SCALE_PIXELS_PER_INCH = 150;
 const FILE_DPI = 1500;
 const OUTPUT_SCALE = 0.1;
@@ -255,6 +276,101 @@ function parseTiff(bytes) {
   };
 }
 
+/**
+ * Read XResolution / YResolution / ResolutionUnit out of an EXIF TIFF block.
+ * Returns null when the block carries no resolution; throws only on a block
+ * that is structurally broken. Units are normalized to the JFIF vocabulary
+ * (1 = dots per inch) so the caller has one comparison.
+ */
+function parseExifResolution(tiff) {
+  if (tiff.length < 8) return null;
+  const order = tiff.toString("ascii", 0, 2);
+  if (order !== "II" && order !== "MM") return null;
+  const little = order === "II";
+  const u16 = (offset) => (offset + 2 <= tiff.length ? (little ? tiff.readUInt16LE(offset) : tiff.readUInt16BE(offset)) : fail("output_jpg_truncated", "EXIF block is truncated"));
+  const u32 = (offset) => (offset + 4 <= tiff.length ? (little ? tiff.readUInt32LE(offset) : tiff.readUInt32BE(offset)) : fail("output_jpg_truncated", "EXIF block is truncated"));
+  if (u16(2) !== 42) return null;
+  const ifd = u32(4);
+  const count = u16(ifd);
+  const values = {};
+  for (let index = 0; index < count; index += 1) {
+    const entry = ifd + 2 + index * 12;
+    const tag = u16(entry);
+    const type = u16(entry + 2);
+    if (tag === 0x011a || tag === 0x011b) {
+      if (type !== 5) continue;
+      const at = u32(entry + 8);
+      const denominator = u32(at + 4);
+      values[tag] = denominator ? u32(at) / denominator : NaN;
+    } else if (tag === 0x0128 && type === 3) {
+      values[tag] = u16(entry + 8);
+    }
+  }
+  if (values[0x011a] === undefined && values[0x011b] === undefined) return null;
+  // EXIF ResolutionUnit: 2 = inch, 3 = centimetre; JFIF: 1 = inch, 2 = cm.
+  const units = values[0x0128] === 3 ? 2 : 1;
+  return { units, x: values[0x011a], y: values[0x011b] };
+}
+
+/**
+ * Walk the JPEG marker stream and read what the container itself declares.
+ *
+ * Mirrors parsePng/parseTiff: the codec probe below proves the pixels decode,
+ * this proves the HEADER states the print contract -- JFIF density in dots per
+ * inch at exactly FILE_DPI, an embedded ICC_PROFILE segment, and one 8-bit
+ * three-component frame -- so a JPG that decodes fine but would print at
+ * 72 DPI is refused before a shop ever opens it.
+ */
+function parseJpeg(bytes) {
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) fail("output_jpg_magic_invalid", "JPEG SOI marker is invalid");
+  if (bytes[bytes.length - 2] !== 0xff || bytes[bytes.length - 1] !== 0xd9) fail("output_jpg_trailing_or_missing_eoi", "JPEG must end exactly at EOI");
+  let offset = 2;
+  let density = null;
+  let icc = false;
+  let frame = null;
+  while (offset + 4 <= bytes.length) {
+    if (bytes[offset] !== 0xff) fail("output_jpg_marker_invalid", "JPEG marker stream is corrupt");
+    const marker = bytes[offset + 1];
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01 || marker === 0xff) { offset += marker === 0xff ? 1 : 2; continue; }
+    if (marker === 0xd9) break;
+    const length = bytes.readUInt16BE(offset + 2);
+    const segmentEnd = offset + 2 + length;
+    if (length < 2 || segmentEnd > bytes.length) fail("output_jpg_truncated", "JPEG segment is truncated");
+    const payload = bytes.subarray(offset + 4, segmentEnd);
+    if (marker === 0xe0 && payload.length >= 14 && payload.toString("ascii", 0, 5) === "JFIF\0") {
+      density = { units: payload[7], x: payload.readUInt16BE(8), y: payload.readUInt16BE(10) };
+    } else if (marker === 0xe1 && payload.length >= 14 && payload.toString("ascii", 0, 6) === "Exif\0\0") {
+      // libvips writes the print density as EXIF resolution tags rather than a
+      // JFIF APP0, so a sharp-encoded JPG declares 1500 DPI here. Either home
+      // is accepted; both must agree with FILE_DPI when present.
+      const exif = parseExifResolution(payload.subarray(6));
+      if (exif) {
+        if (density && (density.units !== exif.units || density.x !== exif.x || density.y !== exif.y)) {
+          fail("output_jpg_density_invalid", "JPEG JFIF and EXIF densities disagree");
+        }
+        density = exif;
+      }
+    } else if (marker === 0xe2 && payload.length >= 12 && payload.toString("ascii", 0, 12) === "ICC_PROFILE\0") {
+      icc = true;
+    } else if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+      if (payload.length < 6) fail("output_jpg_truncated", "JPEG frame header is truncated");
+      if (frame) fail("output_jpg_frame_duplicate", "JPEG declares more than one frame");
+      frame = { precision: payload[0], height: payload.readUInt16BE(1), width: payload.readUInt16BE(3), components: payload[5], progressive: marker === 0xc2 };
+    } else if (marker === 0xda) {
+      // Entropy-coded data follows; the container is complete once EOI closes it.
+      break;
+    }
+    offset = segmentEnd;
+  }
+  if (!frame) fail("output_jpg_frame_missing", "JPEG declares no image frame");
+  if (!density || density.units !== 1 || density.x !== FILE_DPI || density.y !== FILE_DPI) {
+    fail("output_jpg_density_invalid", `JPEG JFIF density must be exactly ${FILE_DPI} DPI`);
+  }
+  if (!icc) fail("output_jpg_srgb_missing", "JPEG must carry an embedded ICC_PROFILE segment");
+  if (frame.precision !== 8 || frame.components !== 3) fail("output_jpg_color_invalid", "JPEG frame must be 8-bit three-component");
+  return { width: frame.width, height: frame.height, progressive: frame.progressive, bitsPerSample: frame.precision };
+}
+
 function assertSrgbProfile(metadata, format) {
   if (metadata.space !== "srgb" || metadata.channels !== 3 || metadata.depth !== "uchar" || metadata.bitsPerSample !== 8) {
     fail(`output_${format}_color_invalid`, `${format.toUpperCase()} must decode as 8-bit three-channel sRGB`);
@@ -269,9 +385,13 @@ function assertSrgbProfile(metadata, format) {
   }
 }
 
+// sharp names the codec, not the extension: a `.jpg` decodes as "jpeg".
+const SHARP_FORMAT = Object.freeze({ png: "png", tiff: "tiff", jpg: "jpeg" });
+
 async function verifyRaster(bytes, format, geometry) {
   let parsed;
   if (format === "png") parsed = parsePng(bytes);
+  else if (format === "jpg") parsed = parseJpeg(bytes);
   else parsed = parseTiff(bytes);
   let metadata;
   try {
@@ -306,7 +426,7 @@ async function verifyRaster(bytes, format, geometry) {
       { cause: error.message, surfaceKey: geometry.surfaceKey, format },
     );
   }
-  if (metadata.format !== format || metadata.width !== geometry.widthPixels || metadata.height !== geometry.heightPixels) {
+  if (metadata.format !== SHARP_FORMAT[format] || metadata.width !== geometry.widthPixels || metadata.height !== geometry.heightPixels) {
     fail("output_raster_geometry_invalid", `${geometry.surfaceKey}.${format} pixel geometry is incorrect`, { expected: [geometry.widthPixels, geometry.heightPixels], observed: [metadata.width, metadata.height] });
   }
   if (parsed.width !== geometry.widthPixels || parsed.height !== geometry.heightPixels) {
@@ -315,7 +435,9 @@ async function verifyRaster(bytes, format, geometry) {
   if (metadata.density !== FILE_DPI || metadata.resolutionUnit !== "inch") {
     fail("output_raster_density_invalid", `${geometry.surfaceKey}.${format} must declare exactly ${FILE_DPI} DPI in inches`);
   }
-  assertSrgbProfile(metadata, format);
+  // sharp does not report bitsPerSample for a JPEG; the SOF frame parsed above
+  // already proved 8-bit precision, so that is what the profile check is told.
+  assertSrgbProfile(format === "jpg" ? { ...metadata, bitsPerSample: metadata.bitsPerSample ?? parsed.bitsPerSample } : metadata, format);
   if (format === "png" && (parsed.bitDepth !== 8 || parsed.colorType !== 2)) fail("output_png_color_invalid", "PNG IHDR must declare 8-bit truecolor sRGB without palette or alpha");
   if (format === "tiff") {
     if (parsed.width !== metadata.width || parsed.height !== metadata.height || parsed.resolutionUnit !== 2 || parsed.xResolution !== FILE_DPI || parsed.yResolution !== FILE_DPI) {
@@ -625,8 +747,8 @@ async function artifactBytes(artifact, readBytes) {
 }
 
 async function verifyProductionOutputSet({ artifacts, dimensionManifest, readBytes, outputFormatContract = OUTPUT_FORMAT_CONTRACT } = {}) {
-  if (![OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT].includes(outputFormatContract)) fail("output_format_contract_invalid", "Unknown production output format contract");
-  const formats = outputFormatContract === OUTPUT_FORMAT_CONTRACT ? FORMATS : LEGACY_FORMATS;
+  const formats = formatsForContract(outputFormatContract);
+  if (!formats) fail("output_format_contract_invalid", "Unknown production output format contract");
   if (!Array.isArray(artifacts) || artifacts.length !== SURFACES.length * formats.length) {
     fail("output_artifact_count_invalid", `Exactly ${SURFACES.length * formats.length} output artifacts are required`);
   }
@@ -668,10 +790,19 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
         decoded = { colorSpace: "sRGB" };
       } else {
         decoded = format === "eps" ? verifyEps(bytes, geometry) : await verifyRaster(bytes, format, geometry);
-        if (format === "png" && formats.includes("pdf")) {
+        // The JPG is the verified PNG's pixels in a second container, and it
+        // says so: an artifact that names another PNG, or none, is a different
+        // raster wearing the surface's name. The PNG is verified first because
+        // `formats` lists it first, so `sourcePngHash` is already known here.
+        if (format === "jpg" && (!sourcePngHash || artifact.metadata.sourcePngHash !== sourcePngHash)) {
+          fail("output_jpg_source_mismatch", `${artifact.storagePath} is not bound to its verified PNG`);
+        }
+        if (format === "png") {
           sourcePngHash = observedHash;
-          expectedPdfHash = sha256(await buildPanelProProductionPdf({ png: bytes, surfaceKey,
-            trimWidthInches: geometry.widthInches, trimHeightInches: geometry.heightInches }));
+          if (formats.includes("pdf")) {
+            expectedPdfHash = sha256(await buildPanelProProductionPdf({ png: bytes, surfaceKey,
+              trimWidthInches: geometry.widthInches, trimHeightInches: geometry.heightInches }));
+          }
         }
       }
       files.push(Object.freeze({
@@ -703,6 +834,9 @@ async function verifyProductionOutputSet({ artifacts, dimensionManifest, readByt
     fileDpi: FILE_DPI,
     outputScale: OUTPUT_SCALE,
     fullScaleBleedInchesPerEdge: BLEED_INCHES_PER_EDGE,
+    // Stated only on a tier that carries the JPG, so a v1/v2 receipt's shape
+    // -- and therefore its outputSetHash -- is byte-identical to before.
+    ...(formats.includes("jpg") ? { jpegQuality: JPEG_QUALITY } : {}),
     files,
   };
   return Object.freeze({ ...receiptBody, verified: true, outputHashes: files.map((file) => file.contentHash), outputSetHash: sha256(Buffer.from(stableJson(receiptBody))) });
@@ -955,9 +1089,14 @@ module.exports = Object.freeze({
   FIXED_ZIP_DATE,
   FIXED_ZIP_MODE,
   FORMATS,
+  PDF_FORMATS,
   LEGACY_FORMATS,
+  FORMAT_CONTRACTS,
+  JPEG_QUALITY,
   OUTPUT_FORMAT_CONTRACT,
+  PDF_OUTPUT_FORMAT_CONTRACT,
   LEGACY_OUTPUT_FORMAT_CONTRACT,
+  formatsForContract,
   FULL_SCALE_PIXELS_PER_INCH,
   MAX_EPS_ENCODED_BYTES,
   MAX_EPS_RAW_BYTES,
