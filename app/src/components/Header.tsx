@@ -10,7 +10,6 @@ import { useSubscriptionLimits } from "@/hooks/useSubscriptionLimits";
 import { useIsAppRoute } from "@/hooks/useIsAppRoute";
 import { supabase } from "@/integrations/supabase/client";
 import { isAllowlistedAdmin, isWpwTenantMember } from "@/lib/admin-allowlist";
-import { WpwShopflowNavLink } from "@/components/layout/WpwShopflowNavLink";
 import { NAV_GROUPS } from "@/lib/dashboard-nav";
 import { SproketQueueWidget } from "@/components/queue/SproketQueueWidget";
 import { RpToken } from "@/components/RpToken";
@@ -271,7 +270,8 @@ const HeaderComponent = () => {
   // operator on the 404 page.
   const MobileNavLinks = () => (
     <>
-      <WpwShopflowNavLink onNavigate={() => setIsOpen(false)} />
+      {/* The ShopFlow banner is gone from here too: NAV_GROUPS now carries the
+          row, so this menu gets it for free and cannot show it twice. */}
       {NAV_GROUPS.map((group) => (
         <div key={group.id} className="mb-2">
           <h4 className="text-xs font-semibold text-white/60 uppercase tracking-wider px-2 mb-1">

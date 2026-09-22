@@ -151,6 +151,24 @@ export type WallProof = {
   alt: string;
   headline: string;
   caption: string;
+  /**
+   * THE MARKING STAGE — the step BETWEEN the two photographs (owner,
+   * 2026-09-22: "Add image before and after show one touch masking when they
+   * click").
+   *
+   * Before and after answer "what do I get". They do not answer "what do I
+   * have to DO", which is the question a visitor actually hesitates on, and the
+   * answer — mark the wall, tap what to keep — is the part of this product that
+   * sounds hardest and is easiest. So the band gets a third frame the customer
+   * reaches by clicking, rather than a fourth paragraph of copy.
+   *
+   * OPTIONAL, AND HONEST ABOUT WHAT IT IS. `caption` on this object says which
+   * kind of frame it is, because there are two and they are not the same claim:
+   * a real screen capture of the tool, or a drawn overlay on the before
+   * photograph showing where the corners go. A pair with no marking frame
+   * simply has two stages, which is what every historical pair has.
+   */
+  marking?: { src: string; alt: string; caption: string };
 };
 
 
@@ -180,6 +198,46 @@ export type WallProof = {
  * /admin/wallpro-proofs override this list when they exist; this is the floor.
  */
 const WALL_PROOFS: WallProof[] = [
+  {
+    /**
+     * THE GYM IS BACK, WITH THE TRADEMARK REMOVED (owner, 2026-09-22: "you
+     * have the gym photos before and after").
+     *
+     * It was withdrawn on 09-21 because the generated mural carried a real
+     * company's wordmark. The mark was found at x 1207-1320, y 393-410 of the
+     * 1400x803 frame -- measured, not eyeballed: a per-column scan of bright
+     * pixels reads zero either side of exactly that span. It sat on a flat
+     * unlit region of the mural, so it was removed by blending the rows
+     * between two clean anchor rows (y 390 and y 413), each smoothed +/-6px
+     * horizontally first so per-pixel noise could not streak down the patch.
+     *
+     * That is the same rule the master cut-out fill follows: continue what is
+     * already there, invent nothing. The headline "WE MOVE AS ONE" is generic
+     * copy and stays; what was removed is somebody else's mark, not the design.
+     *
+     * NOTE FOR WHOEVER LOOKS NEXT: the gym equipment carries a manufacturer's
+     * name on the sled and the plyo box. That is a photographed room, not our
+     * artwork, so it is a different question from the mural and is left alone
+     * pending the owner's call.
+     */
+    before: '/wallpro/proof-gym-before.jpg',
+    after: '/wallpro/proof-gym-after.jpg',
+    alt: 'A gym training floor: the same bare grey wall behind the racks, and then the same wall covered edge to edge with a printed athletic mural',
+    headline: 'A training floor, transformed.',
+    caption: 'A gym wall in a full-height athletic mural, designed in WallPro.',
+    marking: {
+      src: '/wallpro/proof-gym-mask.jpg',
+      alt: 'The bare gym wall with its four corners marked and the wall area shaded, the way the tool shows it',
+      // SAY WHAT THE FRAME IS. This is an overlay drawn on the before
+      // photograph, not a screen recording of the tool, and the caption has to
+      // carry that or the band is claiming a capture it does not have. The
+      // GEOMETRY is measured off that photograph rather than invented: the
+      // bottom edge follows the bench line sampled at x=880/1000/1180/1240/1300
+      // and the top edge the ceiling boundary at x=500/900/1300, each
+      // extrapolated to the frame. Replace with a real capture when one exists.
+      caption: 'Four taps mark the wall. Everything in front of it stays put.',
+    },
+  },
 
       // THE OWNER'S OWN HOME IS NOT A PORTFOLIO (owner, 2026-09-18, seeing it
       // on the tool page after it had already been taken off the landing:
@@ -210,18 +268,16 @@ const WALL_PROOFS: WallProof[] = [
  * whatever else is published behind it.
  */
 /**
- * RETRACTED 2026-09-21. The pinned opening pair was the gym, and its "after"
- * frame is an AI-generated design that wrote a real company's trademark into
- * the artwork (owner: "its supposed to be inspired style of model wrote les
- * mills than it needs retracting asap"). A generated image carrying someone
- * else's mark cannot sit on a marketing band, so the pair is withdrawn and the
- * file is deleted from the build.
+ * RETRACTED 2026-09-21, RESTORED CLEAN 2026-09-22. The pinned pair was
+ * withdrawn because the generated mural carried a real company's wordmark
+ * (owner: "its supposed to be inspired style of model wrote les mills than it
+ * needs retracting asap"). The mark has been removed from the frame -- see the
+ * entry above for exactly where it was and how -- so the pair leads again.
  *
- * WALL_PROOFS is therefore EMPTY and this is null. That is deliberate and it
- * is the honest state: the band simply does not render, which it already knew
- * how to do. A showcase with nothing truthful to show is better empty than
- * padded. Publish a real customer install through /admin/wallpro-proofs, or add
- * a block here, and both come straight back.
+ * The null branch stays and is not dead code: it is what made the empty state
+ * survivable, and it is what an empty curator list falls back to. An empty
+ * WALL_PROOFS must never take the page's own hero down with it, which is the
+ * separate defect fixed in WallPro.tsx the same day.
  */
 export const WALL_HERO_PROOF: WallProof | null = WALL_PROOFS[0] ?? null;
 

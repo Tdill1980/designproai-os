@@ -235,3 +235,60 @@ test("the landing's own media never defaults to the owner's room", () => {
   assert.ok(read("app/src/pages/WallProLanding.tsx").includes("const result = active;"),
     "the Generate & refine tile must follow the selected example");
 });
+
+/**
+ * THE OS KEEPS ONE DOOR TO WPW SHOPFLOW, AND IT IS A NAVIGATION ROW.
+ *
+ * Owner, 2026-09-22, in one breath: "on os.DesignPro the navigation is showing
+ * shopflow navigation instead of DesignPro" AND "it's also missing the WPW
+ * shopflow link in navigation."
+ *
+ * Both were true, and they had ONE cause. Two commits forty minutes apart left
+ * the separation half-done:
+ *
+ *   #9bc62304  deleted the entire WPW nav GROUP from dashboard-nav.ts -- right
+ *   #e540012a  restored only a BANNER: a 72px gradient card mounted above the
+ *              plan pill, outside every group heading, in SidebarBody (so on
+ *              desktop AND in the mobile drawer) and again at the top of the
+ *              marketing header's mobile menu
+ *
+ * A banner outside every group is not a navigation row; it is a second
+ * product's masthead sitting on top of this one's, which is why the rail read
+ * as ShopFlow's. And it was an <a href> to an ABSOLUTE OFF-DOMAIN URL --
+ * https://www.restyleproai.com/shopflow -- while this app mounts /shopflow
+ * itself. Because that destination lived in a string variable rather than a
+ * `route:` literal, app-shell-routing's "every sidebar destination is a route
+ * the router serves" gate could not see it to check it.
+ *
+ * So: one ordinary link row in HOME, pointing at the /shopflow this OS serves,
+ * and no banner. This test pins both halves, because the failure mode is that
+ * somebody "restores" the card again.
+ */
+test("WPW ShopFlow is one nav ROW in the OS sidebar, never a banner over it", () => {
+  const nav = read("app/src/lib/dashboard-nav.ts");
+  const sidebar = read("app/src/components/layout/AppSidebar.tsx");
+  const header = read("app/src/components/Header.tsx");
+
+  // The row exists, in the registry every surface reads.
+  assert.ok(nav.includes('label: "WPW ShopFlow",'),
+    "the OS sidebar lost its WPW ShopFlow link");
+  assert.ok(nav.includes('route: "/shopflow",'),
+    "WPW ShopFlow must point at the /shopflow this app serves");
+
+  // It is an INTERNAL route, not a jump to another product's host. A `route:`
+  // literal is also what makes it visible to the routing gate at all.
+  assert.ok(!nav.includes('route: "https://'),
+    "a nav row must be an internal route, never an absolute URL");
+
+  // And the banner is gone from both surfaces that mounted it.
+  assert.ok(!sidebar.includes("WpwShopflowNavLink"),
+    "the ShopFlow banner is back above the OS sidebar's own groups");
+  assert.ok(!header.includes("WpwShopflowNavLink"),
+    "the ShopFlow banner is back at the top of the mobile menu");
+
+  // The separation ruling that #9bc62304 established still stands: the tenant
+  // TOOL rows stay excluded from the OS tool groups. One dashboard link is not
+  // a re-merge of the two products.
+  assert.ok(nav.includes('WPW_TOOL_KEYS'),
+    "the WPW tool rows must still be excluded from the OS tool groups");
+});

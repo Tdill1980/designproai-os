@@ -20,15 +20,21 @@ describe('publication requires a measured wall', () => {
     }
   });
 
-  it('keeps the gym MEASURED but withheld, with the reason on the record', () => {
-    // Measured and unpublishable are independent. Deleting the entry would lose
-    // both the measurement and the reason, and the next person to see a gym
-    // photo with a tape-measured wall would publish it again.
+  it('publishes the gym now that the mark is off the frame, measurement intact', () => {
+    // WITHHELD 2026-09-21, PUBLISHED 2026-09-22. The reason was never the wall
+    // and never the measurement -- it was a real company's wordmark inside the
+    // generated mural, which has been removed from the frame (see WALL_PROOFS
+    // in wallpro-brand.ts for where it was and how). Measured and publishable
+    // are independent, which is exactly why the entry survived the retraction
+    // with its inches and its reason intact instead of being deleted.
     const gym = ALL_CASE_STUDIES.find(s => s.key === 'gym')!;
     expect(gym.wall).toEqual({ widthIn: 240, heightIn: 120 });
-    expect(gym.withheld).toBeTruthy();
-    expect(gym.withheld).toMatch(/trademark/i);
-    expect(publishedCaseStudies().map(s => s.key)).not.toContain('gym');
+    expect(gym.withheld).toBeNull();
+    expect(publishedCaseStudies().map(s => s.key)).toContain('gym');
+    // And it must point at a real frame, not the placeholder filename the
+    // retraction left behind — a 404 on a case study is worse than no study.
+    expect(gym.photos.after).toBe('/wallpro/proof-gym-after.jpg');
+    expect(gym.photos.after).not.toMatch(/REPLACEMENT/i);
   });
 
   it('never publishes a study that is withheld, however well measured', () => {

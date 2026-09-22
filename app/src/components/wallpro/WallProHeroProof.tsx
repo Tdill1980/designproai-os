@@ -23,7 +23,7 @@
  * fail to load, renders null — so the band can never appear as broken frames.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MoveHorizontal } from 'lucide-react';
+import { MoveHorizontal, MousePointerClick } from 'lucide-react';
 import { clampReveal, compareAriaLabel, COMPARE_STEP, revealFromPointer } from '@/lib/wallpro-compare';
 import type { WallProof } from '@/lib/wallpro-brand';
 
@@ -54,6 +54,20 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
   const [index, setIndex] = useState(0);
   const [reveal, setReveal] = useState(OPENING_REVEAL);
   const [held, setHeld] = useState(false);
+  /**
+   * THE MARKING STAGE (owner, 2026-09-22: "Add image before and after show one
+   * touch masking when they click").
+   *
+   * Before and after answer "what do I get". The question a visitor actually
+   * stalls on is "what do I have to do", and the answer — mark the wall, tap
+   * what to keep — is the part that sounds hardest and is easiest. One click
+   * shows it, instead of a fourth paragraph nobody reads.
+   *
+   * It is a BUTTON, never a click anywhere on the band: the whole box is
+   * already a drag surface for the compare handle, so a bare click target over
+   * it would fire on every attempt to drag.
+   */
+  const [marking, setMarking] = useState(false);
   const [broken, setBroken] = useState<string[]>([]);
   const box = useRef<HTMLDivElement | null>(null);
   /**
@@ -93,7 +107,12 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
   // Preload every pair once, so an advance swaps to a decoded image instead of
   // flashing an empty frame mid-rotation.
   useEffect(() => {
-    for (const p of proofs) for (const src of [p.before, p.after]) { const img = new Image(); img.src = src; }
+    // The marking frame is prefetched too: it is reached by one click, and a
+    // frame that appears a beat after the click reads as the button not working.
+    for (const p of proofs) for (const src of [p.before, p.after, p.marking?.src]) {
+      if (!src) continue;
+      const img = new Image(); img.src = src;
+    }
   }, [proofs]);
 
   const reducedMotion = typeof window !== 'undefined'
@@ -103,14 +122,18 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
   // handle, or they have asked the platform for less movement. A carousel that
   // advances out from under a dragging finger is the classic version of this
   // control done badly.
+  // Leaving the marking frame up while the carousel advanced underneath it
+  // would show one room's wall plan over another room's photograph.
+  useEffect(() => { setMarking(false); }, [index]);
+
   useEffect(() => {
-    if (usable.length < 2 || held || reducedMotion) return;
+    if (usable.length < 2 || held || marking || reducedMotion) return;
     const timer = window.setInterval(() => {
       setIndex(i => (i + 1) % usable.length);
       setReveal(OPENING_REVEAL);
     }, DWELL_MS);
     return () => window.clearInterval(timer);
-  }, [usable.length, held, reducedMotion]);
+  }, [usable.length, held, marking, reducedMotion]);
 
   const track = useCallback((clientX: number) => {
     const rect = box.current?.getBoundingClientRect();
@@ -118,6 +141,10 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
   }, []);
 
   const fail = useCallback((src: string) => setBroken(list => list.includes(src) ? list : [...list, src]), []);
+
+  // A pair without a marking frame simply has two stages, which is what every
+  // historical pair has. The button does not render and nothing else changes.
+  const mark = current?.marking;
 
   if (!current) return null;
 
@@ -205,23 +232,58 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
           />
         </div>
 
-        <span className="pointer-events-none absolute left-3 top-3 rounded bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Before</span>
-        <span className="pointer-events-none absolute right-3 top-3 rounded bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">After</span>
+        {/* THE MARKING FRAME, OVER BOTH PHOTOGRAPHS. It is painted on top
+            rather than swapped in, so the compare pair keeps its DOM and the
+            browser never re-decodes either room on the way back. */}
+        {mark && marking && (
+          <img
+            src={mark.src}
+            alt={mark.alt}
+            onError={() => fail(mark.src)}
+            className={`absolute inset-0 h-full w-full ${fill ? 'object-cover' : 'object-contain'}`}
+            draggable={false}
+          />
+        )}
 
-        <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow" style={{ left: `${reveal}%` }}>
+        {/* The stage labels say which stage this is. Two photographs get
+            Before/After; the marking frame is a third thing and must not be
+            captioned as either of them. */}
+        {marking
+          ? <span className="pointer-events-none absolute left-3 top-3 rounded bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Marking the wall</span>
+          : <>
+              <span className="pointer-events-none absolute left-3 top-3 rounded bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Before</span>
+              <span className="pointer-events-none absolute right-3 top-3 rounded bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">After</span>
+            </>}
+
+        {/* The one control that reaches the third stage. Top-right so it never
+            sits under the compare handle, which lives on the centre line. */}
+        {mark && (
+          <button
+            type="button"
+            onClick={() => setMarking(v => !v)}
+            aria-pressed={marking}
+            className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-slate-800 shadow-md transition hover:bg-white"
+            style={marking ? undefined : { top: '2.5rem' }}
+          >
+            <MousePointerClick size={13} aria-hidden="true" />
+            {marking ? 'Back to before & after' : 'How the wall is marked'}
+          </button>
+        )}
+
+        {!marking && <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow" style={{ left: `${reveal}%` }}>
           <span className="absolute top-1/2 -ml-3.5 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-700 shadow-md">
             <MoveHorizontal size={14} />
           </span>
-        </div>
+        </div>}
 
         {/* The real control. Visually the handle above; for keyboard and screen
             readers a labelled range, same as the customer's own compare view. */}
-        <input
+        {!marking && <input
           type="range" min={0} max={100} step={COMPARE_STEP} value={reveal}
           aria-label={compareAriaLabel(reveal)}
           onChange={e => setReveal(clampReveal(Number(e.target.value)))}
           className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
-        />
+        />}
 
         {/* The caption sits ON the photograph, over a scrim, rather than in a
             column beside it. A room photo beside a narrow text column gives the
@@ -231,7 +293,9 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 bg-gradient-to-t from-black/75 via-black/45 to-transparent px-4 pb-3 pt-10">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-white drop-shadow-sm sm:text-base">{current.headline}</p>
-            <p className="mt-0.5 truncate text-xs text-white/85 sm:text-sm">{current.caption}</p>
+            {/* The marking frame carries its OWN caption, because it is making
+                a different claim from the photographs and must say so itself. */}
+            <p className="mt-0.5 truncate text-xs text-white/85 sm:text-sm">{mark && marking ? mark.caption : current.caption}</p>
           </div>
 
           {usable.length > 1 && (

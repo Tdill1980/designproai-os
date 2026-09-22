@@ -9,27 +9,67 @@ import { useState, lazy, Suspense, ComponentType } from "react";
 const CHUNK_RELOAD_KEY = "chunk_reload_at";
 const CHUNK_RELOAD_WINDOW_MS = 15_000;
 
+/**
+ * THE MARKER NEEDS AN IN-MEMORY TWIN (2026-09-22).
+ *
+ * `sessionStorage` throws in private mode and silently no-ops in partitioned
+ * and embedded contexts. When it does, the marker never sticks, `last` reads 0
+ * on every pass, and the "reload at most once per 15s" guard above is not a
+ * guard at all: EVERY failure reloads again. The only thing on screen through
+ * that loop is <Loading />, which is indistinguishable from a page that is
+ * simply slow.
+ */
+let lastChunkReloadAt = 0;
+const readChunkReloadAt = (): number => {
+  try { return Number(sessionStorage.getItem(CHUNK_RELOAD_KEY)) || lastChunkReloadAt; }
+  catch { return lastChunkReloadAt; }
+};
+const writeChunkReloadAt = (at: number) => {
+  lastChunkReloadAt = at;
+  try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(at)); } catch { /* private mode */ }
+};
+
+/** How long `window.location.reload()` gets to prove it is actually happening
+ *  before we surface the error instead of spinning. */
+const CHUNK_RELOAD_GRACE_MS = 8_000;
+
 function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>) {
   return lazy(() =>
     importFn()
       .then((mod) => {
         // Loaded fine — clear any prior reload marker so a future stale
         // deploy can reload again when it legitimately needs to.
+        lastChunkReloadAt = 0;
         try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* private mode */ }
         return mod;
       })
       .catch((err) => {
-        let last = 0;
-        try { last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY)) || 0; } catch { /* ignore */ }
+        const last = readChunkReloadAt();
         const now = Date.now();
         // Only reload if we haven't already tried within the window. If we
         // just reloaded and it STILL fails, stop reloading and let the error
         // surface to the ErrorBoundary instead of flashing forever.
         if (now - last > CHUNK_RELOAD_WINDOW_MS) {
-          try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now)); } catch { /* ignore */ }
+          writeChunkReloadAt(now);
           window.location.reload();
           // Block rendering until the reload takes over — never flash content.
-          return new Promise<{ default: ComponentType<any> }>(() => {});
+          //
+          // ⚠️ BUT NEVER BLOCK FOREVER. This used to return a promise that can
+          // never settle, and `React.lazy` MEMOISES the payload: once that
+          // promise is installed the route can never render again for the life
+          // of the document — no remount, no navigation, no retry clears it,
+          // and the only visible state is the loading screen. That is fine
+          // while the reload is genuinely on its way and a permanent spinner
+          // when it is not (a reload deferred in a frame, a bfcache restore, a
+          // reload that re-serves the same stale document).
+          //
+          // Rejecting after a grace period costs nothing in the normal case --
+          // the document is gone long before it fires -- and in the abnormal
+          // one it swaps an eternal spinner for the ErrorBoundary's actionable
+          // "load the latest version" screen.
+          return new Promise<{ default: ComponentType<any> }>((_resolve, reject) => {
+            setTimeout(() => reject(err), CHUNK_RELOAD_GRACE_MS);
+          });
         }
         throw err;
       })
