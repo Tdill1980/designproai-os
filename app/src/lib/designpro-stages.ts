@@ -1,3 +1,4 @@
+import { PROOF_BRAND } from "@/lib/os-brand";
 /**
  * Operator-readable names for the automatic workflow stages the server owns.
  *
@@ -56,7 +57,7 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
  * has no three-zone document and is not asked.
  */
 export const PROOF_CHECKS: Array<[string, string]> = [
-  ["proofSheetReviewed", "The three-zone Production Panel Proof for this revision was opened and reviewed"],
+  ["proofSheetReviewed", `The ${PROOF_BRAND.full} for this revision was opened and reviewed`],
   ["cleanPanelsMatchBranded", "Zone 2 is the same six panels as Zone 1 with the type and logos left off"],
   ["cutGraphicsInventoried", "Zone 3 holds the logo, text and graphic elements the brief called for, and nothing invented"],
 ];

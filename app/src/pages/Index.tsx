@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 
 const uspFeatures = [
@@ -211,7 +212,7 @@ const MeetYourSystemSection = () => {
 const HERO_HEADLINES = [
   "The Design-to-Production OS Built for Wide Format.",
   "Prompt-Based Design + Production-Ready File Output",
-  "VehiclePro. WallPro. CutPro. One Production Panel Proof.",
+  `VehiclePro. WallPro. CutPro. One ${PROOF_BRAND.full}.`,
 ];
 
 const HeroHeadlineRotator = () => {

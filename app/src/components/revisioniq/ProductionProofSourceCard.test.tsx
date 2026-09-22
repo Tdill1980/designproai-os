@@ -19,7 +19,7 @@ describe("ProductionProofSourceCard", () => {
     expect(html).toContain("Production Panel Proof · V3");
     expect(html).toContain("the source of every print panel below");
     // The wrapped reader is mounted (pending on a static render), not replaced.
-    expect(html).toContain("Loading your production panel proof");
+    expect(html).toContain("Loading your TriZone™ Production Panel Proof");
     // The word a customer must never read.
     expect(html).not.toMatch(/atlas|topolog/i);
   });

@@ -3417,8 +3417,14 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching print master", false);
         }
         const frozenFiles = [
-          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize, contentType: "image/png" },
-          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256, contentType: "image/png" },
+          // FILE NAMES A CUSTOMER READS. Owner, 2026-09-22: "fix remove atlas
+          // come up with a proprietary name for our ProductionPanelProof." The
+          // sheet is the TriZone(TM) Production Panel Proof; its stem is mirrored
+          // from app/src/lib/os-brand.ts PROOF_BRAND.fileStem (the runtime cannot
+          // import that file) and a lock asserts the two agree. The `kind`
+          // values are receipt identifiers and stay.
+          { archivePath: "proofs/trizone-production-panel-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize, contentType: "image/png" },
+          { archivePath: "proofs/print-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256, contentType: "image/png" },
           // ZONE 3 SHIPS WITH THE PACK. Every persisted cut graphic -- the
           // customer's own logo, the typeset name, the contact bar -- goes in
           // beside the sheet it was separated from, as the exact frozen bytes

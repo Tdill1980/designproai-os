@@ -1211,7 +1211,7 @@ export default function PanelProStudioBoard() {
                 </div>
                 {forensicRecordHref && (
                   <Button asChild size="sm" variant="outline">
-                    <a href={forensicRecordHref} download={`${job?.designId || generationId}-atlas-forensic-record.json`}>
+                    <a href={forensicRecordHref} download={`${job?.designId || generationId}-call1-forensic-record.json`}>
                       <Download className="mr-1 h-4 w-4" /> Download record
                     </a>
                   </Button>

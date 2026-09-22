@@ -819,7 +819,8 @@ test("RevisionStudio presents the three-zone Production Panel Proof as THE sourc
   assert.equal(studio.split("<ProductionProofSource render=").length, 2, "mounted exactly once");
   assert.doesNotMatch(studio, /<AtlasPanelProofSheetLoader/, "RevisionStudio reads the sheet only through the source card");
   const card = readFileSync(new URL("../app/src/components/revisioniq/ProductionProofSourceCard.tsx", import.meta.url), "utf8");
-  assert.match(card, /Production Panel Proof · V\$\{version\}/);
+  // The heading reads the product's own name from os-brand.ts (TriZone™), never a literal.
+  assert.match(card, /\$\{PROOF_BRAND\.full\} · V\$\{version\}/);
   assert.match(card, /the source of every print panel below/);
   assert.match(card, /<AtlasPanelProofSheetLoader/, "one reader per artifact: the card wraps it, it does not re-read");
   assert.doesNotMatch(card, /useQuery|dpApi/, "the card holds no query of its own");

@@ -13,6 +13,7 @@ import {
 } from "@/lib/designpro-generation-error";
 
 import { AtlasRefusedSheetsLoader } from "./AtlasRefusedSheets";
+import { PROOF_BRAND } from "@/lib/os-brand";
 
 type Props = {
   isAtlas: boolean;
@@ -41,7 +42,7 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
             assembly and has no place on this screen. `isAtlas` still selects
             the refused-candidate loader below, which is diagnostics. */}
         <p className="text-white text-base font-semibold text-center">
-          {waitingForCapacity ? "Another design is still generating" : "Your production panel proof didn't finish."}
+          {waitingForCapacity ? "Another design is still generating" : `Your ${PROOF_BRAND.full} didn't finish.`}
         </p>
         {(error || unconfirmed) && (
           <p className="text-sm text-red-300 text-center max-w-md">

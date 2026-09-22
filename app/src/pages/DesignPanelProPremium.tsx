@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
-import { OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS, PROOF_BRAND } from "@/lib/os-brand";
 import { ToolHeader } from "@/components/layout/ToolHeader";
 import { WallProHeroProof } from "@/components/wallpro/WallProHeroProof";
 import { useToolProofBand } from "@/hooks/useToolProofBand";
@@ -2172,7 +2172,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             three-zone Production Panel Proof is Call 1 and the source of
                             every print-ready file. No engine name is presented here. */}
                         <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                          Production Panel Proof
+                          {PROOF_BRAND.full}
                         </div>
                         <p className="mt-2 text-[10px] leading-4 text-white/65">
                           Call 1 draws one sheet in three zones — full print panels, the same panels without type or logos, and your logo, text and graphic elements. Every print-ready file, labeled vehicle surface and matched 3D proof is cut from that one source and carried into production unchanged.
