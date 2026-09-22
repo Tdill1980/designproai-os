@@ -1915,7 +1915,46 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               TIFF/PDF/PNG set. Shown before the work starts, because "leave
               with production files" is the promise the board is delivering. */}
           {!artwork && <WallProOutcomes />}
-          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
+          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
+            {/* THE THREE INPUTS SIT TOGETHER (owner, 2026-09-22, before a demo:
+                "The upload style reference should be right next to upload wall
+                / And the text prompt").
+                They were three screens apart: the wall upload here, the style
+                reference and the brief buried inside step 3's conditional tree
+                below the priced picker. Everything a customer supplies is one
+                block now, so a demo is one screen rather than a scroll hunt.
+                Each control is the SAME one as before -- same state, same
+                handler -- moved, never copied: two boxes writing one `prompt`
+                is the drift this page has already paid for twice. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                {uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}
+                <p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically. A wall photo is optional when generating artwork.</p>
+              </div>
+              <div>
+                {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
+                <p className="mt-2 text-xs wall-muted">{intent === 'match'
+                  ? 'This design is recreated faithfully as a print-ready 4K master: same composition, motifs, palette and scale. A screenshot or a photo of a wall is fine as the source.'
+                  : 'Optional inspiration only. Your description alone is enough — no example image is required.'}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
+                  the brief rather than replacing it, and they are not a
+                  taxonomy: the two personas read prose, so a chip is a word
+                  the customer would have typed, saving a phone keyboard. A
+                  chip that overwrote the brief would delete the only thing in
+                  the request that is actually hers -- the measurement behind
+                  the two-persona rule is that the customer's own words were 44
+                  characters against 3,342 of persona, so they are the
+                  scarcest input on the page and nothing here may spend them. */}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
+                  onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
+                  className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
+              </div>
+            </div>
             {photo && <div id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className="mt-5 space-y-2">
               {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
                   never numbered -- it lived unlabelled inside step 1, below the
@@ -2015,29 +2054,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'cover' ? 'default' : 'outline'} onClick={() => setScaleChoice('cover')}>Mural</Button>
                 <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'repeat' ? 'default' : 'outline'} onClick={() => setScaleChoice('repeat')}>Pattern</Button>
               </div><p className="mt-1 text-xs wall-muted">{autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice }).reason}</p></div>
-              {intent === 'match' && <>
-                {uploadControl('reference', reference ? 'Replace the design to match' : 'Upload the design to match')}
-                <p className="text-xs wall-muted">The designer recreates this design faithfully as a print-ready 4K master: same composition, motifs, palette and scale. Low-resolution files, screenshots and photos of a wall are fine as the source.</p>
-              </>}
               {intent === 'wall' && <p className="text-xs wall-muted">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
-              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
-              {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
-                  the brief rather than replacing it, and they are not a
-                  taxonomy: the two personas read prose, so a chip is a word
-                  the customer would have typed, saving a phone keyboard. A
-                  chip that overwrote the brief would delete the only thing in
-                  the request that is actually hers -- the measurement behind
-                  the two-persona rule is that the customer's own words were 44
-                  characters against 3,342 of persona, so they are the
-                  scarcest input on the page and nothing here may spend them. */}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
-                  onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
-                  className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
-              </div>
               {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
-              {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
-              {intent !== 'match' && <p className="text-xs wall-muted">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
               {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
               {freeReason === 'commercialpro'
                 ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>

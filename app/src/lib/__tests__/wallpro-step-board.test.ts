@@ -175,3 +175,58 @@ describe('the closing strip states outcomes the repo can point at', () => {
     expect(page).toContain('{!artwork && <WallProOutcomes />}');
   });
 });
+
+/**
+ * EVERYTHING THE CUSTOMER SUPPLIES IS ONE BLOCK.
+ *
+ * Owner, 2026-09-22, with a demo session imminent: "The upload style reference
+ * should be right next to upload wall / And the text prompt".
+ *
+ * They were three screens apart — the wall upload in step 1, the style
+ * reference and the brief buried inside step 3's conditional tree BELOW the
+ * priced picker — so showing the tool meant scrolling to hunt for two of the
+ * three things a customer actually provides.
+ *
+ * MOVED, NEVER COPIED. Two textareas writing one `prompt` is the same drift
+ * this page has already paid for with two numbering systems and two homes for
+ * the photo's controls.
+ */
+describe('the three inputs sit together', () => {
+  it('keeps exactly ONE brief, and it is in step 1', () => {
+    expect((page.match(/value=\{prompt\}/g) ?? []).length).toBe(1);
+    const step1 = page.indexOf('<section id="upload-wall"');
+    const step3 = page.indexOf('<section id="choose-design"');
+    const brief = page.indexOf('value={prompt}');
+    expect(brief).toBeGreaterThan(step1);
+    expect(brief).toBeLessThan(step3);
+  });
+
+  it('puts the style reference beside the wall upload, not below the picker', () => {
+    const wall = page.indexOf("uploadControl('photo'");
+    const ref = page.indexOf("uploadControl('reference', reference ? 'Replace style reference'");
+    const step3 = page.indexOf('<section id="choose-design"');
+    expect(ref).toBeGreaterThan(wall);
+    expect(ref).toBeLessThan(step3);
+    // Side by side on anything wider than a phone, stacked on one.
+    expect(page).toContain('<div className="grid gap-3 sm:grid-cols-2">');
+  });
+
+  it('the chips travel with the brief rather than staying behind', () => {
+    const brief = page.indexOf('value={prompt}');
+    const chips = page.indexOf('WALL_STYLE_CHIPS.map');
+    expect(chips).toBeGreaterThan(brief);
+    expect(chips - brief).toBeLessThan(2000);
+  });
+
+  it('the reference hint still tells the truth about which path is active', () => {
+    // On `match` the upload IS the design and is recreated faithfully; on every
+    // other path it is inspiration only. One control, two honest sentences.
+    expect(page).toContain('This design is recreated faithfully as a print-ready 4K master');
+    expect(page).toContain('Optional inspiration only. Your description alone is enough');
+  });
+
+  it('the refine panel keeps its own reference control, which is a different thing', () => {
+    // Post-generation "Add a reference image" belongs to Refine, not to step 1.
+    expect(page).toContain("uploadControl('reference', reference ? 'Replace reference image'");
+  });
+});
