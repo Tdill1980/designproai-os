@@ -13,26 +13,49 @@ const OWNER=id(1), GENERATION=id(2), ATLAS=id(3), REVISION=id(4), RUN=id(5), REQ
 const HASH='a'.repeat(64), SECRET='contract-test-webhook-secret';
 const file = name => readFileSync(new URL(`../${name}`, import.meta.url),'utf8');
 const migration = file('supabase/migrations/20260920042000_designpro_revision_pinned_purchase.sql');
+// THE FIXTURE MUST NOT BE LAXER THAN PRODUCTION (CLAUDE.md, recorded five times).
+// This file used to hand-write `designpro_workflow_runs` WITH a `generation_id`
+// column. Production has never had one -- no migration in the history creates
+// it -- so the RPC's first statement raised 42703 on every real purchase while
+// this suite stayed green over a table that only existed here. The run table
+// is now the REAL one, sliced from the migrations that build it.
+const between = (text, from, to) => {
+  const start = text.indexOf(from);
+  const end = to === null ? text.indexOf('\n);', start) + 3 : text.indexOf(to, start);
+  if (start < 0 || end <= start) throw new Error(`fixture could not slice ${from}`);
+  return text.slice(start, end);
+};
+const RUNS_TABLE = between(file('supabase/migrations/20260806180000_designpro_core_schema.sql'),
+  'CREATE TABLE IF NOT EXISTS public.designpro_workflow_runs', null);
+const RUNS_ALTERS = between(file('supabase/migrations/20260806180400_designpro_progressive_identity.sql'),
+  'ALTER TABLE public.designpro_workflow_runs', 'CREATE TABLE IF NOT EXISTS public.designpro_revision_sources');
+const PATCH = file('supabase/migrations/20260922160000_designpro_revision_purchase_reads_the_run_it_has.sql');
 const pin = {atlasRevisionId:ATLAS,revisionId:REVISION,revisionSnapshotHash:HASH,enticeRunId:RUN,ownerId:OWNER};
 const basePayload = {checkoutSessionId:'cs_test_revision',paymentIntentId:'pi_test_revision',productType:'print_pack_entitlement',
   generationId:GENERATION,amountCents:29900,userEmail:'checkout@example.test',promotionCode:null,discountCents:0,revision:pin};
 const rpcKeys=['p_checkout_session_id','p_payment_intent_id','p_product_type','p_generation_id','p_amount_cents','p_user_email',
   'p_promotion_code','p_discount_cents','p_atlas_revision_id','p_revision_id','p_revision_snapshot_hash','p_entice_run_id','p_owner_id'];
 
-async function database(t) {
+const seedRun=(id,revision,hash)=>`INSERT INTO public.designpro_workflow_runs
+  (id,workflow_type,owner_id,tenant_key,idempotency_key,status,revision_id,revision_snapshot_hash,entice_pack_id)
+  VALUES ('${id}','designpro.entice_pack','${OWNER}','user_${OWNER}','idem-${id}','completed','${revision}','${hash}','${ATLAS}');`;
+
+async function database(t,{patch=true}={}) {
   const db=new PGlite();t.after(()=>db.close());
   await db.exec(`CREATE SCHEMA auth; CREATE SCHEMA extensions;
     CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
     CREATE TABLE auth.users(id uuid PRIMARY KEY);
     CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql AS $$SELECT current_setting('request.jwt.claims',true)::jsonb$$;
-    CREATE TABLE public.designpro_workflow_runs(id uuid PRIMARY KEY,owner_id uuid,generation_id uuid,revision_id uuid,
-      revision_snapshot_hash text,workflow_type text,status text,created_at timestamptz DEFAULT now());
+    CREATE FUNCTION extensions.gen_random_uuid() RETURNS uuid LANGUAGE sql AS $$SELECT gen_random_uuid()$$;
+    INSERT INTO auth.users VALUES ('${OWNER}');`);
+  // The run table exactly as production builds it -- no generation_id.
+  await db.exec(RUNS_TABLE);
+  await db.exec(RUNS_ALTERS);
+  await db.exec(`
     CREATE TABLE public.designpro_revision_sources(revision_id uuid PRIMARY KEY,owner_id uuid,generation_id uuid,
       visualization_id uuid,snapshot_hash text);
     CREATE TABLE public.designpro_flat_atlas_revisions(id uuid PRIMARY KEY,owner_id uuid,generation_id uuid,request_id uuid);
-    INSERT INTO auth.users VALUES ('${OWNER}');
-    INSERT INTO public.designpro_workflow_runs(id,owner_id,generation_id,revision_id,revision_snapshot_hash,workflow_type,status)
-      VALUES ('${RUN}','${OWNER}','${GENERATION}','${REVISION}','${HASH}','designpro.entice_pack','completed');
+    ${seedRun(RUN,REVISION,HASH)}
     INSERT INTO public.designpro_revision_sources VALUES ('${REVISION}','${OWNER}','${GENERATION}','${REQUEST}','${HASH}');
     INSERT INTO public.designpro_flat_atlas_revisions VALUES ('${ATLAS}','${OWNER}','${GENERATION}','${REQUEST}');
     SET request.jwt.claims='{"role":"service_role"}';`);
@@ -42,6 +65,7 @@ async function database(t) {
     original.indexOf('ALTER TABLE public.designpro_purchase_entitlements ENABLE ROW LEVEL SECURITY;')));
   await db.exec(file('supabase/migrations/20260824050000_designpro_promotion_codes.sql'));
   await db.exec(migration);
+  if(patch)await db.exec(PATCH);
   return db;
 }
 
@@ -179,8 +203,7 @@ test('signed webhook executes actual runtime and SQL, stays on purchased revisio
   const g=await gateway(t,{runtime:actualRuntimeHandler(db,rpcCalls)});
   assert.equal((await checkout(g.base)).status,200);
   // A newer completed run of the same generation appears AFTER checkout.
-  await db.exec(`INSERT INTO public.designpro_workflow_runs(id,owner_id,generation_id,revision_id,revision_snapshot_hash,workflow_type,status)
-    VALUES('${id(7)}','${OWNER}','${GENERATION}','${id(8)}','${'b'.repeat(64)}','designpro.entice_pack','completed');`);
+  await db.exec(seedRun(id(7),id(8),'b'.repeat(64)));
   const fields=metadata(g.stripeForms[0]);
   const first=await webhook(g.base,fields);assert.equal(first.status,200);
   const firstBody=await first.json();assert.equal(firstBody.idempotent,false);assert.equal(firstBody.enticeRunId,RUN);
@@ -216,4 +239,62 @@ for(const [name,change]of [
   const g=await gateway(t,{changeWorkspace:change}),response=await checkout(g.base);
   assert.equal(response.status,409);assert.match((await response.json()).error,/checkout_proofs_incomplete/);
   assert.equal(g.stripeForms.length,0);
+});
+
+// THE RPC ASKED THE RUN TABLE FOR A COLUMN IT HAS NEVER HAD (found on
+// production 2026-09-22). `designpro_workflow_runs` carries no `generation_id`;
+// PL/pgSQL compiles a statement on first EVALUATION, so this raised 42703 on
+// the first real purchase and on every one after it -- Stripe paid, the runtime
+// answered 400, no entitlement was written and production never opened.
+// Migration 20260922160000 drops that one predicate; the generation stays bound
+// by the EXISTS on designpro_revision_sources, which is asserted here to still
+// refuse a foreign generation.
+test('the purchase RPC reads the run table production actually has, and stays bound to the generation',async t=>{
+  const args=[basePayload.checkoutSessionId,basePayload.paymentIntentId,basePayload.productType,GENERATION,
+    basePayload.amountCents,basePayload.userEmail,null,0,ATLAS,REVISION,HASH,RUN,OWNER];
+  const call=(db,override=[])=>db.query(
+    `SELECT public.confirm_designpro_revision_purchase(${args.map((_,i)=>`$${i+1}`).join(',')}) AS result`,
+    args.map((value,i)=>override[i]===undefined?value:override[i]));
+
+  // Pre-fix: the real table makes the defect reproduce, verbatim.
+  const unpatched=await database(t,{patch:false});
+  await assert.rejects(()=>call(unpatched),error=>{
+    assert.match(String(error.message),/generation_id/);
+    return true;
+  },'the unpatched RPC must fail against the run table production actually has');
+
+  const db=await database(t);
+  const first=(await call(db)).rows[0].result;
+  assert.equal(first.idempotent,false);
+  assert.equal(first.enticeRunId,RUN);
+  assert.equal(first.revisionId,REVISION);
+  assert.equal((await db.query('SELECT count(*)::int n FROM public.designpro_purchase_entitlements')).rows[0].n,1);
+
+  // The generation binding survives: a foreign generation still cannot buy this
+  // revision, and neither can a foreign owner, revision or snapshot hash.
+  for(const [index,value] of [[3,id(9)],[8,id(9)],[9,id(9)],[10,'b'.repeat(64)],[12,id(9)]]) {
+    const override=[];override[index]=value;
+    await assert.rejects(()=>call(db,override),/purchase_revision_mismatch/,
+      `argument ${index} must still be refused`);
+  }
+  assert.equal((await db.query('SELECT count(*)::int n FROM public.designpro_purchase_entitlements')).rows[0].n,1);
+
+  // And the patch is idempotent over its own result.
+  await db.exec(PATCH);
+  assert.equal((await call(db)).rows[0].result.idempotent,true);
+});
+
+// The fixture may never drift back to a table production does not have.
+test('the run-table fixture is the migrations, not a hand-written one',async t=>{
+  assert.equal(/\bgeneration_id\b/.test(RUNS_TABLE),false,'the real run table has no generation_id');
+  assert.equal(/\bgeneration_id\b/.test(RUNS_ALTERS),false,'and no migration adds one');
+  assert.match(RUNS_TABLE,/CREATE TABLE IF NOT EXISTS public\.designpro_workflow_runs/);
+  assert.match(RUNS_TABLE,/revision_id uuid NOT NULL/);
+  assert.match(RUNS_ALTERS,/ADD COLUMN IF NOT EXISTS revision_snapshot_hash text/);
+  const db=await database(t);
+  const columns=(await db.query(`SELECT column_name FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='designpro_workflow_runs' ORDER BY column_name`)).rows.map(r=>r.column_name);
+  assert.equal(columns.includes('generation_id'),false);
+  for(const column of ['id','owner_id','revision_id','revision_snapshot_hash','workflow_type','status'])
+    assert.ok(columns.includes(column),`${column} missing from the real run table`);
 });

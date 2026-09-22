@@ -214,7 +214,8 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   assert.match(runtime.SYSTEM_JOB, /DRAW ONLY THE PANELS/);
   assert.match(runtime.SYSTEM_JOB, /printed onto this\s+sheet by the press/,
     "the model must be told the document arrives after it, not that it draws one");
-  assert.match(runtime.SYSTEM_JOB, /not a panel plain white/);
+  // POSITIVE FORM (2026-09-22). This asserted "not a panel plain white".
+  assert.match(runtime.SYSTEM_JOB, /outside the panels stays plain white/);
 
   // A positive physical fact, never a prohibition. "Do not draw wheel arches"
   // is the negative shape CLAUDE.md warns about in four places and which has
@@ -262,7 +263,7 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // It is stated as the bleed's own physics and joined to the trim-line
   // sentence, because the frame line is the thing the model was composing
   // inside of.
-  assert.match(runtime.INSTALLATION_FACT, /fills its cell corner to corner/);
+  assert.match(runtime.INSTALLATION_FACT, /filling its cell corner to corner/);
   assert.match(runtime.INSTALLATION_FACT, /out past the frame line on\nall four sides/);
   assert.doesNotMatch(runtime.INSTALLATION_FACT, /\bdo not\b/i,
     "the installation fact must state what IS, never what is forbidden");
@@ -277,11 +278,12 @@ test("three versions, in one pass, and the clean base is one of them", () => {
   // mid-blue artwork, clipped mid-word, in a font that knows nothing about the
   // design underneath.
   const artwork = runtime.VERSIONS.find((v) => v.key === "artwork");
-  assert.match(artwork.instruction, /as if they had never carried type/);
+  // POSITIVE FORM: "as if they had never carried type" told the model about type.
+  assert.match(artwork.instruction, /the artwork alone, background to every edge/);
   // The band LABEL is the rule now — it is drawn on the sheet and it says the
   // whole thing — so the instruction beside it stays one clause. Restating a
   // label in prose is budget the designer needed and did not have.
-  assert.match(artwork.label, /BACKGROUNDS ONLY \(NO TEXT OR LOGO\)/);
+  assert.match(artwork.label, /BACKGROUNDS ONLY \(THE ARTWORK ALONE\)/);
 });
 
 test("every literal string is stated ONCE and marked exact", () => {
@@ -293,7 +295,8 @@ test("every literal string is stated ONCE and marked exact", () => {
     manifest: { zones: [] }, creativeDirection: "blue wave",
   });
   assert.match(prompt, /EXACT TEXT, character for character/);
-  assert.match(prompt, /invent no other words, numerals or web address/);
+  // POSITIVE FORM: the list IS the vocabulary, rather than a ban on inventing one.
+  assert.match(prompt, /every word, numeral and web address on the wrap is here/);
   assert.equal((prompt.match(/\(520\) 555-0192/g) || []).length, 1,
     "a literal must appear exactly once -- twice is two chances to diverge");
 });
@@ -350,7 +353,7 @@ test("the LAYOUT reaches the model as prose; the COORDINATES never do", () => {
   // a layout it can already see. Describing it twice was budget the designer
   // needed: the proof shipped with zero characters of A.C.E. to stay under 4000.
   assert.match(prompt, /THE THREE BANDS, in this order:/);
-  assert.match(prompt, /Fill the attached template; do not re-flow it/,
+  assert.match(prompt, /Fill the attached template exactly as it is drawn/,
     "the chrome is composited at the container's own cell positions, so a re-flow "
     + "puts every caption under the wrong panel");
 
@@ -715,7 +718,7 @@ test("the prompt names the attachments in the order the function sends them", ()
   // say which attachment owns which decision.
   assert.match(tail, /drawn for THIS vehicle/,
     "the container must be named as the per-vehicle shape authority");
-  assert.match(tail, /take no shape or figure from it/,
+  assert.match(tail, /match its craft and draw this brief's\s*",?\s*"?own shapes|match its craft and draw this brief/,
     "the example must be excluded as a shape authority, or its one vehicle teaches every vehicle");
 
   // And only the FILLED sheet is the standard. Saying it of the blank one is
@@ -762,7 +765,8 @@ test("the six panels are demanded ONCE each, because the live sheet drew FRONT t
     input: { companyName: "X" }, manifest: { zones: [] }, creativeDirection: "y",
   });
   assert.match(prompt, /each drawn ONCE/);
-  assert.match(prompt, /never repeated, never a seventh, never an empty box/);
+  // POSITIVE FORM: every box carries its art, rather than three "never"s.
+  assert.match(prompt, /each drawn ONCE, and every box on the sheet carries its art/);
   // AND THE EMPTY BOX IS NOW NAMED WITH WHAT FILLS IT. Zone 3 came back with
   // three of five boxes blank under a rule that only forbade blankness; a rule
   // with no content behind it cannot be followed.
@@ -954,4 +958,104 @@ test("the head accepts either persona: the commercial designer or the restyle Le
   assert.ok(!head.includes("OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"), "the artboard tail is cut on restyle too");
   assert.throws(() => runtime.panelProofCreativeHead("no designer here\nOUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"),
     /panel_proof_ace_persona_missing/);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE CONTRACT SPEAKS ONLY IN THE POSITIVE (owner, 2026-09-22).
+//
+// Owner, on the framework she drafted: "Image models are notoriously bad at
+// negative prompting (like 'no', 'not', 'without'). If you tell an image model
+// 'no 3D wheels' ... its attention mechanism activates the tokens for 'wheels'
+// ... and it often draws exactly what you told it to avoid."
+//
+// This repo had already measured that 4/4 on the field map -- `atlasFieldContract`
+// emitted the six rectangles and then said "None of the map is drawn", and four
+// consecutive live runs painted the digits onto the customer's flanks -- and
+// CLAUDE.md warns about the shape in four places. The document contract was
+// still carrying seven of them: "invent no other words", "NO TEXT OR LOGO",
+// "as if they had never carried type", "do not re-flow it", "never repeated,
+// never a seventh, never an empty box", "take no shape or figure from it",
+// "every part of the sheet that is not a panel".
+//
+// SCOPE IS THE WHOLE POINT. This asserts on the DOCUMENT CONTRACT ONLY -- the
+// prompt built with no creative head -- because A.C.E.'s own assembly is a
+// locked persona (RULE 0.26, v19) whose wording is not this file's to police.
+// Widening this to the assembled prompt would fail on the persona and invite
+// exactly the "rewrite the creative framing to fix a pixel defect" move RULE
+// 0.1 forbids.
+const NEGATION = /\b(no|not|never|without|don['’]?t|none|cannot|neither|nor)\b/gi;
+
+test("the model-facing document contract carries no negative instruction", () => {
+  const prompt = runtime.buildPanelProofPrompt({
+    input: {
+      companyName: "New Aura Day Spa", website: "www.NewAuraDaySpa.com",
+      vehicleYear: "2022", vehicleMake: "Ford", vehicleModel: "F250 Crew Cab",
+    },
+    manifest: { zones: [] },
+    creativeDirection: "Custom wrap for New Aura Day Spa.",
+  });
+  assert.ok(prompt.includes("THE DELIVERABLE IS A PRINT FILE"), "the contract must be present at all");
+  const found = [];
+  for (const line of prompt.split("\n")) {
+    const hits = line.match(NEGATION);
+    if (hits) found.push(`${hits.join(",")} -> ${line.trim()}`);
+  }
+  assert.deepEqual(found, [],
+    "every rule in the document contract must say what to draw, never what to avoid");
+});
+
+test("a Zone 3 slot never names a string the customer did not supply", () => {
+  // THE CONTACT SLOT NAMED A PHONE THE FORM NEVER SUPPLIED. It read "the phone
+  // and web address above, on one line" whenever EITHER existed, so the live
+  // New Aura brief -- website, no phone -- told Zone 3 to cut a phone line that
+  // appears nowhere in the request. Asking for a string that does not exist is
+  // an invitation to invent one, which is the defect EXACT TEXT exists to end.
+  const slot = (input) => {
+    const prompt = runtime.buildPanelProofPrompt({ input, manifest: { zones: [] }, creativeDirection: "y" });
+    return /CONTACT LINE: (.*)/.exec(prompt)[1];
+  };
+  assert.equal(slot({ companyName: "X", website: "x.com" }), "the web address above, on one line");
+  assert.equal(slot({ companyName: "X", phone: "555-0142" }), "the phone above, on one line");
+  assert.equal(slot({ companyName: "X", phone: "555-0142", website: "x.com" }),
+    "the phone and web address above, on one line");
+  // With neither supplied the slot LIFTS a mark off the design rather than
+  // naming a contact string at all.
+  const none = slot({ companyName: "X" });
+  assert.doesNotMatch(none, /phone|web address/i,
+    "with no contact supplied the slot must never name one");
+  assert.match(none, /the design's own lettering/);
+
+  // And the promotional slot stopped asking for a services line the brief may
+  // never have carried.
+  const promo = (input) => /PROMOTIONAL TEXT: (.*)/.exec(
+    runtime.buildPanelProofPrompt({ input, manifest: { zones: [] }, creativeDirection: "y" }))[1];
+  assert.equal(promo({ companyName: "X", promo: "Ask about our spring offer" }), "the promotional text above");
+  assert.match(promo({ companyName: "X" }), /lifted from the panels exactly as set/);
+});
+
+test("both byte-locked twins carry the positive wording, not one of them", () => {
+  // The edge assembly and the runtime assembly are independent files that must
+  // state the same contract; this repo has watched that pair drift four times.
+  // Every phrase below was a negation in one or both twins until 2026-09-22.
+  const runtimeSource = readFileSync(
+    new URL("../runtime/atlas-panel-proof-contract.cjs", import.meta.url), "utf8");
+  const retired = [
+    "invent no other words",
+    "NO TEXT OR LOGO",
+    "never carried type",
+    "do not re-flow it",
+    "never an empty box",
+    "take no shape or figure",
+    "that is not a panel",
+    "the services line set as one cut strip",
+  ];
+  for (const source of [edgeSource, runtimeSource]) {
+    // Comments explain the history; only live strings reach the model, and the
+    // constants below are what the assembler joins.
+    const live = source.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+    for (const phrase of retired) {
+      assert.ok(!live.includes(phrase),
+        `"${phrase}" is a negative instruction and must not reach the model`);
+    }
+  }
 });
