@@ -268,6 +268,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   /** Whether the OS AppShell already owns a rail around this page. Read, never
    *  re-derived: it is the same predicate AppShell itself branches on. */
   const insideOsShell = useInsideAppShell();
+  /**
+   * BRING THE PHOTO TO THE CUSTOMER, NOT THE OTHER WAY ROUND (owner,
+   * 2026-09-22: "it's still making me scroll down").
+   *
+   * Every control that starts a marking mode lives BELOW the photo, so on a
+   * phone pressing one left her looking at the buttons while the thing she now
+   * has to tap was off screen above. Each of them scrolls the preview into
+   * view; the instruction rides on the image itself, so the two arrive
+   * together.
+   */
+  const focusPhoto = () => {
+    setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  };
   // The AI picture is for one design, one photo and one pattern size; a step
   // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
   // and the tab offers to repaint.
@@ -1782,7 +1795,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     onClick={() => {
                       cornersOrigin.current = 'manual'; setCornerSource('manual');
                       setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before');
-                      setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                      focusPhoto();
                     }}
                   >
                     <Ruler className="mr-2 h-4 w-4" />Mark the corners
@@ -2012,7 +2025,46 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <p className="p-2 text-xs wall-muted">{AI_VIEW_EXPLAINER}</p>
                 <div className="px-2 pb-2"><Button size="sm" variant="outline" onClick={() => setView('after')}>Back to the print geometry</Button></div>
               </div> :
-              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />}
+              <div className="relative">
+              {/* ⚠️ THE INSTRUCTION LIVES ON THE PHOTO (owner, 2026-09-22:
+                  "it's still making me scroll down and instruction doesn't pop
+                  up, bad ux").
+                  The previous pass put it in the "Your wall photo" block --
+                  which is BELOW the image. On a phone the customer is looking
+                  at the photo she is tapping, and the words telling her what
+                  to tap were off screen. An instruction you have to scroll to
+                  find is not an instruction.
+                  So it is an overlay pinned to the top of the image itself,
+                  inside the same box the taps land in. It only exists while
+                  marking, so it never covers the design at rest, and it is
+                  pointer-events-none apart from its own two buttons -- a
+                  banner that ate the first tap would be worse than silence. */}
+              {marking && (
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2">
+                  <div className="pointer-events-auto rounded-xl border border-blue-400/70 bg-slate-900/92 px-3 py-2 shadow-lg backdrop-blur">
+                    <p className="text-[13px] font-semibold leading-snug text-white">
+                      {marking === 'wall'
+                        ? `Tap the four corners of your wall, clockwise from the top left — ${4 - corners.length} to go`
+                        : marking === 'rectangle'
+                          ? excludeDraft.length === 0
+                            ? 'Tap ONE corner of the closet, door or window'
+                            : 'Now tap the OPPOSITE corner'
+                          : excludeDraft.length < 3
+                            ? `Tap around the area — ${3 - excludeDraft.length} more point${3 - excludeDraft.length === 1 ? '' : 's'}`
+                            : 'Keep tapping to refine, then Finish'}
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      {marking === 'exclude' && <Button size="sm" className="h-7 px-2 text-xs" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish</Button>}
+                      <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || (marking === 'wall' ? !corners.length : !excludeDraft.length)}
+                        onClick={() => marking === 'wall' ? setCorners(old => old.slice(0, -1)) : setExcludeDraft(old => old.slice(0, -1))}>Undo</Button>
+                      <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy}
+                        onClick={() => { setExcludeDraft([]); setMarking(null); }}>Cancel</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />
+              </div>}
               {/* THE TRUST SIGNAL (owner, 2026-09-12: "There is no trust signal").
                   The composite is not a preview of the print file, it IS the
                   print file on their wall, and that is the reason to buy. Said
@@ -2060,7 +2112,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                         ? `set${cornerSource === 'detected' ? ' automatically' : ' by you'} — the design is imposed inside it`
                         : detecting ? 'looking…' : 'not set — the design cannot be placed on the photo yet'}
                   </p>
-                  <Button size="sm" variant={wallLocated ? 'outline' : 'default'} disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); }}>
+                  <Button size="sm" variant={wallLocated ? 'outline' : 'default'} disabled={!!busy} onClick={() => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); focusPhoto(); }}>
                     <RotateCcw className="mr-1.5 h-3 w-3" />{wallLocated ? 'Re-mark' : 'Mark the corners'}
                   </Button>
                 </div>
@@ -2115,8 +2167,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     around the lot. Named for what the customer is looking at,
                     not for the tool. */}
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                  <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Mask a closet, door or window</Button>
-                  <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); }}>Protect a busy area</Button>
+                  <Button size="sm" variant={marking === 'rectangle' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('rectangle'); setShowMasks(true); setExcludeDraft([]); setView('before'); focusPhoto(); }}>Mask a closet, door or window</Button>
+                  <Button size="sm" variant={marking === 'exclude' ? 'default' : 'outline'} disabled={!!busy} onClick={() => { setMarking('exclude'); setShowMasks(true); setExcludeDraft([]); setView('before'); focusPhoto(); }}>Protect a busy area</Button>
                   <button type="button" className="text-xs font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Fewer options' : 'More options'}</button>
                 </div>
               </div>
