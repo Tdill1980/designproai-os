@@ -1108,85 +1108,24 @@ function SurfacePairRows({
 }
 
 /** Rows that render only when the server actually stated a value. */
-function Fact({ label, value }: { label: string; value: React.ReactNode }) {
-  if (value === null || value === undefined || value === "" ) return null;
-  return (
-    <div className="min-w-0">
-      <dt className="text-[10px] text-gray-500">{label}</dt>
-      <dd className="truncate text-[11px] font-semibold text-gray-900" title={typeof value === "string" ? value : undefined}>
-        {value}
-      </dd>
-    </div>
-  );
-}
 
 function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
   const qc = atlas.qc || null;
-  const provenance = atlas.provenance || null;
   const cutoutSurfaces = Array.isArray(qc?.masterCutoutSurfaces) ? qc!.masterCutoutSurfaces : [];
   const findings = Array.isArray(qc?.masterCutoutFindings) ? qc!.masterCutoutFindings : [];
   const fills = Array.isArray(qc?.cutoutFillApplied) ? qc!.cutoutFillApplied! : [];
-  // Equal on a clean sheet; different when cut-outs were filled before the
-  // panels were cut. Saying which is the difference between "the panel came
-  // from another design" and "the sheet was repaired first".
-  const repaired = Boolean(
-    qc?.panelSourceHash
-    && qc.canonicalMasterHash
-    && qc.panelSourceHash !== qc.canonicalMasterHash,
-  );
-  if (!qc && !provenance) return null;
+  // THE ENGINE'S OWN RECORD IS NOT ON THE SCREEN ANY MORE (owner, 2026-09-22,
+  // looking at this block on the live board: "Delete defunct atlas"). The
+  // master QC verdict, its contract, the authoring model, the prompt hash, the
+  // route and the size the retired sheet was requested at are engine
+  // provenance for the assembled master, which is internal lineage identity
+  // now, not a document a person reviews. They still ride the forensic-record
+  // download for the design team. What stays visible is the one thing a human
+  // must act on before a panel prints: a surface that arrived holed.
+  if (cutoutSurfaces.length === 0 && fills.length === 0) return null;
 
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-        Master QC &amp; provenance
-      </div>
-
-      <dl className="mt-2 grid gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
-        <Fact
-          label="Master QC"
-          value={
-            qc?.masterQcPassed === true ? "Passed"
-              : qc?.masterQcPassed === false ? "Failed"
-                : qc ? "Not recorded" : null
-          }
-        />
-        <Fact
-          label="QC confidence"
-          value={typeof qc?.masterQcConfidence === "number" ? qc.masterQcConfidence.toFixed(2) : null}
-        />
-        <Fact label="QC model" value={qc?.masterQcModel || null} />
-        <Fact label="QC contract" value={qc?.masterQcContract || null} />
-        <Fact
-          label="Authoring attempts"
-          value={typeof qc?.masterAuthoringAttempts === "number" ? String(qc.masterAuthoringAttempts) : null}
-        />
-        <Fact label="Authoring model" value={atlas.model} />
-        <Fact label="Prompt hash" value={provenance?.promptHash ? provenance.promptHash.slice(0, 16) : null} />
-        <Fact label="Pipeline mode" value={provenance?.pipelineMode || null} />
-        <Fact label="Input contract" value={provenance?.inputContract || null} />
-        <Fact label="Call 1 route" value={provenance?.topology || null} />
-        <Fact label="Provider contract" value={provenance?.providerContract || null} />
-        <Fact label="Requested size" value={provenance?.requestedImageSize || null} />
-        <Fact
-          label="Delivered"
-          value={
-            provenance?.deliveredWidthPx && provenance?.deliveredHeightPx
-              ? `${provenance.deliveredWidthPx}×${provenance.deliveredHeightPx}${provenance.nativelyFourK ? " · native 4K" : ""}`
-              : null
-          }
-        />
-        <Fact label="Artboard port" value={provenance?.artboardPortVersion || null} />
-        <Fact
-          label="Canonical master"
-          value={qc?.canonicalMasterHash ? qc.canonicalMasterHash.slice(0, 16) : null}
-        />
-        <Fact
-          label="Panels cut from"
-          value={qc?.panelSourceHash ? `${qc.panelSourceHash.slice(0, 16)}${repaired ? " · repaired sheet" : " · same as master"}` : null}
-        />
-      </dl>
-
       {/* A CUT-OUT IS A PRINT DEFECT, NOT A BROKEN DESIGN. The design and its
           proofs are unaffected; the hole only becomes real at the panel cut, so
           these surfaces must not print until a human has seen them on a

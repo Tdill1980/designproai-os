@@ -293,8 +293,19 @@ select matches(
   'final_qc_evidence_or_business_identity_incomplete',
   'final QC receipt binds canonical DesignID and business Order #'
 );
+-- The exact stamp set is three (seal, stamped Call 8 proof, certificate) plus
+-- the seven stamped views, plus the sealed TriZone(TM) Production Panel Proof
+-- when the frozen snapshot carries one (20260922151000; owner 2026-09-22:
+-- "We still need QC checks, stamp, zip file creator -- it's just now on
+-- TriZone Production panel proof"). The count reads all three terms.
 select ok(
-  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM (3+v_proof_view_count)'
+  position('jsonb_array_length(COALESCE(p_artifacts,''[]''::jsonb)) IS DISTINCT FROM (3+v_proof_view_count+v_proof_sheet_count)'
+    in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('a->>''surfaceKey''=''stamped-production-panel-proof'''
+    in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('production_panel_proof_stamp_without_sheet'
+    in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
+  AND position('NOT IN (''seal'',''stamped-proof'',''certificate'',''stamped-production-panel-proof'')'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
   AND position('v_proof_view_count:=designpro_private.assert_final_stamped_views(v_run.id,p_receipt,p_artifacts)'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
@@ -304,7 +315,7 @@ select ok(
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0
   AND position('certificateHash'
     in pg_get_functiondef('public.complete_designpro_stage(uuid,uuid,jsonb,jsonb,text,jsonb)'::regprocedure)) > 0,
-  'stamp completion requires the seal, production proof, QC certificate and all seven bound vehicle proofs'
+  'stamp completion requires the seal, production proof, QC certificate, all seven bound vehicle proofs, and the sealed Production Panel Proof when the revision carries one'
 );
 select ok(
   (select count(*)=2 from pg_attribute

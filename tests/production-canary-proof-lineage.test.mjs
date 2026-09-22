@@ -180,7 +180,12 @@ test("three-zone canary proves pristine composition and rejects missing logo or 
   const panel = surfaceKey => ({surfaceKey,positionalPremiseVerified:true,persisted:true,storagePath:surfaceKey,contentHash:"a".repeat(64)});
   const proof = {composition:{contract:"designpro.production-zone-composite.v1",sourceAssetsPreserved:true,
     placements:SURFACES.filter(s=>s!=="roof").map(surfaceKey=>({...logo,role:"logo",surfaceKey,flipped:false}))},
-    threeZoneLayout:{required:true},proofStoragePath:"proof.png",proofSha256:"e".repeat(64),
+    // #616 made the canary read WHO drew Zone 1 (`brandedSource`): on the
+    // DERIVED path ("composited") every placement is held to its pristine
+    // identity; on the customer's route ("sheet-drawn") code placed nothing.
+    // This fixture predates that and had been failing on main since, unseen
+    // (CI runs none). The placements it carries are the composited path.
+    threeZoneLayout:{required:true,brandedSource:"composited"},proofStoragePath:"proof.png",proofSha256:"e".repeat(64),
     quadrants:{branded:SURFACES.map(panel),clean:SURFACES.map(panel),cutGraphics:[logo]}};
   const check = p => verify({metadata:{panelProofAuthoring:p}},logo,SURFACES,"","","",{},()=>{});
   check(proof);
@@ -190,4 +195,13 @@ test("three-zone canary proves pristine composition and rejects missing logo or 
   assert.throws(()=>check(melted),/did not receive pristine/);
   const unverified = structuredClone(proof); unverified.quadrants.clean[0].positionalPremiseVerified=false;
   assert.throws(()=>check(unverified),/unverified panel identities/);
+  // The customer's route: the designer drew Zone 1, so code recorded no
+  // placements — and a receipt that says sheet-drawn yet carries placements,
+  // or one that does not say who drew Zone 1 at all, is refused.
+  const sheetDrawn = structuredClone(proof); sheetDrawn.threeZoneLayout.brandedSource="sheet-drawn"; sheetDrawn.composition.placements=[];
+  check(sheetDrawn);
+  const contradictory = structuredClone(proof); contradictory.threeZoneLayout.brandedSource="sheet-drawn";
+  assert.throws(()=>check(contradictory),/yet code recorded placements/);
+  const unnamed = structuredClone(proof); delete unnamed.threeZoneLayout.brandedSource;
+  assert.throws(()=>check(unnamed),/does not say who drew Zone 1/);
 });
