@@ -18,7 +18,8 @@
  *                      responsibilities are not. Nothing about it is retired.
  *   Production Layers — the six print-ready panels cut from the approved layout
  *   Topaz            — Call 12 enhancement of each panel to print resolution
- *   Verified output  — the eighteen files (six surfaces x PNG/TIFF/EPS)
+ *   Verified output  — the sixty files (six surfaces x PNG/JPG/TIFF/EPS/PDF x
+ *                      branded + clean variant, each at 150 PPI with 5" bleed)
  *   Delivery         — the approval stamp, the production ZIP and the manifest
  */
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -39,7 +40,10 @@ import {
   EXPECTED_OUTPUT_FILES,
   FINAL_CHECKS,
   OUTPUT_FORMATS,
+  OUTPUT_VARIANT_LABEL,
+  OUTPUT_VARIANTS,
   outputFormatOf,
+  outputVariantOf,
   PREFLIGHT_CHECKS,
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
@@ -350,21 +354,28 @@ function VerifiedOutputFiles({ artifacts }: { artifacts: WorkflowArtifact[] }) {
   const outputs = artifacts.filter((item) => item.kind === "output");
   if (outputs.length === 0) return null;
 
+  // One row per surface AND variant: the branded panel and, on a v4 pack, the
+  // clean (logo-free) panel beside it. A file written before v4 carries no
+  // variant and is the branded panel, so an older pack shows its rows and
+  // never a fabricated clean row.
   const bySurface = new Map<string, Partial<Record<string, WorkflowArtifact>>>();
   for (const output of outputs) {
     const format = outputFormatOf(output.storagePath);
     if (!format) continue;
-    const row = bySurface.get(output.surfaceKey) || {};
+    const key = `${output.surfaceKey}:${outputVariantOf(output)}`;
+    const row = bySurface.get(key) || {};
     row[format] = output;
-    bySurface.set(output.surfaceKey, row);
+    bySurface.set(key, row);
   }
+  const hasClean = outputs.some((output) => outputVariantOf(output) === "clean");
+  const variants = hasClean ? OUTPUT_VARIANTS : OUTPUT_VARIANTS.filter((variant) => variant === "branded");
   const complete = outputs.length === EXPECTED_OUTPUT_FILES;
 
   return (
     <Panel
       eyebrow="Verified production output"
       title={`${outputs.length} of ${EXPECTED_OUTPUT_FILES} verified files`}
-      description="Six printed surfaces in PNG, TIFF and EPS. Every file's hash is bound to the verified output receipt — the final QC gate signs off on exactly these bytes."
+      description="Six printed surfaces in PNG, JPG, TIFF, EPS and PDF, each as a branded and a clean (logo-free) variant, every file at 150 PPI with 5″ bleed. Every file's hash is bound to the verified output receipt — the final QC gate signs off on exactly these bytes."
       aside={<StatePill state={complete ? "complete" : "running"} />}
     >
       <div className="overflow-x-auto">
@@ -380,11 +391,14 @@ function VerifiedOutputFiles({ artifacts }: { artifacts: WorkflowArtifact[] }) {
             </tr>
           </thead>
           <tbody>
-            {PRODUCTION_SURFACES.map((surface: GenieSurfaceKey) => {
-              const row = bySurface.get(surface) || {};
+            {PRODUCTION_SURFACES.flatMap((surface: GenieSurfaceKey) => variants.map((variant) => {
+              const row = bySurface.get(`${surface}:${variant}`) || {};
               return (
-                <tr key={surface} className="border-b border-border/60 last:border-0">
-                  <td className="py-3 pr-4 font-medium">{SURFACE_LABEL[surface]}</td>
+                <tr key={`${surface}:${variant}`} className="border-b border-border/60 last:border-0">
+                  <td className="py-3 pr-4 font-medium">
+                    {SURFACE_LABEL[surface]}
+                    <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{OUTPUT_VARIANT_LABEL[variant]}</span>
+                  </td>
                   {OUTPUT_FORMATS.map((format) => {
                     const file = row[format];
                     return (
@@ -414,7 +428,7 @@ function VerifiedOutputFiles({ artifacts }: { artifacts: WorkflowArtifact[] }) {
                   })}
                 </tr>
               );
-            })}
+            }))}
           </tbody>
         </table>
       </div>

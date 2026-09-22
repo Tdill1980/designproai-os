@@ -23,10 +23,15 @@ const hashJson=value=>hash(JSON.stringify(canonical(value)));
 const OWNER='11111111-1111-4111-8111-111111111111',RUN='22222222-2222-4222-8222-222222222222',REV='33333333-3333-4333-8333-333333333333',GRAPH='44444444-4444-4444-8444-444444444444';
 const surfaces=['driver','passenger','hood','roof','front','rear'];
 class StageError extends Error{constructor(code,message,retryable=true){super(message);this.code=code;this.retryable=retryable;}}
-function fixture(){
+function fixture({cutGraphics}={}){
   const stored=new Map(),rows=[],downloads=[];
   const put=(path,bytes)=>{stored.set(path,bytes);return{storagePath:path,contentHash:hash(bytes),byteSize:bytes.length};};
-  for(const [kind,count]of [['flat-proof',1],['panel',6],['qc-panel',6],['output',24],['stamp',10]])
+  // The complete output set the purchase manifest requires: six surfaces times
+  // PNG, TIFF, EPS, PDF and JPG, times the branded and the clean variant (60
+  // under contract v4) -- read off the manifest rather than hand-counted.
+  const outputCount=worker.authorizedAssetManifest(['print_pack_entitlement']).requiredOutputFiles;
+  assert.equal(outputCount,60);
+  for(const [kind,count]of [['flat-proof',1],['panel',6],['qc-panel',6],['output',outputCount],['stamp',10]])
     for(let i=0;i<count;i++){
       const ref=put(`designpro/user_${OWNER}/${RUN}/${kind}/file-${i}.png`,Buffer.from(`${kind}:${i}`));
       rows.push({artifact_kind:kind,surface_key:String(i),storage_path:ref.storagePath,content_hash:ref.contentHash,byte_size:ref.byteSize});
@@ -36,7 +41,7 @@ function fixture(){
   const proof=put(`atlas-panel-proof/${hash(proofBytes)}.png`,proofBytes);
   const master=put(`atlas-call1-graph/${GRAPH}/panel-proof-master-${hash(masterBytes)}.png`,masterBytes);
   const snapshot={sourceMasterContentHash:master.contentHash,panelProofAuthoring:{contract:'designpro.atlas-panel-proof-topology.v2',composition:{contract:'designpro.production-zone-composite.v1',sourceAssetsPreserved:true},
-    quadrants:{branded:surfaces.map(surfaceKey=>({surfaceKey})),clean:surfaces.map(surfaceKey=>({surfaceKey})),cutGraphics:[{surfaceKey:'logo'}]},graph:{runId:GRAPH},
+    quadrants:{branded:surfaces.map(surfaceKey=>({surfaceKey})),clean:surfaces.map(surfaceKey=>({surfaceKey})),cutGraphics:cutGraphics??[{surfaceKey:'logo'}]},graph:{runId:GRAPH},
     proofStoragePath:proof.storagePath,proofSha256:proof.contentHash,proofByteSize:proof.byteSize,masterStoragePath:master.storagePath,masterSha256:master.contentHash}};
   const source={owner_id:OWNER,tenant_key:`user_${OWNER}`,snapshot_hash:'a'.repeat(64),snapshot};
   const run={id:RUN,owner_id:OWNER,tenant_key:source.tenant_key,revision_id:REV,revision_snapshot_hash:source.snapshot_hash,manifest_hash:'c'.repeat(64)};
@@ -56,7 +61,15 @@ function fixture(){
     artifact(kind,storagePath,contentHash,byteSize,surfaceKey,metadata){return{kind,storagePath,contentHash,byteSize,surfaceKey,metadata};},
     async complete(sb,stage,run,receipt,hash,artifacts){completed={receipt,hash,artifacts};return completed;},async removeCommittedSpool(){},console};
   const execute=vm.runInNewContext(`${helpers}\n(async function(sb,stage,run,runtimeConfig){ const input={};${branch}})`,context);
-  return{source,stored,downloads,proof,master,views,run,execute:()=>execute(sb,{stage_key:'zip.build'},run,{}),result:()=>({zipped,completed})};
+  return{source,stored,downloads,proof,master,views,run,put,execute:()=>execute(sb,{stage_key:'zip.build'},run,{}),result:()=>({zipped,completed})};
+}
+// A persisted Zone 3 asset exactly as the compositor freezes it: the customer's
+// uploaded logo under its upload revision, or a content-addressed element.
+function cutGraphic(f,{assetRole,bytes,contentType,path}){
+  const contentHash=hash(bytes);const ext={'image/png':'png','image/svg+xml':'svg','image/jpeg':'jpg'}[contentType];
+  const storagePath=path??(assetRole==='logo'?`users/${OWNER}/revisions/${REV}/inputs/logo/${contentHash}.${ext}`:`atlas-elements/${contentHash}.${ext}`);
+  f.put(storagePath,bytes);
+  return{role:'cut-graphic',assetRole,surfaceKey:assetRole,persisted:true,vector:contentType==='image/svg+xml',storagePath,contentHash,byteSize:bytes.length,contentType,productionApproved:false};
 }
 function unzip(bytes){let offset=0;const files=new Map();while(bytes.readUInt32LE(offset)===0x04034b50){const n=bytes.readUInt16LE(offset+26),e=bytes.readUInt16LE(offset+28),name=bytes.toString('utf8',offset+30,offset+30+n),extra=offset+30+n;assert.equal(bytes.readUInt16LE(extra),1);const length=Number(bytes.readBigUInt64LE(extra+4)),start=extra+e;files.set(name,bytes.subarray(start,start+length));offset=start+length+24;}assert.equal(bytes.readUInt32LE(offset),0x02014b50);return files;}
 
@@ -75,6 +88,43 @@ test('changed proof or master bytes, source binding, missing zones and graph-pat
   for(const change of [f=>f.stored.set(f.proof.storagePath,Buffer.from('changed sheet')),f=>f.stored.set(f.master.storagePath,Buffer.from('changed master')),f=>f.source.snapshot_hash='b'.repeat(64),f=>f.source.owner_id=RUN,f=>f.source.snapshot.panelProofAuthoring.quadrants.clean.pop(),f=>f.source.snapshot.panelProofAuthoring.masterStoragePath='provider-cache/foreign.png',f=>f.source.snapshot.panelProofAuthoring=null]){
     const f=fixture();change(f);await assert.rejects(f.execute(),error=>/^zip_(call1_proof_(changed|incomplete)|revision_source_changed)$/.test(error.code)&&error.retryable===false);assert.equal(f.result().completed,undefined);
   }
+});
+
+test('an honest empty Zone 3 packages the proof and master with no cut graphics and no refusal (#599 degrade)',async()=>{
+  const f=fixture({cutGraphics:[]});await f.execute();const{zipped,completed}=f.result(),files=unzip(zipped),receipt=completed.receipt;
+  assert.deepEqual(files.get('proofs/call1-three-zone-production-proof.png'),f.stored.get(f.proof.storagePath));
+  assert.equal([...files.keys()].some(name=>name.startsWith('proofs/cut-graphics/')),false);
+  assert.equal(receipt.includedKinds['cut-graphic'],0);assert.equal(receipt.includedKinds['production-panel-proof'],1);
+  assert.equal(receipt.archiveManifest.length,files.size);
+  // The array must still exist: a proof that cannot say what Zone 3 held is incomplete.
+  const g=fixture();delete g.source.snapshot.panelProofAuthoring.quadrants.cutGraphics;
+  await assert.rejects(g.execute(),error=>error.code==='zip_call1_proof_incomplete'&&error.retryable===false);
+});
+
+test('persisted Zone 3 cut graphics ship in the ZIP as their exact frozen bytes, and a forged identity is refused',async()=>{
+  const f=fixture();
+  const logo=cutGraphic(f,{assetRole:'logo',bytes:Buffer.from('exact uploaded logo png'),contentType:'image/png'});
+  const type=cutGraphic(f,{assetRole:'typography',bytes:Buffer.from('<svg>company name</svg>'),contentType:'image/svg+xml'});
+  const unpersisted={role:'cut-graphic',assetRole:'contact',surfaceKey:'contact',persisted:false};
+  f.source.snapshot.panelProofAuthoring.quadrants.cutGraphics=[logo,type,unpersisted];
+  await f.execute();const{zipped,completed}=f.result(),files=unzip(zipped),receipt=completed.receipt;
+  assert.deepEqual(files.get(`proofs/cut-graphics/logo-${logo.contentHash.slice(0,12)}.png`),f.stored.get(logo.storagePath));
+  assert.deepEqual(files.get(`proofs/cut-graphics/typography-${type.contentHash.slice(0,12)}.svg`),f.stored.get(type.storagePath));
+  assert.equal([...files.keys()].filter(name=>name.startsWith('proofs/cut-graphics/')).length,2,'an unpersisted entry has no bytes to package');
+  assert.equal(receipt.includedKinds['cut-graphic'],2);assert.equal(receipt.sourceProofs.length,4);
+  const listed=receipt.archiveManifest.filter(file=>file.kind==='cut-graphic');
+  // The receipt is built inside the vm realm, so compare values, not prototypes.
+  assert.equal(JSON.stringify(listed.map(file=>[file.surfaceKey,file.contentHash])),JSON.stringify([['logo',logo.contentHash],['typography',type.contentHash]]));
+  assert.equal(receipt.archiveManifest.length,files.size);
+  for(const change of [
+    g=>{g.source.snapshot.panelProofAuthoring.quadrants.cutGraphics=[{...logo,contentHash:'0'.repeat(64)}];},
+    g=>{g.source.snapshot.panelProofAuthoring.quadrants.cutGraphics=[{...logo,storagePath:`provider-cache/${logo.contentHash}.png`}];},
+    g=>{g.source.snapshot.panelProofAuthoring.quadrants.cutGraphics=[{...logo,contentType:'image/svg+xml'}];},
+  ]){const g=fixture();cutGraphic(g,{assetRole:'logo',bytes:Buffer.from('exact uploaded logo png'),contentType:'image/png'});change(g);
+    await assert.rejects(g.execute(),error=>error.code==='zip_cut_graphic_identity_invalid'&&error.retryable===false);}
+  const changed=fixture();const c=cutGraphic(changed,{assetRole:'logo',bytes:Buffer.from('exact uploaded logo png'),contentType:'image/png'});
+  changed.source.snapshot.panelProofAuthoring.quadrants.cutGraphics=[c];changed.stored.set(c.storagePath,Buffer.from('swapped logo bytes'));
+  await assert.rejects(changed.execute(),error=>error.code==='zip_call1_proof_changed'&&error.retryable===false);
 });
 
 test('legacy source without a three-zone receipt keeps its original archive contract and never invents a proof',async()=>{

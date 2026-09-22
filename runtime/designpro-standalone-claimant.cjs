@@ -24,7 +24,7 @@ const {
 // served -- see `buildCall8Proof` and the fail-closed arm in `panels.build`.
 const { call8ProofMaterialHash, normalizeCallOnePanelSet } = require("./call8-proof-material.cjs");
 const { assertRunProductionAncestry } = require("./production-provenance.cjs");
-const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources, FORMATS: OUTPUT_FORMATS, LEGACY_FORMATS, OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT } = require("./output-qc.cjs");
+const { buildDeterministicRasterEps, createDeterministicZip64Stream, verifyProductionOutputSet, planEpsResources, FORMATS: OUTPUT_FORMATS, VARIANTS: OUTPUT_VARIANTS, LEGACY_FORMATS, OUTPUT_FORMAT_CONTRACT, JPG_OUTPUT_FORMAT_CONTRACT, LEGACY_OUTPUT_FORMAT_CONTRACT, JPEG_QUALITY, formatsForContract, variantsForContract, outputFileCountForContract } = require("./output-qc.cjs");
 const { buildPanelProProductionPdf } = require("./panelpro-file-output-render.cjs");
 const { assertDeliverySnapshot, MANIFEST_CONTRACT } = require("./wrapbox-delivery.cjs");
 const { MAX_STANDARD_UPLOAD_BYTES, removeCommittedSpool, spoolDeterministicZip64, spoolImmutableBuffer, spoolStoredZip, uploadSpoolWithTus, verifyStoredArtifact, verifyStoredZip } = require("./zip-spool.cjs");
@@ -169,7 +169,13 @@ const ARTIFACT_KINDS = Object.freeze([
   // "panel": the branded six stay the only "panel" artifacts, so source.verify's
   // exactly-six-distinct-surface_key assertion keeps working untouched, and no
   // downstream consumer can mistake a QC instrument for production artwork.
-  "flat-proof", "panel", "qc-panel", "corrected-panel", "upscaled-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
+  //
+  // "upscaled-clean-panel" is the Zone 2 CLEAN background of a surface,
+  // finished by Call 12 to the identical print rectangle as its branded
+  // "upscaled-panel" (trim + 5" per edge at 150 PPI). It is its own kind so
+  // buildPrintOutputs' exactly-six read of "upscaled-panel" and the PanelPro
+  // source binding keep matching the branded set alone.
+  "flat-proof", "panel", "qc-panel", "corrected-panel", "upscaled-panel", "upscaled-clean-panel", "logo", "output", "stamp", "zip", "wrapbox-manifest",
 ]);
 const CLAIMANT_CONTRACT = "designpro.server-claimant.v2";
 // The Call 9 rule the database enforces. Every output is the deterministic
@@ -903,11 +909,11 @@ function authorizedAssetManifest(paidProducts) {
     // or completes as inapplicable.
     upscale: Object.freeze([...(production ? ["panel", "qc-panel"] : []), ...(logos ? ["logo"] : [])]),
     output: Object.freeze(production ? ["upscaled-panel"] : []),
-    // The complete production output set is six sides x four formats. A run
-    // that did not buy it must not be asked to prove it; a run that did must
-    // fail closed without it.
-    requiredOutputFiles: production ? SURFACE_KEYS.length * OUTPUT_FORMATS.length : 0,
-    ...(production ? { outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS } : {}),
+    // The complete production output set is six sides x five formats x two
+    // variants (branded and clean). A run that did not buy it must not be
+    // asked to prove it; a run that did must fail closed without it.
+    requiredOutputFiles: production ? SURFACE_KEYS.length * OUTPUT_FORMATS.length * OUTPUT_VARIANTS.length : 0,
+    ...(production ? { outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS, outputVariants: OUTPUT_VARIANTS } : {}),
     // What the humans are asked to check. QC validates the purchased asset
     // classes and is never handed a class the customer did not buy.
     qcScope: Object.freeze([
@@ -960,17 +966,37 @@ async function readAuthorizedAssets(sb, runId) {
 }
 
 function authorizedOutputFormats(authorized, built) {
+  // THE BUILD RECEIPT NAMES ITS TIER, AND EVERY TIER EVER SHIPPED RESOLVES.
+  //
+  // v1 receipts carried no contract at all (eighteen files); v2 named itself
+  // and carried twenty-four; v3 carries thirty; v4 carries sixty, the clean
+  // variant of every file beside the branded one. A completed pack is verified
+  // against the set it was actually built as -- never against whatever the
+  // runtime would build today -- so a v2 pack that has already passed final QC
+  // does not become "six files short" the day the JPG ships.
   const legacy = built?.outputFormatContract == null && authorized.outputFormatContract == null
     && authorized.requiredOutputFiles === 18 && built?.outputCount === 18;
-  const current = built?.outputFormatContract === OUTPUT_FORMAT_CONTRACT
-    && built.outputCount === SURFACE_KEYS.length * OUTPUT_FORMATS.length
-    && JSON.stringify(built.outputFormats) === JSON.stringify(OUTPUT_FORMATS);
-  if (built?.verified !== true || !HASH_RE.test(String(built?.outputSetHash || "")) || (!legacy && !current)) {
+  const contract = legacy ? LEGACY_OUTPUT_FORMAT_CONTRACT : built?.outputFormatContract;
+  const outputFormats = formatsForContract(contract);
+  const outputVariants = variantsForContract(contract);
+  const requiredOutputFiles = outputFileCountForContract(contract);
+  const current = !legacy && outputFormats && outputVariants
+    && built.outputCount === requiredOutputFiles
+    && JSON.stringify(built.outputFormats) === JSON.stringify(outputFormats)
+    // A tier with one variant never named it, and must not start to.
+    && (outputVariants.length > 1
+      ? JSON.stringify(built.outputVariants) === JSON.stringify(outputVariants)
+      : built.outputVariants === undefined);
+  if (built?.verified !== true || !HASH_RE.test(String(built?.outputSetHash || "")) || !outputFormats || (!legacy && !current)) {
     throw new StageError("output_build_format_contract_invalid", "Output formats require the immutable completed build receipt", false);
   }
-  const outputFormats = legacy ? LEGACY_FORMATS : OUTPUT_FORMATS;
-  return { ...authorized, outputFormatContract: legacy ? LEGACY_OUTPUT_FORMAT_CONTRACT : OUTPUT_FORMAT_CONTRACT,
-    outputFormats, requiredOutputFiles: SURFACE_KEYS.length * outputFormats.length };
+  // A purchase made under v4 names both variants; a build of a revision with
+  // no Zone 2 ships one. The resolved manifest states the tier BUILT, so the
+  // purchase's `outputVariants` is dropped rather than inherited on a
+  // single-variant build.
+  const { outputVariants: _purchased, ...purchased } = authorized;
+  return { ...purchased, outputFormatContract: contract, outputFormats, requiredOutputFiles,
+    ...(outputVariants.length > 1 ? { outputVariants } : {}) };
 }
 
 async function ensureAutomaticProduction(sb, enticeRunId) {
@@ -1824,11 +1850,36 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
       throw new StageError("enhanced_panel_receipt_mismatch", `Call 12 ${panel.surface_key} receipt and stored enhanced panel differ`, false);
     }
   }
+  // THE CLEAN VARIANT SHIPS BESIDE THE BRANDED ONE (contract v4). Call 12
+  // finished the six Zone 2 backgrounds to the same print rectangle, and it
+  // says so on its receipt; a revision with no Zone 2 recorded none and builds
+  // the branded-only set under contract v3. Half a clean set is neither.
+  const cleanPanels = await artifacts(sb, run.id, ["upscaled-clean-panel"]);
+  const cleanHashes = call12.receipt?.cleanEnhancedHashes;
+  const hasClean = cleanHashes && typeof cleanHashes === "object";
+  if (hasClean) {
+    if (cleanPanels.length !== SURFACE_KEYS.length || new Set(cleanPanels.map((item) => item.surface_key)).size !== SURFACE_KEYS.length) {
+      throw new StageError("enhanced_clean_panels_missing", "Exact six Call 12 enhanced clean panels are required", false);
+    }
+    for (const panel of cleanPanels) {
+      if (String(panel.content_hash).toLowerCase() !== String(cleanHashes[panel.surface_key] || "").toLowerCase()) {
+        throw new StageError("enhanced_clean_panel_receipt_mismatch", `Call 12 ${panel.surface_key} clean receipt and stored enhanced clean panel differ`, false);
+      }
+    }
+  } else if (cleanPanels.length) {
+    throw new StageError("enhanced_clean_panels_unreceipted", "Enhanced clean panels exist that the Call 12 receipt does not bind", false);
+  }
+  const outputFormatContract = hasClean ? OUTPUT_FORMAT_CONTRACT : JPG_OUTPUT_FORMAT_CONTRACT;
+  const outputVariants = variantsForContract(outputFormatContract);
   const dimensionManifest = productionDimensionManifest(run, input);
   const dimensions = new Map((dimensionManifest.expectedSurfaces || []).map((item) => [String(item.surfaceKey), item]));
   const produced = [];
   const spools = [];
-  for (const panel of panels) {
+  const sources = [
+    ...panels.map((panel) => ({ panel, variant: "branded" })),
+    ...(hasClean ? cleanPanels.map((panel) => ({ panel, variant: "clean" })) : []),
+  ];
+  for (const { panel, variant } of sources) {
     const dims = dimensions.get(String(panel.surface_key));
     if (!dims || !Object.values(dims.bleed || {}).every((value) => Number(value) === 5)) throw new StageError("output_dimensions_missing", `GENIE dimensions missing for ${panel.surface_key}`, false);
     const source = await storageBytes(sb, panel.storage_path);
@@ -1844,27 +1895,45 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     // transparent installation holes with a white flatten.
     await verifyPrintRasterSource(source, width, height, panel.surface_key);
     const contained = source;
+    // Every file of both variants states the same physical facts; the clean
+    // one also says which it is, so a reader (and output.verify) can tell the
+    // blank from the branded panel without opening either.
+    const physical = {
+      width, height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
+      physicalWidthInches: width / 1500, physicalHeightInches: height / 1500,
+      productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
+      ...(outputVariants.length > 1 ? { variant, sourceEnhancedKind: panel.artifact_kind } : {}),
+    };
     const raster = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb").png({ compressionLevel: 6 }).withMetadata({ density: 1500 }).toBuffer();
     const slug = String(panel.surface_key).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const base = `designpro/${tenantKey(run.tenant_key)}/${run.id}/outputs/${slug}`;
+    const base = `designpro/${tenantKey(run.tenant_key)}/${run.id}/outputs/${slug}${variant === "clean" ? "-clean" : ""}`;
     const png = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.png`, raster, "image/png");
     if (png.spool) spools.push(png.spool);
-    produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, { format: "png", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    produced.push(artifact("output", png.storagePath, png.hash, png.bytes, panel.surface_key, { format: "png", ...physical }));
+    // THE JPG BESIDE EVERY PNG (owner, 2026-09-22). The same verified print
+    // rectangle -- trim plus 5" on every edge, full print geometry -- encoded
+    // once at quality 92 with no chroma subsampling, carrying the JFIF density
+    // and sRGB profile the verifier demands. It is bound to its PNG by hash so
+    // output.verify can refuse a JPG that is not that PNG's own pixels.
+    const jpgBytes = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb")
+      .jpeg({ quality: JPEG_QUALITY, chromaSubsampling: "4:4:4" }).withMetadata({ density: 1500 }).toBuffer();
+    const jpg = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.jpg`, jpgBytes, "image/jpeg");
+    if (jpg.spool) spools.push(jpg.spool);
+    produced.push(artifact("output", jpg.storagePath, jpg.hash, jpg.bytes, panel.surface_key, {
+      format: "jpg", ...physical, jpegQuality: JPEG_QUALITY, sourcePngHash: png.hash, sourceEnhancedHash: panel.content_hash,
+    }));
     const pdfBytes = await buildPanelProProductionPdf({ png: raster, surfaceKey: panel.surface_key,
       trimWidthInches: Number(dims.widthInches), trimHeightInches: Number(dims.heightInches) });
     const pdf = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.pdf`, pdfBytes, "application/pdf");
     if (pdf.spool) spools.push(pdf.spool);
     produced.push(artifact("output", pdf.storagePath, pdf.hash, pdf.bytes, panel.surface_key, {
-      format: "pdf", width, height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB",
-      sourcePngHash: png.hash, sourceEnhancedHash: panel.content_hash, renderer: "PanelProFileOutput",
-      physicalWidthInches: width / 1500, physicalHeightInches: height / 1500,
-      productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10,
+      format: "pdf", ...physical, sourcePngHash: png.hash, sourceEnhancedHash: panel.content_hash, renderer: "PanelProFileOutput",
       drawingScaleRatio: "1:10", printAtPercent: 1000,
     }));
     const tiffBytes = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb").tiff({ compression: "lzw", predictor: "horizontal", bitdepth: 8 }).withMetadata({ density: 1500 }).toBuffer();
     const tiff = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.tiff`, tiffBytes, "image/tiff");
     if (tiff.spool) spools.push(tiff.spool);
-    produced.push(artifact("output", tiff.storagePath, tiff.hash, tiff.bytes, panel.surface_key, { format: "tiff", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    produced.push(artifact("output", tiff.storagePath, tiff.hash, tiff.bytes, panel.surface_key, { format: "tiff", ...physical }));
     const { data: rgb, info } = await sharp(contained, { limitInputPixels: false }).removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
     if (info.width !== width || info.height !== height || info.channels !== 3) throw new StageError("eps_raster_geometry_invalid", panel.surface_key, false);
     const epsBytes = buildDeterministicRasterEps({
@@ -1876,9 +1945,76 @@ async function buildPrintOutputs(sb, run, input, stage, runtimeConfig) {
     });
     const eps = await uploadProducedBytes(sb, run, stage, runtimeConfig, `${base}.eps`, epsBytes, "application/postscript");
     if (eps.spool) spools.push(eps.spool);
-    produced.push(artifact("output", eps.storagePath, eps.hash, eps.bytes, panel.surface_key, { format: "eps", width: width, height: height, dpi: 1500, outputScale: 0.1, fullScaleBleedInches: 5, colorMode: "sRGB", rasterSha256: hashBytes(rgb), physicalWidthInches: width / 1500, physicalHeightInches: height / 1500, productionWidthInches: Number(dims.widthInches) + 10, productionHeightInches: Number(dims.heightInches) + 10 }));
+    produced.push(artifact("output", eps.storagePath, eps.hash, eps.bytes, panel.surface_key, { format: "eps", ...physical, rasterSha256: hashBytes(rgb) }));
   }
-  return { produced, spools };
+  return { produced, spools, outputFormatContract, outputFormats: formatsForContract(outputFormatContract), outputVariants };
+}
+
+/**
+ * The frozen Zone 2 clean backgrounds of this revision's three-zone Call 1
+ * proof, keyed by surface, or null when the revision predates the proof. The
+ * same identity checks Call 11 applies before it copies these bytes: the
+ * proof contract, its master hash against the branded panels' lineage, and
+ * every background's content-addressed path. Anything else is refused --
+ * enhancing the wrong bytes under a surface's name is worse than none.
+ */
+async function frozenZone2Backgrounds(sb, run, brandedPanels) {
+  const { data: revisionSource, error: revisionError } = await sb.from("designpro_revision_sources")
+    .select("owner_id,tenant_key,snapshot,snapshot_hash").eq("revision_id", run.revision_id).maybeSingle();
+  if (revisionError || !revisionSource || revisionSource.owner_id !== run.owner_id || revisionSource.tenant_key !== run.tenant_key
+    || revisionSource.snapshot_hash !== run.revision_snapshot_hash) {
+    throw new StageError("enhance_revision_source_drift", "The frozen proof source does not match this paid revision", false);
+  }
+  const panelProof = revisionSource.snapshot?.panelProofAuthoring;
+  if (!panelProof) return null;
+  const clean = panelProof.quadrants?.clean;
+  if (panelProof.contract !== "designpro.atlas-panel-proof-topology.v2" || panelProof.composition?.sourceAssetsPreserved !== true
+    || !HASH_RE.test(String(panelProof.masterSha256 || "")) || !Array.isArray(clean) || clean.length !== SURFACE_KEYS.length
+    || new Set(clean.map((item) => item.surfaceKey)).size !== SURFACE_KEYS.length
+    || brandedPanels.some((row) => row.metadata?.sourceMasterHash !== panelProof.masterSha256)) {
+    throw new StageError("enhance_zone2_source_invalid", "The clean set requires the exact six backgrounds of the frozen master the branded panels were cut from", false);
+  }
+  const backgrounds = new Map();
+  for (const item of clean) {
+    if (!SURFACE_KEYS.includes(item.surfaceKey) || item.role !== "clean" || item.persisted !== true
+      || item.positionalPremiseVerified !== true || !HASH_RE.test(String(item.contentHash || ""))
+      || item.storagePath !== `atlas-panel-proof/quadrants/${item.contentHash}.png`
+      || !Number.isSafeInteger(item.byteSize) || item.byteSize <= 0) {
+      throw new StageError("enhance_zone2_identity_invalid", "A frozen Zone 2 background lacks its validated surface identity", false);
+    }
+    backgrounds.set(item.surfaceKey, { ...item, sourceMasterHash: panelProof.masterSha256 });
+  }
+  return backgrounds;
+}
+
+// The clean crop is fitted the way `assemblePanelProofMaster` fitted the Zone 1
+// crop into its zone: proportional resize inside the target, then the boundary
+// pixels copied into the remainder. A crop whose proportions are not the
+// panel's -- a cut of the wrong region, or a sheet, not a panel -- is refused
+// rather than stretched into artwork the model never drew.
+const MAX_CLEAN_FIT_ASPECT_DRIFT = 1.35;
+async function fitCleanToBrandedRectangle(cleanBytes, width, height, surfaceKey) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) {
+    throw new StageError("enhance_branded_geometry_invalid", `${surfaceKey} branded panel has no pixel geometry to fit the clean panel to`, false);
+  }
+  const source = sharp(cleanBytes, { limitInputPixels: false });
+  const meta = await source.metadata();
+  if (!meta.width || !meta.height || meta.format !== "png") throw new StageError("enhance_zone2_not_decodable", surfaceKey, false);
+  const cropAspect = meta.width / meta.height;
+  const panelAspect = width / height;
+  const drift = Math.max(cropAspect / panelAspect, panelAspect / cropAspect);
+  if (!Number.isFinite(drift) || drift > MAX_CLEAN_FIT_ASPECT_DRIFT) {
+    throw new StageError("enhance_zone2_aspect_drift", `${surfaceKey} clean background is ${cropAspect.toFixed(3)}:1 against a ${panelAspect.toFixed(3)}:1 panel (drift ${drift.toFixed(3)})`, false);
+  }
+  const resized = await source.removeAlpha().toColourspace("srgb")
+    .resize(width, height, { fit: "inside" }).png().toBuffer({ resolveWithObject: true });
+  const padX = width - resized.info.width;
+  const padY = height - resized.info.height;
+  if (padX < 0 || padY < 0) throw new StageError("enhance_zone2_fit_invalid", surfaceKey, false);
+  if (!padX && !padY) return resized.data;
+  const left = Math.floor(padX / 2);
+  const top = Math.floor(padY / 2);
+  return sharp(resized.data).extend({ left, right: padX - left, top, bottom: padY - top, extendWith: "copy" }).png().toBuffer();
 }
 
 async function verifyPrintRasterSource(bytes, width, height, surfaceKey) {
@@ -2099,6 +2235,45 @@ function zipArtifactEntries(sb, rows) {
     entries.push({ name, byteSize: Number(row.byte_size), open: () => verifiedArtifactChunks(sb, row) });
   }
   return entries;
+}
+
+// Where a frozen Zone 3 asset may live, and nowhere else: the customer's own
+// uploaded logo under the revision it was uploaded to, or a content-addressed
+// element the compositor persisted. The filename IS the sha256, so a path
+// that names one hash and carries another is refused before a byte is read.
+const CUT_GRAPHIC_EXTENSIONS = Object.freeze({ "image/png": "png", "image/jpeg": "jpg", "image/svg+xml": "svg", "image/webp": "webp", "application/pdf": "pdf" });
+const CUT_GRAPHIC_PATH_RE = /^(?:atlas-elements|atlas-panel-proof\/quadrants|users\/[0-9a-f-]{36}\/revisions\/[0-9a-f-]{36}\/inputs\/logo)\/([0-9a-f]{64})\.(png|jpe?g|svg|webp|pdf)$/;
+
+/**
+ * The persisted Zone 3 cut graphics of a frozen three-zone proof, as archive
+ * files. An entry the compositor never persisted has no bytes to package and is
+ * skipped -- the proof sheet itself still shows it -- so an honest empty Zone 3
+ * yields an empty list rather than a refusal (#599). A persisted entry with a
+ * malformed identity is refused: packaging the wrong bytes under a logo's name
+ * is worse than packaging none.
+ */
+function cutGraphicArchiveFiles(cutGraphics) {
+  const files = [];
+  const names = new Set();
+  for (const [index, item] of (Array.isArray(cutGraphics) ? cutGraphics : []).entries()) {
+    if (!item || typeof item !== "object" || item.persisted !== true) continue;
+    const contentHash = String(item.contentHash || "").toLowerCase();
+    const storagePath = String(item.storagePath || "");
+    const match = CUT_GRAPHIC_PATH_RE.exec(storagePath);
+    const extension = CUT_GRAPHIC_EXTENSIONS[item.contentType];
+    const extensionMatches = match && (match[2] === extension || (extension === "jpg" && match[2] === "jpeg"));
+    if (!HASH_RE.test(contentHash) || !match || match[1] !== contentHash || !extensionMatches
+      || !Number.isSafeInteger(item.byteSize) || item.byteSize < 1) {
+      throw new StageError("zip_cut_graphic_identity_invalid", `cutGraphics[${index}] is not a persisted content-addressed Zone 3 asset`, false);
+    }
+    const role = String(item.assetRole || item.surfaceKey || "graphic").replace(/[^A-Za-z0-9_-]+/g, "-");
+    const archivePath = `proofs/cut-graphics/${role}-${contentHash.slice(0, 12)}.${extension}`;
+    if (names.has(archivePath)) throw new StageError("zip_entry_collision", archivePath, false);
+    names.add(archivePath);
+    files.push({ archivePath, kind: "cut-graphic", surfaceKey: role, storagePath, contentHash, byteSize: item.byteSize,
+      contentType: item.contentType, vector: item.vector === true, assetRole: item.assetRole ?? null });
+  }
+  return files;
 }
 
 function bufferZipEntry(name, bytes) {
@@ -2878,6 +3053,106 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     });
 
     if (new Set(Object.values(enhancedHashes)).size !== SURFACE_KEYS.length) throw new StageError("enhance_surface_reuse", "Every enhanced panel must be distinct", false);
+
+    // THE CLEAN PANELS GET THE SAME FINISHING AS THE BRANDED ONES (owner,
+    // 2026-09-22: "make sure ALL assets files are processed to 150 ppi with
+    // bleed at 5\""). Zone 2 of the three-zone Call 1 proof is the authored,
+    // logo-free background of every surface -- the blank the design team lays
+    // on the vehicle template -- and until now it left the building as the raw
+    // crop off the proof sheet: a few hundred pixels wide, trim only, no bleed,
+    // in the ZIP's qc-panel folder. The reference worker upscales the clean
+    // panel beside the branded one per side (`panelKey_clean` from
+    // `background_url`); this is that behaviour on the frozen Zone 2 bytes.
+    //
+    // Registration with the branded panel is by construction: the clean crop
+    // is fitted into the branded panel's OWN pixel rectangle the way the Zone 1
+    // crop was fitted into its master zone (resize inside, copy-extend the
+    // remainder), then enhanced to the identical (trim + 10") x 150 target.
+    // The Call 11 qc-panel is untouched -- it stays the on-screen QC instrument
+    // RULE 0.25 keeps out of Topaz; this is the SOURCE artwork, not a
+    // derivative of the branded panel.
+    //
+    // A revision authored before the three-zone proof has no Zone 2 and gets
+    // no clean set; the output contract it builds under says so.
+    const cleanBackgrounds = await frozenZone2Backgrounds(sb, run, brandedPanels);
+    const cleanEnhancedHashes = {};
+    const cleanPlans = {};
+    let cleanEnhanced = [];
+    if (cleanBackgrounds) {
+      cleanEnhanced = await withHeavyOutputLease(sb, stage, async () => {
+        const results = [];
+        for (const key of [...SURFACE_KEYS].sort()) {
+          assertStageLeaseActive();
+          const dims = dimensions.get(key);
+          const background = cleanBackgrounds.get(key);
+          const brandedRow = brandedPanels.find((row) => row.surface_key === key);
+          const { data, error } = await sb.storage.from(BUCKET).download(background.storagePath);
+          if (error || !data) throw new StageError("enhance_zone2_download_failed", `${key} clean background is unavailable`, true);
+          const cleanBytes = Buffer.from(await data.arrayBuffer());
+          if (cleanBytes.length !== background.byteSize || hashBytes(cleanBytes) !== background.contentHash) {
+            throw new StageError("enhance_zone2_bytes_changed", `${key} clean background changed after Call 1`, false);
+          }
+          const targetWidthPx = Math.round((Number(dims.widthInches) + 10) * 150);
+          const targetHeightPx = Math.round((Number(dims.heightInches) + 10) * 150);
+          const storagePath = `designpro/${tenantKey(run.tenant_key)}/${run.id}/enhanced/${key}-clean-${String(background.contentHash).slice(0, 24)}.png`;
+          const persistClean = async (bytes, detail, enhancement, reused, sourcePixels) => {
+            const stored = await uploadProducedBytes(sb, run, stage, runtimeConfig, storagePath, bytes, "image/png");
+            if (stored.spool) spools.push(stored.spool);
+            cleanEnhancedHashes[key] = stored.hash;
+            cleanPlans[key] = detail ? detail.plan : { reusedImmutableWinner: reused === true, enhancement };
+            produced.push(artifact("upscaled-clean-panel", stored.storagePath, stored.hash, stored.bytes, key, {
+              call: 12, contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model, variant: "clean",
+              sourceBackgroundPath: background.storagePath, sourceBackgroundHash: background.contentHash,
+              sourceMasterHash: background.sourceMasterHash, sourceArtifactKind: "panel-proof-zone2",
+              brandedPanelHash: brandedRow.content_hash, humanCorrected: false,
+              enhancedSha256: detail?.enhancedSha256 || stored.hash, reusedImmutableWinner: reused === true,
+              enhancement: reused === true ? "reused-immutable-winner" : enhancement,
+              sourcePixels: sourcePixels || null, plan: detail?.plan || null,
+              clampedByEngineCeiling: detail?.plan?.clampedByEngineCeiling === true,
+              widthPx: targetWidthPx, heightPx: targetHeightPx,
+              trimWidthInches: dims.widthInches, trimHeightInches: dims.heightInches,
+              bleed: { top: 5, right: 5, bottom: 5, left: 5 },
+              surfaceSqFt: dims.surfaceSqFt, dpi: 1500, outputScale: 0.1,
+            }));
+            return { key, reused, enhancement };
+          };
+          const existing = await storageBytes(sb, storagePath).catch(() => null);
+          if (existing && existing.length) {
+            try { await verifyPrintRasterSource(existing, targetWidthPx, targetHeightPx, key); }
+            catch (error) { throw new StageError(error.code === "output_source_geometry_mismatch" ? "enhance_winner_geometry_drift" : error.code, error.message, false); }
+            results.push(await persistClean(existing, null, "reused-immutable-winner", true, null));
+            continue;
+          }
+          // The branded panel's own pixel rectangle is the fitting target, so
+          // the two variants of a surface register pixel for pixel.
+          const brandedBytes = await storageBytes(sb, brandedRow.storage_path);
+          if (hashBytes(brandedBytes) !== brandedRow.content_hash) throw new StageError("enhance_source_panel_changed", key, false);
+          const brandedMeta = await sharp(brandedBytes, { limitInputPixels: false }).metadata();
+          const fitted = await fitCleanToBrandedRectangle(cleanBytes, brandedMeta.width, brandedMeta.height, key);
+          const cleanMeta = await sharp(cleanBytes, { limitInputPixels: false }).metadata();
+          const sourcePixels = { widthPx: Number(cleanMeta.width), heightPx: Number(cleanMeta.height) };
+          if (brandedMeta.width >= targetWidthPx && brandedMeta.height >= targetHeightPx) {
+            const conformed = await sharp(fitted, { limitInputPixels: false })
+              .resize(targetWidthPx, targetHeightPx, { fit: "inside" }).removeAlpha().toColourspace("srgb").png().toBuffer();
+            await verifyPrintRasterSource(conformed, targetWidthPx, targetHeightPx, key);
+            results.push(await persistClean(conformed, null, "not-required", false, sourcePixels));
+            continue;
+          }
+          let outcome;
+          try {
+            outcome = await enhancePanel({
+              readiness, surfaceKey: key, bytes: fitted, mimeType: "image/png",
+              targetWidthPx, targetHeightPx, signal: stageLeaseContext.getStore()?.controller?.signal,
+            });
+          } catch (error) { throw new StageError(error.code || "topaz_enhance_failed", error.message, error.retryable === true); }
+          await verifyPrintRasterSource(outcome.bytes, targetWidthPx, targetHeightPx, key);
+          results.push(await persistClean(outcome.bytes, outcome, "topaz", false, sourcePixels));
+        }
+        return results;
+      });
+      if (new Set(Object.values(cleanEnhancedHashes)).size !== SURFACE_KEYS.length) throw new StageError("enhance_clean_surface_reuse", "Every enhanced clean panel must be distinct", false);
+    }
+
     const completed = await complete(sb, stage, run, {
       verified: true, receiptKind: "call12.topaz-upscale", call: 12,
       contract: TOPAZ_CONTRACT, engine: "topaz-image-enhance", model: readiness.model,
@@ -2890,6 +3165,14 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         item.key,
         item.reused === true ? "reused-immutable-winner" : (item.enhancement || "topaz"),
       ])),
+      // The clean set, bound by hash exactly as the branded one is. Absent on a
+      // revision with no Zone 2 -- never an empty object, so a reader cannot
+      // mistake "no clean panels exist" for "all six are missing".
+      ...(cleanBackgrounds ? {
+        cleanEnhancedHashes, cleanPlans, cleanSurfaces: Object.keys(cleanEnhancedHashes).sort(),
+        cleanSourceHashes: Object.fromEntries([...cleanBackgrounds].map(([key, item]) => [key, item.contentHash])),
+        cleanEnhancement: Object.fromEntries(cleanEnhanced.map((item) => [item.key, item.enhancement])),
+      } : {}),
       authoredWinner: true, deterministic: false,
       note: "Topaz output is not reproducible; downstream stages bind these exact hashes.",
     }, null, produced);
@@ -2908,7 +3191,13 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       });
     }
     const built = await withHeavyOutputLease(sb, stage, () => buildPrintOutputs(sb, run, input, stage, runtimeConfig));
-    const completed = await complete(sb, stage, run, { verified: true, outputFormatContract: OUTPUT_FORMAT_CONTRACT, outputFormats: OUTPUT_FORMATS, outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))) }, null, built.produced);
+    // The receipt names the tier it was built as. A revision with no Zone 2
+    // builds the branded-only v3 set; every other build is v4, both variants.
+    const completed = await complete(sb, stage, run, {
+      verified: true, outputFormatContract: built.outputFormatContract, outputFormats: built.outputFormats,
+      ...(built.outputVariants.length > 1 ? { outputVariants: built.outputVariants } : {}),
+      outputCount: built.produced.length, outputSetHash: hashJson(built.produced.map((item) => ({ path: item.storagePath, hash: item.contentHash }))),
+    }, null, built.produced);
     for (const spool of built.spools) await removeCommittedSpool(spool).catch((error) => console.error(`[DESIGNPRO-OS] committed output spool cleanup failed: ${error.message}`));
     return completed;
   }
@@ -3109,11 +3398,16 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       // A named panel-proof receipt must be complete; never silently omit it.
       if (Object.prototype.hasOwnProperty.call(frozen, "panelProofAuthoring")) {
         const proof = frozen.panelProofAuthoring;
+        // Zone 3 may honestly be EMPTY: a brief with no logo, no company name
+        // and no contact bar has no cut graphics to separate (#599 made that a
+        // degrade, not a refusal). The array must still exist -- a proof that
+        // cannot say what Zone 3 held is incomplete; one that says "nothing"
+        // is not.
         if (!proof || proof.contract !== "designpro.atlas-panel-proof-topology.v2"
           || proof.composition?.contract !== "designpro.production-zone-composite.v1"
           || proof.composition?.sourceAssetsPreserved !== true
           || proof.quadrants?.branded?.length !== 6 || proof.quadrants?.clean?.length !== 6
-          || !Array.isArray(proof.quadrants?.cutGraphics) || !proof.quadrants.cutGraphics.length
+          || !Array.isArray(proof.quadrants?.cutGraphics)
           || !HASH_RE.test(String(proof.proofSha256 || "")) || !HASH_RE.test(String(proof.masterSha256 || ""))
           || proof.masterSha256 !== frozen.sourceMasterContentHash
           || !Number.isSafeInteger(proof.proofByteSize) || proof.proofByteSize < 1
@@ -3123,8 +3417,14 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
           throw new StageError("zip_call1_proof_incomplete", "The paid revision must retain its complete composed Call 1 proof and matching print master", false);
         }
         const frozenFiles = [
-          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize },
-          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256 },
+          { archivePath: "proofs/call1-three-zone-production-proof.png", kind: "production-panel-proof", storagePath: proof.proofStoragePath, contentHash: proof.proofSha256, byteSize: proof.proofByteSize, contentType: "image/png" },
+          { archivePath: "proofs/atlas-master.png", kind: "atlas-master", storagePath: proof.masterStoragePath, contentHash: proof.masterSha256, contentType: "image/png" },
+          // ZONE 3 SHIPS WITH THE PACK. Every persisted cut graphic -- the
+          // customer's own logo, the typeset name, the contact bar -- goes in
+          // beside the sheet it was separated from, as the exact frozen bytes
+          // (SVG or raster) the compositor placed. Content-addressed and hash
+          // verified like the two sheets above; nothing is re-rendered.
+          ...cutGraphicArchiveFiles(proof.quadrants.cutGraphics),
         ];
         for (const file of frozenFiles) {
           // These content-addressed graph paths are intentionally outside the
@@ -3137,7 +3437,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
             || (file.byteSize !== undefined && bytes.length !== file.byteSize)) {
             throw new StageError("zip_call1_proof_changed", `${file.kind} bytes differ from the frozen Call 1 identity`, false);
           }
-          sourceProofFiles.push({ ...file, byteSize: bytes.length, contentType: "image/png", revisionSnapshotHash: run.revision_snapshot_hash });
+          sourceProofFiles.push({ ...file, byteSize: bytes.length, revisionSnapshotHash: run.revision_snapshot_hash });
           sourceProofEntries.push(bufferZipEntry(file.archivePath, bytes));
         }
       }
@@ -3171,7 +3471,8 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       dimensionManifest: { archivePath: dimensionArchivePath, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length, workflowManifestHash: run.manifest_hash },
       businessIdentity: { archivePath: businessIdentityArchivePath, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length, designId, orderNumber },
     });
-    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1 } : {}) };
+    const cutGraphicCount = sourceProofFiles.filter((file) => file.kind === "cut-graphic").length;
+    const includedKinds = { ...counts, "source-view": viewEntries.length, "dimension-manifest": 1, "design-order-identity": 1, ...(panelProfileFiles.length ? { "panelprofile-artifact": panelProfileFiles.length } : {}), ...(sourceProofFiles.length ? { "production-panel-proof": 1, "atlas-master": 1, "cut-graphic": cutGraphicCount } : {}) };
 
     // THE ZIP SAYS WHAT IS IN IT, FILE BY FILE. (Trish 2026-08-28)
     //
@@ -3205,7 +3506,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
         contentHash: view.contentHash, byteSize: Number(view.byteSize) || null,
       })),
       ...panelProfileFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, role: file.role, surfaceKey: file.pieceId || null, contentHash: file.contentHash, byteSize: file.byteSize, attachmentId: file.attachmentId })),
-      ...sourceProofFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, surfaceKey: null, contentHash: file.contentHash, byteSize: file.byteSize })),
+      ...sourceProofFiles.map(file => ({ archivePath: file.archivePath, kind: file.kind, surfaceKey: file.surfaceKey ?? null, contentHash: file.contentHash, byteSize: file.byteSize })),
       { archivePath: dimensionArchivePath, kind: "dimension-manifest", surfaceKey: null, contentHash: dimensionManifestHash, byteSize: dimensionManifestBytes.length },
       { archivePath: businessIdentityArchivePath, kind: "design-order-identity", surfaceKey: null, contentHash: businessIdentityHash, byteSize: businessIdentityBytes.length },
     ];
@@ -3263,10 +3564,24 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
       || zipReceipt.receipt?.businessIdentity?.designId !== businessIdentity.designId || zipReceipt.receipt?.businessIdentity?.orderNumber !== businessIdentity.orderNumber) {
       throw new StageError("delivery_business_identity_drift", "ZIP DesignID or Order # no longer matches the immutable revision", false);
     }
-    // Separated logos are the Logo Pack's deliverable. On a Production-Pack-only
-    // run they exist -- Call 10 produced them for the entice preview -- and must
-    // not be delivered.
-    const logoRows = authorized.logoPackAuthorized ? await artifacts(sb, run.id, ["logo"]) : [];
+    // THE MANIFEST STATES THE LOGO LEDGER; THE ZIP DECIDES WHAT IS DELIVERED.
+    //
+    // This read `authorized.logoPackAuthorized ? artifacts(...) : []`, on the
+    // theory that listing the separated logos on a Production-Pack-only run
+    // gave away the $29 product. The archive is where that line is drawn --
+    // `zipKinds` carries `logo` only when the Logo Pack was bought, and that
+    // is unchanged. The manifest is the immutable record of the lineage, and
+    // both readers of it require the ledger unconditionally: the runtime
+    // publisher compares `manifest.logos` to every `logo` artifact on this run
+    // (`validateManifest`, `wrapbox_manifest_logo_mismatch`) and
+    // `commit_designpro_wrapbox_pack` compares it to the Call 10 ledger of the
+    // entice run (`manifest_logo_inventory_does_not_match_ledger`). So on the
+    // first panel-proof run whose brief carried a logo -- de0cdc52,
+    // 2026-09-20, five separated logos, Production Pack only -- the stage
+    // completed, the reconciler refused the manifest, and no WrapBox pack row
+    // and no customer email ever existed. Every earlier completed run had zero
+    // logos, which is the only reason the mismatch never fired before.
+    const logoRows = await artifacts(sb, run.id, ["logo"]);
     const logos = logoRows.map((row) => ({ placementKey: row.metadata?.placementKey, identityKey: row.metadata?.identityKey, displayName: row.metadata?.displayName, targetSurfaceKey: row.metadata?.targetSurfaceKey, storagePath: safePath(row.storage_path, "logo storagePath"), contentHash: row.content_hash, byteSize: row.byte_size, contentType: row.metadata?.contentType || null })).sort((left, right) => String(left.placementKey).localeCompare(String(right.placementKey)));
     const packRows = await artifacts(sb, run.id, [...new Set([...(authorized.delivery || []), ...(authorized.zipKinds || []), ...(authorized.productionPackAuthorized ? ["qc-panel"] : []), "zip"])]);
     const files = packRows.map((row) => ({ kind: row.artifact_kind, surfaceKey: row.surface_key, storagePath: safePath(row.storage_path, "pack storagePath"), contentHash: row.content_hash, byteSize: row.byte_size })).sort((left, right) => `${left.kind}/${left.surfaceKey}/${left.storagePath}`.localeCompare(`${right.kind}/${right.surfaceKey}/${right.storagePath}`));

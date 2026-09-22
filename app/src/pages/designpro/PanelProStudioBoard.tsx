@@ -51,7 +51,10 @@ import {
   EXPECTED_OUTPUT_FILES,
   FINAL_CHECKS,
   OUTPUT_FORMATS,
+  OUTPUT_VARIANT_LABEL,
+  OUTPUT_VARIANTS,
   outputFormatOf,
+  outputVariantOf,
   PREFLIGHT_CHECKS,
 } from "@/lib/designpro-stages";
 import { Badge } from "@/components/ui/badge";
@@ -127,6 +130,7 @@ function SideCard({
   surfaceKey,
   view,
   panel,
+  qcPanel,
   corrections,
   upscaled,
   approved,
@@ -137,6 +141,13 @@ function SideCard({
   surfaceKey: GenieSurfaceKey;
   view: ApprovedGenerationView | undefined;
   panel: WorkflowArtifact | undefined;
+  /**
+   * Zone 2 for this side: the Call 11 QC duplicate, which on a three-zone run
+   * is the frozen clean background byte for byte (`reusedZone2`). The designer
+   * lays THIS on the vehicle template to check sizing without the lettering in
+   * the way, then applies the Zone 3 overlays on top. Never printed.
+   */
+  qcPanel: WorkflowArtifact | undefined;
   /** Every human correction for this side, newest first. */
   corrections: WorkflowArtifact[];
   /** Every enhanced derivative for this side, newest first. */
@@ -370,6 +381,46 @@ function SideCard({
           )}
           {active && <ContentHash value={active.contentHash} />}
         </div>
+      </div>
+
+      {/* ZONE 2 BESIDE ZONE 1. The three-zone Production Panel Proof is the
+          source: Zone 1 is the branded panel above, Zone 2 is this clean
+          background, Zone 3 is the cut graphics listed under Call 10 below.
+          The designer downloads all three for the template check. */}
+      <div className="mt-3">
+        <div className="mb-1 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span>Zone 2 · clean background (QC duplicate)</span>
+          {qcPanel?.metadata?.reusedZone2 === true ? (
+            <Badge variant="outline" className="border-emerald-500/60 text-emerald-600 normal-case tracking-normal dark:text-emerald-400">
+              frozen Call 1 bytes
+            </Badge>
+          ) : qcPanel ? (
+            <Badge variant="outline" className="border-amber-500/60 text-amber-600 normal-case tracking-normal dark:text-amber-400">
+              legacy de-logo
+            </Badge>
+          ) : null}
+        </div>
+        {qcPanel?.signedUrl ? (
+          <div className="flex items-center gap-3">
+            <img
+              src={qcPanel.signedUrl}
+              alt={`${surfaceKey} Zone 2 clean background`}
+              className="h-20 w-36 shrink-0 rounded border border-border bg-white object-contain"
+            />
+            <div className="min-w-0 flex-1">
+              <ContentHash value={qcPanel.contentHash} />
+              <Button asChild size="sm" variant="ghost" className="mt-1">
+                <a href={qcPanel.signedUrl} download={`${surfaceKey}-clean-panel.png`}>
+                  <Download className="mr-1 h-4 w-4" /> Download clean panel
+                </a>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
+            Not produced yet — Call 11 runs after Call 10 on the entice run.
+          </div>
+        )}
       </div>
 
       {/* One line stating whether this proof and this panel are the same
@@ -1415,6 +1466,7 @@ export default function PanelProStudioBoard() {
               surfaceKey={side}
               view={viewBySide.get(side)}
               panel={panelBySide.get(side)}
+              qcPanel={qcPanelBySide.get(side)}
               corrections={correctionsBySide.get(side) || EMPTY_ARTIFACTS}
               upscaled={upscaledBySide.get(side) || EMPTY_ARTIFACTS}
               approved={approvedSides.has(side)}
@@ -1564,7 +1616,7 @@ export default function PanelProStudioBoard() {
         <Panel
           eyebrow="Production output"
           title={`Verified output files · ${outputs.length}/${EXPECTED_OUTPUT_FILES}`}
-          description="Six surfaces × PNG, TIFF and EPS. The final gate signs off exactly these."
+          description="Six surfaces × PNG, JPG, TIFF, EPS and PDF, each in a branded and a clean (logo-free) variant — sixty files, every one at 150 PPI with 5″ bleed. The final gate signs off exactly these."
         >
           <div className="space-y-3">
             {OUTPUT_FORMATS.map((format) => {
@@ -1574,20 +1626,23 @@ export default function PanelProStudioBoard() {
                   <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider">
                     <span>{format}</span>
                     <span className="text-muted-foreground">
-                      {rows.length}/{PRODUCTION_SURFACES.length}
+                      {rows.length}/{PRODUCTION_SURFACES.length * OUTPUT_VARIANTS.length}
                     </span>
                   </div>
                   {/* Presence alone cannot be signed off. The final gate asks a
                       human to certify resolution, print dimensions and colour
                       mode, which means the human has to be able to open the
-                      file -- so every one of the eighteen is downloadable here,
-                      not just counted. */}
+                      file -- so every one of the sixty is downloadable here,
+                      not just counted. The clean variant is listed on its own
+                      line: it is the blank the team lays on the template, and
+                      a file written before v4 carries no variant and is the
+                      branded panel. */}
                   <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                    {PRODUCTION_SURFACES.map((side) => {
-                      const artifact = rows.find((row) => row.surfaceKey === side);
+                    {PRODUCTION_SURFACES.flatMap((side) => OUTPUT_VARIANTS.map((variant) => {
+                      const artifact = rows.find((row) => row.surfaceKey === side && outputVariantOf(row) === variant);
                       return (
                         <div
-                          key={side}
+                          key={`${side}:${variant}`}
                           className={cn(
                             "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-[11px]",
                             artifact ? "border-emerald-500/40" : "border-border",
@@ -1595,6 +1650,7 @@ export default function PanelProStudioBoard() {
                         >
                           <span className={artifact ? "text-emerald-300" : "text-muted-foreground"}>
                             {SURFACE_LABEL[side] || side}
+                            <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">{OUTPUT_VARIANT_LABEL[variant]}</span>
                           </span>
                           {artifact ? (
                             <span className="flex shrink-0 items-center gap-2">
@@ -1603,14 +1659,14 @@ export default function PanelProStudioBoard() {
                                   ? ""
                                   : `${(Number(artifact.byteSize) / 1_048_576).toFixed(1)} MB`}
                               </span>
-                              <SaveLink url={artifact.signedUrl} name={`${side}-print.${format}`} />
+                              <SaveLink url={artifact.signedUrl} name={`${side}${variant === "clean" ? "-clean" : ""}-print.${format}`} />
                             </span>
                           ) : (
                             <span className="text-muted-foreground">pending</span>
                           )}
                         </div>
                       );
-                    })}
+                    }))}
                   </div>
                 </div>
               );
