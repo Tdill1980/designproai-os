@@ -61,6 +61,7 @@ import {
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
 import { ProductionProofSourceCard } from "@/components/revisioniq/ProductionProofSourceCard";
+import { panelProofStillLanding } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
@@ -1106,7 +1107,13 @@ function ProductionProofSource({ render }: { render: any }) {
       requestId={source.requestId}
       revisionId={source.revisionId}
       version={source.version}
-      pollWhilePending={Boolean(render?._revisionRequest)}
+      // A revision is a new generation request whose Call 1 lands the sheet
+      // before its master is accepted. Poll while that request is still
+      // authoring (`_revisionState` is refreshed every 5s by the observer
+      // above; absent means it has not been read yet) and stop once it is
+      // terminal — a finished revision with no three-zone document stays that
+      // way, and re-reading it every second would never change the answer.
+      pollWhilePending={Boolean(render?._revisionRequest) && panelProofStillLanding(render?._revisionState ?? "queued")}
     />
   );
 }

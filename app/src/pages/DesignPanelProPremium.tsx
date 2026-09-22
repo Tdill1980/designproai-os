@@ -8,7 +8,7 @@ import { FolderOpen, ListChecks } from "lucide-react";
 import { Link as ToolHeaderLink } from "react-router-dom";
 import { AiPanelGenerator } from "@/components/designpanelpro/AiPanelGenerator";
 import { DesignGenerationFailure } from "@/components/designpanelpro/DesignGenerationFailure";
-import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { AtlasPanelProofSheetLoader, panelProofStillLanding } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignIQProgressBar } from "@/components/designpanelpro/DesignIQProgressBar";
 import { Card } from "@/components/ui/card";
@@ -95,7 +95,6 @@ import { PersonaPipelineProgress } from "@/components/designpanelpro/PersonaPipe
 import { DesignPipelineProgress, type PipelineStage } from "@/components/designpanelpro/DesignPipelineProgress";
 import { useStarredRenders } from "@/hooks/useStarredRenders";
 import { DesignIQShowcase, GenerationWizard, DESIGNPANELPRO_TIPS } from "@/components/tools/GenerationWizard";
-import { formatDid } from "@/lib/designId";
 import { BuildTag } from "@/components/BuildTag";
 import {
   dpApi,
@@ -307,7 +306,6 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
     generateFromPrompt,
     designName,
     designDnaId,
-    renderDid,
     renderPt,
     // Persona pipeline
     runPersonaPipeline,
@@ -2481,7 +2479,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                       <AtlasPanelProofSheetLoader
                         key={generationRequestState.requestId}
                         requestId={generationRequestState.requestId}
-                        pollWhilePending={pipelineActive || ["queued", "leased", "retryable"].includes(generationRequestState.state)}
+                        pollWhilePending={pipelineActive || panelProofStillLanding(generationRequestState.state)}
                         submittedAt={proofSubmissionTimeRef.current}
                       />
                     )}
@@ -2672,11 +2670,16 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                                 </>
                               )}
                               {/* Hide DesignIDBadge on mobile — info bar below shows same data */}
+                              {/* THE ID LADDER: this page is pre-purchase (Order Production
+                                  Pack leaves for Stripe and returns to /productionflow), so
+                                  the only identity it may show is the Generation ID minted at
+                                  Call 1. The DID and Order ID are minted by the purchase and
+                                  are shown by the post-purchase surfaces, never derived here. */}
                               {!isMobile && (
                                 <DesignIDBadge
                                   toolName={showMvpHero ? "MyVehiclePro™" : "DesignProAI™"}
                                   designName={designName || selectedPanel?.ai_generated_name || selectedPanel?.name}
-                                  did={formatDid(generationIdRef.current) || renderDid || undefined}
+                                  generationId={generationIdRef.current || undefined}
                                   pt={renderPt || undefined}
                                   showPT={true}
                                 />
@@ -2693,7 +2696,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             {/* Info Bar removed \u2014 it added a black text strip below the
                                 KONVA canvas that ate vertical space and made the render
                                 look condensed. The DesignIDBadge overlay on the canvas
-                                already shows tool name, design name, and DID. */}
+                                already shows tool name, design name, and Generation ID. */}
                           </div>
                         ) : (
                           // Idle + generating deliberately do NOT use the Konva
@@ -3253,7 +3256,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <img src={view.url} alt={VIEW_LABEL_MAP[view.type] || view.type} className="w-full h-full object-cover" />
                             <DesignIDBadge
                               toolName="DesignProAI™"
-                              did={formatDid(generationIdRef.current) || renderDid || undefined}
+                              generationId={generationIdRef.current || undefined}
                             />
                             <div className="absolute bottom-2 left-2 bg-background/90 px-2 py-1 rounded text-xs font-medium z-20">
                               {VIEW_LABEL_MAP[view.type] || view.type}

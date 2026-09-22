@@ -1,6 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AtlasPanelProofSheet, panelProofBelongsToOtherRevision, panelProofRefreshInterval } from "./AtlasPanelProofSheet";
+import {
+  AtlasPanelProofSheet,
+  PANEL_PROOF_POLL_MS,
+  PANEL_PROOF_URL_REFRESH_MS,
+  panelProofBelongsToOtherRevision,
+  panelProofRefreshInterval,
+  panelProofRendered,
+  panelProofStillLanding,
+} from "./AtlasPanelProofSheet";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
 
 const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
@@ -45,9 +54,55 @@ describe("AtlasPanelProofSheet", () => {
     expect(html).toContain("Zone 2 — panels without type or logos");
     expect(html).toContain("Zone 3 — logo, text and graphic elements");
     expect(html).not.toContain("These are what get printed");
-    expect(panelProofRefreshInterval({ ...early, panelProof: false }, true)).toBe(1_000);
-    expect(panelProofRefreshInterval(early, true)).toBe(240_000);
+    expect(panelProofRefreshInterval({ ...early, panelProof: false }, true)).toBe(PANEL_PROOF_POLL_MS);
+    expect(panelProofRefreshInterval(early, true)).toBe(PANEL_PROOF_URL_REFRESH_MS);
     expect(panelProofRefreshInterval(undefined, false)).toBe(false);
+  });
+
+  it("re-reads every ~2s while Call 1 can still land the sheet, and stops once it has rendered or the run is terminal", () => {
+    // The sheet is written by Call 1's proof.assemble node, before the master
+    // is accepted and before any 3D view — so how soon a customer sees it is
+    // decided by this cadence, not by "See All Views".
+    expect(PANEL_PROOF_POLL_MS).toBe(1_000);
+    // Authoring / landing states keep polling. `{panelProof:false}` is a STATE
+    // (six-surface / field / hero-driver), never an error, and during authoring
+    // it is also what the read answers before the node lands.
+    for (const state of ["queued", "leased", "retryable"]) {
+      expect(panelProofStillLanding(state)).toBe(true);
+    }
+    expect(panelProofRefreshInterval(undefined, true)).toBe(PANEL_PROOF_POLL_MS);
+    expect(panelProofRefreshInterval({ requestId: "r", revisionId: null, panelProof: false }, true)).toBe(PANEL_PROOF_POLL_MS);
+    // Terminal, or finished: nothing can land any more, so nothing polls.
+    for (const state of ["outputs_ready", "failed", "cancelled", "", null, undefined]) {
+      expect(panelProofStillLanding(state)).toBe(false);
+    }
+    expect(panelProofRefreshInterval({ requestId: "r", revisionId: null, panelProof: false }, false)).toBe(false);
+    // Rendered: the poll stops; only the five-minute signed previews refresh.
+    expect(panelProofRendered(proof())).toBe(true);
+    expect(panelProofRendered({ ...proof(), sheet: { contentHash: "1".repeat(64) } })).toBe(false);
+    expect(panelProofRefreshInterval(proof(), true)).toBe(PANEL_PROOF_URL_REFRESH_MS);
+    expect(panelProofRefreshInterval(proof(), false)).toBe(PANEL_PROOF_URL_REFRESH_MS);
+    expect(PANEL_PROOF_URL_REFRESH_MS).toBeLessThan(300_000);
+  });
+
+  it("every mount site bounds its polling to a live generation, and none adds a second reader", () => {
+    const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+    const loader = read("./AtlasPanelProofSheet.tsx");
+    // ONE endpoint, read through the one loader.
+    expect(loader).toMatch(/dpApi\.getAtlasPanelProof\(requestId\)/);
+    expect(loader).toMatch(/refetchInterval: q => panelProofRefreshInterval\(q\.state\.data, pollWhilePending\)/);
+    // The customer's own page: Call 1 in flight.
+    const create = read("../../pages/DesignPanelProPremium.tsx");
+    expect(create).toMatch(/pollWhilePending=\{pipelineActive \|\| panelProofStillLanding\(generationRequestState\.state\)\}/);
+    // RevisionStudio: a revision's Call 1 in flight, bounded by the observed state.
+    const studio = read("../../pages/RevisionStudioIQ.tsx");
+    expect(studio).toMatch(/pollWhilePending=\{Boolean\(render\?\._revisionRequest\) && panelProofStillLanding\(render\?\._revisionState \?\? "queued"\)\}/);
+    // The two boards: only while the run is doing automatic work, never forever.
+    const board = read("../../pages/designpro/PanelProStudioBoard.tsx");
+    expect(board).toMatch(/pollWhilePending=\{job\?\.state === "queued" \|\| job\?\.state === "running"\}/);
+    expect(board).not.toMatch(/pollWhilePending\s*\n/);
+    const admin = read("../../pages/AdminGeminiCompareStudio.tsx");
+    expect(admin).toMatch(/pollWhilePending=\{job\.state === "queued" \|\| job\.state === "running"\}/);
   });
 
   it("shows branded panels using bounded regions of their own composed sheet", () => {

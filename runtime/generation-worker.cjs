@@ -95,7 +95,33 @@ const {
 const RECEIPT_CONTRACT = "designpro.calls-1-7-receipt.v1";
 const REQUEST_LEASE_SECONDS = 900;
 const HEARTBEAT_MS = 120_000;
-const POLL_MS = 5_000;
+/**
+ * THE CLAIM POLL IS ON THE CUSTOMER'S CRITICAL PATH. (Latency, 2026-09-22.)
+ *
+ * `tick()` is the only thing that picks a queued generation up, so its interval
+ * is dead time between the customer's click and Call 1 starting: at 5 s that
+ * was 0-5 s (2.5 s mean) of nothing, in front of a request->master p50 already
+ * at 89 s against a 60 s SLO. One `claim_designpro_generation_request_v2` RPC
+ * per second per replica is a trivial load; the idle-tick GENIE reclaim below
+ * keeps its own, slower cadence so a faster claim poll does not multiply it.
+ *
+ * `DESIGNPRO_WORKER_POLL_MS` overrides it (250-60000 ms). Anything else --
+ * unset, empty, non-numeric, out of range -- resolves to the default, so a
+ * typo can only ever restore the default and never stall the poll. It is
+ * permitted, never required, by ops/validate-env.py.
+ */
+const DEFAULT_POLL_MS = 1_000;
+const MIN_POLL_MS = 250;
+const MAX_POLL_MS = 60_000;
+function resolveWorkerPollMs(env = process.env) {
+  const raw = String(env?.DESIGNPRO_WORKER_POLL_MS ?? "").trim();
+  if (!/^\d{1,6}$/.test(raw)) return DEFAULT_POLL_MS;
+  const value = Number(raw);
+  return value >= MIN_POLL_MS && value <= MAX_POLL_MS ? value : DEFAULT_POLL_MS;
+}
+const POLL_MS = resolveWorkerPollMs();
+/** The idle-tick GENIE prep reclaim keeps the cadence it had at the old 5 s poll. */
+const IDLE_RECLAIM_MS = 5_000;
 
 /**
  * The design brief the customer typed, plus the vehicle it goes on.
@@ -1025,6 +1051,7 @@ function createGenerationWorker({
   let timer = null;
   let busy = false;
   let stopped = false;
+  let lastIdleReclaimAt = 0;
 
   async function rpc(name, args) {
     const { data, error } = await supabase.rpc(name, args);
@@ -1497,8 +1524,14 @@ function createGenerationWorker({
       if (!claim) {
         // Idle tick: recover a GENIE prep whose lease expired (a runtime
         // restart mid-resolution). The claim is awaited; the resolution is
-        // not, so a customer's Generate is never queued behind it.
-        await geniePrep.reclaimOne().catch(() => null);
+        // not, so a customer's Generate is never queued behind it. Throttled
+        // to IDLE_RECLAIM_MS so the faster claim poll does not turn one
+        // recovery RPC per 5 s into one per second.
+        const now = Date.now();
+        if (now - lastIdleReclaimAt >= IDLE_RECLAIM_MS) {
+          lastIdleReclaimAt = now;
+          await geniePrep.reclaimOne().catch(() => null);
+        }
         return null;
       }
       return await processClaim(claim);
@@ -1529,7 +1562,10 @@ function createGenerationWorker({
 
 module.exports = {
   HEARTBEAT_MS,
+  DEFAULT_POLL_MS,
+  IDLE_RECLAIM_MS,
   POLL_MS,
+  resolveWorkerPollMs,
   RECEIPT_CONTRACT,
   REQUEST_LEASE_SECONDS,
   assertAtlasViewLineage,

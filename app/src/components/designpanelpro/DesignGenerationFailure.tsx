@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatDid } from "@/lib/designId";
+import { shortGenerationId } from "@/lib/designId";
 import { toUuidOrNull } from "@/lib/utils";
 import {
   ATLAS_UNCONFIRMED_OUTCOME_CODE,
@@ -63,7 +63,9 @@ export function DesignGenerationFailure({ isAtlas, error, errorCode, generationI
             </p>
             {savedGenerationId && (
               <>
-                <p className="text-xs text-gray-300 font-mono">{formatDid(savedGenerationId)}</p>
+                {/* A failed generation was never purchased, so it has no Design ID
+                    yet — only the Generation ID minted at Call 1 (the ID ladder). */}
+                <p className="text-xs text-gray-300 font-mono">Generation ID {shortGenerationId(savedGenerationId)}</p>
                 <Button asChild size="sm" className="bg-gradient-to-r from-cyan-500 to-purple-500 text-white">
                   <Link to={`/designpro/studio-board?order=${savedGenerationId}`}>Open saved record</Link>
                 </Button>
