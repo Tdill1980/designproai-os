@@ -144,15 +144,70 @@ describe('masking tells you what to do while you are doing it', () => {
     // Searched FORWARD from the banner: the page has an unrelated Cancel
     // earlier (the history panel), and indexOf would find that one first and
     // make this assertion accidentally meaningless.
+    //
+    // RE-POINTED 2026-09-22 at the ON-PHOTO overlay, which is now the first
+    // match and the one the hand is actually next to. The block below the
+    // photo keeps its own copy for desktop; what must never happen again is
+    // an instruction with its controls somewhere else.
     const banner = page.indexOf('Tap ONE corner of the closet');
     expect(banner).toBeGreaterThan(-1);
     const rest = page.slice(banner, banner + 1800);
-    expect(rest).toContain('>Undo point</Button>');
+    expect(rest).toMatch(/>Undo( point)?<\/Button>/);
     expect(rest).toContain('>Cancel</Button>');
   });
 
   it('says the wall comes first, because a mask before it cuts nothing', () => {
     expect(page).toContain('Mark the wall first');
     expect(page).toContain('there is nothing for a mask to cut out of');
+  });
+});
+
+/**
+ * THE INSTRUCTION IS ON THE PHOTO, AND THE PHOTO COMES TO YOU.
+ *
+ * Owner, 2026-09-22, on the pass an hour before: "It's still not mobile
+ * friendly it's still making me scroll down and instruction doesn't pop up
+ * bad ux."
+ *
+ * Both halves were true and both were mine. The instruction had been put in
+ * the "Your wall photo" block, which is BELOW the image — so on a phone she
+ * was looking at the photo she had to tap while the words telling her what to
+ * tap were off screen. And every control that STARTS a marking mode also
+ * lives below the photo, so pressing one left her looking at buttons with the
+ * target scrolled away above.
+ */
+describe('marking works without scrolling', () => {
+  const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
+
+  it('overlays the instruction inside the image box, not under it', () => {
+    expect(page).toContain('{marking && (');
+    expect(page).toContain('pointer-events-none absolute inset-x-0 top-0 z-20');
+    // The overlay must sit BEFORE the editor, inside the same relative box.
+    const overlay = page.indexOf('pointer-events-none absolute inset-x-0 top-0 z-20');
+    const editor = page.indexOf('<WallPhotoEditor');
+    expect(overlay).toBeGreaterThan(-1);
+    expect(overlay).toBeLessThan(editor);
+  });
+
+  it('never lets the banner swallow the tap it is asking for', () => {
+    // pointer-events-none on the wrapper, auto only on the card's own buttons.
+    const overlay = page.indexOf('pointer-events-none absolute inset-x-0 top-0 z-20');
+    expect(page.slice(overlay, overlay + 400)).toContain('pointer-events-auto');
+  });
+
+  it('carries every marking mode, not just the rectangle', () => {
+    const overlay = page.indexOf('{marking && (');
+    const block = page.slice(overlay, overlay + 2200);
+    expect(block).toContain("marking === 'wall'");
+    expect(block).toContain("marking === 'rectangle'");
+    expect(block).toContain('to go');
+  });
+
+  it('brings the photo into view from EVERY control that starts marking', () => {
+    // One helper, four call sites: the card above step 1, the in-block
+    // Mark/Re-mark, and both masking buttons. A control that starts a mode
+    // without it leaves the customer looking at the wrong half of the page.
+    expect(page).toContain('const focusPhoto = () =>');
+    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(4);
   });
 });

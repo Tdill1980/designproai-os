@@ -116,7 +116,13 @@ describe('the mark-your-wall card is above the scroll and ungated', () => {
 
   it('its button DOES the marking rather than naming another button', () => {
     expect(page).toContain('Mark the corners');
-    expect(page).toMatch(/setMarking\('wall'\); setExcludeDraft\(\[\]\); setView\('before'\);\n\s*setTimeout/);
+    // It enters marking mode AND brings the photo into view. The scroll was an
+    // inline setTimeout here and is now `focusPhoto()`, shared with the three
+    // other controls that start a mode -- on a phone every one of them left
+    // the customer looking at buttons with the target scrolled away above
+    // (owner, 2026-09-22: "it's still making me scroll down").
+    expect(page).toMatch(/setMarking\('wall'\); setExcludeDraft\(\[\]\); setView\('before'\);\n\s*focusPhoto\(\);/);
+    expect(page).toContain('const focusPhoto = () =>');
   });
 
   it('answers the closet question where she asked it', () => {
