@@ -46,6 +46,18 @@ const sharp = require("sharp");
 const { FLAT_BLACK_CHANNEL_MAX } = require("./atlas-master-qc.cjs");
 
 const CONTRACT = "designpro.atlas-master-composite.v1";
+// THE SCHEMA VERSION OF THE `composition` BLOCK, NOT A CLAIM ABOUT ITS PRODUCER.
+// Three gates read this exact string and refuse the whole three-zone proof
+// without it, so it must be one named constant rather than a literal typed in
+// each home:
+//   * designpro_private.panel_proof_is_composed  (20260920011000) -- gates the
+//     graph-sourced read AND the storage signing policy, so a wrong value means
+//     the customer cannot see their own sheet;
+//   * designpro_private.panel_proof_logo_inventory (20260920022906) ->
+//     generation_logo_placement_manifest_required, which fails the handoff;
+//   * zip.build (designpro-standalone-claimant.cjs) -> zip_call1_proof_incomplete.
+// Who actually drew Zone 1 is recorded by `brandedSource`, never by this.
+const COMPOSITION_CONTRACT = "designpro.production-zone-composite.v1";
 // A correct composite changes NOTHING outside its own element rectangles, so
 // the bound is a rounding allowance, not a tolerance for damage.
 const MAX_COMPOSITE_OUTSIDE_DELTA = 0.0001;
@@ -409,12 +421,13 @@ async function compositeProductionPanels({ backgrounds, assets, placements } = {
     panels.push({...base, bytes, byteSize:bytes.length, contentHash:sha256(bytes),
       backgroundContentHash:sha256(base.bytes), applied, zone:"zone1", role:"branded"});
   }
-  return {contract:"designpro.production-zone-composite.v1", panels,
+  return {contract:COMPOSITION_CONTRACT, panels,
     placements, omitted, deterministic:true, sourceAssetsPreserved:true};
 }
 
 module.exports = {
   CONTRACT,
+  COMPOSITION_CONTRACT,
   compositeProductionPanels,
   AtlasCompositeError,
   readingSize,

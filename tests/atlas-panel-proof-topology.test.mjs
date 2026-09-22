@@ -1304,6 +1304,22 @@ test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () =
   assert.equal(result.provenance.composition.placements.length,0,
     "nothing is composited onto a Zone 1 the designer drew");
   assert.equal(result.provenance.threeZoneLayout.brandedSource,"sheet-drawn");
+  // THE COMPOSITION BLOCK'S SCHEMA VERSION IS THE SAME ON BOTH PATHS, AND THREE
+  // GATES REFUSE THE WHOLE PROOF WITHOUT THIS EXACT STRING — none of which a
+  // runtime test can see, which is how a wrong value here passed 1,562 tests:
+  //   designpro_private.panel_proof_is_composed  (20260920011000:9) — the
+  //     graph-sourced read and the storage SIGNING policy, so the customer's
+  //     own sheet becomes unviewable;
+  //   designpro_private.panel_proof_logo_inventory (20260920022906:22) —
+  //     generation_logo_placement_manifest_required, failing the handoff on any
+  //     brief that carries a logo;
+  //   zip.build (designpro-standalone-claimant.cjs:3407) —
+  //     zip_call1_proof_incomplete, so the paid pack never builds.
+  // The producer is `brandedSource`, asserted above. This is the SHAPE.
+  assert.equal(result.provenance.composition.contract,"designpro.production-zone-composite.v1",
+    "a sheet-drawn Zone 1 must keep the composition block's schema version");
+  assert.equal(result.provenance.composition.brandedSource,"sheet-drawn",
+    "the block names its own producer, so the contract never has to lie about it");
   const roof = MANIFEST.zones.find(z => z.surfaceKey === "roof").extraction;
   const pixel = await sharp(result.bytes).extract({left:roof.x+Math.floor(roof.w/2),top:roof.y+Math.floor(roof.h/2),width:1,height:1}).removeAlpha().raw().toBuffer();
   assert.deepEqual([...pixel],[29,78,216],"Zone 1 is the designer's own band, not a composite over Zone 2");

@@ -112,7 +112,7 @@ const PANEL_PROOF_TOPOLOGY_CONTRACT = "designpro.atlas-panel-proof-topology.v2";
 /** Its OWN Call-1 endpoint. It cannot reach design-panel-ai-generate at all. */
 const PROOF_EDGE_FUNCTION = "production-panel-proof";
 
-const { compositeProductionPanels } = require("./atlas-master-composite.cjs");
+const { compositeProductionPanels, COMPOSITION_CONTRACT } = require("./atlas-master-composite.cjs");
 const { planProductionPanelLockup } = require("./atlas-element-lockup.cjs");
 const typeset = require("./atlas-typeset-layer.cjs");
 const { verifyLogoIdentity } = require("./atlas-logo-prepare.cjs");
@@ -1123,7 +1123,20 @@ async function assemblePanelProofMaster({
     const zone2ByKey = new Map(zone2.map((p) => [p.surfaceKey, p]));
     productionLayout = { contract: null, placements: [], omitted: [] };
     composed = {
-      contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
+      // ⚠️ THIS IS THE SCHEMA VERSION OF THE `composition` BLOCK, AND IT IS THE
+      // SAME ON BOTH PATHS ON PURPOSE. It briefly read
+      // PANEL_PROOF_TOPOLOGY_CONTRACT here, which would have failed closed in
+      // three places at once -- the sheet unviewable (the signing policy reads
+      // it), the handoff refused on any logo-bearing brief, and zip.build
+      // refusing the pack. The block's SHAPE is what these gates check, and the
+      // shape is unchanged: contract, layoutContract, placements, panels,
+      // sourceAssetsPreserved. See COMPOSITION_CONTRACT for the three readers.
+      //
+      // Who DREW Zone 1 is a different question, and it is answered honestly by
+      // `brandedSource` below and by `placements: []` -- code placed nothing,
+      // because the designer drew it.
+      contract: COMPOSITION_CONTRACT,
+      brandedSource: "sheet-drawn",
       omitted: [],
       sourceAssetsPreserved: true,
       // `applied: []` is the honest record: no element was composited onto
@@ -1370,7 +1383,8 @@ async function assemblePanelProofMaster({
           graphicsFormat: zone3Format(zone3), productionApproved: false },
         masterSha256: sheet.contentHash || null,
         composition: { contract: composed.contract, layoutContract: productionLayout.contract,
-          placements: productionLayout.placements, panels: compositionChecks, sourceAssetsPreserved: true,
+          placements: productionLayout.placements, brandedSource: zone1Source,
+          panels: compositionChecks, sourceAssetsPreserved: true,
           omitted: [...(productionLayout.omitted || []), ...(composed.omitted || []), ...zone3Omitted] },
         surfaces: zone1.map((p) => ({ surfaceKey: p.surfaceKey, byteSize: p.byteSize,
           widthIn: p.widthIn, heightIn: p.heightIn })),
@@ -1512,6 +1526,9 @@ async function assemblePanelProofMaster({
       // pass declined to carry at all (no assets, an opaque generated mark) is
       // listed here too, under `zone: "zone3"`.
       composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,
+        // WHO DREW ZONE 1, carried on the block itself so a reader of the
+        // composition never has to infer it from the schema version.
+        brandedSource:zone1Source,
         panels:compositionChecks,sourceAssetsPreserved:true,
         omitted:[...(productionLayout.omitted || []),...(composed.omitted || []),...zone3Omitted]},
       imageRequestCount: Number(sheet.imageRequestCount || 1),
