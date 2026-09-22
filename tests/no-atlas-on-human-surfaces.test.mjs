@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 /**
  * NO HUMAN-READ SURFACE SAYS "ATLAS". Owner, 2026-09-21 and again 2026-09-22,
  * looking at the live board: "My 3-zone is Call 1. Delete ATLAS." / "Remove all
- * atlas references."
+ * atlas references." Then, the same day: "Remove all UI Powered by Atlas" /
+ * "Remove and hide atlas" -- the tagline this lock once exempted is retired,
+ * and the internal word "topology" (the Call-1 route) joins the list.
  *
  * ATLAS is the internal name of the square canvas the cut panels are placed on
  * so downstream stages can read them. It is plumbing, and after #591 it is not
@@ -26,9 +28,17 @@ import { fileURLToPath } from "node:url";
  *     `atlasBinding`, `isAtlas`, `AtlasRefusal`, `ATLAS_UNCONFIRMED_...` and
  *     `FLAT_FIRST_ATLAS_PIPELINE_MODE` never match. Renaming those touches
  *     stored rows and the deployed edge function, which CLAUDE.md forbids.
- *   - NOT "Powered by Atlas" -- mixed case, and the owner's own brand ruling
- *     of 2026-09-16 (`app/src/lib/os-brand.ts`). If that ruling changes,
- *     change the brand file, not this lock.
+ *   - "Powered by Atlas", ANY case, on every line: the 2026-09-16 brand ruling
+ *     that exempted it was retired by the owner on 2026-09-22, and the tagline
+ *     had also reached two SEO meta descriptions and the FAQ, which a crawler
+ *     reads. Nothing replaces it; `ATLAS_BRAND` is deleted from os-brand.ts.
+ *   - "topology" / "topologies", ANY case, but ONLY where a person can read
+ *     it: inside a quoted string literal, or as JSX / HTML text. Identifiers
+ *     (`authoringTopology`, `TOPOLOGY_LABEL`, `.topology`, `topology:` keys)
+ *     stay legal, because renaming them touches stored rows and the gateway
+ *     contract. `AtlasRefusedSheets` maps the route to product words instead.
+ *   - app/index.html joins the scan: its meta description is read by every
+ *     crawler and it is not under app/src.
  *   - NOT runtime/: model-facing prompt contracts name A.T.L.A.S. on purpose
  *     and are hash-pinned. The runtime error MESSAGES that reach a screen were
  *     rewritten by hand in the same change; the prompts were not.
@@ -45,10 +55,67 @@ const SKIP_FILE = (rel) =>
   /\.test\.[cm]?[jt]sx?$/.test(rel)
   || rel.startsWith("app/src/data/batch-presets");
 
+const EXTRA_FILES = ["app/index.html"];
+
+/** Whole-line patterns: an identifier can never legitimately spell these. */
 const PATTERNS = [
   { name: "A.T.L.A.S.", re: /A\.T\.L\.A\.S/ },
   { name: "ATLAS", re: /\bATLAS\b/ },
+  { name: "Powered by Atlas", re: /powered\s+by\s+atlas/i },
 ];
+
+/** Visible-text-only pattern: convicted in string literals and JSX/HTML text, never in identifiers. */
+const VISIBLE_WORD = { name: "topology (visible)", re: /\btopolog(?:y|ies)\b/i };
+const JSX_LIKE = new Set([".tsx", ".jsx", ".html"]);
+
+/**
+ * The string literals on one comment-stripped line, with `${…}` holes cut out
+ * of template literals so an interpolated identifier is not read as text.
+ */
+function stringLiterals(line) {
+  const out = [];
+  const re = /"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\\n]|\\.)*)`/g;
+  let m;
+  while ((m = re.exec(line))) {
+    const before = line[m.index - 1];
+    const after = line[m.index + m[0].length];
+    // `Type["topology"]` is an indexed-access type / property reference and
+    // `"topology": value` is an object key: both name an identifier, neither
+    // is text a person reads. (A ternary writes `"a" : "b"` with a space.)
+    if (before === "[" && after === "]") continue;
+    if (after === ":") continue;
+    const text = m[1] ?? m[2] ?? (m[3] ?? "").replace(/\$\{[^}]*\}/g, " ");
+    out.push(text);
+  }
+  return out;
+}
+
+/**
+ * What is left of a JSX/HTML line once string literals, `{…}` expressions and
+ * tags are removed -- i.e. the text a browser would render -- provided the
+ * residue does not look like code. A residue carrying `; = ( ) { } [ ]`, an
+ * arrow, or a statement keyword is code, not prose, and is left alone.
+ */
+function jsxText(line) {
+  let residue = line.replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\\n]|\\.)*`/g, " ");
+  for (let i = 0; i < 8; i += 1) {
+    const next = residue.replace(/\{[^{}]*\}/g, " ").replace(/<[^<>]*>/g, " ");
+    if (next === residue) break;
+    residue = next;
+  }
+  if (/[;=(){}[\]]|=>/.test(residue)) return "";
+  if (/^\s*(?:import|export|const|let|var|type|interface|function|return|case|default|if|else|for|while|switch|throw|new|async|await)\b/.test(residue)) return "";
+  // A lone identifier, with or without a trailing comma, is a shorthand
+  // property (`{ topology, attempt }` split across lines), not a sentence.
+  if (/^\s*[A-Za-z_$][\w$]*\s*,?\s*$/.test(residue)) return "";
+  return residue;
+}
+
+function visibleWordOffences(line, ext) {
+  const texts = stringLiterals(line);
+  if (JSX_LIKE.has(ext)) texts.push(jsxText(line));
+  return texts.some((text) => VISIBLE_WORD.re.test(text));
+}
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -76,25 +143,72 @@ function stripComments(source) {
     .join("\n");
 }
 
-test("no customer or designer surface in app/src or gateway/src says ATLAS", () => {
+function scanTargets() {
+  const files = [];
+  for (const dir of SCAN_DIRS) files.push(...walk(path.join(root, dir)));
+  for (const extra of EXTRA_FILES) files.push(path.join(root, extra));
+  return files;
+}
+
+function stripForFile(source, ext) {
+  // HTML has its own comment syntax and no `//` lines.
+  if (ext === ".html") return source.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
+  return stripComments(source);
+}
+
+test("no customer or designer surface in app/src, gateway/src or app/index.html says ATLAS, Powered by Atlas, or topology", () => {
   const offenders = [];
-  for (const dir of SCAN_DIRS) {
-    for (const file of walk(path.join(root, dir))) {
-      const rel = path.relative(root, file);
-      if (SKIP_FILE(rel)) continue;
-      const lines = stripComments(fs.readFileSync(file, "utf8")).split("\n");
-      lines.forEach((line, index) => {
-        for (const { name, re } of PATTERNS) {
-          if (re.test(line)) offenders.push(`${rel}:${index + 1}  [${name}]  ${line.trim().slice(0, 120)}`);
-        }
-      });
-    }
+  for (const file of scanTargets()) {
+    const rel = path.relative(root, file);
+    if (SKIP_FILE(rel)) continue;
+    const ext = path.extname(file);
+    const lines = stripForFile(fs.readFileSync(file, "utf8"), ext).split("\n");
+    lines.forEach((line, index) => {
+      for (const { name, re } of PATTERNS) {
+        if (re.test(line)) offenders.push(`${rel}:${index + 1}  [${name}]  ${line.trim().slice(0, 120)}`);
+      }
+      if (visibleWordOffences(line, ext)) {
+        offenders.push(`${rel}:${index + 1}  [${VISIBLE_WORD.name}]  ${line.trim().slice(0, 120)}`);
+      }
+    });
   }
   assert.deepEqual(
     offenders,
     [],
-    `These strings can reach a person and still say ATLAS. Rewrite the copy (print master / Call 1 / design), never the identifier:\n  ${offenders.join("\n  ")}`,
+    `These strings can reach a person and still name the engine or its route. Rewrite the copy (print master / Call 1 / design / Production Panel Proof), never the identifier:\n  ${offenders.join("\n  ")}`,
   );
+});
+
+test("the visible-word check convicts prose and spares identifiers", () => {
+  // Identifiers and object keys: legal, because renaming them touches stored rows.
+  for (const line of [
+    "const label = TOPOLOGY_LABEL[refusal.topology];",
+    "  topology: \"six-surface\" | \"field\" | \"hero-driver\";",
+    "const x = provenance?.topology || null;",
+    "  const topology = String(row?.topology || \"\");",
+    "metadata.authoringTopology === PANEL_PROOF_TOPOLOGY",
+    "        topology,",
+    'const TOPOLOGY_LABEL: Record<AtlasRefusal["topology"], string> = {',
+    '  "panel-proof": "Production panel proof",',
+  ]) {
+    assert.equal(visibleWordOffences(line, ".tsx"), false, line);
+    assert.equal(visibleWordOffences(line, ".mjs"), false, line);
+  }
+  // Text a person reads: convicted, in a literal, in JSX text, in an attribute.
+  for (const line of [
+    '<Fact label="Topology" value={provenance?.topology || null} />',
+    "  {brand.poweredBy} — One prepared vehicle topology, one master, six labeled panels.",
+    "throw new Error(`the ${kind} topology is not supported`);",
+    '<meta name="description" content="Six topologies, one OS.">',
+  ]) {
+    assert.equal(visibleWordOffences(line, ".tsx"), true, line);
+  }
+  // In a non-JSX module only literals count, so bare prose there is impossible anyway.
+  assert.equal(visibleWordOffences('const msg = "field topology refused";', ".mjs"), true);
+  assert.equal(visibleWordOffences("const topology = pick();", ".mjs"), false);
+  // The tagline is convicted whatever its case.
+  assert.match("VehiclePro. WallPro. CutPro. Powered by Atlas.", PATTERNS[2].re);
+  assert.match("…and CutPro, powered by Atlas.", PATTERNS[2].re);
 });
 
 test("the comment stripper does not blind the lock", () => {

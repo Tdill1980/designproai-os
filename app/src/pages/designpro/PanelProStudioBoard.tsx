@@ -29,7 +29,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
-import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { ProductionProofSourceCard } from "@/components/revisioniq/ProductionProofSourceCard";
 import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { FullQcPanel } from "@/components/designpro/FullQcPanel";
 import type { PanelQcReport } from "@/lib/designpro-panel-qc";
@@ -1113,11 +1113,14 @@ export default function PanelProStudioBoard() {
         </Notice>
       )}
 
+      {/* The source artifact, named with its version so V1/V2/V3 never read as
+          one another (RULE 0.22: every revision stays inspectable). */}
       {selectedVersion?.revision.requestId && (
-        <AtlasPanelProofSheetLoader
-          key={selectedVersion.revision.requestId}
+        <ProductionProofSourceCard
+          key={selectedVersion.revisionId}
           requestId={selectedVersion.revision.requestId}
           revisionId={selectedVersion.revisionId}
+          version={selectedVersion.version}
           pollWhilePending
         />
       )}

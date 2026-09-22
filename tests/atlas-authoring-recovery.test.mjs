@@ -22,6 +22,15 @@ const geometryResolution = { contract:"designpro.genie-manifest.v1",genieManifes
 // repair, fail-over, checkpoints, recovery -- which still exist behind the
 // DESIGNPRO_ATLAS_FIELD_FIRST=off switch and for revision edits, so it pins
 // the switch off for its fixtures; the field-first tests below lift it.
+//
+// 2026-09-22 (owner: "There isn't any other Call 1 — the only call is panel
+// pro production proof"): the live router `generateOrReuseFlatAtlas` selects
+// the panel proof for EVERY unnamed request. The six-surface / field-first /
+// hero mechanics this file locks are DEAD BUT RETAINED -- kept executable
+// through `_test.generateOrReuseFlatAtlasLegacyRouting`, the pre-ruling
+// router production never calls -- so the harness below drives that router
+// unless a test names `router`. The panel-proof cases at the end of this
+// file drive the LIVE entry point.
 process.env.DESIGNPRO_ATLAS_FIELD_FIRST = "off";
 const input = {contractVersion:atlas.INPUT_CONTRACT,pipelineMode:atlas.PIPELINE_MODE,mode:"commercial",
   companyName:"Recovery Fixture",brief:"Blue and orange test artwork",vehicle:{year:"2022",make:"Ford",model:"F250 Crew Cab",type:"truck"}};
@@ -95,14 +104,21 @@ function harness(source) {
   let inserted = null, pendingRow = null, fenceCalls = 0;
   let insertFailure = false, finishFailure = null, finishFailureCode = "provider_outcome_unknown", forceCacheOnly = false, corruptReads = null, whiteFinish = false;
   let checkpointRace = null, masterFor = null;
-  const query = {select(){return this;},eq(){return this;},order(){return this;},limit(){return this;},
-    async maybeSingle(){return {data:inserted,error:null};},
-    insert(row){pendingRow=row;return this;},
+  // Revision rows by id, so a lookup BY ID (the panel-proof revision reads its
+  // parent row for the accepted proof sheet) answers the row asked for, while
+  // every other lookup keeps answering the last inserted row as before.
+  const rows = new Map();
+  const queryFor = (table) => {const eqs={};const q={select(){return q;},eq(k,v){eqs[k]=v;return q;},order(){return q;},limit(){return q;},
+    async maybeSingle(){
+      if (table==="designpro_flat_atlas_revisions"&&eqs.id!==undefined) return {data:rows.get(eqs.id)||null,error:null};
+      return {data:inserted,error:null};
+    },
+    insert(row){pendingRow=row;return q;},
     async single(){
       if (insertFailure) return {data:null,error:{message:"simulated database interruption"}};
-      inserted=pendingRow;return {data:inserted,error:null};
-    }};
-  const supabase = {from(){return query;},async rpc(){fenceCalls++;return {data:!forceCacheOnly&&fenceCalls===1,error:null};},
+      inserted=pendingRow;if(inserted?.id)rows.set(inserted.id,inserted);return {data:inserted,error:null};
+    }};return q;};
+  const supabase = {from(table){return queryFor(table);},async rpc(){fenceCalls++;return {data:!forceCacheOnly&&fenceCalls===1,error:null};},
     storage:{from(){return {async download(path){
       if (corruptReads === path) return {data:new Blob([Buffer.from("corrupt")]),error:null};
       if (!bytes.has(path)) return {data:null,error:{statusCode:"404",message:"Object not found"}};
@@ -122,7 +138,7 @@ function harness(source) {
     bytes.set(storagePath,Buffer.from(body));
     return {storagePath,contentHash:sha256(body),byteSize:body.length};
   }};
-  const run = (extra={}) => atlas.generateOrReuseFlatAtlas({
+  const run = ({router=atlas._test.generateOrReuseFlatAtlasLegacyRouting,...extra}={}) => router({
     input,surfaces,geometryResolution,...identities,provider:{},supabase,store,
     callEdge:async body=>{masterCalls.push(body);const bytes=masterFor?await masterFor(body):source;return {bytes,provenance:{imageRequestCount:1,masterSha256:sha256(bytes),masterStoragePath:`atlas-call1/${body.providerRequest?.attemptKey||"x"}.png`}};},
     callPanelEdge:async body=>{
@@ -153,7 +169,7 @@ function harness(source) {
     onSurfaceReady(value){publicPanels.push(value);},
     ...extra,
   });
-  return {run,bytes,publicMasters,publicPanels,masterCalls,finishCalls,
+  return {run,bytes,rows,publicMasters,publicPanels,masterCalls,finishCalls,
     get inserted(){return inserted;},get fenceCalls(){return fenceCalls;},
     set insertFailure(value){insertFailure=value;},set finishFailure(value){finishFailure=value;},set finishFailureCode(value){finishFailureCode=value;},
     set forceCacheOnly(value){forceCacheOnly=value;},set corruptReads(value){corruptReads=value;},
@@ -835,4 +851,181 @@ test("the acceptance guard names the condition that failed, and its value",async
     assert.doesNotMatch(error.message,/maxAuthoringAttemptsAllowed/);
     return true;
   });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// THE PANEL PRODUCTION PROOF IS THE ONLY CALL 1 (owner ruling, Trish 2026-09-22).
+// These cases drive the LIVE entry point, `atlas.generateOrReuseFlatAtlas`,
+// with the graph off (no `atlasCall1Graph`), so the in-process pass runs
+// through the harness's own storage and rows. A painted three-zone sheet
+// stands in for the proof edge; `masterCalls` is the six-surface edge and
+// must stay EMPTY on every panel-proof run.
+// ════════════════════════════════════════════════════════════════════════════
+const proofTopology = require("../runtime/atlas-panel-proof-topology.cjs");
+const containerTemplate = require("../runtime/atlas-proof-container-template.cjs");
+async function paintedProofSheet(manifest, { silhouette = [], width = 3072, height = 2048 } = {}) {
+  const layout = containerTemplate.containerLayout(containerTemplate.parsePanelRows(
+    proofTopology.panelRowsFromManifest(manifest)));
+  const sx = width / layout.width, sy = height / layout.height;
+  const rects = [];
+  for (const [zone, colour] of [["zone1", "#1d4ed8"], ["zone2", "#0f766e"], ["zone3", "#b91c1c"]]) {
+    for (const cell of layout[zone] || []) {
+      const x = Math.round(cell.x * sx), y = Math.round(cell.y * sy), w = Math.round(cell.w * sx), h = Math.round(cell.h * sy);
+      if (silhouette.includes(`${zone}:${cell.surfaceKey}`)) {
+        // A vehicle-shaped island on a dark surround: the one shape the
+        // six-surface `edgeHoleRatio` gate was built to refuse.
+        const ix = Math.round(w * 0.12), iy = Math.round(h * 0.12);
+        rects.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#000000"/>`
+          + `<rect x="${x + ix}" y="${y + iy}" width="${w - 2 * ix}" height="${h - 2 * iy}" fill="${colour}"/>`);
+      } else {
+        rects.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${colour}"/>`);
+      }
+    }
+  }
+  return sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+    + `<rect width="${width}" height="${height}" fill="#ffffff"/>${rects.join("")}</svg>`)).png().toBuffer();
+}
+function proofEdgeStub(run, { sheets = [], refuse = [] } = {}) {
+  const calls = [];
+  const callProofEdge = async (body) => {
+    const index = calls.length;
+    calls.push(body);
+    if (refuse[index]) throw new proofTopology.PanelProofRefusal(refuse[index], { status: 200,
+      sheet: { storagePath: `atlas-panel-proof/refused-${index + 1}.png`, contentHash: sha256(Buffer.from(`refused-${index + 1}`)), byteSize: 9 } });
+    const bytes = sheets[Math.min(index, sheets.length - 1)];
+    const contentHash = sha256(bytes);
+    const storagePath = `atlas-panel-proof/${contentHash}.png`;
+    run.bytes.set(storagePath, bytes);
+    return { bytes, contentHash, storagePath, byteSize: bytes.length, model: "gemini-3-pro-image",
+      contract: "designpro.atlas-panel-proof.v1", sheetShape: { mime: "image/png", extension: "png" } };
+  };
+  return { calls, callProofEdge };
+}
+
+test("PANEL PROOF: the live router selects it for a first generation, and a refused candidate spends a second — never six-surface", async t => {
+  finishFlag(t, "off"); failoverFlag(t, undefined);
+  const { source, manifest } = await fixture();
+  const sheet = await paintedProofSheet(manifest);
+  const run = harness(source);
+  const edge = proofEdgeStub(run, { sheets: [sheet], refuse: ["the model drew a vehicle"] });
+  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge });
+  assert.deepEqual(edge.calls.map(body => body.attemptKey), ["panel-proof:1:1", "panel-proof:1:2"],
+    "candidate 1 refused, candidate 2 spent under its OWN identity");
+  assert.equal(run.masterCalls.length, 0, "the six-surface edge is never reached from a panel-proof run");
+  assert.equal(result.metadata.authoringTopology, "panel-proof");
+  assert.equal(result.metadata.authoringFailover, null, "no fail-over contract exists");
+  assert.equal(result.metadata.masterAuthoringAttempts, 2);
+  assert.equal(result.metadata.panelProofAuthoring.topology, "panel-proof", "the authored receipt, not the derived document");
+  assert.equal(result.metadata.panelProofAuthoring.execution, "in-process");
+  assert.equal(result.metadata.panelProofAuthoring.graph.unavailable, true);
+  assert.equal(result.callOnePanels.length, 6);
+  assert.equal(Object.keys(result.viewAuthorities).length, 7);
+  assert.equal(run.publicMasters.length, 1);
+  // Resume: reused without another sheet.
+  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge,
+    claimToken: "55555555-5555-4555-8555-555555555555" });
+  assert.equal(reused.reused, true);
+  assert.equal(edge.calls.length, 2);
+});
+
+test("PANEL PROOF: two refused candidates are TERMINAL with the real reason; no other Call 1 is tried", async t => {
+  finishFlag(t, "off"); failoverFlag(t, undefined);
+  const { source, manifest } = await fixture();
+  const run = harness(source);
+  const edge = proofEdgeStub(run, { sheets: [await paintedProofSheet(manifest)],
+    refuse: ["the model drew a vehicle", "the model drew a vehicle again"] });
+  await assert.rejects(run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge }),
+    error => error.code === "flat_atlas_panel_proof_refused" && error.retryable === false
+      && /refused 2 times/.test(error.message) && /drew a vehicle again/.test(error.message));
+  assert.deepEqual(edge.calls.map(body => body.attemptKey), ["panel-proof:1:1", "panel-proof:1:2"]);
+  assert.equal(run.masterCalls.length, 0, "never six-surface, never field, never hero");
+  assert.equal(run.publicMasters.length, 0);
+  assert.equal(run.inserted, null);
+});
+
+test("PANEL PROOF: the six-surface master gates are advisory — a silhouette the vehicle gate would refuse is accepted and recorded", async t => {
+  finishFlag(t, "off"); failoverFlag(t, undefined);
+  const { source, manifest } = await fixture();
+  const run = harness(source);
+  const edge = proofEdgeStub(run, { sheets: [await paintedProofSheet(manifest, { silhouette: ["zone2:rear"] })] });
+  const result = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge });
+  assert.equal(edge.calls.length, 1, "accepted on the first candidate");
+  assert.equal(result.metadata.masterQcPassed, true);
+  const advisory = result.metadata.masterGateAdvisory;
+  assert.equal(advisory.contract, atlas._test.MASTER_GATE_ADVISORY_CONTRACT);
+  assert.equal(advisory.advisory, true); assert.equal(advisory.refused, false);
+  const findings = [...advisory.findings, ...(advisory.prior?.findings || [])];
+  assert.ok(findings.some(f => /rear/.test(f.finding)), `the gate's own finding on rear is recorded: ${JSON.stringify(findings)}`);
+  assert.ok(findings.some(f => f.code === "flat_atlas_master_deterministic_failed"));
+  // And the checkpoint written with those findings RESUMES rather than throwing
+  // flat_atlas_checkpoint_acceptance_invalid.
+  const checkpointPath = [...run.bytes.keys()].find(path => path.endsWith("/accepted.json"));
+  const record = JSON.parse(run.bytes.get(checkpointPath)).record;
+  assert.equal(record.state.authoringTopology, "panel-proof");
+  assert.ok(record.state.masterGateAdvisory, "the advisory is checkpointed");
+  const reused = await run.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: edge.callProofEdge,
+    claimToken: "55555555-5555-4555-8555-555555555555" });
+  assert.equal(reused.reused, true);
+  assert.equal(edge.calls.length, 1);
+});
+
+test("PANEL PROOF: a revision routes through the same pass — parent proof staged as a reference, instruction folded in, its own run identity", async t => {
+  finishFlag(t, "off");
+  const { source, manifest } = await fixture();
+  const parentRun = harness(source);
+  const parentSheet = await paintedProofSheet(manifest);
+  const parentEdge = proofEdgeStub(parentRun, { sheets: [parentSheet] });
+  const parent = await parentRun.run({ router: atlas.generateOrReuseFlatAtlas, callProofEdge: parentEdge.callProofEdge });
+  assert.equal(parent.metadata.authoringTopology, "panel-proof");
+  const child = harness(source);
+  for (const [path, bytes] of parentRun.bytes) child.bytes.set(path, Buffer.from(bytes));
+  child.rows.set(parent.revisionId, parentRun.inserted);
+  const revisionContext = {
+    contractVersion: "designpro.atlas-revision-intake.v1",
+    parentAtlasRevisionId: parent.revisionId, parentRequestId: identities.requestId, parentRevisionSequence: parent.revisionSequence,
+    parentMaster: { storagePath: parent.master.storagePath, contentHash: parent.master.contentHash, byteSize: parent.master.byteSize },
+    parentManifest: { ...parent.manifestAsset },
+    affectedSurfaces: ["driver", "passenger"],
+    instruction: "Move the phone number off the door handle and enlarge the logo.",
+    history: { mode: "image-reference" },
+  };
+  const options = {
+    router: atlas.generateOrReuseFlatAtlas,
+    requestId: "88888888-8888-4888-8888-888888888888",
+    revisionSequence: 2, parentAtlasRevisionId: parent.revisionId,
+    revisionContext, revisionContextHash: sha256(atlas._test.canonicalBytes(revisionContext)),
+    parentManifest: parent.manifest,
+  };
+  const childEdge = proofEdgeStub(child, { sheets: [await sharp(parentSheet).linear(0.9, 12).png().toBuffer()] });
+  const result = await child.run({ ...options, callProofEdge: childEdge.callProofEdge });
+  assert.equal(child.masterCalls.length, 0, "a revision never reaches the six-surface edge");
+  assert.equal(childEdge.calls.length, 1);
+  const body = childEdge.calls[0];
+  assert.equal(body.attemptKey, "panel-proof:2:1", "V2 is its own durable operation, never V1's");
+  assert.equal(body.revisionSequence, 2);
+  assert.equal(body.revisionInstruction, revisionContext.instruction);
+  assert.match(body.customerPrompt, /REVISION V2[\s\S]*Move the phone number off the door handle/);
+  assert.deepEqual(body.affectedSurfaces, ["driver", "passenger"]);
+  assert.equal(body.parentAtlasRevisionId, parent.revisionId);
+  assert.equal(body.revisionContextHash, options.revisionContextHash);
+  // THE PARENT'S ACCEPTED PROOF is the reference: staged under the edge's own
+  // allowlist, crossing as an identity, and the bytes are really there.
+  assert.match(body.parentProof.storagePath, proofTopology.CALL1_INPUT_PATH);
+  assert.equal(body.parentProof.role, "parent-production-proof");
+  const staged = child.bytes.get(body.parentProof.storagePath);
+  assert.ok(staged, "the parent reference must be written where the edge reads");
+  assert.equal(sha256(staged), body.parentProof.contentHash);
+  assert.equal(staged.length, body.parentProof.byteSize);
+  assert.equal(body.parentProof.contentHash, sha256(await sharp(Buffer.from(child.bytes.get(parent.metadata.panelProofAuthoring.proofStoragePath)))
+    .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true }).png().toBuffer()),
+    "the reference IS the parent's accepted three-zone proof sheet, downscaled");
+  // The revision row is a real panel-proof revision, keyed to its parent.
+  assert.equal(result.revisionSequence, 2);
+  assert.equal(result.parentRevisionId, parent.revisionId);
+  assert.equal(result.metadata.authoringTopology, "panel-proof");
+  assert.equal(result.metadata.panelProofAuthoring.topology, "panel-proof");
+  assert.equal(child.inserted.instruction, revisionContext.instruction);
+  assert.equal(result.manifestAsset.contentHash, parent.manifestAsset.contentHash, "an edit retains its exact GENIE dimensions");
+  assert.notEqual(result.master.contentHash, parent.master.contentHash);
+  assert.equal(result.callOnePanels.length, 6);
 });

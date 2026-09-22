@@ -211,7 +211,7 @@ const MeetYourSystemSection = () => {
 const HERO_HEADLINES = [
   "The Design-to-Production OS Built for Wide Format.",
   "Prompt-Based Design + Production-Ready File Output",
-  "VehiclePro. WallPro. CutPro. Powered by Atlas.",
+  "VehiclePro. WallPro. CutPro. One Production Panel Proof.",
 ];
 
 const HeroHeadlineRotator = () => {
@@ -310,7 +310,7 @@ const Index = () => {
     <div className="min-h-screen flex flex-col bg-black">
       <Helmet>
         <title>DesignProAI — The Design-to-Production OS Built for Wide Format</title>
-        <meta name="description" content="Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built wide-format operating system. VehiclePro, WallPro and CutPro, powered by Atlas." />
+        <meta name="description" content="Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built wide-format operating system. VehiclePro, WallPro and CutPro, every print-ready file cut from one Production Panel Proof." />
         <link rel="canonical" href="https://designproai.com" />
         <meta property="og:title" content="DesignProAI — The Design-to-Production OS Built for Wide Format" />
         <meta property="og:description" content="Prompt-Based Design + Production-Ready File Output. VehiclePro, WallPro and CutPro inside one wide-format operating system." />
@@ -1047,7 +1047,7 @@ const Index = () => {
               {[
                 {
                   q: "What is DesignProAI?",
-                  a: "DesignProAI is the Design-to-Production OS built for wide format. Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built operating system. VehiclePro handles vehicle graphics, WallPro handles wall and environmental graphics, and CutPro handles cut graphics. Powered by Atlas, the intelligence layer behind DesignProAI."
+                  a: "DesignProAI is the Design-to-Production OS built for wide format. Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built operating system. VehiclePro handles vehicle graphics, WallPro handles wall and environmental graphics, and CutPro handles cut graphics. Every print-ready file is cut from one Production Panel Proof — the source your design is produced from."
                 },
                 {
                   q: "How fast can I design a vehicle wrap?",

@@ -72,6 +72,19 @@ function assertIdentity(record, identity) {
   const checks = record.state?.masterDeterministic;
   const zoneKeys = Array.isArray(checks?.zones) ? checks.zones.map((zone) => zone.surfaceKey) : [];
   const receipt = record.state?.outputClassReceipt;
+  // THE SIX-SURFACE GATE TERMS ARE NOT REQUIRED OF A PANEL-PROOF ACCEPTANCE
+  // (owner, 2026-09-22). On that topology the deterministic and output-class
+  // verdicts are ADVISORY -- recorded on `state.masterGateAdvisory`, never a
+  // refusal -- so a checkpoint whose advisory carries findings is still a
+  // valid acceptance and must resume rather than throw. What proves the
+  // acceptance there is the master artifact identity (checked above: an
+  // immutable child of this generation, hash-named, byte-sized) plus the
+  // advisory receipt itself and the attempt terms below. A panel-proof
+  // checkpoint written before the advisory existed carries none and falls
+  // through to the six-surface terms it was written under.
+  const advisory = record.state?.masterGateAdvisory;
+  const panelProofAdvisory = record.state?.authoringTopology === "panel-proof"
+    && advisory && typeof advisory === "object" && advisory.contract === "designpro.atlas-master-gate-advisory.v1";
   // NAMED, BECAUSE AN UNNAMED CONJUNCTION IS NOT A DIAGNOSIS (2026-09-18).
   //
   // This was one fifteen-term `if`, and when it fired on a live canary
@@ -84,6 +97,10 @@ function assertIdentity(record, identity) {
   // Same lesson this repo keeps paying for in a different place: a gate that
   // reports a verdict without its evidence cannot be debugged from the outside.
   const acceptanceFailures = [
+    ...(panelProofAdvisory ? [
+      [advisory.advisory !== true || advisory.refused !== false,
+        `masterGateAdvisory is not an advisory receipt (advisory=${advisory.advisory}, refused=${advisory.refused})`],
+    ] : [
     [checks?.accepted !== true, "masterDeterministic.accepted is not true"],
     [!Array.isArray(checks?.blockingFailures) || checks.blockingFailures.length,
       `blockingFailures=${JSON.stringify(checks?.blockingFailures || null).slice(0, 160)}`],
@@ -101,6 +118,7 @@ function assertIdentity(record, identity) {
       .includes(receipt?.candidateSha256),
       `outputClass.candidateSha256=${String(receipt?.candidateSha256).slice(0, 12)} is neither the accepted master `
       + `${String(record.master?.contentHash).slice(0, 12)} nor the pre-mirror ${String(record.state?.preMirrorMasterHash).slice(0, 12)}`],
+    ]),
     [!Number.isSafeInteger(record.state?.masterAuthoringAttempts) || record.state.masterAuthoringAttempts < 1,
       `masterAuthoringAttempts=${record.state?.masterAuthoringAttempts}`],
     [!Number.isSafeInteger(record.state?.maxAuthoringAttemptsAllowed)

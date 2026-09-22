@@ -18,7 +18,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     api.listArtifacts.mockResolvedValue([{ id: "old-call8", kind: "flat-proof", surfaceKey: "", contentHash: "c".repeat(64), signedUrl: "https://files.test/old-proof.png", metadata: { role: "customer-2d-production-proof", sourceMasterHash: parent.master.contentHash } }]);
     const pending = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
     expect(pending.proofUrl).toBeNull();
-    expect(pending.panelProofSource).toEqual({ requestId: receipt.requestId, revisionId: null });
+    expect(pending.panelProofSource).toEqual({ requestId: receipt.requestId, revisionId: null, version: 5 });
     expect(pending.workflowRun?.workflow_status).toBe("running");
     api.getGenerationRequest.mockResolvedValue({ ...receipt, state: "outputs_ready", revisionHandoffError: { code: "private SQL text" } });
     const stalled = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
@@ -26,7 +26,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     expect(JSON.stringify(stalled)).not.toContain("private SQL text");
     const historical = await getDesignBuildStatus({ generationId: parent.generationId, atlasRevisionId: parent.id });
     expect(historical.proofUrl).toBe("https://files.test/old-proof.png");
-    expect(historical.panelProofSource).toEqual({ requestId: parent.requestId, revisionId: parent.id });
+    expect(historical.panelProofSource).toEqual({ requestId: parent.requestId, revisionId: parent.id, version: 2 });
     expect(JSON.parse(pendingRevisionNotes({ original_prompt: "Saved brief", flat_proof_url: "old", logo_pack: ["old"], logo_layers: { old: true }, ai_edit_summary: "Old change" }))).toEqual({ original_prompt: "Saved brief" });
   });
   it("revises an older selected parent as the server's next version on the same GenerationID", async () => {

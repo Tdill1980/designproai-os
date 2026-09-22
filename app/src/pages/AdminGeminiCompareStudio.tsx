@@ -811,7 +811,9 @@ function AtlasProgressCard({
 
   return (
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
-      {atlas?.requestId && <AtlasPanelProofSheetLoader requestId={atlas.requestId} revisionId={atlas.id} />}
+      {/* Keyed on the selected version so switching V1 -> V2 remounts the
+          reader instead of leaving the previous version's proof on screen. */}
+      {atlas?.requestId && <AtlasPanelProofSheetLoader key={atlas.id} requestId={atlas.requestId} revisionId={atlas.id} />}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
           Call 1
@@ -1219,7 +1221,7 @@ function AtlasForensicRecord({ atlas }: { atlas: FlatAtlasRevision }) {
         <Fact label="Prompt hash" value={provenance?.promptHash ? provenance.promptHash.slice(0, 16) : null} />
         <Fact label="Pipeline mode" value={provenance?.pipelineMode || null} />
         <Fact label="Input contract" value={provenance?.inputContract || null} />
-        <Fact label="Topology" value={provenance?.topology || null} />
+        <Fact label="Call 1 route" value={provenance?.topology || null} />
         <Fact label="Provider contract" value={provenance?.providerContract || null} />
         <Fact label="Requested size" value={provenance?.requestedImageSize || null} />
         <Fact

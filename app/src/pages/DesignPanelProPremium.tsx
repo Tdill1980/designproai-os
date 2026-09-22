@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
-import { ATLAS_BRAND, OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS } from "@/lib/os-brand";
 import { ToolHeader } from "@/components/layout/ToolHeader";
 import { WallProHeroProof } from "@/components/wallpro/WallProHeroProof";
 import { useToolProofBand } from "@/hooks/useToolProofBand";
@@ -2170,14 +2170,14 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         </button>
                       </div>
                       <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-3">
-                        {/* Atlas is the intelligence layer, not a fourth product: it
-                            gets "Powered by Atlas" and one line, never a competing
-                            wordmark (os-brand.ts, Trish 2026-09-16). */}
+                        {/* The product, in the owner's words (Trish 2026-09-22): the
+                            three-zone Production Panel Proof is Call 1 and the source of
+                            every print-ready file. No engine name is presented here. */}
                         <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300">
-                          {ATLAS_BRAND.poweredBy}
+                          Production Panel Proof
                         </div>
                         <p className="mt-2 text-[10px] leading-4 text-white/65">
-                          {ATLAS_BRAND.explanation} One canonical design releases labeled vehicle surfaces and their matched 3D proofs, and the same artifact lineage continues into production.
+                          Call 1 draws one sheet in three zones — full print panels, the same panels without type or logos, and your logo, text and graphic elements. Every print-ready file, labeled vehicle surface and matched 3D proof is cut from that one source and carried into production unchanged.
                         </p>
                       </div>
                       {/* Input area */}

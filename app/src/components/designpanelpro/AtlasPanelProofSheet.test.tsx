@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AtlasPanelProofSheet, panelProofRefreshInterval } from "./AtlasPanelProofSheet";
+import { AtlasPanelProofSheet, panelProofBelongsToOtherRevision, panelProofRefreshInterval } from "./AtlasPanelProofSheet";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
 
 const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
@@ -124,6 +124,22 @@ describe("AtlasPanelProofSheet", () => {
       <AtlasPanelProofSheet proof={{ requestId: "r", revisionId: null, panelProof: false }} status="success" />,
     )).toBe("");
     expect(renderToStaticMarkup(<AtlasPanelProofSheet proof={undefined} status="error" />)).toBe("");
+  });
+
+  it("treats an unbound proof (revisionId null) as this request's, never as another revision's", () => {
+    // The RPC's `call1_graph` branch answers `panelProof: true, revisionId: null`
+    // before the revision row lands. A revision is its own generation request,
+    // so `requestId` already names it; only a NON-NULL id naming another
+    // revision is a mismatch. The old guard compared null !== "70…01" and printed
+    // "The production proof belongs to a different revision." over a live proof.
+    const pinned = "70000000-0000-4000-8000-000000000001";
+    expect(panelProofBelongsToOtherRevision(proof({ revisionId: null }), pinned)).toBe(false);
+    expect(panelProofBelongsToOtherRevision(proof({ revisionId: pinned }), pinned)).toBe(false);
+    expect(panelProofBelongsToOtherRevision(proof({ revisionId: "70000000-0000-4000-8000-000000000002" }), pinned)).toBe(true);
+    // Nothing pinned, or no proof yet: nothing to mismatch.
+    expect(panelProofBelongsToOtherRevision(proof({ revisionId: "70000000-0000-4000-8000-000000000002" }), undefined)).toBe(false);
+    expect(panelProofBelongsToOtherRevision(undefined, pinned)).toBe(false);
+    expect(panelProofBelongsToOtherRevision({ panelProof: false, revisionId: "x" }, pinned)).toBe(false);
   });
 
   it("keeps the panels when the sheet itself cannot be previewed", () => {

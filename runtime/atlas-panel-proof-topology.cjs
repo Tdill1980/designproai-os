@@ -87,17 +87,24 @@
  * two stages onto these bytes is the next step and is NOT done here; storing
  * them is what makes it possible at all.
  *
- * All three zones are mandatory. Missing geometry, blank graphics, or failed
- * artifact persistence refuses the node before it can publish a ready master.
- * Zone 3 remains a raster preview; it is not a vector cut file or QC approval.
+ * Zones 1 and 2 are mandatory. Missing geometry or failed artifact persistence
+ * refuses the node before it can publish a ready master. ZONE 3 DEGRADES
+ * (owner, 2026-09-22): no original assets and no customer text is an EMPTY
+ * band recorded in `composition.omitted`, never a refusal; a generated mark
+ * with no alpha is dropped the same way. A SUPPLIED logo that cannot be read
+ * or hash-verified still refuses. Zone 3 remains a raster preview; it is not
+ * a vector cut file or QC approval.
  *
- * A failed panel-proof node is recorded and terminal. The caller does not
- * substitute another authoring topology or bypass the durable graph.
+ * A refused panel-proof candidate is recorded in the refusal ledger and the
+ * caller spends its bounded second candidate (`candidate` below), then stops
+ * with the gate's real reason. The caller never substitutes another authoring
+ * topology: THERE IS NO OTHER CALL 1 (owner, 2026-09-22).
  *
- * KILL SWITCH: `DESIGNPRO_ATLAS_PANEL_PROOF=off`. Threaded through the runtime
- * reader, `configure-env.sh`, `validate-env.py` and the deploy-workflow lock —
- * because this file's own history says a flag the runtime reads and the writer
- * does not write is not a switch, and that mistake has been made twice.
+ * `DESIGNPRO_ATLAS_PANEL_PROOF` is no longer a router (owner, 2026-09-22:
+ * "There isn't any other Call 1"). `panelProofEnabled()` is kept as the deploy
+ * receipt that reads it -- `configure-env.sh`, `validate-env.py` and the
+ * deploy-workflow lock still thread it -- and the routing logs when it reads
+ * `off`, but every new authoring and every revision is the panel proof.
  */
 
 const PANEL_PROOF_TOPOLOGY = "panel-proof";
@@ -357,13 +364,62 @@ async function stageCustomerAssets({ store, customerImageParts = [], logger = ()
   return staged;
 }
 
-async function requestProofSheet({ manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger }) {
+/**
+ * THE REVISION, AS THE EDGE MUST SEE IT (owner, 2026-09-22: "Revisions should
+ * auto generate edits directly to panel pro production proof").
+ *
+ * A revision is the SAME three-zone request plus two things: the parent's
+ * accepted proof sheet as a reference (staged under the edge's own
+ * `atlas-call1-inputs/<sha>.png` allowlist, crossing as an identity, RULE 0.39)
+ * and the customer's instruction. The instruction is folded into the brief the
+ * model reads AND carried as its own field, so an edge that has not learned the
+ * field yet still receives the words, and an edge that has can frame them.
+ *
+ * `revision` is `{ sequence, parentRevisionId, contextHash, instruction,
+ * affectedSurfaces, parentProof: {storagePath, contentHash, byteSize} }` or
+ * null on a first generation.
+ */
+function revisionRequestFields(revision, brief) {
+  const sequence = Number(revision?.sequence || 1);
+  if (!revision || sequence <= 1) return { customerPrompt: brief, revisionSequence: 1 };
+  const instruction = String(revision.instruction || "").trim();
+  return {
+    customerPrompt: instruction
+      ? `${brief}\n\nREVISION V${sequence} — apply this change to the approved parent production proof, keeping everything else exactly as approved: ${instruction}`
+      : brief,
+    revisionSequence: sequence,
+    parentAtlasRevisionId: revision.parentRevisionId || null,
+    revisionContextHash: revision.contextHash || null,
+    revisionInstruction: instruction || null,
+    affectedSurfaces: Array.isArray(revision.affectedSurfaces) ? [...revision.affectedSurfaces] : [],
+    parentProof: revision.parentProof?.storagePath && revision.parentProof?.contentHash
+      ? {
+          storagePath: revision.parentProof.storagePath,
+          contentHash: revision.parentProof.contentHash,
+          byteSize: Number(revision.parentProof.byteSize || 0) || null,
+          role: "parent-production-proof",
+        }
+      : null,
+  };
+}
+
+async function requestProofSheet({
+  manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
+  // See `revisionRequestFields`. Null on a first generation.
+  revision = null,
+  // THE CANDIDATE INDEX. The bounded re-roll (two candidates, then terminal)
+  // needs each candidate to be its own durable operation, or the second is a
+  // cache read of the first: the provider cache keys on attemptKey, and the
+  // graph keys its run on the definition this rides in.
+  candidate = 1,
+}) {
   const panelRows = panelRowsFromManifest(manifest);
   if (panelRows.length !== 6) {
     throw new PanelProofRefusal(`manifest yielded ${panelRows.length}/6 panel rows`);
   }
   const vehicle = input?.vehicle || {};
   const customerAssets = await stageCustomerAssets({ store, customerImageParts, logger });
+  const revisionFields = revisionRequestFields(revision, input?.brief || input?.prompt || "");
   const sheet = await callProofEdge({
     // Verified VisionBoard references, by identity. Protected Zone-3 originals
     // are retained by the compositor, outside this image-generation request.
@@ -373,8 +429,9 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     generateLogo: input?.generateLogo,
     // The customer's own words. The edge's intake node parses vehicle, contact
     // and brand out of them; a field set here is a field intake never had to
-    // find, and the raw text is what production actually carries.
-    customerPrompt: input?.brief || input?.prompt || "",
+    // find, and the raw text is what production actually carries. On a
+    // revision the instruction is folded in after the brief (see above).
+    ...revisionFields,
     companyName: input?.companyName || input?.businessName || "",
     tagline: input?.tagline || "",
     phone: input?.phone || "",
@@ -399,12 +456,15 @@ async function requestProofSheet({ manifest, input, providerRequest, callProofEd
     //
     // The edge now runs its image request through the durable provider module,
     // which keys the claim on {ownerId, requestId, generationId, mode,
-    // attemptKey}. This contract has ONE bounded candidate, so the key is
-    // constant -- which is the point: a re-claimed worker sending the same
-    // identity reads its own earlier request instead of buying the sheet twice.
-    // Before this, the edge minted a fresh uuid per invocation and `cacheOnly`
-    // could not mean anything.
-    attemptKey: "panel-proof:1",
+    // attemptKey}. A re-claimed worker sending the same identity reads its own
+    // earlier request instead of buying the sheet twice. Before this, the edge
+    // minted a fresh uuid per invocation and `cacheOnly` could not mean anything.
+    //
+    // It was the literal "panel-proof:1", which made a re-roll a no-op: the
+    // second candidate read the first's bytes back. The revision sequence and
+    // the candidate index are in the key now, so V2 never reads V1's sheet and
+    // candidate 2 never reads candidate 1's.
+    attemptKey: `panel-proof:${revisionFields.revisionSequence}:${Math.max(1, Number(candidate) || 1)}`,
     ...providerRequest,
   });
   if (!sheet?.bytes) throw new PanelProofRefusal("the proof edge returned no sheet");
@@ -709,6 +769,14 @@ async function assemblePanelProofMaster({
 
   // Zone 3 comes from original files and outlined typography, NEVER sheet crops.
   const assets = [];
+  // ZONE 3 DEGRADES; IT DOES NOT REFUSE (owner, 2026-09-22: "System must not
+  // issue fails because of no atlas ... Nothing may block orchestration").
+  // Every Zone-3 element this pass declines to carry is named here with its
+  // reason, so an empty band is a recorded state and never a silent one. A
+  // SUPPLIED logo that cannot be read or hash-verified still refuses below:
+  // that is the customer's own file, and shipping without it is a wrong
+  // design, not a degraded one.
+  const zone3Omitted = [];
   if (input.logoAsset) {
     const identity = verifyLogoIdentity(input.logoAsset);
     if (typeof downloadAsset !== "function") throw refuse("original logo reader missing");
@@ -739,8 +807,15 @@ async function assemblePanelProofMaster({
           needsChromaKey:false,sourceContentHash:generated.contentHash};
       }
       const meta = await sharp(bytes).metadata();
-      if (!meta.hasAlpha) throw refuse("generated logo has no transparent channel");
-      assets.push({...asset,bytes,width:meta.width,height:meta.height,vector:false});
+      if (!meta.hasAlpha) {
+        // An opaque generated mark cannot be a cut graphic. It is dropped from
+        // Zone 3 with its identity on the receipt; the design proceeds.
+        zone3Omitted.push({ zone: "zone3", role: "logo", contentHash: asset.contentHash,
+          storagePath: asset.storagePath, reason: "generated_logo_has_no_transparent_channel" });
+        logger("atlas call 1: generated logo has no transparent channel; Zone 3 carries it as omitted");
+      } else {
+        assets.push({...asset,bytes,width:meta.width,height:meta.height,vector:false});
+      }
     }
   }
   const brand = {...(sheet.intake || {}), ...Object.fromEntries(Object.entries(input).filter(([,v]) => v != null && v !== "" && (!Array.isArray(v) || v.length)))};
@@ -779,17 +854,34 @@ async function assemblePanelProofMaster({
       width:rendered.width,height:rendered.height,contentType:"image/svg+xml",vector:true,
       textContent:[job.name,...job.lines,job.raceNumber].filter(Boolean)});
   }
-  if (!assets.length) throw refuse("Zone 3 requires original assets or customer text");
   // Keep byte identities on the receipt, never the in-memory asset buffers.
   // These are the same originals used in both the branded panels and Zone 3.
   zone3 = assets.map(({bytes, role, ...asset}) => ({
     ...asset, surfaceKey: role, role: "cut-graphic", persisted: true,
   }));
   let productionLayout;
-  try { productionLayout = planProductionPanelLockup({panels:zone2,elements:assets}); }
-  catch (cause) { throw refuse("production panel overlay layout invalid", {cause:String(cause?.message || cause),code:cause?.code}); }
+  let composed;
+  if (!assets.length) {
+    // EMPTY ZONE 3 IS A STATE, NOT A REFUSAL. No original logo and no customer
+    // text (no company name, contact line or wordmark) means there is nothing
+    // to cut, so the band is empty and says so in `composition.omitted`. Zone 1
+    // is then the authored panels exactly as Zone 2 carries them -- nothing was
+    // composited because there was nothing to composite -- and every downstream
+    // reader still gets six branded panels, six clean panels and a cut-graphics
+    // count of zero. This used to refuse the whole Call 1, which took the
+    // design, its DesignID and every proof with it over an absent contact bar.
+    zone3Omitted.push({ zone: "zone3", role: null, reason: "no_original_assets_or_customer_text" });
+    logger("atlas call 1: Zone 3 is empty (no original assets or customer text); continuing without cut graphics");
+    productionLayout = { contract: null, placements: [], omitted: [] };
+    composed = { contract: null, omitted: [], sourceAssetsPreserved: true,
+      panels: zone2.map((base) => ({ ...base, backgroundContentHash: base.contentHash,
+        applied: [], zone: "zone1", role: "branded" })) };
+  } else {
+    try { productionLayout = planProductionPanelLockup({panels:zone2,elements:assets}); }
+    catch (cause) { throw refuse("production panel overlay layout invalid", {cause:String(cause?.message || cause),code:cause?.code}); }
+    composed = await compositeProductionPanels({backgrounds:zone2,assets,placements:productionLayout.placements});
+  }
   const placements = productionLayout.placements;
-  const composed = await compositeProductionPanels({backgrounds:zone2,assets,placements});
   const compositionChecks = composed.panels.map(({surfaceKey,contentHash,backgroundContentHash,applied}) =>
     ({surfaceKey,contentHash,backgroundContentHash,applied}));
   logger(`atlas call 1: flat compositor checks passed ${JSON.stringify(compositionChecks)}`);
@@ -954,7 +1046,23 @@ async function assemblePanelProofMaster({
           byteSize: sheet.byteSize || null,
         },
         quadrants: { clean: cleanOnly, cutGraphics: zone3 },
-        composition: { placements: productionLayout.placements, omitted: productionLayout.omitted || [] },
+        // THE SAME FOUR FIELDS THE AUTHORED RECEIPT CARRIES. They were absent
+        // here, and `designpro_private.panel_proof_logo_inventory`
+        // (20260920022906) requires `threeZoneLayout`, `composition.contract`,
+        // `composition.sourceAssetsPreserved` and `masterSha256` -- so every
+        // revision of a logo design failed its handoff with
+        // `generation_logo_placement_manifest_required`. `masterSha256` names
+        // the accepted master this document was derived FROM; it is still not
+        // a top-level `contentHash`, so the receipt still cannot be read as a
+        // master (see the note above).
+        threeZoneLayout: { required: true, branded: zone1.length,
+          backgrounds: zone2.length, graphics: zone3.length,
+          graphicsFormat: !zone3.length ? "none"
+            : zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
+        masterSha256: sheet.contentHash || null,
+        composition: { contract: composed.contract, layoutContract: productionLayout.contract,
+          placements: productionLayout.placements, panels: compositionChecks, sourceAssetsPreserved: true,
+          omitted: [...(productionLayout.omitted || []), ...(composed.omitted || []), ...zone3Omitted] },
         surfaces: zone1.map((p) => ({ surfaceKey: p.surfaceKey, byteSize: p.byteSize,
           widthIn: p.widthIn, heightIn: p.heightIn })),
         stageTimings: [...stageTimings, { stage: "proof.document", ms: Date.now() - quadrantsAt }],
@@ -1082,14 +1190,19 @@ async function assemblePanelProofMaster({
       productionComposedProof: composedProof,
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
-        graphicsFormat: zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
+        // "none" when the band is empty: an all-of-nothing `every()` would
+        // have called an empty band "vector-originals".
+        graphicsFormat: !zone3.length ? "none"
+          : zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
       // `omitted` is the answer to "which asset did not reach which panel, and
       // why". Empty means every Zone-3 original was drawn onto every branded
       // surface that carries branding; it is never absent, so a reader can tell
-      // "nothing was dropped" from "nobody recorded it".
+      // "nothing was dropped" from "nobody recorded it". A Zone-3 element the
+      // pass declined to carry at all (no assets, an opaque generated mark) is
+      // listed here too, under `zone: "zone3"`.
       composition: {contract:composed.contract,layoutContract:productionLayout.contract,placements,
         panels:compositionChecks,sourceAssetsPreserved:true,
-        omitted:[...(productionLayout.omitted || []),...(composed.omitted || [])]},
+        omitted:[...(productionLayout.omitted || []),...(composed.omitted || []),...zone3Omitted]},
       imageRequestCount: Number(sheet.imageRequestCount || 1),
       // The gold standards Call 1 actually saw, by identity. Zero is now a
       // measured answer rather than a literal, so an empty prefix is visible.
@@ -1165,11 +1278,15 @@ async function authorPanelProofMaster({
   providerRequest = {}, callProofEdge, downloadAsset,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(),
+  // See `requestProofSheet`: the revision (null on a first generation) and the
+  // bounded candidate index, both part of the durable operation identity.
+  revision = null, candidate = 1,
 } = {}) {
   const stageTimings = [];
   const sheetAt = Date.now();
   const { sheet, panelRows, customerAssets } = await requestProofSheet({
     manifest, input, providerRequest, callProofEdge, store, customerImageParts, logger,
+    revision, candidate,
   });
   stageTimings.push({ stage: "proof.sheet", ms: Date.now() - sheetAt });
   logger(`atlas call 1: panel proof sheet ${String(sheet.contentHash || "").slice(0, 12)} (${sheet.bytes.length} B)`);
@@ -1192,6 +1309,7 @@ module.exports = {
   panelRowsFromManifest,
   stageProofContainer,
   createPanelProofTransport,
+  revisionRequestFields,
   requestProofSheet,
   assemblePanelProofMaster,
   authorPanelProofMaster,

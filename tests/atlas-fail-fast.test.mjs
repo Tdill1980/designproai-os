@@ -138,7 +138,9 @@ test("the customer page exposes the current A.T.L.A.S. graph without a legacy se
   // The customer reads "Powered by Atlas" (os-brand.ts, Trish 2026-09-16);
   // "A.T.L.A.S. graph active" was the engineering label. The graph is still
   // the only pipeline the page exposes -- that is what the lines above lock.
-  assert.match(premium, /ATLAS_BRAND\.poweredBy/);
+  // "Powered by Atlas" was retired by the owner on 2026-09-22 (ATLAS_BRAND deleted);
+  // the no-atlas lock now asserts its ABSENCE on every human surface.
+  assert.doesNotMatch(premium, /ATLAS_BRAND/);
   assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. graph active/);
   assert.doesNotMatch(premium, /A\.T\.L\.A\.S\. Preview/);
   assert.doesNotMatch(premium, /Server accepted A\.T\.L\.A\.S\. v3/);

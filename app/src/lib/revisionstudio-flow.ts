@@ -30,7 +30,8 @@ export type DesignBuildTrigger =
 export type DesignBuildStatus = {
   workflowRun: { id: string; workflow_status: string } | null;
   proofUrl: string | null;
-  panelProofSource?: { requestId: string; revisionId: string | null } | null;
+  /** The three-zone Production Panel Proof this design was produced from; `version` is the server's V-number when known. */
+  panelProofSource?: { requestId: string; revisionId: string | null; version: number | null } | null;
   activePack: { proof_artifact: { url: string } | null } | null;
 };
 
@@ -99,8 +100,10 @@ export async function getDesignBuildStatus(locator: {
     },
     proofUrl: proofUrl,
     panelProofSource: current?.requestId
-      ? { requestId: current.requestId, revisionId: current.id }
-      : request?.requestId ? { requestId: request.requestId, revisionId: null } : null,
+      ? { requestId: current.requestId, revisionId: current.id, version: current.revisionSequence ?? null }
+      : request?.requestId
+        ? { requestId: request.requestId, revisionId: null, version: locator.revisionRequest?.revisionSequence ?? null }
+        : null,
     activePack: proofUrl ? { proof_artifact: { url: proofUrl } } : null,
   };
 }

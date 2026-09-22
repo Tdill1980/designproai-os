@@ -51,6 +51,17 @@ describe("refused ATLAS candidates on the failure screen", () => {
     expect(html).not.toContain("a".repeat(64));
   });
 
+  it("names the three-zone route in product words, never as undefined", () => {
+    // The runtime records a refused three-zone candidate under `panel-proof`;
+    // before this label existed the strip printed "undefined · try 1".
+    const html = renderToStaticMarkup(<AtlasRefusedSheets status="success" refusals={[{
+      ...refusals[1], id: "50000000-0000-4000-8000-000000000003", topology: "panel-proof",
+    }]} />);
+    expect(html).toContain("Production panel proof · try 1");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toMatch(/topolog/i);
+  });
+
   it("says so when no candidate reached the gates, and renders nothing on a read error", () => {
     expect(renderToStaticMarkup(<AtlasRefusedSheets refusals={[]} status="success" />))
       .toContain("No candidate reached the acceptance gates");
