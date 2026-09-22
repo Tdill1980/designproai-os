@@ -47,21 +47,8 @@ function withFlag(value, fn) {
 // Every node the element graph adds. A surface may depend on none of them.
 const ELEMENT_NODES = [graph.TYPESET_NODE, graph.CONTACT_NODE, graph.LOGO_NODE, graph.LOCKUP_NODE, graph.COMPOSITE_NODE];
 
-// THE ELEMENT GRAPH BELONGS TO THE RETAINED SINGLE-CALL SHAPE (2026-09-22).
-// Hero-first authors its own lettering on the vehicle (the persona brain draws
-// the logo, the name and the contact bar into the hero), so
-// `compileHeroDriverGraph({ heroFirst: true })` compiles NO element node: a
-// typeset lockup composited over brain-lettered flanks would print the name
-// twice, and it is the "generic text" the owner rejected. These locks
-// therefore compile the single-call shape by name.
 const compile = (flag, input) =>
-  withFlag(flag, () => graph.compileHeroDriverGraph({ heroFirst: false, input }));
-
-test("hero-first compiles no element node at all: the hero carries its own lettering", () => {
-  const on = withFlag("on", () => graph.compileHeroDriverGraph({ heroFirst: true, input: BRIEF }));
-  for (const key of ELEMENT_NODES) assert.ok(!on.some((n) => n.key === key), `${key} must not compile on hero-first`);
-  assert.equal(on.length, 12, "five views + six surfaces + master.assemble");
-});
+  withFlag(flag, () => graph.compileHeroDriverGraph({ heroFirst: true, input }));
 
 test("unset means OFF, and off is byte-for-byte today's graph", () => {
   const unset = compile(null, BRIEF);
@@ -71,7 +58,7 @@ test("unset means OFF, and off is byte-for-byte today's graph", () => {
   assert.deepEqual(typo, off, "a typo must not select a customer path");
   assert.ok(!off.some((n) => n.key === graph.TYPESET_NODE));
   assert.ok(!off.some((n) => n.key === graph.CONTACT_NODE));
-  assert.equal(off.length, 7, "the single-call base graph: six surfaces + master.assemble");
+  assert.equal(off.length, 9, "the hero-first base graph now carries two vehicle-view nodes: driver and front");
 });
 
 test("on, the element node is a ROOT and master's edges do not move", () => {

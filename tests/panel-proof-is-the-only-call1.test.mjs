@@ -1,38 +1,31 @@
 /**
- * THE HERO-FIRST CASCADE IS THE ONLY CALL 1.
+ * THE PANEL PRODUCTION PROOF IS THE ONLY CALL 1.
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Owner, Trish 2026-09-22, on the first real generation of the panel-proof
- * route (request 0f53d4e7): "these are not my design edge functions my system
- * created incredible designs this did not follow my prompt and quality is
- * shit!" -- then five reference images, "This is my quality": the Forged
- * Fitness van HERO and its flat driver panel, the McLaren seven-view approval
- * proof, two three-zone sheets. The quality is the working RestylePro order:
- * the design brain draws the wrap ON THE VEHICLE, every other view is
- * photographed from that hero, and the flats are DERIVED from those views.
- *
- * This supersedes the same-day ruling that the panel proof was the only Call
- * 1. The three-zone document is still the deliverable -- derived from the
- * hero's accepted master, never drawn by the model as six tiny panels.
+ * Owner ruling, Trish 2026-09-22, verbatim: "There isn't any other Call 1 —
+ * the only call is panel pro production proof, which is source for all
+ * print-ready files and assets." "Revisions should auto generate edits
+ * directly to panel pro production proof." "System must not issue fails
+ * because of no atlas." "Nothing may block orchestration."
  *
  * What this file locks, by EXECUTION wherever the seam allows it:
  *
- *   1. the live router selects the hero-first cascade for revision sequence 1
- *      AND for sequence > 1 -- a revision carries its parent's driver hero as
- *      the design being edited plus the customer's instruction, on the hero
- *      request only;
- *   2. the panel-proof edge and the six-surface edge are never the first
- *      Call 1 reached; the flag DESIGNPRO_ATLAS_PANEL_PROOF selects nothing;
- *   3. the six-surface master gates are ADVISORY on a panel-proof run (the
- *      retained route) -- their verdicts are recorded, and a checkpoint
- *      carrying those findings resumes instead of throwing;
+ *   1. the live router selects the panel proof for revision sequence 1 AND
+ *      for sequence > 1 -- a revision carries its parent's accepted proof as
+ *      a staged reference and the instruction folded into the brief;
+ *   2. `failOverToSixSurface` is not reachable from a panel-proof run: a
+ *      refused budget is terminal, and the six-surface / hero edges are never
+ *      called;
+ *   3. the six-surface master gates are ADVISORY on the panel proof -- their
+ *      verdicts are recorded, and a checkpoint carrying those findings
+ *      resumes instead of throwing;
  *   4. Zone 3 degrades (no assets / opaque generated mark) instead of refusing,
  *      while a supplied logo that cannot be verified still refuses.
  *
- * The routing probe below does not build a whole master: it hands the pass an
- * edge that throws a SENTINEL, which proves which Call 1 the router reached
- * (the six-surface pass would call `callEdge`; the panel proof `callProofEdge`;
- * the hero cascade calls `callAuthorEdge` -- and its FIRST request is the hero).
+ * The routing probe below does not build a whole master: it hands the pass a
+ * proof edge that throws a SENTINEL, which proves which Call 1 the router
+ * reached (the six-surface pass would call `callEdge`; the hero cascade would
+ * call `callAuthorEdge`; only the panel proof calls `callProofEdge`).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -97,49 +90,27 @@ function probeHarness() {
   return { run, bytes, rows, sixSurfaceCalls, heroCalls, proofCalls, get inserted() { return inserted; } };
 }
 
-const hero = require("../runtime/atlas-hero-driver.cjs");
-
-test("1. the live router selects the HERO-FIRST cascade for a FIRST generation (sequence 1): the first request is the driver hero", async () => {
+test("1. the live router selects the panel proof for a FIRST generation (sequence 1)", async () => {
   const h = probeHarness();
-  await assert.rejects(h.run(), (error) => error.code === "probe_reached_hero");
-  assert.equal(h.heroCalls.length, 1, "the hero edge is the one Call 1 reached, and its first request is the hero");
-  const body = h.heroCalls[0];
-  assert.equal(body.mode, "atlas-author");
-  assert.equal(body.surfaceKey, "driver");
-  assert.equal(body.first, true);
-  assert.equal(body.viewType, "side", "the hero is the driver-side photograph");
-  assert.equal(body.heroViewStoragePath, undefined, "the hero draws from scratch");
-  assert.equal(body.heroReferenceStoragePath, undefined, "and is shown no other view");
-  assert.equal(body.parentViewStoragePath, undefined, "a first generation edits nothing");
-  assert.equal(body.cleanBase, undefined, "the hero authors its own lettering -- no clean base, no typeset lockup");
-  assert.equal(body.prompt, INPUT.brief, "the customer's RAW brief, untouched");
-  assert.equal(body.companyName, INPUT.companyName);
-  assert.equal(body.phone, INPUT.phone);
-  assert.equal(body.vehicleModel, INPUT.vehicle.model);
-  assert.equal(body.providerRequest.attemptKey, "author:driver-view:1");
-  assert.equal(body.providerRequest.claimToken, IDS.claimToken, "authorised against the generation's lease");
-  assert.equal(h.sixSurfaceCalls.length, 0, "the six-surface edge is never the first Call 1");
-  assert.equal(h.proofCalls.length, 0, "the panel-proof edge is never the first Call 1");
-  // The flags are not routers: PANEL_PROOF on or off, HERO_FIRST on or off,
-  // the routing is identical -- `heroFirst: true` rides the routing itself.
-  const previous = { proof: process.env.DESIGNPRO_ATLAS_PANEL_PROOF, hero: process.env.DESIGNPRO_ATLAS_HERO_FIRST };
+  await assert.rejects(h.run(), (error) => error.code === "probe_reached_panel_proof");
+  assert.equal(h.proofCalls.length, 1, "the panel-proof edge is the one Call 1 reached");
+  assert.equal(h.proofCalls[0].attemptKey, "panel-proof:1:1");
+  assert.equal(h.proofCalls[0].revisionSequence, 1);
+  assert.equal(h.sixSurfaceCalls.length, 0, "the six-surface edge is never called");
+  assert.equal(h.heroCalls.length, 0, "the hero edge is never called");
+  // The flag is not a router: with it explicitly OFF the routing is identical.
+  const previous = process.env.DESIGNPRO_ATLAS_PANEL_PROOF;
+  process.env.DESIGNPRO_ATLAS_PANEL_PROOF = "off";
   try {
-    for (const [proofFlag, heroFlag] of [["on", "off"], ["off", "off"], ["on", "on"]]) {
-      process.env.DESIGNPRO_ATLAS_PANEL_PROOF = proofFlag;
-      process.env.DESIGNPRO_ATLAS_HERO_FIRST = heroFlag;
-      const again = probeHarness();
-      await assert.rejects(again.run(), (error) => error.code === "probe_reached_hero");
-      assert.equal(again.heroCalls[0].viewType, "side", `PANEL_PROOF=${proofFlag} HERO_FIRST=${heroFlag}: still the hero`);
-      assert.equal(again.sixSurfaceCalls.length + again.proofCalls.length, 0, "no flag can select another contract");
-    }
+    const off = probeHarness();
+    await assert.rejects(off.run(), (error) => error.code === "probe_reached_panel_proof");
+    assert.equal(off.sixSurfaceCalls.length + off.heroCalls.length, 0, "DESIGNPRO_ATLAS_PANEL_PROOF=off cannot select another contract");
   } finally {
-    for (const [key, value] of [["DESIGNPRO_ATLAS_PANEL_PROOF", previous.proof], ["DESIGNPRO_ATLAS_HERO_FIRST", previous.hero]]) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
+    if (previous === undefined) delete process.env.DESIGNPRO_ATLAS_PANEL_PROOF; else process.env.DESIGNPRO_ATLAS_PANEL_PROOF = previous;
   }
 });
 
-test("1b. the live router runs a REVISION (sequence > 1) through the same cascade: the parent hero staged as the design being edited, the instruction on the hero request", async () => {
+test("1b. the live router selects the panel proof for a REVISION (sequence > 1), with the parent proof staged and the instruction folded in", async () => {
   const h = probeHarness();
   const parentMasterBytes = await sharp({ create: { width: 64, height: 64, channels: 4, background: "#14345a" } }).png().toBuffer();
   const parentMaster = { storagePath: `designpro/${IDS.tenantKey}/${IDS.generationId}/flat-first/v1/revisions/1/master/${sha256(parentMasterBytes)}.png`,
@@ -156,56 +127,51 @@ test("1b. the live router runs a REVISION (sequence > 1) through the same cascad
   await assert.rejects(h.run({
     requestId: "77777777-7777-4777-8777-777777777777", revisionSequence: 2, parentAtlasRevisionId: parentRevisionId,
     revisionContext, revisionContextHash: sha256(canonicalBytes(revisionContext)), parentManifest: MANIFEST,
-  }), (error) => error.code === "probe_reached_hero");
-  assert.equal(h.sixSurfaceCalls.length + h.proofCalls.length, 0, "a revision never leaves the hero cascade");
-  const body = h.heroCalls[0];
-  assert.equal(body.surfaceKey, "driver");
-  assert.equal(body.first, true);
-  assert.equal(body.revisionInstruction, revisionContext.instruction, "the customer's own words reach the hero request");
-  // THE PARENT IS STAGED WHERE THE EDGE ADMITS IT, as an identity. This parent
-  // recorded no hero view (authored before hero-first), so its accepted MASTER
-  // stands in -- the customer's approved artwork, which is what exists.
-  assert.match(body.parentViewStoragePath, hero.CALL1_INPUT_PATH);
-  const staged = h.bytes.get(body.parentViewStoragePath);
+  }), (error) => error.code === "probe_reached_panel_proof");
+  assert.equal(h.sixSurfaceCalls.length + h.heroCalls.length, 0, "a revision never leaves the panel proof");
+  const body = h.proofCalls[0];
+  assert.equal(body.attemptKey, "panel-proof:2:1", "V2 is its own durable operation");
+  assert.equal(body.revisionSequence, 2);
+  assert.equal(body.revisionInstruction, revisionContext.instruction);
+  assert.match(body.customerPrompt, /REVISION V2[\s\S]*Enlarge the logo/);
+  assert.ok(body.customerPrompt.startsWith(INPUT.brief));
+  assert.equal(body.parentAtlasRevisionId, parentRevisionId);
+  assert.deepEqual(body.affectedSurfaces, ["driver"]);
+  // THE PARENT REFERENCE IS STAGED WHERE THE EDGE ADMITS IT, as an identity.
+  assert.match(body.parentProof.storagePath, proof.CALL1_INPUT_PATH);
+  const staged = h.bytes.get(body.parentProof.storagePath);
   assert.ok(staged, "the parent reference bytes are really in the store");
-  assert.equal(sha256(staged), body.parentViewContentHash);
-  assert.equal(body.heroReferenceStoragePath, undefined, "a revision is an edit of the parent, not a view of a hero");
-  // No edit guard refused it: only the retained single-call shape still does.
-  assert.match(atlasSrc, /if \(heroDriver && parentManifest && !heroFirst\) \{/);
+  assert.equal(sha256(staged), body.parentProof.contentHash);
+  assert.equal(body.parentProof.role, "parent-production-proof");
+  // No edit guard refused it.
+  assert.ok(!atlasSrc.includes('"flat_atlas_panel_proof_edit_unsupported"'));
 });
 
-test("2. a refused HERO still never leaves the customer with nothing: the cascade fails over to the retained six-surface contract, and the panel-proof route is never entered", async () => {
+test("2. failOverToSixSurface is not reachable from a panel-proof run: two refused candidates are terminal", async () => {
   const h = probeHarness();
-  let heroAttempts = 0;
-  // A candidate that is not a vehicle view (the receipt is what distinguishes
-  // a view from a panel) is refused by the cascade as HeroDriverRefusal, which
-  // is the one refusal the router fails over on. The transport re-reads the
-  // returned panel from storage and verifies it, so the stub's bytes are put
-  // where it will look.
-  const returned = Buffer.from("x");
-  h.bytes.set("atlas-author/x.png", returned);
+  let calls = 0;
   await assert.rejects(h.run({
-    callAuthorEdge: async () => { heroAttempts += 1; return { heroStage: "flatten", imageRequestCount: 1,
-      panelStoragePath: "atlas-author/x.png", panelSha256: sha256(returned), panelBytes: returned.length }; },
-  }), (error) => error.code === "probe_reached_six_surface");
-  assert.equal(heroAttempts, 1, "the hero was asked once and refused");
-  assert.equal(h.proofCalls.length, 0, "the panel-proof route is dead but retained: never entered from the live router");
-  // The panel-proof pass, when NAMED, still stands on its own without any fallback.
+    callProofEdge: async () => { calls += 1; throw new proof.PanelProofRefusal(`the model drew a vehicle (${calls})`, { status: 200,
+      sheet: { storagePath: `atlas-panel-proof/refused-${calls}.png`, contentHash: sha256(Buffer.from(`r${calls}`)), byteSize: 2 } }); },
+  }), (error) => error.code === "flat_atlas_panel_proof_refused" && error.retryable === false
+    && /refused 2 times/.test(error.message) && /drew a vehicle \(2\)/.test(error.message));
+  assert.equal(calls, 2, "exactly two candidates, then terminal");
+  assert.equal(h.sixSurfaceCalls.length, 0);
+  assert.equal(h.heroCalls.length, 0);
+  // And by source: the panel-proof branch and the exhausted-budget tail never
+  // name the fail-over; the six retained doors sit behind hero/field passes.
   const branch = atlasSrc.slice(atlasSrc.indexOf("} else if (panelProof) {"), atlasSrc.indexOf("generated = { bytes: proof.bytes"));
   assert.doesNotMatch(branch, /failOverToSixSurface|failOverToField/);
   const tail = atlasSrc.slice(atlasSrc.indexOf("      if (panelProof) {\n        // THE PANEL PROOF NEVER ENTERS A FALLBACK CONTRACT"),
     atlasSrc.indexOf("      if (!failoverEnabled) {"));
   assert.match(tail, /refusal\.retryable = false;\s*\n\s*throw refusal;/);
-  // A named panel-proof run is still runnable and still terminal on two refusals.
-  const named = probeHarness();
-  let calls = 0;
-  await assert.rejects(named.run({
-    authoringTopology: proof.PANEL_PROOF_TOPOLOGY,
-    callProofEdge: async () => { calls += 1; throw new proof.PanelProofRefusal(`the model drew a vehicle (${calls})`, { status: 200,
-      sheet: { storagePath: `atlas-panel-proof/refused-${calls}.png`, contentHash: sha256(Buffer.from(`r${calls}`)), byteSize: 2 } }); },
-  }), (error) => error.code === "flat_atlas_panel_proof_refused" && error.retryable === false && /refused 2 times/.test(error.message));
-  assert.equal(calls, 2, "exactly two candidates, then terminal");
-  assert.equal(named.sixSurfaceCalls.length + named.heroCalls.length, 0);
+  // An infrastructure fault before the edge was reached is NOT re-rolled.
+  const infra = probeHarness();
+  let infraCalls = 0;
+  await assert.rejects(infra.run({
+    callProofEdge: async () => { infraCalls += 1; throw new proof.PanelProofRefusal("SUPABASE_URL / service key are required for the proof edge"); },
+  }), (error) => error.code === "flat_atlas_panel_proof_refused");
+  assert.equal(infraCalls, 1, "a second candidate is never spent against a wall");
 });
 
 test("3. the six-surface master gates are advisory on the panel proof, and a checkpoint carrying their findings RESUMES", async () => {

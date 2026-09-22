@@ -3572,72 +3572,6 @@ async function stageParentProofReference({ supabase, store, parentRevisionId, re
 }
 
 /**
- * THE PARENT HERO, STAGED FOR A HERO-FIRST REVISION. A revision edits the
- * design the customer approved, and on hero-first that design IS the parent's
- * driver vehicle view (`metadata.heroDriverAuthoring.views.driver`), so it is
- * what the hero request is shown with the instruction. When the parent has no
- * recorded hero view (authored on another topology), the parent's accepted
- * MASTER stands in -- a flat sheet is a weaker reference than a photograph,
- * but it is the customer's approved artwork and it is what exists. Staged
- * into the content-addressed prefix the edge attaches from; a path the edge
- * would refuse cannot leave here. Fails CLOSED: a revision with no parent
- * artifact at all is not a revision.
- */
-async function stageParentHeroViewReference({ supabase, store, parentRevisionId, revisionContext, logger = () => {} }) {
-  const readParentHeroView = async () => {
-    try {
-      const { data, error } = await supabase.from("designpro_flat_atlas_revisions")
-        .select("metadata").eq("id", parentRevisionId).maybeSingle();
-      if (error || !data) return null;
-      const view = data.metadata?.heroDriverAuthoring?.views?.driver;
-      const storagePath = String(view?.storagePath || "");
-      const contentHash = String(view?.contentHash || "").toLowerCase();
-      const byteSize = Number(view?.byteSize || 0);
-      if (!storagePath || !HASH_RE.test(contentHash) || !byteSize) return null;
-      return { storagePath, contentHash, byteSize, source: "parent-hero-view" };
-    } catch {
-      return null;
-    }
-  };
-  const parentMaster = revisionContext?.parentMaster;
-  const candidates = [
-    await readParentHeroView(),
-    parentMaster?.storagePath && HASH_RE.test(String(parentMaster.contentHash || ""))
-      ? { storagePath: parentMaster.storagePath, contentHash: String(parentMaster.contentHash).toLowerCase(),
-          byteSize: Number(parentMaster.byteSize || 0), source: "parent-master" }
-      : null,
-  ].filter(Boolean);
-  let lastFailure = null;
-  for (const source of candidates) {
-    try {
-      const bytes = await downloadVerified(supabase, source.storagePath, source.contentHash, source.byteSize);
-      // The hero is the flatten's subject on the parent and the edit's subject
-      // here: full size, never a thumbnail. JPEG so a 4K hero fits the request.
-      const staged = await sharp(bytes, { limitInputPixels: false })
-        .flatten({ background: "#ffffff" })
-        .jpeg({ quality: 92, chromaSubsampling: "4:4:4" }).toBuffer();
-      const contentHash = sha256(staged);
-      const storagePath = `atlas-call1-inputs/${contentHash}.jpg`;
-      // The atlas-author edge's own allowlist (`attach()`), which admits jpg as
-      // well as png -- the panel-proof module's CALL1_INPUT_PATH is png-only.
-      if (!/^atlas-call1-inputs\/[0-9a-f]{64}\.(?:png|jpg)$/.test(storagePath)) {
-        throw new FlatAtlasError("flat_atlas_parent_hero_path_invalid", `parent hero path the edge would refuse: ${storagePath}`);
-      }
-      await store.putImmutableBytes({ storagePath, bytes: staged, contentType: "image/jpeg" });
-      logger(`atlas call 1: parent ${source.source} staged as ${contentHash.slice(0, 12)} for the hero-first revision`);
-      return { storagePath, contentHash, byteSize: staged.length, source: source.source,
-        sourceStoragePath: source.storagePath, sourceContentHash: source.contentHash };
-    } catch (cause) {
-      lastFailure = cause;
-      logger(`atlas call 1: parent ${source.source} could not be staged (${String(cause?.message || cause).slice(0, 160)})`);
-    }
-  }
-  throw new FlatAtlasError("flat_atlas_parent_hero_unavailable",
-    `The revision's parent design could not be staged for the hero edit: ${String(lastFailure?.message || "no parent artifact")}`.slice(0, 400),
-    true);
-}
-
-/**
  * The revision's own edit assets (a reference photo, a logo, an edited panel
  * the customer uploaded with the instruction), as Gemini parts, so the
  * panel-proof pass stages them beside the VisionBoard references. Best effort:
@@ -3721,44 +3655,11 @@ async function generateOrReuseFlatAtlas(options) {
   // `tests/atlas-historical-read.test.mjs`). A caller that NAMES a topology (a
   // harness, or the legacy-resume dispatch inside the panel-proof pass) still
   // gets exactly that.
-  //
-  // ⛔ SUPERSEDED 2026-09-22, THE SAME DAY, BY THE OWNER'S PIXELS. The first
-  // real generation on the panel-proof route (request 0f53d4e7, 2021 F150,
-  // Botanical Gardens brief with a home photo and a custom logo) came back as
-  // gradient panels, generic typeset lettering, a doubled logo and a 115 s
-  // Call 1. Owner: "these are not my design edge functions my system created
-  // incredible designs this did not follow my prompt and quality is shit!" --
-  // then five reference images, "This is my quality": the Forged Fitness van
-  // HERO and its flat driver panel, the McLaren seven-view approval proof,
-  // two three-zone sheets. Diagnosed from the row and the code: a document
-  // that asks the model for six ~1200x300 px panels inside a 3:2 sheet cannot
-  // carry a design, and the Zone 1 shown was code-composited, not drawn.
-  //
-  // CALL 1 IS THE HERO ON THE VEHICLE, EVERY VIEW PHOTOGRAPHED FROM IT, AND
-  // EVERY FLAT DERIVED FROM ITS VIEW (RULE 0.37's "hero first, sheet
-  // derived"; RULE 1's reference is RestylePro: design-panel-ai-generate
-  // mode:'restyle' viewType:'side' -> generate-color-render clones ->
-  // generate-2d-proof renderFlatTile per view). That is the hero-driver
-  // cascade with hero-first on EVERY AI surface (atlas-hero-driver.cjs,
-  // HERO_VIEW_SURFACES), routed here explicitly -- `heroFirst: true` is the
-  // routing's decision and rides the run definition, so the deploy flag
-  // cannot silently put a customer back on a flat-sheet contract. Revisions
-  // run the same cascade with the parent hero as the design being edited.
-  //
-  // THE THREE-ZONE PRODUCTION PANEL PROOF IS STILL THE DELIVERABLE. It is
-  // DERIVED from the accepted master by `assemblePanelProofMaster
-  // ({documentOnly})` below, exactly as the other topologies derive it: code
-  // draws the document; the artwork inside it is the hero's.
-  //
-  // THE PANEL-PROOF ROUTE IS DEAD BUT RETAINED, beside hero-driver's
-  // single-call shape, field-first and six-surface: a caller that NAMES it
-  // still gets it (the harnesses, the legacy-resume dispatch), and a stored
-  // run authored on it stays readable and resumable (owner protection #1).
   if (options?.authoringTopology === undefined) {
-    if (panelProofEnabled()) {
-      options?.logger?.("atlas call 1: DESIGNPRO_ATLAS_PANEL_PROOF reads on; the hero-first cascade is the only Call 1 and runs regardless");
+    if (!panelProofEnabled()) {
+      options?.logger?.("atlas call 1: DESIGNPRO_ATLAS_PANEL_PROOF reads off; the panel production proof is the only Call 1 and runs regardless");
     }
-    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: HERO_DRIVER_TOPOLOGY, heroFirst: true });
+    return generateOrReuseFlatAtlasResolved({ ...options, authoringTopology: PANEL_PROOF_TOPOLOGY });
   }
   return generateOrReuseFlatAtlasResolved(options);
 }
@@ -3808,12 +3709,6 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // It is what makes that hand-off one-way: the six-surface tail may not fail
     // back to the field contract the request has already exhausted.
     fieldFirstExhausted = false,
-    // HERO FIRST ON EVERY SURFACE (2026-09-22). Set by the live router for
-    // every unnamed request; the hero-driver cascade then runs view -> flatten
-    // per surface and the graph compiles that shape. False on a caller that
-    // named the topology, which keeps the retained single-call cascade
-    // reachable by its own locks and by the legacy-resume dispatch.
-    heroFirst = false,
     // GENIE PREP lifecycle receipt (prepHit, genieMs, geometry time avoided).
     // Persisted on the revision; never part of the model-facing request.
     geniePrep = null,
@@ -3871,13 +3766,9 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // same manifest as its parent, the parent's accepted proof sheet as a
   // reference, the instruction folded into the brief. The former
   // `flat_atlas_panel_proof_edit_unsupported` guard is gone on purpose.
-  // A REVISION RUNS THROUGH THE HERO-FIRST CASCADE (2026-09-22): same
-  // manifest as its parent, the parent's driver HERO staged as the design
-  // being edited, the customer's instruction handed to the hero request. The
-  // retained single-call cascade (`heroFirst` off) still refuses an edit.
-  if (heroDriver && parentManifest && !heroFirst) {
+  if (heroDriver && parentManifest) {
     throw new FlatAtlasError("flat_atlas_hero_edit_unsupported",
-      "A revision edit keeps its parent's topology; the single-call hero-driver cascade is for first authoring only");
+      "A revision edit keeps its parent's topology; the hero-driver cascade is for first authoring only");
   }
   if (authoringTopology === "field" && parentManifest) {
     throw new FlatAtlasError("flat_atlas_failover_edit_unsupported",
@@ -4401,21 +4292,8 @@ async function generateOrReuseFlatAtlasResolved(options) {
       // The sheet then faces the SAME gates below as a six-surface master.
       let hero;
       try {
-        // THE REVISION, FOR THE HERO-FIRST CASCADE: the parent's driver hero
-        // staged as a Call-1 input (the edge attaches only from that prefix)
-        // plus the customer's instruction. Null on a first generation.
-        const heroRevision = heroFirst && parentManifest && revisionContext
-          ? {
-              sequence: revisionSequence,
-              parentRevisionId,
-              contextHash: revisionContextHash,
-              instruction: String(revisionContext.instruction || "").trim(),
-              affectedSurfaces: [...revisionContext.affectedSurfaces],
-              parentView: await stageParentHeroViewReference({ supabase, store, parentRevisionId, revisionContext, logger }),
-            }
-          : null;
         const heroArgs = {
-          manifest, input: authoringInput, store, logger, heroFirst, revision: heroRevision,
+          manifest, input: authoringInput, store, logger,
           creativeContext: [String(input?.companyName || "").trim(), String(input?.industryType || "").trim(), String(input?.brandColors || "").trim()].filter(Boolean).join(" · ").slice(0, 600),
           providerRequest: { requestId, generationId, claimToken, ...(providerRecoveryOnly ? { cacheOnly: true } : {}) },
           callEdge: createAtlasAuthorTransport({ supabase, callAuthorEdge, ownerId }),
@@ -5149,18 +5027,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const baseCarriesLettering = passengerMirror?.letteringRead === "located" && baseLetteringBands > 0;
   let elementLayer = null;
   const elementWorker = options.atlasCall1Graph && atlasCall1GraphEnabled() ? options.atlasCall1Graph : null;
-  // HERO-FIRST AUTHORS ITS OWN LETTERING (2026-09-22). The hero was composed
-  // on the vehicle with the logo, the name and the contact bar designed in by
-  // the persona brain (heroRequestBody sends no cleanBase), so there is no
-  // clean base to composite onto: a typeset lockup here would print the name
-  // twice, and it is the "generic text" the owner rejected. Recorded, never
-  // silent, so a reader of `elementGraph` can tell "skipped by design" from
-  // "never ran".
-  const heroAuthoredLettering = heroDriver && heroFirst;
-  if (heroAuthoredLettering && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()) {
-    logger("atlas element graph: skipped -- hero-first authored its own lettering on the vehicle; nothing to composite");
-    elementLayer = { applied: [], changed: false, skipped: "hero_first_authors_its_own_lettering" };
-  } else if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
+  if (!panelProof && elementWorker && typeof elementWorker.authorElements === "function" && cleanBaseEnabled()
     && baseCarriesLettering) {
     logger(`atlas element graph: skipped -- Call 1 authored its own lettering (${baseLetteringBands} band(s) located on the driver panel) `
       + `despite the clean-base contract; compositing would print the company name twice`);
@@ -5473,9 +5340,7 @@ async function generateOrReuseFlatAtlasResolved(options) {
         // Sept 17-18 configuration the accepted designs were made on. These
         // panels therefore carry type, and the proof's Zone 2 bar states that
         // rather than claiming a clean base that was never authored.
-        // Hero-first panels carry the brain's own lettering (no clean base
-        // was ever authored), and the proof's Zone 2 bar must say so.
-        cleanBaseZone2: cleanBaseEnabled() && !(heroDriver && heroFirst),
+        cleanBaseZone2: cleanBaseEnabled(),
         panelRows: panelRowsFromManifest(manifest),
         input: authoringInput, manifest, store, logger,
         downloadAsset: proofAssetDownloader,
@@ -5758,10 +5623,6 @@ async function generateOrReuseFlatAtlasResolved(options) {
         applied: elementLayer.applied,
         changed: elementLayer.changed,
         refused: elementLayer.refused,
-        // "skipped by design" is a fourth state and it must be readable: a
-        // hero-first run (the brain lettered the hero) and a base that already
-        // carried lettering are both recorded here, never as a bare null.
-        skipped: elementLayer.skipped ?? null,
         cleanMasterHash: elementLayer.cleanMasterHash,
         runId: elementLayer.runId,
         elementGraphMs: elementLayer.elementGraphMs,

@@ -355,56 +355,18 @@ function compileHeroDriverGraph({ heroFirst = hero.heroFirstEnabled(), input = n
   // instant as driver's, in parallel with driver's own authoring, and adds
   // nothing to the critical path by the time front's flatten is ready.
   if (heroFirst) {
-    // HERO FIRST, EVERY SURFACE (owner, 2026-09-22: "This is my quality").
-    // The working RestylePro order as a DAG:
-    //
-    //   surface.driver.view                      -- the HERO: persona brain, raw brief, on the vehicle
-    //     ├─▶ surface.driver                     -- its flatten
-    //     ├─▶ surface.hood.view  ─▶ surface.hood -- photographed FROM the hero, then flattened
-    //     ├─▶ surface.front.view ─▶ surface.front
-    //     ├─▶ surface.rear.view  ─▶ surface.rear
-    //     └─▶ surface.roof.view  ─▶ surface.roof
-    //   surface.driver ─▶ surface.passenger      -- the flank flopped in code
-    //   all of the above ─▶ master.assemble
-    //
-    // The driver view is the ONLY root: every other view depends on it because
-    // it is SHOWN it (a view without the hero would be its own design, RULE
-    // 0.0). A flatten depends on its own view and nothing else -- it sends no
-    // neighbours and replays only that view (live 9c6008ec: anything heavier
-    // OOM'd the edge worker). Wave shape: 1 request, then 5 in parallel, then
-    // 4 in parallel beside the passenger flop.
     for (const surfaceKey of hero.HERO_VIEW_SURFACES) {
-      nodes.push({
-        key: viewNode(surfaceKey), dependsOn: surfaceKey === "driver" ? [] : [DRIVER_VIEW_NODE],
-        input: { surfaceKey, stage: "vehicle-view", viewType: hero.VIEW_TYPES[surfaceKey] || null }, maxAttempts: 3,
-      });
+      nodes.push({ key: viewNode(surfaceKey), dependsOn: [], input: { surfaceKey, stage: "vehicle-view" }, maxAttempts: 3 });
     }
-    for (const surfaceKey of hero.HERO_VIEW_SURFACES) {
-      // A non-driver flatten also waits on the DRIVER FLANK: it is shown
-      // nothing but its own view, but a refused flatten is continued
-      // deterministically from the driver flank (composeSurfaceFromNeighbour),
-      // and that donor must be a dependency to be readable. Driver's flatten
-      // runs in the same wave as the views, so this adds no wall clock.
-      nodes.push({
-        key: surfaceNode(surfaceKey), dependsOn: surfaceKey === "driver" ? [viewNode(surfaceKey)] : [viewNode(surfaceKey), surfaceNode("driver")],
-        input: { surfaceKey, stage: "flatten" }, maxAttempts: 3,
-      });
-    }
-    nodes.push({ key: surfaceNode("passenger"), dependsOn: [surfaceNode("driver")], input: { surfaceKey: "passenger" }, maxAttempts: 3 });
-    nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
-    // NO ELEMENT NODES ON HERO-FIRST. The hero authors its own logo, name and
-    // contact bar (heroRequestBody sends no cleanBase), so a typeset lockup
-    // composited on top would print the company name twice -- and the typeset
-    // lockup is the "generic text" the owner rejected. The element graph stays
-    // exactly what it is for the retained single-call shape below.
-    return validateGraph(nodes);
   }
   for (const stage of hero.AUTHOR_CASCADE) {
     for (const surfaceKey of stage) {
       const deps = surfaceKey === "passenger" ? ["driver"]
         : [...new Set([...(hero.AUTHOR_NEIGHBOURS[surfaceKey] || []), ...(hero.AUTHOR_HISTORY[surfaceKey] || [])])];
       const dependsOn = deps.map(surfaceNode);
-      nodes.push({ key: surfaceNode(surfaceKey), dependsOn, input: { surfaceKey }, maxAttempts: 3 });
+      const hasHeroView = heroFirst && hero.HERO_VIEW_SURFACES.has(surfaceKey);
+      if (hasHeroView) dependsOn.push(viewNode(surfaceKey));
+      nodes.push({ key: surfaceNode(surfaceKey), dependsOn, input: { surfaceKey, ...(hasHeroView ? { stage: "flatten" } : {}) }, maxAttempts: 3 });
     }
   }
   nodes.push({ key: MASTER_NODE, dependsOn: nodes.map((n) => n.key), input: {}, maxAttempts: 3 });
@@ -805,7 +767,6 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
     };
     const assembled = await hero.assembleHeroMaster({
       manifest, authored, stageTimings, startedAt: Date.parse(run.created_at) || startedAt, execution: "graph", graph,
-      heroFirst: definition.heroFirst === true,
     });
     const stored = await store.putImmutableBytes({
       storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/master-${assembled.contentHash}.png`, bytes: assembled.bytes, contentType: "image/png",
@@ -823,30 +784,15 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
   if (node.node_key.endsWith(".view") && node.node_key.startsWith("surface.")) {
     abortIf();
     const viewSurfaceKey = String(node.input?.surfaceKey || node.node_key.replace(/^surface\./, "").replace(/\.view$/, ""));
-    // A NON-DRIVER VIEW IS A PHOTOGRAPH OF THE HERO. Its dependency is the
-    // driver view, and the reference crosses the node boundary as an identity
-    // (path + hash) the edge re-reads and verifies -- never bytes.
-    let heroReference = null;
-    if (viewSurfaceKey !== "driver") {
-      const driverView = deps.get(DRIVER_VIEW_NODE)?.output?.view;
-      if (!driverView?.storagePath || !driverView?.contentHash) {
-        throw new AtlasCall1GraphError("designpro_atlas_call1_dependency_incomplete", `${DRIVER_VIEW_NODE} carries no view reference for ${viewSurfaceKey}`, true);
-      }
-      heroReference = { storagePath: driverView.storagePath, contentHash: driverView.contentHash };
-    }
     const view = await hero.authorHeroVehicleView({
       surfaceKey: viewSurfaceKey,
       zone: zoneOf(manifest, viewSurfaceKey),
-      heroRequest: hero.heroRequestBody(definition.input, { heroFirst: definition.heroFirst === true }),
+      heroRequest: hero.heroRequestBody(definition.input),
       creativeContext: String(definition.creativeContext || ""),
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
       providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : null,
       store,
       logger,
-      heroReference,
-      // The revision (parent driver view + instruction) rides the run
-      // DEFINITION so whichever worker claims the hero sends the same request.
-      revision: definition.revision || null,
     });
     logger(`atlas call 1 graph ${run.id}: ${viewSurfaceKey} vehicle view ${view.contentHash.slice(0, 12)}`);
     return { state: "completed", output: { contract: GRAPH_CONTRACT, surfaceKey: viewSurfaceKey, stage: "vehicle-view",
@@ -866,10 +812,13 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
   if (surfaceKey === "passenger") {
     result = await hero.composePassengerPlaceholder(await loadSurface("driver"), zone);
   } else {
+    const neighbours = await Promise.all((hero.AUTHOR_NEIGHBOURS[surfaceKey] || []).map(loadSurface));
+    const priorExchanges = (await Promise.all((hero.AUTHOR_HISTORY[surfaceKey] || []).map(loadSurface))).map((s) => s.exchange).filter(Boolean);
+    abortIf();
     // NODE 3 reads node 1's output as a REFERENCE. A missing or malformed
     // reference is a dependency failure, never a silent single-call driver.
     // Generalized over ANY hero-view-eligible surface (hero.HERO_VIEW_SURFACES),
-    // not just driver -- every flatten reads its own surface.<key>.view.
+    // not just driver -- front's flatten reads surface.front.view the same way.
     let heroView = null;
     const surfaceViewNode = viewNode(surfaceKey);
     if (hero.HERO_VIEW_SURFACES.has(surfaceKey) && (node.depends_on || []).includes(surfaceViewNode)) {
@@ -879,13 +828,6 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       }
       heroView = Object.freeze({ ...view, exchange: deps.get(surfaceViewNode)?.output?.exchange || null });
     }
-    // A FLATTEN IS SHOWN ITS OWN VIEW AND NOTHING ELSE, so on the hero-first
-    // shape the neighbour and history tables are not read at all -- those
-    // surfaces are not this node's dependencies and would be reported missing.
-    const neighbours = heroView ? [] : await Promise.all((hero.AUTHOR_NEIGHBOURS[surfaceKey] || []).map(loadSurface));
-    const priorExchanges = heroView ? []
-      : (await Promise.all((hero.AUTHOR_HISTORY[surfaceKey] || []).map(loadSurface))).map((s) => s.exchange).filter(Boolean);
-    abortIf();
     result = await hero.authorSurface({
       // Driver is ALWAYS `first` on the edge, split or not. A surface that is
       // hero-view-eligible only sometimes (front) is `first` only on the pass
@@ -899,8 +841,7 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       surfaceKey, zone, first: surfaceKey === "driver" || Boolean(heroView),
       neighbours: heroView ? [] : neighbours,
       priorExchanges: heroView ? [] : priorExchanges, heroView,
-      heroRequest: hero.heroRequestBody(definition.input, { heroFirst: definition.heroFirst === true }),
-      creativeContext: String(definition.creativeContext || ""),
+      heroRequest: hero.heroRequestBody(definition.input), creativeContext: String(definition.creativeContext || ""),
       store, logger,
       callEdge: (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
       // The claim carries the generation's CURRENT lease token: the edge
@@ -1357,24 +1298,17 @@ function createAtlasCall1NodeWorker({
   async function author({
     manifest, input, requestId, generationId, ownerId, creativeContext = "", providerRequest = null,
     logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
-    heroFirst = hero.heroFirstEnabled(), revision = null,
   }) {
     if (!manifest?.zones || !requestId || !generationId || !ownerId) {
       throw new AtlasCall1GraphError("designpro_atlas_call1_author_invalid", "graph authoring requires the manifest and the request identity");
     }
     const { claimToken: _never, ...providerBase } = providerRequest || {};
-    // THE SHAPE IS THE SWITCH: `heroFirst` and the revision ride the run
-    // DEFINITION, so the compiled node rows and every claimed node agree on
-    // which orchestration this is, whichever worker claims it and whatever the
-    // flag reads by then. Both are folded into the definition hash, so a
-    // revision or a differently-routed request is its own run.
     const definition = { contract: GRAPH_CONTRACT, manifest, input, creativeContext: String(creativeContext || "").slice(0, 600),
-      providerRequest: providerRequest ? providerBase : null, promptVersion: hero.HERO_DRIVER_PROMPT_VERSION,
-      heroFirst: heroFirst === true, ...(revision ? { revision } : {}) };
+      providerRequest: providerRequest ? providerBase : null, promptVersion: hero.HERO_DRIVER_PROMPT_VERSION };
     const definitionHash = hashJson(definition);
     const created = await rpc("create_designpro_atlas_call1_run", {
       p_request_id: requestId, p_generation_id: String(generationId), p_owner_id: ownerId, p_contract: GRAPH_CONTRACT,
-      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph({ input, heroFirst: heroFirst === true }),
+      p_definition_hash: definitionHash, p_definition: definition, p_nodes: compileHeroDriverGraph({ input }),
     });
     let run = created?.run;
     if (!run?.id) throw new AtlasCall1GraphError("designpro_atlas_call1_rpc_failed", "create returned no run", true);
