@@ -88,7 +88,7 @@ test("a missing A.T.L.A.S. master is stated, never silent", () => {
     "absence must render an explicit state, not nothing at all");
   assert.match(card, /data-testid="atlas-master-missing"/,
     "the missing state must be addressable so a DCA can fail on it");
-  assert.match(card, /A\.T\.L\.A\.S\. master not available/,
+  assert.match(card, /Print master not available/,
     "the missing state must say what is missing in plain words");
 });
 

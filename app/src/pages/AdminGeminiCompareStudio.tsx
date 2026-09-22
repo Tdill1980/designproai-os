@@ -814,7 +814,7 @@ function AtlasProgressCard({
       {atlas?.requestId && <AtlasPanelProofSheetLoader requestId={atlas.requestId} revisionId={atlas.id} />}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-          A.T.L.A.S.
+          Call 1
         </span>
         <span className="text-[10px] text-gray-400">
           {atlas ? `V${atlas.revisionSequence} · ${atlas.promptVersion}` : "authoring"}
@@ -852,7 +852,7 @@ function AtlasProgressCard({
           data-testid="atlas-master-missing"
           className="mt-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800"
         >
-          A.T.L.A.S. master not available for this revision. Every panel and proof
+          Print master not available for this revision. Every panel and proof
           descends from it, so this job cannot be validated until it loads.
         </div>
       )}
@@ -865,7 +865,7 @@ function AtlasProgressCard({
         <div data-testid="atlas-master" className="mt-3 border-t border-gray-200 pt-3">
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
-              Flattened A.T.L.A.S. master · V{atlas.revisionSequence}
+              Print master · V{atlas.revisionSequence}
             </span>
             <span className="flex items-center gap-3 text-[10px]">
               <a
@@ -1076,7 +1076,7 @@ function SurfacePairRows({
                     {promoted
                       ? "Call 9 promoted production panel"
                       : callOnePanel
-                        ? "Call 1 A.T.L.A.S. source panel"
+                        ? "Call 1 source panel"
                         : "Print panel"}
                   </div>
                   {panelUrl ? (
@@ -1097,7 +1097,7 @@ function SurfacePairRows({
                           no declared dimensions. */}
                       <img
                         src={panelUrl}
-                        alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical A.T.L.A.S. source"} panel`}
+                        alt={`${sideKey} ${promoted ? "Call 9 promoted production" : "Call 1 canonical source"} panel`}
                         loading="lazy"
                         style={widthInches && heightInches
                           ? { aspectRatio: `${widthInches} / ${heightInches}` }
