@@ -180,7 +180,7 @@ export function AtlasPanelProofSheet({
  * the same cadence, because during authoring it is also what the read answers
  * before the node lands.
  */
-export const PANEL_PROOF_POLL_MS = 2_000;
+export const PANEL_PROOF_POLL_MS = 1_000;
 /** Signed preview URLs expire in five minutes; refresh them well inside that. */
 export const PANEL_PROOF_URL_REFRESH_MS = 240_000;
 

@@ -68,10 +68,15 @@ test("the worker polls at the resolved interval, and an idle tick reclaims GENIE
   }
   try {
     assert.deepEqual(intervals, [worker.POLL_MS], "start() schedules tick() at the resolved poll interval");
+    // start() fired one unawaited tick; let it finish (it holds `busy`) before
+    // counting, or the first awaited ticks below are no-ops.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const claimsBefore = rpcCalls.filter((name) => name === "claim_designpro_generation_request_v2").length;
+    assert.equal(reclaims, 1, "the first idle tick reclaims");
     // Nine idle ticks inside one second: nine claim RPCs (that is the poll), but
-    // the GENIE reclaim -- a second RPC -- fires once, on its own 5 s cadence.
+    // the GENIE reclaim -- a second RPC -- does not fire again inside its 5 s cadence.
     for (let i = 0; i < 9; i += 1) await instance.tick();
-    assert.equal(rpcCalls.filter((name) => name === "claim_designpro_generation_request_v2").length, 9);
+    assert.equal(rpcCalls.filter((name) => name === "claim_designpro_generation_request_v2").length - claimsBefore, 9);
     assert.equal(reclaims, 1, "a 1 s claim poll must not turn one reclaim per 5 s into one per second");
     assert.equal(worker.IDLE_RECLAIM_MS, 5_000);
   } finally {

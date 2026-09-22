@@ -63,7 +63,7 @@ describe("AtlasPanelProofSheet", () => {
     // The sheet is written by Call 1's proof.assemble node, before the master
     // is accepted and before any 3D view — so how soon a customer sees it is
     // decided by this cadence, not by "See All Views".
-    expect(PANEL_PROOF_POLL_MS).toBe(2_000);
+    expect(PANEL_PROOF_POLL_MS).toBe(1_000);
     // Authoring / landing states keep polling. `{panelProof:false}` is a STATE
     // (six-surface / field / hero-driver), never an error, and during authoring
     // it is also what the read answers before the node lands.

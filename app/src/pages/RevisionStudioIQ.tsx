@@ -1112,7 +1112,7 @@ function ProductionProofSource({ render }: { render: any }) {
       // authoring (`_revisionState` is refreshed every 5s by the observer
       // above; absent means it has not been read yet) and stop once it is
       // terminal — a finished revision with no three-zone document stays that
-      // way, and re-reading it every two seconds would never change the answer.
+      // way, and re-reading it every second would never change the answer.
       pollWhilePending={Boolean(render?._revisionRequest) && panelProofStillLanding(render?._revisionState ?? "queued")}
     />
   );
