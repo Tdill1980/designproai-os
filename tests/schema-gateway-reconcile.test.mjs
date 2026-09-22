@@ -355,6 +355,10 @@ test("ordered migration chain retains existing production boundaries and appends
     // harness lease the database mints rather than a probe forging it.
     "20260921180000_designpro_asset_path_validator_executable_by_service_role.sql",
     "20260921183000_designpro_harness_lease_rpc.sql",
+    // The frozen snapshot carries the three-zone proof on every handoff, and
+    // the paid output contract admits v3/v4 with the clean-panel variant.
+    "20260922051200_designpro_snapshot_carries_panel_proof_without_logo.sql",
+    "20260922060000_designpro_output_contract_v4_clean_panels.sql",
   ]);
   // Call 11 sits between Call 10 and pack.verify, so the QC duplicates exist
   // before the pack is sealed and handed to the PanelPro preflight gate.
