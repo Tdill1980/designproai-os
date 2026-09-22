@@ -186,7 +186,7 @@ const SYSTEM_JOB = [
   "a wrap-shop graphic designer hands to the printer.",
   "",
   "DRAW ONLY THE PANELS. Every caption, figure, note and rule around them is printed onto this",
-  "sheet by the press afterwards. Leave every part of the sheet that is not a panel plain white.",
+  "sheet by the press afterwards. Every part of the sheet outside the panels stays plain white.",
 ].join("\n");
 
 /**
@@ -241,7 +241,7 @@ const INSTALLATION_FACT = [
   "and trims the wheel openings, handles and glass afterwards, with a blade, on the vehicle. So every",
   "panel here is a SOLID RECTANGLE of artwork — four straight edges, four square corners — and",
   "the artwork runs straight through the places those openings will be. Type and logos stay clear of the",
-  "trim line; the artwork does not — it fills its cell corner to corner, out past the frame line on",
+  "trim line; the artwork runs past it — filling its cell corner to corner, out past the frame line on",
   "all four sides.",
 ].join("\n");
 
@@ -261,8 +261,8 @@ const INSTALLATION_FACT = [
  * sections has never produced that failure; a coordinate table has, 4/4.
  */
 const SHEET_LAYOUT = [
-  "Fill the attached template; do not re-flow it. Each band holds those six panels in the template's",
-  "own cells, in that order, each drawn ONCE — never repeated, never a seventh, never an empty box.",
+  "Fill the attached template exactly as it is drawn. Each band holds those six panels in the",
+  "template's own cells, in that order, each drawn ONCE, and every box on the sheet carries its art.",
 ].join("\n");
 
 /**
@@ -297,8 +297,8 @@ const VERSIONS = Object.freeze([
   },
   {
     key: "artwork",
-    label: "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
-    instruction: "the same panels drawn as if they had never carried type.",
+    label: "ZONE 2 — BACKGROUNDS ONLY (THE ARTWORK ALONE)",
+    instruction: "the same six panels with the artwork alone, background to every edge.",
   },
   {
     key: "elements",
@@ -345,6 +345,20 @@ function exactStrings(input = {}) {
  * the defect the exact-text rule exists to prevent -- it is a drawn MARK from
  * the design's own vocabulary, which is a legitimate cut graphic.
  */
+/**
+ * THE CONTACT SLOT NAMED A PHONE THE FORM NEVER SUPPLIED (2026-09-22).
+ *
+ * The slot read "the phone and web address above, on one line" whenever EITHER
+ * was present. On the live New Aura run the brief carried a website and no
+ * phone, so Zone 3 was told to cut a phone line that exists nowhere in the
+ * request -- an invitation to invent a number, which is exactly what the
+ * exact-text rule exists to prevent. It now names only what the form supplied.
+ */
+function contactNames(phone, website) {
+  const names = [phone ? "phone" : "", website ? "web address" : ""].filter(Boolean);
+  return names.length ? `the ${names.join(" and ")} above, on one line` : "";
+}
+
 const CUT_GRAPHIC_SLOTS = [
   // ⚠️ A SLOT FALLBACK MAY NAME A SLOT. IT MAY NEVER NAME A LOGO FORM.
   // The twin comment in `_shared/atlas-panel-proof-prompt.ts` carries the
@@ -353,8 +367,8 @@ const CUT_GRAPHIC_SLOTS = [
   // whole request and it said the logo is something OTHER than the name).
   { caption: "PRIMARY LOGO", from: "logo", fallback: "this design's own logo, exactly as drawn on the panels" },
   { caption: "TAGLINE / SLOGAN", from: "tagline", fallback: "the company name exactly as set on the panels" },
-  { caption: "CONTACT LINE", from: "contact", fallback: "the web address alone" },
-  { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "the services line set as one cut strip" },
+  { caption: "CONTACT LINE", from: "contact", fallback: "the company name set as one cut line, in the design's own lettering" },
+  { caption: "PROMOTIONAL TEXT", from: "promo", fallback: "a line of the design's own lettering, lifted from the panels exactly as set" },
   { caption: "ICONS / SERVICE GRAPHICS", from: "icons", fallback: "the design's own motifs drawn as plain cut shapes" },
 ];
 
@@ -439,7 +453,7 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   // noise in a prompt whose budget is the design's.
 
   if (strings.length) {
-    out.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
+    out.push("", "EXACT TEXT, character for character — every word, numeral and web address on the wrap is here:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
 
@@ -460,8 +474,7 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   const supplied = {
     logo: "",
     tagline: pick(input.tagline) ? "the tagline above" : "",
-    contact: [pick(input.phone), pick(input.website)].filter(Boolean).length
-      ? "the phone and web address above, on one line" : "",
+    contact: contactNames(pick(input.phone), pick(input.website)),
     promo: pick(input.promo) ? "the promotional text above" : "",
     icons: "",
   };
@@ -475,8 +488,8 @@ function buildPanelProofPrompt({ input = {}, manifest = {}, creativeDirection = 
   out.push("",
     "ATTACHED: (1) the BLANK CONTAINER TEMPLATE — it is drawn for THIS vehicle, so every panel's",
     "shape and position comes from it; (2) a FINISHED PROOF — the standard for the QUALITY of the",
-    "work, on a different vehicle and another company's brand, so take no shape or figure from it.",
-    "The only shapes anywhere are Zone 3's cut graphics.");
+    "work, on a different vehicle for another company's brand: match its craft and draw this brief's",
+    "own shapes. Every shape on this sheet belongs to this design.");
 
   return out.join("\n");
 }

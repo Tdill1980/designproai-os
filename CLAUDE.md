@@ -160,6 +160,64 @@ table.** When a fixture stands in for a schema, build it FROM the migrations.
 **Not proven:** no purchase has been confirmed on production since the patch.
 Tick it when an entitlement row appears for a real checkout.
 
+## 🗣️ THE DOCUMENT CONTRACT SPEAKS ONLY IN THE POSITIVE (owner, Trish 2026-09-22)
+
+Owner, on the prompt framework she drafted: *"Image models are notoriously bad
+at negative prompting (like 'no', 'not', 'without'). If you tell an image model
+'no 3D wheels' … its attention mechanism activates the tokens for 'wheels' …
+and it often draws exactly what you told it to avoid."*
+
+This file already measured that 4/4 — `atlasFieldContract` printed the six
+rectangles and then said *"None of the map is drawn"*, and four consecutive live
+runs painted those digits onto the customer's flanks — and warns about the shape
+in four places. The DOCUMENT contract was still carrying seven negations of its
+own. All seven are now positive, in BOTH byte-locked twins
+(`_shared/atlas-panel-proof-prompt.ts`, `runtime/atlas-panel-proof-contract.cjs`):
+*"every word, numeral and web address on the wrap is here"*, *"THE ARTWORK
+ALONE"*, *"the artwork alone, background to every edge"*, *"Fill the attached
+template exactly as it is drawn"*, *"each drawn ONCE, and every box on the sheet
+carries its art"*, *"match its craft and draw this brief's own shapes"*, *"every
+part of the sheet outside the panels stays plain white"*.
+
+**THE SCOPE IS THE DOCUMENT CONTRACT, NEVER A.C.E.** The lock asserts on the
+prompt built with NO creative head. The persona's own assembly is locked (RULE
+0.26, v19) and its wording is not this file's to police; widening the lock to
+the assembled prompt would fail on the persona and invite exactly the "rewrite
+the creative framing to fix a pixel defect" move RULE 0.1 forbids.
+
+**SIX EXISTING LOCKS PINNED THE NEGATIVE WORDING and had to be inverted** — one
+of them under a test literally named *"the installation fact is POSITIVE"*, four
+lines below a comment explaining why a prohibition is the wrong shape. That is
+the ninth time this file has recorded a lock encoding the defect it was written
+to prevent.
+
+**A ZONE-3 SLOT MAY NEVER NAME A STRING THE CUSTOMER DID NOT SUPPLY.** The
+contact slot read *"the phone and web address above, on one line"* whenever
+EITHER existed, so the live New Aura brief — website, no phone — told Zone 3 to
+cut a phone line that appears nowhere in the request, which is an invitation to
+invent one. `contactNames` names only what the form carries; with neither, the
+slot LIFTS a mark off the design. The promotional slot stopped asking for a
+services line the brief may never have carried.
+
+**THE SECOND MODEL TURN WAS REJECTED, DELIBERATELY.** The owner's draft put the
+layout in a second call that would *"extract the elements of that artwork and
+map them into the attached blank Tri-zone template"*. An image model repaints
+rather than extracts, so Zone 1 — the band every print panel is cut from — would
+be a re-drawing of turn 1's design: the `separatedArtwork` defect shape retired
+the same day, plus a break of the one-image-call rule and the hash binding. The
+layout logic stays in the tail of the ONE call with the template attached, which
+is what ran on `21dc0312` in 65 s. **"Uninstalled vinyl sheets" was also left
+out** — that wording is the photograph-of-film trap the owner corrected the same
+day; the object is the print FILE a wrap-shop designer hands to the printer.
+
+**The contract version is NOT bumped, on purpose.** `providerCacheMaterial`
+hashes `modelRequest`, which carries the prompt text, so changed wording is
+already a different cache key; and no migration pins
+`designpro.atlas-panel-production-proof.v1`, which is a stored identifier the
+scope line keeps.
+
+**Not proven:** no live generation has run on the positive wording.
+
 ## ™ THE THREE-ZONE SHEET IS THE **TriZone™ Production Panel Proof** — ONE NAME, DECLARED ONCE (owner, Trish 2026-09-22: "fix remove atlas come up with a proprietary name for our ProductionPanelProof")
 
 The sheet Call 1 draws now has a name of its own, the way PanelPro, CutPro

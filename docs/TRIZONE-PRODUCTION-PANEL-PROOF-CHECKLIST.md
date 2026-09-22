@@ -104,6 +104,60 @@ the two calls were TOLD and GIVEN, plus two leftovers of the retired route.
 6. [ ] One live generation, same brief ("Custom wrap for New Aura Day Spa … create a logo and a custom photo of a women getting a professional facial in a spa setting", company + website on the form, 2022 Ford F250 Crew Cab). Read from the row and tick the lines above.
 7. [ ] **Acceptance is the owner's eye** on the exported TriZone™ sheet against the Ridgeline standard: artwork on all six panels, the company name and contact line in the design's own font in Zone 1 AND Zone 3, one logo per panel, Zone 2 the same panels without type; the seven proofs photographed in the studio with the same design.
 
+## The document contract speaks only in the positive (owner, 2026-09-22)
+
+Owner, on the prompt framework she drafted: *"Image models are notoriously bad
+at negative prompting (like 'no', 'not', 'without'). If you tell an image model
+'no 3D wheels' … its attention mechanism activates the tokens for 'wheels' … and
+it often draws exactly what you told it to avoid."*
+
+This repo had already measured that 4/4 — `atlasFieldContract` printed the six
+rectangles and then said *"None of the map is drawn"*, and four consecutive live
+runs painted those digits onto the customer's flanks — and CLAUDE.md warns about
+the shape in four places. The DOCUMENT contract was still carrying seven of them.
+
+| was | is |
+|---|---|
+| "invent no other words, numerals or web address" | "every word, numeral and web address on the wrap is here" |
+| "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)" | "ZONE 2 — BACKGROUNDS ONLY (THE ARTWORK ALONE)" |
+| "as if they had never carried type" | "the artwork alone, background to every edge" |
+| "Fill the attached template; do not re-flow it" | "Fill the attached template exactly as it is drawn" |
+| "never repeated, never a seventh, never an empty box" | "each drawn ONCE, and every box on the sheet carries its art" |
+| "take no shape or figure from it" | "match its craft and draw this brief's own shapes" |
+| "every part of the sheet that is not a panel" | "every part of the sheet outside the panels stays plain white" |
+
+- [x] Zero negation tokens in the model-facing document contract. — LOCKED
+  (`tests/atlas-panel-proof-contract.test.mjs`, asserted on the prompt built
+  with NO creative head, so A.C.E.'s own locked persona is out of scope by
+  construction; verified to fail against the pre-fix twins).
+- [x] **SIX EXISTING LOCKS PINNED THE NEGATIVE WORDING** and had to be inverted —
+  one of them under a test literally named *"the installation fact is POSITIVE"*.
+  The ninth time this repo has recorded a lock encoding the defect it was
+  written to prevent.
+- [x] A Zone 3 slot never names a string the customer did not supply. The
+  contact slot read "the phone and web address above" whenever EITHER existed,
+  so the live New Aura brief (website, no phone) told Zone 3 to cut a phone line
+  that appears nowhere in the request. `contactNames` names only what the form
+  carries; with neither, the slot LIFTS a mark off the design. The promotional
+  slot stopped asking for a services line the brief may never have carried.
+- [x] **The second model turn was rejected, deliberately.** The owner's draft put
+  the layout in a second call that would "extract the elements and map them into
+  the template". An image model repaints rather than extracts, so Zone 1 — the
+  band every print panel is cut from — would be a re-drawing of turn 1's design.
+  That is the `separatedArtwork` defect shape retired on 2026-09-22, and it
+  breaks the one-image-call rule and the hash binding. The layout logic lives in
+  the tail of the ONE call, with the template attached, as it ran on `21dc0312`.
+- [x] **"Uninstalled vinyl sheets" was left out.** That wording is the
+  photograph-of-film trap the owner corrected the same day.
+- [x] **The contract version is NOT bumped, on purpose.** `providerCacheMaterial`
+  hashes `modelRequest`, which carries the prompt text, so changed wording is
+  already a different cache key; and no migration pins
+  `designpro.atlas-panel-production-proof.v1`, which is a stored identifier the
+  scope line keeps.
+
+**Not proven:** no live generation has run on the positive wording. Acceptance
+is the owner's eye on the exported sheet.
+
 ## Open items this file carries unticked, on purpose
 
 - [ ] Retire the internal assembled master (C5 above): rebind every gate to the TriZone sheet hash — a migration series.
