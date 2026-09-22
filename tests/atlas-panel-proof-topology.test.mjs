@@ -168,7 +168,26 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
   assert.equal(body.visionboard_intent, "exact_reference");
   assert.equal(body.styleDescriptors, input.styleDescriptors);
   assert.equal(body.customerAssets.length, 1);
-  assert.equal(body.separatedArtwork, true);
+  // ⛔ THIS ASSERTED `separatedArtwork === true`, AND THAT FIELD WAS THE DEFECT.
+  //
+  // Owner, 2026-09-22, on the first real generation of this route: the design
+  // "did not follow my prompt and quality is shit". Inside the edge that one
+  // field discarded the three-zone prompt for a "six clean printed background
+  // artworks" ask, stripped every A.C.E. line containing a negation, dropped
+  // the hash-pinned Ridgeline gold sheet, blanked the per-vehicle template to
+  // six grey rectangles and bought a second image request for the logo. The
+  // lock pinned it as the contract.
+  //
+  // The contract is: the designer draws Zone 1, Zone 2 and Zone 3 together, in
+  // ONE pass, on the dimensioned template, shown the Ridgeline proof.
+  assert.ok(!Object.hasOwn(body, "separatedArtwork"),
+    "the customer's Call 1 asks for all three zones, never backgrounds alone");
+  assert.equal(body.anchorTurns, false, "one image request, not a two-turn conversation");
+  assert.deepEqual(body.panelTrimRows?.length, 6,
+    "the document's callouts are labelled TRIM, so the trim inches travel beside the print inches");
+  assert.ok(body.panelTrimRows.every((row, i) =>
+    row.split(":")[0] === body.panelRows[i].split(":")[0]),
+    "trim rows and print rows name the same six surfaces in the same order");
   assert.ok(!Object.hasOwn(body, "logoAsset"), "protected Zone-3 originals do not enter the generation request");
   const assemble = (request) => runInNewContext(assembly, {
     body: request, customerPrompt: request.customerPrompt,
@@ -181,9 +200,21 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
   assert.ok(exact.includes(input.brief), "failed intake cannot erase the customer's creative brief");
   assert.match(exact, /Brand colors: #123456, #fedcba/);
   assert.match(exact, /Style direction: geometric racing stripes/);
-  assert.doesNotMatch(exact, /Typography preference:|Spell the business name|Contact info \(place in the contact bar\)/,
-    "clean-background generation leaves typography to the compositor");
-  assert.match(exact, /BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND/);
+  // ⛔ THESE TWO ASSERTED THE BACKGROUND-ONLY CONTRACT, INVERTED ON 2026-09-22.
+  //
+  // They read `doesNotMatch(/Typography preference:|Spell the business name|
+  // Contact info/)` — "clean-background generation leaves typography to the
+  // compositor" — and `match(/BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY
+  // KIND/)`. That is the defect stated as a requirement: the designer was
+  // forbidden to letter the panels, so code dropped a generic typeset lockup on
+  // afterwards and the owner got "generic text" and a doubled logo.
+  //
+  // The designer letters the wrap. Zone 2 is the band WITHOUT type, drawn in
+  // the same pass, which is where "backgrounds only" legitimately lives.
+  assert.match(exact, /Spell the business name/,
+    "the designer sets the company name, in the design's own typeface");
+  assert.doesNotMatch(exact, /BACKGROUND ARTWORK ONLY — NO LETTERING OF ANY KIND/,
+    "the background-only ask is what produced gradients with no lettering");
   assert.match(exact, /EXACT REFERENCE: The provided reference is the customer's approved artwork authority/);
   assert.doesNotMatch(exact, /STYLE INSPIRATION:/);
   const inspired = assemble({ ...body, visionboard_intent: "style_inspiration" });
@@ -530,10 +561,15 @@ test("Zone 3 degrades instead of refusing: no assets or text is an EMPTY band, r
   assert.ok(omitted, "the absence of originals must be named in composition.omitted");
   assert.equal(omitted.reason, "no_original_assets_or_customer_text");
   assert.deepEqual(out.provenance.composition.placements, []);
-  // Zone 1 is then the authored panels exactly as Zone 2 carries them.
+  // Zone 1 is the designer's own branded band, and Zone 2 is the same panels
+  // without type. They are two different bands of one sheet, so their bytes
+  // MUST differ — this asserted they were identical, which is what "Zone 1 is
+  // then the authored panels exactly as Zone 2 carries them" meant when code
+  // built Zone 1 out of Zone 2.
   for (const panel of out.provenance.composition.panels) {
-    assert.equal(panel.contentHash, panel.backgroundContentHash, `${panel.surfaceKey}: nothing composited, nothing changed`);
-    assert.deepEqual(panel.applied, []);
+    assert.notEqual(panel.contentHash, panel.backgroundContentHash,
+      `${panel.surfaceKey}: the branded band is not the clean band`);
+    assert.deepEqual(panel.applied, [], "nothing was composited onto it");
   }
   // And the master is what the six Zone-1 panels assemble into: 4096 square.
   const meta = await sharp(out.bytes).metadata();
@@ -1251,12 +1287,26 @@ test("Zone 1 uses Zone 2 plus byte-identical original vector assets", async () =
   assert.equal(original.contentHash,contentHash);
   assert.equal(original.storagePath,logoAsset.storagePath);
   assert.equal(original.byteSize,bytes.length);
-  assert.equal(calls[0].separatedArtwork,true);
-  assert.equal(calls[0].customerAssets.length,0);
-  assert.ok(result.provenance.composition.placements.filter(p => p.role === "logo").length === 5);
+  assert.ok(!Object.hasOwn(calls[0],"separatedArtwork"));
+  assert.equal(calls[0].customerAssets.length,0,
+    "a protected Zone-3 original never enters the generation request");
+  // ⛔ THIS ASSERTED FIVE COMPOSITED LOGO PLACEMENTS AND A GREEN ROOF.
+  //
+  // "Zone 1 derives from green Zone 2, never blue generated Zone 1" was the
+  // background-only architecture written down as a requirement: the designer's
+  // own Zone 1 was thrown away and code pasted the logo onto the unlettered
+  // backgrounds. That is the doubled logo and the generic lettering the owner
+  // rejected on 2026-09-22.
+  //
+  // Zone 1 is now the blue band the designer drew, and nothing composites onto
+  // it. The original logo is still registered as a Zone-3 cut graphic above —
+  // that half was always right, and is what the plotter cuts.
+  assert.equal(result.provenance.composition.placements.length,0,
+    "nothing is composited onto a Zone 1 the designer drew");
+  assert.equal(result.provenance.threeZoneLayout.brandedSource,"sheet-drawn");
   const roof = MANIFEST.zones.find(z => z.surfaceKey === "roof").extraction;
   const pixel = await sharp(result.bytes).extract({left:roof.x+Math.floor(roof.w/2),top:roof.y+Math.floor(roof.h/2),width:1,height:1}).removeAlpha().raw().toBuffer();
-  assert.deepEqual([...pixel],[15,118,110],"Zone 1 derives from green Zone 2, never blue generated Zone 1");
+  assert.deepEqual([...pixel],[29,78,216],"Zone 1 is the designer's own band, not a composite over Zone 2");
 });
 
 test("generated custom logo identity is shared by branded panels and Zone 3", async () => {
@@ -1271,10 +1321,12 @@ test("generated custom logo identity is shared by branded panels and Zone 3", as
     downloadAsset:async identity=>{assert.equal(identity.contentHash,contentHash);return bytes;}});
   const graphic = out.provenance.quadrants.cutGraphics.find(asset=>asset.surfaceKey==="logo");
   assert.equal(graphic.contentHash,contentHash);
-  const placements = out.provenance.composition.placements.filter(placement=>placement.role==="logo");
-  assert.equal(placements.length,5);
-  assert.ok(placements.every(placement=>placement.contentHash===graphic.contentHash
-    && placement.storagePath===graphic.storagePath));
+  // The generated logo is ONE artifact with ONE identity, and it reaches the
+  // customer as a Zone-3 cut graphic. It is no longer also pasted onto six
+  // branded panels: the designer drew the branding into Zone 1 in the same
+  // pass, and dropping a second copy on top is the doubled logo.
+  assert.equal(out.provenance.composition.placements.length,0);
+  assert.equal(out.provenance.threeZoneLayout.brandedSource,"sheet-drawn");
   assert.equal(out.imageRequestCount,2);
 });
 

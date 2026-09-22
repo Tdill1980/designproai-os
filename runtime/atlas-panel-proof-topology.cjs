@@ -378,6 +378,45 @@ function panelRowsFromManifest(manifest) {
   });
 }
 
+/**
+ * THE SAME SIX ROWS AT **TRIM** SIZE — the dimension the sheet must PRINT.
+ *
+ * `panelRowsFromManifest` states the PRINT rectangle because that is the shape
+ * the model fills and the cutter cuts; its own header explains why, and it does
+ * not change. But the document's callouts and its PANEL DIMENSIONS REFERENCE
+ * table are labelled TRIM, and the edge draws its container from
+ * `parsePanelRows(panelRows)` with no other dimension source — so it read those
+ * print numbers as trim and added the 5" bleed a second time. A 222.5 x 53
+ * driver printed as `242.5" W x 73.0" H (TRIM: 232.5" x 63.0")`: both numbers
+ * wrong, on the sheet the designer is shown.
+ *
+ * So the trim inches travel beside the print inches and the edge labels from
+ * these. Absent (an older caller), the edge falls back to exactly today's
+ * behaviour, so this can never make a request fail.
+ */
+function panelTrimRowsFromManifest(manifest) {
+  const zones = Array.isArray(manifest?.zones) ? manifest.zones : [];
+  const rows = [];
+  for (const zone of zones) {
+    const name = String(zone?.surfaceKey || "").toUpperCase();
+    const bleed = zone?.bleedIn || {};
+    const printW = Number(zone?.printWidthIn);
+    const printH = Number(zone?.printHeightIn);
+    const w = Number.isFinite(Number(zone?.trimWidthIn)) ? Number(zone.trimWidthIn)
+      : (Number.isFinite(printW) ? printW - Number(bleed.left || 0) - Number(bleed.right || 0) : NaN);
+    const h = Number.isFinite(Number(zone?.trimHeightIn)) ? Number(zone.trimHeightIn)
+      : (Number.isFinite(printH) ? printH - Number(bleed.top || 0) - Number(bleed.bottom || 0) : NaN);
+    // A MISSING TRIM IS NOT A REFUSAL. The print rows already refused on a
+    // manifest with no usable dimensions; this is a labelling detail, and
+    // losing the whole design over a label is the blast radius this file
+    // warns about in four other places.
+    if (!name || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return [];
+    if (w > MAX_PLAUSIBLE_PANEL_INCHES || h > MAX_PLAUSIBLE_PANEL_INCHES) return [];
+    rows.push(`${name}: ${round1(w)}" wide x ${round1(h)}" high`);
+  }
+  return rows.length === zones.length ? rows : [];
+}
+
 /** One decimal, and no trailing ".0" — the owner's own spec-sheet form. */
 function round1(value) {
   return String(Math.round(Number(value) * 10) / 10);
@@ -524,7 +563,36 @@ async function requestProofSheet({
     // Verified VisionBoard references, by identity. Protected Zone-3 originals
     // are retained by the compositor, outside this image-generation request.
     customerAssets,
-    separatedArtwork: true,
+    // ⛔ `separatedArtwork: true` USED TO SIT HERE, AND IT WAS THE WHOLE DEFECT.
+    //
+    // Owner, 2026-09-22: "It gets the production panel template with vehicle
+    // make and model info including dimension of rectangle panels and it takes
+    // customer prompt and designs a cohesive set of 6 wrap panels using our
+    // persona based edge functions, and is shown the ridgeline pools 3 zone
+    // proof so it does the same — it creates the zone 1, 2, and 3 all at one
+    // time."
+    //
+    // That one field made the edge do the opposite of all of it. Measured in
+    // `production-panel-proof/index.ts`:
+    //
+    //   :640-660  the three-zone prompt is assembled at :621 and DISCARDED;
+    //             the substitute asks for "six clean printed background
+    //             artworks" — Zone 2 alone, no lettering, no logo, no bands.
+    //   :643-648  every A.C.E. line containing no/not/never/without/don't is
+    //             stripped out, which is most of the designer's own rules.
+    //   :773      the hash-pinned Ridgeline gold sheet is NOT attached.
+    //   :717-728  the container is drawn `mode: "artwork"` — six plain grey
+    //             rectangles, no vehicle, no dimensions, no captions.
+    //   :972      the anchored conversation is forced off.
+    //   :1090     a second paid image request runs for the logo.
+    //
+    // Then the assembler re-manufactured Zone 1 from those unlettered
+    // backgrounds plus a typeset lockup. Gradients, generic type, two logos.
+    //
+    // Omitting it selects the path that was built for this and has never been
+    // reachable by a customer: A.C.E. intact, the Ridgeline sheet attached, the
+    // per-vehicle dimensioned template attached, all three zones asked for in
+    // one pass. Do not restore it. It is `91d0b8e`'s decision, reversed.
     hasCustomerLogo: Boolean(input?.logoAsset),
     generateLogo: input?.generateLogo,
     // The customer's own words. The edge's intake node parses vehicle, contact
@@ -552,6 +620,14 @@ async function requestProofSheet({
     vehicleModel: vehicle.model || null,
     vehicleType: vehicle.type || vehicle.vehicleClass || null,
     panelRows,
+    // The TRIM inches, so the document's callouts and its reference table say
+    // what the panel actually prints. See `panelTrimRowsFromManifest`.
+    panelTrimRows: panelTrimRowsFromManifest(manifest),
+    // ONE CALL, NOT TWO. The owner's contract is one pass that draws all three
+    // zones; the two-turn design-then-layout conversation is a second paid
+    // image request and put Call 1 at 115 s. It stays in the edge and is one
+    // field away, so a side-by-side costs nothing.
+    anchorTurns: false,
     // THE OPERATION IDENTITY, STABLE ACROSS A RECOVERY.
     //
     // The edge now runs its image request through the durable provider module,
@@ -841,14 +917,31 @@ async function assemblePanelProofMaster({
       })()
     : await cutProofPanels({
       proofBytes: sheet.bytes, manifest: proofManifest,
-      // Zone 2 is the generated artwork authority. Zone 1 is composed below,
-      // and Zone 3 comes from originals; neither consumes a provisional AI crop.
-      zones: ["zone2"], sharp,
+      // ALL THREE BANDS, AS THE DESIGNER DREW THEM.
+      //
+      // This read `["zone2"]`, and the two lines above it said Zone 1 was
+      // "composed below" and Zone 3 "comes from originals". That was the
+      // background-only architecture: the sheet carried three finished bands
+      // and the assembler kept one of them.
+      //
+      // Owner, 2026-09-22: the designer "creates the zone 1, 2, and 3 all at
+      // one time" on the template. So all three are read off the sheet it
+      // returned. The template cells are GENIE geometry authored BEFORE the
+      // request, so Zone 1 and Zone 2 both arrive with
+      // `positionalPremiseVerified` and a studio-template identity; nothing
+      // here re-detects a rectangle out of generated pixels.
+      // Zone 3 is NOT cut here: `sheetDrawnCutGraphic` already reads those five
+      // boxes off this same sheet, insets past the template's dashed frame,
+      // measures the ink and trims to it. A raw box crop beside it would be a
+      // second producer of the same artifact (RULE 0.21) and a worse one.
+      zones: ["zone1", "zone2"], sharp,
     });
   if (cut.refused) throw refuse(cut.refused, { cutSheet: cut.sheet });
   mark("panel.cut", cutAt);
 
-  let zone1 = [];
+  // The designer's own Zone 1, on the sheet path. Empty on the derived path,
+  // where there is no sheet to read and the compositor below builds it.
+  let zone1 = cut.panels.filter((p) => p.zone === "zone1");
   const zone2 = cut.panels.filter((p) => p.zone === "zone2");
   let zone3 = [];
   if (zone2.length !== 6) {
@@ -984,7 +1077,75 @@ async function assemblePanelProofMaster({
   }
   let productionLayout;
   let composed;
+  /**
+   * WHICH ZONE 1 THIS RECEIPT DESCRIBES — and it is never inferred later.
+   *
+   * `sheet-drawn` is the designer's own branded panels, drawn with Zone 2 and
+   * Zone 3 in one pass. `composited` is the clean backgrounds with a typeset
+   * lockup dropped on by code, which is the derived path only.
+   *
+   * The same honesty rule as `deterministic`: a reader must be able to tell the
+   * designer's work from something code manufactured, without opening pixels.
+   * Reporting one as the other is the receipts-green/pixels-wrong shape this
+   * file records four times.
+   */
+  let zone1Source = "composited";
+  // THE ABSENCE OF ORIGINALS IS RECORDED HERE, NOT INSIDE ONE BRANCH.
+  //
+  // It used to be written only where the compositor found nothing to composite.
+  // Zone 1 is now published as the designer drew it, so that branch no longer
+  // runs on the sheet path — and the receipt silently stopped saying that no
+  // customer logo, company name or contact line was ever supplied. That is a
+  // fact about the CUSTOMER'S INPUT, not about which code built Zone 1, so it
+  // is stated once, for every path.
   if (!assets.length) {
+    zone3Omitted.push({ zone: "zone3", role: null, reason: "no_original_assets_or_customer_text" });
+    logger("atlas call 1: no original logo and no customer text; Zone 3 carries only what the design drew");
+  }
+  // ═══ THE SHEET PATH: ZONE 1 IS THE DESIGNER'S, AND NOTHING REBUILDS IT ═══
+  //
+  // Owner, 2026-09-22: "No not cut from any drawing. It gets the production
+  // panel template ... and designs a cohesive set of 6 wrap panels using our
+  // persona based edge functions ... it creates the zone 1, 2, and 3 all at
+  // one time."
+  //
+  // `compositeProductionPanels` builds Zone 1 by dropping a `typeset.renderLockup`
+  // wordmark and the uploaded logo onto the UNLETTERED Zone 2 backgrounds. On
+  // the sheet path that discards the lettering A.C.E. set in the design's own
+  // typeface, replaces it with a generic one, and drops a second copy of a logo
+  // the designer already drew. That is exactly what the owner rejected on
+  // request 0f53d4e7.
+  //
+  // It is kept, unchanged, for the DERIVED path (`zone2Panels` supplied), where
+  // there is no authored Zone 1 to publish and a legacy six-surface or field
+  // revision still needs its three-zone document.
+  if (zone1.length === 6) {
+    const zone2ByKey = new Map(zone2.map((p) => [p.surfaceKey, p]));
+    productionLayout = { contract: null, placements: [], omitted: [] };
+    composed = {
+      contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
+      omitted: [],
+      sourceAssetsPreserved: true,
+      // `applied: []` is the honest record: no element was composited onto
+      // these pixels, because the designer drew them there.
+      // Paired BY SURFACE KEY, never by index. Both bands come from the same
+      // container layout so the orders agree today, and an index pairing is
+      // one refactor away from silently mapping the hood onto the roof.
+      panels: zone1.map((panel) => ({
+        ...panel,
+        // `cutProofPanels` returns pixels, not identities — every other
+        // consumer of `composed.panels` reads `contentHash`.
+        contentHash: sha256(panel.bytes),
+        backgroundContentHash: zone2ByKey.get(panel.surfaceKey)?.bytes
+          ? sha256(zone2ByKey.get(panel.surfaceKey).bytes) : null,
+        applied: [],
+        zone: "zone1",
+        role: "branded",
+      })),
+    };
+    zone1Source = "sheet-drawn";
+    logger("atlas call 1: Zone 1 is the designer's own six panels, drawn with Zone 2 and Zone 3 in one pass");
+  } else if (!assets.length) {
     // EMPTY ZONE 3 IS A STATE, NOT A REFUSAL. No original logo and no customer
     // text (no company name, contact line or wordmark) means there is nothing
     // to cut, so the band is empty and says so in `composition.omitted`. Zone 1
@@ -993,7 +1154,6 @@ async function assemblePanelProofMaster({
     // reader still gets six branded panels, six clean panels and a cut-graphics
     // count of zero. This used to refuse the whole Call 1, which took the
     // design, its DesignID and every proof with it over an absent contact bar.
-    zone3Omitted.push({ zone: "zone3", role: null, reason: "no_original_assets_or_customer_text" });
     logger("atlas call 1: Zone 3 is empty (no original assets or customer text); continuing without cut graphics");
     productionLayout = { contract: null, placements: [], omitted: [] };
     composed = { contract: null, omitted: [], sourceAssetsPreserved: true,
@@ -1013,11 +1173,25 @@ async function assemblePanelProofMaster({
     scaleCell(cell,displayLayout,cut.sheet)]));
   zone1 = composed.panels.map(p => ({...p,displayRect:displayCells.get(p.surfaceKey)}));
 
-  // THE CUSTOMER-VISIBLE CALL 1 IS BUILT BY CODE, NEVER BY GEMINI.
-  // Gemini's returned canvas is only an internal background-art staging source.
-  // Start from the deterministic Studio template so every header, dimension,
-  // zone bar, caption, note and footer is exact; then place the exact clean
-  // backgrounds, the deterministic branded composites, and the original assets.
+  // ═══ CODE BUILT ONLY THE PRODUCTION PANEL PROOF DOCUMENT ═══
+  //
+  // This block used to open "THE CUSTOMER-VISIBLE CALL 1 IS BUILT BY CODE,
+  // NEVER BY GEMINI. Gemini's returned canvas is only an internal
+  // background-art staging source." That sentence arrived in `91d0b8e`
+  // (2026-09-20, "Make Gemini author backgrounds only, never the proof sheet")
+  // together with `separatedArtwork` and the background-only prompt, and the
+  // owner reversed all three on 2026-09-22. Do not restore it.
+  //
+  // What is true, and what this block does: the DOCUMENT is code. The template,
+  // the header and job block, the zone bands, the panel rectangles, the
+  // dimension callouts, the PANEL DIMENSIONS REFERENCE table, the notes and the
+  // legend are drawn here from GENIE geometry, so a dimension can never be
+  // invented or copied wrong.
+  //
+  // The ARTWORK is the designer's. Zone 1, Zone 2 and Zone 3 were created
+  // together in one pass through the design edge functions, and they are placed
+  // onto this document exactly as they were drawn. Code owns the document. It
+  // does not own the design.
   const vehicle = input?.vehicle || {};
   const vehicleLabel = [vehicle.year || brand.vehicleYear, vehicle.make || brand.vehicleMake,
     vehicle.model || brand.vehicleModel]
@@ -1192,6 +1366,7 @@ async function assemblePanelProofMaster({
         // master (see the note above).
         threeZoneLayout: { required: true, branded: zone1.length,
           backgrounds: zone2.length, graphics: zone3.length,
+          brandedSource: zone1Source,
           graphicsFormat: zone3Format(zone3), productionApproved: false },
         masterSha256: sheet.contentHash || null,
         composition: { contract: composed.contract, layoutContract: productionLayout.contract,
@@ -1324,6 +1499,9 @@ async function assemblePanelProofMaster({
       productionComposedProof: composedProof,
       threeZoneLayout: { required: true, branded: zone1.length,
         backgrounds: zone2.length, graphics: zone3.length,
+        // "sheet-drawn" = the designer's own Zone 1; "composited" = code built
+        // it from the clean backgrounds. See `zone1Source`.
+        brandedSource: zone1Source,
         // "none" when the band is empty: an all-of-nothing `every()` would
         // have called an empty band "vector-originals".
         graphicsFormat: zone3Format(zone3), productionApproved: false },

@@ -125,7 +125,14 @@ test("the derived receipt carries the four fields the logo-placement handoff req
   const { result } = await derive();
   const p = result.provenance;
   assert.deepEqual(Object.keys(p.threeZoneLayout).sort(),
-    ["backgrounds", "branded", "graphics", "graphicsFormat", "productionApproved", "required"]);
+    ["backgrounds", "branded", "brandedSource", "graphics", "graphicsFormat",
+      "productionApproved", "required"]);
+  // THE DERIVED PATH IS THE ONE THAT STILL COMPOSITES, AND IT SAYS SO. A legacy
+  // six-surface or field revision has no authored three-zone sheet to publish,
+  // so code builds its Zone 1 from the clean panels plus a typeset lockup.
+  // A reader must be able to tell that from the designer's own band without
+  // opening pixels.
+  assert.equal(p.threeZoneLayout.brandedSource, "composited");
   assert.equal(p.threeZoneLayout.required, true);
   assert.equal(p.threeZoneLayout.branded, 6);
   assert.equal(p.threeZoneLayout.backgrounds, 6);
