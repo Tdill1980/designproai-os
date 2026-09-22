@@ -18,7 +18,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     api.listArtifacts.mockResolvedValue([{ id: "old-call8", kind: "flat-proof", surfaceKey: "", contentHash: "c".repeat(64), signedUrl: "https://files.test/old-proof.png", metadata: { role: "customer-2d-production-proof", sourceMasterHash: parent.master.contentHash } }]);
     const pending = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
     expect(pending.proofUrl).toBeNull();
-    expect(pending.panelProofSource).toEqual({ requestId: receipt.requestId, revisionId: null });
+    expect(pending.panelProofSource).toEqual({ requestId: receipt.requestId, revisionId: null, version: 5 });
     expect(pending.workflowRun?.workflow_status).toBe("running");
     api.getGenerationRequest.mockResolvedValue({ ...receipt, state: "outputs_ready", revisionHandoffError: { code: "private SQL text" } });
     const stalled = await getDesignBuildStatus({ generationId: parent.generationId, revisionRequest: receipt });
@@ -26,7 +26,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     expect(JSON.stringify(stalled)).not.toContain("private SQL text");
     const historical = await getDesignBuildStatus({ generationId: parent.generationId, atlasRevisionId: parent.id });
     expect(historical.proofUrl).toBe("https://files.test/old-proof.png");
-    expect(historical.panelProofSource).toEqual({ requestId: parent.requestId, revisionId: parent.id });
+    expect(historical.panelProofSource).toEqual({ requestId: parent.requestId, revisionId: parent.id, version: 2 });
     expect(JSON.parse(pendingRevisionNotes({ original_prompt: "Saved brief", flat_proof_url: "old", logo_pack: ["old"], logo_layers: { old: true }, ai_edit_summary: "Old change" }))).toEqual({ original_prompt: "Saved brief" });
   });
   it("revises an older selected parent as the server's next version on the same GenerationID", async () => {
@@ -35,7 +35,7 @@ describe("existing RevisionStudio history and automatic regeneration handoff", (
     expect(api.createGenerationRequest).not.toHaveBeenCalled();
   });
   it("refuses an unknown named parent and a receipt for another design, without starting a fresh generation", async () => {
-    expect(() => revisionParent([current, parent], parent.generationId, "missing")).toThrow(/selected ATLAS/);
+    expect(() => revisionParent([current, parent], parent.generationId, "missing")).toThrow(/selected design version/);
     api.createGenerationRevision.mockResolvedValue({ ...receipt, generationId: "other" });
     await expect(submitDesignRevision(input())).rejects.toThrow(/existing design and parent/);
     expect(api.createGenerationRequest).not.toHaveBeenCalled();

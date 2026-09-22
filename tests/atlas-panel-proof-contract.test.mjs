@@ -758,33 +758,96 @@ test("the six panels are demanded ONCE each, because the live sheet drew FRONT t
   }
 });
 
-test("a refused panel-proof records its original gate and never invokes alternate artwork", async () => {
+test("the six-surface master gates are ADVISORY on the panel proof: recorded on the receipt, never a refusal, never a ledger row", async () => {
+  // Owner, 2026-09-22: "System must not issue fails because of no atlas." The
+  // vehicle-sheet gates convicted a live panel proof on `rear edgeHoleRatio=0.42`
+  // (2026-09-21). On this topology both verdicts are measured and RECORDED as
+  // `masterGateAdvisory`; the candidate is accepted. The same slice, executed
+  // with `panelProof: false`, still refuses -- the gates are unchanged for the
+  // topology they were built for.
   const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
-  const start = source.indexOf("    if (heroDriver || panelProof) {", source.indexOf("const refusalReason = stillBlocking"));
-  const fixedStart = source.indexOf("    if (heroDriver) {", source.indexOf("const refusalReason = stillBlocking"));
-  const end = source.indexOf("    if (attempt === maxAuthoringAttempts)", fixedStart >= 0 ? fixedStart : start);
-  const branch = source.slice(start >= 0 ? start : fixedStart, end);
-  for (const code of ["flat_atlas_master_deterministic_failed", "flat_atlas_master_output_class_invalid"]) {
-    const recorded = [];
+  const atlas = require("../runtime/flat-first-atlas.cjs");
+  // The six-surface branch comes FIRST in the source, deliberately: the
+  // output-class gate lock (`atlas-output-class-gate.test.mjs`) reads the
+  // loop's ORDER — deterministic checks, then the class gate, then acceptance
+  // — and the advisory `else` must not put a `classifyAtlasCandidate` ahead of
+  // `deterministic.blockingFailures` in reading order.
+  const gateStart = source.indexOf("      if (!panelProof) {\n      stillBlocking = [...(deterministic.blockingFailures");
+  const gateEnd = source.indexOf("    const refusalReason = stillBlocking.join", gateStart);
+  assert.ok(gateStart > 0 && gateEnd > gateStart, "the advisory branch must exist inside the candidate loop");
+  assert.ok(source.slice(gateStart, gateEnd).includes("// ADVISORY ON THE PANEL PROOF"),
+    "the advisory branch is the else of the six-surface gate");
+  // The slice ends with the advisory `else` closing AND the enclosing
+  // `} else {` of the noImage branch closing; drop the outer one so the
+  // if/else executes standalone.
+  const gate = source.slice(gateStart, gateEnd).replace(/\n\s*\}\s*$/, "\n");
+  const deterministic = { accepted: false, blockingFailures: ["rear: edgeHoleRatio 0.42 exceeds 0.35"],
+    cutoutFindings: [], zones: [{ surfaceKey: "rear", edgeHoleRatio: 0.42, nonBlackFraction: 0.9, opaqueRatio: 1 }] };
+  const outputClass = { contract: "designpro.atlas-output-class-gate.v1", disposition: "vehicle_depiction",
+    blocking: true, confidence: 1, evidence: "a truck", candidateSha256: "a".repeat(64) };
+  for (const panelProof of [true, false]) {
+    const sandbox = {
+      panelProof, attempt: 2, provider: {}, masterBytes: Buffer.from("m"), manifest: { zones: [] },
+      timings: { outputClassMs: 0 }, logger() {}, Date,
+      deterministic, masterCutoutSurfaces: [], masterCutoutFindings: [],
+      outputClassReceipt: null, masterGateAdvisory: null, stillBlocking: null, refusalCode: null,
+      async classifyAtlasCandidate() { return outputClass; },
+      panelProofGateAdvisory: atlas._test.panelProofGateAdvisory,
+    };
+    await runInNewContext(`(async () => { ${gate} })()`, sandbox);
+    // Arrays made inside the VM realm carry the sandbox's Array prototype, so
+    // they are spread into host arrays before a strict deep comparison.
+    if (panelProof) {
+      assert.deepEqual([...sandbox.stillBlocking], [], "the panel proof is ACCEPTED");
+      assert.equal(sandbox.refusalCode, null);
+      const advisory = sandbox.masterGateAdvisory;
+      assert.equal(advisory.contract, atlas._test.MASTER_GATE_ADVISORY_CONTRACT);
+      assert.equal(advisory.advisory, true);
+      assert.equal(advisory.refused, false);
+      assert.equal(advisory.candidate, 2);
+      assert.deepEqual([...advisory.findings.map((f) => f.code)],
+        ["flat_atlas_master_deterministic_failed", "flat_atlas_master_output_class_invalid"]);
+      assert.match(advisory.findings[0].finding, /rear: edgeHoleRatio 0\.42/, "the gate's real finding is on the receipt");
+      assert.equal(advisory.outputClass.disposition, "vehicle_depiction");
+      assert.equal(advisory.deterministic.zones[0].edgeHoleRatio, 0.42);
+    } else {
+      assert.deepEqual([...sandbox.stillBlocking], ["rear: edgeHoleRatio 0.42 exceeds 0.35"], "six-surface still refuses");
+      assert.equal(sandbox.refusalCode, "flat_atlas_master_deterministic_failed");
+      assert.equal(sandbox.masterGateAdvisory, null);
+    }
+  }
+  // And the map-drawn verdict keeps its own code on the advisory too.
+  const mapped = atlas._test.panelProofGateAdvisory({ candidate: 1, deterministic: { accepted: true, blockingFailures: [], cutoutFindings: [], zones: [] },
+    outputClass: { ...outputClass, disposition: "map_drawn" } });
+  assert.deepEqual(mapped.findings.map((f) => f.code), ["flat_atlas_master_map_drawn"]);
+});
+
+test("a panel-proof budget spent is TERMINAL with the gate's real reason, and never invokes alternate artwork", async () => {
+  // The exhausted-budget tail, executed with `panelProof: true`: the refusal
+  // carries the recorded code and reason, `retryable` is false, and
+  // `failOverToSixSurface` is never called -- there is no other Call 1.
+  const source = readFileSync(new URL("../runtime/flat-first-atlas.cjs", import.meta.url), "utf8");
+  const start = source.indexOf("    if (attempt === maxAuthoringAttempts) {", source.indexOf("const refusalReason = stillBlocking"));
+  const end = source.indexOf("      if (!failoverEnabled) {", start);
+  // The slice opens `if (attempt === maxAuthoringAttempts) {` and closes only
+  // the inner panel-proof block, so one closer balances it.
+  const branch = source.slice(start, end) + "}";
+  for (const code of ["flat_atlas_master_no_image", "flat_atlas_master_deterministic_failed"]) {
     let alternateProviderCalls = 0;
     class FlatAtlasError extends Error { constructor(code, message) { super(message); this.code = code; } }
     const reason = "original gate evidence retained verbatim";
-    const run = runInNewContext(`(async () => { ${branch} })`, {
-      heroDriver: false, panelProof: true, HERO_DRIVER_TOPOLOGY: "hero-driver", PANEL_PROOF_TOPOLOGY: "panel-proof",
-      AUTHORING_FAILOVER_CONTRACT: "failover", authoringTopology: "panel-proof", providerRecoveryOnly: true,
-      refusalCode: code, refusalReason: reason, attempt: 1, edgeProvenance: [],
-      generated: { bytes: Buffer.from("saved proof"), model: "fixture", provenance: {
-        masterStoragePath: "saved/master.png", masterSha256: "a".repeat(64), masterContentType: "image/png" } },
-      HASH_RE: /^[a-f0-9]{64}$/, supabase: {}, requestId: "request", generationId: "generation",
-      ownerId: "owner", tenantKey: "tenant", logger() {}, FlatAtlasError,
-      async recordAtlasRefusal(_db, record) { recorded.push(record); },
+    const run = runInNewContext(`(async () => { ${branch} })()`, {
+      panelProof: true, attempt: 2, maxAuthoringAttempts: 2, refusalCode: code, refusalReason: reason,
+      rawCandidates: "", FlatAtlasError, logger() {},
       async failOverToSixSurface() { alternateProviderCalls++; throw new Error("unexpected alternate provider"); },
     });
-    await assert.rejects(run, (error) => error.code === code && error.message === reason && error.retryable === false);
+    await assert.rejects(run, (error) => error.code === code
+      && /failed acceptance 2 times/.test(error.message) && error.message.includes(reason) && error.retryable === false);
     assert.equal(alternateProviderCalls, 0);
-    assert.equal(recorded.length, 1);
-    assert.equal(recorded[0].code, code);
-    assert.equal(recorded[0].reason, reason);
-    assert.equal(recorded[0].storagePath, "saved/master.png");
   }
+  // And nothing ahead of the budget throws for the panel proof any more: the
+  // slice from the refusal reason to the exhausted branch names no panelProof
+  // throw, so candidate 1 of 2 proceeds to candidate 2.
+  const ahead = source.slice(source.indexOf("const refusalReason = stillBlocking"), start);
+  assert.ok(!ahead.includes("if (panelProof)"), "no panel-proof throw ahead of the attempt budget");
 });

@@ -485,6 +485,11 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       customerImageParts: definition.customerImageParts || [],
       providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : {},
       callProofEdge: (body, meta) => callProofEdge(body, { ...(meta || {}), ownerId: run.owner_id }),
+      // The revision (parent proof identity + instruction) and the candidate
+      // index ride the run DEFINITION, so whichever worker claims this node
+      // sends the same request and the same attemptKey.
+      revision: definition.revision || null,
+      candidate: Number(definition.candidate || 1),
     });
     if (!sheet?.storagePath || !sheet?.contentHash) {
       throw new AtlasCall1GraphError("designpro_atlas_call1_proof_sheet_unaddressed",
@@ -1130,6 +1135,15 @@ function createAtlasCall1NodeWorker({
   async function authorPanelProof({
     manifest, input, requestId, generationId, ownerId, providerRequest = null,
     customerImageParts = [], onProofSheetReady = null,
+    // THE REVISION AND THE CANDIDATE ARE PART OF THE RUN'S IDENTITY.
+    //
+    // Without them the definition hash was identical for V1 and V2 of one
+    // request and for candidate 1 and candidate 2 of one budget, so "re-roll"
+    // resumed the failed run and "revise" resumed the parent's -- the second
+    // sheet was never bought. `revision` is identities and text only (the
+    // parent proof's {storagePath, contentHash, byteSize} and the instruction),
+    // never pixels (RULE 0.39). `candidate` is 1-based.
+    revision = null, candidate = 1,
     logger: log = logger, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs: awaitPollMs = AWAIT_POLL_MS,
   }) {
     if (!manifest?.zones || !requestId || !generationId || !ownerId) {
@@ -1143,11 +1157,17 @@ function createAtlasCall1NodeWorker({
     // parts ride the definition so whichever worker claims proof.sheet sends
     // the same references — never the pixels, which is why only their
     // identities are ever put in a node's input or output.
+    const candidateIndex = Math.max(1, Number(candidate) || 1);
     const definition = panelProofExecutionDefinition({
       contract: GRAPH_CONTRACT, role: "panel-proof", manifest, input,
       providerRequest: providerRequest ? providerBase : null,
       customerImageParts,
       panelProofContract: panelProof.PANEL_PROOF_TOPOLOGY_CONTRACT,
+      // `undefined` on a first generation's first candidate: canonical() drops
+      // it, so an existing V1 run created before this field hashes as before
+      // and a resume of it still finds its own row.
+      ...(revision ? { revision } : {}),
+      ...(candidateIndex > 1 ? { candidate: candidateIndex } : {}),
     });
     // A terminal pre-checkpoint recovery run stays immutable. Version only the
     // cache-only execution graph, never the original provider request identity.

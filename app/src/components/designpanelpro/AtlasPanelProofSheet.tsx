@@ -165,6 +165,23 @@ export function panelProofRefreshInterval(proof: AtlasPanelProof | undefined, po
   return pollWhilePending ? 1_000 : false;
 }
 
+/**
+ * Whether a pinned revision may show this proof. A revision IS its own
+ * generation request (`enqueue_designpro_atlas_revision` inserts a new
+ * `designpro_generation_requests` row), so `requestId` already names the
+ * revision and no revision argument is added to the RPC, the route or dpApi.
+ * The RPC's `call1_graph` branch legitimately answers `panelProof: true,
+ * revisionId: null` before the revision row lands, so a null answer is
+ * "not bound yet", never "bound to a different revision". Only a NON-NULL
+ * answer that names another revision is a mismatch.
+ */
+export function panelProofBelongsToOtherRevision(
+  proof: Pick<AtlasPanelProof, "panelProof" | "revisionId"> | undefined,
+  revisionId: string | undefined,
+): boolean {
+  return Boolean(revisionId && proof?.panelProof && proof.revisionId && proof.revisionId !== revisionId);
+}
+
 export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePending = false, submittedAt }: {
   requestId: string; revisionId?: string; pollWhilePending?: boolean; submittedAt?: number | null;
 }) {
@@ -178,8 +195,9 @@ export function AtlasPanelProofSheetLoader({ requestId, revisionId, pollWhilePen
     refetchIntervalInBackground: false,
     retry: false,
   });
-  // An operator inspecting a pinned revision must not see an unbound preview.
-  if (revisionId && query.data?.panelProof && query.data.revisionId !== revisionId) {
+  // An operator inspecting a pinned revision must not see ANOTHER revision's
+  // proof. An unbound one (revisionId null, row not landed yet) is this request's.
+  if (panelProofBelongsToOtherRevision(query.data, revisionId)) {
     return <p className="text-xs text-gray-500">The production proof belongs to a different revision.</p>;
   }
   const recordVisible = () => {

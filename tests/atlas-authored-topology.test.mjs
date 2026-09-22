@@ -58,7 +58,10 @@ test('one authored topology preserves all six distinct source regions through pe
   const query={select(){return this},eq(){return this},order(){return this},limit(){return this},
     async maybeSingle(){return {data:null,error:null}},
     insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
-  const result=await atlas.generateOrReuseFlatAtlas({
+  // THE RETAINED SIX-SURFACE ROUTER (owner 2026-09-22: the panel production proof is the only
+  // Call 1; production never routes here). These mechanics are kept executable through the
+  // legacy router exported for exactly this purpose.
+  const result=await atlas._test.generateOrReuseFlatAtlasLegacyRouting({
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',
@@ -246,7 +249,7 @@ function runCutoutLoop(candidates) {
     async maybeSingle(){return {data:null,error:null}},
     insert(row){inserted=row;return this},async single(){return {data:inserted,error:null}}};
   const paths=candidates.map((_,i)=>`atlas-call1/55555555-5555-4555-8555-55555555555${i}.png`);
-  const done=atlas.generateOrReuseFlatAtlas({
+  const done=atlas._test.generateOrReuseFlatAtlasLegacyRouting({
     input,surfaces,geometryResolution,requestId:'11111111-1111-4111-8111-111111111111',
     generationId:'22222222-2222-4222-8222-222222222222',ownerId:'33333333-3333-4333-8333-333333333333',
     tenantKey:'user_33333333-3333-4333-8333-333333333333',claimToken:'44444444-4444-4444-8444-444444444444',

@@ -1,6 +1,6 @@
 # CLAUDE.md — designproai-os
 
-## 🏷️ CUSTOMER-FACING NAMES: DESIGNPROAI IS THE OS; VEHICLEPRO, WALLPRO, CUTPRO RUN INSIDE IT; "POWERED BY ATLAS" (owner ruling, Trish 2026-09-16)
+## 🏷️ CUSTOMER-FACING NAMES: DESIGNPROAI IS THE OS; VEHICLEPRO, WALLPRO, CUTPRO RUN INSIDE IT; NO ENGINE IS NAMED (owner ruling, Trish 2026-09-16; "Powered by Atlas" retired 2026-09-22)
 
 Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
 `app/src/lib/os-brand.ts`. Locked by `tests/os-brand-naming.test.mjs`.
@@ -15,10 +15,20 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   tool called VehiclePro"*. **CutPro** replaces "GraphicsPro" in every
   customer-facing word. **WallPro** keeps its name. Inside a tool the header
   names the tool BENEATH the DesignProAI lockup, never instead of it.
-- **Atlas is not a fourth product.** Customer copy says *Powered by Atlas* and,
-  with room, *The intelligence layer behind DesignProAI.* The A.T.L.A.S.
-  vocabulary in this file, the runtime, the gateway, tests and admin/QC
-  surfaces is engineering vocabulary and stays.
+- **No engine is named to a customer.** This bullet used to read *"Customer
+  copy says Powered by Atlas and, with room, The intelligence layer behind
+  DesignProAI."* That ruling is RETIRED — owner, 2026-09-22: *"Remove all UI
+  Powered by Atlas"* / *"Remove and hide atlas"* / *"Panel production proof is
+  source."* `ATLAS_BRAND` is deleted from `os-brand.ts` (no empty object left
+  behind), the tagline is gone from `DesignProAIHome`, `DesignPanelProPremium`,
+  `GenerateDesign`, BOTH SEO meta descriptions (`app/index.html`, `Index.tsx`)
+  and the FAQ answer, and nothing replaces it. What the customer reads instead
+  is what the product does: **Call 1 draws the three-zone Production Panel
+  Proof, and every print-ready file is cut from it.** The A.T.L.A.S. vocabulary
+  in this file, the runtime, the gateway and tests is engineering vocabulary
+  and stays — but it no longer reaches a screen, an alt text, a meta tag or a
+  crawler (`tests/no-atlas-on-human-surfaces.test.mjs` now convicts the tagline
+  in any case, and the word "topology" wherever it is visible text).
 - **This was copy, not a rename.** Keys (`designpro`, `graphicspro`,
   `wallpro`), routes (`/designpro/*`, `/graphics-pro*`, `/printpro/wallpro`),
   buckets, edge functions, tier gates, logic keys (`<FAQ productName="GraphicsPro">`,
@@ -29,7 +39,55 @@ Full record: `docs/BRAND-NAMING-2026-09-16.md`. Source of the words:
   deployed function reads.
 
 
-## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND OFF FOR CUSTOMERS (2026-09-19)
+## 🚫 NO HUMAN-READ SURFACE SAYS "ATLAS" — AND THE IDENTIFIERS STAY (owner, Trish 2026-09-21/22)
+
+Owner, looking at the live PanelPro board: *"My 3-zone is Call 1. Delete ATLAS."*
+then *"Remove all atlas references."* #596 and #597 each removed a handful of
+labels by hand and each missed the next handful, because nothing looked for
+the word. Now something does: **`tests/no-atlas-on-human-surfaces.test.mjs`**
+scans `app/src` and `gateway/src`, strips comments, and fails on any
+`A.T.L.A.S.` or word-bounded `ATLAS` that can render, toast, throw to a
+screen or land in an alt/aria/title. Verified to fail against the pre-fix
+tree (it listed 27 strings across 11 files the two hand passes had missed,
+including six multi-line JSX texts no grep for a quote could see).
+
+The words to use instead: **print master** (the sheet), **Call 1** (the
+step), **design / revision** (the lineage). Runtime error MESSAGES that reach
+a screen (StageError text, worker refusals, proof-QC reasons) were rewritten
+in the same change; runtime PROMPT text that names A.T.L.A.S. to the model is
+hash-pinned and untouched.
+
+**The scope line, and do not cross it:** this is copy, not a rename. Table
+names (`designpro_atlas_call1_runs`), storage paths (`atlas-call1-inputs/…`),
+env flags (`DESIGNPRO_ATLAS_*`), stage keys, edge modes (`atlas-artboard`),
+identifiers (`atlasBinding`, `isAtlas`, `AtlasRefusal`) and file names all
+stay. Renaming any of them touches stored rows and the deployed edge
+function, and removes no confusion a customer can see. The lock is
+case-sensitive and word-bounded precisely so it never asks for that.
+
+**"Powered by Atlas" IS in scope now, and it is removed (2026-09-22).** This
+paragraph used to exempt the tagline as the owner's own 2026-09-16 brand
+ruling. The owner retired it the same day this section was written: *"Remove
+all UI Powered by Atlas"*. The lock was extended rather than a hand pass made:
+it now convicts `/powered\s+by\s+atlas/i` on every line, scans `app/index.html`
+as well (a crawler reads that meta description), and convicts **"topology"**
+wherever it is VISIBLE text — a quoted string literal, JSX text or HTML text —
+while leaving identifiers (`authoringTopology`, `TOPOLOGY_LABEL`, `.topology`,
+`topology:` keys) legal, because those are stored-row and gateway-contract
+names. `AtlasRefusedSheets` maps every route the ledger can record — including
+`panel-proof`, which used to render as the literal "undefined" — to product
+words; the admin fact reads "Call 1 route", never "Topology".
+
+**"Panel production proof is source"** is the companion ruling, and it is a
+placement, not a word: the three-zone sheet is mounted ONCE per surface, as
+`ProductionProofSourceCard` ("Production Panel Proof · V{n} — the source of
+every print panel below"), directly ABOVE `ProductionFlowLayersCard` and the
+Order Production Files button in RevisionStudio, and above the panel board in
+PanelPro, keyed on the selected version. It wraps the one existing reader
+(`AtlasPanelProofSheetLoader`) and holds no query of its own — one reader per
+artifact, RULE 0.21. Locked by `tests/server-revision-studio.test.mjs`.
+
+## 🧩 THE THREE-ZONE PANEL PROOF: DURABLE, READABLE, AND ON (2026-09-19; flag corrected 2026-09-22)
 
 Owner, on the architecture: *"Production panel proof is source it has the 3
 zones / For panels, panels with seperated and logos and text."* Then, on the
@@ -37,10 +95,14 @@ work: *"Finish crop correctness, durable DAG execution, and immediate three-zone
 display."* — *"Keep the three-zone route off for customers until the repaired
 path passes a controlled real-generation test."*
 
-**FLAG STATE: `atlas_panel_proof: off` on the droplet** (contained at `e540012`,
-run 35460623843, `VERIFIED_WORKING`). Everything below is built and locked; none
-of it is on a customer's critical path until a controlled real generation with
-uploaded assets has passed.
+**FLAG STATE: `atlas_panel_proof: ON` on the droplet.** This paragraph used to
+say `off` (contained at `e540012`, run 35460623843). That is stale: deploy run
+**1876**'s resolved-flag banner prints `DESIGNPRO_ATLAS_PANEL_PROOF=on`, so the
+three-zone route IS the customer's Call 1 today. Read the flag line in the
+deploy log before judging a run's route — the same lesson this file records
+for `atlas_field_first`. Everything below is built and locked; the controlled
+real generation with uploaded assets that was to gate the flip is still the
+owner's acceptance standard for calling the pixels good.
 
 ### Five defects, all of them live, all found by measurement
 
@@ -171,9 +233,13 @@ production pack, which is where the cut-contour builder actually lives.
   `logos.extract` (Call 10).** Today Zone 2 replaces a white-box paint and Zone 3
   a keyed-out lift; the model draws them, which is better than either, but the
   two Calls still own those artifacts downstream.
-- **PDF delivery is still absent from the paid contract.** `output-qc.cjs`'s
-  `FORMATS` is `["png","tiff","eps"]`; `runtime/panelpro-file-output-contract.cjs`
-  exists and is not wired in.
+- ~~**PDF delivery is still absent from the paid contract.**~~ **Stale as of
+  2026-09-22.** `runtime/output-qc.cjs` `FORMATS` is now
+  `["png","tiff","eps","pdf"]` (`designpro.production-formats.v2`, with the
+  v1 triple kept as `LEGACY_FORMATS`), and `panelpro-file-output-contract.cjs`
+  is required by the claimant, the graph, the plan, the render and the service
+  modules. What has NOT changed: no fresh paid run has been opened to confirm
+  the PDF lands in the ZIP a customer downloads.
 - **`parseCustomerIntake` is a SECOND Flash call on the customer's critical path**
   inside Call 1. It is not timed separately and it is the next latency lever.
 

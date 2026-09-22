@@ -60,7 +60,7 @@ import {
   type RenderElementSeparatorHandle,
 } from "@/components/revisioniq/RenderElementSeparator";
 import { ProductionFlowLayersCard } from "@/components/revisioniq/ProductionFlowLayersCard";
-import { AtlasPanelProofSheetLoader } from "@/components/designpanelpro/AtlasPanelProofSheet";
+import { ProductionProofSourceCard } from "@/components/revisioniq/ProductionProofSourceCard";
 import { JobWorkflowHeader } from "@/components/designpro/JobWorkflowHeader";
 import { DesignPromptRecord } from "@/components/revisioniq/DesignPromptRecord";
 import { DesignLibrary } from "@/components/revisioniq/DesignLibrary";
@@ -1054,33 +1054,32 @@ function InlineVisionBoard({
 // customer artifact the server selected by role.
 // ---------------------------------------------------------------------------
 
-// InlineStoredProof — PRELOADS the saved 2D production proof for the selected
-// render and shows it inline (no dialog, no click). Resolves the canonical
-// proof URL the same way the dialog does, from the design's own projection.
-// Renders nothing until a stored proof exists, so it's always additive.
-function InlineStoredProof({ render }: { render: any }) {
+// One durable build read per selected render, shared by the two cards below
+// through the query cache (same key), so the column never asks twice.
+function useDesignBuildStatusFor(render: any) {
   const id = render?.id || null;
-  const { data: proofStatus } = useQuery({
+  return useQuery({
     queryKey: ["revstudio-inline-2dproof", id, render?.atlas_revision_id, render?._revisionRequest?.requestId],
     enabled: !!id,
     queryFn: () => getDesignBuildStatus({ generationId: String(id),
       atlasRevisionId: render?.atlas_revision_id, revisionRequest: render?._revisionRequest }),
     refetchInterval: 15000,
   });
+}
+
+// InlineStoredProof — PRELOADS the saved Call-8 2D production proof for the
+// selected render and shows it inline (no dialog, no click). Resolves the
+// canonical proof URL the same way the dialog does, from the design's own
+// projection. Renders nothing until a stored proof exists, so it's always
+// additive. The three-zone Production Panel Proof is NOT here any more: it is
+// the source artifact and is mounted once, by ProductionProofSource below,
+// directly above the print panels it produced (owner, 2026-09-22).
+function InlineStoredProof({ render }: { render: any }) {
+  const { data: proofStatus } = useDesignBuildStatusFor(render);
   const proofUrl = proofStatus?.proofUrl;
-  const panelProofSource = proofStatus?.panelProofSource;
-  if (!proofUrl && !panelProofSource) return null;
+  if (!proofUrl) return null;
   return (
-    <div className="space-y-3">
-      {panelProofSource && (
-        <AtlasPanelProofSheetLoader
-          key={panelProofSource.requestId}
-          requestId={panelProofSource.requestId}
-          revisionId={panelProofSource.revisionId || undefined}
-          pollWhilePending={Boolean(render?._revisionRequest)}
-        />
-      )}
-      {proofUrl && <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2">
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold text-zinc-200">2D Production Proof</span>
         <span className="ml-auto text-[10px] text-zinc-500">preloaded</span>
@@ -1088,8 +1087,27 @@ function InlineStoredProof({ render }: { render: any }) {
       <a href={proofUrl} target="_blank" rel="noreferrer" className="block rounded-md overflow-hidden border border-zinc-800 bg-white">
         <img src={proofUrl} alt="2D Production Proof" className="w-full object-contain" loading="eager" />
       </a>
-      </div>}
     </div>
+  );
+}
+
+// ProductionProofSource — THE SOURCE ARTIFACT, above the print panels it was
+// cut into. "Panel production proof is source" (Trish 2026-09-22). Fed from
+// the same per-revision `panelProofSource` the build status already resolves;
+// this adds no reader of its own. Renders nothing until the revision has a
+// request to read.
+function ProductionProofSource({ render }: { render: any }) {
+  const { data: proofStatus } = useDesignBuildStatusFor(render);
+  const source = proofStatus?.panelProofSource;
+  if (!source) return null;
+  return (
+    <ProductionProofSourceCard
+      key={source.requestId}
+      requestId={source.requestId}
+      revisionId={source.revisionId}
+      version={source.version}
+      pollWhilePending={Boolean(render?._revisionRequest)}
+    />
   );
 }
 
@@ -1251,7 +1269,7 @@ function StoredOrGenerated2DProof({
       const code = String(error?.message || error);
       if (code === "flat_first_production_gate_required" || code === "generation_not_ready_for_production") {
         toast.error(
-          "The A.T.L.A.S. master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
+          "The print master for this design has not been accepted yet, so there is nothing to build a proof from. It will start by itself the moment it lands.",
         );
         return;
       }
@@ -6296,6 +6314,12 @@ export default function RevisionStudioIQ() {
                     Open PanelProFileOutput
                   </Button>
                 )}
+
+                {/* THE SOURCE, THEN WHAT WAS CUT FROM IT. The three-zone
+                    Production Panel Proof sits directly above the print panels
+                    and the Order button (owner, 2026-09-22: "Panel production
+                    proof is source"). One reader of the artifact, mounted once. */}
+                <ProductionProofSource render={selectedInspectionRender} />
 
                 <ProductionFlowLayersCard
                   // A panelizer-sourced card's `id` was a job id —

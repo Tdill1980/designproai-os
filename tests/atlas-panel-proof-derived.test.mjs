@@ -115,12 +115,39 @@ test("the three-zone production proof is built from the accepted master's own pa
   assert.match(result.provenance.sourceArtwork.contentHash, /^[0-9a-f]{64}$/);
 });
 
+test("the derived receipt carries the four fields the logo-placement handoff requires", async () => {
+  // `designpro_private.panel_proof_logo_inventory` (migration 20260920022906)
+  // requires `threeZoneLayout`, `composition.contract`,
+  // `composition.sourceAssetsPreserved` and `masterSha256`. The derived receipt
+  // omitted all four, so every REVISION of a logo design failed its handoff
+  // with `generation_logo_placement_manifest_required` -- live, 2026-09-22.
+  // They mirror the authored receipt field for field.
+  const { result } = await derive();
+  const p = result.provenance;
+  assert.deepEqual(Object.keys(p.threeZoneLayout).sort(),
+    ["backgrounds", "branded", "graphics", "graphicsFormat", "productionApproved", "required"]);
+  assert.equal(p.threeZoneLayout.required, true);
+  assert.equal(p.threeZoneLayout.branded, 6);
+  assert.equal(p.threeZoneLayout.backgrounds, 6);
+  assert.equal(p.threeZoneLayout.graphics, 2);
+  assert.equal(p.threeZoneLayout.graphicsFormat, "vector-originals");
+  assert.equal(p.composition.contract, "designpro.production-zone-composite.v1");
+  assert.equal(p.composition.sourceAssetsPreserved, true);
+  assert.ok(Array.isArray(p.composition.panels) && p.composition.panels.length === 6);
+  assert.ok(Array.isArray(p.composition.omitted));
+  // `masterSha256` names the accepted master the document was derived FROM.
+  assert.equal(p.masterSha256, p.sourceArtwork.contentHash);
+  assert.match(p.masterSha256, /^[0-9a-f]{64}$/);
+});
+
 test("the derived proof can never be mistaken for a master", async () => {
   const { result } = await derive();
   // `bytes` and `contentHash` are how a caller names a master. This path has no
   // master to name -- the accepted one already exists and is already the
   // authority -- and a receipt carrying them is the two-master ambiguity the
   // 2026-08-31 ruling retired and the v28 composite shipped again.
+  // (`provenance.masterSha256` names the accepted master it was derived from;
+  // it is not a top-level `contentHash`, and the topology still says derived.)
   assert.equal(result.bytes, undefined);
   assert.equal(result.contentHash, undefined);
   assert.equal(result.provenance.topology, "derived-from-accepted-master");

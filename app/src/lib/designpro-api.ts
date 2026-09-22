@@ -212,7 +212,8 @@ export type FlatAtlasCallOnePanel = {
  */
 export type AtlasRefusal = {
   id: string;
-  topology: "six-surface" | "field" | "hero-driver";
+  /** The Call-1 route that drew the candidate; `panel-proof` is the three-zone route. */
+  topology: "six-surface" | "field" | "hero-driver" | "panel-proof";
   attempt: number;
   code: string;
   reason: string;

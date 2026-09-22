@@ -15,10 +15,14 @@
  *     VehiclePro — vehicle graphics        (was "DesignPro" / "DesignProAI" in the tool)
  *     WallPro    — wall and environmental graphics
  *     CutPro     — cut graphics            (was "GraphicsPro" in customer-facing copy)
- *   Powered by Atlas
  *
- * Atlas is NOT a fourth tool. It is the intelligence/orchestration layer, and
- * it never competes with the three tools in navigation.
+ * No engine, intelligence layer or internal pipeline name is presented to a
+ * customer (owner, Trish 2026-09-22: "Remove all UI Powered by Atlas" /
+ * "Remove and hide atlas"). The "Powered by Atlas" tagline of 2026-09-16 is
+ * retired; nothing replaces it. What the customer is told instead is what the
+ * product does: Call 1 draws the three-zone Production Panel Proof, and every
+ * print-ready file is cut from that one sheet. Internal identifiers that carry
+ * the old engine name stay -- they are plumbing, not copy.
  *
  * Terminology that stays consistent: "Prompt-Based Design",
  * "Production-Ready File Output", "Design-to-Production OS", "Wide Format".
@@ -40,13 +44,6 @@ export const OS_BRAND = {
     "Create professional graphics from a prompt, refine the design, and generate production-ready output—all inside one purpose-built wide-format operating system.",
   /** Document-title suffix for every page. */
   titleSuffix: "DesignProAI — Prompt-Based Design + Production-Ready File Output",
-} as const;
-
-export const ATLAS_BRAND = {
-  /** The one line Atlas gets wherever it is mentioned to a customer. */
-  poweredBy: "Powered by Atlas",
-  /** The explanation, when there is room for one. */
-  explanation: "The intelligence layer behind DesignProAI.",
 } as const;
 
 export type OsToolKey = "vehiclepro" | "wallpro" | "cutpro";

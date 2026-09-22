@@ -3096,6 +3096,63 @@ test("refused Atlas candidates are listed with their verdicts and signed for the
   assert.equal(calls.filter((item) => item.url.includes("/storage/v1/object/sign/")).length, 2);
 });
 
+test("a refused three-zone (panel-proof) candidate is listed, not a 502 for the whole ledger", async (t) => {
+  // The runtime records a refused three-zone sheet under topology `panel-proof`
+  // (PANEL_PROOF_TOPOLOGY). The validator admitted only the three older routes,
+  // so ONE such row made this route answer atlas_refusals_response_invalid and
+  // the owner saw no refused sheets at all on exactly the route being judged.
+  const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestId = "10000000-0000-4000-8000-000000000013";
+  const sheetPath = "atlas-call1/c0ffee00-492b-49dd-b3d3-a51432358707.jpg";
+  const server = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_refusal_paths")) {
+        return Response.json([
+          { id: "50000000-0000-4000-8000-000000000003", requestId, generationId: "90000000-0000-4000-8000-000000000013",
+            topology: "panel-proof", attempt: 1, code: "flat_atlas_panel_proof_refused",
+            reason: "zone 1 fit 0.41 below 0.90", storagePath: sheetPath, sha256: "c".repeat(64),
+            byteSize: 100, contentType: "image/jpeg", model: "gemini-3-pro-image", createdAt: "2026-09-22T10:00:00Z" },
+        ]);
+      }
+      if (value.includes("/storage/v1/object/sign/")) return Response.json({ message: "not allowed" }, { status: 400 });
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${requestId}/atlas-refusals`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(response.status, 200);
+  const rows = await response.json();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].topology, "panel-proof");
+  assert.equal(rows[0].reason, "zone 1 fit 0.41 below 0.90");
+  assert.equal("storagePath" in rows[0], false);
+  // An unknown route is still refused: the allowlist is widened, not removed.
+  const bad = createGateway({
+    env,
+    fetchImpl: async (url) => {
+      const value = String(url);
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: userId });
+      if (value.endsWith("/rest/v1/rpc/designpro_atlas_refusal_paths")) {
+        return Response.json([{ id: "50000000-0000-4000-8000-000000000004", requestId, topology: "made-up", attempt: 1,
+          code: "x", reason: "y", storagePath: sheetPath, sha256: "d".repeat(64) }]);
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  t.after(() => bad.close());
+  const badBase = await listen(bad);
+  const refused = await fetch(`${badBase}/api/generation/requests/${requestId}/atlas-refusals`, {
+    headers: { cookie: "dp_session=test-token" },
+  });
+  assert.equal(refused.status, 502);
+});
+
 // ── THE THREE-ZONE PRODUCTION PANEL PROOF ─────────────────────────────────
 //
 // The whole point of the route: the sheet Call 1 drew plus the Zone 2 (clean)

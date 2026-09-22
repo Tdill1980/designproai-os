@@ -4,11 +4,20 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
- * Customer-facing naming and positioning (owner ruling, Trish 2026-09-16).
+ * Customer-facing naming and positioning (owner ruling, Trish 2026-09-16;
+ * tagline retired 2026-09-22).
  *
  *   DESIGNPROAI — Prompt-Based Design + Production-Ready File Output
  *     VehiclePro · WallPro · CutPro
- *   Powered by Atlas
+ *
+ * "Powered by Atlas" was the fourth line of that hierarchy for six days. Owner,
+ * 2026-09-22: "Remove all UI Powered by Atlas" / "Remove and hide atlas". No
+ * engine or intelligence-layer name is presented to a customer any more; the
+ * copy says what the product does instead (Call 1 draws the three-zone
+ * Production Panel Proof; every print-ready file is cut from it). The word is
+ * now convicted on every human-read surface by
+ * tests/no-atlas-on-human-surfaces.test.mjs; this file locks that the brand
+ * source no longer offers it.
  *
  * This is BRAND / UI COPY. The internal identifiers -- navigation keys,
  * routes, buckets, edge functions, tier keys -- are deliberately unchanged,
@@ -37,8 +46,10 @@ const APP = read("app/src/App.tsx");
 test("os-brand.ts states the hierarchy the customer must read at a glance", () => {
   assert.match(BRAND, /positioning: "Prompt-Based Design \+ Production-Ready File Output"/);
   assert.match(BRAND, /hero: "The Design-to-Production OS Built for Wide Format\."/);
-  assert.match(BRAND, /poweredBy: "Powered by Atlas"/);
-  assert.match(BRAND, /explanation: "The intelligence layer behind DesignProAI\."/);
+  // The retired tagline is gone from the brand source: no export offers it,
+  // so no surface can import it back.
+  assert.doesNotMatch(BRAND, /ATLAS_BRAND/);
+  assert.doesNotMatch(stripComments(BRAND), /powered by atlas|intelligence layer/i);
   for (const [name, tagline] of [
     ["VehiclePro", "Prompt-Based Vehicle Graphics Design + Production-Ready File Output"],
     ["WallPro", "Prompt-Based Wall Graphics Design + Production-Ready File Output"],
@@ -124,11 +135,24 @@ test("the OS-side WallPro tagline is the hierarchy line; the partner page keeps 
   assert.match(brand, /eyebrow: 'WePrintWraps',[\s\S]{0,900}tagline: 'Custom Wall Wrap design, print files & printed wrap'/);
 });
 
-test("Atlas is 'Powered by Atlas', never a fourth product", () => {
-  for (const path of ["app/src/pages/DesignPanelProPremium.tsx", "app/src/pages/DesignProAIHome.tsx"]) {
+test("no surface names an engine to the customer: the tagline is retired everywhere, including SEO and the FAQ", () => {
+  for (const path of [
+    "app/src/pages/DesignPanelProPremium.tsx",
+    "app/src/pages/DesignProAIHome.tsx",
+    "app/src/pages/designpro/GenerateDesign.tsx",
+    "app/src/pages/Index.tsx",
+    "app/index.html",
+  ]) {
     const source = stripComments(read(path));
-    assert.match(source, /ATLAS_BRAND\.poweredBy/, `${path} names Atlas through os-brand.ts`);
+    assert.doesNotMatch(source, /ATLAS_BRAND/, `${path} still imports the retired brand object`);
+    assert.doesNotMatch(source, /powered by atlas/i, `${path} still carries the retired tagline`);
+    assert.doesNotMatch(source, /intelligence layer behind/i, `${path} still explains an engine to the customer`);
     assert.doesNotMatch(source, /A\.T\.L\.A\.S\. graph active/, `${path} no longer shows the engineering label to the customer`);
+  }
+  // What replaced it is the product, in the owner's words: the three-zone
+  // Production Panel Proof is Call 1 and the source of every print-ready file.
+  for (const path of ["app/src/pages/DesignPanelProPremium.tsx", "app/src/pages/DesignProAIHome.tsx", "app/src/pages/designpro/GenerateDesign.tsx"]) {
+    assert.match(stripComments(read(path)), /Production Panel Proof/, `${path} names the source artifact`);
   }
 });
 

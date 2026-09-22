@@ -38,7 +38,7 @@ describe("refused ATLAS candidates on the failure screen", () => {
     const html = renderToStaticMarkup(<AtlasRefusedSheets refusals={refusals} status="success" />);
     expect(html).toContain("why each sheet was refused (2)");
     expect(html).toContain('src="https://dp-project.supabase.co/storage/v1/object/sign/wrap-files/sheet?token=one"');
-    expect(html).toContain("Six-surface ATLAS sheet · try 2");
+    expect(html).toContain("Six-surface sheet · try 2");
     expect(html).toContain("vehicle shapes cut out of the panel");
     expect(html).toContain("one wheel/glass/bed shape cut out of the panel");
     // The field candidate had no signed URL: listed with its verdict, no <img>.
@@ -49,6 +49,17 @@ describe("refused ATLAS candidates on the failure screen", () => {
     expect(html.match(/<img /g)?.length).toBe(1);
     // Storage identity never renders: the sha256 is data for the API, not the customer.
     expect(html).not.toContain("a".repeat(64));
+  });
+
+  it("names the three-zone route in product words, never as undefined", () => {
+    // The runtime records a refused three-zone candidate under `panel-proof`;
+    // before this label existed the strip printed "undefined · try 1".
+    const html = renderToStaticMarkup(<AtlasRefusedSheets status="success" refusals={[{
+      ...refusals[1], id: "50000000-0000-4000-8000-000000000003", topology: "panel-proof",
+    }]} />);
+    expect(html).toContain("Production panel proof · try 1");
+    expect(html).not.toContain("undefined");
+    expect(html).not.toMatch(/topolog/i);
   });
 
   it("says so when no candidate reached the gates, and renders nothing on a read error", () => {

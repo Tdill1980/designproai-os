@@ -83,7 +83,7 @@ test("an unsupported vehicle is still refused before the brief is written", () =
 });
 
 test("the operating UI exposes only the current A.T.L.A.S. graph", () => {
-  assert.match(ui, /One A\.T\.L\.A\.S\. artifact graph/);
+  assert.match(ui, /One artifact graph/);
   assert.match(ui, /const pipelineMode: GenerationPipelineMode = FLAT_FIRST_ATLAS_PIPELINE_MODE/);
   assert.doesNotMatch(ui, /Legacy production|Choose how this run starts|flat-first test/);
   assert.doesNotMatch(ui, /Diagnostic isolation|Proofs-only test/);

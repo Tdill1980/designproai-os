@@ -173,7 +173,7 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     icon: Factory,
     pillar: "output",
     tier: "starter",
-    description: "The production control room — A.T.L.A.S. master, panels, proofs, downloads and the human QC checklist",
+    description: "The production control room — print master, panels, proofs, downloads and the human QC checklist",
   },
   {
     key: "panelprofileoutput",
