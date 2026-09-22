@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useHeaderHeight } from "@/hooks/useHeaderHeight";
 import { Link, useLocation } from "react-router-dom";
-import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame } from "lucide-react";
+import { Lock, Sparkles, Crown, Shield, Layers, HelpCircle, BookOpen, Frame, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserTier } from "@/hooks/useUserTier";
 import { TIER_HIERARCHY, TIER_LABELS, type Tier } from "@/hooks/useToolAccess";
@@ -401,6 +401,61 @@ const SidebarBody = ({ onNavigate }: SidebarBodyProps) => {
                   questions the tool cannot answer about itself. Not admin-only
                   -- these are customer pages, and the wall buyer who wants a
                   price before measuring anything is the one they exist for. */}
+              {/* THE LANDING PAGES ARE BACK IN THE NAVIGATION (owner,
+                  2026-09-22: "Also bring back landing pages / They need to be
+                  in os.Designproai navigation").
+                  They were never deleted -- /wallpro has served the dark
+                  WallProLanding all along -- but NOTHING in this OS linked to
+                  them. Every WallPro affordance (this rail, the bottom tabs,
+                  the dashboard tile) pointed at /printpro/wallpro, the tool, so
+                  the landing was reachable only by typing the URL and read as
+                  gone. It sits first among the sub-links because it is the page
+                  the other two are reached from on the public side. */}
+              {tool.key === "wallpro" && (
+                <SidebarTooltip
+                  title="WallPro — overview"
+                  description="The public WallPro page: the hero before and after, the case study on a real measured wall, and the seven steps from photo to print-ready files"
+                >
+                  <Link
+                    to="/wallpro"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/wallpro")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <Home className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Overview</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
+              {/* The PARTNER landing, beside the partner tool that is already
+                  in this rail (wallpro_wpw). Same reasoning the owner gave for
+                  the tenant tools on 2026-09-16 -- "I should see both on
+                  navigation left side, so I can show WPW and also sell" -- and
+                  a demo of what a franchise gets is exactly what it is. */}
+              {tool.key === "wallpro_wpw" && (
+                <SidebarTooltip
+                  title="WPW × WallPro — overview"
+                  description="The WePrintWraps landing page in the white partner UI, the page a shop's own customers land on"
+                >
+                  <Link
+                    to="/wall-wrap"
+                    onClick={onNavigate}
+                    className={cn(
+                      "ml-5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition border-l",
+                      isActive("/wall-wrap")
+                        ? "bg-white/15 text-white border-white/60"
+                        : "text-white/70 border-white/15 hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <Home className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Overview</span>
+                  </Link>
+                </SidebarTooltip>
+              )}
               {tool.key === "wallpro" && (
                 <SidebarTooltip
                   title="WallPro — prices & FAQ"

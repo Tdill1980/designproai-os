@@ -135,7 +135,7 @@ const GYM: WallCaseStudy = {
     // so it stays. The AFTER is the retracted generation and is deleted from the
     // build; this names the file it needs, not a file that exists.
     before: '/wallpro/proof-gym-before.jpg',
-    after: '/wallpro/proof-gym-after-REPLACEMENT-REQUIRED.jpg',
+    after: '/wallpro/proof-gym-after.jpg',
     artwork: null,
   },
   alt: {
@@ -145,8 +145,20 @@ const GYM: WallCaseStudy = {
     artwork: 'The generated artwork for the gym wall',
     installed: 'The finished gym with the mural installed behind the racks',
   },
-  maskCapture: null,
-  withheld: 'The generated "after" artwork carried a real company trademark and was retracted 2026-09-21. Needs a clean generation before it can be published.',
+  maskCapture: '/wallpro/proof-gym-mask.jpg',
+  /**
+   * PUBLISHED 2026-09-22. The one thing held against it -- a real company's
+   * wordmark in the generated mural -- has been removed from the frame; see
+   * WALL_PROOFS in wallpro-brand.ts for exactly where it was and how.
+   *
+   * STILL FLAGGED, and it is a ONE-WORD answer: the owner gave "120\" x 240\""
+   * and the order is read off the photograph, not the message, because every
+   * figure this page prints (panel count, linear feet, price, repeat width)
+   * follows from these two numbers. 240 wide x 120 high is a wall twice as
+   * wide as it is high, which is the wall in proof-gym-*.jpg. If it is the
+   * other way round, swap the two values above and nothing else changes.
+   */
+  withheld: null,
 };
 
 export const ALL_CASE_STUDIES: WallCaseStudy[] = [STUDIO, GYM];
