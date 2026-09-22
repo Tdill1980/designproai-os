@@ -168,7 +168,13 @@ select pg_temp.seed(
 select pg_temp.seed(
   '62000000-0000-4000-8000-00000000000c','63000000-0000-4000-8000-00000000000c',
   '65000000-0000-4000-8000-00000000000c','64000000-0000-4000-8000-00000000000c',
-  'noproof',(select logo from logo_b),NULL
+  'noproof',
+  -- Its own logo, under its own generation id: the asset-binding trigger
+  -- refuses a logo path that names another generation.
+  (select jsonb_set(logo,'{storagePath}',
+    to_jsonb('users/61000000-0000-4000-8000-000000000001/revisions/63000000-0000-4000-8000-00000000000c/inputs/logo/'||pg_temp.sha('logo-b')||'.png'))
+   from logo_b),
+  NULL
 );
 
 -- 1-2. The installed body is the patched one, and the logo branch survived it.
