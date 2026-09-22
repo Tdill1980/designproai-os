@@ -58,7 +58,7 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
  * never sign for it.
  */
 export const PACK_PRESENCE_CHECKS: Array<[string, string]> = [
-  ["atlasPresent", "A.T.L.A.S. master present, with its Generation ID"],
+  ["atlasPresent", "Print master present, with its Generation ID"],
   ["designIdPresent", "Design ID present"],
   ["sevenProofsPresent", "All 7 3D proofs present and descended from this A.T.L.A.S. revision"],
   ["proofsIndividuallyPresent", "Each 3D proof is its own file, individually downloadable"],

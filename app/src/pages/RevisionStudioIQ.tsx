@@ -4958,7 +4958,7 @@ export default function RevisionStudioIQ() {
                       <Badge
                         variant="outline"
                         className="border-zinc-600 text-zinc-300 text-[11px] font-mono cursor-pointer hover:bg-zinc-700/40"
-                        title="A.T.L.A.S. Generation ID — click to copy"
+                        title="Generation ID — click to copy"
                         onClick={() => {
                           const fullId = String(genIdOf(selectedRender) || selectedRender?.id || "");
                           if (fullId) {

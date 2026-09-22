@@ -898,7 +898,7 @@ function AtlasProgressCard({
           <a href={atlas.masterUrl} target="_blank" rel="noreferrer" className="block">
             <img
               src={atlas.masterUrl}
-              alt={`Flattened A.T.L.A.S. master, revision ${atlas.revisionSequence}`}
+              alt={`Print master, revision ${atlas.revisionSequence}`}
               loading="lazy"
               className="max-h-[26rem] w-full rounded border border-gray-200 bg-white object-contain"
             />
