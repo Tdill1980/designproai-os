@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { inflateSync } from 'node:zlib';
 import sharp from 'sharp';
 import JSZip from 'jszip';
-import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, tileCoordinate, SEAM_RATIO_MAX } from '../wallpro-seamless';
+import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, tileCoordinate, SEAM_RATIO_MAX } from '../wallpro-seamless';
 import { artworkPoint } from '../wallpro-geometry';
 import { assertSeamlessForPrint, buildWallPrintPack } from '../wallpro-print-export';
 import { DEFAULT_WALL_PRINT } from '../wallpro-print-plan';
@@ -41,15 +41,43 @@ describe('WallPro seam measurement', () => {
     expect(Buffer.compare(Buffer.from(blendSeamless(data, size, size)), Buffer.from(blended))).toBe(0);
     expect(() => blendSeamless(data, size, size, 0.6)).toThrow();
   });
-  it('chooses verified-as-generated only when the measurement proves it, otherwise mirror', () => {
+  /**
+   * ⚠️ THIS CASE USED TO ENCODE THE DEFECT, AND ITS OWN TITLE SAID SO.
+   *
+   * It read "chooses verified-as-generated only when the measurement proves
+   * it, OTHERWISE MIRROR" and asserted exactly that — so the customer path's
+   * straight-to-kaleidoscope fallback was pinned as correct behaviour while
+   * the batch path (`batchSeamDecision`, 2026-09-14) had already been fixed to
+   * climb blend first. A green suite sat over two halves of one product
+   * disagreeing about the same tile. It now pins the ladder both halves share.
+   */
+  it('climbs verified → blend → mirror, and only reaches mirror when a MEASURED blend fails', () => {
     const bad = gradientTile(), good = periodicTile();
-    expect(chooseSeamlessMethod(measureSeam(good.data, good.size, good.size), 'auto')).toBe('verified');
-    expect(chooseSeamlessMethod(measureSeam(bad.data, bad.size, bad.size), 'auto')).toBe('mirror');
-    expect(chooseSeamlessMethod(measureSeam(bad.data, bad.size, bad.size), 'blend')).toBe('blend');
-    const badReport = measureSeam(bad.data, bad.size, bad.size);
-    expect(seamlessReceipt('auto', badReport, null).verified).toBe(true); // mirror by construction
-    expect(seamlessReceipt('blend', badReport, badReport).verified).toBe(false); // blend must be re-measured
-    expect(seamlessReceipt('blend', badReport, measureSeam(blendSeamless(bad.data, bad.size, bad.size), bad.size, bad.size)).verified).toBe(true);
+    const badReport = measureSeam(bad.data, bad.size, bad.size), goodReport = measureSeam(good.data, good.size, good.size);
+    const blendedOk = measureSeam(blendSeamless(bad.data, bad.size, bad.size), bad.size, bad.size);
+    expect(blendedOk.seamless).toBe(true);
+
+    expect(seamLadder(goodReport, null, 'auto')).toBe('verified');
+    // The whole fix: a tile that does not join is BLENDED, not flipped.
+    expect(seamLadder(badReport, blendedOk, 'auto')).toBe('blend');
+    // Mirror survives as the last rung — a blend that was run and did not close.
+    expect(seamLadder(badReport, badReport, 'auto')).toBe('mirror');
+    // ...and as the answer when no blend was attempted at all, which is what a
+    // caller that skips the attempt is really saying.
+    expect(seamLadder(badReport, null, 'auto')).toBe('mirror');
+    // An explicit preference is obeyed whatever the pixels say.
+    expect(seamLadder(goodReport, null, 'mirror')).toBe('mirror');
+    expect(seamLadder(badReport, null, 'blend')).toBe('blend');
+
+    // A blend is attempted exactly when it could change the answer.
+    expect(shouldTryBlend(badReport, 'auto')).toBe(true);
+    expect(shouldTryBlend(goodReport, 'auto')).toBe(false);
+    expect(shouldTryBlend(goodReport, 'blend')).toBe(true);
+    expect(shouldTryBlend(badReport, 'mirror')).toBe(false);
+
+    expect(seamlessReceipt('auto', badReport, null, 'mirror').verified).toBe(true); // mirror by construction
+    expect(seamlessReceipt('blend', badReport, badReport, 'blend').verified).toBe(false); // blend must be re-measured
+    expect(seamlessReceipt('blend', badReport, blendedOk, 'blend').verified).toBe(true);
   });
   it('mirror repeat maps every join onto its own copy, in preview sampling and print geometry alike', () => {
     expect(tileCoordinate(1.25, true)).toEqual({ index: 1, u: 0.75 });
@@ -82,7 +110,7 @@ describe('WallPro print export seam gate', () => {
   it('refuses a repeat without a verified seam receipt and accepts murals without one', async () => {
     const bytes = await tile(600);
     const bad = gradientTile();
-    const unverified = seamlessReceipt('blend', measureSeam(bad.data, bad.size, bad.size), measureSeam(bad.data, bad.size, bad.size));
+    const unverified = seamlessReceipt('blend', measureSeam(bad.data, bad.size, bad.size), measureSeam(bad.data, bad.size, bad.size), 'blend');
     await expect(buildWallPrintPack({ name: 'No receipt', layout, settings: DEFAULT_WALL_PRINT, source: { bytes, width: 600, height: 600 } })).rejects.toThrow('seam check');
     await expect(buildWallPrintPack({ name: 'Unverified', layout, settings: DEFAULT_WALL_PRINT, source: { bytes, width: 600, height: 600 }, seamless: unverified })).rejects.toThrow('does not join');
     expect(() => assertSeamlessForPrint({ ...layout, mirror: true }, seamlessReceipt('blend', unverified.before, unverified.after, 'blend'))).toThrow('disagree');
@@ -91,7 +119,10 @@ describe('WallPro print export seam gate', () => {
   it('prints mirror repeat with flipped odd tiles and records the receipt in the manifest', async () => {
     const bytes = await tile(600);
     const bad = gradientTile();
-    const receipt = seamlessReceipt('auto', measureSeam(bad.data, bad.size, bad.size), null);
+    // Mirror is now the LAST rung, so this fixture states it outright: a
+    // blend was run against this tile and did not close it.
+    const badReport = measureSeam(bad.data, bad.size, bad.size);
+    const receipt = seamlessReceipt('auto', badReport, null, seamLadder(badReport, badReport, 'auto'));
     expect(receipt.method).toBe('mirror');
     const pack = await buildWallPrintPack({ name: 'Mirror', layout: { ...layout, mirror: true }, settings: DEFAULT_WALL_PRINT, source: { bytes, width: 600, height: 600 }, seamless: receipt });
     const zip = await JSZip.loadAsync(pack.zip);
@@ -106,7 +137,8 @@ describe('WallPro print export seam gate', () => {
     expect(content).toMatch(new RegExp(`1\\. 0\\. 0\\. -1\\. 0\\. ${n} cm`));
     expect(content).toMatch(new RegExp(`-1\\. 0\\. 0\\. -1\\. ${n} ${n} cm`));
     expect(await zip.file('PRINT-INSTRUCTIONS.txt')!.async('string')).toContain('mirror repeat');
-    const verified = seamlessReceipt('auto', measureSeam(periodicTile().data, 96, 96), null);
+    const goodReport = measureSeam(periodicTile().data, 96, 96);
+    const verified = seamlessReceipt('auto', goodReport, null, seamLadder(goodReport, null, 'auto'));
     expect(verified.method).toBe('verified');
     const plain = await buildWallPrintPack({ name: 'Verified', layout, settings: DEFAULT_WALL_PRINT, source: { bytes, width: 600, height: 600 }, seamless: verified });
     expect(pageContentStreams(plain.files[0].bytes).join('\n')).not.toMatch(/-1\. 0\. 0\. /);

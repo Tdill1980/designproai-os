@@ -28,16 +28,17 @@ import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
 import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
 import { WallProSidebar, WallProStepStrip } from '@/components/wallpro/WallProSidebar';
+import { WallProStepBoard, WallProOutcomes, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
-import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
+import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
-import { autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { WALL_STYLE_CHIPS, appendStyleChip, autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, wallFreeReason, saveWallItemsFile, readWallItemsFile, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -265,6 +266,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // photo pane stays on the photo and says what it needs. Print files never
   // wait on this; they are built from the flat master.
   const wallLocated = cornersValidNow && cornerSource !== 'default';
+  /**
+   * A FROZEN SENTENCE NEXT TO LIVE STATE WILL EVENTUALLY LIE (2026-09-22).
+   *
+   * The owner photographed one screen carrying BOTH "Corners set. Nothing on
+   * this wall needs keeping — the design covers it all" and, underneath it,
+   * "Mark your wall to see the design on it". Two statements about the same
+   * wall that cannot both be true.
+   *
+   * The card is DERIVED — it re-reads `wallLocated` every render and is always
+   * right. The notice is a string written once and left there, so any path that
+   * later invalidates the corners strands a claim about them on screen. Rather
+   * than hunt the one ordering that did it, the contradiction is made
+   * structurally impossible: a notice cannot outlive the wall state it was
+   * written against.
+   *
+   * ONLY on the FALSE edge, deliberately. `markPoint` writes "Corners set…"
+   * in the same tick that flips this true, and clearing on the true edge would
+   * wipe the message the customer is meant to read. Losing the corners is what
+   * turns such a message into a lie, and that is the edge this catches.
+   */
+  const wasLocated = useRef(wallLocated);
+  useEffect(() => {
+    if (wasLocated.current && !wallLocated) setNotice('');
+    wasLocated.current = wallLocated;
+  }, [wallLocated]);
   /** Whether the OS AppShell already owns a rail around this page. Read, never
    *  re-derived: it is the same predicate AppShell itself branches on. */
   const insideOsShell = useInsideAppShell();
@@ -515,17 +541,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       ctx.drawImage(image, 0, 0);
       const pixels = ctx.getImageData(0, 0, tile.width, tile.height);
       const before = measureSeam(pixels.data, tile.width, tile.height);
-      const method = chooseSeamlessMethod(before, seamPreference);
-      let after: SeamReport | null = null, tiled: WallAsset = artwork;
-      if (method === 'blend') {
-        const blended = blendSeamless(pixels.data, tile.width, tile.height);
+      // THE BLEND IS ATTEMPTED BEFORE MIRROR IS CHOSEN, NOT AFTER (2026-09-22).
+      // `seamLadder` cannot prefer the blend over the flip on a promise — the
+      // crossfade has to be run and MEASURED, because whether it closes this
+      // particular tile is a fact about these pixels. It is ~one pass over the
+      // tile on a canvas she is already looking at, and it is what stands
+      // between her design and a kaleidoscope.
+      let blended: Uint8ClampedArray | null = null, after: SeamReport | null = null;
+      if (shouldTryBlend(before, seamPreference)) {
+        blended = blendSeamless(pixels.data, tile.width, tile.height);
         after = measureSeam(blended, tile.width, tile.height);
+      }
+      const method = seamLadder(before, after, seamPreference);
+      let tiled: WallAsset = artwork;
+      if (method === 'blend' && blended) {
         ctx.putImageData(new ImageData(blended, tile.width, tile.height), 0, 0);
         const blob = await canvasBlob(tile);
         if (!active) return;
         owned = URL.createObjectURL(blob);
         // Derived deterministically from the stored artwork; never uploaded itself.
         tiled = { url: owned, aspect: artwork.aspect };
+      } else {
+        // A measured blend that did not close the tile is evidence about the
+        // blend, not about what prints. The receipt carries `before` alone so
+        // nothing downstream reads a rejected repair as the shipped pixels.
+        after = null;
       }
       tile.width = 1; tile.height = 1;
       if (!active) return;
@@ -1419,6 +1459,41 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * same fact a button is gated on -- a rail that congratulated you on a step
    * you had not finished would be worse than no rail.
    */
+  /** Scroll a step's own section to the top of the page, under the header. */
+  const jumpToStep = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  /**
+   * THE FOUR CARDS, EACH REPORTING ITS OWN FACT.
+   *
+   * The owner's mockup numbering, not the page's old one: making "Select wall
+   * area" a numbered step is her answering her own complaint, because that is
+   * the step she kept failing to find — it was never a step, it lived inside
+   * step 1's photo block below the fold.
+   *
+   * `detail` is a FACT, never an adjective, the same rule the rail already
+   * follows: a decorative checklist tells the customer nothing about where the
+   * job actually is. Each action does the work rather than naming another
+   * button — the lesson "Mark the corners" already learned.
+   */
+  const boardSteps: BoardStep[] = [
+    { id: 'upload-wall', n: 1, label: 'Upload your wall', icon: Upload, done: !!photo, preview: photo?.url ?? null,
+      detail: photo ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Any photo from your phone, including iPhone HEIC. JPG, PNG, HEIC, max 20 MB.',
+      action: { label: photo ? 'Replace photo' : 'Upload your wall', onClick: () => uploadInputs.current.photo?.click() } },
+    { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: photo?.url ?? null,
+      detail: !photo ? 'Upload a wall photo first. Print files never wait for this.'
+        : wallLocated ? `Corners set ${cornerSource === 'detected' ? 'automatically' : 'by you'}${exclusions.length || items.length ? ` - ${exclusions.length + items.length} protected` : ''}`
+          : detecting ? 'Looking for your wall...' : 'Tap the four corners, clockwise from the top left. We exclude windows, doors and furniture.',
+      action: photo ? { label: wallLocated ? 'Re-mark the corners' : 'Mark the corners', onClick: () => {
+        cornersOrigin.current = 'manual'; setCornerSource('manual');
+        setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before'); focusPhoto();
+      } } : undefined },
+    { id: 'choose-design', n: 3, label: 'Describe your design', icon: Settings2, done: !!artwork || prompt.trim().length > 0,
+      detail: artwork ? WALL_DESIGN_SKUS[designMode].label : prompt.trim() ? prompt.trim().slice(0, 90) : 'Try "modern tropical, dark background". More ways to start are under it.',
+      action: { label: 'Describe it', onClick: () => jumpToStep('choose-design') } },
+    { id: 'wall-preview', n: 4, label: 'Generate & preview', icon: ImageIcon, done: !!artwork, preview: artwork?.url ?? null,
+      detail: artwork ? (photo && wallLocated ? 'Flat master and imposed on your wall' : 'Flat master ready') : 'Get options in seconds, then print-ready files.',
+      action: { label: generateLabel, onClick: () => void generate(), disabled: generateDisabled } },
+  ];
+
   const wallSteps = [
     { id: 'upload-wall', label: 'Your wall', done: width > 0 && height > 0,
       detail: width > 0 && height > 0 ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Width and height' },
@@ -1738,7 +1813,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         <span className="shrink-0 font-semibold text-white">Order film &rarr;</span>
       </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
-      {notice && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm">{notice}</p>}
+      {/* WHITE ON WHITE. The owner photographed it on 2026-09-22: a notice card
+          with no readable text in it at all.
+
+          `bg-sky-50` is near-white and this element set NO colour, so it
+          inherited the page's — which under `data-wall-theme="designpro"` is
+          `--wall-ink` at 98% lightness. Light text on a light card. On the
+          WePrintWraps theme the inherited ink is near-black and it read fine,
+          which is exactly why it survived: the defect only exists on one of the
+          two brands this one component serves.
+
+          Every other surface on this page states its colour through the wall
+          tokens. This one hardcoded Tailwind sky and therefore opted out of the
+          theme while still living inside it. It uses the card tokens now, with
+          a blue rule rather than a blue fill, so it is legible on both. */}
+      {notice && <p role="status" className="rounded-xl border border-l-4 border-blue-500/70 wall-card p-3 text-sm wall-ink">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{history.projects.map((p: any) => <Button key={p.id} disabled={!!busy} variant="outline" className="justify-start truncate" onClick={() => void run('Opening project', () => restore(p.config, p.id, p.name))}>{p.name}</Button>)}</div>
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
@@ -1782,10 +1871,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     {' '}<strong className="wall-ink">Your print files do not wait for this</strong> — they are already correct.
                   </p>
                   {/* Her actual question, answered where it was asked. */}
+                  {/* IT NAMED A BUTTON THAT NO LONGER EXISTS (2026-09-22).
+                      "Change what we keep" was the collapsed text link that hid
+                      the masking tools; the UX pass that promoted those tools
+                      into the open DELETED it, and this sentence kept pointing
+                      at it. So the one card that answers "how do I mask the
+                      closet?" sent her looking for a control that is not on the
+                      page — the same defect as the print export telling
+                      customers to choose a repeat mode with no such control,
+                      found the same hour. Name the buttons that are really
+                      there, in the words printed on them. */}
                   <p className="mt-2 max-w-[60ch] text-xs wall-muted">
-                    A closet opening, a doorway or a window inside the wall:
-                    mark the wall first, then use <em>Change what we keep</em> under
-                    the photo to paint around it.
+                    A closet opening, a doorway or a window inside the wall: mark
+                    the wall first, then use <strong className="wall-ink">Mask a closet,
+                    door or window</strong> under the photo and tap its two opposite
+                    corners.
                   </p>
                 </div>
                 {marking !== 'wall' && (
@@ -1804,8 +1904,67 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </div>
             </section>
           )}
-          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
-            {photo && <div className="mt-3 space-y-2">
+          {/* THE WHOLE JOB IN ONE ROW, ABOVE EVERYTHING (owner, 2026-09-22:
+              "It should be like this", with a four-card tool mockup).
+              It does no work itself — each card carries its own live state and
+              opens its step, which is the owner's own ruling: a photo editor
+              at a quarter of the screen cannot be tapped on a phone. */}
+          <WallProStepBoard steps={boardSteps} active={activeStepId(boardSteps)} busy={!!busy} onOpen={jumpToStep} />
+          {/* What every path ends with, stated as facts the repo can point at:
+              the scale brain, the 54" roll, the bleed/overlap plan and the
+              TIFF/PDF/PNG set. Shown before the work starts, because "leave
+              with production files" is the promise the board is delivering. */}
+          {!artwork && <WallProOutcomes />}
+          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
+            {/* THE THREE INPUTS SIT TOGETHER (owner, 2026-09-22, before a demo:
+                "The upload style reference should be right next to upload wall
+                / And the text prompt").
+                They were three screens apart: the wall upload here, the style
+                reference and the brief buried inside step 3's conditional tree
+                below the priced picker. Everything a customer supplies is one
+                block now, so a demo is one screen rather than a scroll hunt.
+                Each control is the SAME one as before -- same state, same
+                handler -- moved, never copied: two boxes writing one `prompt`
+                is the drift this page has already paid for twice. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                {uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}
+                <p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically. A wall photo is optional when generating artwork.</p>
+              </div>
+              <div>
+                {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
+                <p className="mt-2 text-xs wall-muted">{intent === 'match'
+                  ? 'This design is recreated faithfully as a print-ready 4K master: same composition, motifs, palette and scale. A screenshot or a photo of a wall is fine as the source.'
+                  : 'Optional inspiration only. Your description alone is enough — no example image is required.'}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
+                  the brief rather than replacing it, and they are not a
+                  taxonomy: the two personas read prose, so a chip is a word
+                  the customer would have typed, saving a phone keyboard. A
+                  chip that overwrote the brief would delete the only thing in
+                  the request that is actually hers -- the measurement behind
+                  the two-persona rule is that the customer's own words were 44
+                  characters against 3,342 of persona, so they are the
+                  scarcest input on the page and nothing here may spend them. */}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
+                  onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
+                  className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
+              </div>
+            </div>
+            {photo && <div id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className="mt-5 space-y-2">
+              {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
+                  never numbered -- it lived unlabelled inside step 1, below the
+                  fold on a phone -- which is why "it did not allow me or
+                  instruct me to pin corners" and "how do you mask the closet"
+                  were the same report twice. It sits inside this section
+                  because the photo it acts on is here; the page already holds
+                  two step headings in one section. */}
+              <StepHeading n={2} icon={Ruler}>Select wall area</StepHeading>
+              <p className="-mt-1 mb-1 text-xs wall-muted">Drag the corners to mark your wall. We exclude windows, doors and furniture. Your print files never wait for this.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
@@ -1839,7 +1998,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </span>
             </div>}
           </section>
-          <section id="choose-design" className={panelClass}><StepHeading n={2} icon={LayoutGrid}>Choose your design</StepHeading><div className="mb-4 grid gap-2">{([
+          <section id="choose-design" className={panelClass}><StepHeading n={3} icon={Settings2}>Describe your design</StepHeading>
+            {/* THE FIVE PRICED PATHS MOVE UNDER THE BRIEF (owner ruling,
+                2026-09-22, asked directly: "Inside step 3, chips on top").
+                Describing a design is the default way in, so the picker stops
+                being a toll gate in front of it -- but it is NOT hidden: every
+                path keeps its own price on its own row, which is the 09-13
+                launch rule that the price rides the choice and never a
+                checkout. Open by default whenever the customer has already
+                chosen a non-default path, so a restored project never buries
+                the mode it is actually in. */}
+            <details className="mt-4 rounded-lg border wall-edge p-3" open={designMode !== 'ai'}>
+              <summary className="cursor-pointer text-sm font-semibold wall-ink">More ways to start &mdash; and what each costs</summary>
+              <div className="mt-3"><div className="mb-4 grid gap-2">{([
               { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
               { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
               { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
@@ -1850,14 +2021,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   path is its own SKU (owner's launch list, 2026-09-13), so the
                   customer picks knowing what it costs. */}
               <span className="shrink-0 text-sm font-bold text-blue-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
-            <p className="mb-4 text-[11px] wall-muted">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p>
+            <p className="mb-4 text-[11px] wall-muted">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p></div>
+            </details>
             {/* STEP 3 (Trish 2026-09-16). Same conditional tree, same state --
                 only a heading, so "Pick a design" reads as its own step and
                 "Describe/match/upload" reads as its own step, matching what the
                 customer actually does next instead of hiding inside step 2. */}
-            <StepHeading n={3} icon={designMode === 'library' ? ImageIcon : Settings2}>
-              {designMode === 'library' ? 'Pick a ready-made design' : designMode === 'upload' ? 'Add your artwork' : 'Configure your design'}
-            </StepHeading>
+            {/* NOT a numbered step any more (2026-09-22). The owner's board
+                runs 1 Upload - 2 Select wall area - 3 Describe - 4 Generate,
+                and a second "3" beside it is the two-numbering-systems defect
+                the UX pass already removed once. This is the active path's own
+                sub-heading. */}
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold wall-ink">
+              {(() => { const I = designMode === 'library' ? ImageIcon : Settings2; return <I className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />; })()}
+              {designMode === 'library' ? 'Pick a ready-made design' : designMode === 'upload' ? 'Add your artwork' : 'Your brief'}
+            </h3>
             {designMode === 'library' ? <div className="space-y-3">
               {catalog === null ? <p className="text-sm wall-muted">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm wall-muted">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
                 <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
@@ -1876,15 +2054,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'cover' ? 'default' : 'outline'} onClick={() => setScaleChoice('cover')}>Mural</Button>
                 <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'repeat' ? 'default' : 'outline'} onClick={() => setScaleChoice('repeat')}>Pattern</Button>
               </div><p className="mt-1 text-xs wall-muted">{autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice }).reason}</p></div>
-              {intent === 'match' && <>
-                {uploadControl('reference', reference ? 'Replace the design to match' : 'Upload the design to match')}
-                <p className="text-xs wall-muted">The designer recreates this design faithfully as a print-ready 4K master: same composition, motifs, palette and scale. Low-resolution files, screenshots and photos of a wall are fine as the source.</p>
-              </>}
               {intent === 'wall' && <p className="text-xs wall-muted">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
-              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
-              {intent !== 'match' && uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
-              {intent !== 'match' && <p className="text-xs wall-muted">Optional inspiration only. Your description is enough to generate a design; no example image is required.</p>}
               {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
               {freeReason === 'commercialpro'
                 ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
@@ -1919,7 +2090,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 right, the moment the corners exist. The tabs only switch the
                 photo pane between the original wall and the imposed design;
                 the flat master never leaves the screen. */}
-            <StepHeading n={4} icon={ImageIcon}>Preview &amp; download</StepHeading>
+            <StepHeading n={4} icon={ImageIcon}>Generate &amp; preview</StepHeading>
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
               {/* Before and after (owner, 2026-09-12: "Before and afters will
                   speak volumes"). Offered only once a real composite exists --
@@ -1978,6 +2149,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 </p>}
                 <p className="mt-1 text-xs wall-muted">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
               </div>
+              {/* MIRROR CHANGES HER ARTWORK, SO IT HAS TO SAY SO (2026-09-22).
+                  `verified: true` is correct for a mirrored tile -- the join is
+                  a column against its own copy -- and that is exactly why the
+                  receipt alone could never surface this: every gate read
+                  "seamless" and stayed quiet while alternate tiles printed
+                  flipped. The method, not the verdict, is what the customer
+                  needs, and only in the one case where the wall will not look
+                  like the design she approved. */}
+              {seamReceipt?.method === 'mirror' && <div className="mb-2 rounded-lg border border-amber-400/60 bg-amber-50/80 px-3 py-2 text-xs dark:bg-amber-500/10">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">This tile is being mirrored to join.</p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Every other tile is flipped, so your wall will read symmetrically — fine on texture, visible on leaves, figures or lettering. The tile did not join on its own and the blended repair did not close it either.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2 h-7 px-2 text-xs" disabled={!!busy} onClick={() => setSeamPreference(seamPreference === 'blend' ? 'auto' : 'blend')}>
+                  {seamPreference === 'blend' ? 'Back to automatic' : 'Use the blended repeat anyway'}
+                </Button>
+              </div>}
               <div className="flex min-h-80 items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-4"><div className="relative inline-block">
               {flatView === 'css' && draftTile
                 ? <div role="img" aria-label={`Print master across your ${width} by ${height} inch wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || previewArt).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />

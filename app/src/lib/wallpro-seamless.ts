@@ -96,9 +96,48 @@ export function blendSeamless(data: ArrayLike<number>, width: number, height: nu
   return out;
 }
 
-export function chooseSeamlessMethod(report: SeamReport, preference: SeamlessPreference): SeamlessMethod {
+/**
+ * ONE SEAM LADDER, FOR THE CUSTOMER AND THE BATCH ALIKE (2026-09-22).
+ *
+ * Owner, on a generated repeat: "Why did it make a poor design?" The design
+ * was not poor when it left the model. `chooseSeamlessMethod` — which this
+ * replaces — read, in full:
+ *
+ *     return report.seamless ? 'verified' : 'mirror';
+ *
+ * So EVERY tile the measurement did not clear became a MIRROR repeat: alternate
+ * tiles flipped, which is kaleidoscope symmetry. On abstract texture that is
+ * invisible. On the botanicals, palms and line work WallPro actually generates
+ * it is the single most recognisable "AI wallpaper" artefact there is —
+ * butterflied leaves, mirrored stems, a hard axis of symmetry every tile width
+ * across her wall. She was looking at the fallback, not at the design.
+ *
+ * The batch path had already been corrected (`batchSeamDecision`, 2026-09-14)
+ * and its comment names the reason: mirror "is invisible on abstract texture
+ * and plainly wrong on cranes, leaves or lettering". The customer path never
+ * got that fix, so the two halves of one product disagreed about the same tile.
+ * They now share this function, which is that ladder:
+ *
+ *     verified  — it already joins, print it as generated
+ *     blend     — the deterministic crossfaded outer frame, motifs upright
+ *     mirror    — only when a MEASURED blend still does not join
+ *
+ * ⚠️ BLEND CANNOT BE CHOSEN WITHOUT MEASURING IT. That is why this takes
+ * `blendedAfter` rather than deciding from `before` alone: the crossfade is a
+ * real repair whose result is a fact, not a promise. Pass null only when no
+ * blend was attempted (an explicit preference, or a tile that already joins).
+ */
+export function seamLadder(before: SeamReport, blendedAfter: SeamReport | null, preference: SeamlessPreference): SeamlessMethod {
   if (preference === 'mirror' || preference === 'blend') return preference;
-  return report.seamless ? 'verified' : 'mirror';
+  if (before.seamless) return 'verified';
+  if (blendedAfter?.seamless) return 'blend';
+  return 'mirror';
+}
+
+/** Whether `auto` should spend a blend attempt on this tile at all. A tile that
+ * already joins needs no repair; an explicit preference has already decided. */
+export function shouldTryBlend(before: SeamReport, preference: SeamlessPreference): boolean {
+  return preference === 'blend' || (preference === 'auto' && !before.seamless);
 }
 
 /** Mirror repeat: every odd tile is flipped, so each join places a column (or
@@ -109,7 +148,19 @@ export function tileCoordinate(t: number, mirror: boolean): { index: number; u: 
   return { index, u: mirror && ((index % 2) + 2) % 2 === 1 ? 1 - u : u };
 }
 
-export function seamlessReceipt(preference: SeamlessPreference, before: SeamReport, after: SeamReport | null, method = chooseSeamlessMethod(before, preference)): SeamlessReceipt {
+/**
+ * `method` is REQUIRED — it is the ladder's answer, and the ladder needs a
+ * measured blend to give one. It used to default to a decision made from
+ * `before` alone, which is exactly how the mirror fallback stayed invisible.
+ *
+ * `verified` stays TRUE for mirror, and that is not a loophole: a mirrored
+ * join places a column against its own copy, so there is provably no seam.
+ * `verified` is the PRINT gate ("does this tile join") and it is answered
+ * correctly. What mirror costs is not seam quality but ARTWORK — the flip is a
+ * visible change to the customer's design — so the surfaces read `method`, not
+ * `verified`, before telling her the wall is as she designed it.
+ */
+export function seamlessReceipt(preference: SeamlessPreference, before: SeamReport, after: SeamReport | null, method: SeamlessMethod): SeamlessReceipt {
   const verified = method === 'mirror' ? true : method === 'verified' ? before.seamless : !!after?.seamless;
   return { contract: 'wallpro.seamless.v1', preference, method, before, after, verified };
 }

@@ -21,7 +21,7 @@ export type Point = { x: number; y: number };
 export type OcclusionClass = 'fixed' | 'movable';
 /** A pixel-accurate mask: a grayscale PNG (data URL) that fills `box`, normalized
  * 0..1 in photo coordinates; values above 127 are protected. */
-export type WallMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string; class: OcclusionClass };
+export type WallMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string | null; class: OcclusionClass };
 export type WallDetection = { wall: Point[] | null; openings: { label: string; points: Point[] }[]; masks: WallMask[]; model: string; notes: string | null };
 
 // Boxes and coarse polygons around a bed or a window-plus-drapes swallow the
@@ -49,7 +49,9 @@ export const SEGMENTATION_PROMPT = [
 const MAX_MASKS = 24, MAX_MASK_BYTES = 2_000_000;
 
 /** Validates the segmentation answer: box_2d is [ymin, xmin, ymax, xmax] on a
- * 0..1000 grid and mask is a PNG data URL. Anything else is dropped. */
+ * 0..1000 grid. The mask is a PNG data URL when the model managed one, and
+ * NULL when it did not -- see normalizeMasks. A bad BOX is still dropped:
+ * without it there is nothing to show and nothing to fill. */
 /** The list of masks wherever the model put it: a top-level array, or the one
  * array-valued key of a wrapping object (JSON mode sometimes answers
  * `{ "masks": [...] }` or `{ "segmentation_masks": [...] }`). */
@@ -72,14 +74,28 @@ export function normalizeMasks(raw: unknown): WallMask[] {
     if (!Array.isArray(b) || b.length !== 4 || !b.every((n: unknown) => typeof n === 'number' && Number.isFinite(n))) continue;
     // A bare base64 PNG (no data-URL prefix) is accepted as the same thing.
     if (typeof png === 'string' && !png.startsWith('data:') && /^iVBORw0KGgo/.test(png.trim())) png = 'data:image/png;base64,' + png.trim();
-    if (typeof png !== 'string' || !png.startsWith('data:image/png;base64,') || png.length > MAX_MASK_BYTES) continue;
+    // AN UNUSABLE MASK NO LONGER DISCARDS THE OBJECT (2026-09-22).
+    //
+    // This line used to `continue`, throwing away the label, the box and the
+    // class along with the mask. So a model that located the window exactly
+    // and fumbled only its PNG produced NOTHING -- and the customer, who had
+    // asked three times why masking was not working, was told nothing was
+    // found. The deployed comment above records how flaky this channel is:
+    // "every thinking-on call today answered 0 masks".
+    //
+    // The box alone is enough to SHOW the object, label it, make it tappable
+    // and fill it as a rectangle. It is coarser than an outline and the client
+    // says so; it is preview-only either way, so the cost of over-covering the
+    // wall beside a drape is preview fidelity, never a print file. Owner,
+    // 2026-09-22, with a photograph of exactly this: "It should be doing this."
+    const usable = typeof png === 'string' && png.startsWith('data:image/png;base64,') && png.length <= MAX_MASK_BYTES;
     const c = (n: number) => Math.min(1, Math.max(0, n / 1000));
     const box = { y0: c(b[0]), x0: c(b[1]), y1: c(b[2]), x1: c(b[3]) };
     if (box.x1 - box.x0 < 0.005 || box.y1 - box.y0 < 0.005) continue;
     // Anything other than a clean "movable" answer defaults to fixed/protected
     // -- the safer side of the error, per the rule above.
     const cls: OcclusionClass = (item as any)?.class === 'movable' ? 'movable' : 'fixed';
-    out.push({ label: String((item as any)?.label || 'protected area').slice(0, 40), box, png, class: cls });
+    out.push({ label: String((item as any)?.label || 'protected area').slice(0, 40), box, png: usable ? png : null, class: cls });
   }
   return out;
 }
@@ -186,11 +202,16 @@ export function createDetectHandler(deps: { createClient: (...args: any[]) => an
           masks = normalizeMasks(answer);
           // An empty answer is the thing to diagnose: say what shape came back.
           if (!masks.length) console.warn(JSON.stringify({ event: 'wall_segmentation_empty', owner, wallPath, answer: describeMaskAnswer(answer) }));
+          // And how many survived on their BOX alone, which is the difference
+          // between "the model found nothing" and "the model found it and the
+          // mask channel failed". Those need different fixes and used to look
+          // identical from here.
+          else { const boxOnly = masks.filter(m => !m.png).length; if (boxOnly) console.warn(JSON.stringify({ event: 'wall_segmentation_box_only', owner, wallPath, boxOnly, total: masks.length })); }
         } catch (err) { console.warn(JSON.stringify({ event: 'wall_segmentation_unreadable', owner, wallPath, error: String(err) })); }
       }
       else if (segmentation) console.warn(JSON.stringify({ event: 'wall_segmentation_failed', owner, wallPath, status: segmentation.status }));
       const detection = normalizeDetection(parsed);
-      console.log(JSON.stringify({ event: 'wall_detected', owner, wallPath, model: DETECT_MODEL, corners: !!detection.wall, openings: detection.openings.length, masks: masks.length }));
+      console.log(JSON.stringify({ event: 'wall_detected', owner, wallPath, model: DETECT_MODEL, corners: !!detection.wall, openings: detection.openings.length, masks: masks.length, outlined: masks.filter(m => !!m.png).length }));
       return response({ ...detection, masks, model: DETECT_MODEL });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The detection service timed out. Mark the corners and openings by hand.' : err instanceof Error ? err.message : 'Wall detection failed.';

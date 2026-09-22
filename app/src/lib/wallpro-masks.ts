@@ -10,7 +10,28 @@ import type { Point } from './wallpro-geometry';
  * defaults to `fixed` -- protecting something that should have been removed
  * is a cosmetic miss, not a wrong reveal. */
 export type OcclusionClass = 'fixed' | 'movable';
-export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string; class?: OcclusionClass };
+/**
+ * `png` IS NULLABLE, AND THAT IS THE WHOLE POINT (2026-09-22).
+ *
+ * The detector answers with a label, a box, a class AND a grayscale mask PNG.
+ * Until now the edge handler dropped the ENTIRE item when that PNG was
+ * missing, malformed or over 2 MB — box and label with it — so a model that
+ * located the window perfectly and fumbled only the mask produced zero
+ * protected areas and the customer saw nothing at all. The deployed handler's
+ * own comment records how fragile that channel is: "every thinking-on call
+ * today answered 0 masks".
+ *
+ * The system had exactly two states — a pixel-perfect outline, or nothing —
+ * and no middle. The owner asked for the middle, with a photograph of it
+ * (2026-09-22, three labelled rectangles over the drapes, the window and the
+ * door): "It should be doing this." A rectangle needs no mask PNG.
+ *
+ * So a box-only item survives with `png: null` and is rasterised as its own
+ * rectangle. It is a COARSER answer, deliberately marked as one, and it is
+ * preview-only like every mask here — print panels stay full rectangles — so
+ * over-covering the wall beside a drape costs preview fidelity, never a file.
+ */
+export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string | null; class?: OcclusionClass };
 export const MASK_THRESHOLD = 127;
 export const MASK_MAX_EDGE = 1600;
 
@@ -28,11 +49,28 @@ export async function rasterizeDetectionMasks(masks: DetectedMask[], photoWidth:
   const uctx = union.getContext('2d', { willReadFrequently: true })!;
   const out = uctx.getImageData(0, 0, width, height);
   let painted = 0;
+  const fill = (left: number, top: number, w: number, h: number) => {
+    for (let y = 0; y < h; y++) {
+      const oy = top + y; if (oy < 0 || oy >= height) continue;
+      for (let x = 0; x < w; x++) {
+        const ox = left + x; if (ox < 0 || ox >= width) continue;
+        const o = (oy * width + ox) * 4;
+        out.data[o] = 255; out.data[o + 1] = 255; out.data[o + 2] = 255; out.data[o + 3] = 255; painted++;
+      }
+    }
+  };
   for (const mask of masks) {
-    let img: HTMLImageElement;
-    try { img = await loadImage(mask.png); } catch { continue; }
     const left = Math.round(mask.box.x0 * width), top = Math.round(mask.box.y0 * height);
     const w = Math.max(1, Math.round((mask.box.x1 - mask.box.x0) * width)), h = Math.max(1, Math.round((mask.box.y1 - mask.box.y0) * height));
+    // NO OUTLINE, BUT A BOX IS STILL AN ANSWER. An item whose mask PNG never
+    // arrived, or arrived unreadable, is filled as its own rectangle rather
+    // than discarded -- the difference between the customer seeing her window
+    // protected roughly and seeing nothing protected at all. `loadImage`
+    // failing is the SAME case as `png` being null and takes the same path;
+    // it used to `continue`, silently losing the object.
+    let img: HTMLImageElement | null = null;
+    if (mask.png) { try { img = await loadImage(mask.png); } catch { img = null; } }
+    if (!img) { fill(left, top, w, h); continue; }
     const scratch = document.createElement('canvas'); scratch.width = w; scratch.height = h;
     const sctx = scratch.getContext('2d', { willReadFrequently: true })!;
     sctx.drawImage(img, 0, 0, w, h);
