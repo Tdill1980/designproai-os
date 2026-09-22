@@ -1109,6 +1109,10 @@ function atlasProofArtworkAuthority(atlas, sourceViewType) {
       surfaceKey: panel.surfaceKey,
       surfaceSelection: panel.surfaceSelection,
       panel,
+      // The designer's own DESIGN ANCHOR from Call 1, handed to the
+      // photographer as `designAnchorText` — the RestylePro contract.
+      designAnchor: typeof sheet.designAnchor === "string" && sheet.designAnchor.trim()
+        ? sheet.designAnchor.trim() : null,
     };
   }
   return {
@@ -1161,6 +1165,10 @@ function atlasProofRequestBody({ options, input, sourceViewType, authority, revi
     sourcePanelContentType: authority.contentType,
     sourceAuthorityRole: authority.role,
     sourceAuthorityContract: authority.contract,
+    // What the designer said about the design, in its own words. Absent on
+    // sheets authored before it was recorded; the photographer then points at
+    // the attached panel. Never the customer's brief.
+    ...(authority.designAnchor ? { designAnchorText: authority.designAnchor } : {}),
     ...(authority.role === "three-zone-production-proof" ? {
       targetPanelStoragePath: authority.panel.storagePath,
       targetPanelHash: authority.panel.contentHash,

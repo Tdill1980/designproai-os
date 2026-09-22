@@ -603,6 +603,10 @@ async function requestProofSheet({
     // find, and the raw text is what production actually carries. On a
     // revision the instruction is folded in after the brief (see above).
     ...revisionFields,
+    // THE CUSTOMER'S MODE selects the persona: commercial (the sign-and-wrap
+    // designer) or restyle (the Lead Vehicle Wrap Designer). The edge read a
+    // literal "commercial" until 2026-09-22; the app has always sent this.
+    mode: String(input?.mode || "").toLowerCase() === "restyle" ? "restyle" : "commercial",
     companyName: input?.companyName || input?.businessName || "",
     tagline: input?.tagline || "",
     phone: input?.phone || "",
@@ -753,6 +757,11 @@ function createPanelProofTransport({
       promptChars: Number(payload.promptChars || 0),
       sheetShape: payload.sheetShape || null,
       intake: payload.intake || null,
+      // The designer's own DESIGN ANCHOR text, for the photographer (Call 2),
+      // and which persona ran. Both are receipts of what the edge did.
+      designAnchor: typeof payload.designAnchor === "string" && payload.designAnchor.trim()
+        ? payload.designAnchor.trim() : null,
+      mode: payload.mode === "restyle" ? "restyle" : (payload.mode === "commercial" ? "commercial" : null),
       generatedElements: payload.generatedElements || [],
       imageRequestCount: Number(payload.imageRequestCount || 1),
       containerSource: (payload.attachedInputs || []).find((a) => a?.role === "container") || null,
@@ -1032,7 +1041,25 @@ async function assemblePanelProofMaster({
     {role:"typography",name:brand.companyName || brand.businessName || requestedWordmark,lines:[brand.tagline || ""],raceNumber},
     {role:"contact",name:"",lines:[brand.phone,brand.website,...services,brand.promo].filter(Boolean)},
   ];
-  for (const job of textJobs) {
+  /**
+   * ZONE 3 LETTERING IS THE DESIGN'S OWN ON THE SHEET PATH.
+   *
+   * Owner, 2026-09-22: "it's never supposed to use generic fonts. Ace creates
+   * a logo font, uses that throughout." These two jobs typeset the company
+   * name and the contact line in a vendored font and claimed the TYPOGRAPHY
+   * and CONTACT slots BEFORE `sheetDrawnCutGraphic` could read the marks the
+   * designer drew there, so the customer's cut sheet carried lettering in a
+   * typeface the design never used while the real lettering sat unread on the
+   * sheet. Live 2449ccf8: `typography` and `contact` both `vector: true`.
+   *
+   * So on the sheet path (`!zone2Panels`) they are not built: every slot the
+   * customer's own uploaded logo leaves empty is filled from the sheet. The
+   * DERIVED path — a legacy six-surface or field revision with no authored
+   * Zone 3 — keeps the typeset originals, because there is no sheet to read.
+   */
+  const customerTextSupplied = textJobs.some((job) => job.name || job.lines.some(Boolean) || job.raceNumber);
+  const zone3LetteringSource = !zone2Panels ? "sheet-drawn" : "typeset";
+  for (const job of (zone3LetteringSource === "sheet-drawn" ? [] : textJobs)) {
     if (!job.name && !job.lines.some(Boolean) && !job.raceNumber) continue;
     let rendered = job.name || job.lines.some(Boolean)
       ? await typeset.renderLockup({...job,width:1600}) : {svg:"",width:1600,height:0};
@@ -1111,7 +1138,7 @@ async function assemblePanelProofMaster({
   // customer logo, company name or contact line was ever supplied. That is a
   // fact about the CUSTOMER'S INPUT, not about which code built Zone 1, so it
   // is stated once, for every path.
-  if (!assets.length) {
+  if (!assets.length && !customerTextSupplied) {
     zone3Omitted.push({ zone: "zone3", role: null, reason: "no_original_assets_or_customer_text" });
     logger("atlas call 1: no original logo and no customer text; Zone 3 carries only what the design drew");
   }
@@ -1564,6 +1591,12 @@ async function assemblePanelProofMaster({
        */
       intake: sheet.intake || null,
       promptChars: Number(sheet.promptChars || 0),
+      // WHICH PERSONA RAN, WHAT IT SAID, AND WHO LETTERED ZONE 3. Three facts
+      // the owner asked for on 2026-09-22 and none of which a receipt carried.
+      mode: sheet.mode || null,
+      briefSource: sheet.intake?.briefSource || null,
+      designAnchor: sheet.designAnchor || null,
+      zone3LetteringSource,
       masterSha256: assembled.contentHash,
       masterStoragePath: null,
       // THE CUSTOMER'S OWN ASSETS, BY IDENTITY, ON THE RECEIPT.

@@ -38,6 +38,7 @@ import type { PersonaPipelinePhase } from "@/components/designpanelpro/PersonaPi
 import type { CoverageType } from "@/components/tools/CoverageSelector";
 import { type VehicleType } from "@/components/tools/VehicleTypeSelector";
 import { normalizeDesignProVehicleTypeForIdentity } from "@/lib/designpro-flat-first";
+import { PROOF_BRAND } from "@/lib/os-brand";
 import type { VehicleSpecsPreview } from "@/components/tools/NonStandardVehicleWarning";
 
 type KitSize = "small" | "medium" | "large" | "xl";
@@ -777,7 +778,7 @@ export const useDesignPanelProLogic = (
         title: finished.designName || "Design Rendered",
         description:
           pipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE
-            ? "Your print master and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status."
+            ? `Your ${PROOF_BRAND.full} and seven vehicle views are saved. The server started Call 8 and the production job now reports its real status.`
             : "Your seven DesignProAI™ views are saved. The server started Call 8 and the production job now reports its real status.",
       });
       return { generationId: request.generationId, directRender: true, renderUrl: primary?.signedUrl };
@@ -896,7 +897,7 @@ export const useDesignPanelProLogic = (
           : requiresNewAtlasRun
           ? ATLAS_NEW_RUN_REQUIRED_MESSAGE
           : freshAtlasMasterQcFailure
-          ? "The new print master was rejected during visual quality inspection. No proof set was saved. Start a new design."
+          ? `The new ${PROOF_BRAND.short} was rejected during visual quality inspection. No proof set was saved. Start a new design.`
           : code === GENERATION_ACTIVE_LIMIT_CODE
           ? GENERATION_ACTIVE_LIMIT_MESSAGE
           : code === "generation_pipeline_mode_mismatch"
@@ -991,7 +992,7 @@ export const useDesignPanelProLogic = (
     if (!standaloneRequestId) return false;
     if (activePipelineMode === FLAT_FIRST_ATLAS_PIPELINE_MODE) {
       setGenerationError(
-        "Proof views are locked to one print master. Start a new design to regenerate the proof set.",
+        `Proof views are locked to one ${PROOF_BRAND.short}. Start a new design to regenerate the proof set.`,
       );
       return false;
     }

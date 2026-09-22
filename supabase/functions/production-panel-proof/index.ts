@@ -251,13 +251,13 @@ const ATLAS_PANELS = [
  * is what already knows what a professional dentist wrap looks like.
  */
 const PINNED_INPUT_FRAMING: Record<string, string> = {
-  format: "PANEL PRODUCTION PROOF — FORMAT AND TOPOLOGY REFERENCE ONLY. "
-    + "Read it for STRUCTURE alone: how the three zone bands are laid out, how the panel rectangles sit inside them, "
-    + "how each rectangle is filled corner to corner with artwork that runs off all four edges, "
-    + "and where the dimensions row, template notes and legend sit. "
-    + "It is an example of the DOCUMENT, not of the design. "
-    + "Copy none of its artwork, photography, palette, wording, company name, logo, brand, industry or typography — "
-    + "that identity belongs to the business on that sheet, not to this customer. "
+  format: "FINISHED PANEL PRODUCTION PROOF — THE STANDARD, FOR ANOTHER COMPANY ON ANOTHER VEHICLE. "
+    + "Match it on two things. FORMAT: the three zone bands, the panel rectangles inside them, every rectangle "
+    + "filled corner to corner with artwork that runs off all four edges, Zone 2 the same panels without their "
+    + "lettering, Zone 3 the marks alone. QUALITY: the depth of the artwork, the finish of the type, one design "
+    + "carried across every panel — this is the level of work expected. "
+    + "Take nothing else from it: its artwork, photography, palette, wording, company name, logo, brand, "
+    + "industry, typography, shapes and figures belong to the business on that sheet. "
     + "The subject, colour and every design decision come from this customer's own brief and from your own judgement as the designer.",
 };
 
@@ -524,7 +524,22 @@ serve(async (req) => {
     // skips it and spends nothing, which is why this is a branch and not a
     // stage every request pays for.
     const customerPrompt = String(body?.customerPrompt || "").trim();
-    const intake = customerPrompt ? await parseCustomerIntake(customerPrompt) : null;
+    // THE FLASH READER RUNS ONLY WHEN THE FORM LEFT THE COMPANY BLANK.
+    //
+    // Owner, 2026-09-22, on the live New Aura run: "it's not using designer
+    // brain". The form had supplied the company name and the web address, and
+    // the intake call still ran — a second model on the customer's critical
+    // path whose only remaining job was to REWRITE the brief (see
+    // `briefSource` below). With the company stated, the deterministic pass
+    // (phone, web address, year/make/model, body class) is everything intake
+    // can add that a regular expression decides, and it costs nothing.
+    const explicitCompany = String(body?.companyName ?? "").trim();
+    const flashSkipped = Boolean(customerPrompt) && Boolean(explicitCompany);
+    const intake = !customerPrompt ? null
+      : flashSkipped
+        ? { ...mergeIntake(extractDeterministic(customerPrompt), { creativeDirection: customerPrompt }),
+            intakeRead: "skipped:company_name_supplied" }
+        : await parseCustomerIntake(customerPrompt);
     // THE EXPLICIT FIELD WINS OVER THE PARSED ONE. Intake is a convenience for
     // free text; a caller that states a value is stating it, not suggesting it.
     const field = (name: string) => {
@@ -561,34 +576,48 @@ serve(async (req) => {
       })
       .slice(0, 8);
     /**
-     * A PARAPHRASE MUST NOT BE ABLE TO SWALLOW THE CUSTOMER'S PLACEMENT.
+     * THE CUSTOMER'S OWN WORDS ARE THE BRIEF. ALWAYS.
      *
-     * `intake.creativeDirection` won outright here. The intake prompt tells
-     * the reader to copy the customer's own words, to keep placement, and that
-     * the brief "must not be shortened" -- but it is a Flash call, it fails
-     * soft, and nothing measured whether it actually kept them. On live
-     * bbdd0db0 the brief asked for the scene "on 3/4 of sides and rear" and
-     * the design covers whole panels edge to edge.
+     * Owner, 2026-09-22: "it's not using designer brain" / "Design functions
+     * not being used or are used improperly." Measured on the live New Aura
+     * run (revision 2449ccf8): the brief A.C.E. received was
+     * `intake.creativeDirection` — a Flash paraphrase — because the rule here
+     * let the paraphrase win whenever it kept two thirds of the words. The
+     * designer was handed a sentence the customer never typed, and the design
+     * was the average of that sentence.
      *
-     * So the extraction is checked against the words it came from. Intake
-     * legitimately drops the vehicle, the phone number and the web address, so
-     * a shorter result is expected; losing most of the brief is not. Below
-     * two thirds of the original wording the customer's own sentence is used
-     * instead, because an unshortened brief the designer can read beats a tidy
-     * one that lost the instruction.
+     * The persona stack's own rule is the WallPro consultant's: "the
+     * customer's own words go through unchanged." So the raw brief is the
+     * brief, full stop. Intake still fills the STRUCTURED fields the form left
+     * empty (company, tagline, services, promo, industry, vehicle) — those are
+     * extraction, not authorship — and it never authors the creative direction
+     * when the customer wrote one. The paraphrase is used only when there is
+     * no raw text at all, and the receipt says which it was (`briefSource`).
      */
     const extracted = field("creativeDirection");
     const rawBrief = String(body?.prompt || "") || customerPrompt;
-    const words = (value: string) => String(value || "").trim().split(/\s+/).filter(Boolean).length;
-    const briefText = extracted && words(extracted) >= Math.ceil(words(rawBrief) * 0.66)
-      ? extracted : (rawBrief || extracted);
+    const briefText = rawBrief || extracted;
+    const briefSource = rawBrief ? "raw" : (extracted ? "intake" : "none");
     const creativeDirection = [
       briefText,
       field("style") ? `Style direction: ${field("style")}.` : "",
     ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
+    /**
+     * BOTH PERSONAS, SELECTED BY THE CUSTOMER'S MODE.
+     *
+     * Owner, 2026-09-22: "Make sure it also has the persona based design
+     * instruction for commercial and restyle." This read `mode: "commercial"`
+     * as a literal, so the restyle designer — the Lead Vehicle Wrap Designer
+     * with DESIGN AMPLIFICATION, the persona behind the Martini 911 and every
+     * restyle in the gallery — never ran on this route, although the app has
+     * always sent `mode` and the runtime has always carried it. A restyle
+     * brief was designed by the commercial fleet persona, which is why a spa's
+     * "custom photo of a woman getting a facial" came back as a fleet livery.
+     */
+    const mode = String(body?.mode || "").trim().toLowerCase() === "restyle" ? "restyle" : "commercial";
     let creativeHead = panelProofCreativeHead(buildDesignIQPrompt({
-      mode: "commercial",
+      mode,
       prompt: creativeDirection,
       finish: String(body?.finish || "Gloss"),
       substrate: "standard",
@@ -706,10 +735,16 @@ serve(async (req) => {
     // than inferred from source comments.
     const phase1Audit = {
       contract: "designpro.vehiclepro.phase1.graphic-designer-flat-first-opaque-edge.v1",
-      graphicDesignerPersonaInjected:
-        /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/.test(prompt),
-      nativeGeminiImageKnowledgeInjected:
-        /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
+      // THE PERSONA THE MODE SELECTS, proved on the payload. Commercial is the
+      // sign-and-wrap-company designer with its native-image-knowledge line;
+      // restyle is the Lead Vehicle Wrap Designer with DESIGN AMPLIFICATION.
+      // Either absent and the request is refused before the provider sees it.
+      graphicDesignerPersonaInjected: mode === "restyle"
+        ? /You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(prompt)
+        : /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/.test(prompt),
+      nativeGeminiImageKnowledgeInjected: mode === "restyle"
+        ? /DESIGN AMPLIFICATION: Elevate and enhance the brief/.test(prompt)
+        : /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
       flatPanelProductionProofInjected:
         /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
         || (/OUTPUT: six clean printed background artworks/.test(prompt)
@@ -1184,6 +1219,21 @@ serve(async (req) => {
       throw new Error(`panel_proof_no_image:${payload?.candidates?.[0]?.finishReason || "unknown"}`);
     }
     const bytes = decodeBase64(image.inlineData.data as string);
+    /**
+     * THE DESIGNER'S OWN WORDS, FOR THE PHOTOGRAPHER.
+     *
+     * `responseModalities: ["TEXT","IMAGE"]` asks A.C.E. for a design name and
+     * a DESIGN ANCHOR before the image — the same text the RestylePro pipeline
+     * hands `persona-photographer-render` as `designAnchorText` so every view
+     * photographs one design. It came back on every sheet and was thrown away
+     * here. It is the designer describing the design it just drew; it is not
+     * a second creative authority, and Call 2 uses it only beside the panel.
+     */
+    const designAnchor = candidateParts
+      .filter((p: Record<string, unknown>) => typeof p?.text === "string" && String(p.text).trim())
+      .map((p: Record<string, unknown>) => String(p.text).trim())
+      .join("\n")
+      .slice(0, 2000) || null;
 
     // THE GATE RUNS BEFORE ANYTHING IS STORED OR RETURNED. A re-flowed sheet is
     // refused here rather than handed onward for a downstream slicer to measure
@@ -1233,9 +1283,16 @@ serve(async (req) => {
       promptChars: prompt.length,
       prompt,
       phase1Audit,
+      // WHICH DESIGNER RAN, and what the designer said about the design.
+      mode,
+      designAnchor,
       // WHAT THE RAW MESSAGE BECAME. A wrong parse is otherwise invisible: the
       // sheet just quietly carries the wrong company or the wrong truck.
-      intake: intake ? { contract: INTAKE_CONTRACT, ...intake } : null,
+      // `briefSource` is the fact that matters most: "raw" means A.C.E. read
+      // the customer's own sentence; "intake" means no raw text existed.
+      intake: intake
+        ? { contract: INTAKE_CONTRACT, ...intake, briefSource, flashSkipped }
+        : { briefSource, flashSkipped: false },
       // THE EDIT, BOUND TO ITS PARENT. Sequence, parent revision id, context
       // hash and the parent proof's content hash, so the runtime's receipt can
       // prove V2 was drawn against V1's approved sheet and not from scratch.

@@ -165,7 +165,11 @@ export function panelProofCreativeHead(aceAssembly: string): string {
   // commercial assembly is the senior-designer identity; if a refactor ever
   // drops it, the proof silently goes back to having no designer at all, which
   // is the exact defect this function exists to end.
-  if (!/senior graphic designer and vehicle-wrap specialist/.test(head)) {
+  // EITHER PERSONA IS A HEAD: the commercial sign-and-wrap-company designer or
+  // the restyle Lead Vehicle Wrap Designer (owner, 2026-09-22: "the persona
+  // based design instruction for commercial and restyle"). Neither present and
+  // the proof has no designer at all, which is the defect this exists to end.
+  if (!/senior graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(head)) {
     throw new Error("panel_proof_ace_persona_missing");
   }
   return head;
@@ -400,8 +404,6 @@ export function buildPanelProofTurns(params: PanelProofParams): { design: string
     design.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
-  design.push("", "THE SMALL PANELS (hood, front, rear) carry the logo and ONE line at most, set LARGE.",
-    "The longer copy belongs on the flanks, which have the room to read it.");
   // The turn-1 ask, stated last so it is the instruction the model leaves with.
   // It names the six panels and nothing about a document.
   design.push("", "Draw those six panels of finished wrap artwork, one cohesive design across all of them,",
@@ -476,16 +478,14 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
     out.push("", "EXACT TEXT, character for character — invent no other words, numerals or web address:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
-  // SMALL PANELS CARRY FEWER WORDS, LARGER. Live sheet 35404195565 returned the
-  // rear reading "(520J SSS-0192" and its sub-tagline as "Boo nsanoxst caung
-  // gflahog" -- the flanks were perfect on the same sheet. RestylePro measured
-  // this exact failure and its cause: a tile that gives the lettering ~2-3px of
-  // OUTPUT cannot draw a phone number, so the model draws a plausible one. The
-  // remedy there was more pixels per tile; here the panel's size is the GENIE
-  // geometry and cannot move, so the remedy is fewer glyphs across it.
-  // Positive instruction, stated as what a wrap designer does anyway.
-  out.push("", "THE SMALL PANELS (hood, front, rear) carry the logo and ONE line at most, set LARGE.",
-    "The longer copy belongs on the flanks, which have the room to read it.");
+  // THE SMALL-PANELS LINE IS GONE (owner, 2026-09-22: "Ace creates a logo
+  // font, uses that throughout"). It told the designer that hood, front and
+  // rear "carry the logo and ONE line at most, set LARGE" — a composition rule
+  // written by code, standing between the persona and its own judgement, and
+  // it capped every small panel at a logo plus a slogan. The lettering-size
+  // failure it was written for (live 35404195565) is a pixel-budget fact of the
+  // six-across sheet, not a reason to compose the design from here. What the
+  // designer places on each panel is the designer's call.
 
   out.push("", "THE THREE BANDS, in this order:",
     ...VERSIONS.map((v, i) => `  ${i + 1}. ${v.label}`));

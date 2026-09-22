@@ -35,7 +35,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Tier } from "@/hooks/useToolAccess";
-import { OS_TOOLS } from "@/lib/os-brand";
+import { OS_TOOLS, PROOF_BRAND } from "@/lib/os-brand";
 
 export type Pillar = "home" | "design" | "output" | "profit" | "marketing" | "account";
 
@@ -174,7 +174,7 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     icon: Factory,
     pillar: "output",
     tier: "starter",
-    description: "The production control room — print master, panels, proofs, downloads and the human QC checklist",
+    description: `The production control room — the ${PROOF_BRAND.full}, panels, proofs, downloads and the human QC checklist`,
   },
   {
     key: "panelprofileoutput",

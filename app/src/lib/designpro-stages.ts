@@ -82,7 +82,7 @@ export const PROOF_CHECKS: Array<[string, string]> = [
  * never sign for it.
  */
 export const PACK_PRESENCE_CHECKS: Array<[string, string]> = [
-  ["atlasPresent", "Print master present, with its Generation ID"],
+  ["atlasPresent", `${PROOF_BRAND.full} present, with its Generation ID`],
   ["designIdPresent", "Design ID present"],
   ["sevenProofsPresent", "All 7 3D proofs present and descended from this design revision"],
   ["proofsIndividuallyPresent", "Each 3D proof is its own file, individually downloadable"],

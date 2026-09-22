@@ -238,8 +238,11 @@ test("every A.T.L.A.S. shot is photographed from its own panel, with no Driver d
 
     // NO DRIVER DEPENDENCY, AND NO HERO.
     assert.equal(post.body.heroRenderUrl, undefined);
+    // THE ANCHOR IS THE DESIGNER'S, NEVER THE RUNTIME'S. This fixture's sheet
+    // carries no DESIGN ANCHOR, so none is sent and the photographer points at
+    // the panel; the case below shows the designer's own text travelling.
     assert.equal(post.body.designAnchorText, undefined,
-      "the anchor text is the photographer's to build, not the runtime's");
+      "with no designer anchor on the sheet, nothing is invented in its place");
 
     // Vehicle + finish travel; nothing creative does.
     assert.equal(post.body.vehicleMake, "Ford");
@@ -432,3 +435,24 @@ test("Passenger mirror plus native zone are deterministically bounded below Gemi
  *   - the 20 MiB request bound is no longer this process's problem: the
  *     transport sends a storage PATH, not the image bytes.
  */
+
+test("the designer's DESIGN ANCHOR from Call 1 reaches the photographer as designAnchorText, verbatim", async () => {
+  // Owner, 2026-09-22: "Restore the photographer persona." The pinned
+  // buildPhotographerPrompt takes `designAnchorText`; on RestylePro that is the
+  // design pass's own anchor. Here it is the text part A.C.E. emits beside the
+  // proof sheet on Call 1, carried on `panelProofAuthoring.designAnchor` and
+  // read off the stored revision -- never the customer's brief.
+  const proofBytes = await sharp({ create: { width: 64, height: 48, channels: 3, background: "#1565c0" } }).png().toBuffer();
+  const panelPaths = Object.fromEntries(["driver", "passenger", "hood", "roof", "front", "rear"].map((s) => [s, `designpro/panels/${s}.png`]));
+  const f = transportFixture({ proofBytes, panelPaths });
+  f.atlas.proofSheet = { storagePath: "atlas-panel-proof/full.png", contentHash: "d".repeat(64), contentType: "image/png",
+    designAnchor: "  Aura Bloom — soft ivory ground, gold script, eucalyptus sweep rear to front  " };
+  const provider = createAtlasDesignPanelProvider({ supabase: f.supabase, supabaseUrl: "https://example.supabase.co",
+    serviceRoleKey: "s".repeat(64), fetchImpl: f.fetchImpl, requestId: REQUEST_ID, generationId: GENERATION_ID,
+    provider: { models: ["gemini-3-pro-image"], keyCount: 1, generateImage: async () => assert.fail("transport must not generate locally") },
+    tenantKey: TENANT_KEY, input: { brief: "the customer's own words never travel", vehicle: { year: "2022", make: "Ford", model: "F250" } }, atlas: f.atlas });
+  await provider.generateImage({ sourceViewType: "side", attempt: 1 });
+  const body = f.posts[0].body;
+  assert.equal(body.designAnchorText, "Aura Bloom — soft ivory ground, gold script, eucalyptus sweep rear to front");
+  assert.equal(body.brief, undefined, "the brief is not the anchor and never travels");
+});
