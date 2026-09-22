@@ -58,6 +58,46 @@ export function wallPrintPanels(width: number, height: number) {
   }));
 }
 
+/**
+ * A QUAD THAT IS THE WHOLE PHOTOGRAPH IS NOT A WALL (owner, 2026-09-22).
+ *
+ * She uploaded a real room -- vanity nook, wall-mounted TV, an open closet
+ * doorway -- and the design was painted straight over the ceiling, the floor
+ * and the doorway, with no prompt to mark anything. The page even has a
+ * comment describing that exact outcome, written 2026-09-12.
+ *
+ * The guard that was supposed to stop it (`cornerSource !== 'default'`) checks
+ * PROVENANCE, not GEOMETRY. `validWallCorners` happily accepts UNIT_WALL --
+ * area 1.0, all crosses positive -- so a detector that hands back the frame is
+ * indistinguishable from a located wall: corners valid, source "detected",
+ * `wallLocated` true, and the view auto-flips to the composite before she has
+ * seen her own photo.
+ *
+ * THE ASYMMETRY IS THE WHOLE ARGUMENT. A false negative costs four taps. A
+ * false positive covers the room and reads as "it didn't work". And a real
+ * wall photograph essentially cannot fill its own frame: you always see floor,
+ * ceiling, or the return wall -- her photo's feature wall is well under half
+ * the frame.
+ *
+ * Scope: this convicts a DETECTION only. A customer who taps four corners at
+ * the edges of her photo meant it, and `wallPreviewBlocker` still judges her
+ * taps on validity alone.
+ */
+const WHOLE_FRAME_AREA = 0.9;
+const WHOLE_FRAME_EPS = 0.03;
+
+export function looksLikeWholeFrame(points: Point[]): boolean {
+  if (points.length !== 4) return false;
+  const area = Math.abs(points.reduce((a, p, i) => a + p.x * points[(i + 1) % 4].y - p.y * points[(i + 1) % 4].x, 0)) / 2;
+  if (area >= WHOLE_FRAME_AREA) return true;
+  // Or it hugs all four frame corners without covering much — a thin sliver
+  // pinned to the edges is the same "I found nothing" answer wearing a
+  // different shape.
+  return UNIT_WALL.every((corner, i) =>
+    Math.abs(points[i].x - corner.x) <= WHOLE_FRAME_EPS &&
+    Math.abs(points[i].y - corner.y) <= WHOLE_FRAME_EPS);
+}
+
 export function validWallCorners(points: Point[]): boolean {
   if (points.length !== 4 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return false;
   // Top-left, top-right, bottom-right, bottom-left in image coordinates.

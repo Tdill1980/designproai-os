@@ -29,7 +29,7 @@ import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
 import { WallProSidebar } from '@/components/wallpro/WallProSidebar';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, chooseSeamlessMethod, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
@@ -238,6 +238,18 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // told. 'default' means nobody has found this wall yet and the corners are
   // still the whole photo, so the design covers the ceiling and floor too.
   const [cornerSource, setCornerSource] = useState<'default' | 'detected' | 'manual'>('default');
+  /**
+   * DID THE DETECTOR ACTUALLY READ THIS WALL (2026-09-22).
+   *
+   * "Nothing needed protecting on this wall" is a strong claim, and until now
+   * it was printed whenever the item list happened to be empty -- including
+   * when the detector had returned nothing usable at all. Those are opposite
+   * facts and the customer cannot tell them apart from the sentence.
+   *
+   * A detection whose wall came back as the whole frame has not read the wall,
+   * so its masks are not evidence of an unobstructed one either.
+   */
+  const [wallReadMissed, setWallReadMissed] = useState(false);
   const fullFrame = () => UNIT_WALL.map(p => ({ ...p }));
   // The on-wall view switches on by itself the moment a design and four valid
   // corners both exist, whichever arrives last: detection landing after a
@@ -575,7 +587,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const validated = await validateWallUpload(ready);
       const asset = { ...validated, file: ready, url: retain(validated.url) };
       if (role === 'photo') {
-        setPhoto(asset); setCorners([]); cornersOrigin.current = 'default'; setCornerSource('default'); setExclusions([]); setDetectedMask(null); setRemoveMask(null); setExcludeDraft([]); setView('before');
+        setPhoto(asset); setCorners([]); cornersOrigin.current = 'default'; setCornerSource('default'); setWallReadMissed(false); setExclusions([]); setDetectedMask(null); setRemoveMask(null); setExcludeDraft([]); setView('before');
         /**
          * ASK FOR THE FOUR CORNERS IMMEDIATELY (owner, 2026-09-18, with a photo
          * uploaded and the page stuck on "Detecting…": "It should ask customer
@@ -739,8 +751,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // start with no explanation. Any tap at all now counts as theirs.
     const started = cornersOrigin.current === 'manual' && cornersRef.current.length > 0;
     const handMarked = started && validWallCorners(cornersRef.current);
-    const cornersOk = !!found.wall && validWallCorners(found.wall);
+    // A DETECTION THAT RETURNS THE FRAME HAS FOUND NOTHING (2026-09-22).
+    // `validWallCorners` accepts UNIT_WALL, so without this the "detected"
+    // source is handed a quad covering the whole photograph, `wallLocated`
+    // goes true, and the design paints over the ceiling, the floor and an
+    // open doorway before the customer has seen her own photo. See
+    // looksLikeWholeFrame for why a false negative is the cheap direction.
+    const cornersOk = !!found.wall && validWallCorners(found.wall) && !looksLikeWholeFrame(found.wall);
     const applied = !started && cornersOk;
+    // Recorded whether or not we apply: a customer mid-tap still deserves an
+    // honest mask card afterwards.
+    setWallReadMissed(!cornersOk);
     if (applied) { setCorners(found.wall!); cornersOrigin.current = 'detected'; setCornerSource('detected'); }
     // Marking mode closes ONLY when detection actually placed the corners. It
     // opened on upload so the customer can tap straight away; closing it on a
@@ -1690,6 +1711,64 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       </section>}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
+          {/* ── MARK THE WALL, ABOVE THE SCROLL (owner, 2026-09-22) ──────────
+              "it doesn't show my photo when I upload, it should show my photo
+              as soon as I upload / above scroll a card pops up and tells me to
+              pin corners of wall and how do I mask closet?"
+
+              The page already had a notice for this and she never saw it, for
+              two compounding reasons. It was gated on `artwork &&` -- so it
+              said nothing at all until a design existed -- and it sat inside
+              the preview section, thousands of pixels down on a phone. It was
+              also unreachable in her case, because the bogus whole-frame
+              detection made `wallLocated` TRUE.
+
+              This card is the opposite of all three: no artwork gate, at the
+              top where the photo lands, and it states the ONE thing standing
+              between her and the on-wall view. Its button does the work rather
+              than describing it -- marking mode on, view back to the photo,
+              scrolled to the photo -- because "tap Re-mark wall corners" was
+              an instruction to find another button. */}
+          {photo && !wallLocated && (
+            <section className={panelClass + ' border-blue-500/60'} role="status">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold wall-ink">
+                    {marking === 'wall'
+                      ? `Tap the four corners of your wall — ${4 - corners.length} to go`
+                      : detecting
+                        ? 'Looking for your wall…'
+                        : 'Mark your wall to see the design on it'}
+                  </h2>
+                  <p className="mt-1.5 max-w-[60ch] text-sm wall-muted">
+                    {marking === 'wall'
+                      ? 'Clockwise from the top left. The design is imposed the moment the fourth corner lands.'
+                      : 'Tap the four corners of the wall, clockwise from the top left. It takes about five seconds.'}
+                    {' '}<strong className="wall-ink">Your print files do not wait for this</strong> — they are already correct.
+                  </p>
+                  {/* Her actual question, answered where it was asked. */}
+                  <p className="mt-2 max-w-[60ch] text-xs wall-muted">
+                    A closet opening, a doorway or a window inside the wall:
+                    mark the wall first, then use <em>Change what we keep</em> under
+                    the photo to paint around it.
+                  </p>
+                </div>
+                {marking !== 'wall' && (
+                  <Button
+                    size="sm"
+                    disabled={!!busy}
+                    onClick={() => {
+                      cornersOrigin.current = 'manual'; setCornerSource('manual');
+                      setCorners([]); setMarking('wall'); setExcludeDraft([]); setView('before');
+                      setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+                    }}
+                  >
+                    <Ruler className="mr-2 h-4 w-4" />Mark the corners
+                  </Button>
+                )}
+              </div>
+            </section>
+          )}
           <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>{uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}<p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically; mark windows and drapes with the mask tools. A wall photo is optional when generating artwork.</p>
             {photo && <div className="mt-3 space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
@@ -1941,7 +2020,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     ? 'Finding what to protect on this wall…'
                     : detectedMask || removeMask || exclusions.length
                       ? <>Protected automatically. The design paints around anything fixed and through anything that would be moved before install.{items.length > 0 && <> <strong>Tap any labelled item on the photo to change our mind about it</strong> — {itemSummary(items).kept} kept, {itemSummary(items).through} painted through.</>}{exclusions.length > 0 && ` ${exclusions.length} area${exclusions.length === 1 ? '' : 's'} you marked by hand.`}</>
-                      : 'Nothing needed protecting on this wall.'}
+                      : wallReadMissed
+                        ? 'We could not read this wall automatically, so nothing is protected yet. Mark the corners, then tell us what to keep — a closet opening, a doorway, a window.'
+                        : 'Nothing needed protecting on this wall.'}
                   {' '}<button type="button" className="font-semibold text-blue-700 underline" onClick={() => setShowMaskTools(v => !v)}>{showMaskTools ? 'Done' : 'Change what we keep'}</button>
                 </p>
               </div>
