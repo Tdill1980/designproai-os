@@ -367,6 +367,43 @@ test("a repeated side is normalized, not refused -- the six approvals are still 
   );
 });
 
+test("the three Production Panel Proof attestations ride only as signed, and a declined one is refused", async (t) => {
+  // Owner, 2026-09-22: the three-zone proof reaches PanelPro; the preflight
+  // must name it. The database requires these three only when the revision's
+  // frozen snapshot carries the proof, so the gateway's job is narrower: forward
+  // exactly what a person signed, refuse a present-but-false one, and never
+  // invent one for a legacy revision that has no proof to attest to.
+  const proof = { proofSheetReviewed: true, cleanPanelsMatchBranded: true, cutGraphicsInventoried: true };
+  const submit = async (qc) => {
+    const calls = [];
+    const server = createGateway({ env, fetchImpl: authenticatedFetch(calls) });
+    t.after(() => server.close());
+    const base = await listen(server);
+    const response = await fetch(`${base}/api/jobs/job-1/approvals/preflight`, {
+      method: "POST",
+      headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+      body: JSON.stringify({ qc, notes: "" }),
+    });
+    const approval = calls.find((call) => call.url.endsWith("/rest/v1/rpc/approve_designpro_human_gate"));
+    return { status: response.status, body: await response.json(), qc: approval ? JSON.parse(approval.init.body).p_qc : null };
+  };
+  // Signed: all three ride on the receipt as true.
+  const signed = await submit({ ...preflightQc, ...proof });
+  assert.equal(signed.status, 202);
+  assert.deepEqual([signed.qc.proofSheetReviewed, signed.qc.cleanPanelsMatchBranded, signed.qc.cutGraphicsInventoried], [true, true, true]);
+  // Absent: nothing is fabricated -- the database decides from the snapshot.
+  const legacy = await submit({ ...preflightQc });
+  assert.equal(legacy.status, 202);
+  for (const key of Object.keys(proof)) assert.equal(key in legacy.qc, false, `${key} must not be invented`);
+  // Declined: a present-but-false attestation is a refusal, never dropped.
+  for (const key of Object.keys(proof)) {
+    const declined = await submit({ ...preflightQc, ...proof, [key]: false });
+    assert.equal(declined.status, 400, `${key}: false was accepted`);
+    assert.equal(declined.qc, null, `${key}: false reached the gate RPC`);
+    assert.deepEqual(declined.body.whenProofPresent, Object.keys(proof));
+  }
+});
+
 test("approval refuses a visually clicked gate unless every required check is explicit", async (t) => {
   const calls = [];
   const server = createGateway({ env, fetchImpl: authenticatedFetch(calls) });

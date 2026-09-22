@@ -39,6 +39,29 @@ export const PREFLIGHT_CHECKS: Array<[string, string]> = [
 ];
 
 /**
+ * THE PREFLIGHT NAMES THE PROOF. (Owner, Trish 2026-09-22: "must send
+ * production panel proof and its assets to panel pro studio / For processing
+ * and qc.")
+ *
+ * The three-zone Production Panel Proof, its six Zone 2 clean panels and its
+ * Zone 3 cut graphics already reach PanelPro Studio and the paid ZIP. What was
+ * missing is that no QC check asked about any of them: a reviewer could look
+ * at the sheet, nothing required them to, and nothing recorded that they did.
+ *
+ * These three are human attestations like the six in PREFLIGHT_CHECKS. The
+ * board shows the evidence beside each one -- the sheet hash, the Zone 2 count,
+ * the Zone 3 inventory, read from the proof itself -- and the box is only ever
+ * ticked by a person. The database requires them ONLY when the revision's
+ * frozen snapshot carries the proof; a revision authored on an earlier route
+ * has no three-zone document and is not asked.
+ */
+export const PROOF_CHECKS: Array<[string, string]> = [
+  ["proofSheetReviewed", "The three-zone Production Panel Proof for this revision was opened and reviewed"],
+  ["cleanPanelsMatchBranded", "Zone 2 is the same six panels as Zone 1 with the type and logos left off"],
+  ["cutGraphicsInventoried", "Zone 3 holds the logo, text and graphic elements the brief called for, and nothing invented"],
+];
+
+/**
  * IS EVERYTHING ACTUALLY THERE — the design team's presence sweep.
  *
  * Owner, 2026-08-28: "All the checks must be visible in UI on PanelProStudio

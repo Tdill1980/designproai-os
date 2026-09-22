@@ -701,6 +701,15 @@ export type PreflightQc = {
   logoInventoryVerified: boolean;
   textLockVerified: boolean;
   /**
+   * The three attestations about the three-zone Production Panel Proof
+   * (`PROOF_CHECKS`). Required by the database only when the revision's frozen
+   * snapshot carries the proof; a revision authored on an earlier route has no
+   * three-zone document and is not asked. Sent only when a person ticked them.
+   */
+  proofSheetReviewed?: boolean;
+  cleanPanelsMatchBranded?: boolean;
+  cutGraphicsInventoried?: boolean;
+  /**
    * The six sides the designer approved individually, each against its own proof
    * and its own panel. The board has always gated its button on all six; they
    * just never left the browser, so the receipt recorded the six checkboxes and

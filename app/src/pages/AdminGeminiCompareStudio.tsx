@@ -36,8 +36,10 @@ import {
   outputFormatOf,
   outputVariantOf,
   PREFLIGHT_CHECKS,
+  PROOF_CHECKS,
   STAGE_LABEL,
 } from "@/lib/designpro-stages";
+import { useAtlasPanelProof } from "@/components/designpanelpro/AtlasPanelProofSheet";
 import {
   exactTimestamp,
   type DesignVersion,
@@ -2166,11 +2168,148 @@ function packPresenceEvidence(job: PanelProStudioJob): Record<string, string> {
   };
 }
 
+/** Only the proof attestations a person ticked, as `true`; nothing else. */
+function tickedProofChecks(proofQc: Record<string, boolean>): Partial<PreflightQc> {
+  return Object.fromEntries(
+    PROOF_CHECKS.filter(([key]) => proofQc[key] === true).map(([key]) => [key, true]),
+  ) as Partial<PreflightQc>;
+}
+
+/** The revision a production run is built from: the run's own, else the newest. */
+function productionProofRequestId(job: PanelProStudioJob): string | null {
+  const own = job.atlas_versions.find((entry) => entry.id === job.revision_id);
+  return own?.requestId || job.atlas_versions[job.atlas_versions.length - 1]?.requestId || null;
+}
+
+/**
+ * THE SOURCE PROOF, INSIDE THE GATE THAT NAMES IT. (Owner, 2026-09-22: "must
+ * send production panel proof and its assets to panel pro studio / For
+ * processing and qc.")
+ *
+ * The three-zone sheet is already at the top of this page. What was missing is
+ * that the preflight never asked about it: a reviewer could look, nothing
+ * required them to, and nothing recorded that they did. These are the three
+ * attestations that do -- and the evidence beside each one (the sheet hash,
+ * the Zone 2 count, the Zone 3 inventory, the thumbnails) is read from the
+ * proof itself through the SAME query the sheet loader uses, so seeing the
+ * asset and signing for it are one act. The evidence is computed; the box is
+ * only ever ticked by a person (RULE 0.22).
+ *
+ * Required unless the read POSITIVELY says this revision has no three-zone
+ * proof (`panelProof: false` -- a six-surface / field revision). A read that is
+ * still loading or failed cannot prove absence, so the boxes stay required:
+ * the database decides the same way from the frozen snapshot, and an extra
+ * true attestation on a legacy revision is harmless.
+ */
+function ProofSourceAttestations({
+  requestId,
+  pollWhilePending,
+  checks,
+  onChange,
+  onRequired,
+}: {
+  requestId: string;
+  pollWhilePending: boolean;
+  checks: Record<string, boolean>;
+  onChange: (key: string, value: boolean) => void;
+  onRequired: (required: boolean) => void;
+}) {
+  const query = useAtlasPanelProof(requestId, pollWhilePending);
+  const proof = query.data;
+  const absent = query.status === "success" && Boolean(proof) && proof.panelProof === false;
+  const required = !absent;
+  useEffect(() => { onRequired(required); }, [required, onRequired]);
+
+  if (absent) {
+    return (
+      <p data-testid="proof-attestations-not-required" className="mt-3 text-[11px] text-gray-500">
+        No three-zone Production Panel Proof on this revision: it was authored before
+        Call 1 drew one, so the three proof attestations are not asked.
+      </p>
+    );
+  }
+
+  const quadrants = proof?.quadrants;
+  const clean = quadrants?.clean || [];
+  const branded = quadrants?.branded || [];
+  const cut = quadrants?.cutGraphics || [];
+  const reading = query.status === "pending";
+  const unreadable = query.status === "error" || (query.status === "success" && !proof?.panelProof);
+  const evidence: Record<string, string> = {
+    proofSheetReviewed: reading
+      ? "Reading the Production Panel Proof…"
+      : unreadable
+        ? "The proof could not be read here — open it at the top of this page before signing"
+        : `Sheet ${String(proof?.sheet?.contentHash || "").slice(0, 12) || "—"} · V${proof?.revisionSequence ?? "?"}`,
+    cleanPanelsMatchBranded: reading
+      ? "Reading…"
+      : `Zone 2 · ${clean.length} clean panels · Zone 1 · ${branded.length} branded panels`,
+    cutGraphicsInventoried: reading
+      ? "Reading…"
+      : cut.length
+        ? `Zone 3 · ${cut.length} elements: ${cut.map((panel) => panel.surfaceKey).join(", ")}`
+        : "Zone 3 · no elements — the brief carried no logo, contact line or tagline",
+  };
+  const thumbs: Record<string, typeof clean> = {
+    cleanPanelsMatchBranded: clean.filter((panel) => panel.signedUrl),
+    cutGraphicsInventoried: cut.filter((panel) => panel.signedUrl),
+  };
+
+  return (
+    <div data-testid="proof-attestations">
+      <div className="mb-2 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+        The source proof
+      </div>
+      <ul className="space-y-1.5">
+        {PROOF_CHECKS.map(([key, label]) => (
+          <li key={key} className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-emerald-600"
+              checked={!!checks[key]}
+              onChange={(event) => onChange(key, event.target.checked)}
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[11px] leading-snug text-gray-600">{label}</span>
+              <span className="block truncate font-mono text-[10px] text-gray-400" title={evidence[key]}>
+                {evidence[key]}
+              </span>
+              {thumbs[key]?.length ? (
+                <span className="mt-1 flex flex-wrap gap-1">
+                  {thumbs[key].map((panel) => (
+                    <a
+                      key={`${key}:${panel.surfaceKey}:${panel.contentHash || ""}`}
+                      href={panel.signedUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={panel.surfaceKey}
+                    >
+                      <img
+                        src={panel.signedUrl}
+                        alt={`${panel.surfaceKey} — ${key === "cleanPanelsMatchBranded" ? "Zone 2" : "Zone 3"}`}
+                        className="h-10 w-16 rounded border border-gray-200 bg-gray-50 object-contain"
+                        loading="lazy"
+                      />
+                    </a>
+                  ))}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ProductionPackSection({
   job,
   approvedSides,
   qcPassedSides,
   surfaceQc,
+  proofQc,
+  onProofQc,
+  onProofRequired,
   onApproved,
 }: {
   job: PanelProStudioJob;
@@ -2179,6 +2318,10 @@ function ProductionPackSection({
   qcPassedSides: ReadonlySet<string>;
   /** What the server recorded per surface, carried into the QC receipt. */
   surfaceQc: Record<string, SurfaceQcRecord>;
+  /** The three proof attestations, held by the page so the shortcut button shares them. */
+  proofQc: Record<string, boolean>;
+  onProofQc: (key: string, value: boolean) => void;
+  onProofRequired: (required: boolean) => void;
   onApproved: () => Promise<void>;
 }) {
   const { toast } = useToast();
@@ -2197,8 +2340,16 @@ function ProductionPackSection({
   // sends artwork to print that nobody physically checked.
   const qcOutstanding = PRODUCTION_SURFACES.filter((side) => !qcPassedSides.has(side));
   const presenceEvidence = packPresenceEvidence(job);
+  const proofRequestId = productionProofRequestId(job);
+  const [proofRequired, setProofRequired] = useState(true);
+  const handleProofRequired = useCallback((required: boolean) => {
+    setProofRequired(required);
+    onProofRequired(required);
+  }, [onProofRequired]);
+  const proofReady = !proofRequired || PROOF_CHECKS.every(([key]) => proofQc[key]);
   const preflightReady = PACK_PRESENCE_CHECKS.every(([key]) => preflight[key])
     && PREFLIGHT_CHECKS.every(([key]) => preflight[key])
+    && proofReady
     && allSidesApproved && qcOutstanding.length === 0;
   const finalReady = FINAL_CHECKS.every(([key]) => finalQc[key]);
 
@@ -2215,6 +2366,10 @@ function ProductionPackSection({
         {
           ...(PACK_PRESENCE_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
           ...(PREFLIGHT_CHECKS.reduce((acc, [key]) => ({ ...acc, [key]: true }), {}) as PreflightQc),
+          // The proof attestations ride only as ticked. Never `true` by default:
+          // the gateway forwards what a person signed and the database
+          // requires them only when the revision carries the proof.
+          ...tickedProofChecks(proofQc),
           approvedSides: [...approvedSides],
           // What was verified on each side, so the receipt records the physical
           // check rather than only that a button was pressed.
@@ -2328,6 +2483,23 @@ function ProductionPackSection({
                 </li>
               ))}
             </ul>
+            {/* THE SOURCE PROOF. The sheet, Zone 2 and Zone 3 already reach
+                this board; these are the attestations that name them, with
+                their evidence and thumbnails beside the box. */}
+            {proofRequestId ? (
+              <ProofSourceAttestations
+                key={proofRequestId}
+                requestId={proofRequestId}
+                pollWhilePending={job.state === "queued" || job.state === "running"}
+                checks={proofQc}
+                onChange={onProofQc}
+                onRequired={handleProofRequired}
+              />
+            ) : (
+              <p className="mt-3 text-[11px] text-amber-700">
+                This job carries no Call 1 revision to read a Production Panel Proof from.
+              </p>
+            )}
             <Textarea
               value={preflightNotes}
               onChange={(event) => setPreflightNotes(event.target.value)}
@@ -2709,6 +2881,20 @@ export default function AdminGeminiCompareStudio() {
       return next;
     });
   }, []);
+  // THE THREE PROOF ATTESTATIONS, held by the page: the Production Pack card
+  // renders and ticks them, and the "Build Print Files" shortcut below submits
+  // the same gate, so both read one record of what a person actually signed.
+  const [proofQc, setProofQc] = useState<Record<string, boolean>>({});
+  const proofQcRef = useRef<Record<string, boolean>>({});
+  const proofRequiredRef = useRef(true);
+  const tickProofQc = useCallback((key: string, value: boolean) => {
+    setProofQc((prev) => {
+      const next = { ...prev, [key]: value };
+      proofQcRef.current = next;
+      return next;
+    });
+  }, []);
+  const noteProofRequired = useCallback((required: boolean) => { proofRequiredRef.current = required; }, []);
   const [runningPanelPro, setRunningPanelPro] = useState(false);
   const [panelProProgress, setPanelProProgress] = useState<{ done: number; total: number; label: string } | null>(null);
   const [buildingPrint, setBuildingPrint] = useState<{ done: number; total: number } | null>(null);
@@ -2784,6 +2970,10 @@ export default function AdminGeminiCompareStudio() {
         // the same six keys, so carrying them across a GenerationID boundary
         // would make the new job appear approved by the old job's clicks.
         approvedSidesRef.current = new Set();
+        // The three proof attestations are a signature for THIS job's proof;
+        // they never carry across a GenerationID boundary either.
+        proofQcRef.current = {};
+        setProofQc({});
         setSelectedVersionNumber(null);
       }
       setJob(next as unknown as Job);
@@ -3381,6 +3571,21 @@ export default function AdminGeminiCompareStudio() {
       });
       return;
     }
+    // THE PROOF ATTESTATIONS ARE NEVER HARD-CODED. The three about the
+    // Production Panel Proof are a person's signature; this shortcut sends the
+    // ones ticked on the Production Pack card and stops if the proof is on
+    // this revision and they are not all signed.
+    const proofMissing = proofRequiredRef.current
+      ? PROOF_CHECKS.filter(([key]) => proofQcRef.current[key] !== true).map(([, label]) => label)
+      : [];
+    if (proofMissing.length) {
+      toast({
+        title: "Sign for the Production Panel Proof first",
+        description: `In the Production Pack card, tick: ${proofMissing.join("; ")}.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setBuildingPrint({ done: 0, total: VIEW_DEFS.length });
     try {
       await dpApi.approvePreflight(
@@ -3392,6 +3597,7 @@ export default function AdminGeminiCompareStudio() {
           panelHashesVerified: true,
           logoInventoryVerified: true,
           textLockVerified: true,
+          ...tickedProofChecks(proofQcRef.current),
           approvedSides: VIEW_DEFS.map((def) => SURFACE_FOR_SIDE_KEY[def.sideKey]).filter(Boolean).sort(),
           surfaceQc: approvedSurfaceChecklists(surfaceQcRef.current),
         } as any,
@@ -3997,6 +4203,9 @@ export default function AdminGeminiCompareStudio() {
                 approvedSides={approvedSidesRef.current}
                 qcPassedSides={qcPassedSides}
                 surfaceQc={surfaceQcRecords}
+                proofQc={proofQc}
+                onProofQc={tickProofQc}
+                onProofRequired={noteProofRequired}
                 onApproved={async () => { await loadJob(String(job.id)); }}
               />
             )}
