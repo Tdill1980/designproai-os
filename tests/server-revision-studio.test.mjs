@@ -168,7 +168,16 @@ test("The branded panel editor and the PanelPro production board stay distinct",
 
   // The board validates. It is never a second panel producer.
   assert.doesNotMatch(board, /dpApi\.(regenerateView|createGenerationRequest|handoffGeneration)/);
-  assert.match(board, /dpApi\.approvePreflight\(/);
+  // It used to be asserted here that the board calls `dpApi.approvePreflight`.
+  // That call submitted `{ ...checks, approvedSides }` with no per-surface
+  // checklist, which the gateway refuses before the RPC -- every click
+  // returned 400 (docs/PANEL-PROOF-TO-PANELPRO.md §5.3). A control that cannot
+  // complete the gate is not a control. The preflight is submitted from the
+  // control room only; the board keeps the final gate and links to it
+  // (tests/panelpro-preflight-names-the-proof.test.mjs).
+  assert.doesNotMatch(board, /dpApi\.approvePreflight\(/);
+  assert.match(board, /dpApi\.approveFinalQc\(/);
+  assert.match(board, /Release preflight in PanelPro Studio/);
 });
 
 // A PROOF AND ITS PANEL MUST BE THE SAME DESIGN, AND THE BOARD MUST SAY SO.

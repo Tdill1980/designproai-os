@@ -68,6 +68,21 @@ test("output verification is the exact byte-verified 6 x 3 production matrix", (
   ]) assert.ok(migrations.includes(marker), marker);
 });
 
+test("the preflight names the Production Panel Proof on the database, the gateway and the app alike", () => {
+  // Owner, 2026-09-22. The three attestations about the three-zone proof are
+  // one key set on every layer: a key the database requires that the gateway
+  // never forwards, or the app never asks, would refuse every three-zone
+  // preflight for a reason no screen could show.
+  const appStages = readFileSync(new URL("../app/src/lib/designpro-stages.ts", import.meta.url), "utf8");
+  for (const key of ["proofSheetReviewed", "cleanPanelsMatchBranded", "cutGraphicsInventoried"]) {
+    assert.match(migrations, new RegExp(`"${key}":true`), `migration requires ${key}`);
+    assert.match(gateway, new RegExp(`"${key}"`), `gateway forwards ${key}`);
+    assert.match(appStages, new RegExp(`\\["${key}",`), `app lists ${key}`);
+  }
+  assert.match(migrations, /panelpro_proof_evidence_incomplete/);
+  assert.match(migrations, /jsonb_typeof\(v_source\.snapshot->'panelProofAuthoring'\)='object'/, "required only when the frozen snapshot carries the proof");
+});
+
 test("preflight text lock and repeated logo placement identity are fail-closed", () => {
   assert.match(migrations, /textLockVerified/);
   assert.match(gateway + web, /textLockVerified/);

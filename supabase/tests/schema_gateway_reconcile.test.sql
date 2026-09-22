@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(35);
 
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 
@@ -282,6 +282,11 @@ select matches(
   pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),
   'textLockVerified',
   'PanelPro preflight requires the frozen text lock check'
+);
+select matches(
+  pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),
+  'panelpro_proof_evidence_incomplete',
+  'PanelPro preflight names the three-zone Production Panel Proof when the frozen snapshot carries it (2026-09-22)'
 );
 select matches(
   pg_get_functiondef('public.approve_designpro_human_gate(uuid,text,uuid,text,jsonb)'::regprocedure),

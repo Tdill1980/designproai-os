@@ -866,14 +866,25 @@ export default function ProductionWorkflow() {
           />
         )}
 
+      {/* THE PREFLIGHT IS RELEASED IN PANELPRO STUDIO, NOT HERE. This page used
+          to mount QcGate for the preflight too, submitting the six attestations
+          alone -- no approved sides, no per-surface checklists -- which the
+          gateway refuses outright, so every click returned 400. The one working
+          preflight submit is the control room's Production Pack card, which
+          carries the six attestations, the per-surface checklists, the three
+          Production Panel Proof attestations and the approved sides together.
+          The final gate below is complete on its own and stays here. */}
       {job.state === "waiting_for_preflight" && (
-        <QcGate
-          gate="preflight"
-          onApprove={async (qc, notes) => {
-            await dpApi.approvePreflight(generationId, qc as PreflightQc, notes);
-            await load();
-          }}
-        />
+        <Panel
+          className="border-amber-500/40"
+          eyebrow="Human release gate"
+          title="PanelPro preflight QC"
+          description="This run is waiting on the design team's preflight. It is released from PanelPro Studio, beside the Production Panel Proof, the per-surface checklists and the panels themselves."
+        >
+          <Button asChild>
+            <Link to={`/designpro/jobs/${generationId}/panelpro`}>Open PanelPro Studio</Link>
+          </Button>
+        </Panel>
       )}
       {job.state === "waiting_for_final_qc" && (
         <PanelProfileQcSummary outputs={job.panelProfileOutputs} />
