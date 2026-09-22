@@ -130,8 +130,9 @@ export const PANEL_PROOF_CONTAINER_TEMPLATE = {
  * not creative direction -- and it is one sentence, not two paragraphs.
  */
 export const SYSTEM_JOB = [
-  "THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF: the printed panels",
-  "themselves, laid out in three bands on a clean white sheet.",
+  "THE DELIVERABLE IS A PRINT FILE: six flat vehicle-wrap design panels, laid out in three bands on a",
+  "clean white sheet, in exactly the form of the attached finished proof — flat artwork, the PNG or TIFF",
+  "a wrap-shop graphic designer hands to the printer.",
   "",
   "DRAW ONLY THE PANELS. Every caption, figure, note and rule around them is printed onto this",
   "sheet by the press afterwards. Leave every part of the sheet that is not a panel plain white.",
