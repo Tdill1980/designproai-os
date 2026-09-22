@@ -3060,7 +3060,7 @@ async function executeProduction(sb, stage, run, runtimeConfig) {
     // logo-free background of every surface -- the blank the design team lays
     // on the vehicle template -- and until now it left the building as the raw
     // crop off the proof sheet: a few hundred pixels wide, trim only, no bleed,
-    // in the ZIP's qc-panel folder. RestylePro's worker upscales the clean
+    // in the ZIP's qc-panel folder. The reference worker upscales the clean
     // panel beside the branded one per side (`panelKey_clean` from
     // `background_url`); this is that behaviour on the frozen Zone 2 bytes.
     //
