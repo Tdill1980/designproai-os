@@ -2755,12 +2755,29 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                         className="w-full rounded-lg border"
                       />
                     )}
-                    {mainDisplayUrl && !viewsVisible && (
+                    {/* ⚠️ THIS WHOLE BLOCK WAS GATED ON `!viewsVisible`, WHICH IS
+                        FALSE FOR EVERY RUN ON THIS PIPELINE — so it never
+                        rendered, and the only navigation to RevisionStudio on
+                        this screen went with it. The comment on `viewsVisible`
+                        above already names that hazard for issue #570; auto
+                        reveal then reintroduced it from the other side.
+
+                        The two buttons answer different questions and are no
+                        longer gated together. "See All Views" only means
+                        something while views are hidden. "Open in
+                        RevisionStudio" is how the customer revises and how they
+                        reach the panels and the Order Production Files button,
+                        so it is offered as soon as there is a design to revise —
+                        which is RULE 0.23's "then ask" half. */}
+                    {mainDisplayUrl && (
                       <div className="w-full space-y-2 rounded-lg border border-cyan-400/30 bg-cyan-400/5 p-3">
                         <p className="text-sm font-semibold text-cyan-100">
-                          Do you want to see all sides of this design, or revise it?
+                          {viewsVisible
+                            ? "Want to change something? Revise this design."
+                            : "Do you want to see all sides of this design, or revise it?"}
                         </p>
                         <div className="flex flex-col gap-2 sm:flex-row">
+                          {!viewsVisible && (
                           <Button
                             onClick={handleGenerateAllViews}
                             variant="outline"
@@ -2769,6 +2786,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             <Layers className="w-4 h-4" />
                             See All Views
                           </Button>
+                          )}
                           {/* THE ID TRAVELS WITH THE BUTTON. (Trish 2026-08-29:
                               "I should never have to copy/paste a Generation
                               ID.") This navigated to a bare `/revision-studio`,

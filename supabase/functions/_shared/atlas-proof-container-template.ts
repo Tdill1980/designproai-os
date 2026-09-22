@@ -91,8 +91,18 @@ export interface ContainerOptions {
   companyName?: string;
   vehicle?: string;
   bleedInches?: number;
-  /** Header job block. Absent fields draw a ruled line, as the blank sheet does. */
-  job?: { date?: string; order?: string; designer?: string; version?: string };
+  /**
+   * Header job block. Absent fields draw a ruled line, as the blank sheet does.
+   * `generationId` labels the second row before a purchase exists (the ID
+   * ladder: Generation ID at Call 1, Design ID and Order ID at purchase).
+   */
+  job?: { date?: string; order?: string; generationId?: string; designer?: string; version?: string };
+  /**
+   * Per-slot Zone 3 captions, by slot index, or null to keep the slot's own.
+   * A slot filled with an element the DESIGN drew must not be captioned
+   * "PRIMARY LOGO" or "CONTACT LINE"; the caller names what it placed there.
+   */
+  zone3Captions?: Array<{ caption?: string; note?: string } | null> | null;
 }
 
 const esc = (v: unknown) => String(v == null ? "" : v)
@@ -360,7 +370,7 @@ export function parsePanelRows(rows: unknown): ContainerManifest {
  */
 export function containerSvg(options: ContainerOptions = {}): string {
   const { manifest = {}, companyName = "", vehicle = "", bleedInches = 5, mode = "template",
-    job = {}, dimensionManifest } = options;
+    job = {}, dimensionManifest, zone3Captions = null } = options;
   const chrome = mode === "chrome";
   const ground = chrome ? "none" : "#ffffff";
   const surfaces = surfacesFrom(manifest);
@@ -470,7 +480,13 @@ export function containerSvg(options: ContainerOptions = {}): string {
   // values; once the document became the code's job that instruction was one the
   // model is told to ignore, and deleting it without drawing them here would
   // have silently dropped a supplied order number off the sheet.
-  ([["DATE:", job.date], ["ORDER #:", job.order], ["DESIGNER:", job.designer],
+  // THE ID LADDER (owner, 2026-09-22): the Generation ID is minted at Call 1;
+  // the Design ID and the Order ID are minted at purchase. Before a purchase
+  // the second row names the Generation ID, never a derived DID and never a
+  // blank line with a misleading label. A real order number still wins.
+  const orderRow: [string, string | undefined] = job.order ? ["ORDER #:", job.order]
+    : job.generationId ? ["GENERATION ID:", job.generationId] : ["ORDER #:", ""];
+  ([["DATE:", job.date], orderRow, ["DESIGNER:", job.designer],
     ["VERSION:", job.version]] as Array<[string, string | undefined]>).forEach(([k, v], i) => {
     m.push(text(1192, 38 + i * 14, k, { size: 8.5, fill: MUTED }));
     if (v) m.push(text(1262, 38 + i * 14, v, { size: 8.5 }));
@@ -494,12 +510,15 @@ export function containerSvg(options: ContainerOptions = {}): string {
   m.push(zoneBand(54, 648, 1428, ZONE3,
     "ZONE 3 — CUT GRAPHICS (LOGO, TEXT & ICONS ONLY)",
     "VECTOR CUT ELEMENTS — NO BACKGROUND"));
-  for (const slot of layoutCutGraphics()) {
+  layoutCutGraphics().forEach((slot, index) => {
+    const custom = Array.isArray(zone3Captions) ? zone3Captions[index] : null;
+    const caption = custom?.caption || slot.caption;
+    const note = custom?.note || slot.note;
     m.push(`<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" fill="${ground}"`
       + ` stroke="${FRAME}" stroke-width="1" stroke-dasharray="5 4"/>`);
-    m.push(text(slot.x + slot.w / 2, 792, slot.caption, { size: 9.5, weight: 700, anchor: "middle" }));
-    m.push(text(slot.x + slot.w / 2, 803, slot.note, { size: 7.5, fill: MUTED, anchor: "middle" }));
-  }
+    m.push(text(slot.x + slot.w / 2, 792, caption, { size: 9.5, weight: 700, anchor: "middle" }));
+    m.push(text(slot.x + slot.w / 2, 803, note, { size: 7.5, fill: MUTED, anchor: "middle" }));
+  });
 
   // ── trim table, notes, legend ────────────────────────────────────────────
   m.push(`<line x1="0" y1="826" x2="${WIDTH}" y2="826" stroke="${RULE}" stroke-width="1"/>`);

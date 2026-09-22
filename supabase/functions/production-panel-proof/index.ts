@@ -340,6 +340,47 @@ const ARTBOARD_QUALITY_MAX = 2;
 const CALL1_INPUT_PATH = /^atlas-call1-inputs\/[0-9a-f]{64}\.png$/;
 
 /**
+ * THE AUTHORITATIVE DIMENSIONS FOR THE DOCUMENT'S LABELS.
+ *
+ * `containerSvg` reads `trimWidthIn`/`trimHeightIn` and
+ * `printWidthIn`/`printHeightIn` off a `dimensionManifest` and falls back to
+ * the geometry rows when one is absent. `parsePanelRows` emits
+ * `trimInches: {widthIn, heightIn}` -- a different shape, for the rectangles --
+ * so it cannot serve as that manifest. This builds the one it wants, from the
+ * caller's TRIM rows paired with the PRINT rows already in hand.
+ *
+ * Returns undefined unless both row sets parse to the SAME six surfaces. A
+ * partial manifest would label some panels from GENIE and the rest from the
+ * fallback, which is worse than labelling all of them the same way: two
+ * conventions on one sheet cannot be read.
+ */
+function panelDimensionManifest(trimRows: unknown, printRows: unknown) {
+  const parse = (rows: unknown) => {
+    const out = new Map<string, { widthIn: number; heightIn: number }>();
+    for (const zone of parsePanelRows(rows).zones as Array<Record<string, unknown>>) {
+      const trim = zone.trimInches as { widthIn: number; heightIn: number } | undefined;
+      if (!trim) continue;
+      out.set(String(zone.surfaceKey), { widthIn: trim.widthIn, heightIn: trim.heightIn });
+    }
+    return out;
+  };
+  const trim = parse(trimRows);
+  const print = parse(printRows);
+  if (!trim.size || trim.size !== print.size) return undefined;
+  const zones: Array<Record<string, unknown>> = [];
+  for (const [surfaceKey, t] of trim) {
+    const p = print.get(surfaceKey);
+    if (!p) return undefined;
+    zones.push({
+      surfaceKey,
+      trimWidthIn: t.widthIn, trimHeightIn: t.heightIn,
+      printWidthIn: p.widthIn, printHeightIn: p.heightIn,
+    });
+  }
+  return { zones };
+}
+
+/**
  * THE EDGE-SIDE INSPECTOR GATE: the sheet's SHAPE, read without decoding it.
  *
  * Owner: the gate must run before the payload reaches the UI, with no stubs.
@@ -716,6 +757,21 @@ serve(async (req) => {
     try {
       const drawn = await stageProofContainer(svc.storage.from(BUCKET), {
         manifest: parsePanelRows(panelRows),
+        // THE CALLOUTS MUST READ TRIM, AND `panelRows` IS PRINT.
+        //
+        // `panelRowsFromManifest` states the PRINT rectangle on purpose: that
+        // is the shape the designer fills and the cutter cuts, and it is the
+        // only one whose aspect reproduces the zone exactly. But the document
+        // labels its callouts and its PANEL DIMENSIONS REFERENCE table TRIM,
+        // and with no `dimensionManifest` `containerSvg` treated those print
+        // numbers as trim and added the 5" bleed a second time — a 222.5 x 53
+        // driver drawn as `242.5" W x 73.0" H (TRIM: 232.5" x 63.0")`. Both
+        // numbers wrong, on the sheet the designer is shown.
+        //
+        // So the caller sends the trim rows beside the print rows and the
+        // labels come from both. Absent — an older caller — this is undefined
+        // and the drawing is byte-identical to before.
+        dimensionManifest: panelDimensionManifest(body?.panelTrimRows, panelRows),
         mode: body.separatedArtwork === true ? "artwork" : "template",
         companyName: field("companyName"),
         vehicle: ["vehicleYear", "vehicleMake", "vehicleModel"].map(field).filter(Boolean).join(" "),
