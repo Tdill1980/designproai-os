@@ -786,25 +786,66 @@ test("the six-surface master gates are ADVISORY on the panel proof: recorded on 
   const outputClass = { contract: "designpro.atlas-output-class-gate.v1", disposition: "vehicle_depiction",
     blocking: true, confidence: 1, evidence: "a truck", candidateSha256: "a".repeat(64) };
   for (const panelProof of [true, false]) {
+    // THE CLASS VERDICT IS HELD BACK until the test releases it. On the panel
+    // proof the inspector is advisory and runs OFF the critical path (latency,
+    // 2026-09-22), so acceptance must complete while this promise is still
+    // pending; the pre-change branch awaited it inline and would sit here for
+    // the whole Flash round trip -- which the race below turns into a failure
+    // instead of a hang. Six-surface still awaits it: the gate is unchanged.
+    let releaseVerdict;
+    const verdict = new Promise((resolve) => { releaseVerdict = () => resolve(outputClass); });
     const sandbox = {
       panelProof, attempt: 2, provider: {}, masterBytes: Buffer.from("m"), manifest: { zones: [] },
-      timings: { outputClassMs: 0 }, logger() {}, Date,
+      timings: { outputClassMs: 0, advisoryClass: { offCriticalPath: true, ms: 0, calls: 0 } }, logger() {}, Date,
       deterministic, masterCutoutSurfaces: [], masterCutoutFindings: [],
       outputClassReceipt: null, masterGateAdvisory: null, stillBlocking: null, refusalCode: null,
-      async classifyAtlasCandidate() { return outputClass; },
+      async classifyAtlasCandidate() { return panelProof ? verdict : outputClass; },
       panelProofGateAdvisory: atlas._test.panelProofGateAdvisory,
+      advisoryClass: null,
     };
-    await runInNewContext(`(async () => { ${gate} })()`, sandbox);
+    sandbox.advisoryClass = panelProof ? atlas._test.createPanelProofAdvisoryClassifier({
+      classify: () => verdict, provider: sandbox.provider, zones: sandbox.manifest.zones,
+      timings: sandbox.timings, logger() {},
+      publish: (next) => { sandbox.outputClassReceipt = next.outputClassReceipt; sandbox.masterGateAdvisory = next.masterGateAdvisory; },
+    }) : null;
+    const accepted = runInNewContext(`(async () => { ${gate} })()`, sandbox);
+    if (panelProof) {
+      const outcome = await Promise.race([accepted.then(() => "accepted"),
+        new Promise((resolve) => setTimeout(() => resolve("still waiting on the inspector"), 500).unref())]);
+      assert.equal(outcome, "accepted", "the panel proof must be accepted while the class verdict is still in flight");
+    } else {
+      await accepted;
+    }
     // Arrays made inside the VM realm carry the sandbox's Array prototype, so
     // they are spread into host arrays before a strict deep comparison.
     if (panelProof) {
       assert.deepEqual([...sandbox.stillBlocking], [], "the panel proof is ACCEPTED");
       assert.equal(sandbox.refusalCode, null);
+      // The deterministic findings are on the receipt BEFORE the verdict: a
+      // checkpoint written in this window carries a valid advisory receipt
+      // (contract, advisory:true, refused:false) that names the real finding.
+      const interim = sandbox.masterGateAdvisory;
+      assert.equal(interim.contract, atlas._test.MASTER_GATE_ADVISORY_CONTRACT);
+      assert.equal(interim.advisory, true);
+      assert.equal(interim.refused, false);
+      assert.deepEqual([...interim.findings.map((f) => f.code)], ["flat_atlas_master_deterministic_failed"]);
+      assert.equal(interim.outputClass, null, "not measured yet, and never pretended to be");
+      assert.equal(sandbox.outputClassReceipt, null);
+      assert.equal(sandbox.advisoryClass.pending(), true);
+      // Then the verdict lands and is JOINED: the same receipt the inline
+      // inspector recorded, class finding included.
+      releaseVerdict();
+      await sandbox.advisoryClass.settle();
+      assert.equal(sandbox.advisoryClass.pending(), false);
+      assert.equal(sandbox.timings.advisoryClass.calls, 1);
+      assert.equal(sandbox.timings.outputClassMs, 0, "the inspector's time is not billed to the critical path");
+      assert.equal(sandbox.outputClassReceipt, outputClass);
       const advisory = sandbox.masterGateAdvisory;
       assert.equal(advisory.contract, atlas._test.MASTER_GATE_ADVISORY_CONTRACT);
       assert.equal(advisory.advisory, true);
       assert.equal(advisory.refused, false);
       assert.equal(advisory.candidate, 2);
+      assert.equal(advisory.stage, "candidate");
       assert.deepEqual([...advisory.findings.map((f) => f.code)],
         ["flat_atlas_master_deterministic_failed", "flat_atlas_master_output_class_invalid"]);
       assert.match(advisory.findings[0].finding, /rear: edgeHoleRatio 0\.42/, "the gate's real finding is on the receipt");

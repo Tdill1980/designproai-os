@@ -3408,6 +3408,100 @@ function panelProofGateAdvisory({ candidate, deterministic, outputClass, stage =
 }
 
 /**
+ * THE ADVISORY INSPECTOR RUNS OFF THE CRITICAL PATH ON THE PANEL PROOF.
+ * (Latency, 2026-09-22: measured p50 request->master 89 s against a 60 s SLO,
+ * with the output-class inspector -- one Gemini Flash call, ~11 s p50 -- awaited
+ * INSIDE the candidate loop before acceptance, on a topology where its verdict
+ * refuses nothing.)
+ *
+ * On six-surface / field / hero-driver the inspector is a GATE and stays where
+ * it is: deterministic checks, then the class question, then acceptance, in
+ * that order, awaited. Nothing here touches that branch.
+ *
+ * On the panel proof both verdicts are ADVISORY (`panelProofGateAdvisory`):
+ * recorded on the receipt for PanelPro's human QC, never a refusal. So the
+ * DETERMINISTIC findings -- already measured, free -- are recorded the moment
+ * the candidate is accepted, and the class question is asked in the background
+ * while the fill, the checkpoint, the panel cut and the Driver photographer
+ * request proceed. The verdict is JOINED before the revision row is written,
+ * so the row carries exactly the receipt it carried when the call was awaited
+ * inline: same `masterGateAdvisory` shape, same `stage`/`prior` chain, same
+ * `masterOutputClass`.
+ *
+ * What changes on the receipt while the verdict is in flight: the advisory
+ * carries `outputClass: null` and `outputClassReceipt` is null. That interim
+ * state is a VALID panel-proof acceptance -- `writeAcceptedCheckpoint` requires
+ * the advisory receipt itself (contract, advisory:true, refused:false), not the
+ * class verdict -- so a checkpoint written in that window resumes, and the
+ * resumed worker asks the class question again on the accepted bytes rather
+ * than recording null as fact.
+ *
+ * The queue is sequential (candidate, then repaired when the fill changed the
+ * sheet), so a repaired run still records two verdicts on two sheets exactly as
+ * before. Only the LAST enqueued stage is published, so a checkpoint can never
+ * carry a candidate-stage receipt over a repaired master.
+ */
+function createPanelProofAdvisoryClassifier({ classify = classifyAtlasCandidate, provider, zones, timings, logger, publish }) {
+  const queue = [];
+  let index = 0;
+  let running = null;
+  let prior = null;
+  let lastReceipt = null;
+  const record = timings && typeof timings.advisoryClass === "object" && timings.advisoryClass
+    ? timings.advisoryClass : null;
+  const drain = async () => {
+    while (index < queue.length) {
+      const entry = queue[index];
+      const startedAt = Date.now();
+      let receipt = null;
+      try {
+        receipt = await classify({ provider, bytes: entry.bytes, zones });
+      } catch (cause) {
+        // `classifyAtlasCandidate` already fails OPEN with an `unavailable`
+        // receipt on transport failure; a throw here is a programming fault.
+        // It is logged and the receipt stays null ("not measured") -- it is
+        // never allowed to reject into the accepted design.
+        logger?.(`atlas call 1: advisory output-class inspector failed on the ${entry.stage} sheet `
+          + `(recorded as not measured): ${String(cause?.message || cause).slice(0, 200)}`);
+      }
+      if (record) {
+        record.ms += Date.now() - startedAt;
+        record.calls += 1;
+      }
+      prior = panelProofGateAdvisory({
+        candidate: entry.candidate, deterministic: entry.deterministic, outputClass: receipt,
+        stage: entry.stage, prior: entry.prior !== undefined ? entry.prior : prior,
+      });
+      lastReceipt = receipt;
+      index += 1;
+      if (receipt?.blocking) {
+        logger?.(`atlas call 1: output class ${receipt.disposition} on the ${entry.stage} panel proof `
+          + `(advisory, recorded, not refused): ${String(receipt.evidence || "").slice(0, 200)}`);
+      }
+      if (index === queue.length) publish({ outputClassReceipt: lastReceipt, masterGateAdvisory: prior });
+    }
+  };
+  const kick = () => {
+    if (running || index >= queue.length) return;
+    running = drain().finally(() => { running = null; kick(); });
+  };
+  return {
+    /** `{ stage, candidate, deterministic, bytes, prior? }` -- verdicts are asked in enqueue order. */
+    enqueue(entry) { queue.push(entry); kick(); },
+    /** True while a verdict is still owed. */
+    pending() { return running !== null || index < queue.length; },
+    /** Waits for every enqueued verdict; the last publish has already landed when this resolves. */
+    async settle() {
+      while (running || index < queue.length) {
+        kick();
+        await running;
+      }
+      return { outputClassReceipt: lastReceipt, masterGateAdvisory: prior, calls: index };
+    },
+  };
+}
+
+/**
  * THE PARENT PROOF, STAGED WHERE THE PROOF EDGE WILL ATTACH IT (owner,
  * 2026-09-22: "Revisions should auto generate edits directly to panel pro
  * production proof").
@@ -4106,8 +4200,24 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // stopwatch against a browser tab.
     outputClassMs: 0,
     passengerMirrorMs: 0,
+    // The panel proof's ADVISORY inspector runs concurrently with the fill,
+    // the checkpoint, the cut and the Driver request, so its duration is not
+    // wall-clock spent by the customer. Recorded as an object rather than an
+    // `*Ms` bucket on purpose: `unattributedMs` subtracts every `*Ms` key from
+    // the total, and subtracting overlapped time would make it lie.
+    advisoryClass: { offCriticalPath: true, ms: 0, calls: 0 },
     ...(recoveredState?.timings || {}),
   };
+  // The panel proof's off-critical-path inspector (see
+  // `createPanelProofAdvisoryClassifier`). Null on every other topology, where
+  // the class question stays a blocking gate inside the loop.
+  const advisoryClass = panelProof ? createPanelProofAdvisoryClassifier({
+    provider, zones: manifest.zones, timings, logger,
+    publish: (next) => {
+      outputClassReceipt = next.outputClassReceipt;
+      masterGateAdvisory = next.masterGateAdvisory;
+    },
+  }) : null;
   const checkpointState = () => {
     const { bytes: _providerBytes, ...generatedReceipt } = generated;
     const { bytes: _deliveryBytes, ...deliveryReceipt } = masterDelivery || {};
@@ -4466,16 +4576,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
         // the receipt; neither refuses, neither writes a ledger row. The
         // cut-out surfaces above still feed the deterministic FILL after the
         // loop, because the fill is repair, not a gate.
-        const outputClassStartedAt = Date.now();
-        outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: masterBytes, zones: manifest.zones });
-        timings.outputClassMs += Date.now() - outputClassStartedAt;
+        //
+        // THE DETERMINISTIC FINDINGS ARE RECORDED NOW; THE CLASS QUESTION IS
+        // ASKED OFF THE CRITICAL PATH (see `createPanelProofAdvisoryClassifier`):
+        // a verdict that refuses nothing is not allowed to hold the Driver
+        // proof for a Flash round trip. It is joined before the revision row.
         masterGateAdvisory = panelProofGateAdvisory({
-          candidate: attempt, deterministic, outputClass: outputClassReceipt, stage: "candidate",
+          candidate: attempt, deterministic, outputClass: null, stage: "candidate",
         });
         if (masterGateAdvisory.findings.length) {
           logger(`atlas call 1: six-surface master gates report ${masterGateAdvisory.findings.length} finding(s) on the panel proof `
             + `(advisory, recorded, not refused): ${masterGateAdvisory.findings.map((f) => f.finding).join("; ").slice(0, 400)}`);
         }
+        advisoryClass.enqueue({ stage: "candidate", candidate: attempt, deterministic, bytes: masterBytes });
         stillBlocking = [];
         refusalCode = null;
       }
@@ -4713,21 +4826,26 @@ async function generateOrReuseFlatAtlasResolved(options) {
     // question on the pre-repair sheet already passed; asking it again of a
     // strictly more continuous sheet is the honest receipt, not a new gate.
     masterDeterministic = repaired;
-    const repairedClassStartedAt = Date.now();
-    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes, zones: manifest.zones });
-    timings.outputClassMs += Date.now() - repairedClassStartedAt;
     if (panelProof) {
       // ADVISORY on the repaired panel-proof master too: recorded, with the
-      // pre-repair verdicts kept under `prior`, never refused.
+      // pre-repair verdicts kept under `prior`, never refused. The repaired
+      // sheet's class verdict is queued behind the candidate's and joined
+      // before the revision row; the deterministic findings are on the receipt
+      // now, so a checkpoint written meanwhile describes the repaired sheet.
       masterGateAdvisory = panelProofGateAdvisory({
-        candidate: masterAuthoringAttempts, deterministic: repaired, outputClass: outputClassReceipt,
+        candidate: masterAuthoringAttempts, deterministic: repaired, outputClass: null,
         stage: "repaired", prior: masterGateAdvisory,
       });
       if (masterGateAdvisory.findings.length) {
         logger(`atlas call 1: six-surface master gates report ${masterGateAdvisory.findings.length} finding(s) on the repaired panel proof `
           + `(advisory, recorded, not refused): ${masterGateAdvisory.findings.map((f) => f.finding).join("; ").slice(0, 400)}`);
       }
-    } else if (outputClassReceipt.blocking) {
+      advisoryClass.enqueue({ stage: "repaired", candidate: masterAuthoringAttempts, deterministic: repaired, bytes: surfaceSourceBytes });
+    } else {
+    const repairedClassStartedAt = Date.now();
+    outputClassReceipt = await classifyAtlasCandidate({ provider, bytes: surfaceSourceBytes, zones: manifest.zones });
+    timings.outputClassMs += Date.now() - repairedClassStartedAt;
+    if (outputClassReceipt.blocking) {
       throw new FlatAtlasError(
         outputClassReceipt.disposition === "map_drawn"
           ? "flat_atlas_master_map_drawn"
@@ -4735,6 +4853,19 @@ async function generateOrReuseFlatAtlasResolved(options) {
         `The repaired sheet was classed ${outputClassReceipt.disposition}: ${outputClassReceipt.evidence || "refused by the output-class gate"}`,
       );
     }
+    }
+  }
+  // A RESUMED PANEL-PROOF CHECKPOINT WHOSE CLASS VERDICT WAS STILL IN FLIGHT
+  // when the previous worker stopped carries the advisory with `outputClass:
+  // null`. The verdict is asked again here, on the accepted bytes, so the
+  // revision row records a measurement rather than the absence of one. (Not
+  // reached on a fresh run: the loop above enqueued the candidate stage.)
+  if (advisoryClass && recoveredCheckpoint && !outputClassReceipt
+    && masterGateAdvisory && !advisoryClass.pending()) {
+    advisoryClass.enqueue({
+      stage: masterGateAdvisory.stage || "candidate", candidate: Math.max(1, masterAuthoringAttempts),
+      deterministic: masterDeterministic, bytes: surfaceSourceBytes, prior: masterGateAdvisory.prior || null,
+    });
   }
 
   // Optional finishing is PRIVATE preparation until the entire composed sheet
@@ -5255,6 +5386,16 @@ async function generateOrReuseFlatAtlasResolved(options) {
   const uploadWaitStartedAt = Date.now();
   await persistImmutableAssets();
   timings.uploadWaitMs += Date.now() - uploadWaitStartedAt;
+  // THE ADVISORY CLASS VERDICT IS JOINED HERE, after the panels are durable and
+  // the Driver request has long since been dispatched, and before the revision
+  // row is built -- so `masterOutputClass` and `masterGateAdvisory` below carry
+  // exactly what an inline inspector would have recorded. Only the panel proof
+  // has a classifier; every other topology already awaited its gate.
+  if (advisoryClass) {
+    const advisoryJoinStartedAt = Date.now();
+    await advisoryClass.settle();
+    timings.advisoryClass.joinWaitMs = (Number(timings.advisoryClass.joinWaitMs) || 0) + (Date.now() - advisoryJoinStartedAt);
+  }
   // Identity + the design-time size of every side, recorded on the immutable
   // revision. Downstream consumes these; it never re-cuts them.
   const callOnePanelRecords = callOnePanels.map((panel) => ({
@@ -5670,6 +5811,9 @@ module.exports = {
     // the six-surface gates write on it, and the revision's parent-proof
     // staging, exported so both can be EXECUTED by the lock.
     MASTER_GATE_ADVISORY_CONTRACT, panelProofGateAdvisory, stageParentProofReference, revisionEditAssetParts,
+    // The panel proof's off-critical-path inspector, exported so the lock can
+    // EXECUTE the advisory branch with a verdict still in flight.
+    createPanelProofAdvisoryClassifier,
     // The pre-2026-09-22 router (hero-driver / field-first / six-surface),
     // retained so its mechanics stay executable; production never calls it.
     generateOrReuseFlatAtlasLegacyRouting,

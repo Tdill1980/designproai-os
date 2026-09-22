@@ -1172,7 +1172,12 @@ export default function PanelProStudioBoard() {
           requestId={selectedVersion.revision.requestId}
           revisionId={selectedVersion.revisionId}
           version={selectedVersion.version}
-          pollWhilePending
+          // The sheet lands before the entice handoff, so on this board it is
+          // normally readable on the first fetch. Keep re-reading only while
+          // the run is doing automatic work (before the handoff the status
+          // projects Call 1 as queued/running); a run parked on a human gate or
+          // finished cannot land a sheet it does not have.
+          pollWhilePending={job?.state === "queued" || job?.state === "running"}
         />
       )}
 

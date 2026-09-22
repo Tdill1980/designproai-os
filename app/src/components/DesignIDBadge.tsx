@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { customerDesignIdentity } from "@/lib/designId";
 
 /**
  * DESIGNID BADGE OVERLAY — Neon blue glassmorphic render overlay
@@ -14,8 +15,19 @@ interface DesignIDBadgeProps {
   toolName: string;
   /** AI-generated human-readable name (e.g., "Crimson Ronin Edge") */
   designName?: string;
-  /** Tamper-proof render identifier (e.g., "DID-8F4A2C1E") */
+  /**
+   * The Design ID a PURCHASE minted (e.g., "DID-8F4A2C1E"). Post-purchase
+   * surfaces only — WrapBox, the vault, a delivered pack. Never derive it on the
+   * spot from a generation id: the ID ladder mints the DID and the Order ID
+   * when the Production Pack is bought, not at Call 1.
+   */
   did?: string;
+  /**
+   * The Generation ID, minted at Call 1. A pre-purchase surface passes this and
+   * NOT `did`; the chip reads "Generation ID" + the first 8 hex. When both are
+   * given the DID wins, because a DID only exists once a purchase does.
+   */
+  generationId?: string;
   /** PromptThumbprint — cryptographic hash of creative brief (e.g., "PT-7B3E9D1FA4C2") */
   pt?: string;
   /** Whether to show PT chip (true for prompt-based tools only) */
@@ -116,12 +128,16 @@ export const DesignIDBadge = ({
   toolName,
   designName,
   did,
+  generationId,
   pt,
   showPT = false,
   hideToolName = false,
   className,
 }: DesignIDBadgeProps) => {
-  const hasIdentity = !!(designName || did);
+  const identity = customerDesignIdentity({ generationId, purchasedDesignId: did })
+    // A caller that hands a purchase-minted `did` in another shape still shows it.
+    || (did ? { label: "Design ID" as const, value: did } : null);
+  const hasIdentity = !!(designName || identity);
 
   return (
     <div className={cn("absolute inset-0 pointer-events-none select-none z-10", className)}>
@@ -190,11 +206,12 @@ export const DesignIDBadge = ({
             </span>
           )}
 
-          {/* DID + PT chips row */}
+          {/* Identity + PT chips row */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            {/* DID chip */}
-            {did && (
+            {/* Identity chip: the purchase-minted DID, or the Generation ID before a purchase */}
+            {identity && (
               <span
+                data-identity={identity.label}
                 style={{
                   background: "rgba(0,200,255,0.07)",
                   border: "1px solid rgba(0,200,255,0.22)",
@@ -215,7 +232,7 @@ export const DesignIDBadge = ({
                     lineHeight: 1,
                   }}
                 >
-                  {did}
+                  {identity.label === "Generation ID" ? `Generation ID ${identity.value}` : identity.value}
                 </span>
               </span>
             )}

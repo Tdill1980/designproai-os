@@ -131,6 +131,15 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
             if runtime[flag] not in {"true", "false"}:
                 raise ValidationError(f"{flag} must be exactly true or false")
             runtime_keys.add(flag)
+    # The Calls 1-7 claim-poll interval (runtime/generation-worker.cjs,
+    # DESIGNPRO_WORKER_POLL_MS): permitted, never required; the runtime defaults
+    # to 1000 ms. A value the runtime would refuse is refused here too, so the
+    # deploy cannot install a knob that silently resolves to the default.
+    if "DESIGNPRO_WORKER_POLL_MS" in runtime:
+        poll = runtime["DESIGNPRO_WORKER_POLL_MS"]
+        if not re.fullmatch(r"\d{1,6}", poll) or not 250 <= int(poll) <= 60000:
+            raise ValidationError("DESIGNPRO_WORKER_POLL_MS must be an integer between 250 and 60000")
+        runtime_keys.add("DESIGNPRO_WORKER_POLL_MS")
     runtime_keys |= TOPAZ_PROVIDER_KEYS if topaz_mode == "true" else set()
     exact_keys("runtime", runtime, runtime_keys)
     # DESIGNPRO_ADDITIONAL_ORIGINS is optional: present only when a second

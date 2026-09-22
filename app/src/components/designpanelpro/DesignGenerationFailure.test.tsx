@@ -38,7 +38,10 @@ describe("DesignPro ATLAS failure UI", () => {
     expect(html).toContain("Your production panel proof didn&#x27;t finish.");
     expect(html).not.toMatch(/ATLAS/);
     expect(html).toContain("image service response could not be confirmed");
-    expect(html).toContain("DID-E9BABE2D");
+    // THE ID LADDER: a failed run was never purchased, so it has no Design ID.
+    // It shows the Generation ID minted at Call 1, and never a DID.
+    expect(html).toContain("Generation ID E9BABE2D");
+    expect(html).not.toContain("DID-");
     expect(html).toContain(`href="/designpro/studio-board?order=${generationId}"`);
     expect(html).toContain(`href="/revision-studio?generationId=${generationId}"`);
     expect(html).toContain("Reference: provider_outcome_unknown");

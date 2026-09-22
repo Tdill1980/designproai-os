@@ -815,7 +815,17 @@ function AtlasProgressCard({
     <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-3">
       {/* Keyed on the selected version so switching V1 -> V2 remounts the
           reader instead of leaving the previous version's proof on screen. */}
-      {atlas?.requestId && <AtlasPanelProofSheetLoader key={atlas.id} requestId={atlas.requestId} revisionId={atlas.id} />}
+      {/* Re-read while the run is doing automatic work so a sheet landing after
+          the board opened appears without a reload; a parked or finished run
+          cannot land one. */}
+      {atlas?.requestId && (
+        <AtlasPanelProofSheetLoader
+          key={atlas.id}
+          requestId={atlas.requestId}
+          revisionId={atlas.id}
+          pollWhilePending={job.state === "queued" || job.state === "running"}
+        />
+      )}
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">
           Call 1

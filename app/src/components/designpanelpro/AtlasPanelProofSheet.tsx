@@ -159,10 +159,48 @@ export function AtlasPanelProofSheet({
   );
 }
 
-/** Poll only while a live request is waiting, then refresh expiring preview URLs. */
+/**
+ * WHEN THE SHEET CAN FIRST APPEAR, measured against the read path.
+ *
+ * The three-zone document is written by Call 1's `proof.assemble` node, which
+ * completes BEFORE the master is accepted, before any 3D proof, and before the
+ * entice handoff creates a workflow run. So the sheet is readable from
+ * `GET /panel-proof` from the moment Call 1 lands it, and the only surface that
+ * can be open earlier is the one watching Call 1 itself. Nothing here waits for
+ * "See All Views" (locked by `tests/designpanel-view-reveal.test.mjs`); what
+ * decides how soon a customer sees it is how often this loader re-reads while
+ * the generation is still authoring.
+ *
+ * So: while the generation is in a state Call 1 can still land the sheet in,
+ * the loader re-reads every `PANEL_PROOF_POLL_MS`; once the sheet has rendered,
+ * the poll stops and only the expiring five-minute preview URLs are refreshed;
+ * once the generation is terminal (or the caller reports nothing in flight) it
+ * does not poll at all. `{panelProof:false}` is a STATE — a six-surface / field
+ * / hero-driver run has no three-zone document — never an error, and it keeps
+ * the same cadence, because during authoring it is also what the read answers
+ * before the node lands.
+ */
+export const PANEL_PROOF_POLL_MS = 2_000;
+/** Signed preview URLs expire in five minutes; refresh them well inside that. */
+export const PANEL_PROOF_URL_REFRESH_MS = 240_000;
+
+/** Generation states in which Call 1 may still be authoring, or its proof row still landing. */
+export const PANEL_PROOF_LANDING_STATES: ReadonlySet<string> = new Set(["queued", "leased", "retryable"]);
+
+/** True while the generation is in a state Call 1 can still land the sheet in. */
+export function panelProofStillLanding(generationState: string | null | undefined): boolean {
+  return PANEL_PROOF_LANDING_STATES.has(String(generationState || ""));
+}
+
+/** The sheet is on screen: a three-zone document with a signed sheet preview. */
+export function panelProofRendered(proof: AtlasPanelProof | undefined): boolean {
+  return Boolean(proof?.panelProof && proof.sheet?.signedUrl);
+}
+
+/** Poll only while a live request can still land the sheet, then refresh expiring preview URLs. */
 export function panelProofRefreshInterval(proof: AtlasPanelProof | undefined, pollWhilePending: boolean): number | false {
-  if (proof?.panelProof && proof.sheet?.signedUrl) return 240_000;
-  return pollWhilePending ? 1_000 : false;
+  if (panelProofRendered(proof)) return PANEL_PROOF_URL_REFRESH_MS;
+  return pollWhilePending ? PANEL_PROOF_POLL_MS : false;
 }
 
 /**
