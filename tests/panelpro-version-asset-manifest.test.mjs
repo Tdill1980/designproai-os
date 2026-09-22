@@ -275,7 +275,7 @@ test("RevisionStudio shows the full Generation ID, not only the DID", () => {
   const studio = readFileSync(
     new URL("../app/src/pages/RevisionStudioIQ.tsx", import.meta.url), "utf8",
   );
-  assert.match(studio, /A\.T\.L\.A\.S\. Generation ID — click to copy/);
+  assert.match(studio, /Generation ID — click to copy/);
   assert.match(studio, /Generation ID copied/);
   // And the DID badge stays: the two answer different questions.
   assert.match(studio, /formatDid\(genIdOf\(selectedRender\) \|\| selectedRender\?\.id\)/);

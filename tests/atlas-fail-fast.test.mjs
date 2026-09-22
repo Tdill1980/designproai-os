@@ -118,7 +118,11 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   assert.match(premium, /renderError \|\| atlasNewRunRequired/);
   assert.match(premium, /generationError\?\.includes\("Start a new ATLAS run"\)/);
   assert.match(premium, /<DesignGenerationFailure/);
-  assert.match(failureUi, /Start New ATLAS Run/);
+  // The explicit new-run action survives; only its label changed. Owner,
+  // 2026-09-21: no customer surface says ATLAS. The button now reads
+  // "Start a new design" -- the invariant this asserts (a poisoned lineage
+  // offers a NEW run, never a retry of the same one) is unchanged.
+  assert.match(failureUi, /Start a new design/);
   assert.doesNotMatch(failureUi, /Precision/);
   assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
