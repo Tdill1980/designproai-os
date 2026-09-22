@@ -31,6 +31,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowDown, ArrowUp, Eye, EyeOff, Trash2, Upload, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { prepareWallUpload } from '@/lib/wallpro-render';
 import {
   listWallProofsForCurator, saveWallProof, deleteWallProof, reorderWallProofs,
   uploadWallProofImage, wallProofUrl, wallUser, type WallProofRow, type ProofBandToolKey,
@@ -64,14 +65,46 @@ const field = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2
 
 type Half = { file: File; natural: { width: number; height: number }; preview: string };
 
-function useHalf() {
+/**
+ * "WallPro won't let me replace hero before and after slider bar image"
+ * (owner, 2026-09-22). Two defects, and BOTH of them look identical from the
+ * chair: the picker opens, a file is chosen, and nothing at all happens.
+ *
+ * 1. THE FAILURE WAS UNHANDLED AND THEREFORE INVISIBLE. `take` is async and
+ *    the call site was `void take(...)`, so a rejected `createImageBitmap`
+ *    went nowhere: no half, no preview, no error. And it rejects on ordinary
+ *    inputs -- Chrome cannot decode HEIC, which is what `accept="image/*"`
+ *    offers from a phone, and it throws on a corrupt or unsupported file too.
+ *    Every path now reports in words.
+ *
+ * 2. RE-CHOOSING THE SAME FILE WAS A NO-OP. The input's value was never
+ *    cleared, so `change` never fired the second time. That is precisely the
+ *    replace workflow: look at the crop, dislike it, pick the same file again
+ *    -- and the page sits there. `WallPro.tsx` has cleared `e.target.value`
+ *    since it was written; this page never learned it.
+ *
+ * The decode goes through `prepareWallUpload` (RULE 1: the proven converter,
+ * not a new one), which passes a JPG/PNG/WebP through byte for byte and
+ * transcodes anything else -- above all iPhone HEIC -- exactly as the customer
+ * upload does. The previous preview URL is revoked, so replacing repeatedly
+ * does not leak a blob per attempt.
+ */
+function useHalf(report: (message: string) => void) {
   const [half, setHalf] = useState<Half | null>(null);
   const take = useCallback(async (file: File | undefined) => {
     if (!file) return;
-    const bitmap = await createImageBitmap(file);
-    setHalf({ file, natural: { width: bitmap.width, height: bitmap.height }, preview: URL.createObjectURL(file) });
-    bitmap.close?.();
-  }, []);
+    try {
+      const ready = await prepareWallUpload(file);
+      const bitmap = await createImageBitmap(ready).catch(() => {
+        throw new Error('This browser could not read that image. Choose a JPG, PNG or WebP file.');
+      });
+      const preview = URL.createObjectURL(ready);
+      setHalf(old => { if (old) URL.revokeObjectURL(old.preview); return { file: ready, natural: { width: bitmap.width, height: bitmap.height }, preview }; });
+      bitmap.close?.();
+    } catch (e) {
+      report(e instanceof Error ? e.message : 'That image could not be opened.');
+    }
+  }, [report]);
   return [half, take, setHalf] as const;
 }
 
@@ -86,8 +119,8 @@ export default function AdminWallProProofs() {
   const [rows, setRows] = useState<WallProofRow[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [before, takeBefore, setBefore] = useHalf();
-  const [after, takeAfter, setAfter] = useHalf();
+  const [before, takeBefore, setBefore] = useHalf(setError);
+  const [after, takeAfter, setAfter] = useHalf(setError);
   const [trim, setTrim] = useState<ProofTrim>({ top: 0, bottom: 0 });
   const [headline, setHeadline] = useState('');
   const [caption, setCaption] = useState('');
@@ -212,8 +245,11 @@ export default function AdminWallProProofs() {
               ([key, half, take, ref]) => (
                 <div key={key}>
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{key}</p>
-                  <input ref={ref} type="file" accept="image/*" className="sr-only"
-                    onChange={e => void take(e.target.files?.[0])} />
+                  {/* `e.target.value = ''` is load-bearing: without it,
+                      choosing the SAME file again fires no `change` event and
+                      the page silently ignores the replace. */}
+                  <input ref={ref} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
+                    onChange={e => { void take(e.target.files?.[0]); e.target.value = ''; }} />
                   <Button variant="outline" className="mt-1.5 w-full justify-center" disabled={!!busy}
                     onClick={() => ref.current?.click()}>
                     <Upload className="mr-2 h-4 w-4" />{half ? 'Replace' : `Choose the ${key}`}
