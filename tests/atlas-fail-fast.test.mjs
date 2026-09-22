@@ -118,7 +118,26 @@ test("legacy Atlas owner-read failures clear every preview and never recover sig
   assert.match(premium, /renderError \|\| atlasNewRunRequired/);
   assert.match(premium, /generationError\?\.includes\("Start a new ATLAS run"\)/);
   assert.match(premium, /<DesignGenerationFailure/);
-  assert.match(failureUi, /Start New ATLAS Run/);
+  // THE RECOVERY BUTTON EXISTS, AND ITS WORDS ARE CUSTOMER COPY.
+  //
+  // This asserted the literal "Start New ATLAS Run" until #595 applied the
+  // 2026-09-16 brand ruling — Atlas is engineering vocabulary and never appears
+  // in customer copy — and renamed it to "Start a new design". The button was
+  // right and the lock was stale, so main went red on a correct change.
+  //
+  // What this lock is FOR is that a failed generation offers a way out at all;
+  // the exact wording is the brand ruling's to decide. So it now pins the
+  // BEHAVIOUR (an onStartNew control) and the RULE (no Atlas vocabulary in what
+  // the customer reads), which is what must not drift — while leaving the
+  // copywriting free. `ATLAS_UNCONFIRMED_OUTCOME_CODE` is a reference string a
+  // customer quotes to support, not prose, so the check is scoped to the JSX
+  // text this component renders.
+  assert.match(failureUi, /onClick=\{onStartNew\}/, "a failed generation must offer a way out");
+  assert.match(failureUi, /Start a new design/);
+  for (const [, copy] of failureUi.matchAll(/>\s*\{?\s*isAtlas \? "([^"]+)"/g)) {
+    assert.doesNotMatch(copy, /\bA\.?T\.?L\.?A\.?S\.?\b/i,
+      `customer copy must not say Atlas: ${copy}`);
+  }
   assert.doesNotMatch(failureUi, /Precision/);
   assert.match(gateway, /request\.failureCode === ATLAS_NEW_RUN_REQUIRED[\s\S]*return json\(res, 409/);
   assert.match(gateway, /designpro_generation_view_paths[\s\S]*includes\(ATLAS_NEW_RUN_REQUIRED\)[\s\S]*status: 409/);
