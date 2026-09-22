@@ -256,12 +256,17 @@ test("4. Zone 3 degrades instead of refusing; a supplied logo that cannot be ver
   const base = { manifest: MANIFEST, sharp, assembleFinishedMaster, store: memoryStore(),
     input: { brief: "a clean blue wave wrap", vehicle: { year: "2012", make: "Toyota", model: "Prius" } } };
 
-  // No assets, no customer text: an EMPTY band, recorded, and the master still leaves.
+  // No assets, no customer text: nothing is composited, the absence is
+  // recorded, and the master still leaves. The band itself carries what the
+  // sheet DREW in its five boxes (owner, 2026-09-22: a design's own elements
+  // end up in Zone 3) -- this fixture paints all five, so five are carried.
   const empty = await proof.authorPanelProofMaster({ ...base, callProofEdge: edge() });
   assert.ok(empty.contentHash);
-  assert.equal(empty.provenance.threeZoneLayout.graphics, 0);
-  assert.equal(empty.provenance.threeZoneLayout.graphicsFormat, "none");
-  assert.equal(empty.provenance.composition.omitted.find((o) => o.zone === "zone3")?.reason, "no_original_assets_or_customer_text");
+  assert.equal(empty.provenance.threeZoneLayout.graphics, 5);
+  assert.equal(empty.provenance.threeZoneLayout.graphicsFormat, "sheet-drawn-raster");
+  assert.ok(empty.provenance.quadrants.cutGraphics.every((a) => a.source === "sheet-drawn"));
+  assert.equal(empty.provenance.composition.omitted.find((o) => o.zone === "zone3" && o.role === null)?.reason,
+    "no_original_assets_or_customer_text");
   assert.equal(empty.provenance.quadrants.branded.length, 6);
   assert.equal(empty.provenance.quadrants.clean.length, 6);
 
@@ -271,7 +276,10 @@ test("4. Zone 3 degrades instead of refusing; a supplied logo that cannot be ver
   const dropped = await proof.authorPanelProofMaster({ ...base, store: memoryStore(), callProofEdge: edge({ generatedElements: [logo] }),
     input: { ...base.input, companyName: "Only Call One", phone: "(520) 555-0100" }, downloadAsset: async () => opaque });
   assert.ok(dropped.contentHash);
-  assert.ok(!dropped.provenance.quadrants.cutGraphics.some((a) => a.surfaceKey === "logo"));
+  // The opaque mark itself never reaches Zone 3; the slot it vacated carries
+  // the element the sheet drew there instead of standing empty.
+  assert.ok(!dropped.provenance.quadrants.cutGraphics.some((a) => a.contentHash === logo.contentHash));
+  assert.ok(dropped.provenance.quadrants.cutGraphics.every((a) => a.surfaceKey !== "logo" || a.source === "sheet-drawn"));
   assert.equal(dropped.provenance.composition.omitted.find((o) => o.role === "logo")?.reason, "generated_logo_has_no_transparent_channel");
 
   // A SUPPLIED logo that fails its hash is the customer's own file: still refused.

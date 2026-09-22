@@ -159,6 +159,106 @@ function designIdFromGenerationId(generationId) {
 }
 
 /**
+ * THE ID LADDER (owner, 2026-09-22: "Generation ID is call one, then design
+ * id, and order id"). The sheet is a PRE-purchase document, so its job block
+ * names the Generation ID -- the same first-8-hex the app's chip shows -- and
+ * never a DID derived on the spot: a DID exists only once a purchase does.
+ */
+function generationIdLabel(generationId) {
+  const hex = String(generationId || "").replaceAll("-", "");
+  return hex.length >= 8 ? hex.slice(0, 8).toUpperCase() : "";
+}
+
+/** MM/DD/YYYY in UTC, the form the owner's reference sheet carries. */
+function proofDateLabel(now = new Date()) {
+  const d = new Date(now);
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${mm}/${dd}/${d.getUTCFullYear()}`;
+}
+
+/** Zone 3 slot index by the role a code-owned asset carries. */
+const ZONE3_SLOT_INDEX = Object.freeze({ logo: 0, typography: 1, contact: 2, promo: 3, icons: 4 });
+/** Zone 3 slot key by index -- the container's own slot keys, in order. */
+const ZONE3_SLOT_KEYS = Object.freeze(["logo", "tagline", "contact", "promo", "icons"]);
+
+/**
+ * ZONE 3 CARRIES THE DESIGN'S OWN ELEMENTS (owner, 2026-09-22: "a Restyle
+ * design will have design elements that end up in zone 3 see example").
+ *
+ * The model is told to fill every Zone 3 box with the design's own marks --
+ * a Restyle's vehicle number, series text, ship graphic, icon, stripe set,
+ * badge -- and it draws them into the sheet. Until this date the assembler
+ * then rebuilt Zone 3 from code-owned assets only (an original or generated
+ * logo, typeset name and contact lines) and DISCARDED what the model drew, so
+ * a design with no company name and no logo shipped an EMPTY Zone 3 band on
+ * the customer's own proof.
+ *
+ * Now a slot no code-owned asset claims is filled from the sheet: the box is
+ * cropped off the accepted sheet, inset past the template's own dashed frame,
+ * measured for ink, trimmed to its ink and persisted as a Zone 3 element. It is
+ * a RASTER PREVIEW on the sheet's white ground, drawn by the same pass that
+ * drew Zone 1, so it matches the panels by construction. It is not keyed to
+ * alpha -- a white or light element (the reference sheet's X-wing) would be
+ * eaten by a white key -- and it is not a vector cut file; the plotter-ready
+ * contours are produced in the production pack (Call 10), exactly as before.
+ * `source: "sheet-drawn"` and `vector: false` say so on the receipt.
+ *
+ * A box with no ink is an empty slot, recorded in `composition.omitted` as
+ * `slot_not_drawn`; nothing here can refuse a Call 1. Code-owned assets always
+ * win their slot; the sheet never overwrites an original.
+ */
+const SHEET_DRAWN_CAPTION = Object.freeze({ caption: "DESIGN ELEMENT", note: "(Cut graphic — drawn with this design)" });
+const SHEET_DRAWN_MIN_INK = 0.005;
+const SHEET_DRAWN_INK_MAX_CHANNEL = 225;
+
+async function sheetDrawnCutGraphic({ sheetBytes, rect, slotKey, slotIndex, sharp, persist }) {
+  const inset = Math.max(3, Math.round(Math.min(rect.width, rect.height) * 0.04));
+  const region = {
+    left: rect.left + inset, top: rect.top + inset,
+    width: Math.max(1, rect.width - inset * 2), height: Math.max(1, rect.height - inset * 2),
+  };
+  const { data, info } = await sharp(sheetBytes, { limitInputPixels: 40000000 })
+    .extract(region).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let ink = 0, minX = info.width, minY = info.height, maxX = -1, maxY = -1;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const i = (y * info.width + x) * 3;
+      if (Math.min(data[i], data[i + 1], data[i + 2]) < SHEET_DRAWN_INK_MAX_CHANNEL) {
+        ink++;
+        if (x < minX) minX = x; if (y < minY) minY = y;
+        if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  const fit = ink / (info.width * info.height);
+  if (fit < SHEET_DRAWN_MIN_INK || maxX < minX || maxY < minY) {
+    return { omitted: { zone: "zone3", role: slotKey, reason: "slot_not_drawn", fit: Number(fit.toFixed(4)) } };
+  }
+  const pad = 4;
+  const left = Math.max(0, minX - pad), top = Math.max(0, minY - pad);
+  const width = Math.min(info.width, maxX + pad + 1) - left;
+  const height = Math.min(info.height, maxY + pad + 1) - top;
+  const bytes = await sharp(data, { raw: { width: info.width, height: info.height, channels: 3 } })
+    .extract({ left, top, width, height }).png().toBuffer();
+  const contentHash = sha256(bytes);
+  const stored = await persist({ storagePath: `atlas-elements/${contentHash}.png`, bytes, contentType: "image/png" });
+  return { element: {
+    ...stored, contentHash, byteSize: bytes.length, contentType: "image/png", width, height,
+    surfaceKey: slotKey, slotIndex, role: "cut-graphic", persisted: true, vector: false,
+    source: "sheet-drawn", fit: Number(fit.toFixed(4)), widthIn: null, heightIn: null, bytes,
+  } };
+}
+
+/** What the Zone 3 band is made of, for the receipt. */
+function zone3Format(zone3) {
+  if (!zone3.length) return "none";
+  if (zone3.every((a) => a.vector)) return "vector-originals";
+  if (zone3.every((a) => a.source === "sheet-drawn")) return "sheet-drawn-raster";
+  return "mixed-originals";
+}
+
+/**
  * How far a cut crop's aspect may sit from the zone it is resized into.
  *
  * `fit: "fill"` cannot refuse anything, so this is the guard that stops a crop
@@ -616,6 +716,8 @@ async function assemblePanelProofMaster({
    * ORDER # line. See the job block below for why that line mattered.
    */
   generationId = "",
+  /** The revision this sheet belongs to; V1 on a first generation. Fills VERSION. */
+  revisionSequence = 1,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(), stageTimings = [],
   /**
@@ -859,6 +961,27 @@ async function assemblePanelProofMaster({
   zone3 = assets.map(({bytes, role, ...asset}) => ({
     ...asset, surfaceKey: role, role: "cut-graphic", persisted: true,
   }));
+  // The design's own drawn elements fill every slot the code-owned assets left
+  // empty (see `sheetDrawnCutGraphic`). Sheet path only: on the derived path
+  // the "sheet" is the accepted master and has no Zone 3 boxes to read.
+  const sheetDrawn = [];
+  if (!zone2Panels) {
+    const cropLayout = containerLayout(proofManifest);
+    const occupied = new Set(assets.map((a) => ZONE3_SLOT_INDEX[a.role]).filter(Number.isInteger));
+    for (const [slotIndex, cell] of cropLayout.zone3.entries()) {
+      if (occupied.has(slotIndex)) continue;
+      const slotKey = ZONE3_SLOT_KEYS[slotIndex] || cell.surfaceKey;
+      const result = await sheetDrawnCutGraphic({
+        sheetBytes: sheet.bytes, rect: scaleCell(cell, cropLayout, cut.sheet), slotKey, slotIndex, sharp, persist,
+      });
+      if (result.omitted) zone3Omitted.push(result.omitted);
+      else sheetDrawn.push(result.element);
+    }
+    if (sheetDrawn.length) {
+      logger(`atlas call 1: Zone 3 carries ${sheetDrawn.length} element(s) the design drew (${sheetDrawn.map((e) => e.surfaceKey).join(", ")})`);
+    }
+    zone3 = [...zone3, ...sheetDrawn.map(({ bytes, slotIndex, ...element }) => element)];
+  }
   let productionLayout;
   let composed;
   if (!assets.length) {
@@ -914,24 +1037,24 @@ async function assemblePanelProofMaster({
     // THE SHEET CARRIES THE DESIGN'S OWN IDENTITY, MINTED AT CALL 1.
     //
     // Owner, 2026-09-21: "MOST IMPORTANTLY IT MUST CREATE THE GENERATE ID ON
-    // CALL 1". The GenerationID already exists by the time this runs -- live
-    // 7a72951823648d27 was authored under aded4bf5-1cd9-4f31-8d6e-8d6c3cc1c94b
-    // -- and the sheet printed `CS-2019TRANSIT-01`, a literal the caller typed,
-    // because `order` read only `orderNumber`. A production proof whose ORDER #
-    // is a hand-typed string cannot be matched back to the run that made it.
-    //
-    // DID-XXXXXXXX is the one canonical form (app/src/lib/designId.ts, and the
-    // same slice in wrapbox-delivery / generation-worker), so PanelPro,
-    // RevisionStudio, WrapBox and this sheet all name the design identically.
-    // A supplied orderNumber still WINS -- a real shop order number is the more
-    // specific fact -- and the DID is what fills the line when there is none,
-    // instead of leaving it a ruled blank.
+    // CALL 1". The GenerationID already exists by the time this runs, and the
+    // sheet used to print it as a DID -- which the ID ladder (owner, 2026-09-22)
+    // rules out before a purchase: Generation ID at Call 1, Design ID and Order
+    // ID at purchase. So the second row reads GENERATION ID until a real shop
+    // order number exists, which still wins. DATE, DESIGNER and VERSION are
+    // filled by code too: the customer sees this sheet within a minute of
+    // Generate, and three ruled blanks under a real design read as unfinished.
     job: {
-      date: input?.proofDate || "",
-      order: input?.orderNumber || designIdFromGenerationId(generationId) || "",
-      designer: input?.designer || "",
-      version: input?.proofVersion || "",
+      date: input?.proofDate || proofDateLabel(),
+      order: input?.orderNumber || "",
+      generationId: generationIdLabel(generationId),
+      designer: input?.designer || "DesignProAI",
+      version: input?.proofVersion || `V${Math.max(1, Number(revisionSequence) || 1)}`,
     },
+    // A slot the design filled is captioned as the design's element, not as a
+    // business field it is not.
+    zone3Captions: ZONE3_SLOT_KEYS.map((_, index) =>
+      sheetDrawn.some((e) => e.slotIndex === index) ? SHEET_DRAWN_CAPTION : null),
   });
   const proofBase = await sharp(blankTemplate)
     .resize(cut.sheet.width,cut.sheet.height,{fit:"fill"})
@@ -958,15 +1081,27 @@ async function assemblePanelProofMaster({
 
   // Zone 3: original logo / outlined type / contact assets, placed into the
   // code-drawn slots. The template captions remain code-owned and untouched.
-  const slotIndex = { logo: 0, typography: 1, contact: 2, promo: 3, icons: 4 };
   const zone3Cells = displayLayout.zone3.map(cell => scaleCell(cell,displayLayout,cut.sheet));
   for (const asset of assets) {
-    const index = Number.isInteger(slotIndex[asset.role]) ? slotIndex[asset.role] : -1;
+    const index = Number.isInteger(ZONE3_SLOT_INDEX[asset.role]) ? ZONE3_SLOT_INDEX[asset.role] : -1;
     if (index < 0 || !zone3Cells[index]) continue;
     const r = zone3Cells[index];
     const pad = Math.max(6, Math.round(Math.min(r.width,r.height)*0.08));
     proofLayers.push({
       input: await sharp(asset.bytes,{density:300,limitInputPixels:40000000})
+        .resize(Math.max(1,r.width-pad*2),Math.max(1,r.height-pad*2),{fit:"contain",background:"white"})
+        .png().toBuffer(),
+      left:r.left+pad, top:r.top+pad,
+    });
+  }
+  // The design's own drawn elements, back into the slots they came from, at
+  // the same inset the code-owned assets use.
+  for (const element of sheetDrawn) {
+    const r = zone3Cells[element.slotIndex];
+    if (!r) continue;
+    const pad = Math.max(6, Math.round(Math.min(r.width,r.height)*0.08));
+    proofLayers.push({
+      input: await sharp(element.bytes,{limitInputPixels:40000000})
         .resize(Math.max(1,r.width-pad*2),Math.max(1,r.height-pad*2),{fit:"contain",background:"white"})
         .png().toBuffer(),
       left:r.left+pad, top:r.top+pad,
@@ -1057,8 +1192,7 @@ async function assemblePanelProofMaster({
         // master (see the note above).
         threeZoneLayout: { required: true, branded: zone1.length,
           backgrounds: zone2.length, graphics: zone3.length,
-          graphicsFormat: !zone3.length ? "none"
-            : zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
+          graphicsFormat: zone3Format(zone3), productionApproved: false },
         masterSha256: sheet.contentHash || null,
         composition: { contract: composed.contract, layoutContract: productionLayout.contract,
           placements: productionLayout.placements, panels: compositionChecks, sourceAssetsPreserved: true,
@@ -1192,8 +1326,7 @@ async function assemblePanelProofMaster({
         backgrounds: zone2.length, graphics: zone3.length,
         // "none" when the band is empty: an all-of-nothing `every()` would
         // have called an empty band "vector-originals".
-        graphicsFormat: !zone3.length ? "none"
-          : zone3.every(a => a.vector) ? "vector-originals" : "mixed-originals", productionApproved: false },
+        graphicsFormat: zone3Format(zone3), productionApproved: false },
       // `omitted` is the answer to "which asset did not reach which panel, and
       // why". Empty means every Zone-3 original was drawn onto every branded
       // surface that carries branding; it is never absent, so a reader can tell
@@ -1296,6 +1429,7 @@ async function authorPanelProofMaster({
     // Same identity the provider request was authorised against, so the sheet
     // and the provider cache name one generation.
     generationId: providerRequest?.generationId || "",
+    revisionSequence: Number(revision?.sequence || 1),
   });
 }
 
@@ -1313,4 +1447,5 @@ module.exports = {
   requestProofSheet,
   assemblePanelProofMaster,
   authorPanelProofMaster,
+  _test: { proofDateLabel, generationIdLabel, SHEET_DRAWN_CAPTION, ZONE3_SLOT_KEYS, SHEET_DRAWN_MIN_INK },
 };

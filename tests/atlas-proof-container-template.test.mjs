@@ -97,6 +97,38 @@ test("both homes draw a byte-identical sheet, on two different vehicles", async 
   }
 });
 
+test("both homes draw the ID-ladder job block and per-slot Zone 3 captions identically", async () => {
+  const edgeMod = await edge();
+  const captions = [null, { caption: "DESIGN ELEMENT", note: "(Cut graphic — drawn with this design)" }, null, null,
+    { caption: "DESIGN ELEMENT", note: "(Cut graphic — drawn with this design)" }];
+  for (const job of [
+    { date: "09/22/2026", generationId: "ADED4BF5", designer: "DesignProAI", version: "V1" },
+    { date: "09/22/2026", order: "RCF250-001", generationId: "ADED4BF5", designer: "A.L.", version: "V2" },
+    {},
+  ]) {
+    const options = { manifest: runtimeTemplate.parsePanelRows(F250), ...BRAND, job, zone3Captions: captions };
+    const fromEdge = edgeMod.containerSvg(options);
+    const fromRuntime = runtimeTemplate.containerSvg(options);
+    assert.equal(fromEdge, fromRuntime);
+    // Before a purchase the second row names the Generation ID; a real order
+    // number wins; neither prints a derived DID.
+    if (job.order) {
+      assert.ok(fromEdge.includes("ORDER #:") && fromEdge.includes("RCF250-001"));
+      assert.ok(!fromEdge.includes("GENERATION ID:"));
+    } else if (job.generationId) {
+      assert.ok(fromEdge.includes("GENERATION ID:") && fromEdge.includes("ADED4BF5"));
+      assert.ok(!fromEdge.includes("ORDER #:"));
+    } else {
+      assert.ok(fromEdge.includes("ORDER #:"));
+    }
+    assert.ok(!fromEdge.includes("DID-"));
+    // Captioned slots read as the design's element; the others keep their own.
+    assert.equal((fromEdge.match(/DESIGN ELEMENT/g) || []).length, 2);
+    assert.ok(fromEdge.includes("PRIMARY LOGO") && fromEdge.includes("CONTACT LINE") && fromEdge.includes("PROMOTIONAL TEXT"));
+    assert.ok(!fromEdge.includes("TAGLINE / SLOGAN") && !fromEdge.includes("ICONS / SERVICE GRAPHICS"));
+  }
+});
+
 test("the two vehicles produce DIFFERENT sheets — the renderer is not pinned to one", async () => {
   const { containerSvg } = await edge();
   const prius = containerSvg({ manifest: runtimeTemplate.parsePanelRows(PRIUS), ...BRAND });

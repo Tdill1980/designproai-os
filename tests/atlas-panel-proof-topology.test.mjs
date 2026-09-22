@@ -356,11 +356,108 @@ test("composed proof header preserves brand and vehicle parsed from the customer
     manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)),
     dimensionManifest: MANIFEST,
     companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5,
+    // The job block is filled by code (the ID ladder): today's date, the
+    // designer, V1. No generation id was minted for this fixture, so the second
+    // row is the ruled ORDER # line.
+    job: { date: proof._test.proofDateLabel(), designer: "DesignProAI", version: "V1" },
   });
   const header = async bytes => sharp(bytes).resize(3072,2048,{fit:"fill"})
     .extract({left:0,top:0,width:3072,height:160}).removeAlpha().raw().toBuffer();
-  assert.deepEqual(await header(actual), await header(expected),
+  // Buffer.equals, never deepEqual: a 1.5 MB diff message on a mismatch is what
+  // got this test SIGKILLed for memory before it could report anything.
+  assert.ok((await header(actual)).equals(await header(expected)),
     "code-owned header must use parsed intake rather than generic COMPANY NAME / VEHICLE placeholders");
+});
+
+test("the job block names the GENERATION ID before a purchase, never a derived DID", async () => {
+  // Owner, 2026-09-22: "Generation ID is call one, then design id, and order
+  // id." The sheet is a pre-purchase document; its second row is the Generation
+  // ID (first 8 hex), and a real order number still wins when one exists.
+  const sheet = await paintedSheet();
+  const store = memoryStore();
+  const { callProofEdge } = edgeStub(sheet);
+  const generationId = "aded4bf5-1cd9-4f31-8d6e-8d6c3cc1c94b";
+  const out = await proof.authorPanelProofMaster({ ...AUTHOR_ARGS, store, callProofEdge,
+    providerRequest: { generationId }, revision: { sequence: 2 } });
+  const actual = store.objects.get(out.provenance.proofStoragePath).bytes;
+  const render = (job) => container.renderContainerTemplate({
+    manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)), dimensionManifest: MANIFEST,
+    companyName: "Bright Smiles Dental", vehicle: "2012 Toyota Prius", bleedInches: 5, job,
+  });
+  const header = async bytes => sharp(bytes).resize(3072,2048,{fit:"fill"})
+    .extract({left:0,top:0,width:3072,height:160}).removeAlpha().raw().toBuffer();
+  const withGenerationId = await header(await render({
+    date: proof._test.proofDateLabel(), generationId: "ADED4BF5", designer: "DesignProAI", version: "V2" }));
+  const withDid = await header(await render({
+    date: proof._test.proofDateLabel(), order: "DID-ADED4BF5", designer: "DesignProAI", version: "V2" }));
+  assert.ok((await header(actual)).equals(withGenerationId), "the second row must read GENERATION ID ADED4BF5 and VERSION V2");
+  assert.ok(!(await header(actual)).equals(withDid), "a DID must not be derived before a purchase");
+  assert.equal(proof._test.generationIdLabel(generationId), "ADED4BF5");
+  assert.equal(proof._test.generationIdLabel("short"), "");
+  assert.match(proof._test.proofDateLabel(new Date("2026-09-22T07:30:00Z")), /^09\/22\/2026$/);
+});
+
+test("Zone 3 carries the elements the DESIGN drew, in every slot no original asset claims", async () => {
+  // Owner, 2026-09-22, against her reference sheet (KK871 · ROGUE SEVEN · ship
+  // graphic · icon · stripe set · badge): "a Restyle design will have design
+  // elements that end up in zone 3". A brief with no company, contact or logo
+  // used to ship an EMPTY Zone 3 band while the model had drawn all five boxes.
+  const store = memoryStore();
+  const { callProofEdge } = edgeStub(await paintedSheet());
+  const out = await proof.authorPanelProofMaster({
+    ...AUTHOR_ARGS, store, callProofEdge,
+    input: { brief: "a rusted starfighter livery", vehicle: { year: "2012", make: "Toyota", model: "Prius" } },
+  });
+  const cut = out.provenance.quadrants.cutGraphics;
+  assert.equal(cut.length, 5, "all five drawn boxes reach Zone 3");
+  assert.deepEqual(cut.map((e) => e.surfaceKey), [...proof._test.ZONE3_SLOT_KEYS]);
+  for (const element of cut) {
+    assert.equal(element.source, "sheet-drawn");
+    assert.equal(element.vector, false, "a sheet crop is a raster preview, never a vector cut file");
+    assert.equal(element.persisted, true);
+    assert.equal(element.storagePath, `atlas-elements/${element.contentHash}.png`);
+    assert.ok(element.fit >= proof._test.SHEET_DRAWN_MIN_INK, `${element.surfaceKey} carries its ink share`);
+    assert.equal(element.bytes, undefined, "no pixels on the receipt");
+    const stored = store.objects.get(element.storagePath);
+    assert.equal(createHash("sha256").update(stored.bytes).digest("hex"), element.contentHash);
+  }
+  assert.equal(out.provenance.threeZoneLayout.graphics, 5);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "sheet-drawn-raster");
+  // Zone 1 still composites nothing: the crops are Zone 3 elements, not lockup assets.
+  assert.deepEqual(out.provenance.composition.placements, []);
+  // The composed proof captions those slots as the design's elements, not as
+  // PRIMARY LOGO / CONTACT LINE fields the design does not have.
+  const captioned = await container.renderContainerTemplate({
+    manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)), dimensionManifest: MANIFEST,
+    companyName: "", vehicle: "2012 Toyota Prius", bleedInches: 5,
+    job: { date: proof._test.proofDateLabel(), designer: "DesignProAI", version: "V1" },
+    zone3Captions: proof._test.ZONE3_SLOT_KEYS.map(() => proof._test.SHEET_DRAWN_CAPTION),
+  });
+  const plain = await container.renderContainerTemplate({
+    manifest: container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)), dimensionManifest: MANIFEST,
+    companyName: "", vehicle: "2012 Toyota Prius", bleedInches: 5,
+    job: { date: proof._test.proofDateLabel(), designer: "DesignProAI", version: "V1" },
+  });
+  const captions = async bytes => sharp(bytes).resize(3072,2048,{fit:"fill"})
+    .extract({left:0,top:1560,width:3072,height:60}).removeAlpha().raw().toBuffer();
+  const actual = await captions(store.objects.get(out.provenance.proofStoragePath).bytes);
+  assert.ok(actual.equals(await captions(captioned)), "the caption strip reads DESIGN ELEMENT under every drawn slot");
+  assert.ok(!actual.equals(await captions(plain)), "the business captions are not printed under design elements");
+});
+
+test("a Zone 3 box the model left blank is an empty slot, recorded, never a fabricated element", async () => {
+  const layout = container.containerLayout(container.parsePanelRows(proof.panelRowsFromManifest(MANIFEST)));
+  const { callProofEdge } = edgeStub(await paintedSheet({
+    empty: layout.zone3.map((cell) => `zone3:${cell.surfaceKey}`),
+  }));
+  const out = await proof.authorPanelProofMaster({
+    ...AUTHOR_ARGS, store: memoryStore(), callProofEdge,
+    input: { brief: "a clean blue wave wrap", vehicle: { year: "2012", make: "Toyota", model: "Prius" } },
+  });
+  assert.deepEqual(out.provenance.quadrants.cutGraphics, []);
+  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "none");
+  const blank = out.provenance.composition.omitted.filter((o) => o.reason === "slot_not_drawn");
+  assert.deepEqual(blank.map((o) => o.role), [...proof._test.ZONE3_SLOT_KEYS]);
 });
 
 test("panel-proof refusals are recorded, re-rolled ONCE, then terminal — never a substitute authoring route", () => {
@@ -419,14 +516,18 @@ test("Zone 3 degrades instead of refusing: no assets or text is an EMPTY band, r
     input: { brief: "a clean blue wave wrap", vehicle: { year: "2012", make: "Toyota", model: "Prius" } },
   });
   assert.ok(out.contentHash, "the master is still produced");
-  assert.equal(out.provenance.threeZoneLayout.graphics, 0);
-  assert.equal(out.provenance.threeZoneLayout.graphicsFormat, "none");
+  // No ORIGINAL asset and no customer text: nothing is composited onto Zone 1.
+  // The Zone 3 band itself is not empty on this fixture -- the sheet drew all
+  // five boxes and they are carried as the design's own elements (locked in
+  // its own test below); what this test pins is that the absence of originals
+  // is recorded and never refuses.
   assert.equal(out.provenance.threeZoneLayout.branded, 6);
   assert.equal(out.provenance.threeZoneLayout.backgrounds, 6);
-  assert.deepEqual(out.provenance.quadrants.cutGraphics, []);
-  // The empty band is a RECORDED state, never a silent one.
-  const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3");
-  assert.ok(omitted, "an empty Zone 3 must be named in composition.omitted");
+  assert.ok(out.provenance.quadrants.cutGraphics.every((e) => e.source === "sheet-drawn"),
+    "no original asset can appear when none was supplied");
+  // The absence of originals is a RECORDED state, never a silent one.
+  const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3" && o.role === null);
+  assert.ok(omitted, "the absence of originals must be named in composition.omitted");
   assert.equal(omitted.reason, "no_original_assets_or_customer_text");
   assert.deepEqual(out.provenance.composition.placements, []);
   // Zone 1 is then the authored panels exactly as Zone 2 carries them.
@@ -449,9 +550,13 @@ test("Zone 3 degrades the other way: a generated logo without alpha is dropped a
     downloadAsset: async () => opaque });
   assert.ok(out.contentHash);
   // The opaque mark is not a cut graphic; the outlined typography and contact
-  // line still are, so Zone 3 carries two and the design proceeds.
-  assert.ok(!out.provenance.quadrants.cutGraphics.some((a) => a.surfaceKey === "logo"));
-  assert.equal(out.provenance.quadrants.cutGraphics.length, 2);
+  // line still are, and the three slots no original claims (the logo slot
+  // included) carry what the sheet drew, so Zone 3 carries five and the
+  // design proceeds.
+  assert.ok(!out.provenance.quadrants.cutGraphics.some((a) => a.contentHash === contentHash),
+    "the opaque generated mark never reaches Zone 3");
+  assert.equal(out.provenance.quadrants.cutGraphics.filter((a) => a.source !== "sheet-drawn").length, 2);
+  assert.equal(out.provenance.quadrants.cutGraphics.length, 5);
   const omitted = out.provenance.composition.omitted.find((o) => o.zone === "zone3" && o.role === "logo");
   assert.ok(omitted, "the dropped mark must be named");
   assert.equal(omitted.reason, "generated_logo_has_no_transparent_channel");
@@ -520,8 +625,12 @@ test("all three quadrants reach the receipt — the clean panels and the cut gra
   // panels, and the blank panels are what PanelPro lays on a vehicle template.
   assert.equal(q.branded.length, 6);
   assert.equal(q.clean.length, 6);
-  assert.equal(q.cutGraphics.length, 2, "original outlined brand and contact assets");
-  assert.ok(q.cutGraphics.every(a => a.vector && a.contentType === "image/svg+xml"));
+  const originals = q.cutGraphics.filter((a) => a.source !== "sheet-drawn");
+  const drawn = q.cutGraphics.filter((a) => a.source === "sheet-drawn");
+  assert.equal(originals.length, 2, "original outlined brand and contact assets");
+  assert.ok(originals.every(a => a.vector && a.contentType === "image/svg+xml"));
+  assert.equal(drawn.length, 3, "the design's own elements fill the three slots the originals left");
+  assert.ok(drawn.every(a => !a.vector && a.contentType === "image/png"));
   for (const panel of [...q.branded, ...q.clean]) {
     assert.ok(panel.rect && Number.isFinite(panel.fit), `${panel.surfaceKey} must carry its rect and fit`);
   }
@@ -572,7 +681,9 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
     // OUTPUTS; `atlas-call1-inputs/` is the allowlist the flatten reads from,
     // and a product artifact sitting there is one refactor away from being
     // attached to a customer's own generation as a teaching input.
-    assert.equal(panel.storagePath, panel.vector ? `atlas-elements/${panel.contentHash}.svg` : `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
+    assert.equal(panel.storagePath,
+      panel.role === "cut-graphic" ? `atlas-elements/${panel.contentHash}.${panel.vector ? "svg" : "png"}`
+        : `atlas-panel-proof/quadrants/${panel.contentHash}.png`,
       `${where} must be addressed by its own hash`);
     assert.doesNotMatch(panel.storagePath, /^atlas-call1-inputs\//,
       `${where} is an output and must not live in the edge's input prefix`);
@@ -589,21 +700,21 @@ test("the clean panels and the cut graphics are STORED, and the receipt addresse
     assert.equal(stored.contentType, panel.vector ? "image/svg+xml" : "image/png");
   }
 
-  // ELEVEN RECEIPT ENTRIES — six clean panels and five cut graphics — and one
-  // object per DISTINCT content hash, not per entry.
+  // ELEVEN RECEIPT ENTRIES — six clean panels, two original cut graphics and
+  // the three drawn elements — and one object per DISTINCT content hash, not
+  // per entry.
   //
   // Content addressing deduplicates by design, and this fixture proves it does:
   // its synthetic cells are uniformly painted, so several crops are byte-identical
-  // and 11 entries land in 8 objects. That is the store behaving correctly, and
-  // asserting 11 objects here was my error, not the runtime's — a real sheet's
-  // panels differ, and either way every entry above was verified to address the
-  // bytes actually stored under its own hash.
+  // and the entries land in fewer objects. That is the store behaving correctly;
+  // a real sheet's panels differ, and either way every entry above was verified
+  // to address the bytes actually stored under its own hash.
   //
   // The "wrote one buffer under every path" failure is caught anyway: the store
   // refuses a content-addressed path that already holds different bytes, exactly
   // as generation-store.cjs does.
   const entries = [...q.clean, ...q.cutGraphics];
-  assert.equal(entries.length, 8);
+  assert.equal(entries.length, 11);
   assert.equal(new Set(entries.map((p) => p.storagePath)).size,
     new Set(entries.map((p) => p.contentHash)).size,
     "one stored object per distinct content hash");
