@@ -204,10 +204,16 @@ describe('marking works without scrolling', () => {
   });
 
   it('brings the photo into view from EVERY control that starts marking', () => {
-    // One helper, four call sites: the card above step 1, the in-block
-    // Mark/Re-mark, and both masking buttons. A control that starts a mode
-    // without it leaves the customer looking at the wrong half of the page.
+    // One helper, FIVE call sites: the card above step 1, the in-block
+    // Mark/Re-mark, both masking buttons, and -- added 2026-09-22 -- step 2 on
+    // the owner's four-step board, which is now the most likely place a
+    // customer starts marking. A control that starts a mode without it leaves
+    // the customer looking at the wrong half of the page.
+    //
+    // The count is asserted rather than a minimum ON PURPOSE: this lock exists
+    // because controls that start a mode kept being added WITHOUT the scroll,
+    // so a new one must fail here and be looked at, not slide under a `>= 4`.
     expect(page).toContain('const focusPhoto = () =>');
-    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(4);
+    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(5);
   });
 });

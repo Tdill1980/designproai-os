@@ -236,3 +236,33 @@ export function flatPaneView(input: {
   if (input.settling || !input.hasCanvas) return input.hasCssTile ? 'css' : 'tile';
   return 'canvas';
 }
+
+/**
+ * THE STYLE CHIPS (owner's tool mockup, 2026-09-22).
+ *
+ * Seven words a wall customer would actually type, as one tap instead of a
+ * phone keyboard. They are deliberately NOT a taxonomy and nothing downstream
+ * branches on them: the consultant persona reads prose, so a chip is only a
+ * head start on the same sentence the customer was going to write.
+ */
+export const WALL_STYLE_CHIPS = ['Modern', 'Floral', 'Wood', 'Abstract', 'Marble', 'Concrete', 'Custom'] as const;
+
+/**
+ * A CHIP APPENDS; IT NEVER REPLACES.
+ *
+ * The customer's own words are the scarcest input on this page — the
+ * measurement behind the two-persona rule is 44 characters of brief against
+ * 3,342 of persona boilerplate — so a control that overwrote the brief would
+ * spend the one thing the design actually depends on. Tapping the same chip
+ * twice is a no-op rather than a stutter, and `Custom` adds nothing at all: it
+ * means "I will describe it myself", so it only focuses the writing.
+ */
+export function appendStyleChip(prompt: string, chip: string): string {
+  if (chip === 'Custom') return prompt;
+  const word = chip.toLowerCase();
+  const already = new RegExp(`(^|[^a-z])${word}([^a-z]|$)`, 'i').test(prompt);
+  if (already) return prompt;
+  const trimmed = prompt.trim();
+  if (!trimmed) return chip;
+  return /[.,;]$/.test(trimmed) ? `${trimmed} ${word}` : `${trimmed}, ${word}`;
+}
