@@ -1098,27 +1098,27 @@ const ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT = "designpro.atlas-three-zone-proof-a
  */
 function atlasProofArtworkAuthority(atlas, sourceViewType) {
   const panel = atlas.panelFor(sourceViewType);
-  const sheet = atlas.proofSheet && typeof atlas.proofSheet === "object" ? atlas.proofSheet : null;
-  if (sheet?.storagePath && /^[0-9a-f]{64}$/.test(String(sheet.contentHash || ""))) {
-    return {
-      storagePath: sheet.storagePath,
-      contentHash: String(sheet.contentHash).toLowerCase(),
-      contentType: String(sheet.contentType || "image/png"),
-      contract: ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT,
-      role: "three-zone-production-proof",
-      surfaceKey: panel.surfaceKey,
-      surfaceSelection: panel.surfaceSelection,
-      panel,
-      // The designer's own DESIGN ANCHOR from Call 1, handed to the
-      // photographer as `designAnchorText` — the RestylePro contract.
-      designAnchor: typeof sheet.designAnchor === "string" && sheet.designAnchor.trim()
-        ? sheet.designAnchor.trim() : null,
-    };
+
+  // CALL 2 IS A PRESENTATION STAGE, NOT A SECOND DESIGN STAGE.
+  //
+  // The previous three-zone branch made the entire coded proof sheet IMAGE 1
+  // and only supplied the matching panel as a secondary target. Live evidence
+  // (generation 04a9b73b-8c41-4d2a-ad1c-3f7884bb5eeb) proves every proof then
+  // recorded sourcePanelHash = the sheet hash, not the surface panel hash.
+  // That gives the photographer six competing designs plus document furniture
+  // and allows it to reinterpret the wrap. The accepted Zone-1 panel is the
+  // artwork authority. The coded sheet is presentation/documentation only.
+  if (!panel?.storagePath || !/^[0-9a-f]{64}$/.test(String(panel.contentHash || ""))) {
+    throw new DesignPanelServerError(
+      "designpanel_atlas_panel_authority_missing",
+      `The accepted Call-1 ${panel?.surfaceKey || sourceViewType} panel is required before a 3D proof can render`,
+      false,
+    );
   }
   return {
     storagePath: panel.storagePath,
-    contentHash: panel.contentHash,
-    contentType: panel.contentType,
+    contentHash: String(panel.contentHash).toLowerCase(),
+    contentType: String(panel.contentType || "image/png"),
     contract: ATLAS_PANEL_AUTHORITY_CONTRACT,
     role: "surface-panel",
     surfaceKey: panel.surfaceKey,
