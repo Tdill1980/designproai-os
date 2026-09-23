@@ -2,126 +2,42 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-/**
- * THE TOOL'S MASTHEAD SURVIVES AN EMPTY SHOWCASE.
- *
- * Owner, 2026-09-22, holding a screenshot of the band beside the live page:
- * "Wpw wallpro should look like this." The live tool opened on a bare
- * "1. Upload your wall" with no headline, no sentence saying what it does, and
- * no link to the case study or the prices. It looked unfinished, which is the
- * worst thing a partner demo can look like.
- *
- * ── HOW IT DISAPPEARED, WHICH IS THE WHOLE POINT OF THIS FILE ─────────────
- *
- * Nobody deleted it. The section was gated on `bandProofs.length > 0` — one
- * condition covering two unrelated things: a before/after SLIDER, which
- * genuinely needs a photograph, and the page's own MASTHEAD, which does not.
- *
- * Then the proof list emptied from both ends, for two good reasons that had
- * nothing to do with each other and were taken three days apart:
- *
- *   2026-09-18  the owner's own home came out ("remove my photo ... just show
- *               the others") — TWO entries, the spa pair and the slat pair
- *               being the same room photographed two ways;
- *   2026-09-21  the gym pair came out when its generated "after" was found to
- *               have written a real company's trademark into the artwork.
- *
- * WALL_PROOFS hit zero. `WallProHeroProof` rendered null exactly as its own
- * contract says it should ("SHOWS NOTHING WHEN IT HAS NOTHING"), and the gate
- * took the headline, the description and both links down with it. Every test
- * in the suite stayed green, because no test had ever asserted that the tool
- * says what it is.
- *
- * ── WHAT IS LOCKED, AND WHY IT IS READ OFF THE SOURCE ─────────────────────
- *
- * That the masthead's condition is the customer's own progress and NOTHING
- * else. A showcase is allowed to be empty — it is empty on purpose, and this
- * repository would rather ship a short honest list than a padded one — but an
- * empty showcase may never silence the page.
- *
- * Read from source rather than rendered: the defect is a JSX condition
- * upstream of everything, and a render test would have to mount the whole tool
- * (Supabase, storage, canvas, the generator) to reach it. The condition itself
- * is the thing that broke and the thing worth pinning.
- */
 const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
+const magic = readFileSync(fileURLToPath(new URL('../../components/wallpro/WallProMagic.tsx', import.meta.url)), 'utf8');
 
-/** The masthead's opening condition, as written. */
-const gate = () => page.match(/\{!photo && !artwork && \(\n\s*<section className=\{?`?mx-auto mt-5 grid/);
-
-describe('the WallPro masthead', () => {
-  it('renders on the customer\'s progress alone, never on whether a showcase has photos', () => {
-    // The pre-fix line was `{!photo && !artwork && bandProofs.length > 0 && (`.
-    // Verified to fail against it: this match requires the condition to CLOSE
-    // straight after !artwork.
-    expect(gate(), 'the masthead section must open on `!photo && !artwork` only').not.toBeNull();
-    expect(page).not.toContain('!photo && !artwork && bandProofs.length > 0');
+describe('the WallPro opening experience', () => {
+  it('shows the transformation only before the customer starts', () => {
+    expect(page).toMatch(/\{!photo && !artwork && \(/);
+    expect(page).toContain('See the transformation');
+    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
   });
 
-  it('still says what the tool is, and still links to the proof and the prices', () => {
-    // The HEADLINE moved 2026-09-22 ("Design a wall. / Leave with production
-    // files.", owner's own mockup) and is free to move again -- what this file
-    // locks is the CONDITION, not the wording. So the assertion is that the
-    // hero says something and still carries its two links, not that it says one
-    // particular sentence forever.
-    expect(page).toContain('Design a wall.');
-    expect(page).toContain('From idea to installed');
-    expect(page).toContain('See a real wall, bare to installed');
-    expect(page).toContain('Prices &amp; questions');
+  it('shows the product magic before the working form', () => {
+    const hero = page.indexOf('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
+    const magic = page.indexOf('<WallProMagic />');
+    const upload = page.indexOf('<section id="upload-wall"');
+    expect(hero).toBeGreaterThan(-1);
+    expect(magic).toBeGreaterThan(hero);
+    expect(upload).toBeGreaterThan(magic);
   });
 
-  it('starts designing on THIS page rather than inventing a second door', () => {
-    // "Start designing" is an in-page anchor to step 1, which is a few hundred
-    // pixels below it. A router link to a second upload surface would be the
-    // reconstructed front half RULE 0.27 forbids, and the landing already
-    // learned that lesson once.
-    expect(page).toContain('href="#upload-wall"');
+  it('starts on the same page rather than inventing another upload route', () => {
+    expect(magic).toContain('href="#upload-wall"');
     expect(page).toContain('<section id="upload-wall"');
   });
 
-  it('does not put a printer\'s claim on the page that has no printer', () => {
-    // "Trusted by installers" is WePrintWraps' claim to make; DesignProAI sells
-    // the files. A badge the brand cannot back is how a tool page starts
-    // reading as marketing, so the fourth claim is brand-conditional.
-    expect(page).toMatch(/theme\.showPrintOffer\s*\n?\s*\?\s*\{ icon: ShieldCheck, title: 'Trusted by', text: 'installers' \}/);
-    expect(page).toContain("{ icon: ShieldCheck, title: 'TIFF, PDF', text: '& PNG output' }");
+  it('keeps one shared component for the light WPW and dark DesignPro surfaces', () => {
+    expect(page).toContain("data-wall-theme={theme.surface}");
+    expect(page).toContain("theme.showPrintOffer");
+    expect(page).toContain("<WallProPurchaseCard");
   });
 
-  it('keeps the partner sentence on the partner brand and off DesignProAI', () => {
-    // One component, two true sentences. A DesignProAI visitor must not be
-    // promised a printer this page does not sell.
-    expect(page).toContain('Designed in WallPro, printed by WePrintWraps');
-    expect(page).toMatch(/theme\.showPrintOffer\s*\n?\s*\?\s*<>Designed in WallPro, printed by WePrintWraps/);
+  it('moves the old top print shortcut into the purchase area', () => {
+    expect(page).not.toContain('Already have artwork?</strong> Skip the design and order printed film');
+    expect(page).toContain('showPrintOffer={theme.showPrintOffer}');
   });
 
-  it('sends each brand to its OWN case study and FAQ', () => {
-    expect(page).toContain("theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'");
-    expect(page).toContain("theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'");
-  });
-
-  it('drops to one column when there is no proof to sit beside the copy', () => {
-    // Two columns with an empty second one is a hero stranded in a narrow
-    // gutter. The grid template is therefore conditional where the SECTION is
-    // not -- which is the whole separation this fix makes.
-    //
-    // The track WIDTH is deliberately not pinned: it is a layout choice that
-    // moved once already (26rem -> 30rem when the headline grew to three
-    // lines) and pinning it made an unrelated test fail for a legitimate
-    // change. The CONDITION is the contract.
-    expect(page).toMatch(/bandProofs\.length > 0 \? 'lg:grid-cols-\[minmax\(0,\d+rem\)_minmax\(0,1fr\)\]' : ''/);
-  });
-
-  it('mounts the slider unconditionally inside the section, trusting its own empty contract', () => {
-    // WallProHeroProof returns null on an empty list by design. Re-checking the
-    // length at the mount site is the duplicate condition that caused this.
-    expect(page).toContain('<WallProHeroProof proofs={bandProofs} />');
-    expect(page).not.toContain('bandProofs.length === 0 && <WallProHeroProof');
-  });
-
-  it('clears itself the moment the customer has a wall or artwork on screen', () => {
-    // Unchanged behaviour, pinned because it is the other half of the
-    // condition and a future edit to this line must not lose it: someone with
-    // their own room on screen does not need to be told what the tool is.
+  it('clears the showcase once the customer has a wall or artwork on screen', () => {
     expect(page).toMatch(/!photo && !artwork/);
   });
 });

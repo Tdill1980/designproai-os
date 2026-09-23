@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, ArrowRight, PlayCircle, Sparkles, Scaling, FileText, type LucideIcon } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -24,11 +24,11 @@ import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, WALL_HERO_PROOF,
 import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
 import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
-import { WallProPrintOffer } from '@/components/wallpro/WallProPrintOffer';
-import { WallProFilmOrder } from '@/components/wallpro/WallProFilmOrder';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
+import { WallProMagic } from '@/components/wallpro/WallProMagic';
+import { WallProPurchaseCard } from '@/components/wallpro/WallProPurchaseCard';
 import { WallProSidebar, WallProStepStrip } from '@/components/wallpro/WallProSidebar';
-import { WallProStepBoard, WallProOutcomes, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
+import { WallProStepBoard, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
@@ -1760,117 +1760,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           sentence that names the printer, which is the whole reason the brand
           table exists. */}
       {!photo && !artwork && (
-        <section className={`mx-auto mt-5 grid max-w-6xl items-center gap-6 lg:gap-10 ${bandProofs.length > 0 ? 'lg:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]' : ''}`}>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500 md:text-xs">
-              From idea to installed
-            </p>
-            {/* The line break is authored, not left to the measure: "Design a
-                wall." must land alone, because it is the promise and the rest
-                is the payoff. `text-balance` would re-wrap it per viewport. */}
-            <h2 className="mt-3 text-4xl font-extrabold leading-[1.03] tracking-tight wall-ink md:text-5xl">
-              Design a wall.<br />Leave with{' '}
-              <span className="bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent">
-                production files.
-              </span>
-            </h2>
-            <p className="mt-4 max-w-[46ch] text-sm wall-muted md:text-base">
-              {/* The partner's name belongs on the partner's page. On DesignProAI
-                  the same sentence would promise a printer this page does not
-                  sell -- and the whole point of the brand table is that one
-                  component can say the true thing on either domain. */}
-              {theme.showPrintOffer
-                ? <>Designed in WallPro, printed by WePrintWraps. Upload a wall, describe your
-                    vision, and take print-ready wall wrap designs — scaled, panelized and ready
-                    for production, whether we print them or you do.</>
-                : <>Upload a wall, describe your vision, and let WallPro generate print-ready
-                    wall wrap designs — scaled, panelized and ready for production.</>}
-            </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              {/* An anchor, not a router link: step 1 is on this page. */}
-              <a
-                href="#upload-wall"
-                className={`inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 ${WALL_GRADIENT}`}
-              >
-                Start designing <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </a>
-              {/* Each brand's own case study. Sending a DesignProAI customer to
-                  the partner's version put a printer's logo, a printer's film
-                  price and "Order printed film" in front of somebody who came
-                  here for the files (owner, 2026-09-16). */}
-              <Link
-                to={theme.showPrintOffer ? '/wall-wrap/how-it-works' : '/printpro/wallpro/how-it-works'}
-                className="inline-flex items-center gap-2 rounded-full border wall-edge px-6 py-3 text-sm font-semibold wall-ink transition hover:border-blue-500"
-              >
-                <PlayCircle className="h-4 w-4" aria-hidden="true" /> See a real wall, bare to installed
-              </Link>
+        <div className="mx-auto mt-4 max-w-6xl space-y-6">
+          <section aria-labelledby="wallpro-hero-heading">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">Before you design</p>
+                <h1 id="wallpro-hero-heading" className="mt-1 text-2xl font-extrabold tracking-tight wall-ink sm:text-3xl">
+                  See the transformation <span className="bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
+                </h1>
+              </div>
+              <p className="max-w-xl text-sm wall-muted">The slider is a real before-and-after wall. Drag it, then see how WallPro gets from a photo to production below.</p>
             </div>
-            {/* THE FOUR CLAIMS, AND WHY THESE FOUR. Each one is something this
-                repository can actually point at: the generator, autoWallScale,
-                the 150-PPI production floor, and -- on the partner brand only
-                -- the printer standing behind it. The DesignProAI page gets a
-                fourth claim about the file formats instead, because "trusted by
-                installers" is the PRINTER's claim to make and this page does
-                not sell installation. A badge the product cannot back is how a
-                tool page starts reading as marketing. */}
-            <ul className="mt-7 grid grid-cols-2 gap-x-5 gap-y-4 sm:grid-cols-4">
-              {[
-                { icon: Sparkles, title: 'AI-powered', text: 'design' },
-                { icon: Scaling, title: 'Accurate scaling', text: '& panelization' },
-                { icon: FileText, title: '150 PPI', text: 'print-ready files' },
-                theme.showPrintOffer
-                  ? { icon: ShieldCheck, title: 'Trusted by', text: 'installers' }
-                  : { icon: ShieldCheck, title: 'TIFF, PDF', text: '& PNG output' },
-              ].map(({ icon: Icon, title, text }) => (
-                <li key={title} className="flex items-start gap-2">
-                  <Icon className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
-                  <span className="text-xs leading-tight wall-muted">
-                    <strong className="block font-semibold wall-ink">{title}</strong>{text}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {/* The FAQ answers what the case study deliberately does not: the
-                price ladder, the 24-hour human check, and what the coloured
-                glass on the photo actually means. Same brand, same rule. It is
-                a text link and stays one: a third button here would compete
-                with Start designing, which is the only action that matters. */}
-            <Link
-              to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'}
-              className="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 underline-offset-4 hover:underline"
-            >
-              Prices &amp; questions <span aria-hidden="true">&rarr;</span>
-            </Link>
-          </div>
-          {/* Renders null on an empty list by its own contract, so this is safe
-              to mount unconditionally; the grid above is what changes shape. */}
-          <WallProHeroProof proofs={bandProofs} />
-        </section>
+            <WallProHeroProof proofs={bandProofs} variant="shallow" />
+          </section>
+          <WallProMagic />
+        </div>
       )}
-      {/* THE SECOND DOOR, AT THE TOP WHERE IT BELONGS (owner's #2). The film
-          block is the only friction-free money on this page -- no sign-in, no
-          token, no design -- and on a wrap printer's site "I already have
-          artwork" is a large share of arrivals. It was sitting below two
-          thousand pixels of design tool, which asks exactly the wrong question
-          of that customer. One slim line puts it one click away without
-          competing with the designer for the fold. */}
-      {theme.showPrintOffer && !artwork && <a
-        href="#order-printed-film"
-        onClick={e => { e.preventDefault(); document.getElementById('order-printed-film')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-        /* Owner, 2026-09-15: "the order a printed wrap you have your own art
-           should be a blue magenta gradiant white text". It was flat #ec4899,
-           which is the tail of the page's own gradient wearing none of its
-           head -- so the one bar selling the SECOND product read as a foreign
-           object rather than the page's other primary action. It carries
-           WALL_GRADIENT now, the same sweep as the Generate buttons, and
-           brightens on hover instead of jumping to a different pink. */
-        className={`mx-auto mt-4 flex max-w-6xl items-center justify-between gap-3 rounded-xl ${WALL_GRADIENT} px-4 py-3 text-sm text-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_28px_-12px_rgba(37,99,235,0.45)] transition hover:brightness-110`}
-      >
-        <span className="text-white/90">
-          <strong className="font-semibold text-white">Already have artwork?</strong> Skip the design and order printed film by the square foot.
-        </span>
-        <span className="shrink-0 font-semibold text-white">Order film &rarr;</span>
-      </a>}
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {/* WHITE ON WHITE. The owner photographed it on 2026-09-22: a notice card
           with no readable text in it at all.
@@ -1910,6 +1815,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           desktop keeps form-left / visuals-right. On a phone the DOM order
           IS the order, and step 2 is the photo itself rather than two
           buttons naming a photo somewhere else. */}
+      <div className="mx-auto mt-6 max-w-6xl">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-500">Start your wall wrap</p>
+        <h2 className="mt-1 text-2xl font-extrabold tracking-tight wall-ink">Enter dimensions, upload your wall, then make it yours.</h2>
+        <p className="mt-1 text-sm wall-muted">Your dimensions drive the panel plan. Your photo drives the geometry, masking and on-wall preview.</p>
+      </div>
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-span-2 lg:row-start-1">
           {/* ── MARK THE WALL, ABOVE THE SCROLL (owner, 2026-09-22) ──────────
@@ -1998,14 +1908,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               So on a phone the sticky `WallProStepStrip` is the progress
               indicator, which is what it was always for, and the board appears
               at `sm` and up where four cards genuinely fit side by side. */}
-          <div className="hidden sm:block">
+          {(photo || artwork) && <div className="hidden sm:block">
             <WallProStepBoard steps={boardSteps} active={activeStepId(boardSteps)} busy={!!busy} onOpen={jumpToStep} />
-          </div>
-          {/* What every path ends with, stated as facts the repo can point at:
-              the scale brain, the 54" roll, the bleed/overlap plan and the
-              TIFF/PDF/PNG set. Shown before the work starts, because "leave
-              with production files" is the promise the board is delivering. */}
-          {!artwork && <WallProOutcomes />}
+          </div>}
         </fieldset>
 
         {/* ⚠️ THE PHOTO SITS INSIDE THIS SECTION, DIRECTLY UNDER THE TWO
@@ -2056,6 +1961,32 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   : 'Optional. Your description alone is enough.'}</p>
               </div>
             </div>
+            <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
+                2026-09-14: "on enter wall size should give price for printed
+                wrap from wpw film"). The wall's own square footage at the live
+                WePrintWraps rate -- the number a customer can check with a tape
+                measure -- so the cost of the thing they came for is answered in
+                step 1 rather than four thousand pixels later. It is the film
+                only; the design is priced on its own card, because they are
+                separate purchases with separate payees. */}
+            {/* GATED ON showPrintOffer, like every other print element (owner,
+                2026-09-15: the DesignProAI page should not carry the partner's
+                marks). This block quoted a WePrintWraps film rate and named
+                their material on the DesignProAI-branded page, while the bar,
+                the order section and the spec were all correctly hidden there
+                -- so one partner's pricing leaked onto a page that hides
+                everything else about them. The condition was simply missing. */}
+            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border wall-edge bg-[hsl(var(--wall-field))] px-3 py-2">
+              <span className="text-xs wall-muted">
+                Printed film, this wall
+                <span className="block text-[11px] wall-muted">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
+              </span>
+              <span className="text-base font-bold tabular-nums wall-ink">
+                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
+              </span>
+            </div>}
           {photo && <section id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
               {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
                   never numbered -- it lived unlabelled inside step 1, below the
@@ -2319,32 +2250,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
-            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
-                2026-09-14: "on enter wall size should give price for printed
-                wrap from wpw film"). The wall's own square footage at the live
-                WePrintWraps rate -- the number a customer can check with a tape
-                measure -- so the cost of the thing they came for is answered in
-                step 1 rather than four thousand pixels later. It is the film
-                only; the design is priced on its own card, because they are
-                separate purchases with separate payees. */}
-            {/* GATED ON showPrintOffer, like every other print element (owner,
-                2026-09-15: the DesignProAI page should not carry the partner's
-                marks). This block quoted a WePrintWraps film rate and named
-                their material on the DesignProAI-branded page, while the bar,
-                the order section and the spec were all correctly hidden there
-                -- so one partner's pricing leaked onto a page that hides
-                everything else about them. The condition was simply missing. */}
-            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border wall-edge bg-[hsl(var(--wall-field))] px-3 py-2">
-              <span className="text-xs wall-muted">
-                Printed film, this wall
-                <span className="block text-[11px] wall-muted">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
-              </span>
-              <span className="text-base font-bold tabular-nums wall-ink">
-                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
-              </span>
-            </div>}
+
           </section>
 
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-3">
@@ -2563,35 +2469,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {currentVersion?.status === 'approved' && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">V{currentVersion.version_no} approved</span>}
               <span className="text-xs wall-muted">1 design token per refinement.</span>
             </div>
-            {currentVersionId && (entitled
-              ? <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900">
-                  <p className="font-semibold">Print-ready wall file unlocked for this version.</p>
-                  {/* THE ORDER NUMBER STAYS ON SCREEN. The confirmation notice
-                      is transient -- it is gone on the next action and on any
-                      reload -- so a customer who looked away lost the only
-                      thing they had to quote. This reads from the entitlement
-                      itself, so it survives reload, is identical to what the
-                      team sees on the QC board, and needs no state of its own.
-                      Selectable and monospaced, because its whole job is to be
-                      copied into an email. */}
-                  {orderNumbers.length > 0 && <p className="mt-1">
-                    {orderNumbers.length > 1 ? 'Order numbers: ' : 'Order number: '}
-                    {orderNumbers.map((n, i) => <span key={n}>{i > 0 ? ', ' : ''}<span className="select-all font-mono font-semibold">{n}</span></span>)}
-                  </p>}
-                </div>
-              : <div className="mt-3 flex items-center gap-2">
-                  {/* CHARGE FOR THE PATH THEY TOOK. This button used to send
-                      'wallpro_custom_file' and say $149 for EVERY entry path,
-                      so a customer who picked the $79 catalog design was
-                      charged $149 and one who had the $199 room design done
-                      was undercharged by $50. designMode is the SKU (owner's
-                      launch list, 2026-09-14), so the button now names and
-                      charges what they actually chose, and the return path
-                      follows the brand's own page so a WePrintWraps customer
-                      is not dropped onto the DesignProAI route after paying. */}
-                  <Button variant="outline" disabled={!!busy || !canCommitFromView(view)} title={canCommitFromView(view) ? undefined : 'Switch to "On your wall" first — the AI view is not your print file.'} onClick={() => void run('Opening checkout', async () => { window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro')); })}>Unlock my print-ready wall file — {formatMoney(WALL_DESIGN_SKUS[designMode].cents)}</Button>
-                  <span className="text-xs wall-muted">{WALL_DESIGN_SKUS[designMode].label} · seamless-verified, panelized to the roll, at your exact wall dimensions.</span>
-                </div>)}
+            {currentVersionId && entitled && <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900">
+              <p className="font-semibold">Print-ready wall file unlocked for this version.</p>
+              {orderNumbers.length > 0 && <p className="mt-1">
+                {orderNumbers.length > 1 ? 'Order numbers: ' : 'Order number: '}
+                {orderNumbers.map((n, i) => <span key={n}>{i > 0 ? ', ' : ''}<span className="select-all font-mono font-semibold">{n}</span></span>)}
+              </p>}
+            </div>}
             {versions.length > 0 && <div className="mt-4"><p className="text-sm font-semibold">Version history</p>
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">{versions.map(v => <button key={v.id} type="button" disabled={!!busy || v.id === currentVersionId} onClick={() => void restoreVersion(v)} className={'w-36 shrink-0 rounded-lg border p-2 text-left text-xs ' + (v.id === currentVersionId ? 'border-blue-500 bg-blue-50' : 'wall-edge hover:border-blue-400')}>
                 <div className="aspect-[4/3] overflow-hidden rounded bg-[hsl(var(--wall-ground))]">{versionThumbs[v.artwork_path] && <img src={versionThumbs[v.artwork_path]} alt={'Version ' + v.version_no} className="h-full w-full object-cover" loading="lazy" />}</div>
@@ -2640,6 +2524,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               Printed as {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long on the {billing.billedWidthIn}″ roll ({billing.linearFeet} linear ft), Avery HP MPI 2610 wall vinyl, matte/luster. Half-inch overlap at every seam.
             </p>}
           </div>}
+          {artwork && <WallProPurchaseCard
+            showPrintOffer={theme.showPrintOffer}
+            billing={billing}
+            designMode={designMode}
+            canBuyFile={!!currentVersionId && canCommitFromView(view)}
+            fileUnlocked={entitled}
+            busy={!!busy}
+            onBuyFile={() => {
+              if (!currentVersionId) return;
+              void run('Opening checkout', async () => {
+                window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro'));
+              });
+            }}
+          />}
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
           {/* THE PRODUCT PAGE'S THIRD PURCHASE. Owner, 2026-09-14: this is
               "THE Product Page ... that they will purchase design and files
@@ -2652,29 +2550,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         </div>
       </div>
 
-      {/* ── BELOW THE TOOL: FULL WIDTH ──────────────────────────────────────
-          These three used to sit INSIDE the right-hand column of the
-          [400px | rest] grid, which meant that once the form ended the page ran
-          on for another two thousand pixels with a 400px column of nothing
-          beside it (owner, 2026-09-14: "It needs to look like a real tool
-          page"). The designer is a two-column workspace; what you buy after it
-          is not, and it should use the whole page.
-
-          Order is the customer's: what your design costs to print, then film on
-          its own for the buyer who needs no design, then the questions. */}
-      {theme.showPrintOffer && <div className="mt-5 space-y-5">
-        <WallProPrintOffer billing={billing} />
-        {/* THE THIRD THING THIS PAGE SELLS (owner, 2026-09-14: "buttons so they
-            can directly buy printed wrap film if they don't need a new
-            design"). It takes the wall's own square footage, so a customer who
-            measured in step 1 sees a real price without entering anything
-            twice -- and needs no design, photo or approved version. */}
-        <WallProFilmOrder wallSqFt={billing?.wallSqFt ?? null} />
-        {/* The product-page half: the questions and the search terms the wall
-            product page answered. A page that REPLACES a product page has to
-            answer what it answered, or the questions arrive as phone calls and
-            the rankings go elsewhere. */}
-        <WallProProductDetail faqHref={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'} />
+      {theme.showPrintOffer && <div className="mt-5">
+        <WallProProductDetail faqHref="/wall-wrap/faq" />
       </div>}
     </div>
     {/* On a phone the form and the wall photo stack, so marking corners puts
