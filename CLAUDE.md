@@ -202,6 +202,112 @@ gains nothing from a name it has never seen. The OBJECT is what had to be right.
 against the constant** (section below). Under the old hand-copied literals it
 would have taken Call 1 down a second time.
 
+## 🔪 EVERY INSTRUMENT SAW THE DIE-CUT HOOD AND NONE OF THEM COULD STOP IT (live 848be1c6, 2026-09-23)
+
+Owner, on the PanelPro board: *"see hood also fail cut to share of hood that's
+wrong."* The HOOD panel of `848be1c6` (New Aura Day Spa, Prius, revision
+`a9d6dd85`) came back drawn as a hood SILHOUETTE floating on the document's own
+white page, and it reached PanelPro as a **Call 9 promoted production panel**.
+RULE 0.15 has forbidden exactly this since 2026-08-23 — a wrap panel is a solid
+rectangle; the installer cuts the shape.
+
+**Four instruments were watching. Three were blind and the fourth was gagged.**
+
+| instrument | what it did |
+|---|---|
+| `masterOutputClass` | **CONVICTED IT** — `vehicle_depiction`, confidence **1.0**, `anatomyRectangles: 3`, evidence *"The hood panel is a vehicle-shaped island of artwork on a plain white surround"* |
+| `edgeHoleRatio` | **0.000.** It is a DARKNESS test (`holeAt` is luma ≤ 24) and this surround is `248,248,248`. Structurally blind, exactly as efca5e03 was blind to a luma-88 one |
+| `detectDieCut` | convicts page colour **enclosed** by artwork; this surround walks to the cell border, which that file defines as *"the margin between panels"*. It is also **wired to nothing** |
+| `fit` (`inkFraction`) | **0.8088** against 0.9841–1.0000 on every sibling — measured, written to the receipt, and consumed by nothing (*"Paint density remains a receipt metric"*) |
+
+The run recorded `masterQcPassed: true`, `accepted: true`, `blockingFailures: []`.
+`code` and `reason` on the class receipt are **null**: on this topology both
+master gates are ADVISORY by the owner's 2026-09-21 ruling (*"System must not
+issue fails because of no atlas"*), after `deterministicMasterChecks` measured
+`rear edgeHoleRatio=0.42` on a panel-proof master and killed a run it was never
+calibrated on.
+
+**That ruling was right for the deterministic gate and left a hole the size of
+this defect.** The inspector is NOT miscalibrated here — its prompt was rewritten
+on 2026-09-16 to convict *"a hood, roof, door, bed side, tailgate, fender or
+bumper silhouette"* by name. The one instrument that got it right was silenced
+alongside the one that was wrong.
+
+### THE GATE THAT SHIPPED: ZONE 1 IS ZONE 2 PLUS LETTERING, AND TYPE CANNOT SUBTRACT INK
+
+`dieCutFindings` (`runtime/atlas-panel-proof-topology.cjs`) compares each
+surface's branded `fit` against **its own clean twin**. Same surface, same cell,
+same model, same pass; Zone 2 is defined as those panels without the type. A
+branded cell materially emptier than its clean twin has no innocent reading.
+Measured on 848be1c6, branded minus clean:
+
+```
+driver 0.0000 · passenger 0.0000 · roof 0.0000
+front -0.0105 · rear +0.0044 · HOOD -0.1912
+```
+
+18× the worst innocent deviation. `MAX_BAND_FIT_DROP = 0.06` sits 3× clear of
+the defect and 5× clear of the noise.
+
+- **It is RELATIVE, never a floor.** A fit floor convicts a legitimately light
+  design — the precise false positive RULE 0.32 refused `measurePlainSurround`
+  for. A design that is white all over is white in BOTH bands, so the difference
+  is zero and it is never convicted. Locked by a case that would fail a floor.
+- **It REFUSES through `refuse()`**, which attaches the sheet identity, so
+  flat-first-atlas classifies it as a **creative** refusal: it spends the bounded
+  second candidate and re-rolls, and the refused sheet reaches the ledger where
+  the owner can open it. A bare throw would leave the customer with nothing,
+  which is the outcome the 2026-09-21 ruling exists to prevent.
+- **Sheet path only** (`zone1.length === 6`). The derived path composites Zone 1
+  and its supplied Zone 2 carries a hardcoded `fit: 1`, so the comparison would
+  convict every legacy revision. `threeZoneLayout.dieCut` is `null` there, and
+  present-but-clean on a good sheet — so a reader can tell "measured" from "not
+  applicable".
+- **It is the COMPLEMENT of `atlas-proof-diecut.cjs`**, which owns the INTERIOR
+  case (a window or wheel arch enclosed by artwork). Giving that file a consumer
+  is its own decision with its own false-positive story — a white-filled logo
+  counter is an enclosed page shape — and was not made here.
+- **AND THE CORNERS CONFIRM IT, because ink alone has an innocent case.** A
+  WHITE BANNER behind lettering is page colour by `inkFraction`'s own predicate
+  (>= 246 on every channel), exists only in the branded band because the clean
+  band has no type to sit behind, and at 15% of a cell with 20% text coverage
+  produces a 0.12 band drop — twice the threshold, worse than the live hood.
+  That design is correct and the band comparison alone would have refused it.
+  A panel trimmed to a body-panel outline is a different shape: the page colour
+  is the SURROUND, and a surround always takes the four corners, while a banner,
+  a knocked-out wordmark or a white sky never does (the CORE PRINT RULE has the
+  artwork filling the cell corner to corner). So a candidate is convicted only
+  when its corner boxes are also page. Measured on fixtures: die-cut **1.0000**,
+  banner **0.0000** — `MIN_CORNER_PAGE_FRACTION = 0.5` sits in the middle of an
+  empty gap rather than being tuned against either side. It runs on candidates
+  only, so a clean sheet pays nothing. A corner that cannot be measured CLEARS
+  the candidate: refusing a sheet because an instrument failed is the same
+  mistake as convicting an unmeasured cell.
+- **The cross-surface deficit is measured and deliberately NOT blocking.** It
+  catches the case this comparison cannot (a surface die-cut in BOTH bands, where
+  the difference is zero) and separates just as cleanly on 848be1c6 (hood 0.183
+  below its band median, every sibling within 0.008). It stays a receipt because
+  no fixture yet proves it will not convict a genuinely lighter panel;
+  `atlas-proof-zone-gate.cjs` is the precedent. **Do not promote it without a
+  discriminator.**
+
+**`Number(null)` IS `0` AND `Number.isFinite(0)` IS TRUE — CAUGHT IN THIS GATE'S
+OWN FIRST DRAFT.** `fitOf` coerced, so a cell nobody measured read as a cell
+measured COMPLETELY EMPTY and was convicted — refusing a sheet for a fault in a
+different instrument. That is the same coercion this file already records
+printing a fabricated `0" wide` on a Zone 3 slot. The lock's absence case caught
+it before it shipped; `fitOf` now takes `typeof raw === "number"` and nothing else.
+
+Locked by `tests/atlas-proof-outer-die-cut.test.mjs` — the arithmetic from
+`a9d6dd85`'s own `quadrants[].fit` values, the discriminator on real pixels.
+Verified to fail pre-fix on every load-bearing number: neutering
+`MAX_BAND_FIT_DROP` loses the hood conviction (1–2); unwiring the refusal loses
+the wiring case (7); `MIN_CORNER_PAGE_FRACTION` at 1.1 loses the die-cut
+conviction (8, 10) and at 0 loses the banner clearance (9, 10).
+
+**NOT PROVEN:** no live generation has run with this gate. What it changes on a
+good sheet is one receipt field; what it changes on a bad one is a re-roll.
+
 ## 🚨 A FAIL-CLOSED AUDIT THAT RESTATES THE TEXT IT GUARDS TOOK CALL 1 DOWN (live 2026-09-22)
 
 `production-panel-proof`'s **phase-1 payload contract** refuses the request

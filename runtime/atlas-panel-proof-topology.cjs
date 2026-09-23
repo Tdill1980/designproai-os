@@ -274,6 +274,245 @@ function zone3Format(zone3) {
  * cascade, which exists for the same reason: a resize that silently reshapes is
  * a defect no downstream measurement can see.
  */
+/**
+ * ⛔ THE DIE-CUT GATE — A BRANDED PANEL MAY NOT BE EMPTIER THAN ITS OWN CLEAN TWIN.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Live 848be1c6 (2026-09-23, New Aura Day Spa on a Prius): the HOOD came back
+ * drawn as a hood SILHOUETTE floating on the document's own white page, and it
+ * shipped to PanelPro as a promoted production panel. Owner: "see hood also
+ * fail cut to share of hood that's wrong."
+ *
+ * EVERY INSTRUMENT SAW IT AND NONE OF THEM COULD STOP IT:
+ *
+ *   masterOutputClass  vehicle_depiction, confidence 1.0, anatomyRectangles 3,
+ *                      evidence "The hood panel is a vehicle-shaped island of
+ *                      artwork on a plain white surround" — but on this
+ *                      topology both master gates are ADVISORY by the owner's
+ *                      2026-09-21 ruling ("System must not issue fails because
+ *                      of no atlas"), so the verdict was recorded beside an
+ *                      accepted master and refused nothing.
+ *   edgeHoleRatio      0.000 on the hood. It is a DARKNESS test (holeAt is
+ *                      luma <= 24) and this surround is 248,248,248. It is
+ *                      structurally blind to a die-cut on white, exactly as
+ *                      efca5e03 was blind to one on luma-88 grey.
+ *   fit                0.8088 branded against 0.9841–1.0000 on every sibling —
+ *                      measured, recorded, and consumed by nothing ("Paint
+ *                      density remains a receipt metric").
+ *
+ * WHY THIS COMPARISON AND NOT A FIT FLOOR. A floor convicts a legitimately
+ * light design, which is the precise false positive RULE 0.32 refused
+ * `measurePlainSurround` for: this repo's own full-bleed fixtures — a flat
+ * ground with graphics inset — score at the extreme and are correct. So the
+ * gate is RELATIVE, and it rests on a fact about ink rather than a threshold
+ * about taste:
+ *
+ *     ZONE 1 IS ZONE 2 PLUS LETTERING. TYPE ADDS INK. IT CANNOT SUBTRACT IT.
+ *
+ * Both bands are the same surface, at the same cell size, drawn by the same
+ * model in the same pass, and Zone 2 is defined as those panels without the
+ * type. A branded cell materially emptier than its own clean twin therefore
+ * has no innocent reading — one band was die-cut and the other was not. A
+ * design that is white all over is white in BOTH bands and the difference is
+ * zero, so it is never convicted here.
+ *
+ * Measured on 848be1c6, branded minus clean:
+ *
+ *     driver 0.0000 · passenger 0.0000 · roof 0.0000
+ *     front -0.0105 · rear +0.0044 · HOOD -0.1912
+ *
+ * 18x the worst innocent deviation. MAX_BAND_FIT_DROP sits at 0.06 — three
+ * times clear of the defect and six times clear of the noise.
+ *
+ * THE CROSS-SURFACE DEFICIT IS MEASURED AND DELIBERATELY NOT BLOCKING. It
+ * catches the case this gate cannot — a surface die-cut in BOTH bands, where
+ * the difference is zero — and on 848be1c6 it separates just as cleanly (hood
+ * 0.183 below its band's median, every sibling within 0.008). It is left as a
+ * receipt because no fixture yet proves it will not convict a design that is
+ * genuinely lighter on one panel, and this file's own zone gate is the
+ * precedent: built, measured, non-blocking until a discriminator exists. Do
+ * not promote it without one.
+ *
+ * IT IS THE COMPLEMENT OF `atlas-proof-diecut.cjs`, NOT A DUPLICATE. That file
+ * convicts an INTERIOR die-cut -- a window or wheel arch of page colour
+ * ENCLOSED by artwork -- and by its own definition page colour that can walk to
+ * the band's border is "the margin between panels", so a panel trimmed to its
+ * body-panel OUTLINE is invisible to it. This gate is the outer-boundary half.
+ * (`detectDieCut` is also, as of this writing, wired to nothing; giving it a
+ * consumer is its own decision with its own false-positive story -- a
+ * white-filled logo counter is an enclosed page shape -- and is not made here.)
+ *
+ * SHEET PATH ONLY. On the derived path Zone 1 is composited by code and the
+ * supplied Zone 2 panels carry a hardcoded `fit: 1`, so the comparison would
+ * convict every legacy revision. The caller runs this only when six Zone 1
+ * cells came off the sheet.
+ */
+const DIE_CUT_CONTRACT = "designpro.atlas-proof-die-cut-gate.v1";
+const MAX_BAND_FIT_DROP = 0.06;
+const SURFACE_FIT_DEFICIT_NOTICE = 0.12;
+
+function median(values) {
+  const sorted = values.filter((n) => Number.isFinite(n)).slice().sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * ⛔ `Number(null)` IS `0`, AND `Number.isFinite(0)` IS TRUE. A coercing read
+ * here turns a cell nobody measured into a cell measured as COMPLETELY EMPTY,
+ * and this gate would then convict it — refusing a sheet for a fault in a
+ * different instrument. CLAUDE.md records the same coercion printing a
+ * fabricated `0" wide` on a Zone 3 slot that has no inches by contract. `fit`
+ * is produced by `inkFraction` as a number; anything else is absence.
+ */
+const fitOf = (panel) => {
+  const raw = panel?.fit;
+  return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+};
+
+/**
+ * The arithmetic half: pure, no pixels, no sharp. `candidates` are surfaces
+ * whose branded band lost ink against their own clean twin; `dieCutFindings`
+ * below is what decides whether that loss is a die-cut.
+ *
+ * @returns {{contract, candidates: Array, notices: Array, surfaces: Array}}
+ */
+function bandFitFindings(zone1, zone2) {
+  const clean = new Map((zone2 || []).map((panel) => [panel.surfaceKey, panel]));
+  const brandedFits = (zone1 || []).map(fitOf).filter((n) => n !== null);
+  const cleanFits = (zone2 || []).map(fitOf).filter((n) => n !== null);
+  const brandedMedian = median(brandedFits);
+  const cleanMedian = median(cleanFits);
+  const candidates = [];
+  const notices = [];
+  const surfaces = [];
+  for (const panel of zone1 || []) {
+    const brandedFit = fitOf(panel);
+    const twin = clean.get(panel.surfaceKey);
+    const cleanFit = fitOf(twin);
+    // A cell neither band could measure is a different failure and the
+    // positional-premise check above already owns it.
+    if (brandedFit === null || cleanFit === null) continue;
+    const bandDrop = Number((cleanFit - brandedFit).toFixed(4));
+    const brandedDeficit = brandedMedian === null ? null : Number((brandedMedian - brandedFit).toFixed(4));
+    const cleanDeficit = cleanMedian === null ? null : Number((cleanMedian - cleanFit).toFixed(4));
+    surfaces.push({ surfaceKey: panel.surfaceKey, brandedFit, cleanFit, bandDrop, brandedDeficit, cleanDeficit });
+    if (bandDrop > MAX_BAND_FIT_DROP) {
+      candidates.push({
+        surfaceKey: panel.surfaceKey, brandedFit, cleanFit, bandDrop,
+        finding: `${panel.surfaceKey}: the branded panel covers ${(brandedFit * 100).toFixed(1)}% of its cell `
+          + `against ${(cleanFit * 100).toFixed(1)}% on the same surface without type — `
+          + `${(bandDrop * 100).toFixed(1)}% of the artwork is page, so the panel was drawn cut to shape`,
+      });
+    }
+    // Both bands short of their own band's median: a die-cut the comparison
+    // above cannot see, because it is present in Zone 1 AND Zone 2.
+    if (brandedDeficit !== null && cleanDeficit !== null
+      && brandedDeficit > SURFACE_FIT_DEFICIT_NOTICE && cleanDeficit > SURFACE_FIT_DEFICIT_NOTICE) {
+      notices.push({
+        surfaceKey: panel.surfaceKey, brandedDeficit, cleanDeficit,
+        finding: `${panel.surfaceKey}: both bands sit below their own median fit `
+          + `(branded -${brandedDeficit.toFixed(4)}, clean -${cleanDeficit.toFixed(4)})`,
+      });
+    }
+  }
+  return { contract: DIE_CUT_CONTRACT, candidates, notices, surfaces,
+    brandedMedianFit: brandedMedian, cleanMedianFit: cleanMedian,
+    maxBandFitDrop: MAX_BAND_FIT_DROP, surfaceFitDeficitNotice: SURFACE_FIT_DEFICIT_NOTICE };
+}
+
+/**
+ * ⛔ THE CONFIRMATION: A DIE-CUT LOSES THE CORNERS. AN INTERIOR WHITE ELEMENT
+ * DOES NOT.
+ *
+ * The band comparison above is sound about ink and silent about WHERE the ink
+ * went, and that gap has a real innocent case: a white banner behind lettering
+ * is page colour by `inkFraction`'s reckoning (>= 246 on every channel), it
+ * exists only in the branded band because the clean band has no type to sit
+ * behind — and a banner covering 15% of a cell at 20% text coverage produces a
+ * 0.12 band drop, twice MAX_BAND_FIT_DROP. That design is correct and this gate
+ * would have refused it.
+ *
+ * A panel trimmed to a body-panel outline is a different shape entirely: the
+ * outline is convex-ish and centred, so the page colour is the SURROUND, and
+ * the surround always takes the four corners. A banner, a knocked-out wordmark
+ * and a white sky never do — the CORE PRINT RULE has the artwork filling the
+ * cell corner to corner, so on any correct panel the corners are artwork.
+ *
+ * So a candidate is convicted only when its corners are page as well. The
+ * measurement runs on convicted candidates alone, which on a clean sheet is
+ * none of them: this costs nothing on a good run and four small extracts on a
+ * bad one.
+ *
+ * `MIN_CORNER_PAGE_FRACTION` is 0.5 — a die-cut's corners read at or near 1.0
+ * and a filled panel's at or near 0, so the threshold sits in the middle of an
+ * empty gap rather than being tuned against either.
+ */
+const CORNER_BOX = 0.12;
+const MIN_CORNER_PAGE_FRACTION = 0.5;
+
+/** Share of the four corner boxes that is page colour, by `inkFraction`'s own predicate. */
+async function cornerPageFraction(sharp, bytes) {
+  const meta = await sharp(bytes).metadata();
+  const w = Number(meta.width) || 0;
+  const h = Number(meta.height) || 0;
+  if (w < 8 || h < 8) return null;
+  const bw = Math.max(2, Math.round(w * CORNER_BOX));
+  const bh = Math.max(2, Math.round(h * CORNER_BOX));
+  const boxes = [
+    { left: 0, top: 0 }, { left: w - bw, top: 0 },
+    { left: 0, top: h - bh }, { left: w - bw, top: h - bh },
+  ];
+  let page = 0;
+  let total = 0;
+  for (const box of boxes) {
+    const { data, info } = await sharp(bytes)
+      .extract({ left: box.left, top: box.top, width: bw, height: bh })
+      .removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < data.length; i += info.channels) {
+      total += 1;
+      // The SAME predicate `inkFraction` uses, inverted. Two definitions of
+      // "page" between the measurement and its confirmation is how a gate
+      // convicts on one rule and clears on another.
+      if (data[i] >= 246 && (data[i + 1] ?? data[i]) >= 246 && (data[i + 2] ?? data[i]) >= 246) page += 1;
+    }
+  }
+  return total ? Number((page / total).toFixed(4)) : null;
+}
+
+/**
+ * @returns {{contract, convicted, candidates, notices, surfaces, ...}} —
+ *   `convicted` is empty on a clean sheet. Nothing here throws: the caller owns
+ *   the refusal so the sheet identity rides with it. A corner measurement that
+ *   cannot be taken CLEARS the candidate rather than convicting it — an
+ *   unmeasurable panel is a different fault and the checks above own it.
+ */
+async function dieCutFindings(zone1, zone2, { sharp = require("sharp") } = {}) {
+  const bands = bandFitFindings(zone1, zone2);
+  const bytesOf = new Map((zone1 || []).map((panel) => [panel.surfaceKey, panel?.bytes]));
+  const convicted = [];
+  const cleared = [];
+  for (const candidate of bands.candidates) {
+    const bytes = bytesOf.get(candidate.surfaceKey);
+    let corners = null;
+    if (bytes?.length) {
+      try { corners = await cornerPageFraction(sharp, bytes); } catch { corners = null; }
+    }
+    if (corners !== null && corners >= MIN_CORNER_PAGE_FRACTION) {
+      convicted.push({ ...candidate, cornerPageFraction: corners });
+    } else {
+      cleared.push({
+        ...candidate, cornerPageFraction: corners,
+        clearedBecause: corners === null
+          ? "the corners could not be measured"
+          : `the cell's corners carry artwork (${(corners * 100).toFixed(1)}% page), so the lost ink is inside the panel and not a trimmed outline`,
+      });
+    }
+  }
+  return { ...bands, convicted, cleared, minCornerPageFraction: MIN_CORNER_PAGE_FRACTION };
+}
+
 const MAX_PANEL_ASPECT_DRIFT = 1.05;
 
 /**
@@ -972,7 +1211,22 @@ async function assemblePanelProofMaster({
   if (unverified.length) {
     throw refuse(`unverified panel identities: ${unverified.map((p) => `${p.zone}:${p.surfaceKey}`).join(", ")}`);
   }
-  // Paint density remains a receipt metric, not evidence of surface identity.
+  // Paint density is a receipt metric about surface IDENTITY, and it is also
+  // the one honest measure of whether this cell was drawn cut to shape.
+  // `dieCutFindings` uses it only as a comparison between a surface's own two
+  // bands; it never reads a fit in isolation. Sheet path only — on the derived
+  // path Zone 1 is composited below and has nothing to compare yet.
+  let dieCut = null;
+  if (zone1.length === 6) {
+    dieCut = await dieCutFindings(zone1, zone2, { sharp });
+    if (dieCut.convicted.length) {
+      throw refuse(
+        `the designer drew ${dieCut.convicted.length === 1 ? "a panel" : "panels"} cut to the vehicle's shape `
+        + `instead of filling the cell: ${dieCut.convicted.map((item) => item.finding).join("; ")}`,
+        { dieCut },
+      );
+    }
+  }
 
   // Zone 3 comes from original files and outlined typography, NEVER sheet crops.
   const assets = [];
@@ -1420,7 +1674,13 @@ async function assemblePanelProofMaster({
         threeZoneLayout: { required: true, branded: zone1.length,
           backgrounds: zone2.length, graphics: zone3.length,
           brandedSource: zone1Source,
-          graphicsFormat: zone3Format(zone3), productionApproved: false },
+          graphicsFormat: zone3Format(zone3), productionApproved: false,
+        // THE DIE-CUT GATE'S OWN MEASUREMENTS, kept whether or not it
+        // convicted: a clean sheet's per-surface band fits are what a
+        // later reader needs to judge the thresholds from real runs,
+        // and a convicted one never reaches a receipt at all. Null on
+        // the derived path, which has no sheet-drawn Zone 1.
+        dieCut },
         masterSha256: sheet.contentHash || null,
         composition: { contract: composed.contract, layoutContract: productionLayout.contract,
           placements: productionLayout.placements, brandedSource: zone1Source,
@@ -1558,7 +1818,13 @@ async function assemblePanelProofMaster({
         brandedSource: zone1Source,
         // "none" when the band is empty: an all-of-nothing `every()` would
         // have called an empty band "vector-originals".
-        graphicsFormat: zone3Format(zone3), productionApproved: false },
+        graphicsFormat: zone3Format(zone3), productionApproved: false,
+        // THE DIE-CUT GATE'S OWN MEASUREMENTS, kept whether or not it
+        // convicted: a clean sheet's per-surface band fits are what a
+        // later reader needs to judge the thresholds from real runs,
+        // and a convicted one never reaches a receipt at all. Null on
+        // the derived path, which has no sheet-drawn Zone 1.
+        dieCut },
       // `omitted` is the answer to "which asset did not reach which panel, and
       // why". Empty means every Zone-3 original was drawn onto every branded
       // surface that carries branding; it is never absent, so a reader can tell
@@ -1680,6 +1946,12 @@ module.exports = {
   PROOF_EDGE_FUNCTION,
   CALL1_INPUT_PATH,
   PanelProofRefusal,
+  dieCutFindings,
+  bandFitFindings,
+  MIN_CORNER_PAGE_FRACTION,
+  DIE_CUT_CONTRACT,
+  MAX_BAND_FIT_DROP,
+  SURFACE_FIT_DEFICIT_NOTICE,
   panelProofEnabled,
   panelRowsFromManifest,
   stageProofContainer,
