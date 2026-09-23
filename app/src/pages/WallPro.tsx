@@ -705,7 +705,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
         onChange={e => { void fileSelected(e.target.files?.[0], role); e.target.value = ''; }} />
       <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
-        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed wall-edge bg-[hsl(var(--wall-field))] p-4 text-sm font-medium hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed wall-edge bg-[hsl(var(--wall-field))] p-4 text-sm font-medium hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
         <Upload size={18} />{label}
       </button>
     </div>
@@ -1254,10 +1254,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * well gets one copy, not two.
    */
   const bandProofs = useMemo(() => {
-    const rest = (curatedProofs ?? theme.proofs)
-      .filter(p => !WALL_HERO_PROOF || (p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after));
-    // No pinned pair is a real state now that the gym is retracted: whatever a
-    // curator has published stands on its own, and nothing is invented to lead it.
+    const rest = curatedProofs ?? theme.proofs;
+    // The gym proof is the owner-approved hero. Do not filter the first shared
+    // proof out of the tool page: that silently removed the before/after slider
+    // whenever no curator row existed.
     return WALL_HERO_PROOF ? [WALL_HERO_PROOF, ...rest] : rest;
   }, [curatedProofs, theme.proofs]);
 
@@ -1776,7 +1776,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           <WallProMagic />
         </div>
       )}
-      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
+      {error && <div role="alert" className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}{error.startsWith('Sign in') && <Link className="ml-2 underline" to="/login" state={{ from: '/printpro/wallpro' }}>Sign in</Link>}</div>}
       {/* WHITE ON WHITE. The owner photographed it on 2026-09-22: a notice card
           with no readable text in it at all.
 
@@ -1791,7 +1791,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           tokens. This one hardcoded Tailwind sky and therefore opted out of the
           theme while still living inside it. It uses the card tokens now, with
           a blue rule rather than a blue fill, so it is legible on both. */}
-      {notice && <p role="status" className="rounded-xl border border-l-4 border-blue-500/70 wall-card p-3 text-sm wall-ink">{notice}</p>}
+      {notice && <p role="status" className="rounded-md border border-l-4 border-blue-500/70 wall-card p-3 text-sm wall-ink">{notice}</p>}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{history.projects.map((p: any) => <Button key={p.id} disabled={!!busy} variant="outline" className="justify-start truncate" onClick={() => void run('Opening project', () => restore(p.config, p.id, p.name))}>{p.name}</Button>)}</div>
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
