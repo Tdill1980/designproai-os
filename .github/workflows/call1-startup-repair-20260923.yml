@@ -1,0 +1,73 @@
+name: Verify isolated Call 1 startup repair
+on:
+  push:
+    branches: [fix/call1-startup-latency-20260923]
+    paths:
+      - .github/workflows/call1-startup-repair-20260923.yml
+      - scripts/repair-call1-startup-20260923.mjs
+permissions:
+  contents: write
+concurrency:
+  group: call1-startup-repair-20260923
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: github.repository == 'Tdill1980/designproai-os'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ESBUILD_BIN: ${{ runner.temp }}/call1-tools/node_modules/.bin/esbuild
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the compiler version already pinned by this repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -e 'const fs=require("node:fs"); const lock=JSON.parse(fs.readFileSync("app/package-lock.json","utf8")); const version=lock.packages["node_modules/esbuild"]?.version; if(!version)throw new Error("No pinned esbuild"); process.stdout.write(version);')
+          npm install --prefix "$RUNNER_TEMP/call1-tools" --no-package-lock --no-save --no-audit --no-fund "esbuild@$version"
+      - name: Reproduce the live failure in strict mode before changing code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/fix/call1-startup-latency-20260923
+          if node --test tests/call1-startup-latency.test.mjs > "$RUNNER_TEMP/call1-before.log" 2>&1; then
+            cat "$RUNNER_TEMP/call1-before.log"
+            echo 'Expected the recorded production regression; refusing a blind patch.'
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/call1-before.log"
+          grep -q 'prompt is not defined' "$RUNNER_TEMP/call1-before.log"
+      - name: Apply narrow source-identity-checked repair
+        run: node scripts/repair-call1-startup-20260923.mjs
+      - name: Execute repaired payload and shared-designer parity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/production-panel-proof-clean-prompt.test.mjs tests/designiq-shared-assembly.test.mjs | tee "$RUNNER_TEMP/call1-after.log"
+          git diff --check
+      - name: Commit tested repair only to this branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/fix/call1-startup-latency-20260923
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/production-panel-proof/index.ts tests/production-panel-proof-clean-prompt.test.mjs tests/call1-startup-latency.test.mjs
+          git diff --cached --stat
+          git commit -m 'fix: restore request-local Call 1 prompt and matching payload audit'
+          git push origin HEAD:refs/heads/fix/call1-startup-latency-20260923
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: call1-startup-regression-results
+          path: |
+            ${{ runner.temp }}/call1-before.log
+            ${{ runner.temp }}/call1-after.log
+          if-no-files-found: warn
+          retention-days: 7
