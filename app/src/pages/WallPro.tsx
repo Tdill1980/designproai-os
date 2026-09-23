@@ -1570,7 +1570,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // this attribute selects (index.css), so the partner page stays light and the
   // DesignProAI page is dark WITHOUT a second component. Scoped here rather
   // than on :root because the OS shell around this page has its own palette.
-  return <div data-wall-theme={theme.surface} className={`min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
+  return <div data-wall-theme={theme.surface} className={`wallpro-page min-h-screen ${WALL_PAGE_GROUND} lg:flex lg:gap-2 lg:px-6`}>
     {/* THE RAIL FOLLOWS THE CHROME, NOT THE BRAND (owner, 2026-09-22: "it's
         currently confusing and has bad ux").
         It used to be `theme.showPrintOffer &&`, which is true only for
