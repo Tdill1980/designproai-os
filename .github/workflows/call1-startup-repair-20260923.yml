@@ -15,8 +15,6 @@ jobs:
     if: github.repository == 'Tdill1980/designproai-os'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      ESBUILD_BIN: ${{ runner.temp }}/call1-tools/node_modules/.bin/esbuild
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -31,6 +29,7 @@ jobs:
           set -euo pipefail
           version=$(node -e 'const fs=require("node:fs"); const lock=JSON.parse(fs.readFileSync("app/package-lock.json","utf8")); const version=lock.packages["node_modules/esbuild"]?.version; if(!version)throw new Error("No pinned esbuild"); process.stdout.write(version);')
           npm install --prefix "$RUNNER_TEMP/call1-tools" --no-package-lock --no-save --no-audit --no-fund "esbuild@$version"
+          echo "ESBUILD_BIN=$RUNNER_TEMP/call1-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
       - name: Reproduce the live failure in strict mode before changing code
         shell: bash
         run: |
