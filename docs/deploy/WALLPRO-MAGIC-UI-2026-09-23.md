@@ -12,3 +12,10 @@ Owner-approved shared WallPro UI release.
 - production printable width remains 53 in
 
 This file is a deployment marker only; product code is already merged in PR #642.
+
+## UI clarity correction
+- Full room photos in magic steps (no object-cover crop)
+- Larger 2/3-column proof layout instead of five cramped cards
+- Reduced WallPro-only corner radius
+- Stronger dark surface/card/divider contrast
+- Flatter hero treatment
