@@ -376,6 +376,40 @@ what the model actually emitted before `containExtend` fitted it. On a 166.8″
 flank: 5.0 px/in cut from the shared sheet, 12.3 re-authored at 2K, 24.6 at 4K.
 Report the delivered number when asked whether this pass bought real pixels.
 
+### AND THE FLAG WAS UNREACHABLE FROM A DEPLOY — THE THIRD TIME (caught pre-ship, 2026-09-23)
+
+`panelRefineEnabled()` reads `DESIGNPRO_ATLAS_PANEL_REFINE`, and
+`configure-env.sh` wrote that key **nowhere**. So the resolution fix would have
+deployed in a state where it could never run, on the one defect blocking the
+owner from shipping. That is exactly what this file records for
+`DESIGNPRO_ATLAS_FIELD_FIRST` (weeks) and `DESIGNPRO_ATLAS_HERO_FIRST` (repeated
+within hours of documenting the first), and the rule written then —
+***"Do not add an env-gated routing flag without adding it to that list"*** —
+was not followed by the session that wrote this one.
+
+It is now threaded exactly like `atlas_topology`: deploy input
+`atlas_panel_refine` (`unchanged` | `on` | `off`), sticky in `configure-env.sh`,
+an exact `{on,off}` vocabulary in `validate-env.py`, printed in the resolved-flag
+banner, and in `ci-dark-deploy.sh`'s reconfigure condition so a flip on the
+already-running release restarts rather than printing `ALREADY_COMPLETE`. Added
+to the CLASS list in `ops/tests/deploy-workflow.test.mjs`, which is what caught
+it — the list works, and it only works if the next flag is added to it.
+
+**THE SAME PASS CAUGHT A SECOND, DIFFERENT BUG.** The deploy-log banner had
+EIGHT flags and SEVEN `%s=%s` pairs. **A `printf` given more arguments than
+placeholders REUSES the format string**, so it would have emitted a second,
+malformed line — the same defect the element-graph flag produced on the
+2026-09-17 log. The parity assertion (`args.length * 2 === placeholders`) is
+what convicts it; containment alone passes. Do not weaken it to a
+`includes()` check.
+
+**COST, STATED SO IT IS A DECISION AND NOT A SURPRISE:** the pass turns ONE
+image request into SEVEN (driver alone, then five at concurrency 3), taking Call
+1 from ~85 s to roughly three minutes. The owner has ruled on latency before
+("it should never take 7 minutes", "under 45 seconds"), so this flag is never
+turned on as part of a routine deploy — it is her call each time, and flipping it
+back is one dispatch with no rebuild.
+
 **NOT PROVEN:** no live generation has run with the flag on. `DESIGNPRO_ATLAS_PANEL_REFINE=on`
 exists precisely so the same brief can be run both ways and the two exported
 sheets judged side by side, which is the owner's acceptance standard. Locked by
