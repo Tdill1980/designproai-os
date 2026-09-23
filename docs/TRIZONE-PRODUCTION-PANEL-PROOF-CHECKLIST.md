@@ -311,8 +311,18 @@ emittable 21:9 — drift 1.20, comfortably inside. Read the ceiling in
       Evidence: wiring lock case 7. **Needs an edge deploy of
       `design-panel-ai-generate` — until then the edge answers at 2K and the
       receipt says so, which is the honest half-gain, not a failure.**
-- [ ] **`panelProofAuthoring.mode` is null** on the live row — the Part A2 mode
-      passthrough is not recording.
-- [ ] **`panelProofAuthoring.designAnchor` is null** — Part B's anchor capture
-      returns nothing, so Call 2's photographer falls back to the generic
-      pointer at the attached panel instead of the designer's own DESIGN ANCHOR.
+- [x] **`mode` and `designAnchor` were being eaten at the node boundary, not
+      failing to be produced.** The edge emits both (read back from the deployed
+      body), the transport parses both, the assembler writes both — and
+      `proof.sheet`'s hand-written output projection carried 11 of the 16 fields
+      the assembler reads. Measured on `848be1c6`: every projected field carried
+      a real value, every unprojected one read null/0. Four were lost — `mode`,
+      `designAnchor`, `artboardQualityExamplesApplied`, `promptVersion`.
+      Fixed by `sheetOutputFields`, a named function reconciled against the
+      assembler's own reads (`tests/atlas-panel-proof-sheet-crosses-the-node.test.mjs`,
+      verified to fail pre-fix and to NAME the missing fields).
+      **Runtime-only — no edge deploy needed.**
+- [ ] **A live run showing `mode` and `designAnchor` populated.** The fix makes
+      the receipts able to report; only a fresh generation proves they do. Judge
+      the seven proofs against the design once the real DESIGN ANCHOR reaches
+      Call 2's photographer.

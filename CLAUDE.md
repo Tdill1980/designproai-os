@@ -202,6 +202,73 @@ gains nothing from a name it has never seen. The OBJECT is what had to be right.
 against the constant** (section below). Under the old hand-copied literals it
 would have taken Call 1 down a second time.
 
+## 🧾 THE DESIGN ENGINE RAN AND COULD NOT SAY SO: A HAND-WRITTEN PROJECTION ATE FOUR RECEIPTS (owner, Trish 2026-09-23: "I need these design edge functions it's my design engine")
+
+Two of the five design-engine fixes of 2026-09-22 read as NOT LANDED on the
+owner's own live run, and **the edge, the transport and the assembler were all
+correct**. Measured on generation `848be1c6`:
+
+| field | projected by `proof.sheet`? | value on the revision |
+|---|---|---|
+| `intake.briefSource` | yes | **`"raw"`** — real |
+| `promptChars` | yes | **4887** — real |
+| **`mode`** | **no** | **null** |
+| **`designAnchor`** | **no** | **null** |
+| **`artboardQualityExamplesApplied`** | **no** | **0** |
+| **`promptVersion`** | **no** | **null** |
+
+**The split is exactly the projection list.** `proof.sheet` and `proof.assemble`
+are two node rows, claimable by two different worker processes, so the only
+thing the assembler sees of the sheet is what the sheet node puts in its
+output — and that was a hand-written inline object carrying 11 of the 16 fields
+the assembler reads. Production runs `CALL1_GRAPH=on`, so this was EVERY
+customer run; the in-process path (the fallback) was always correct, which is
+why no fixture caught it.
+
+**What was lost is not a pixel, and that is what makes it expensive.** `mode` is
+WHICH DESIGNER PERSONA RAN — the whole point of the 2026-09-22 fix that stopped
+`mode: "commercial"` being a hardcoded literal. `designAnchor` is the designer's
+own description of the design it just drew, which Call 2's photographer is
+handed as `designAnchorText` so all seven views photograph ONE design; absent,
+it falls back to a generic pointer at the attached panel. So the design engine
+went on designing correctly while being unable to report what it did — and two
+sessions in a row (this one included) read the null receipts, recorded "not
+fixed", and moved on. **A receipt that cannot report a fix is how a shipped fix
+becomes an unshipped one.**
+
+**THE REMEDY IS THE SHAPE, NOT THE FOUR NAMES.** `sheetOutputFields(sheet)` is
+now a named exported function, and
+`tests/atlas-panel-proof-sheet-crosses-the-node.test.mjs` RECONCILES it: every
+`sheet.<field>` the assembler reads must be projected, with three documented
+exceptions (`bytes`, `width`, `height` — RULE 0.39 keeps pixels off the boundary
+and the cut owns the decoded size) and one explicit rename (`contract` →
+`proofContract`, re-mapped by the assemble node). Add a field to the transport
+and consume it in the assembler, and the build fails naming it. Verified against
+the pre-fix tree, its failure message reads:
+
+```
+the assembler reads these sheet fields and the sheet node does not project
+them, so they are null on every graph run: artboardQualityExamplesApplied,
+mode, designAnchor
+```
+
+**An inline object literal cannot be compared to anything.** That is the whole
+reason four fields went missing with every test green, and it is the same class
+as the transport that was not forwarded through this same node an hour earlier.
+**Whenever a value crosses a node boundary through a hand-written list, make the
+list a function and reconcile it against its consumer.**
+
+`promptVersion` was a second, smaller case of the same dishonesty: the edge
+names its CONTRACT and emits no separate prompt version, so
+`promptVersion: sheet.promptVersion || null` wrote null on every run while
+`masterProvenance` two hundred lines above already fell back to `sheet.contract`
+for the identical value. Both now fall back, so the two paths agree.
+
+**NOT PROVEN:** no live generation has run with the projection repaired. What it
+changes is what the receipts can SAY; whether the restyle persona is right for a
+given brief, and whether the real DESIGN ANCHOR improves the seven proofs, is
+the owner's eye on a fresh run.
+
 ## 🔍 THE SOFT PANELS ARE ONE NUMBER: 5 PIXELS PER INCH. NO PROMPT CHANGE ADDS A PIXEL. (owner, Trish 2026-09-23)
 
 Owner, on her own New Aura run: *"still not a high quality design my prompt was

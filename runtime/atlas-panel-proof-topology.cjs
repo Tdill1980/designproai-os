@@ -1901,7 +1901,12 @@ async function assemblePanelProofMaster({
     provenance: {
       contract: PANEL_PROOF_TOPOLOGY_CONTRACT,
       topology: PANEL_PROOF_TOPOLOGY,
-      promptVersion: sheet.promptVersion || null,
+      // The edge names its CONTRACT and emits no separate prompt version, so
+      // reading only `promptVersion` wrote null on every run while the very
+      // same value was available two fields away (and `masterProvenance` above
+      // already falls back to it). A receipt claiming not to know something the
+      // sheet plainly carries is the shape this file records five times.
+      promptVersion: sheet.promptVersion || sheet.contract || null,
       proofContract: composedProof.contract,
       proofSha256: composedProof.contentHash,
       proofStoragePath: composedProof.storagePath,
