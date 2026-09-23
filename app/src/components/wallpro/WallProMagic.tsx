@@ -1,10 +1,11 @@
-import { Check, CornerDownRight, Eye, FileCheck2, MousePointerClick, Upload, Wand2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { CornerDownRight, Eye, FileCheck2, MousePointerClick, Upload, Wand2 } from 'lucide-react';
 import { WALL_CARD, WALL_GRADIENT } from '@/lib/wallpro-brand';
 
 const before = '/wallpro/proof-spa-before.jpg';
 const after = '/wallpro/proof-spa-after.jpg';
 
-function Frame({ children, label }: { children: React.ReactNode; label: string }) {
+function Frame({ children, label }: { children: ReactNode; label: string }) {
   return (
     <div className="relative aspect-[4/3] overflow-hidden rounded-xl border wall-edge bg-slate-950 shadow-sm">
       {children}
