@@ -36,7 +36,7 @@ const CONTRACT = "wallpro.production-panels.v1";
 // app/src/lib/wallpro-geometry.ts -- see the note there for why it moved off 54
 // (a half-inch-short wrap on the first real job). A test reads both and fails
 // if they drift.
-const DEFAULTS = Object.freeze({ bleedIn: 1, overlapIn: 0.5, panelWidthIn: 53, targetPpi: 150 });
+const DEFAULTS = Object.freeze({ bleedIn: 0.5, overlapIn: 0.5, panelWidthIn: 53, targetPpi: 150 });
 const MAX_TILE_PLACEMENTS = 20000;
 // Panels build in parallel. Three 130 MP panels in flight is ~1.5 GB of raw
 // pixels plus Topaz round-trips; the env can widen or narrow it per droplet.
