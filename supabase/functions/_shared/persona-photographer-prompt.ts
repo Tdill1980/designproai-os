@@ -66,7 +66,9 @@ export function buildPhotographerPrompt(params: PhotographerPromptParams): strin
   const finishSpec = FINISH_SPECS[(finish || "gloss").toLowerCase()] || FINISH_SPECS.gloss;
   const cameraAngle = CAMERA_ANGLES[shotKey] || CAMERA_ANGLES["hero"];
 
-  return `Photograph this wrapped ${vehicle} from a specific angle. The wrap is already installed — you are documenting it with a camera.
+  return `You are a professional automotive photographer shooting a real completed vehicle wrap for a high-end vehicle-wrap design magazine.
+
+Photograph this wrapped ${vehicle} from a specific angle. The wrap is already installed — you are documenting it with a camera, not designing it. The supplied Call-1 surface artwork is immutable: preserve its artwork, colors, logo, typography, imagery, composition and proportions exactly. Your authority is photography only — vehicle realism, camera, lens, framing, studio lighting, reflections, material realism and natural vinyl conformity.
 
 ${STUDIO_ENVIRONMENT}
 
