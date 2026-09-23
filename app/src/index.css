@@ -1181,3 +1181,22 @@ p {
 /* A placeholder has to follow the theme too, or the dark dropzone prompts in
    near-black on near-black. */
 [data-wall-theme] ::placeholder { color: hsl(var(--wall-ink-soft)); opacity: 1; }
+
+
+/* WallPro is a production workspace, not a stack of soft dashboard bubbles.
+   Scoped to WallPro so PatternPro and the rest of the OS do not move. */
+.wallpro-page .wall-card {
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 0 rgba(var(--wall-shadow) / var(--wall-shadow-close));
+}
+.wallpro-page button,
+.wallpro-page a,
+.wallpro-page input,
+.wallpro-page textarea,
+.wallpro-page select {
+  border-radius: 0.375rem;
+}
+.wallpro-page [class*="rounded-xl"],
+.wallpro-page [class*="rounded-2xl"] {
+  border-radius: 0.375rem;
+}
