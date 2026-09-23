@@ -647,91 +647,23 @@ serve(async (req) => {
       atlasCleanBase: body.separatedArtwork === true,
       atlasPanels: ATLAS_PANELS,
     } as Record<string, unknown>));
-    if (body.separatedArtwork === true) {
-      // The shared clean-base branch omits customer copy. Its presentation and
-      // exact-reference sentences still mention branding; adapt only those
-      // two clauses for this background-only output.
-      /**
-       * A CLEAN BASE IS STILL A DESIGN. THIS ASKED FOR A BACKGROUND.
-       *
-       * "Reserve calm, high-contrast negative space for the separate vector
-       * overlay layer" replaced the sentence that hands the designer authority
-       * over composition -- and it is the whole of what the designer was told
-       * about layout. Asked for a calm background, a designer gives you a
-       * photograph, which is exactly what live bbdd0db0 returned: six cropped
-       * desert-garden photos with no composition, no colour system and no
-       * graphic language, while the customer's own placement instruction
-       * ("a desert tropical Scottsdale home front on 3/4 of sides and rear")
-       * went unanswered.
-       *
-       * The separation is not the problem and is not being undone: Zone 2
-       * needs lettering-free panels for template QC and Zone 3 needs the marks
-       * as separate originals. What has to change is that the base is a
-       * COMPOSED wrap missing only its lettering, not a backdrop. So the
-       * replacement keeps every constraint the overlay needs -- no lettering,
-       * no logo, reserved space with enough contrast to carry type -- and
-       * gives back the design brief that was taken away.
-       *
-       * This is creative conditioning and it is therefore judgement, not a
-       * measurement. It is narrow on purpose: it restores composition
-       * authority and the customer's stated placement, and adds nothing about
-       * subject, palette or style, which remain the brief's alone.
-       */
-      creativeHead = creativeHead
-        .replace("The company name reads clearly at a glance; how the branding is composed is your creative call.",
-          "This is a finished commercial wrap composition with its lettering left off, never a backdrop: "
-          + "design it with deliberate flow across the panel, a committed colour system, and graphic language "
-          + "-- shapes, sweeps, edges, photographic content -- arranged as a designer would arrange them. "
-          + "Honour every placement the customer stated: where they say artwork covers a fraction of a side "
-          + "or a specific area, compose it exactly there. "
-          + "Leave one deliberate, calm, high-contrast area on each surface for the brand lockup that is "
-          + "composited separately; reserving that area is part of the composition, not a substitute for it.")
-        .replace("Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully",
-          "Recreate only its background colors, patterns, layout, composition, proportions and visual hierarchy faithfully");
-    }
-
-    let prompt = buildPanelProofPrompt({
+    // CALL 1 CREATIVE AUTHORITY:
+    // The proven DesignIQ/A.C.E. assembly above is the designer. Do not replace
+    // it with a second "clean background" persona or strip its professional
+    // judgement. `separatedArtwork` is a downstream production concern:
+    // Turn 1 still authors the COMPLETE coherent wrap; layer separation happens
+    // only after that accepted design exists.
+    //
+    // The only additional instruction here is the flat production destination.
+    // It changes WHERE the golden designer renders, never HOW it designs.
+    prompt = [
       creativeHead,
-      companyName: field("companyName"),
-      tagline: field("tagline"),
-      phone: field("phone"),
-      website: field("website"),
-      services: (body?.services ?? intake?.services),
-      promo: field("promo"),
-      vehicleYear: field("vehicleYear"),
-      vehicleMake: field("vehicleMake"),
-      vehicleModel: field("vehicleModel"),
-      proofDate: body?.proofDate,
-      orderNumber: body?.orderNumber,
-      designer: body?.designer,
-      proofVersion: body?.proofVersion,
-      creativeDirection,
-      panelRows,
-    });
-
-    if (body.separatedArtwork === true) {
-      // Preserve A.C.E.'s creative direction while replacing legacy layout
-      // language with the explicit artwork-only boundary below.
-      const artworkCreativeHead = creativeHead
-        .replace(" — build the entire design from this palette and do not introduce unrelated colors.",
-          " — build the entire design from this palette.")
-        .split(/\n+/)
-        .filter((line) => line.startsWith("Client's creative direction:")
-          || !/\b(?:no|not|never|without|do\s+not|don't|must\s+not|cannot)\b/i.test(line))
-        .join("\n");
-      prompt = [
-        "ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer's six vehicle panel cells.",
-        "CONTENT SCOPE: color fields, photography, illustration, gradients, textures, patterns, graphic motion, lighting, depth and visual accents. Keep every generated pixel within this artwork vocabulary.",
-        artworkCreativeHead,
-        "REQUIRED SUBJECT HIERARCHY: When the customer's creative direction requests a photoreal hero subject or scene, render that specific subject prominently inside the panel artwork. Preserve its people, animals, products or activity as requested. Textures and patterns support the requested subject; they must not replace it. Background artwork here includes the complete photographic and illustrated design beneath the separate branding layer.",
-        "Output the COMPLETE finished wrap artwork edge-to-edge: the professional design, requested/generated photography, graphic elements, logo/brand identity, and typography belong together in the finished composition. Strictly forbid document frames, headers, panel labels, dimensions, arrows, zone markers, vehicle silhouettes, wheels, windows, or installed-vehicle mockups.",
-        "MASTER DESIGN SYSTEM: Create ONE original professional vehicle-wrap design for this specific customer's brief before resolving the supplied surfaces. Treat branding, typography, photography, color, graphic language, depth, and visual movement as parts of that single master design — the same way a senior wrap designer builds one master Illustrator composition before production panelization.",
-        "SURFACE APPLICATION: Attachment 1 contains the six fixed production geometries for driver, passenger, roof, hood, front, and rear. Apply the ONE established master design across those surfaces. Driver and passenger are corresponding executions of the same vehicle campaign, never independent design concepts. Adapt the master composition appropriately to each surface while preserving one unmistakable brand identity, photographic treatment, typography, color system, and graphic language.",
-        "PRODUCTION GEOMETRY: Fill every supplied rectangle completely, boundary-to-boundary. Preserve each rectangle's exact location and aspect ratio on the 3:2 staging canvas. These rectangles constrain the physical output geometry; they do not define separate creative assignments. Keep unused canvas white.",
-        "Customer reference images, when present, calibrate professional quality and requested customer style only. Do not copy another customer's artwork, branding, typography, layout, colors, subject matter, or vehicle. Return the six COMPLETE finished surface artworks on the staging canvas.",
-      ].join("\n\n");
-    }
-
+      "FLAT PRODUCTION DESTINATION: Render the complete finished wrap design into the six supplied production rectangles: driver, passenger, roof, hood, front, and rear.",
+      "These rectangles are the fixed physical surface geometries of ONE vehicle wrap. They are not six separate creative assignments. Driver and passenger are corresponding sides of the same master campaign.",
+      "Fill every supplied production rectangle edge-to-edge with the finished artwork. Continue background, photography, illustration, color, texture, and graphic movement through the full outer boundary so code-owned trim and 5-inch bleed geometry can be preserved.",
+      "Keep critical brand marks and readable customer text inside the usable surface area while allowing noncritical artwork to continue through bleed.",
+      "Return flat uninstalled artwork only. The application supplies the staging geometry and the coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
+    ].join("\n\n");
     // PHASE 1 PAYLOAD CONTRACT — fail closed before the provider sees a request.
     // The live canary reports this object next to the full prompt so the exact
     // persona/layout injection can be proved from the provider payload rather
