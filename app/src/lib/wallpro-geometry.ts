@@ -98,6 +98,45 @@ export function looksLikeWholeFrame(points: Point[]): boolean {
     Math.abs(points[i].y - corner.y) <= WHOLE_FRAME_EPS);
 }
 
+/**
+ * FOUR TAPS ARE A WALL IN WHATEVER ORDER THEY ARRIVE (owner, Trish 2026-09-23,
+ * standing in front of the wall she needed to show a printer in the morning:
+ * "I'm trying to wrap this wall the white wall and it won't do it").
+ *
+ * Her four corners were right. Their ORDER was not: she had tapped top-left,
+ * top-right, bottom-LEFT, bottom-RIGHT — reading order, which is what a person
+ * does — and slots 3 and 4 are bottom-right and bottom-left. That makes the
+ * quad cross itself, `validWallCorners` returns false, "Wall area: not set"
+ * never clears, and the design can never land on the photo. Measured on her own
+ * numbers: corner 2's cross product came back -2297.6.
+ *
+ * The app's answer was a sentence telling her to do it again, clockwise. But
+ * the four points already describe exactly one convex quadrilateral; which
+ * order they were tapped in carries no information the geometry needs. So the
+ * code sorts them instead of asking a person to.
+ *
+ * Deterministic, no model, no guess: take the centroid, sort the four points by
+ * their angle around it — which is the convex ring for any four points in
+ * convex position — then rotate that ring to start at the corner nearest the
+ * top-left of the frame. In image coordinates (y downward) ascending angle IS
+ * top-left → top-right → bottom-right → bottom-left, the order every consumer
+ * already expects.
+ *
+ * It returns null rather than guessing when no ordering can work — one point
+ * inside the triangle of the other three is a genuinely degenerate wall, and
+ * `validWallCorners` is still the judge of the result.
+ */
+export function orderWallCorners(points: Point[]): Point[] | null {
+  if (points.length !== 4 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return null;
+  const cx = points.reduce((a, p) => a + p.x, 0) / 4;
+  const cy = points.reduce((a, p) => a + p.y, 0) / 4;
+  const ring = [...points].sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+  let start = 0;
+  for (let i = 1; i < 4; i += 1) if (ring[i].x + ring[i].y < ring[start].x + ring[start].y) start = i;
+  const ordered = [0, 1, 2, 3].map(i => ring[(start + i) % 4]);
+  return validWallCorners(ordered) ? ordered : null;
+}
+
 export function validWallCorners(points: Point[]): boolean {
   if (points.length !== 4 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return false;
   // Top-left, top-right, bottom-right, bottom-left in image coordinates.

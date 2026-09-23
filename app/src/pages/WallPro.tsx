@@ -31,7 +31,7 @@ import { WallProSidebar, WallProStepStrip } from '@/components/wallpro/WallProSi
 import { WallProStepBoard, WallProOutcomes, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
-import { validWallSize, validWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
+import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
@@ -822,7 +822,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // Recorded whether or not we apply: a customer mid-tap still deserves an
     // honest mask card afterwards.
     setWallReadMissed(!cornersOk);
-    if (applied) { setCorners(found.wall!); cornersOrigin.current = 'detected'; setCornerSource('detected'); }
+    if (applied) { setCorners(orderWallCorners(found.wall!) ?? found.wall!); cornersOrigin.current = 'detected'; setCornerSource('detected'); }
     // Marking mode closes ONLY when detection actually placed the corners. It
     // opened on upload so the customer can tap straight away; closing it on a
     // detection that found nothing would leave them with no corners AND no
@@ -1404,10 +1404,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       return;
     }
     if (marking === 'exclude') { setExcludeDraft(old => [...old, p]); return; }
-    const next = corners.length >= 4 ? [p] : [...corners, p]; setCorners(next); cornersOrigin.current = 'manual'; setCornerSource('manual');
+    const tapped = corners.length >= 4 ? [p] : [...corners, p];
+    // THE ORDER OF THE TAPS CARRIES NO INFORMATION THE GEOMETRY NEEDS.
+    // Reading order (top-left, top-right, bottom-left, bottom-right) is what a
+    // person actually does, and it used to produce a self-crossing quad and a
+    // sentence telling her to start again. Four points in convex position
+    // describe exactly one quadrilateral, so sort them into it.
+    const next = tapped.length === 4 ? orderWallCorners(tapped) ?? tapped : tapped;
+    setCorners(next); cornersOrigin.current = 'manual'; setCornerSource('manual');
     if (next.length === 4) {
       setMarking(null);
-      if (!validWallCorners(next)) setError('Those corners cross or form a narrow area. Mark them clockwise starting at the top left.');
+      if (!validWallCorners(next)) setError('Those four points do not enclose an area — one of them sits inside the other three. Tap the four corners of the wall itself.');
       else {
         setError('');
         if (artwork) setView('after');
@@ -2289,7 +2296,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   </div>
                 </div>
               )}
-              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next); }} onMasks={setExclusions} />
+              <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next.length === 4 ? orderWallCorners(next) ?? next : next); }} onMasks={setExclusions} />
               </div>}
               {/* THE TRUST SIGNAL (owner, 2026-09-12: "There is no trust signal").
                   The composite is not a preview of the print file, it IS the
@@ -2422,7 +2429,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </>}
               {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
-              {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} /></label>)}</div></div>)}</div></details>}
+              {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
             </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm wall-muted">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
             </div>
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
