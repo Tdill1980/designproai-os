@@ -77,12 +77,12 @@ export function WallProSidebar({
             key={step.id}
             type="button"
             onClick={() => jump(step.id)}
-            className="group flex items-start gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-[hsl(var(--wall-card))]"
+            className="group flex items-start gap-2.5 rounded-md px-2 py-2 text-left transition hover:bg-[hsl(var(--wall-card))]"
           >
             <span
               aria-hidden="true"
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                step.done ? 'bg-emerald-600 text-white' : 'border wall-edge bg-[hsl(var(--wall-card))] wall-muted'
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-[10px] font-bold ${
+                step.done ? 'border border-[hsl(var(--wall-card-edge))] bg-[hsl(var(--wall-field))] wall-ink' : 'border wall-edge bg-[hsl(var(--wall-card))] wall-muted'
               }`}
             >
               {step.done ? <Check className="h-3 w-3" /> : i + 1}
@@ -97,7 +97,7 @@ export function WallProSidebar({
         {/* The promise, where it is visible for the whole session rather than
             only beside a button two screens down. */}
         {(freeReason === 'trial' || freeReason === 'signed-out' || freeReason === 'commercialpro') && (
-          <p className="mx-2 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-800">
+          <p className="mx-2 mt-3 rounded-md border wall-edge bg-[hsl(var(--wall-card))] px-2.5 py-2 text-[11px] font-semibold wall-ink">
             {freeReason === 'commercialpro' ? 'Design included with CommercialPro'
               : freeReason === 'signed-out' ? 'Your first design is free — account required'
               : 'Your first design is free'}
@@ -157,16 +157,16 @@ export function WallProStepStrip({ steps, top, className = '' }: { steps: WallSt
             <button
               type="button"
               onClick={() => jump(step.id)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-sm border px-3 py-1.5 text-xs font-semibold transition ${
                 step.done
-                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-700'
+                  ? 'border-[hsl(var(--wall-card-edge))] bg-[hsl(var(--wall-card))] wall-ink'
                   : 'wall-edge bg-[hsl(var(--wall-card))] wall-muted hover:wall-ink'
               }`}
             >
               <span
                 aria-hidden="true"
-                className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                  step.done ? 'bg-emerald-600 text-white' : 'border wall-edge'
+                className={`flex h-4 w-4 items-center justify-center rounded-sm text-[9px] font-bold ${
+                  step.done ? 'border wall-edge bg-[hsl(var(--wall-field))] wall-ink' : 'border wall-edge'
                 }`}
               >
                 {step.done ? <Check className="h-2.5 w-2.5" /> : i + 1}
