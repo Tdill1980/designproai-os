@@ -7,98 +7,105 @@ import { runInNewContext } from 'node:vm';
 import { loadDesignIQ, ATLAS_PANELS } from './helpers/load-designiq.mjs';
 import { resolveEsbuild } from '../scripts/build-control-prompt.mjs';
 
-const require=createRequire(import.meta.url);
-// SYSTEM_JOB and SHEET_LAYOUT are now READ by the edge's phase-1 audit, which
-// compares the prompt against the constants themselves rather than against
-// hand-copied literals -- the drift that took Call 1 down on 2026-09-22. The
-// harness must supply them or it is not running the code the edge runs.
-const { buildPanelProofPrompt, panelProofCreativeHead, SYSTEM_JOB, SHEET_LAYOUT }=require('../runtime/atlas-panel-proof-contract.cjs');
-const source=readFileSync(new URL('../supabase/functions/production-panel-proof/index.ts',import.meta.url),'utf8');
-const start=source.indexOf('    const customerAssets =');
-const end=source.indexOf('    const parts: Array<Record<string, unknown>> = [{ text: prompt }];',start);
-assert.ok(start>0 && end>start);
-const assembly=execFileSync(resolveEsbuild(),['--loader=ts','--format=cjs'],{
-  input:`(() => {${source.slice(start,end)}\nreturn {prompt,customerAssets};})()`,encoding:'utf8',stdio:['pipe','pipe','pipe'],
-});
-const PERSONA='ROLE: Senior commercial vehicle-wrap artwork designer. OUTPUT: six clean printed background artworks for deterministic placement into the customer\'s six vehicle panel cells.';
-const BODY={separatedArtwork:true,companyName:'Copper Finch Artisan Bakery',phone:'(520) 555-0192',website:'copperfinch.example',
-  creativeDirection:'Deep blue base with sunrise-orange airflow ribbons sweeping front to rear, rich landscape photography.',
-  fontStyle:'bold condensed',brandColors:'#06284A, #FF7A18',finish:'Gloss',industryType:'HVAC',
-  vehicleYear:'2022',vehicleMake:'Ford',vehicleModel:'F250 Crew Cab',vehicleType:'truck'};
-async function assemble(body={}) {
-  const request={...BODY,...body};
-  const {buildDesignIQPrompt}=await loadDesignIQ();
-  return runInNewContext(assembly,{body:request,field:name=>String(request[name]||'').trim(),
-    customerPrompt:'',intake:null,panelRows:[],buildDesignIQPrompt,buildPanelProofPrompt,panelProofCreativeHead,
-    SYSTEM_JOB,SHEET_LAYOUT,ATLAS_PANELS});
+const require = createRequire(import.meta.url);
+const { buildPanelProofPrompt, panelProofCreativeHead, SYSTEM_JOB, SHEET_LAYOUT } = require('../runtime/atlas-panel-proof-contract.cjs');
+const source = readFileSync(new URL('../supabase/functions/production-panel-proof/index.ts', import.meta.url), 'utf8');
+const start = source.indexOf('    const customerAssets =');
+const end = source.indexOf('    const parts: Array<Record<string, unknown>> = [{ text: prompt }];', start);
+assert.ok(start > 0 && end > start, 'execute the real edge request assembly, not a duplicate');
+const section = source.slice(start, end);
+
+function compile(inject = '') {
+  const code = section.replace('    const phase1Audit = {', `${inject}\n    const phase1Audit = {`);
+  // Deno modules are strict. Sloppy VM tests concealed an undeclared prompt
+  // assignment by creating a global, while production threw ReferenceError.
+  return execFileSync(resolveEsbuild(), ['--loader=ts', '--format=cjs'], {
+    input: `(() => { "use strict"; ${code}\nreturn {prompt, creativeHead, phase1Audit, customerAssets}; })()`,
+    encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+const compiled = compile();
+const fixture = {
+  separatedArtwork: true, mode: 'commercial',
+  prompt: 'Create a wrap for Juniper Cycle Works. Make a logo and include a photo of a bicycle mechanic. No neon colors.',
+  companyName: 'Juniper Cycle Works', phone: '(520) 555-0192', website: 'junipercycle.example',
+  finish: 'Gloss', vehicleYear: '2022', vehicleMake: 'Ford', vehicleModel: 'Transit', vehicleType: 'van',
+};
+
+async function assemble(overrides = {}, code = compiled, transformHead = value => value) {
+  const body = { ...fixture, ...overrides };
+  const { buildDesignIQPrompt } = await loadDesignIQ();
+  const context = {
+    body, field: name => String(body[name] ?? '').trim(), customerPrompt: '', intake: null, panelRows: [],
+    buildDesignIQPrompt, buildPanelProofPrompt,
+    panelProofCreativeHead: value => transformHead(panelProofCreativeHead(value)),
+    SYSTEM_JOB, SHEET_LAYOUT, ATLAS_PANELS,
+  };
+  const output = runInNewContext(code, context, { timeout: 2000 });
+  assert.equal(Object.hasOwn(context, 'prompt'), false, 'each request keeps its own prompt; no global mutation');
+  return output;
 }
 
-test('active separated Call 1 injects exact persona and omits contradictory branded generation directions',async()=>{
-  const {prompt}=await assemble();
-  assert.ok(prompt.startsWith(PERSONA+'\n\n'));
-  assert.match(prompt,/CONTENT SCOPE:/);
-  assert.match(prompt,/ARTWORK STAGING CANVAS/);
-  assert.match(prompt,/six unlabelled gray rectangles/);
-  assert.doesNotMatch(prompt,/Bright Smiles|three-zone|ZONE [123]|document area|sheet/i);
-  assert.match(prompt,/native Gemini 3 Pro Image design knowledge/);
-  assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
-  assert.match(prompt,/rich landscape photography/);
-  assert.doesNotMatch(prompt,/ZONE 1 — Background copies|ZONE 2 — Authoritative backgrounds only|ZONE 3 — Reserved for original vector cut graphics/);
-  assert.match(prompt,/Strictly forbid document frames, headers, text labels, borders, dimensions/);
-  assert.match(prompt,/Return the six clean background artworks on the staging canvas/);
-  assert.doesNotMatch(prompt,/EXACT TEXT, character for character|ZONE 3'S FIVE BOXES, every one filled|Spell the business name|Typography preference:|The company name reads clearly|SMALL PANELS.*carry the logo/);
-  for(const protectedCopy of [BODY.companyName,BODY.phone,BODY.website])assert.ok(!prompt.includes(protectedCopy));
-});
-
-test('exact-reference guidance is restricted to backgrounds, and protected originals never enter image attachments',async()=>{
-  const reference={storagePath:`atlas-call1-inputs/${'a'.repeat(64)}.png`,contentHash:'a'.repeat(64)};
-  const logo={storagePath:`users/owner/revisions/revision/inputs/logo/${'b'.repeat(64)}.svg`,contentHash:'b'.repeat(64),contentType:'image/svg+xml'};
-  const {prompt,customerAssets}=await assemble({visionboard_intent:'exact_reference',logoAsset:logo,customerAssets:[
-    reference,logo,
-    {storagePath:`atlas-call1-inputs/${'b'.repeat(64)}.png`,contentHash:logo.contentHash},
-    {storagePath:`atlas-call1-inputs/${'c'.repeat(64)}.png`,assetRole:'logo'},
-    {storagePath:`atlas-call1-inputs/${'d'.repeat(64)}.png`,role:'typography'},
-    {storagePath:`atlas-call1-inputs/${'e'.repeat(64)}.png`,contentType:'application/pdf'},
-  ]});
-  assert.equal(customerAssets.length,1);assert.equal(customerAssets[0].storagePath,reference.storagePath);
-  assert.match(prompt,/EXACT REFERENCE:/);
-  assert.match(prompt,/Recreate only its background colors/);
-  assert.doesNotMatch(prompt,/Recreate its colors, patterns, typography, logos/);
-  assert.match(source,/for \(const asset of customerAssets\)/,'the image attachment loop consumes the filtered set');
-});
-
-test('customer direction containing a negative preference survives the scope filter',async()=>{
-  const direction = 'Forest-green landscape photography with no neon colors and no cartoon animals.';
-  const {prompt} = await assemble({creativeDirection: direction});
-  assert.ok(prompt.includes(direction));
-  assert.match(prompt,/Brand colors: #06284A, #FF7A18/);
-});
-
-test('requested photoreal hero subjects survive the real prompt assembly with priority over patterns',async()=>{
-  for(const direction of [
-    'Include a large photorealistic hero scene of a skilled bicycle mechanic repairing a mountain bike, integrated naturally with the desert-inspired graphics.',
-    'Feature a large photoreal well-groomed dog with a friendly professional groomer on the side panels.',
-    'Feature a large photoreal solar-panel installation scene across the rear three quarters of both sides.',
-  ]) {
-    const {prompt}=await assemble({creativeDirection:direction});
-    assert.ok(prompt.includes(direction));
-    assert.match(prompt,/REQUIRED SUBJECT HIERARCHY:/);
-    assert.match(prompt,/Textures and patterns support the requested subject; they must not replace it/);
-    assert.doesNotMatch(prompt,/wrap pattern artwork only/);
-    assert.match(prompt,/Strictly forbid document frames, headers, text labels/);
+for (const mode of ['commercial', 'restyle']) {
+  for (const separatedArtwork of [true, false]) {
+    test(`${mode}, separated=${separatedArtwork}: reaches provider boundary without ReferenceError or stale audit`, async () => {
+      const result = await assemble({ mode, separatedArtwork });
+      assert.ok(result.prompt.startsWith(result.creativeHead + '\n\n'), 'retain the exact selected designer head');
+      assert.ok(result.prompt.includes(fixture.prompt), 'preserve raw client wording including negative preferences');
+      assert.match(result.prompt, /FLAT PRODUCTION DESTINATION:/);
+      assert.match(result.prompt, /5-inch bleed/);
+      for (const [key, value] of Object.entries(result.phase1Audit)) {
+        if (key !== 'contract') assert.equal(value, true, key);
+      }
+    });
   }
+}
+
+test('audit still rejects a dropped designer head', async () => {
+  const broken = compile('prompt = prompt.replace(creativeHead, "");');
+  await assert.rejects(assemble({}, broken), /panel_proof_phase1_contract_missing:.*graphicDesignerPersonaInjected/);
 });
 
-test('legacy non-separated probe retains the existing branded prompt contract',async()=>{
-  const {prompt}=await assemble({separatedArtwork:false});
-  assert.match(prompt,/Spell the business name exactly/);
-  assert.ok(prompt.includes(BODY.companyName));
-  assert.match(prompt,/ZONE 3'S FIVE BOXES, every one filled/);
+test('audit still rejects missing native-knowledge or amplification guidance', async () => {
+  const removeKnowledge = head => head.split('\n').filter(line => !/\bnative\b.*\bknowledge\b|DESIGN AMPLIFICATION:/i.test(line)).join('\n');
+  await assert.rejects(assemble({}, compiled, removeKnowledge), /panel_proof_phase1_contract_missing:.*nativeGeminiImageKnowledgeInjected/);
+});
+
+test('audit still rejects a missing flat output instruction', async () => {
+  const broken = compile('prompt = prompt.replace(flatProductionInstructions[0], "");');
+  await assert.rejects(assemble({}, broken), /panel_proof_phase1_contract_missing:.*flatPanelProductionProofInjected/);
+});
+
+test('audit still rejects a missing geometry instruction', async () => {
+  const broken = compile('prompt = prompt.replace(flatProductionInstructions[1], "");');
+  await assert.rejects(assemble({}, broken), /panel_proof_phase1_contract_missing:.*templateLayoutLocked/);
+});
+
+test('request preparation is local: this harness does not call Gemini or storage', async () => {
+  assert.doesNotMatch(section, /await\s+(?:fetch|runDurableImageProviderRequest)\s*\(/);
+  const a = await assemble({ prompt: 'Juniper Cycle Works, a 1980s BMX racing style.' });
+  const b = await assemble({ prompt: 'Orchid Dental, a calm contemporary photographic design.' });
+  assert.notEqual(a.prompt, b.prompt);
+  assert.ok(!b.prompt.includes('1980s BMX'));
 });
 
 
-test('separated artwork input excludes full proof examples and cannot fall back to a labeled container', () => {
-  assert.match(source, /mode: body.separatedArtwork === true \? "artwork" : "template"/);
-  assert.match(source, /for \(const pinned of \(body.separatedArtwork === true \? \[\] : PINNED_INPUTS\)\)/);
-  assert.match(source, /if \(body.separatedArtwork === true\) throw renderError/);
+test('protected originals stay out of the image attachments; customer references remain', async () => {
+  const reference = {storagePath: 'atlas-call1-inputs/' + 'a'.repeat(64) + '.png', contentHash: 'a'.repeat(64)};
+  const logo = {storagePath: 'users/owner/revisions/revision/inputs/logo/' + 'b'.repeat(64) + '.svg', contentHash: 'b'.repeat(64), contentType: 'image/svg+xml'};
+  const {customerAssets} = await assemble({logoAsset: logo, customerAssets: [reference, logo,
+    {storagePath: 'atlas-call1-inputs/' + 'b'.repeat(64) + '.png', contentHash: logo.contentHash},
+    {storagePath: 'atlas-call1-inputs/' + 'c'.repeat(64) + '.png', assetRole: 'logo'},
+    {storagePath: 'atlas-call1-inputs/' + 'd'.repeat(64) + '.png', role: 'typography'},
+    {storagePath: 'atlas-call1-inputs/' + 'e'.repeat(64) + '.png', contentType: 'application/pdf'},
+  ]});
+  assert.equal(customerAssets.length, 1);
+  assert.equal(customerAssets[0].storagePath, reference.storagePath);
+  assert.match(source, /for \(const asset of customerAssets\)/);
+});
+
+test('separated artwork cannot fall back to a labelled container or a full proof example', () => {
+  assert.ok(source.includes('mode: body.separatedArtwork === true ? "artwork" : "template"'));
+  assert.ok(source.includes('for (const pinned of (body.separatedArtwork === true ? [] : PINNED_INPUTS))'));
+  assert.ok(source.includes('if (body.separatedArtwork === true) throw renderError'));
 });

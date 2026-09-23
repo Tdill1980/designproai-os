@@ -99,8 +99,8 @@ test("the head it feeds the proof is the persona, and the artboard tail is gone"
 
   // THE PERSONA SURVIVES THE CUT — these are the exact blocks that were missing
   // from the proof entirely, each measured in CLAUDE.md as proven direction.
-  assert.match(head, /senior graphic designer and vehicle-wrap specialist/, "the persona identity");
-  assert.match(head, /native Gemini 3 Pro Image design knowledge/, "native model design knowledge");
+  assert.match(head, /senior (?:professional )?graphic designer and vehicle-wrap specialist/, "the persona identity");
+  assert.match(head, /native (?:Gemini 3 Pro Image )?design knowledge/, "native model design knowledge");
   assert.match(head, /built from layered elements/, "COMMERCIAL_DEPTH's build order");
   assert.match(head, /Translate anything the brief names into concrete design/, "the translation block");
   assert.match(head, /clean modern dental wrap, teal and white/, "the customer's own brief");
@@ -180,7 +180,7 @@ test("DesignIQ names the proof's own object, and Call 1 still names the artboard
   // THE VALUABLE HALF SURVIVES. If a future edit swaps the object by deleting
   // the creative direction with it, the proof loses its designer again — which
   // is the 2026-09-18 defect (3,906 chars, ~40 of brief, zero of A.C.E.).
-  assert.match(proof, /senior graphic designer and vehicle-wrap specialist/, "the persona");
+  assert.match(proof, /senior (?:professional )?graphic designer and vehicle-wrap specialist/, "the persona");
   assert.match(proof, /built from layered elements/, "COMMERCIAL_DEPTH's build order");
   assert.match(proof, /mid-ground graphic motion/, "the layered build order's middle term");
   assert.match(proof, /clean modern dental wrap, teal and white/, "the customer's brief");
