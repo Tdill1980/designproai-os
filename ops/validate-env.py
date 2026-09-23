@@ -114,6 +114,21 @@ def validate(runtime_path: Path, gateway_path: Path) -> None:
     # Same lesson as the v9 DB pin in CLAUDE.md: a gate must not learn a
     # requirement one release before the writer that satisfies it.
     runtime_keys |= {"DESIGNPRO_ATLAS_PANEL_FINISH"} if "DESIGNPRO_ATLAS_PANEL_FINISH" in runtime else set()
+    # RETIRED 2026-09-23, AND IT MUST BE TOLERATED WHILE IT DRAINS.
+    #
+    # The per-panel resolution pass is deleted, so nothing reads this key and
+    # configure-env.sh no longer writes it -- but the LIVE runtime.env on the
+    # droplet still carries the line the rollback deploy wrote, and this
+    # validator runs against that file before it is rewritten. Removing the key
+    # from the approved set without this refused the very deploy that removes
+    # it: "runtime.env has unapproved keys: DESIGNPRO_ATLAS_PANEL_REFINE",
+    # exit 1, before a single byte of production was touched.
+    #
+    # Permitted, never required, and NOT given a value vocabulary below -- a
+    # retired flag no code reads needs no legal values. It disappears on its
+    # own the first time the writer rewrites the file. Delete this line once a
+    # deploy log shows it gone.
+    runtime_keys |= {"DESIGNPRO_ATLAS_PANEL_REFINE"} if "DESIGNPRO_ATLAS_PANEL_REFINE" in runtime else set()
     # Call-1 topology (RULE 0.35) and its node-graph kill switch: permitted,
     # never required, for the same upgrade reason; exact vocabularies when
     # present so a typo cannot select a customer path. The topology is written
