@@ -305,9 +305,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * together.
    */
   const focusPhoto = () => {
-    // `#wall-preview` is the step-4 HEADING, above the tabs and the whole flat
-    // master pane -- so "take me to the photo" landed on a title with the photo
-    // still off screen. Go to the picture itself, centred.
+    // Go to the PICTURE, centred, never to a heading above it. The fallback
+    // `#wall-preview` is now the step-4 result section and exists only for the
+    // signed-out / artwork-only states that mount no editor at all.
+    //
+    // ⚠️ THIS HELPER IS NOT THE STRUCTURE, AND IT WAS ASKED TO BE ONCE.
+    // Scrolling to the photo was the 2026-09-23 answer to "I have to scroll to
+    // find my upload", and the owner rejected it twice: the photo was still in
+    // step 4, three hundred lines down the DOM. It lives under the upload now.
+    // What is left here is the right job for a scroll -- a control that starts
+    // a marking mode bringing its target into view -- and nothing more.
     setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
   };
@@ -1864,8 +1871,26 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>
         {!history.projects.length && !history.generations.length && <p className="py-4 text-sm wall-muted">Your saved projects will appear here.</p>}
       </section>}
-      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
-        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70">
+      {/* ⚠️ FOUR CELLS, IN THE ORDER A PHONE READS THEM (owner, Trish
+          2026-09-23: "You never fixed still disjointed upload should show
+          image uploaded and allow me to mark corners and mask and easily
+          move mask adjust it.")
+
+          The photo, its corner marking and its mask tools all rendered
+          inside STEP 4, in the second column. Below `lg` that column stacks
+          under the ENTIRE left one, so on a phone the wall she had just
+          uploaded was ~330 lines beneath the button she uploaded it with,
+          and step 1 showed two empty dashed boxes. Scrolling her to it was
+          the previous pass and she rejected it twice, correctly: the fix
+          for "I have to scroll to my photo" is not a faster scroll.
+
+          So the grid is now FOUR children in reading order — 1 upload,
+          2 the photo, 3 the design, 4 the result — placed explicitly so the
+          desktop keeps form-left / visuals-right. On a phone the DOM order
+          IS the order, and step 2 is the photo itself rather than two
+          buttons naming a photo somewhere else. */}
+      <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
+        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-1">
           {/* ── MARK THE WALL, ABOVE THE SCROLL (owner, 2026-09-22) ──────────
               "it doesn't show my photo when I upload, it should show my photo
               as soon as I upload / above scroll a card pops up and tells me to
@@ -2000,22 +2025,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
               </div>
             </div>
-            {photo && <div id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className="mt-5 space-y-2">
-              {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
-                  never numbered -- it lived unlabelled inside step 1, below the
-                  fold on a phone -- which is why "it did not allow me or
-                  instruct me to pin corners" and "how do you mask the closet"
-                  were the same report twice. It sits inside this section
-                  because the photo it acts on is here; the page already holds
-                  two step headings in one section. */}
-              <StepHeading n={2} icon={Ruler}>Select wall area</StepHeading>
-              <p className="-mt-1 mb-1 text-xs wall-muted">Drag the corners to mark your wall. We exclude windows, doors and furniture. Your print files never wait for this.</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
-                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
-              </div>
-              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
-            </div>}
             <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
@@ -2043,99 +2052,33 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </span>
             </div>}
           </section>
-          <section id="choose-design" className={panelClass}><StepHeading n={3} icon={Settings2}>Describe your design</StepHeading>
-            {/* THE FIVE PRICED PATHS MOVE UNDER THE BRIEF (owner ruling,
-                2026-09-22, asked directly: "Inside step 3, chips on top").
-                Describing a design is the default way in, so the picker stops
-                being a toll gate in front of it -- but it is NOT hidden: every
-                path keeps its own price on its own row, which is the 09-13
-                launch rule that the price rides the choice and never a
-                checkout. Open by default whenever the customer has already
-                chosen a non-default path, so a restored project never buries
-                the mode it is actually in. */}
-            <details className="mt-4 rounded-lg border wall-edge p-3" open={designMode !== 'ai'}>
-              <summary className="cursor-pointer text-sm font-semibold wall-ink">More ways to start &mdash; and what each costs</summary>
-              <div className="mt-3"><div className="mb-4 grid gap-2">{([
-              { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
-              { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
-              { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
-              { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
-              { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
-            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'wall-edge hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs wall-muted">{option.hint}</span>
-              {/* The price is on the choice, not buried in a checkout. Each entry
-                  path is its own SKU (owner's launch list, 2026-09-13), so the
-                  customer picks knowing what it costs. */}
-              <span className="shrink-0 text-sm font-bold text-blue-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
-            <p className="mb-4 text-[11px] wall-muted">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p></div>
-            </details>
-            {/* STEP 3 (Trish 2026-09-16). Same conditional tree, same state --
-                only a heading, so "Pick a design" reads as its own step and
-                "Describe/match/upload" reads as its own step, matching what the
-                customer actually does next instead of hiding inside step 2. */}
-            {/* NOT a numbered step any more (2026-09-22). The owner's board
-                runs 1 Upload - 2 Select wall area - 3 Describe - 4 Generate,
-                and a second "3" beside it is the two-numbering-systems defect
-                the UX pass already removed once. This is the active path's own
-                sub-heading. */}
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold wall-ink">
-              {(() => { const I = designMode === 'library' ? ImageIcon : Settings2; return <I className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />; })()}
-              {designMode === 'library' ? 'Pick a ready-made design' : designMode === 'upload' ? 'Add your artwork' : 'Your brief'}
-            </h3>
-            {designMode === 'library' ? <div className="space-y-3">
-              {catalog === null ? <p className="text-sm wall-muted">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm wall-muted">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
-                <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
-                {/* Both sides of this merge kept: main added the room-mockup
-                    thumbnail and its caption; this branch moved the selection
-                    colour off violet with the rest of the page. */}
-                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-blue-500 ring-2 ring-blue-300' : 'wall-edge hover:border-blue-400')}>
-                  <div className="aspect-[4/3] bg-[hsl(var(--wall-ground))]">{(() => { const src = (row.mockups?.[0] && catalogThumbs[row.mockups[0].path]) || catalogThumbs[row.thumb_path || row.master_path]; return src ? <img src={src} alt={row.title} className="h-full w-full object-cover" loading="lazy" /> : null; })()}</div>
-                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] wall-muted">{row.design_id} · {row.design_type}</p>{row.mockups?.[0] && <p className="truncate text-[10px] text-emerald-700">{row.mockups[0].caption}</p>}</div>
-                </button>)}</div>
-                <p className="text-xs wall-muted">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
-              </>}
-            </div> : designMode === 'ai' || designMode === 'match' || designMode === 'wall' ? <div className="space-y-3">
-              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-3 gap-2">
-                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'auto' ? 'default' : 'outline'} onClick={() => setScaleChoice('auto')}>Auto</Button>
-                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'cover' ? 'default' : 'outline'} onClick={() => setScaleChoice('cover')}>Mural</Button>
-                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'repeat' ? 'default' : 'outline'} onClick={() => setScaleChoice('repeat')}>Pattern</Button>
-              </div><p className="mt-1 text-xs wall-muted">{autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice }).reason}</p></div>
-              {intent === 'wall' && <p className="text-xs wall-muted">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
-              {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
-              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
-              {freeReason === 'commercialpro'
-                ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
-                : freeReason === 'trial'
-                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
-                  : freeReason === 'signed-out'
-                    ? <p className="text-xs font-semibold text-emerald-700">
-                        Your first design is free — <Link to="/signup" state={{ from: '/wallwrap-design' }} className="underline">create a free account</Link> to claim it.
-                        Pricing film needs no account.
-                      </p>
-                    : <p className="text-xs wall-muted">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
-              {/* The reason generation is blocked, and any failure, sit beside the button
-                  the customer is looking at. The page-top alert alone is off screen here. */}
-              {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
-              {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
-              {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
-              <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
-            </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs wall-muted">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
-          </section>
         </fieldset>
-        <div className="min-w-0 space-y-5">
-          {/* scroll-mt clears the sticky header: a finished design scrolls
-              itself here, and without it the heading lands underneath. */}
-          {/* Scroll margin clears BOTH sticky bars -- the site header, measured
-              into stickyTop, plus this page's own -- so the design a finished
-              generation scrolls itself to does not land underneath them. */}
-          <section id="wall-preview" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
-            {/* STEP 4 (Trish 2026-09-16): the result, beside the form that
-                produces it. Every WallPro design originates as a flat
-                rectangle, and the client sees both at once: the print master
-                on the left and the same file imposed on their photo on the
-                right, the moment the corners exist. The tabs only switch the
-                photo pane between the original wall and the imposed design;
-                the flat master never leaves the screen. */}
-            <StepHeading n={4} icon={ImageIcon}>Generate &amp; preview</StepHeading>
+
+        {/* STEP 2 — THE PHOTO, AND EVERYTHING DONE TO IT, IN ONE PLACE.
+            It is NOT inside a disabled fieldset: every control here already
+            carries its own `disabled={!!busy}`, and greying out the wall
+            while a design renders would take the corners away mid-marking. */}
+        <div className="min-w-0 space-y-5 lg:col-start-2 lg:row-start-1 lg:row-span-2">
+          {photo && <section id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
+              {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
+                  never numbered -- it lived unlabelled inside step 1, below the
+                  fold on a phone -- which is why "it did not allow me or
+                  instruct me to pin corners" and "how do you mask the closet"
+                  were the same report twice.
+                  ⚠️ AND THEN IT WAS A STEP WITH NOTHING IN IT (owner,
+                  2026-09-23: "upload should show image uploaded and allow me
+                  to mark corners and mask"). Step 2 was two detect buttons and
+                  a sentence about a photo three hundred DOM lines away, in the
+                  other grid column. The photo, its marking banner, its mask
+                  tools and its corner fields are all HERE now, so the step is
+                  the work rather than a pointer at it. */}
+              <StepHeading n={2} icon={Ruler}>Select wall area</StepHeading>
+              <p className="-mt-1 mb-1 text-xs wall-muted">Drag the corners to mark your wall. We exclude windows, doors and furniture. Your print files never wait for this.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
+                <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
+              </div>
+              <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
             {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
               {/* Before and after (owner, 2026-09-12: "Before and afters will
                   speak volumes"). Offered only once a real composite exists --
@@ -2143,87 +2086,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   The after is always the deterministic composite. */}
               {canCompare && <Button size="sm" variant={view === 'compare' ? 'default' : 'outline'} onClick={() => setView('compare')}><MoveHorizontal className="mr-1 h-3 w-3" />Before &amp; after</Button>}
               {artwork && aiAvailable && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs wall-muted"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
-            <div className={photo && previewArt ? 'grid gap-4 xl:grid-cols-2' : ''}>
-            {previewArt && <div>
-              {/* Say which picture this is. "THE PRINT MASTER · 4096 × 4096 PX"
-                  over a wall-scale render read as though the wall were 4096
-                  square, and over a bare tile it invited the "my pattern came
-                  back small" reading the flatView comment above explains. */}
-              {/* ⚠️ THESE PANES CARRY NO NUMBER (owner, 2026-09-22: "it's
-                  currently confusing and has bad ux").
-                  They used to read "1 ·" and "2 ·" while the page's STEPS are
-                  also numbered 1-4 -- and these two live INSIDE step 4. Her
-                  screenshot shows "2 · IMPOSED ON YOUR WALL", which reads as
-                  step 2, and step 2 is "Choose your design". One numbering
-                  system per page: the steps have it, because they are a
-                  sequence; these are two views of one result, which is not. */}
-              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">{artwork ? 'Flat design — the print master' : 'Your uploaded design — not print-ready yet'}{artwork && flatView !== 'tile' ? ` · across your ${width} × ${height} in wall` : previewArt.width && previewArt.height ? ` · ${previewArt.width} × ${previewArt.height} px` : ''}</p>}
-              {/* Pattern size, as PatternPro's slider: the design itself drawn
-                  smaller or bigger across the wall, 30% to 300%, with no new
-                  generation (owner, 2026-09-12). The panels do not change. */}
-              <div className="mb-2 rounded-lg border wall-edge bg-[hsl(var(--wall-card))] px-3 py-2 text-sm" aria-label="Pattern size">
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-semibold">Pattern size</span>
-                  <span className="rounded bg-[hsl(var(--wall-ground))] px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, wallBox, scaleDraft)}</span>
-                </div>
-                <Slider aria-label="Pattern size" min={PATTERN_SCALE_MIN} max={PATTERN_SCALE_MAX} step={PATTERN_SCALE_STEP} value={[scaleDraft]} disabled={!!busy} onValueChange={v => draftPatternScale(v[0])} onValueCommit={v => applyPatternScale(v[0])} />
-                <div className="mt-1 flex justify-between text-[11px] wall-muted"><span>30% smaller</span><span>100% as generated</span><span>300% bigger</span></div>
-                <div className="mt-2 flex flex-wrap items-center gap-1">
-                  {PATTERN_SCALE_PRESETS.map(p => <Button key={p} size="sm" variant={scaleDraft === p ? 'default' : 'outline'} className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(p)}>{patternScaleWord(p)} {p}%</Button>)}
-                  {scaleDraft !== 100 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(100)}><RotateCcw className="mr-1 h-3 w-3" />Reset</Button>}
-                </div>
-                {/* Bigger spreads the same pixels over more inches, so the
-                    honest limit on "bigger" is resolution, never print size:
-                    the wall, the panels and the file stay exactly as they are. */}
-                {/* THE NUMBER IS INFORMATION; THE OLD BUTTON WAS BAD ADVICE.
-                    "Use 40%, the largest fully sharp size" sat here and, on the
-                    owner's own 120-inch wall, 40% of a 60-inch repeat is a
-                    24-inch repeat -- four-plus across, the craft-fair density
-                    the scale brain exists to prevent. It told customers to undo
-                    the measured baseline to chase sharpness that the pipeline
-                    already supplies: production runs Topaz per 54-inch panel to
-                    reach 150 PPI, which is the whole reason that stage exists.
-                    Owner, 2026-09-12: "Keep it lower resolution" -- hold the
-                    pattern at the size it should print and accept the native
-                    density. The honest figure stays on screen; the call to
-                    action that fought the baseline is gone. */}
-                {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'wall-muted' : 'wall-muted')}>
-                  {draftPpi >= printSettings.minPpi
-                    ? `${Math.round(draftPpi)} PPI from the design's own pixels — above your ${printSettings.minPpi} PPI minimum. Wall size, panels and print file are unchanged at every size.`
-                    : `${Math.round(draftPpi)} PPI native from the design's own pixels. Production enhances every ${WALLPRO_PRINT_WIDTH}″ panel through Topaz to ${printSettings.minPpi} PPI, so keep the pattern at the size it should print — shrinking it to raise this number is not the fix.`}
-                </p>}
-                <p className="mt-1 text-xs wall-muted">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
-              </div>
-              {/* MIRROR CHANGES HER ARTWORK, SO IT HAS TO SAY SO (2026-09-22).
-                  `verified: true` is correct for a mirrored tile -- the join is
-                  a column against its own copy -- and that is exactly why the
-                  receipt alone could never surface this: every gate read
-                  "seamless" and stayed quiet while alternate tiles printed
-                  flipped. The method, not the verdict, is what the customer
-                  needs, and only in the one case where the wall will not look
-                  like the design she approved. */}
-              {seamReceipt?.method === 'mirror' && <div className="mb-2 rounded-lg border border-amber-400/60 bg-amber-50/80 px-3 py-2 text-xs dark:bg-amber-500/10">
-                <p className="font-semibold text-amber-900 dark:text-amber-200">This tile is being mirrored to join.</p>
-                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-                  Every other tile is flipped, so your wall will read symmetrically — fine on texture, visible on leaves, figures or lettering. The tile did not join on its own and the blended repair did not close it either.
-                </p>
-                <Button size="sm" variant="outline" className="mt-2 h-7 px-2 text-xs" disabled={!!busy} onClick={() => setSeamPreference(seamPreference === 'blend' ? 'auto' : 'blend')}>
-                  {seamPreference === 'blend' ? 'Back to automatic' : 'Use the blended repeat anyway'}
-                </Button>
-              </div>}
-              <div className="flex min-h-80 items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-4"><div className="relative inline-block">
-              {flatView === 'css' && draftTile
-                ? <div role="img" aria-label={`Print master across your ${width} by ${height} inch wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || previewArt).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />
-                : <img src={flatView === 'canvas' && flatShown ? flatShown : previewArt.url} alt={flatView === 'canvas' ? `Print master across your ${width} by ${height} inch wall at the current pattern scale` : 'Generated tile'} className={'max-h-[650px] max-w-full object-contain' + (flatView === 'canvas' && !flatCurrent ? ' opacity-70' : '')} draggable={false} />}
-              {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
-                onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
-                onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
-                onPointerUp={() => { if (maskDraft && maskDraft.w > 0.01 && maskDraft.h > 0.01) setMaskRects(old => [...old, maskDraft]); maskStart.current = null; setMaskDraft(null); }}>
-                {[...maskRects, ...(maskDraft ? [maskDraft] : [])].map((r, i) => <rect key={i} x={r.x * 100} y={r.y * 100} width={r.w * 100} height={r.h * 100} fill="rgba(255,255,255,0.45)" stroke="#7c3aed" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />)}
-              </svg>}
-              </div></div>
-            </div>}
-            {photo ? <div>
               {/* Two wraps on one photo: the mural on the wall, brick on the
                   fireplace. Each zone is its own design and its own purchase. */}
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -2442,8 +2304,195 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
-            </div> : !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm wall-muted">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
-            </div>
+          </section>}
+        </div>
+
+        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-2">
+          <section id="choose-design" className={panelClass}><StepHeading n={3} icon={Settings2}>Describe your design</StepHeading>
+            {/* THE FIVE PRICED PATHS MOVE UNDER THE BRIEF (owner ruling,
+                2026-09-22, asked directly: "Inside step 3, chips on top").
+                Describing a design is the default way in, so the picker stops
+                being a toll gate in front of it -- but it is NOT hidden: every
+                path keeps its own price on its own row, which is the 09-13
+                launch rule that the price rides the choice and never a
+                checkout. Open by default whenever the customer has already
+                chosen a non-default path, so a restored project never buries
+                the mode it is actually in. */}
+            <details className="mt-4 rounded-lg border wall-edge p-3" open={designMode !== 'ai'}>
+              <summary className="cursor-pointer text-sm font-semibold wall-ink">More ways to start &mdash; and what each costs</summary>
+              <div className="mt-3"><div className="mb-4 grid gap-2">{([
+              { mode: 'library', label: 'Pick a design', hint: 'Ready-to-print designs by industry. No token.' },
+              { mode: 'match', label: 'Match my design', hint: 'Upload a design; it is recreated print-ready, with any changes you ask for.' },
+              { mode: 'wall', label: 'Design for my wall', hint: 'Upload your wall photo and let the designer propose a design for that room.' },
+              { mode: 'ai', label: 'Describe a design', hint: 'Prompt only: a mural or a repeating pattern.' },
+              { mode: 'upload', label: 'Use my print-ready file', hint: 'Your own file, placed as supplied. It must meet the print resolution.' },
+            ] as const).map(option => <button key={option.mode} type="button" onClick={() => { setDesignMode(option.mode); setArtwork(null); setDesignId(null); if (option.mode === 'match') { setPlacement('repeat'); setRepeatWidth(24); } }} className={'flex items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left ' + (designMode === option.mode ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-300' : 'wall-edge hover:border-blue-400')}><span className="shrink-0 text-sm font-semibold">{option.label}</span><span className="text-xs wall-muted">{option.hint}</span>
+              {/* The price is on the choice, not buried in a checkout. Each entry
+                  path is its own SKU (owner's launch list, 2026-09-13), so the
+                  customer picks knowing what it costs. */}
+              <span className="shrink-0 text-sm font-bold text-blue-700">{formatMoney(WALL_DESIGN_SKUS[option.mode].cents)}</span></button>)}</div>
+            <p className="mb-4 text-[11px] wall-muted">Every design includes print-ready panelized files, checked by our team before release. Printing is {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))} a square foot and is optional — take the files elsewhere if you prefer.</p></div>
+            </details>
+            {/* STEP 3 (Trish 2026-09-16). Same conditional tree, same state --
+                only a heading, so "Pick a design" reads as its own step and
+                "Describe/match/upload" reads as its own step, matching what the
+                customer actually does next instead of hiding inside step 2. */}
+            {/* NOT a numbered step any more (2026-09-22). The owner's board
+                runs 1 Upload - 2 Select wall area - 3 Describe - 4 Generate,
+                and a second "3" beside it is the two-numbering-systems defect
+                the UX pass already removed once. This is the active path's own
+                sub-heading. */}
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold wall-ink">
+              {(() => { const I = designMode === 'library' ? ImageIcon : Settings2; return <I className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />; })()}
+              {designMode === 'library' ? 'Pick a ready-made design' : designMode === 'upload' ? 'Add your artwork' : 'Your brief'}
+            </h3>
+            {designMode === 'library' ? <div className="space-y-3">
+              {catalog === null ? <p className="text-sm wall-muted">Loading designs…</p> : catalog.length === 0 ? <p className="text-sm wall-muted">No ready-to-sell designs are published yet. Describe your own with Create with AI.</p> : <>
+                <label className="block text-sm">Industry<select className={inputClass} value={catalogIndustry} onChange={e => setCatalogIndustry(e.target.value)}><option value="all">All ({catalog.length})</option>{[...new Set(catalog.map(r => r.industry))].sort().map(i => <option key={i} value={i}>{i}</option>)}</select></label>
+                {/* Both sides of this merge kept: main added the room-mockup
+                    thumbnail and its caption; this branch moved the selection
+                    colour off violet with the rest of the page. */}
+                <div className="grid max-h-[520px] grid-cols-2 gap-2 overflow-y-auto pr-1">{catalog.filter(r => catalogIndustry === 'all' || r.industry === catalogIndustry).map(row => <button key={row.id} type="button" disabled={!!busy} onClick={() => void pickDesign(row)} className={'overflow-hidden rounded-lg border text-left ' + (designId === row.design_id ? 'border-blue-500 ring-2 ring-blue-300' : 'wall-edge hover:border-blue-400')}>
+                  <div className="aspect-[4/3] bg-[hsl(var(--wall-ground))]">{(() => { const src = (row.mockups?.[0] && catalogThumbs[row.mockups[0].path]) || catalogThumbs[row.thumb_path || row.master_path]; return src ? <img src={src} alt={row.title} className="h-full w-full object-cover" loading="lazy" /> : null; })()}</div>
+                  <div className="p-2"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] wall-muted">{row.design_id} · {row.design_type}</p>{row.mockups?.[0] && <p className="truncate text-[10px] text-emerald-700">{row.mockups[0].caption}</p>}</div>
+                </button>)}</div>
+                <p className="text-xs wall-muted">Every design is a fixed production master with its own DesignID. Picking one never spends a token; it loads the approved artwork and its placement.</p>
+              </>}
+            </div> : designMode === 'ai' || designMode === 'match' || designMode === 'wall' ? <div className="space-y-3">
+              <div><p className="text-sm">Design type</p><div className="mt-1 grid grid-cols-3 gap-2">
+                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'auto' ? 'default' : 'outline'} onClick={() => setScaleChoice('auto')}>Auto</Button>
+                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'cover' ? 'default' : 'outline'} onClick={() => setScaleChoice('cover')}>Mural</Button>
+                <Button size="sm" className="h-auto whitespace-normal px-2 py-2 text-center leading-tight" variant={scaleChoice === 'repeat' ? 'default' : 'outline'} onClick={() => setScaleChoice('repeat')}>Pattern</Button>
+              </div><p className="mt-1 text-xs wall-muted">{autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice }).reason}</p></div>
+              {intent === 'wall' && <p className="text-xs wall-muted">{photo ? 'The designer reads the room in your wall photo and proposes a design for it. Describe a direction if you have one.' : 'Upload your wall photo in step 1 and mark its four corners.'}</p>}
+              {intent === 'prompt' && <label className="block text-sm">Start with a style<select className={inputClass} value="" onChange={e => { setPrompt(WALL_DESIGNS.find(d => d.id === e.target.value)?.prompt || ''); setArtwork(null); }}><option value="">Choose a starting point</option>{WALL_DESIGNS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
+              {reference && <div className="flex items-center gap-3"><img src={reference.url} alt={intent === 'match' ? 'Design to match' : 'Style reference'} className="h-14 w-14 rounded object-contain" /><Button size="sm" variant="ghost" onClick={() => { setReference(null); setArtwork(null); }}>Remove</Button></div>}
+              {freeReason === 'commercialpro'
+                ? <p className="text-xs font-semibold text-emerald-700">Included with CommercialPro — no token. Usually ready in 1–2 minutes.</p>
+                : freeReason === 'trial'
+                  ? <p className="text-xs font-semibold text-emerald-700">Your first design is free. Usually ready in 1–2 minutes.</p>
+                  : freeReason === 'signed-out'
+                    ? <p className="text-xs font-semibold text-emerald-700">
+                        Your first design is free — <Link to="/signup" state={{ from: '/wallwrap-design' }} className="underline">create a free account</Link> to claim it.
+                        Pricing film needs no account.
+                      </p>
+                    : <p className="text-xs wall-muted">1 design token or plan render. Usually ready in 1–2 minutes.</p>}
+              {/* The reason generation is blocked, and any failure, sit beside the button
+                  the customer is looking at. The page-top alert alone is off screen here. */}
+              {generationBlocker && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">{generationBlocker}</p>}
+              {!generationBlocker && previewBlocker && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">{previewBlocker}</p>}
+              {error && !busy && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
+              <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
+            </div> : <div className="space-y-3">{uploadControl('artwork', artwork ? 'Replace artwork' : 'Upload artwork or pattern')}<p className="text-xs wall-muted">Your artwork is placed as supplied. Pattern size stays under your control.</p></div>}
+          </section>
+        </fieldset>
+        <div className="min-w-0 space-y-5 lg:col-start-2 lg:row-start-3">
+          {/* scroll-mt clears the sticky header: a finished design scrolls
+              itself here, and without it the heading lands underneath. */}
+          {/* Scroll margin clears BOTH sticky bars -- the site header, measured
+              into stickyTop, plus this page's own -- so the design a finished
+              generation scrolls itself to does not land underneath them. */}
+          <section id="wall-preview" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
+            {/* STEP 4 (Trish 2026-09-16): the result, beside the form that
+                produces it. Every WallPro design originates as a flat
+                rectangle, and the client sees both: the print master here and
+                the same file imposed on her photo in step 2, the moment the
+                corners exist. The tabs live with the photo and switch that
+                pane between the original wall and the imposed design.
+
+                ⚠️ THE PAIR IS NOW STACKED, NOT SIDE BY SIDE, AND THAT IS A
+                DELIBERATE TRADE (owner, 2026-09-23). The 09-16 wording was
+                "the print master on the LEFT and the same file imposed on
+                their photo on the RIGHT" -- one `xl:grid-cols-2` inside this
+                section. Keeping that meant keeping the photo down here, which
+                is the defect she reported twice: on a phone the two panes
+                never sat side by side anyway, they stacked with the master
+                FIRST, so the wall she had just photographed was below a flat
+                tile. The master is one scroll under the wall now, in the same
+                right-hand column on a desktop. If the side-by-side is wanted
+                back, move this pane INTO the step-2 section rather than moving
+                the photo back out of it. */}
+            <StepHeading n={4} icon={ImageIcon}>Generate &amp; preview</StepHeading>
+            {previewArt && <div>
+              {/* Say which picture this is. "THE PRINT MASTER · 4096 × 4096 PX"
+                  over a wall-scale render read as though the wall were 4096
+                  square, and over a bare tile it invited the "my pattern came
+                  back small" reading the flatView comment above explains. */}
+              {/* ⚠️ THESE PANES CARRY NO NUMBER (owner, 2026-09-22: "it's
+                  currently confusing and has bad ux").
+                  They used to read "1 ·" and "2 ·" while the page's STEPS are
+                  also numbered 1-4 -- and these two live INSIDE step 4. Her
+                  screenshot shows "2 · IMPOSED ON YOUR WALL", which reads as
+                  step 2, and step 2 is "Choose your design". One numbering
+                  system per page: the steps have it, because they are a
+                  sequence; these are two views of one result, which is not. */}
+              {photo && <p className="mb-2 text-xs font-semibold uppercase tracking-wide wall-muted">{artwork ? 'Flat design — the print master' : 'Your uploaded design — not print-ready yet'}{artwork && flatView !== 'tile' ? ` · across your ${width} × ${height} in wall` : previewArt.width && previewArt.height ? ` · ${previewArt.width} × ${previewArt.height} px` : ''}</p>}
+              {/* Pattern size, as PatternPro's slider: the design itself drawn
+                  smaller or bigger across the wall, 30% to 300%, with no new
+                  generation (owner, 2026-09-12). The panels do not change. */}
+              <div className="mb-2 rounded-lg border wall-edge bg-[hsl(var(--wall-card))] px-3 py-2 text-sm" aria-label="Pattern size">
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">Pattern size</span>
+                  <span className="rounded bg-[hsl(var(--wall-ground))] px-2 py-0.5 font-mono text-xs">{patternScaleLabel(patternBase, wallBox, scaleDraft)}</span>
+                </div>
+                <Slider aria-label="Pattern size" min={PATTERN_SCALE_MIN} max={PATTERN_SCALE_MAX} step={PATTERN_SCALE_STEP} value={[scaleDraft]} disabled={!!busy} onValueChange={v => draftPatternScale(v[0])} onValueCommit={v => applyPatternScale(v[0])} />
+                <div className="mt-1 flex justify-between text-[11px] wall-muted"><span>30% smaller</span><span>100% as generated</span><span>300% bigger</span></div>
+                <div className="mt-2 flex flex-wrap items-center gap-1">
+                  {PATTERN_SCALE_PRESETS.map(p => <Button key={p} size="sm" variant={scaleDraft === p ? 'default' : 'outline'} className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(p)}>{patternScaleWord(p)} {p}%</Button>)}
+                  {scaleDraft !== 100 && <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!!busy} onClick={() => applyPatternScale(100)}><RotateCcw className="mr-1 h-3 w-3" />Reset</Button>}
+                </div>
+                {/* Bigger spreads the same pixels over more inches, so the
+                    honest limit on "bigger" is resolution, never print size:
+                    the wall, the panels and the file stay exactly as they are. */}
+                {/* THE NUMBER IS INFORMATION; THE OLD BUTTON WAS BAD ADVICE.
+                    "Use 40%, the largest fully sharp size" sat here and, on the
+                    owner's own 120-inch wall, 40% of a 60-inch repeat is a
+                    24-inch repeat -- four-plus across, the craft-fair density
+                    the scale brain exists to prevent. It told customers to undo
+                    the measured baseline to chase sharpness that the pipeline
+                    already supplies: production runs Topaz per 54-inch panel to
+                    reach 150 PPI, which is the whole reason that stage exists.
+                    Owner, 2026-09-12: "Keep it lower resolution" -- hold the
+                    pattern at the size it should print and accept the native
+                    density. The honest figure stays on screen; the call to
+                    action that fought the baseline is gone. */}
+                {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'wall-muted' : 'wall-muted')}>
+                  {draftPpi >= printSettings.minPpi
+                    ? `${Math.round(draftPpi)} PPI from the design's own pixels — above your ${printSettings.minPpi} PPI minimum. Wall size, panels and print file are unchanged at every size.`
+                    : `${Math.round(draftPpi)} PPI native from the design's own pixels. Production enhances every ${WALLPRO_PRINT_WIDTH}″ panel through Topaz to ${printSettings.minPpi} PPI, so keep the pattern at the size it should print — shrinking it to raise this number is not the fix.`}
+                </p>}
+                <p className="mt-1 text-xs wall-muted">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
+              </div>
+              {/* MIRROR CHANGES HER ARTWORK, SO IT HAS TO SAY SO (2026-09-22).
+                  `verified: true` is correct for a mirrored tile -- the join is
+                  a column against its own copy -- and that is exactly why the
+                  receipt alone could never surface this: every gate read
+                  "seamless" and stayed quiet while alternate tiles printed
+                  flipped. The method, not the verdict, is what the customer
+                  needs, and only in the one case where the wall will not look
+                  like the design she approved. */}
+              {seamReceipt?.method === 'mirror' && <div className="mb-2 rounded-lg border border-amber-400/60 bg-amber-50/80 px-3 py-2 text-xs dark:bg-amber-500/10">
+                <p className="font-semibold text-amber-900 dark:text-amber-200">This tile is being mirrored to join.</p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Every other tile is flipped, so your wall will read symmetrically — fine on texture, visible on leaves, figures or lettering. The tile did not join on its own and the blended repair did not close it either.
+                </p>
+                <Button size="sm" variant="outline" className="mt-2 h-7 px-2 text-xs" disabled={!!busy} onClick={() => setSeamPreference(seamPreference === 'blend' ? 'auto' : 'blend')}>
+                  {seamPreference === 'blend' ? 'Back to automatic' : 'Use the blended repeat anyway'}
+                </Button>
+              </div>}
+              <div className="flex min-h-80 items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-4"><div className="relative inline-block">
+              {flatView === 'css' && draftTile
+                ? <div role="img" aria-label={`Print master across your ${width} by ${height} inch wall at ${scaleDraft} percent`} className="max-h-[650px] w-[min(100%,650px)] rounded" style={{ aspectRatio: `${width} / ${height}`, backgroundImage: `url(${(tileArtwork || previewArt).url})`, backgroundSize: `${draftTile.fraction * 100}% auto`, backgroundPosition: draftTile.position, backgroundRepeat: 'repeat' }} />
+                : <img src={flatView === 'canvas' && flatShown ? flatShown : previewArt.url} alt={flatView === 'canvas' ? `Print master across your ${width} by ${height} inch wall at the current pattern scale` : 'Generated tile'} className={'max-h-[650px] max-w-full object-contain' + (flatView === 'canvas' && !flatCurrent ? ' opacity-70' : '')} draggable={false} />}
+              {(maskMode || maskRects.length > 0) && <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={'absolute inset-0 h-full w-full ' + (maskMode ? 'cursor-crosshair' : 'pointer-events-none')} style={{ touchAction: 'none' }}
+                onPointerDown={e => { if (!maskMode) return; e.currentTarget.setPointerCapture(e.pointerId); maskStart.current = maskPoint(e); setMaskDraft({ ...maskStart.current, w: 0, h: 0 }); }}
+                onPointerMove={e => { if (!maskMode || !maskStart.current) return; const p = maskPoint(e), s = maskStart.current; setMaskDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) }); }}
+                onPointerUp={() => { if (maskDraft && maskDraft.w > 0.01 && maskDraft.h > 0.01) setMaskRects(old => [...old, maskDraft]); maskStart.current = null; setMaskDraft(null); }}>
+                {[...maskRects, ...(maskDraft ? [maskDraft] : [])].map((r, i) => <rect key={i} x={r.x * 100} y={r.y * 100} width={r.w * 100} height={r.h * 100} fill="rgba(255,255,255,0.45)" stroke="#7c3aed" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />)}
+              </svg>}
+              </div></div>
+            </div>}
+            {!photo && !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm wall-muted">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
           <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || rendering || detecting || preparingProof || scaleSettling || !photo || !preview || !canvas.current || !artwork || !wallLocated || !billing || !dimensionsValid || !seamReady} onClick={() => void openDesignProof()}>{preparingProof ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}3D Proof</Button><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs wall-muted">3D Proof includes your before photo, finished wall, and a detail close-up. Add a wall photo and locate its corners to prepare it. Use Prepare print files below for full-size panel PDFs.</p></section>
