@@ -221,7 +221,7 @@ function panelProofCreativeHead(aceAssembly) {
   // the restyle Lead Vehicle Wrap Designer (owner, 2026-09-22: "the persona
   // based design instruction for commercial and restyle"). Neither present and
   // the proof has no designer at all, which is the defect this exists to end.
-  if (!/senior graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(head)) {
+  if (!/^(?:You are (?:the |a )?senior (?:professional )?graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer)\b/.test(head)) {
     throw new Error("panel_proof_ace_persona_missing");
   }
   return head;

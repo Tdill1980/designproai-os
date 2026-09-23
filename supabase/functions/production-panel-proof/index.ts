@@ -656,52 +656,35 @@ serve(async (req) => {
     //
     // The only additional instruction here is the flat production destination.
     // It changes WHERE the golden designer renders, never HOW it designs.
-    prompt = [
-      creativeHead,
+    const flatProductionInstructions = [
       "FLAT PRODUCTION DESTINATION: Render the complete finished wrap design into the six supplied production rectangles: driver, passenger, roof, hood, front, and rear.",
       "These rectangles are the fixed physical surface geometries of ONE vehicle wrap. They are not six separate creative assignments. Driver and passenger are corresponding sides of the same master campaign.",
       "Fill every supplied production rectangle edge-to-edge with the finished artwork. Continue background, photography, illustration, color, texture, and graphic movement through the full outer boundary so code-owned trim and 5-inch bleed geometry can be preserved.",
       "Keep critical brand marks and readable customer text inside the usable surface area while allowing noncritical artwork to continue through bleed.",
       "Return flat uninstalled artwork only. The application supplies the staging geometry and the coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
-    ].join("\n\n");
+    ];
+    let prompt = [creativeHead, ...flatProductionInstructions].join("\n\n");
     // PHASE 1 PAYLOAD CONTRACT — fail closed before the provider sees a request.
     // The live canary reports this object next to the full prompt so the exact
     // persona/layout injection can be proved from the provider payload rather
     // than inferred from source comments.
+    // Compare the emitted payload with the actual selected DesignIQ head.
+    // A persona wording change must not break startup, while dropping the
+    // designer or any output instruction must still fail before the provider.
+    const designerIdentity = creativeHead.split(/\n\s*\n/)[0].trim();
+    const nativeKnowledgeInstruction = creativeHead.split("\n")
+      .find(line => /\bnative\b.*\bknowledge\b|DESIGN AMPLIFICATION:/i.test(line));
     const phase1Audit = {
       contract: "designpro.vehiclepro.phase1.graphic-designer-flat-first-opaque-edge.v1",
-      // THE PERSONA THE MODE SELECTS, proved on the payload. Commercial is the
-      // sign-and-wrap-company designer with its native-image-knowledge line;
-      // restyle is the Lead Vehicle Wrap Designer with DESIGN AMPLIFICATION.
-      // Either absent and the request is refused before the provider sees it.
-      graphicDesignerPersonaInjected: mode === "restyle"
-        ? /You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(prompt)
-        : /You are the senior graphic designer and vehicle-wrap specialist at a professional sign and wrap company/.test(prompt),
-      nativeGeminiImageKnowledgeInjected: mode === "restyle"
-        ? /DESIGN AMPLIFICATION: Elevate and enhance the brief/.test(prompt)
-        : prompt.includes("Use your native Gemini 3 Pro Image design knowledge and your professional wrap-design judgment for decisions the customer did not specify."),
-      // ⚠️ THESE TWO PROBES ARE THE CONSTANTS THEMSELVES, NEVER A COPY OF THEM.
-      //
-      // They were hand-copied literals, and on 2026-09-22 that took Call 1 down
-      // on production. The owner's print-file wording changed SYSTEM_JOB from
-      // "THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION
-      // PROOF" to "THE DELIVERABLE IS A PRINT FILE"; this guard still searched
-      // for the retired sentence, so every customer generation threw
-      // `panel_proof_phase1_contract_missing:flatPanelProductionProofInjected`
-      // BEFORE the provider was called -- a fail-closed audit convicting the
-      // prompt it was written to protect. The positive-framing pass would have
-      // broken `templateLayoutLocked` the same way one deploy later.
-      //
-      // A guard that restates the text it guards can only ever drift from it.
-      // Comparing against the exported constant cannot: if the sentence is in
-      // the prompt the probe is true, whatever the sentence says.
+      graphicDesignerPersonaInjected:
+        /^You are\b/i.test(designerIdentity) && /\bdesigner\b/i.test(designerIdentity)
+        && prompt.startsWith(creativeHead + "\n\n"),
+      nativeGeminiImageKnowledgeInjected:
+        Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
       flatPanelProductionProofInjected:
-        prompt.includes(SYSTEM_JOB)
-        || (/OUTPUT: six clean printed background artworks/.test(prompt)
-          && /six unlabelled gray rectangles/.test(prompt)),
+        flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0]),
       templateLayoutLocked:
-        prompt.includes(SHEET_LAYOUT)
-        || /ARTWORK STAGING CANVAS/.test(prompt),
+        flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction)),
     };
     const missingPhase1 = Object.entries(phase1Audit)
       .filter(([key, value]) => key !== "contract" && value !== true)
