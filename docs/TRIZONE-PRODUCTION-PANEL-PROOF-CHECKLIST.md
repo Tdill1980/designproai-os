@@ -278,10 +278,59 @@ Guarded by `tests/zone1-comes-only-from-the-template.test.mjs`.
       sheet is **28.6 px/in** — the arithmetic maximum for any single sheet.
       Against Call 12's `(trim + 10") × 150`, Topaz runs 5×–30× on this
       architecture, always.
-- [ ] **Template band re-layout** — the only sanctioned lever. 3-across ≈ 1.7×
-      (8.78 px/in), 2-across ≈ 2.5× (12.75), each needing a taller band to keep
-      cell aspect (344px / 545px) against a 1024px canvas shared with Zones 2
-      and 3. Same one image call, same cutter, same gates. Owner's call.
+- [x] **Template band re-layout — MEASURED AND REFUSED, 2026-09-23.** The owner
+      called it; the arithmetic closes it. Run against the live `layoutRow`, a
+      3-across row makes the driver cell 551px wide and its aspect-correct
+      height **185px**, so Zone 1 as two rows of three needs 22 (band header)
+      + 185 + 47 (captions) + 185 + 47 ≈ **500px**. Zone 2 is the same six
+      panels without the type, so it must match: **1,000px for the two bands
+      alone.**
+
+      The canvas has **928px** below the header rule at y=96, of which **916 are
+      already spoken for** — Zone 1 264, Zone 2 276, Zone 3 162, the PANEL
+      DIMENSIONS REFERENCE table + notes + legend + footer 214. **Slack: 12px.**
+      There is no version of this that fits without deleting the dimension
+      table, and that table is how a dimension can never be invented.
+
+      Scaling the template does nothing: a cell's px/in depends on the FRACTION
+      of the sheet it occupies, not on the template's own pixel size. Band
+      height above the aspect-correct value also does nothing — `layoutRow`
+      caps `h` and the cell is WIDTH-bound.
+
+      **And the gain would not have mattered.** 3-across measures **1.54×**,
+      2-across **1.92×**, against a 150-PPI target that needs ~30×. The ceiling
+      is one panel spanning the entire sheet: 5056 ÷ 176.8 = **28.6 px/in**.
+      One 4K sheet cannot carry print-resolution panels at any layout. Topaz
+      does that lifting and always will on this architecture.
+- [ ] **If the owner still wants the composition gain** (bigger cells = the
+      model composing each panel with more attention, which is the real
+      complaint behind "different sheen" and the averaged colours), the only
+      untried lever is the sheet's **aspect**: 21:9 at the same 4K pixel budget
+      is ~6900px wide instead of 5056, about **1.36×**, six across, one call,
+      same cutter. Cost: the hash-pinned Ridgeline reference is 3:2, so the
+      model would be shown a 3:2 standard for a 21:9 sheet. That is a creative
+      contract change and RULE 0.37 requires a side-by-side before it ships.
 - [x] **150 PPI output already exists and runs** — Call 12 / Topaz targets
       `(widthInches + 10) × 150` for branded and clean panels. The gap was never
       the 150 PPI step; it is the real pixels going into it.
+
+### The logo font and the 5" bleed — 2026-09-23
+
+Owner, on the live New Aura sheet: *"This design still not creating a custom
+logo font"* / *"That's not a logo font it's also cutting off face"* / *"Fix logo
+iss must me a custom logo font and fix bleed"*. Full record in CLAUDE.md.
+
+- [x] **The lettering rule reaches the LIVE Call-1 path.** The EXACT TEXT line
+      in both byte-locked twins now reads *"every word, numeral and web address
+      on the wrap is here, in one drawn letterform"*. Scoped to the panel-proof
+      contract: the shared `LOGO_REQUIREMENT` also feeds the deployed field/v24
+      prompts, and editing it there broke four byte pins.
+- [x] **The 5" bleed is DRAWN, not only captioned.** `panelCell` draws one
+      dashed hairline rectangle at the trim; `row` derives the inset per axis
+      (3.0% of a flank's width, 8.4% of its height). ~25px on the delivered
+      sheet. Both template twins, locked by execution.
+- [ ] **Owner's eye on a fresh export** — the company name in the design's own
+      letterform, and nothing she cares about outside the dashed line. No live
+      generation has run on either fix.
+- [ ] **Edge deploy of `production-panel-proof`** read back, confirming the
+      new EXACT TEXT wording and `trimInset` in the deployed body.

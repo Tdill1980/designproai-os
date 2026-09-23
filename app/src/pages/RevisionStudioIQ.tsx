@@ -971,12 +971,19 @@ function InlineVisionBoard({
           >
             <img src={img.storageUrl} alt={img.slotLabel} className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-              <Maximize2 className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+              {/* A CONTROL THAT ONLY EXISTS ON HOVER DOES NOT EXIST ON A PHONE.
+                  Touch has no hover state, so `opacity-0 group-hover:opacity-100`
+                  renders these permanently invisible on the device most of this
+                  product's traffic uses -- and the one below is the only way to
+                  remove a reference image. Visible by default; the hover fade is
+                  restored only where a pointer can actually hover, so the
+                  desktop look is unchanged. */}
+              <Maximize2 className="w-4 h-4 text-white opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity drop-shadow-lg" />
             </div>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onChange(images.filter((_, idx) => idx !== i)); }}
-              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/90"
+              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity hover:bg-red-500/90"
               disabled={disabled}
             >
               <X className="w-3 h-3 text-white" />
@@ -4817,8 +4824,15 @@ export default function RevisionStudioIQ() {
                       </Button>
                     </div>
 
-                    {/* 7-View Grid */}
-                    <div className="grid grid-cols-7 gap-1 p-2 bg-black/20">
+                    {/* 7-View Grid.
+                        SEVEN ACROSS IS A DESKTOP NUMBER. On a 375px phone it
+                        left each proof about 45px wide -- a row of grey stamps
+                        nobody can judge a wrap from, on the surface 60% of this
+                        product's traffic arrives at. The seven views are the
+                        same seven at every width; only how many share a row
+                        changes, so a phone gets 3 legible tiles and the desktop
+                        keeps the single row it was designed for. */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1 p-2 bg-black/20">
                       {viewOrder.map((viewType) => {
                         const url = urls[viewType];
                         return (

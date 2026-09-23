@@ -36,6 +36,27 @@ import { Input } from "@/components/ui/input";
 import { dpApi, type DesignLibraryEntry } from "@/lib/designpro-api";
 import { cn } from "@/lib/utils";
 
+/**
+ * A THUMBNAIL LINK IS A FIVE-MINUTE LEASE, AND NOTHING WAS RENEWING IT.
+ *
+ * `thumbnailUrl` is a SIGNED storage URL. The gateway signs it `expiresIn: 300`
+ * and the row says so in its own type (`expiresIn?: 300`) -- the contract states
+ * the expiry and this component ignored it. The fetch ran once per window, so a
+ * library left open past five minutes had every tile's link dead underneath it,
+ * and `<img>` with a dead src paints the browser's own broken-image icon. The
+ * owner saw a grid of them and reasonably read it as "my designs are gone".
+ *
+ * They were never gone. The bytes and the row were fine; the LEASE had lapsed.
+ * So the tiles are renewed before they expire rather than after they break, and
+ * a tile that breaks anyway says what actually happened instead of borrowing the
+ * "this design produced no image" copy, which would report a live design as a
+ * failed one -- exactly the kind of honest-looking lie this file's own header
+ * forbids.
+ */
+const THUMBNAIL_TTL_MS = 300_000;
+/** Renew with a margin, so a slow round trip still lands before the lease ends. */
+const THUMBNAIL_RENEW_MS = THUMBNAIL_TTL_MS - 45_000;
+
 /** The default window the product promises, and the two a designer asks for. */
 const WINDOWS = [
   { key: "4m", label: "Last 4 months", months: 4 },
@@ -216,6 +237,12 @@ export function DesignLibrary({
   const pipeline = externalPipeline === undefined ? ownPipeline : externalPipeline;
   const [status, setStatus] = useState<StatusFilter>("all");
   const [reloadKey, setReloadKey] = useState(0);
+  /**
+   * Tiles whose signed link the browser could not load. Keyed by generation so
+   * one dead lease never blanks its neighbours, and CLEARED on every successful
+   * fetch because the new rows carry fresh links.
+   */
+  const [expired, setExpired] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     let live = true;
@@ -225,7 +252,7 @@ export function DesignLibrary({
     const since = new Date();
     since.setMonth(since.getMonth() - months);
     dpApi.listDesignLibrary({ since })
-      .then((rows) => { if (live) setEntries(rows); })
+      .then((rows) => { if (live) { setEntries(rows); setExpired(new Set()); } })
       .catch((cause) => {
         if (!live) return;
         setEntries([]);
@@ -234,6 +261,42 @@ export function DesignLibrary({
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [windowKey, reloadKey]);
+
+  /**
+   * RENEW THE LEASE, AND ONLY WHILE SOMEONE IS LOOKING.
+   *
+   * A background tab renewing every four minutes forever is a signing request
+   * per tile for a grid nobody is reading, so the timer is torn down when the
+   * page is hidden. Coming back re-signs immediately when the last fetch is
+   * older than the renewal window -- a phone that was in a pocket for an hour is
+   * the common case, and it is precisely the one the old code failed.
+   */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const renew = () => setReloadKey((key) => key + 1);
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(renew, THUMBNAIL_RENEW_MS);
+    };
+    const onVisibility = () => {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState === "hidden") {
+        if (timer) clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      // Back on screen: the links may already have lapsed while away.
+      renew();
+    };
+    arm();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    // Re-armed by every completed fetch, so the next renewal is measured from
+    // the links actually on screen rather than from when the grid first mounted.
+  }, [reloadKey, windowKey]);
 
   // Filtering happens in memory on purpose: this is one shop's work over a
   // window, not a volume worth a round trip per keystroke, and every field the
@@ -395,23 +458,38 @@ export function DesignLibrary({
                 className="group relative block aspect-video w-full bg-zinc-950"
                 title={`Open ${titleOf(entry)}`}
               >
-                {entry.thumbnailUrl ? (
+                {entry.thumbnailUrl && !expired.has(entry.generationId) ? (
                   <img
                     src={entry.thumbnailUrl}
                     alt={titleOf(entry)}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                    // The lease lapsed (or the object momentarily refused). Say
+                    // so and re-sign, rather than leaving the browser to paint
+                    // its broken-image icon over a design that is perfectly fine.
+                    onError={() => {
+                      setExpired((prev) => {
+                        if (prev.has(entry.generationId)) return prev;
+                        const next = new Set(prev);
+                        next.add(entry.generationId);
+                        return next;
+                      });
+                    }}
                   />
                 ) : (
-                  // Honest, and specific about which of the two reasons it is.
+                  // Honest, and specific about which of the reasons it is. A
+                  // lapsed preview link is NOT "produced no image": the design
+                  // exists and its bytes are in the bucket.
                   <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-zinc-600">
                     <ImageOff className="h-6 w-6" />
                     <span className="px-3 text-center text-[10px] leading-tight">
-                      {entry.viewsSuperseded
-                        ? "Proofs withheld — superseded architecture"
-                        : state === "failed"
-                          ? "This design produced no image"
-                          : "Still rendering"}
+                      {entry.thumbnailUrl
+                        ? "Preview link expired — refreshing"
+                        : entry.viewsSuperseded
+                          ? "Proofs withheld — superseded architecture"
+                          : state === "failed"
+                            ? "This design produced no image"
+                            : "Still rendering"}
                     </span>
                   </span>
                 )}

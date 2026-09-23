@@ -269,6 +269,123 @@ changes is what the receipts can SAY; whether the restyle persona is right for a
 given brief, and whether the real DESIGN ANCHOR improves the seven proofs, is
 the owner's eye on a fresh run.
 
+## ✍️ THE 5" BLEED WAS COMPUTED, CAPTIONED AND NEVER DRAWN — AND THE LOGO-FONT RULE LIVED IN A FILE CALL 1 DOES NOT READ (owner, Trish 2026-09-23)
+
+Owner, on her own live New Aura sheet: *"This design still not creating a custom
+logo font"*, then *"That's not a logo font it's also cutting off face"*, then
+*"Fix logo iss must me a custom logo font and fix bleed"*. Two defects, one
+screenshot, and neither was where it looked.
+
+### THE TRIM LINE
+
+`trimOf` / `printOf` compute the bleed from GENIE and **every caption on the
+sheet already states it** — `166.8" W x 59.4" H (TRIM: 156.8" x 49.4") with 5"
+bleed`. The cell itself was ONE rectangle. So the document said "there is a 5″
+sacrificial margin" in words the model reads as a caption, while the contract
+said *"the artwork alone, background to every edge"* and the drawing showed a
+single box to fill. The designer filled it corner to corner, correctly, and the
+model's face landed in the band the installer cuts off.
+
+`panelCell` now takes `trimInset` and draws **one dashed hairline rectangle**
+inside the cell; `row` derives it **per axis** from the cell's own proportion —
+5″ of 166.8″ is 3.0% of the width and 5″ of 59.4″ is 8.4% of the height, so a
+single averaged inset would miss the trim on both axes at once. Measured: 7.7px
+on the 1536 template, ~25px on the delivered 5056px sheet.
+
+- **It carries no text, no ticks and no registration crosses.** This repo has
+  been bitten exactly once by drawing geometry into the paint area —
+  `atlasFieldContract` printed six rectangles beside *"none of the map is
+  drawn"* and four consecutive live runs painted those digits onto the
+  customer's flanks. A hairline is not a numeral, and `map_drawn` already
+  convicts "drawn frames" if the model copies it.
+- **The customer never sees it.** The returned panel is composited OVER the cell
+  when the document is assembled, so the guide exists for the designer and is
+  painted out before anyone reads the proof.
+- **The requirement existed at the WRONG END.** PanelPro's human QC asks the
+  reviewer to confirm *"nothing important falling into openings or cut areas"* —
+  inspected after the fact, never asked for up front. This is that same rule,
+  moved to where the decision is made.
+- Both byte-locked template twins carry it (`runtime/atlas-proof-container-template.cjs`,
+  `_shared/atlas-proof-container-template.ts`), and the lock is by EXECUTION:
+  `tests/atlas-proof-container-template.test.mjs` transpiles the TS and asserts
+  the two draw a byte-identical sheet on two vehicles.
+
+### THE LETTERFORM
+
+The rule the owner is asking for — *"Ace creates a logo font, uses that
+throughout — never generic fonts"* — DOES exist, in the shared
+`LOGO_REQUIREMENT`. **Editing it there broke four byte pins at once**
+(`tests/atlas-one-field-call1.test.mjs`: 2696→2846, 3853→4003, plus two hashes),
+because that constant also feeds the owner-approved, DEPLOYED field and v24
+prompts. A shared creative constant is not the place to answer a defect seen on
+one route.
+
+So the rule rides the line Call 1 already sends, in both byte-locked twins:
+
+```
+EXACT TEXT, character for character — every word, numeral and web address on
+the wrap is here, in one drawn letterform:
+```
+
+**Two near-misses worth recording.** The first patch went into the `design.push`
+block — the two-turn path, `anchorTurns: false`, OFF — while the live path is
+`out.push`, which is the one the runtime twin mirrors; a second occurrence in
+the edge file made that easy to get wrong. And the document contract is capped
+at **2700 chars** with a **1200-char** ceiling over Call 1's own assembly: the
+first wording landed at 2788, the second at **1201 — over by one character**.
+Raising either ceiling to fit a sentence is how a prompt reaches 4,887
+characters; shortening the sentence is the move.
+
+**NOT PROVEN:** no live generation has run with either fix. Acceptance is the
+owner's eye on an exported sheet — the company name set in the design's own
+letterform, and nothing she cares about outside the dashed line.
+
+## 📱 A FIVE-MINUTE LEASE NOBODY RENEWED, AND TWO CONTROLS A PHONE CANNOT REACH (owner, Trish 2026-09-23: "It better be mobile friendly 60% of our users will be using on a mobile phone")
+
+Three defects on the surfaces a phone actually gets, each found in the source
+rather than inferred from the screenshot, and each a different failure mode.
+
+**THE DESIGN LIBRARY'S BROKEN TILES WERE NEVER BROKEN DESIGNS.** `thumbnailUrl`
+is a SIGNED storage URL — the gateway signs it `expiresIn: 300` and
+`DesignLibraryEntry` declares `expiresIn?: 300`, so **the contract stated the
+expiry and the component ignored it**. The fetch ran once per window and never
+again, so a library left open past five minutes had every link dead underneath
+it and the browser painted its own broken-image icon over perfectly good work.
+The owner saw a grid of them and reasonably read it as "my designs are gone".
+
+The bytes and the rows were fine; the LEASE had lapsed. So the tiles are now
+renewed **before** they expire (`THUMBNAIL_RENEW_MS = TTL − 45s`, derived from
+the TTL so the two cannot drift), the timer is torn down while the tab is hidden
+— a background grid nobody is reading must not spend a signing request per tile
+— and coming back re-signs immediately, which is the phone-in-a-pocket case and
+precisely the one the old code failed.
+
+**A TILE THAT BREAKS ANYWAY MUST NOT BORROW THE FAILURE COPY.** The honest
+placeholder already existed for a design with no image; reusing it for a lapsed
+link would report a LIVE design as a failed one. The `onError` branch says
+*"Preview link expired — refreshing"*, and the lock asserts that string is
+reached **before** *"This design produced no image"* in the reason ladder —
+ordering is the whole point, not decoration.
+
+**A CONTROL THAT ONLY EXISTS ON HOVER DOES NOT EXIST ON A PHONE.** Two sites
+carried `opacity-0 group-hover:opacity-100`, which on touch is permanently
+invisible — and one of them is **the only way to remove an uploaded reference
+image**. They are visible by default now, with the fade restored under
+`[@media(hover:hover)]` so the desktop is unchanged. `grid-cols-7` on the proof
+strip (~45px per proof at 375px) reflows to 3 / 4 / 7.
+
+**⛔ A FOURTH "DEFECT" WAS REPORTED AND WAS NOT ONE.** `ProductionWorkflow`'s
+`min-w-[520px]` table is already inside `overflow-x-auto`, which is the correct
+pattern for a wide table on a narrow screen. It is asserted as a NON-defect in
+`tests/revisionstudio-reaches-a-phone.test.mjs` so it is never "fixed" into a
+regression — the tenth time this file has had to guard against a lock encoding
+the thing it was written to prevent. **Check the surrounding markup before
+reporting a width as a mobile bug.**
+
+Locked by `tests/revisionstudio-reaches-a-phone.test.mjs`; five of its six cases
+were verified to fail against the pre-fix tree, and the sixth (the non-defect)
+passes either way.
+
 ## 🚫 ZONE 1 IS CUT FROM THE TEMPLATE. A SECOND PRODUCER IS NEVER THE ANSWER. (owner, Trish 2026-09-23)
 
 Owner: *"we must use the code built template that's already zoned tricolor"*,
@@ -315,6 +432,49 @@ cannot carry six print-resolution panels — that is geometry, not tuning.**
 So the only sanctioned resolution work is the TEMPLATE's own band geometry
 (~2× available, free, same single image call, same cutter, same gates). Do not
 propose a second producer again, however well it measures.
+
+#### ⛔ AND THE BAND RE-LAYOUT DOES NOT FIT EITHER — MEASURED 2026-09-23, DO NOT RE-PROPOSE IT
+
+The owner called this lever, and the arithmetic closed it. **The paragraph above
+is the one that was wrong**: it says "~2× available, free", and the vertical
+budget says otherwise. Run `layoutRow` before believing either.
+
+A 3-across row makes the driver cell **551px wide**, aspect-correct height
+**185px**. Zone 1 as two rows of three therefore needs 22 (band header) + 185 +
+47 (captions) + 185 + 47 ≈ **500px**. Zone 2 is *the same six panels without the
+type*, so it has to match, or the document stops reading as one design twice:
+**1,000px for the two bands alone.**
+
+| the canvas below the header rule (y=96) | 928px |
+|---|---|
+| Zone 1 region (108→372) | 264 |
+| Zone 2 region (372→648) | 276 |
+| Zone 3 region (648→810) | 162 |
+| dimensions table + notes + legend + footer (810→1024) | 214 |
+| **allocated** | **916** |
+| **slack** | **12px** |
+
+There is no version that fits without deleting the PANEL DIMENSIONS REFERENCE
+table, and that table is how a dimension can never be invented.
+
+**Two things that look like levers and are not.** Scaling the template up
+changes nothing — a cell's px/in depends on the FRACTION of the sheet it
+occupies, not the template's own pixel size, and the delivered sheet is ~5056px
+either way. Raising a band's height changes nothing — `layoutRow` caps `h` at
+the aspect-correct value and the cell is **WIDTH-bound**; today's 150px band
+already leaves the driver cell's height unused.
+
+**And the gain would not have mattered.** 3-across measures **1.54×**, 2-across
+**1.92×**, against a 150-PPI target needing ~30×. The ceiling stands: one panel
+spanning the whole sheet is 5056 ÷ 176.8 = **28.6 px/in**. **One 4K sheet cannot
+carry six print-resolution panels at ANY layout.** Topaz does that lifting and
+always will on this architecture.
+
+The one untried lever is the sheet's **aspect**: 21:9 at the same 4K pixel
+budget is ~6900px wide rather than 5056 — about **1.36×**, six across, one call,
+same cutter, same gates. Its cost is that the hash-pinned Ridgeline standard is
+3:2, so the model would be shown a 3:2 example for a 21:9 sheet. That is a
+creative-contract change and RULE 0.37 requires a side-by-side before it ships.
 
 ### THE PROCESS FAILURE, RECORDED BECAUSE IT COST A PRODUCTION FLAG FLIP
 
