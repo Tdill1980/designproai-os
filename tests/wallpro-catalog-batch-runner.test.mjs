@@ -17,18 +17,32 @@ import { resolve } from "node:path";
  * standing in for `<canvas>` to decode and re-encode pixels; that is a
  * transport swap, and it is deliberately the ONLY exception.
  *
- * The deploy-flag lesson is re-asserted here too, because this workflow has a
- * boolean input and that is exactly where it bit last time: an Actions
- * expression written `cond && '' || value` evaluates to the literal value on
- * BOTH branches, which is how four A.T.L.A.S. routing flags silently reset
- * themselves (CLAUDE.md, "the sticky flags did not stick"). A `dry_run` that
- * inverts is a batch that writes to a public catalog when it was told to plan.
+ * The deploy-flag lesson is re-asserted here, because this workflow has inputs
+ * that decide whether anything is spent or written. An Actions expression
+ * written `cond && '' || value` evaluates to the literal value on BOTH
+ * branches, which is how four A.T.L.A.S. routing flags silently reset
+ * themselves (CLAUDE.md, "the sticky flags did not stick").
+ *
+ * The run mode carries a second, sharper version of that lesson, and it was
+ * caught here rather than in production: a three-value mode encoded as two
+ * presence-flags makes the DANGEROUS value the fall-through, because "publish"
+ * becomes the state where neither safe flag is set. A mode is not two booleans.
+ * It travels as one value against an exact allowlist, refused before the mint.
  */
 const root = resolve(import.meta.dirname, "..");
 const read = (rel) => readFileSync(resolve(root, rel), "utf8");
 const RUNNER = read("scripts/wallpro-catalog-batch.mjs");
 const LIB = read("scripts/wallpro-catalog-lib.ts");
 const WORKFLOW = read(".github/workflows/publish-wall-catalog.yml");
+/**
+ * The runner with its comments removed. Several assertions below name the very
+ * thing they forbid -- the endpoints the mint must not hand-roll, the words a
+ * log must not carry -- and the file explains those bans in prose beside the
+ * code. A whole-file regex therefore convicts its own explanation, which it did
+ * twice while this suite was being written. Judge the CODE; assert the prose
+ * separately where it is load-bearing.
+ */
+const RUNNER_CODE = RUNNER.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 test("the runner imports the catalog rules and restates none of them", () => {
   // Every rule below is a decision about what a publishable row IS. A second
@@ -69,7 +83,7 @@ test("the design itself is never authored here — the edge function makes it", 
   assert.ok(!/GOOGLE_AI_API_KEY|GEMINI_API_KEY/.test(RUNNER), "the runner must not hold a provider key");
   // And it must reach that function as a real user, because the function keys
   // the storage folder and the charge decision on the resolved user id.
-  assert.match(RUNNER, /admin\/generate_link/);
+  assert.match(RUNNER_CODE, /admin\.auth\.admin\.generateLink/);
   assert.match(RUNNER, /Authorization: `Bearer \$\{auth\.token\}`/);
 });
 
@@ -101,25 +115,120 @@ test("only a blend rewrites the master; verified and mirror publish what the mod
   assert.match(RUNNER, /method === 'blend'\s*\?\s*\{ bytes: blendedBytes/);
 });
 
-test("the workflow is protected, plans by default, and its boolean does not invert", () => {
+test("the workflow is protected and its default mode touches nothing", () => {
   assert.match(WORKFLOW, /default: DO_NOT_PUBLISH/);
   assert.match(WORKFLOW, /inputs\.confirmation == 'PUBLISH_WALL_CATALOG'/);
-  // dry_run defaults to true: the first dispatch of a thing that writes to a
-  // public catalog must be the one that writes nothing.
-  const dry = WORKFLOW.slice(WORKFLOW.indexOf("dry_run:"), WORKFLOW.indexOf("count:"));
-  assert.match(dry, /type: boolean/);
-  assert.match(dry, /default: true/);
-  // The Actions truthiness trap, verbatim from CLAUDE.md: the inverted form
-  // returns the value on BOTH branches. Value on true, empty on false.
-  assert.match(WORKFLOW, /inputs\.dry_run && '1' \|\| ''/);
-  // Judge the EXPRESSIONS, not the prose. The comment beside that input warns
-  // about the inverted form by quoting it, and an assertion that reads the
-  // whole file convicts its own warning -- which this lock did on first run.
+  const mode = WORKFLOW.slice(WORKFLOW.indexOf("run_mode:"), WORKFLOW.indexOf("count:"));
+  assert.match(mode, /default: preflight/);
+  assert.match(mode, /options: \[preflight, plan, publish\]/);
+});
+
+test("the run mode is ONE validated value, never a flag per safe mode", () => {
+  // THE DEFECT THIS CASE EXISTS FOR, caught reading back my own comment: the
+  // first draft derived `--check-auth` and `--dry-run` from two equality
+  // expressions, which makes "publish" the state where NEITHER is set. An
+  // unrecognised value -- a typo, or an option a later edit adds to the list --
+  // would then fall through to the only mode that spends money and writes to a
+  // public catalog. A three-value mode is not two booleans.
+  assert.match(WORKFLOW, /P_RUN_MODE: \$\{\{ inputs\.run_mode \}\}/);
+  assert.match(WORKFLOW, /--run-mode "\$P_RUN_MODE"/);
+  assert.ok(!/\$\{P_CHECK:\+|\$\{P_DRY:\+/.test(WORKFLOW), "the mode must not travel as presence-flags");
+  // And the script refuses anything off the list BEFORE it touches a credential.
+  assert.match(RUNNER, /if \(!\['preflight', 'plan', 'publish'\]\.includes\(RUN_MODE\)\)/);
+  const guard = RUNNER.indexOf("--run-mode must be preflight");
+  const mint = RUNNER.indexOf("async function curatorToken");
+  assert.ok(guard > 0 && guard < mint, "an unknown mode must be refused before the mint");
+});
+
+test("visibility stays a two-state switch and does not invert", () => {
+  const vis = WORKFLOW.slice(WORKFLOW.indexOf("visibility:"), WORKFLOW.indexOf("curator_email:"));
+  assert.match(vis, /default: staged/);
+  assert.match(WORKFLOW, /inputs\.visibility == 'live' && '1' \|\| ''/);
+  // Judge the EXPRESSIONS, not the prose: the comment warns by quoting the
+  // forbidden form, and a whole-file assertion convicts its own warning.
   const code = WORKFLOW.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
   assert.ok(!/&&\s*''\s*\|\|/.test(code), "never write the inverted truthiness form in a workflow");
-  // And the warning itself must survive, or the next session deletes the
-  // comment to silence a lock and loses the reason with it.
   assert.match(WORKFLOW, /Never `cond && '' \|\| value`/);
+});
+
+test("preflight proves the session against the door the batch must pass", () => {
+  // A session object is not proof the edge will accept the token. The check
+  // resolves it back through auth/v1/user, which is the same question
+  // `generate-wall-design` asks with sb.auth.getUser(jwt).
+  assert.match(RUNNER, /auth\/v1\/user/);
+  assert.match(RUNNER, /if \(seen !== auth\.userId\) throw new Error/);
+  const check = RUNNER.indexOf("if (PREFLIGHT) {");
+  const publish = RUNNER.indexOf("await publishOne(");
+  assert.ok(check > 0 && check < publish);
+});
+
+test("preflight proves the STORAGE COPY, which is the other untestable step", () => {
+  // The copy from `<owner>/generated/…` into `catalog/…` needs the service key
+  // and therefore cannot be exercised from a session. Discovering it broken
+  // after a dozen paid generations is the expensive way to learn, so preflight
+  // runs it for real — and the row too, which is where both foreign keys, the
+  // DesignID pattern and the master_path regex are first enforced.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /await storageCopy\(source\.artwork_path, masterPath\)/);
+  assert.match(block, /await storageUpload\(thumbPath/);
+  assert.match(block, /designUpsertRow\(\{/);
+  assert.match(block, /wallpro_designs\?on_conflict=design_id/);
+  // It uses artwork that ALREADY EXISTS, so it costs no model call.
+  assert.match(block, /state=eq\.completed&artwork_path=not\.is\.null/);
+  const blockCode = block.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/generate-wall-design/.test(blockCode), "preflight must never call the generator");
+  // And the source object is read, never altered.
+  assert.ok(!/storageRemove\(\[source|rowRemove\(source/.test(block));
+});
+
+test("preflight cleans up even when it fails part-way", () => {
+  // A preflight that leaves a row or an object behind on a mid-way failure is
+  // one nobody runs twice, and it litters a production catalog. The teardown
+  // is in `finally`, and `made` is appended as each object lands so a failure
+  // after the copy still removes the copy.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /\} finally \{/);
+  const fin = block.indexOf("} finally {");
+  assert.ok(block.indexOf("await rowRemove(designId)") > fin, "the row is removed in finally");
+  assert.ok(block.indexOf("await storageRemove(made)") > fin, "the objects are removed in finally");
+  assert.ok(block.indexOf("made.push(masterPath)") < fin, "each object is tracked as it lands");
+  assert.ok(block.indexOf("made.push(thumbPath)") < fin);
+  // And a cleanup that did not work is REPORTED, not swallowed.
+  assert.match(block, /left behind: \$\{designId\}/);
+});
+
+test("the preflight row is hidden and disposable, never a real catalog entry", () => {
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  // Staged and inactive, so even a failed cleanup cannot put it in the shop
+  // window; and a random DesignID, so it can never collide with a real one.
+  assert.match(block, /approvalStatus: 'generated', isActive: false/);
+  assert.match(block, /'WPB-PREFLIGHT-' \+ randomUUID\(\)/);
+});
+
+test("preflight says plainly when the write path could not be reached", () => {
+  // With no completed generation there is nothing to copy. Reporting that as
+  // success would be the receipts-green/pixels-wrong shape CLAUDE.md records.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /the copy and the row are UNPROVEN/);
+});
+
+test("the mint uses the installed client, not a hand-written wire format", () => {
+  // GoTrue has moved this format more than once, and it is the one step that
+  // cannot be tested without the service key -- so a guess fails where it is
+  // most expensive. The client ships with the server it talks to.
+  assert.match(RUNNER, /from '@supabase\/supabase-js'/);
+  assert.match(RUNNER, /admin\.auth\.admin\.generateLink\(\{ type: 'magiclink', email \}\)/);
+  assert.match(RUNNER, /admin\.auth\.verifyOtp\(\{ token_hash: hashed, type \}\)/);
+  assert.ok(
+    !/auth\/v1\/admin\/generate_link|auth\/v1\/verify\b/.test(RUNNER_CODE),
+    "the mint must not hand-roll the auth endpoints",
+  );
+  // The reason is worth keeping where the next reader will be tempted.
+  assert.match(RUNNER, /GoTrue has moved that wire format/);
+  // Which OTP type redeems a magic-link hash is the detail that moved, so both
+  // are tried and the winner is reported rather than assumed.
+  assert.match(RUNNER, /for \(const type of \['magiclink', 'email'\]\)/);
+  assert.match(RUNNER, /otpType/);
 });
 
 test("the service key is read on the droplet and never travels as an argument", () => {
@@ -133,10 +242,21 @@ test("the service key is read on the droplet and never travels as an argument", 
 });
 
 test("the runner never prints the curator token or the key", () => {
-  const logged = RUNNER.match(/console\.(log|error)\([^\n]*/g) || [];
+  // Judge what is INTERPOLATED, not what is mentioned: check-auth's own success
+  // line contains the word "token" and says something true and useful, while
+  // logging no value at all. An assertion on the word convicts that sentence
+  // and teaches the next session to delete the explanation instead of the leak.
+  const logged = RUNNER_CODE.match(/console\.(log|error)\([^\n]*/g) || [];
   for (const line of logged) {
-    assert.ok(!/\btoken\b|SERVICE_KEY|access_token|hashed/.test(line), `a credential reaches the log: ${line}`);
+    for (const secret of ["auth.token", "SERVICE_KEY", "access_token", "hashed", "session.access"]) {
+      assert.ok(
+        !line.includes("${" + secret) && !line.includes("+ " + secret),
+        `a credential value reaches the log: ${line}`,
+      );
+    }
   }
+  // And the token is never written anywhere else a person could read it.
+  assert.ok(!/console\.[a-z]+\(\s*auth\.token/.test(RUNNER_CODE));
 });
 
 test("a curator who is not admin or tester is refused before anything is written", () => {
@@ -179,6 +299,54 @@ test("staging is a shared rule, not a second definition of a row", () => {
   // Absent means today's behaviour, so the admin page's row is unchanged.
   assert.ok(!/row\.approval_status\s*=/.test(RUNNER), "the runner must not mutate the validated row");
   assert.ok(!/row\.is_active\s*=/.test(RUNNER), "the runner must not mutate the validated row");
+});
+
+test("the parser reads the argument form the workflow actually passes", async () => {
+  // THIS IS THE CASE TWELVE GREEN LOCKS DID NOT HAVE. The first dry run reached
+  // the droplet, started the container and died on `Pass --email=<curator>`,
+  // because the parser took only `--email=value` while the workflow passes
+  // `--email "value"`. Every lock had matched strings in the file; none had
+  // ever run the parser. So this one runs it, on the exact vector the workflow
+  // builds -- a fixture laxer than the real thing catches nothing.
+  const { arg, flag } = await import("../scripts/wallpro-catalog-args.mjs");
+
+  const asWorkflowPasses = [
+    "--email", "trish@weprintwraps.com",
+    "--count", "12", "--mode", "mural", "--domain", "all", "--dry-run",
+  ];
+  assert.equal(arg(asWorkflowPasses, "email"), "trish@weprintwraps.com");
+  assert.equal(arg(asWorkflowPasses, "count"), "12");
+  assert.equal(arg(asWorkflowPasses, "mode"), "mural");
+  assert.equal(arg(asWorkflowPasses, "domain"), "all");
+  assert.equal(flag(asWorkflowPasses, "dry-run"), true);
+  assert.equal(flag(asWorkflowPasses, "live"), false);
+
+  // The equals form keeps working, and both forms agree.
+  const equalsForm = ["--email=trish@weprintwraps.com", "--count=12", "--live"];
+  assert.equal(arg(equalsForm, "email"), "trish@weprintwraps.com");
+  assert.equal(arg(equalsForm, "count"), "12");
+  assert.equal(flag(equalsForm, "live"), true);
+
+  // A switch immediately before another switch has no value to steal, or
+  // `--dry-run --mode mural` would read "mural" as the dry-run's argument.
+  assert.equal(arg(["--dry-run", "--mode", "mural"], "dry-run", null), null);
+  assert.equal(arg(["--dry-run", "--mode", "mural"], "mode"), "mural");
+  // A trailing switch must not read past the end of the vector.
+  assert.equal(arg(["--mode"], "mode", "fallback"), "fallback");
+  assert.equal(arg([], "email", null), null);
+});
+
+test("the workflow ships the parser it imports", () => {
+  // The runner imports a sibling module; a payload without it dies on import
+  // inside the container, after the SSH hop has already succeeded.
+  assert.match(RUNNER, /from '\.\/wallpro-catalog-args\.mjs'/);
+  assert.match(WORKFLOW, /tar -cz[^\n]*scripts\/wallpro-catalog-args\.mjs/);
+  // Every local module the runner imports must be in that tar.
+  const tarLine = WORKFLOW.split("\n").find((l) => l.includes("tar -cz"));
+  for (const [, spec] of RUNNER.matchAll(/from '(\.\/[^']+)'/g)) {
+    const file = spec.replace("./", "scripts/");
+    assert.ok(tarLine.includes(file), `${file} is imported but never shipped`);
+  }
 });
 
 test("re-running skips what is already published", () => {
