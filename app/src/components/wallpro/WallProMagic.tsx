@@ -7,15 +7,15 @@ const after = '/wallpro/proof-spa-after.jpg';
 
 function Frame({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-xl border wall-edge bg-slate-950 shadow-sm">
+    <div className="relative overflow-hidden border wall-edge bg-[hsl(var(--wall-field))]">
       {children}
-      <span className="absolute left-2 top-2 rounded-full bg-slate-950/80 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur">{label}</span>
+      <span className="absolute left-2 top-2 bg-slate-950/85 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{label}</span>
     </div>
   );
 }
 
 function Room({ src, alt }: { src: string; alt: string }) {
-  return <img src={src} alt={alt} className="h-full w-full object-cover" draggable={false} />;
+  return <img src={src} alt={alt} className="block h-auto w-full object-contain" draggable={false} />;
 }
 
 export function WallProMagic() {
@@ -29,13 +29,13 @@ export function WallProMagic() {
         <p className="text-xs font-semibold wall-muted">Touch the wall. Protect what stays. See it installed. Print it.</p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <article className={WALL_CARD + ' p-3'}>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <article className={WALL_CARD + ' !rounded-md p-3'}>
           <div className="mb-2 flex items-start gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">1</span><div><h3 className="text-sm font-bold wall-ink">Upload your photo</h3><p className="text-[11px] wall-muted">Start with the room you actually want to wrap.</p></div></div>
           <Frame label="Your room"><Room src={before} alt="Room before a wall wrap is designed" /></Frame>
         </article>
 
-        <article className={WALL_CARD + ' p-3'}>
+        <article className={WALL_CARD + ' !rounded-md p-3'}>
           <div className="mb-2 flex items-start gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">2</span><div><h3 className="text-sm font-bold wall-ink">Touch 4 corners</h3><p className="text-[11px] wall-muted">Four touches define the exact wall geometry.</p></div></div>
           <Frame label="Corner geometry">
             <Room src={before} alt="Room photo with the wall boundary marked" />
@@ -46,7 +46,7 @@ export function WallProMagic() {
           </Frame>
         </article>
 
-        <article className={WALL_CARD + ' p-3'}>
+        <article className={WALL_CARD + ' !rounded-md p-3'}>
           <div className="mb-2 flex items-start gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">3</span><div><h3 className="text-sm font-bold wall-ink">1-touch masking</h3><p className="text-[11px] wall-muted">Tap curtains, windows or objects once to protect them.</p></div></div>
           <Frame label="Protected">
             <Room src={before} alt="Room photo showing curtains protected by one-touch masking" />
@@ -59,7 +59,7 @@ export function WallProMagic() {
           </Frame>
         </article>
 
-        <article className={WALL_CARD + ' p-3'}>
+        <article className={WALL_CARD + ' !rounded-md p-3'}>
           <div className="mb-2 flex items-start gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">4</span><div><h3 className="text-sm font-bold wall-ink">Preview on your wall</h3><p className="text-[11px] wall-muted">The design is imposed into the geometry you marked.</p></div></div>
           <Frame label="On your wall">
             <Room src={after} alt="The same room with the exotic floral wall design installed" />
@@ -67,7 +67,7 @@ export function WallProMagic() {
           </Frame>
         </article>
 
-        <article className={WALL_CARD + ' p-3'}>
+        <article className={WALL_CARD + ' !rounded-md p-3'}>
           <div className="mb-2 flex items-start gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-black text-white">5</span><div><h3 className="text-sm font-bold wall-ink">Print-ready panels</h3><p className="text-[11px] wall-muted">Panelized at the press width with ½″ perimeter bleed.</p></div></div>
           <Frame label="Production">
             <Room src={after} alt="Exotic floral wall design divided into three print panels" />
@@ -79,12 +79,12 @@ export function WallProMagic() {
         </article>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border wall-edge bg-[hsl(var(--wall-field))] px-4 py-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border wall-edge bg-[hsl(var(--wall-field))] px-4 py-3">
         <div className="flex items-center gap-3">
-          <span className={"flex h-10 w-10 items-center justify-center rounded-xl text-white " + WALL_GRADIENT}><Wand2 className="h-5 w-5" /></span>
+          <span className={"flex h-10 w-10 items-center justify-center rounded-md text-white " + WALL_GRADIENT}><Wand2 className="h-5 w-5" /></span>
           <div><p className="text-sm font-bold wall-ink">Ready to try it on your wall?</p><p className="text-xs wall-muted">Start with dimensions and a photo. The geometry and masking happen on the same workspace.</p></div>
         </div>
-        <a href="#upload-wall" className={"inline-flex items-center rounded-lg px-4 py-2 text-sm font-bold text-white " + WALL_GRADIENT}><Upload className="mr-2 h-4 w-4" />Start your wall wrap</a>
+        <a href="#upload-wall" className={"inline-flex items-center rounded-md px-4 py-2 text-sm font-bold text-white " + WALL_GRADIENT}><Upload className="mr-2 h-4 w-4" />Start your wall wrap</a>
       </div>
     </section>
   );
