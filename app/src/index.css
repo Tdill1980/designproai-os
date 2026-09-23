@@ -1141,9 +1141,9 @@ p {
      The card is LIGHTER than the ground here for the same reason it is in the
      light theme: a panel reads as an object only when it separates from what
      it sits on. */
-  --wall-ground: 222 55% 8%;       /* navy */
-  --wall-card: 220 14% 15%;        /* charcoal, saturation pulled out */
-  --wall-card-edge: 218 14% 25%;
+  --wall-ground: 222 55% 7%;       /* deep navy canvas */
+  --wall-card: 218 16% 20%;        /* clearly lifted graphite work surface */
+  --wall-card-edge: 215 18% 36%;   /* visible structural dividers */
   --wall-ink: 210 40% 98%;
   --wall-ink-soft: 215 16% 74%;    /* ~7:1 on the charcoal card */
   --wall-field: 222 30% 11%;       /* a well is DARKER than its card, as a hole should be */
@@ -1181,3 +1181,24 @@ p {
 /* A placeholder has to follow the theme too, or the dark dropzone prompts in
    near-black on near-black. */
 [data-wall-theme] ::placeholder { color: hsl(var(--wall-ink-soft)); opacity: 1; }
+
+
+/* WallPro is a production workspace, not a stack of soft dashboard bubbles.
+   Keep the shared theme tokens, but give this page flatter, harder-working
+   geometry and stronger surface separation. PatternPro is intentionally
+   unaffected. */
+.wallpro-page .wall-card {
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 0 rgba(var(--wall-shadow) / var(--wall-shadow-close));
+}
+.wallpro-page button,
+.wallpro-page a,
+.wallpro-page input,
+.wallpro-page textarea,
+.wallpro-page select {
+  border-radius: 0.375rem;
+}
+.wallpro-page [class*="rounded-xl"],
+.wallpro-page [class*="rounded-2xl"] {
+  border-radius: 0.375rem;
+}
