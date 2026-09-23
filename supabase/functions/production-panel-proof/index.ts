@@ -743,10 +743,10 @@ serve(async (req) => {
       // Either absent and the request is refused before the provider sees it.
       graphicDesignerPersonaInjected: mode === "restyle"
         ? /You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(prompt)
-        : /senior graphic designer and vehicle-wrap specialist at a sign and wrap company/.test(prompt),
+        : /You are the senior graphic designer and vehicle-wrap specialist at a professional sign and wrap company/.test(prompt),
       nativeGeminiImageKnowledgeInjected: mode === "restyle"
         ? /DESIGN AMPLIFICATION: Elevate and enhance the brief/.test(prompt)
-        : /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
+        : prompt.includes("Use your native Gemini 3 Pro Image design knowledge and your professional wrap-design judgment for decisions the customer did not specify."),
       // ⚠️ THESE TWO PROBES ARE THE CONSTANTS THEMSELVES, NEVER A COPY OF THEM.
       //
       // They were hand-copied literals, and on 2026-09-22 that took Call 1 down
