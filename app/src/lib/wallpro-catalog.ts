@@ -157,6 +157,25 @@ export type WallDesignDraft = {
   seam: SeamlessReceipt | null; rating?: number | null; batchId?: string | null; createdBy: string; collectionId?: string | null;
   /** Existing master_version for this DesignID, when republishing; 0 for a first publish. */
   previousVersion?: number;
+  /**
+   * STAGED, NOT LIVE (owner, Trish 2026-09-23: "I'd rather check the library
+   * first make sure it's good").
+   *
+   * A publish used to be unconditionally `approved` + active, which is the
+   * shop window — right for the admin page, where a human has just looked at
+   * the design before pressing Publish, and wrong for the headless batch,
+   * where nobody has. The headless runner therefore stages: `generated` and
+   * hidden. The public SELECT policy is `is_active AND approval_status =
+   * 'approved'`, so a staged row reaches NO customer, while the curator read
+   * policy has no such filter — it shows up in the admin gallery with its
+   * thumbnail and its Active toggle, which is the review loop that already
+   * exists.
+   *
+   * ABSENT MEANS TODAY'S BEHAVIOUR. The admin page passes neither and its row
+   * is byte-identical to before; only a caller that explicitly stages differs.
+   */
+  approvalStatus?: WallCatalogRow['approval_status'];
+  isActive?: boolean;
 };
 
 /** Builds the upsert row and refuses anything the table would refuse, so a
@@ -186,7 +205,8 @@ export function designUpsertRow(draft: WallDesignDraft) {
     prompt: e.prompt, prompt_version: WALL_CATALOG_PROMPT_VERSION, mode: draft.mode, tile_width_in: tile,
     generation_id: draft.generationId, provider: WALL_CATALOG_PROVIDER, model: WALL_GENERATION_MODEL, synthid_expected: true, prompt_hash: draft.promptHash,
     master_path: draft.masterPath, thumb_path: draft.thumbPath || null, master_sha256: draft.masterSha256, width_px: draft.widthPx, height_px: draft.heightPx, master_version: previous + 1,
-    seam: draft.mode === 'repeat' ? draft.seam : null, approval_status: 'approved' as const, is_active: true,
+    seam: draft.mode === 'repeat' ? draft.seam : null,
+    approval_status: draft.approvalStatus ?? ('approved' as WallCatalogRow['approval_status']), is_active: draft.isActive ?? true,
     rating: draft.rating ?? null, batch_id: draft.batchId || null, created_by: draft.createdBy, collection_id: draft.collectionId || null,
     updated_at: new Date().toISOString(),
   };

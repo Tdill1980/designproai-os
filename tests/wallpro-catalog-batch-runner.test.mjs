@@ -146,6 +146,41 @@ test("a curator who is not admin or tester is refused before anything is written
   assert.ok(check > 0 && publish > 0 && check < publish, "roles must be checked before the first publish");
 });
 
+test("a headless batch stages hidden; only an explicit --live reaches a customer", () => {
+  // Owner, 2026-09-23: "I'd rather check the library first make sure it's
+  // good." The admin page publishes approved+active because a human just
+  // looked at the design. Nobody looked at these, so the public SELECT
+  // policy (is_active AND approval_status='approved') must exclude them by
+  // construction rather than by anyone remembering to hide them.
+  assert.match(RUNNER, /const GO_LIVE = flag\('live'\)/);
+  assert.match(RUNNER, /approvalStatus: GO_LIVE \? 'approved' : 'generated', isActive: GO_LIVE/);
+  // The row must never be able to go live without that flag being read.
+  assert.ok(!/approvalStatus: 'approved'(?!\s*:)/.test(RUNNER), "the runner must not hard-code an approved row");
+  assert.ok(!/isActive: true/.test(RUNNER), "the runner must not hard-code an active row");
+});
+
+test("the workflow stages by default and a typo hides rather than ships", () => {
+  const vis = WORKFLOW.slice(WORKFLOW.indexOf("visibility:"), WORKFLOW.indexOf("curator_email:"));
+  assert.match(vis, /default: staged/);
+  assert.match(vis, /options: \[staged, live\]/);
+  // Equality against the one live value, so anything else -- including a
+  // value a future edit adds -- resolves to empty and stages.
+  assert.match(WORKFLOW, /inputs\.visibility == 'live' && '1' \|\| ''/);
+  assert.match(WORKFLOW, /\$\{P_LIVE:\+--live\}/);
+});
+
+test("staging is a shared rule, not a second definition of a row", () => {
+  // The runner does NOT post-process the row designUpsertRow returned; the
+  // draft carries the intent and the app's own validator applies it, so the
+  // admin page and the batch cannot disagree about what a staged row is.
+  const CATALOG = read("app/src/lib/wallpro-catalog.ts");
+  assert.match(CATALOG, /approval_status: draft\.approvalStatus \?\? \('approved'/);
+  assert.match(CATALOG, /is_active: draft\.isActive \?\? true/);
+  // Absent means today's behaviour, so the admin page's row is unchanged.
+  assert.ok(!/row\.approval_status\s*=/.test(RUNNER), "the runner must not mutate the validated row");
+  assert.ok(!/row\.is_active\s*=/.test(RUNNER), "the runner must not mutate the validated row");
+});
+
 test("re-running skips what is already published", () => {
   assert.match(RUNNER, /selectLibraryEntries\(library, \{ domain: DOMAIN \}, published\)/);
   assert.match(RUNNER, /wallpro_designs\?select=design_id/);

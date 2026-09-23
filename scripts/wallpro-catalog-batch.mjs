@@ -38,6 +38,17 @@
  * already an admin/tester, because the catalog's own RLS and the batch's
  * charge exemption both key on `user_roles`. The token is never logged.
  *
+ * ── IT STAGES; IT DOES NOT PUT ANYTHING IN THE SHOP WINDOW ────────────────
+ *
+ * Owner, 2026-09-23: "I'd rather check the library first make sure it's good."
+ * The admin page publishes `approved` + active because a human has just LOOKED
+ * at the design before pressing Publish. Nobody has looked at these. So every
+ * row this writes is `generated` + hidden, and the public SELECT policy
+ * (`is_active AND approval_status='approved'`) means no customer can reach one.
+ * The curator read policy has no such filter, so they appear in the admin
+ * gallery with their thumbnails and their Active toggle — the review loop that
+ * already exists. `--live` overrides it, and nothing calls it by default.
+ *
  * ── SAFE TO RUN TWICE ─────────────────────────────────────────────────────
  *
  * Already-published DesignIDs are skipped (`selectLibraryEntries` takes the
@@ -69,6 +80,9 @@ const COUNT = Number(arg('count', '12'));
 const MODE = arg('mode', 'mural');           // mural | repeat | both
 const DOMAIN = arg('domain', 'all');          // residential | commercial | all
 const DRY_RUN = flag('dry-run');
+// Staged unless explicitly told otherwise. A batch nobody has looked at must
+// not be able to reach a customer by default.
+const GO_LIVE = flag('live');
 const BATCH_ID = arg('batch-id', 'wallbatch_' + Date.now());
 
 if (!SUPABASE_URL || !SERVICE_KEY) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
@@ -217,6 +231,7 @@ async function publishOne(entry, mode, auth) {
     masterPath, thumbPath, masterSha256: sha256(masterBytes),
     widthPx: meta.width, heightPx: meta.height,
     seam: decided.receipt, batchId: BATCH_ID, createdBy: auth.userId,
+    approvalStatus: GO_LIVE ? 'approved' : 'generated', isActive: GO_LIVE,
   });
 
   // Bytes before the row: a catalog row whose master 404s is worse than no row.
@@ -232,7 +247,7 @@ async function publishOne(entry, mode, auth) {
     body: JSON.stringify([row]),
   }), `Publishing ${entry.id}`);
 
-  return { id: entry.id, title: entry.title, mode, seam: decided.receipt?.method ?? null, px: `${meta.width}x${meta.height}` };
+  return { id: entry.id, title: entry.title, mode, seam: decided.receipt?.method ?? null, px: `${meta.width}x${meta.height}`, live: GO_LIVE };
 }
 
 async function main() {
@@ -269,7 +284,11 @@ async function main() {
   }
 
   const total = (await publishedIds()).size;
-  console.log(`\npublished ${done.length}, failed ${failed.length} · catalog now holds ${total} designs`);
+  console.log(`\n${GO_LIVE ? 'published LIVE' : 'staged HIDDEN'} ${done.length}, failed ${failed.length} · catalog now holds ${total} designs`);
+  if (!GO_LIVE && done.length) {
+    console.log('None of these reach a customer yet. Review them in the admin');
+    console.log('gallery at /admin/wallpro-batch and press Active on the keepers.');
+  }
   if (!done.length) { console.error('No design published.'); process.exitCode = 1; }
 }
 

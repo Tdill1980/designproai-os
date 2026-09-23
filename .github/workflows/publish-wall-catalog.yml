@@ -22,7 +22,10 @@ name: Publish the WallPro catalog
 # --env-file rather than an argument.
 #
 # START WITH dry_run: it plans and prints the selection, generates nothing and
-# writes nothing.
+# writes nothing. And a real run STAGES by default (owner, 2026-09-23: "I'd
+# rather check the library first make sure it's good") -- rows land hidden, the
+# public policy needs is_active AND approved, so nothing reaches a customer
+# until a human presses Active in the admin gallery.
 
 on:
   workflow_dispatch:
@@ -57,6 +60,12 @@ on:
         type: choice
         default: all
         options: [all, residential, commercial]
+      visibility:
+        description: "staged = hidden until you press Active in the admin gallery. live = straight into the shop window."
+        required: false
+        type: choice
+        default: staged
+        options: [staged, live]
       curator_email:
         description: "The admin/tester account the designs are published as"
         required: false
@@ -138,6 +147,9 @@ jobs:
           # Value on the TRUE branch, empty on the false one -- the form
           # CLAUDE.md records. Never `cond && '' || value`.
           P_DRY: ${{ inputs.dry_run && '1' || '' }}
+          # Same shape as P_DRY: the value on the TRUE branch only. Anything that
+          # is not exactly "live" stages, so a typo hides rather than ships.
+          P_LIVE: ${{ inputs.visibility == 'live' && '1' || '' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -151,7 +163,7 @@ jobs:
           test -n "$payload_file"
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' P_PAYLOAD_FILE='$payload_file' P_COUNT='$P_COUNT' P_MODE='$P_MODE' P_DOMAIN='$P_DOMAIN' P_EMAIL='$P_EMAIL' P_DRY='$P_DRY' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' P_PAYLOAD_FILE='$payload_file' P_COUNT='$P_COUNT' P_MODE='$P_MODE' P_DOMAIN='$P_DOMAIN' P_EMAIL='$P_EMAIL' P_DRY='$P_DRY' P_LIVE='$P_LIVE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
           env_file=/opt/designproai-os/shared/runtime.env
@@ -178,7 +190,7 @@ jobs:
             --entrypoint node "$image" \
             scripts/wallpro-catalog-batch.mjs \
               --email "$P_EMAIL" --count "$P_COUNT" --mode "$P_MODE" --domain "$P_DOMAIN" \
-              ${P_DRY:+--dry-run}
+              ${P_DRY:+--dry-run} ${P_LIVE:+--live}
           REMOTE
 
       - name: Report the catalog as it now stands
