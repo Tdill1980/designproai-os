@@ -1467,14 +1467,35 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       }
     }
   }
-  async function prepareArtworkDownload() {
-    await run('Preparing artwork download', async () => {
+  /**
+   * ONE TAP, NOT TWO (owner, Trish 2026-09-23: "I can't download artwork to
+   * test myself and Carley need to do this").
+   *
+   * This used to be `prepareArtworkDownload`, and the name was the defect: it
+   * fetched the bytes and then swapped itself for a SECOND button you had to
+   * find and press again. A control called "Prepare artwork download" reads as
+   * a step before the thing you wanted, and the thing you wanted appeared
+   * where the button you just pressed used to be. Now the fetch and the save
+   * are one action.
+   *
+   * It goes through `fetch` + object URL rather than pointing an anchor at the
+   * signed URL, because `download` is ignored cross-origin -- Safari would
+   * NAVIGATE to the artwork instead of saving it, which on a phone looks like
+   * the button opened a picture and lost her place.
+   */
+  async function downloadArtwork() {
+    await run('Downloading artwork', async () => {
       if (!artwork) return;
       const url = artwork.path ? await openWallAsset(artwork.path) : artwork.url;
       const result = await fetch(url);
       if (!result.ok) throw new Error('The artwork could not be downloaded.');
       const blob = await result.blob();
-      setArtworkDownload({ source: artwork.path || artwork.url, url: retain(URL.createObjectURL(blob)), name: 'wallpro-artwork' + (blob.type === 'image/jpeg' ? '.jpg' : blob.type === 'image/webp' ? '.webp' : '.png') });
+      const name = 'wallpro-artwork' + (blob.type === 'image/jpeg' ? '.jpg' : blob.type === 'image/webp' ? '.webp' : '.png');
+      const href = retain(URL.createObjectURL(blob));
+      setArtworkDownload({ source: artwork.path || artwork.url, url: href, name });
+      const a = document.createElement('a');
+      a.href = href; a.download = name; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
     });
   }
 
@@ -1890,7 +1911,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           IS the order, and step 2 is the photo itself rather than two
           buttons naming a photo somewhere else. */}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
-        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-1">
+        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-span-2 lg:row-start-1">
           {/* ── MARK THE WALL, ABOVE THE SCROLL (owner, 2026-09-22) ──────────
               "it doesn't show my photo when I upload, it should show my photo
               as soon as I upload / above scroll a card pops up and tells me to
@@ -1985,7 +2006,34 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               TIFF/PDF/PNG set. Shown before the work starts, because "leave
               with production files" is the promise the board is delivering. */}
           {!artwork && <WallProOutcomes />}
-          <section id="upload-wall" className={panelClass}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
+        </fieldset>
+
+        {/* ⚠️ THE PHOTO SITS INSIDE THIS SECTION, DIRECTLY UNDER THE TWO
+            UPLOAD BOXES (owner, Trish 2026-09-23, third report of the same
+            thing: "when you upload you have to scroll down to find it").
+
+            The previous pass made the photo its own grid child immediately
+            after step 1, which fixed the 330-line gap and left a real one:
+            step 1 still carried the style reference, the brief, the style
+            chips, the wall size and the film price, so uploading a wall
+            photo still meant scrolling past five controls to see it. "After
+            step 1" was never the ask. UNDER THE UPLOAD was.
+
+            SO THIS SECTION IS NOT A <fieldset> ANY MORE. It was one only to
+            get `disabled={!!busy}` for free, and that free disable is exactly
+            what must not reach the photo: greying the editor mid-generation
+            takes the corner handles away while the render is waiting on those
+            corners being right. The three controls that were relying on the
+            fieldset -- the brief textarea and the two size inputs -- now carry
+            `disabled={!!busy}` themselves, which is also where a reader looks
+            for it. Add a control here and give it its own.
+
+            THE 09-22 GROUPING SURVIVES: wall upload, style reference and the
+            text prompt are still one block, which is what "they were three
+            screens apart" was about. What is now between the uploads and the
+            brief is not a fourth input -- it is the picture the first upload
+            just produced. */}
+        <section id="upload-wall" className={panelClass + ' lg:col-span-2 lg:row-start-2'}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
             {/* THE THREE INPUTS SIT TOGETHER (owner, 2026-09-22, before a demo:
                 "The upload style reference should be right next to upload wall
                 / And the text prompt").
@@ -1999,66 +2047,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 {uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}
-                <p className="mt-2 text-xs wall-muted">Any photo from your phone, including iPhone HEIC — it is converted here. Wall corners are detected automatically. A wall photo is optional when generating artwork.</p>
+                <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
               </div>
               <div>
                 {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
                 <p className="mt-2 text-xs wall-muted">{intent === 'match'
-                  ? 'This design is recreated faithfully as a print-ready 4K master: same composition, motifs, palette and scale. A screenshot or a photo of a wall is fine as the source.'
-                  : 'Optional inspiration only. Your description alone is enough — no example image is required.'}</p>
+                  ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. A screenshot is fine.'
+                  : 'Optional. Your description alone is enough.'}</p>
               </div>
             </div>
-            <div className="mt-4">
-              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
-              {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
-                  the brief rather than replacing it, and they are not a
-                  taxonomy: the two personas read prose, so a chip is a word
-                  the customer would have typed, saving a phone keyboard. A
-                  chip that overwrote the brief would delete the only thing in
-                  the request that is actually hers -- the measurement behind
-                  the two-persona rule is that the customer's own words were 44
-                  characters against 3,342 of persona, so they are the
-                  scarcest input on the page and nothing here may spend them. */}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
-                  onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
-                  className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
-            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
-                2026-09-14: "on enter wall size should give price for printed
-                wrap from wpw film"). The wall's own square footage at the live
-                WePrintWraps rate -- the number a customer can check with a tape
-                measure -- so the cost of the thing they came for is answered in
-                step 1 rather than four thousand pixels later. It is the film
-                only; the design is priced on its own card, because they are
-                separate purchases with separate payees. */}
-            {/* GATED ON showPrintOffer, like every other print element (owner,
-                2026-09-15: the DesignProAI page should not carry the partner's
-                marks). This block quoted a WePrintWraps film rate and named
-                their material on the DesignProAI-branded page, while the bar,
-                the order section and the spec were all correctly hidden there
-                -- so one partner's pricing leaked onto a page that hides
-                everything else about them. The condition was simply missing. */}
-            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border wall-edge bg-[hsl(var(--wall-field))] px-3 py-2">
-              <span className="text-xs wall-muted">
-                Printed film, this wall
-                <span className="block text-[11px] wall-muted">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
-              </span>
-              <span className="text-base font-bold tabular-nums wall-ink">
-                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
-              </span>
-            </div>}
-          </section>
-        </fieldset>
-
-        {/* STEP 2 — THE PHOTO, AND EVERYTHING DONE TO IT, IN ONE PLACE.
-            It is NOT inside a disabled fieldset: every control here already
-            carries its own `disabled={!!busy}`, and greying out the wall
-            while a design renders would take the corners away mid-marking. */}
-        <div className="min-w-0 space-y-5 lg:col-start-2 lg:row-start-1 lg:row-span-2">
           {photo && <section id="select-wall-area" style={{ scrollMarginTop: stickyTop + 120 }} className={panelClass + ' overflow-hidden'}>
               {/* STEP 2 IS NOW A STEP (owner, 2026-09-22). Marking the wall was
                   never numbered -- it lived unlabelled inside step 1, below the
@@ -2299,15 +2296,58 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 {hasOverride(items) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void applyItems(resetItems(items))}>Reset to what we detected</Button>}
                 {(detectedMask || removeMask) && <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => { setDetectedMask(null); setRemoveMask(null); setItems([]); }}>Clear detected areas</Button>}
               </div>
-              <p className="mt-2 text-xs wall-muted">Tap anything on the photo to keep it as photographed or paint the design through it. Drawing is only for something we missed. For a busy wall -- a gallery of frames, a mantel display, a crowded shelf -- draw ONE rough shape around the whole area with Protect a busy area instead of tracing each item; everything inside stays exactly as photographed. Select a finished mask and drag its white points to adjust; arrow keys fine-tune a focused point. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
+              <p className="mt-2 text-xs wall-muted">Tap anything on the photo to keep it or paint through it. For a busy wall, draw ONE shape around the lot. Drag a mask's white points to adjust it, or drag its middle to move it. {exclusions.length > 0 && `${exclusions.length} protected ${exclusions.length === 1 ? 'area' : 'areas'}.`}</p>
               </>}
               {marking && <p role="status" className="mt-3 text-sm text-blue-700">{marking === 'wall' ? (corners.length >= 4 ? 'Corners are set. Drag a point to adjust, or tap the top-left corner to start over.' : 'Tap corner ' + (corners.length + 1) + ' of 4: ' + cornerNames[corners.length] + '.') : marking === 'rectangle' ? excludeDraft.length ? 'Now tap the opposite corner. Everything inside the rectangle will stay unchanged.' : 'Drag a box around the window or drapes, or tap two opposite corners.' : 'Tap around the edge of the object, or loosely around a whole busy area at once, then choose Finish mask.'}</p>}
               {!marking && cornersValid && <p className="mt-3 text-xs wall-muted">Measured wall: {width}″ W × {height}″ H. Placement follows the selected corners.</p>}
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
           </section>}
-        </div>
+            <div className="mt-4">
+              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
+                  the brief rather than replacing it, and they are not a
+                  taxonomy: the two personas read prose, so a chip is a word
+                  the customer would have typed, saving a phone keyboard. A
+                  chip that overwrote the brief would delete the only thing in
+                  the request that is actually hers -- the measurement behind
+                  the two-persona rule is that the customer's own words were 44
+                  characters against 3,342 of persona, so they are the
+                  scarcest input on the page and nothing here may spend them. */}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
+                  onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
+                  className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
+                2026-09-14: "on enter wall size should give price for printed
+                wrap from wpw film"). The wall's own square footage at the live
+                WePrintWraps rate -- the number a customer can check with a tape
+                measure -- so the cost of the thing they came for is answered in
+                step 1 rather than four thousand pixels later. It is the film
+                only; the design is priced on its own card, because they are
+                separate purchases with separate payees. */}
+            {/* GATED ON showPrintOffer, like every other print element (owner,
+                2026-09-15: the DesignProAI page should not carry the partner's
+                marks). This block quoted a WePrintWraps film rate and named
+                their material on the DesignProAI-branded page, while the bar,
+                the order section and the spec were all correctly hidden there
+                -- so one partner's pricing leaked onto a page that hides
+                everything else about them. The condition was simply missing. */}
+            {theme.showPrintOffer && dimensionsValid && billing && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border wall-edge bg-[hsl(var(--wall-field))] px-3 py-2">
+              <span className="text-xs wall-muted">
+                Printed film, this wall
+                <span className="block text-[11px] wall-muted">{billing.wallSqFt} sq ft × {formatMoney(Math.round(WPW_WALL_FILM_RATE_PER_SQFT * 100))}/sq ft · Avery HP MPI 2610</span>
+              </span>
+              <span className="text-base font-bold tabular-nums wall-ink">
+                {formatMoney(Math.round(billing.wallSqFt * WPW_WALL_FILM_RATE_PER_SQFT * 100))}
+              </span>
+            </div>}
+          </section>
 
-        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-2">
+        <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-start-1 lg:row-start-3">
           <section id="choose-design" className={panelClass}><StepHeading n={3} icon={Settings2}>Describe your design</StepHeading>
             {/* THE FIVE PRICED PATHS MOVE UNDER THE BRIEF (owner ruling,
                 2026-09-22, asked directly: "Inside step 3, chips on top").
@@ -2458,10 +2498,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     action that fought the baseline is gone. */}
                 {artwork && draftPpi > 0 && <p className={'mt-2 text-xs ' + (draftPpi + 1e-9 >= printSettings.minPpi ? 'wall-muted' : 'wall-muted')}>
                   {draftPpi >= printSettings.minPpi
-                    ? `${Math.round(draftPpi)} PPI from the design's own pixels — above your ${printSettings.minPpi} PPI minimum. Wall size, panels and print file are unchanged at every size.`
-                    : `${Math.round(draftPpi)} PPI native from the design's own pixels. Production enhances every ${WALLPRO_PRINT_WIDTH}″ panel through Topaz to ${printSettings.minPpi} PPI, so keep the pattern at the size it should print — shrinking it to raise this number is not the fix.`}
+                    ? `${Math.round(draftPpi)} PPI — above your ${printSettings.minPpi} PPI minimum.`
+                    : `${Math.round(draftPpi)} PPI native. Production takes every ${WALLPRO_PRINT_WIDTH}″ panel to ${printSettings.minPpi} PPI, so leave the pattern at the size it should print.`}
                 </p>}
-                <p className="mt-1 text-xs wall-muted">Same design, drawn smaller or bigger on your wall. Deterministic, no token; the print file rebuilds at this size when you approve.</p>
+                <p className="mt-1 text-xs wall-muted">Wall size, panels and price never change — only how big the design is drawn.</p>
               </div>
               {/* MIRROR CHANGES HER ARTWORK, SO IT HAS TO SAY SO (2026-09-22).
                   `verified: true` is correct for a mirrored tile -- the join is
@@ -2492,13 +2532,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               </svg>}
               </div></div>
             </div>}
+              {/* THE DOWNLOAD IS WHERE THE ARTWORK IS (owner, 2026-09-23:
+                  "I can't download artwork to test myself and Carley need to
+                  do this"). It also lives in the project card below, which is
+                  where it was ONLY living -- past the whole photo block, the
+                  masks and the corner fields, behind a two-step "Prepare"
+                  button. A file you want a copy of is wanted while you are
+                  looking at it. */}
+              {artwork && <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void downloadArtwork()}><Download className="mr-1.5 h-3.5 w-3.5" />Download artwork</Button>
+                <span className="text-xs wall-muted">The flat 4K master, as generated — send it to anyone.</span>
+              </div>}
             {!photo && !artwork && <div className="flex min-h-96 flex-col items-center justify-center rounded-xl bg-[hsl(var(--wall-ground))] p-8 text-center"><ImageIcon className="mb-4 h-12 w-12 text-slate-300" /><h2 className="font-semibold">See the design on your wall</h2><p className="mt-2 max-w-sm text-sm wall-muted">Describe a design and choose Generate wall design, or upload your own artwork. Add a wall photo whenever you want to preview it in your room.</p></div>}
             {busy && <p role="status" className="mt-4 flex items-center gap-2 text-sm text-blue-700"><Loader2 className="h-4 w-4 animate-spin" />{busy}…</p>}
           </section>
-          <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || rendering || detecting || preparingProof || scaleSettling || !photo || !preview || !canvas.current || !artwork || !wallLocated || !billing || !dimensionsValid || !seamReady} onClick={() => void openDesignProof()}>{preparingProof ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}3D Proof</Button><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}{artworkDownload && artworkDownload.source === (artwork?.path || artwork?.url) ? <Button asChild variant="outline"><a href={artworkDownload.url} download={artworkDownload.name}>Download artwork</a></Button> : <Button variant="outline" disabled={!!busy || !artwork} onClick={() => void prepareArtworkDownload()}>Prepare artwork download</Button>}</div><p className="mt-3 text-xs wall-muted">3D Proof includes your before photo, finished wall, and a detail close-up. Add a wall photo and locate its corners to prepare it. Use Prepare print files below for full-size panel PDFs.</p></section>
+          <section className={panelClass}><label className="block text-sm">Project name<input className={inputClass} maxLength={200} value={name} onChange={e => setName(e.target.value)} disabled={!!busy} /></label><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" disabled={!!busy || rendering || detecting || preparingProof || scaleSettling || !photo || !preview || !canvas.current || !artwork || !wallLocated || !billing || !dimensionsValid || !seamReady} onClick={() => void openDesignProof()}>{preparingProof ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}3D Proof</Button><Button disabled={!!busy || !artwork || !dimensionsValid || !metrics} onClick={() => void run('Saving project', () => persistCurrent())}><Save className="mr-2 h-4 w-4" />Save project</Button>{preview && !rendering && !busy ? <Button asChild variant="outline"><a href={preview} download="wallpro-wall-preview.png"><Download className="mr-2 h-4 w-4" />Download wall preview</a></Button> : <Button variant="outline" disabled>Download wall preview</Button>}<Button variant="outline" disabled={!!busy || !artwork} onClick={() => void downloadArtwork()}><Download className="mr-2 h-4 w-4" />Download artwork</Button></div><p className="mt-3 text-xs wall-muted">3D Proof needs a wall photo with its corners marked. Full-size panel PDFs come from Prepare print files below.</p></section>
           {artwork && <section className={panelClass} aria-label="Refine and approve">
             <h2 className="font-semibold">Refine this design</h2>
-            <p className="mt-1 text-sm wall-muted">Changes are applied to the current version and saved as the next version. Composition and everything you do not mention stay as they are.{currentVersion ? ` Current: V${currentVersion.version_no}${currentVersion.status === 'approved' ? ' (approved)' : ''}.` : ''}</p>
+            <p className="mt-1 text-sm wall-muted">Saved as the next version. Anything you do not mention stays as it is.{currentVersion ? ` Current: V${currentVersion.version_no}${currentVersion.status === 'approved' ? ' (approved)' : ''}.` : ''}</p>
             <div className="mt-3 flex flex-wrap gap-1">{['Change colours', 'Remove an object', 'Add an object', 'Make it busier', 'Make it simpler', 'More negative space', 'Match my reference', 'Extend the design'].map(q => <Button key={q} size="sm" variant="outline" disabled={!!busy} onClick={() => setRefinePrompt(p => (p ? p + ' ' : '') + ({ 'Change colours': 'Change the colours: ', 'Remove an object': 'Remove ', 'Add an object': 'Add ', 'Make it busier': 'Make the design busier with more motifs.', 'Make it simpler': 'Make the design simpler and more minimal.', 'More negative space': 'Keep everything but add more negative space.', 'Match my reference': 'Match the colour in the reference image.', 'Extend the design': 'Extend the design to the right, continuing the same composition.' }[q] || q))}>{q}</Button>)}</div>
             <label className="mt-3 block text-sm">Describe what you want changed<textarea className={inputClass + ' min-h-20'} maxLength={6000} value={refinePrompt} disabled={!!busy} placeholder="Make the flowers smaller and the background charcoal…" onChange={e => setRefinePrompt(e.target.value)} /></label>
             <div className="mt-3 flex flex-wrap items-center gap-2">

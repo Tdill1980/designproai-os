@@ -221,8 +221,17 @@ describe('the three inputs sit together', () => {
   it('the reference hint still tells the truth about which path is active', () => {
     // On `match` the upload IS the design and is recreated faithfully; on every
     // other path it is inspiration only. One control, two honest sentences.
-    expect(page).toContain('This design is recreated faithfully as a print-ready 4K master');
-    expect(page).toContain('Optional inspiration only. Your description alone is enough');
+    //
+    // ⚠️ THIS USED TO PIN THE PROSE VERBATIM, and it convicted a pure
+    // shortening (owner, 2026-09-23: "a ton of unnecessary text it's hard to
+    // even understand"). A lock that restates the text it guards turns every
+    // edit into a lock edit and teaches nothing — the same shape CLAUDE.md
+    // records taking Call 1 down. What matters is that the hint still BRANCHES
+    // on the active path and still says the two load-bearing things: on match
+    // the upload becomes a print-ready master, otherwise it is optional.
+    expect(page).toContain("{intent === 'match'");
+    expect(page).toMatch(/print-ready 4K master/);
+    expect(page).toMatch(/Optional\. Your description alone is enough/);
   });
 
   it('the refine panel keeps its own reference control, which is a different thing', () => {
