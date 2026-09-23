@@ -105,17 +105,6 @@ if [[ -z $atlas_panel_finish && -s $ROOT/shared/runtime.env ]]; then
   atlas_panel_finish=$(sed -n 's/^DESIGNPRO_ATLAS_PANEL_FINISH=//p' "$ROOT/shared/runtime.env" | head -n 1)
 fi
 [[ $atlas_panel_finish == "on" ]] || atlas_panel_finish=off
-# PER-PANEL RESOLUTION PASS (2026-09-23). Each Zone 1 cell re-authored on its
-# own ~4096px canvas instead of the ~843px a six-across band gives a 166" flank:
-# 5.0 -> 24.6 pixels per inch. Same sticky resolution as the finishing flag, and
-# for the reason this file has now learned three times -- a flag the runtime
-# READS and this writer never WRITES is unset, therefore off, and unreachable
-# from a deploy for as long as nobody notices.
-atlas_panel_refine=${ATLAS_PANEL_REFINE:-}
-if [[ -z $atlas_panel_refine && -s $ROOT/shared/runtime.env ]]; then
-  atlas_panel_refine=$(sed -n 's/^DESIGNPRO_ATLAS_PANEL_REFINE=//p' "$ROOT/shared/runtime.env" | head -n 1)
-fi
-[[ $atlas_panel_refine == "on" ]] || atlas_panel_refine=off
 # Call-1 authoring topology (RULE 0.35, owner 2026-09-11). Same resolution as
 # the finishing flag: this deploy's explicit instruction wins, otherwise the
 # running system's value, otherwise the six-surface default (written as an
@@ -245,10 +234,6 @@ trap cleanup EXIT
   # Only the exact string `on` enables it -- the runtime fails safe on anything
   # else, so a typo here cannot switch a customer path on.
   printf 'DESIGNPRO_ATLAS_PANEL_FINISH=%s\n' "$atlas_panel_finish"
-  # PER-PANEL RESOLUTION PASS. `on` re-authors each print panel at full canvas
-  # after the sheet is accepted; anything else is off. Sticky, and it costs six
-  # extra image requests per generation, so it is never on by omission.
-  printf 'DESIGNPRO_ATLAS_PANEL_REFINE=%s\n' "$atlas_panel_refine"
   # CALL-1 TOPOLOGY. `six-surface` (the default) or `hero-driver` (the
   # cascade). Sticky for the same reason as the finishing flag above.
   printf 'DESIGNPRO_ATLAS_TOPOLOGY=%s\n' "$atlas_topology"
@@ -311,15 +296,14 @@ trap - EXIT
 #
 # These seven are routing selectors, not secrets: no key, token or URL is
 # printed here, and the block sits after every secret has been consumed.
-printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
+printf 'A.T.L.A.S. flags resolved for this release: %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s %s=%s\n' \
   DESIGNPRO_ATLAS_TOPOLOGY "$atlas_topology" \
   DESIGNPRO_ATLAS_PANEL_PROOF "$atlas_panel_proof" \
   DESIGNPRO_ATLAS_FIELD_FIRST "$atlas_field_first" \
   DESIGNPRO_ATLAS_HERO_FIRST "$atlas_hero_first" \
   DESIGNPRO_ATLAS_ELEMENT_GRAPH "$atlas_element_graph" \
   DESIGNPRO_ATLAS_CALL1_GRAPH "$atlas_call1_graph" \
-  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish" \
-  DESIGNPRO_ATLAS_PANEL_REFINE "$atlas_panel_refine"
+  DESIGNPRO_ATLAS_PANEL_FINISH "$atlas_panel_finish"
 echo "DesignProAI dark environment is configured with outbound email explicitly disabled. No secret was printed."
 if [[ -n $topaz_key ]]; then
   echo "Call 12 upscaling is ENABLED: production packs will enhance through Topaz before QC."
