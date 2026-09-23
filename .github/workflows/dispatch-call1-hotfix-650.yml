@@ -1,0 +1,67 @@
+name: Dispatch tested Call 1 hotfix 650
+on:
+  push:
+    branches: [ops/call1-hotfix-650-20260923]
+    paths: [.github/workflows/dispatch-call1-hotfix-650.yml]
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+concurrency:
+  group: dispatch-call1-hotfix-650
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: github.repository == 'Tdill1980/designproai-os'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_PR_HEAD: f50cdb0cd7279c22ac1d639f46cd4652a483a458
+    steps:
+      - name: Wait for the owner-authorized tested repair to merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/ops/call1-hotfix-650-20260923
+          for attempt in $(seq 1 60); do
+            gh api "repos/$GITHUB_REPOSITORY/pulls/650" > "$RUNNER_TEMP/pr.json"
+            jq -e --arg head "$EXPECTED_PR_HEAD" '.head.sha == $head and .base.ref == "main"' "$RUNNER_TEMP/pr.json" > /dev/null
+            if jq -e '.merged == true' "$RUNNER_TEMP/pr.json" > /dev/null; then
+              sha=$(jq -r '.merge_commit_sha' "$RUNNER_TEMP/pr.json")
+              [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+              echo "EXACT_SHA=$sha" >> "$GITHUB_ENV"
+              echo "Approved PR #650 merge: $sha"
+              exit 0
+            fi
+            jq -e '.state == "open"' "$RUNNER_TEMP/pr.json" > /dev/null
+            sleep 5
+          done
+          echo 'PR has not merged; nothing deployed.'
+          exit 1
+      - name: Require the exact successful main push gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 90); do
+            gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" -f head_sha="$EXACT_SHA" -f event=push > "$RUNNER_TEMP/release.json"
+            if jq -e --arg sha "$EXACT_SHA" 'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "main" and .conclusion == "success")' "$RUNNER_TEMP/release.json" > /dev/null; then
+              echo "Exact successful main gate: $EXACT_SHA"
+              exit 0
+            fi
+            if jq -e 'any(.workflow_runs[]; .status == "completed" and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out"))' "$RUNNER_TEMP/release.json" > /dev/null; then
+              echo 'Release gate failed or was cancelled; nothing deployed.'
+              exit 1
+            fi
+            sleep 5
+          done
+          echo 'No successful exact release; nothing deployed.'
+          exit 1
+      - name: Dispatch existing protected workflow for production-panel-proof only
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n --arg sha "$EXACT_SHA" '{ref:"main",inputs:{exact_sha:$sha,confirmation:"DEPLOY_DESIGNPRO_FUNCTIONS",functions:"production-panel-proof"}}' > "$RUNNER_TEMP/edge-dispatch.json"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-edge-functions.yml/dispatches" --input "$RUNNER_TEMP/edge-dispatch.json"
+          echo "Dispatched existing protected edge workflow: production-panel-proof at $EXACT_SHA"
+          echo "No droplet, database migration, other edge function, or production secret changed by this dispatcher."
