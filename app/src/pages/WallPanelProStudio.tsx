@@ -585,8 +585,19 @@ export default function WallPanelProStudio() {
             customer's browser timed out.
           </p>
         </div>
+        {/* ⚠️ "Production jobs" WAS A BUTTON TO THIS PAGE (found 2026-09-23,
+            while the owner was asking "Are print ready files located in
+            WallPro admin page?").
+            It linked to `/admin/wallpro-production`, and App.tsx routes that
+            to `<Navigate to="/wallpanelprostudio" replace />` -- so pressing
+            it navigated to the page it was already on. The old board was
+            RETIRED INTO this one, and the header two paragraphs up already
+            says this board carries the print files, so the button named a
+            destination that had stopped existing. A control that does nothing
+            reads as a broken app, which is the exact failure "tap Re-mark wall
+            corners" is recorded for elsewhere. Deleted rather than repointed:
+            there is nowhere else for it to go. */}
         <div className="flex gap-2">
-          <Button variant="outline" asChild><Link to="/admin/wallpro-production">Production jobs</Link></Button>
           <Button variant="outline" disabled={loading} onClick={() => void load()}>
             <RefreshCw className={'mr-2 h-4 w-4' + (loading ? ' animate-spin' : '')} />Refresh
           </Button>
