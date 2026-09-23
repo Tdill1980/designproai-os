@@ -607,21 +607,6 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       // The sheet node's own timing travels forward, so the receipt keeps ONE
       // shape whether Call 1 ran as a graph or in process.
       stageTimings: [{ stage: PROOF_SHEET_NODE, ms: Number(sheetOutput.durationMs || 0) }],
-      // THE atlas-author TRANSPORT — the SAME `callEdge` the surface nodes use,
-      // owner-bound per call exactly as they bind it. It reaches the resolution
-      // pass that re-authors each Zone 1 panel on its own canvas; with
-      // DESIGNPRO_ATLAS_PANEL_REFINE unset it is never called, and this node is
-      // byte-identical to before. It is passed rather than constructed here for
-      // the reason RULE 0.26 gives: one Call-1 door, built once by the caller.
-      callAuthorEdge: typeof callEdge === "function"
-        ? (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id })
-        : null,
-      ownerId: run.owner_id,
-      providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : {},
-      // Absent on the panel-proof definition on purpose (a new field would
-      // change the definition hash and orphan every run created before it);
-      // the assembler derives it from `input`, which both paths carry.
-      creativeContext: String(definition.creativeContext || ""),
     });
     const stored = await store.putImmutableBytes({
       storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/panel-proof-master-${assembled.contentHash}.png`,

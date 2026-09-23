@@ -269,154 +269,68 @@ changes is what the receipts can SAY; whether the restyle persona is right for a
 given brief, and whether the real DESIGN ANCHOR improves the seven proofs, is
 the owner's eye on a fresh run.
 
-## 🔍 THE SOFT PANELS ARE ONE NUMBER: 5 PIXELS PER INCH. NO PROMPT CHANGE ADDS A PIXEL. (owner, Trish 2026-09-23)
+## 🚫 ZONE 1 IS CUT FROM THE TEMPLATE. A SECOND PRODUCER IS NEVER THE ANSWER. (owner, Trish 2026-09-23)
 
-Owner, on her own New Aura run: *"still not a high quality design my prompt was
-specific, it didn't follow direction ... the resolution will not work see each
-panel some look a diff sheen almost like real while others look like print
-files"*, against the Practical Magic wrap this system produced last November.
+Owner: *"we must use the code built template that's already zoned tricolor"*,
+then *"delete the bad one so we can't make this mistake ever."* Both were said
+after a per-panel "resolution pass" was built, deployed and rolled back inside
+one night. It is DELETED — module, locks, flag, deploy input, all of it — and
+`tests/zone1-comes-only-from-the-template.test.mjs` is what stops it returning.
 
-**Measured from the row (`848be1c6` / revision `a9d6dd85`), not argued:**
+**What it did, and why measuring well did not make it right.** Each Zone 1 panel
+was re-authored on its OWN BLANK CANVAS through `atlas-author` and pasted back
+into the sheet: 5.06 → 24.6 px/in, failing soft per surface. It was still wrong,
+because it made a SECOND PRODUCER of the panels the proof is supposed to be the
+only source of — no zone bands, no colour coding, no dimensioned cell, no
+template at all. The architecture rests on *the Production Panel Proof IS the
+source and every print file is cut from it*, and that sentence stops being true
+the moment a panel arrives from somewhere else.
 
-```
-sheet delivered      5056 x 3392
-Zone 1 band          25.8% of the height -> 875 px tall
-six panels ACROSS    5056 / 6            -> ~843 px per cell
-passenger, 166.8"    843 px              -> 5.05 PIXELS PER INCH
-150 PPI would need   25,020 px           -> 30x short
-```
+**CLAUDE.md already said so**, in the list of what Call 1 does not change: *"one
+image call, single turn, the code-drawn colour-coded template, the six-across
+sheet, the cutter, the gates."* It was read, quoted in the commit message, and
+violated in the same commit.
 
-Every complaint in that sentence follows from that one number, and they are not
-four problems:
+### THE RESOLUTION CEILING, MEASURED FROM THE TEMPLATE ITSELF
 
-- **the mush.** Topaz at 5 px/in is not sharpening, it is INVENTING.
-- **the mismatched sheen.** At 843 px the model composes each cell as its own
-  small picture, so the flanks got a photograph and the roof got an abstract.
-  They are not one design because they were never one canvas.
-- **the colours.** Five named colours need room to be placed as a SYSTEM; at
-  thumbnail scale the model averages them, which is the mauve that came back.
-- **"logo on back".** The rear is the smallest cell on the sheet.
+Run `layoutRow` over a real manifest before theorising. On a Prius, Zone 1 is a
+150px band with 1146px of usable width split six ways, so the driver cell is
+**272 × 107** and every surface lands within 0.04 of **5.06 px/in**. That number
+is DRAWN by `atlas-proof-container-template.cjs`, not emergent from "six panels
+share one image" — and the cause decides the fix.
 
-**ONE IMAGE CALL IS ONE IMAGE, AND SIX PANELS SHARE IT. More resolution requires
-more calls. That is arithmetic, and it is why the four prompt passes of the last
-two days moved none of it.** The brief is also ~245 of 4,887 prompt characters
-(~5%) — the dilution shape this file already records for WallPro — but a
-persona-diluted brief and a 5 px/in canvas are different defects and only the
-second one explains soft pixels.
+| layout | worst px/in | vs today | cost |
+|---|---|---|---|
+| 6 across, 150px band (today) | 5.04 | — | — |
+| 3 across × 2 rows | 8.78 | 1.7× | band needs 344px to keep aspect |
+| 2 across × 3 rows | 12.75 | 2.5× | band needs 545px |
+| 1 per row × 6 | 26.55 | 5.2× | band needs 1155px/row — 6,930px of vertical on a 1024 canvas |
 
-### THE RESOLUTION PASS — `runtime/atlas-panel-refine.cjs`, OFF BY DEFAULT
+**And there is a hard arithmetic ceiling.** The delivered sheet is ~5056px wide,
+so a panel occupying the ENTIRE width is 5056 ÷ 176.8 = **28.6 px/in**. Six
+panels sharing one sheet cannot each have that. Against Call 12's `(trim + 10") ×
+150` target, Topaz is doing 5×–30× on this architecture, always. **One sheet
+cannot carry six print-resolution panels — that is geometry, not tuning.**
 
-After the sheet is accepted — so the DESIGN is already decided and the gates
-have passed it — each Zone 1 cell is re-authored on its OWN ~4096 px canvas
-through `authorSurface`, shown its own cell from that sheet and continuing the
-same conversation. Measured on the live manifest: driver 5.91 → 24.56 px/in,
-every surface at least 3×, aspect drift < 0.002.
+So the only sanctioned resolution work is the TEMPLATE's own band geometry
+(~2× available, free, same single image call, same cutter, same gates). Do not
+propose a second producer again, however well it measures.
 
-- **It is a RESOLUTION pass, never a second creative authority (RULE 0.26).**
-  The sheet is the design and the sheet's own cell is the reference every panel
-  is drawn from. `brandedSource` therefore stays `sheet-drawn` — it answers WHO
-  DREW Zone 1, and the answer is unchanged. **Do not invent a third
-  `brandedSource` value:** `scripts/production-canary.mjs` refuses any name but
-  `sheet-drawn` and `composited`, so a new one fails every run the moment the
-  flag turns on.
-- **IT FAILS SOFT, PER SURFACE.** A refused panel keeps its original crop, so
-  the worst case it can produce is exactly the sheet the customer would have had
-  without it. That is RULE 0.15's cut-out ruling and the lesson of the
-  2026-09-17 cascade, where ONE refused surface threw away four good ones.
-- **`fit` IS RE-MEASURED on the refined pixels.** It came from the cell's
-  rectangle ON THE SHEET; carrying that number onto different bytes reports a
-  density nobody measured. `inkFraction` now takes an optional rectangle for
-  exactly this and is exported rather than re-typed (RULE 0.21).
-- **ORDER: the die-cut gate runs FIRST.** Refining before it would buy six
-  images for a sheet about to be refused AND defeat the gate, whose comparison
-  is branded-against-clean — re-authored bytes are no longer the cell the clean
-  twin is the twin of.
-- **THE TRANSPORT IS PASSED IN, NEVER BUILT.** `createAtlasAuthorTransport` is
-  constructed once by the caller (`flat-first-atlas.cjs` in process, the node
-  worker's own `callEdge` on the durable path) and handed down. The topology
-  module builds no door — asserted, comments stripped first so a doc comment
-  cannot satisfy the scan.
-- **BOTH PATHS ARE WIRED, and the durable one is the live one.** `CALL1_GRAPH=on`
-  in production, so `proof.assemble` is where this actually runs; wiring only
-  the in-process half would have shipped a module nothing calls.
-- **THE RELEASE MANIFEST CAUGHT WHAT THE LOGIC LOCKS COULD NOT.**
-  `source-tests/runtime/runtime-closure.test.mjs` failed with *"required but
-  never packaged: atlas-panel-refine.cjs"* — the droplet ships `ops/release-files.txt`,
-  not the repo, so a new runtime module absent from that list is a deploy that
-  crashes on require with every test green. **Add a new `runtime/*.cjs` to
-  `ops/release-files.txt` in the same commit.**
+### THE PROCESS FAILURE, RECORDED BECAUSE IT COST A PRODUCTION FLAG FLIP
 
-### THE CANVAS SIZE IS A PROPERTY OF THE ASK NOW, NOT OF THE ENDPOINT
+Three assertions were made that session and all three were wrong in the same
+direction — each picked the explanation that fitted the work already underway:
 
-`ATLAS_AUTHOR_IMAGE_SIZE` was hardcoded `"2K"`, so the panel was contain-fitted
-UP to the 4096 target rather than emitted at it — half the gain, and a receipt
-reporting the canvas alone would have claimed pixels that were interpolated.
+1. *"mode is null, the fix did not land"* — it had landed; a node-boundary
+   projection was eating it (section below).
+2. *"the flag is threaded"* — the comment beside it said so; it was written
+   nowhere, the third time that exact class shipped.
+3. *"5 px/in because six panels share one image"* — right number, invented
+   mechanism, and the invented mechanism chose the expensive fix.
 
-The default stays 2K (right for the hero cascade: one surface at 2K beats its
-share of a 4096² six-surface sheet, and it returns faster). The caller may now
-name `imageSize` on the body; the edge validates it against {1K, 2K, 4K} and
-falls back to 2K on anything else, and the vehicle-view stage is excluded
-because it is a photograph the flatten reads, not artwork. The refine asks 4K.
-It rides `modelRequest`, which `providerCacheMaterial` hashes, so a 4K ask can
-never read a 2K answer back out of the provider cache.
-
-**AND THE LOCK ENCODED THE HARDCODING — the tenth time this file has recorded
-that shape.** `tests/atlas-hero-driver-topology.test.mjs` asserted the literal
-`imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE }`, so the
-constant could not leave the call site without the suite going red. It is
-inverted, and what replaces it is stricter than the literal was: the default is
-still pinned to 2K, the value must be validated against a closed set, an
-unrecognised value must fall back rather than reach the provider, and the
-resolved size must reach `imageConfig`. **A lock on a literal pins today's
-value; a lock on the contract pins the property you actually care about.**
-
-**Two numbers on the receipt, and they are not the same claim:**
-`pxPerInchAfter` is the panel FILE's own resolution; `pxPerInchDelivered` is
-what the model actually emitted before `containExtend` fitted it. On a 166.8″
-flank: 5.0 px/in cut from the shared sheet, 12.3 re-authored at 2K, 24.6 at 4K.
-Report the delivered number when asked whether this pass bought real pixels.
-
-### AND THE FLAG WAS UNREACHABLE FROM A DEPLOY — THE THIRD TIME (caught pre-ship, 2026-09-23)
-
-`panelRefineEnabled()` reads `DESIGNPRO_ATLAS_PANEL_REFINE`, and
-`configure-env.sh` wrote that key **nowhere**. So the resolution fix would have
-deployed in a state where it could never run, on the one defect blocking the
-owner from shipping. That is exactly what this file records for
-`DESIGNPRO_ATLAS_FIELD_FIRST` (weeks) and `DESIGNPRO_ATLAS_HERO_FIRST` (repeated
-within hours of documenting the first), and the rule written then —
-***"Do not add an env-gated routing flag without adding it to that list"*** —
-was not followed by the session that wrote this one.
-
-It is now threaded exactly like `atlas_topology`: deploy input
-`atlas_panel_refine` (`unchanged` | `on` | `off`), sticky in `configure-env.sh`,
-an exact `{on,off}` vocabulary in `validate-env.py`, printed in the resolved-flag
-banner, and in `ci-dark-deploy.sh`'s reconfigure condition so a flip on the
-already-running release restarts rather than printing `ALREADY_COMPLETE`. Added
-to the CLASS list in `ops/tests/deploy-workflow.test.mjs`, which is what caught
-it — the list works, and it only works if the next flag is added to it.
-
-**THE SAME PASS CAUGHT A SECOND, DIFFERENT BUG.** The deploy-log banner had
-EIGHT flags and SEVEN `%s=%s` pairs. **A `printf` given more arguments than
-placeholders REUSES the format string**, so it would have emitted a second,
-malformed line — the same defect the element-graph flag produced on the
-2026-09-17 log. The parity assertion (`args.length * 2 === placeholders`) is
-what convicts it; containment alone passes. Do not weaken it to a
-`includes()` check.
-
-**COST, STATED SO IT IS A DECISION AND NOT A SURPRISE:** the pass turns ONE
-image request into SEVEN (driver alone, then five at concurrency 3), taking Call
-1 from ~85 s to roughly three minutes. The owner has ruled on latency before
-("it should never take 7 minutes", "under 45 seconds"), so this flag is never
-turned on as part of a routine deploy — it is her call each time, and flipping it
-back is one dispatch with no rebuild.
-
-**NOT PROVEN:** no live generation has run with the flag on. `DESIGNPRO_ATLAS_PANEL_REFINE=on`
-exists precisely so the same brief can be run both ways and the two exported
-sheets judged side by side, which is the owner's acceptance standard. Locked by
-`tests/atlas-panel-refine.test.mjs` (the arithmetic, on the live manifest) and
-`tests/atlas-panel-refine-wiring.test.mjs` (the wiring, asserted on the master's
-PIXELS rather than its receipt; verified to fail against the pre-fix tree on
-both the topology half and the graph half).
+In each case the real cause was one file away and unread. **Read the file that
+owns the number before proposing what to do about it**, and when a rule in this
+document names something as unchanged, treat measuring well as irrelevant.
 
 ## 🔪 EVERY INSTRUMENT SAW THE DIE-CUT HOOD AND NONE OF THEM COULD STOP IT (live 848be1c6, 2026-09-23)
 

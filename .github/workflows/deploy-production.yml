@@ -104,20 +104,6 @@ on:
           - unchanged
           - "on"
           - "off"
-      atlas_panel_refine:
-        description: >-
-          Per-panel resolution pass. "on" re-authors each print panel on its own
-          full canvas after the sheet is accepted (a 166" flank goes from ~5 to
-          ~25 pixels per inch) at the cost of six extra image requests per
-          generation. "unchanged" keeps whatever the droplet is already running.
-          Only the exact string "on" enables it; anything else fails safe to off.
-        required: false
-        type: choice
-        default: unchanged
-        options:
-          - unchanged
-          - "on"
-          - "off"
       atlas_panel_finish:
         description: >-
           Per-surface A.T.L.A.S. panel finishing. "unchanged" keeps whatever the
@@ -628,14 +614,6 @@ jobs:
           # 05:52Z, whose log prints `ATLAS_FIELD_FIRST: unchanged`), and it
           # applied to all four flags at once.
           ATLAS_PANEL_FINISH: ${{ inputs.atlas_panel_finish != 'unchanged' && inputs.atlas_panel_finish || '' }}
-          # ⛔ `!= 'unchanged' && <value> || ''` — NEVER `== 'unchanged' && '' || <value>`.
-          # An empty string is FALSY in an Actions expression and both operators
-          # return an OPERAND, so the inverted form exports the literal word
-          # `unchanged`, which the writer reads as a real instruction and
-          # resolves to the DEFAULT. That silently reset all four routing flags
-          # on 2026-09-16 and is invisible, because a reset flag looks exactly
-          # like a flag nobody set.
-          ATLAS_PANEL_REFINE: ${{ inputs.atlas_panel_refine != 'unchanged' && inputs.atlas_panel_refine || '' }}
           ATLAS_TOPOLOGY: ${{ inputs.atlas_topology != 'unchanged' && inputs.atlas_topology || '' }}
           ATLAS_FIELD_FIRST: ${{ inputs.atlas_field_first != 'unchanged' && inputs.atlas_field_first || '' }}
           ATLAS_HERO_FIRST: ${{ inputs.atlas_hero_first != 'unchanged' && inputs.atlas_hero_first || '' }}
@@ -659,7 +637,7 @@ jobs:
             "$STRIPE_SECRET_KEY" \
             "$STRIPE_WEBHOOK_SECRET" | \
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_PANEL_REFINE='$ATLAS_PANEL_REFINE' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' ATLAS_ELEMENT_GRAPH='$ATLAS_ELEMENT_GRAPH' ATLAS_PANEL_PROOF='$ATLAS_PANEL_PROOF' '$remote_stage/control/ops/ci-dark-deploy.sh'"
+            "EXACT_SHA='$EXACT_SHA' ARCHIVE_DIGEST='$ARCHIVE_DIGEST' REMOTE_STAGE='$remote_stage' ATLAS_PANEL_FINISH='$ATLAS_PANEL_FINISH' ATLAS_TOPOLOGY='$ATLAS_TOPOLOGY' ATLAS_CALL1_GRAPH='$ATLAS_CALL1_GRAPH' ATLAS_FIELD_FIRST='$ATLAS_FIELD_FIRST' ATLAS_HERO_FIRST='$ATLAS_HERO_FIRST' ATLAS_ELEMENT_GRAPH='$ATLAS_ELEMENT_GRAPH' ATLAS_PANEL_PROOF='$ATLAS_PANEL_PROOF' '$remote_stage/control/ops/ci-dark-deploy.sh'"
 
       # An explicit merge marker scopes this read-only incident check to the
       # owner's reported request. It uses the runtime's existing credentials in
