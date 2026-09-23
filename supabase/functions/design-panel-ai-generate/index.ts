@@ -2670,8 +2670,21 @@ Output a single structured paragraph that another AI could use to recreate this 
 // The aspect ratio IS requested here (the closest menu ratio to the GENIE
 // rectangle) because there is no input image for the model to follow; the
 // runtime still resizes the return to the exact zone and refuses drift.
-// 2K, not 4K: one surface at 2K carries more pixels on its long edge than the
-// same surface's share of a 4096² six-surface sheet, and returns faster.
+// 2K IS THE DEFAULT, AND THE CALLER MAY ASK FOR 4K (`imageSize` on the body).
+//
+// The original reasoning stands for the hero cascade: one surface at 2K carries
+// more pixels on its long edge than the same surface's share of a 4096²
+// six-surface sheet, and it returns faster. It is the WRONG default for the
+// resolution pass, which exists only to move pixels-per-inch. Measured on the
+// live New Aura manifest, a 166.8" passenger flank:
+//
+//   cut from the shared proof sheet   ~843 px  ->   5.0 px/in
+//   re-authored at 2K                ~2048 px  ->  12.3 px/in
+//   re-authored at 4K                ~4096 px  ->  24.6 px/in
+//
+// So the SIZE is a property of the ask, not of the endpoint. An unrecognised
+// or absent value is 2K, which is the state that cannot surprise a caller that
+// has not been changed.
 const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-view-flatten";
 // Mirrors the runtime's HERO_VIEW_SURFACES (atlas-hero-driver.cjs). Add a
 // surface here only on the same evidentiary bar it was added there: a real,
@@ -2679,6 +2692,11 @@ const ATLAS_AUTHOR_PROMPT_VERSION = "atlas-author-hero-first.20260917.v5-front-v
 const ATLAS_HERO_VIEW_ELIGIBLE_SURFACES = new Set(["driver", "front"]);
 const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image";
 const ATLAS_AUTHOR_IMAGE_SIZE = "2K";
+const ATLAS_AUTHOR_IMAGE_SIZES = new Set(["1K", "2K", "4K"]);
+function atlasAuthorImageSize(requested: unknown): string {
+  const want = String(requested || "").trim().toUpperCase();
+  return ATLAS_AUTHOR_IMAGE_SIZES.has(want) ? want : ATLAS_AUTHOR_IMAGE_SIZE;
+}
 const ATLAS_AUTHOR_MAX_NEIGHBOURS = 5;
 const ATLAS_AUTHOR_MAX_PRIOR_TURNS = 10;
 const ATLAS_AUTHOR_ASPECTS: Array<[string, number]> = [
@@ -3004,6 +3022,9 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     // ask for the surface's own nearest supported aspect, as before.
     const heroView = first && !heroFlatten;
     const aspectRatio = heroView ? "16:9" : atlasAuthorAspect(targetWidthPx, targetHeightPx);
+    // The vehicle view is a photograph the flatten reads; its size is the
+    // endpoint's default. Every other ask may name its own.
+    const imageSize = heroView ? ATLAS_AUTHOR_IMAGE_SIZE : atlasAuthorImageSize(body.imageSize);
     const t0 = Date.now();
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const modelRequest = JSON.stringify({
@@ -3011,7 +3032,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
       generationConfig: {
         temperature: 1.0,
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE },
+        imageConfig: { aspectRatio, imageSize },
       },
     });
     const modelRequestByteSize = new TextEncoder().encode(modelRequest).byteLength;
@@ -3037,7 +3058,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
     });
     requestId = cached.requestId;
     imageRequestCount = 1;
-    console.log(`atlas-author ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts, ${priorTurns.length} prior turns, ${aspectRatio} ${ATLAS_AUTHOR_IMAGE_SIZE})`);
+    console.log(`atlas-author ${requestId}: ${surfaceKey} responded in ${Date.now() - t0}ms (${parts.length} parts, ${priorTurns.length} prior turns, ${aspectRatio} ${imageSize})`);
     const payload = cached.payload;
     const { candidateParts, imagePart, textOut } = selectFinalGenerateContentImage(payload, "atlas_author");
     const { bytes: panelBytes, mimeType: panelContentType, extension } = decodeGenerateContentImage(imagePart.inlineData, "atlas_author");
@@ -3091,7 +3112,7 @@ async function handleAtlasAuthor(body: Record<string, unknown>, ownerId: string)
         modelRequestByteSize,
         modelInputImageCount: totalInputImageCount,
         aspectRatio,
-        imageSize: ATLAS_AUTHOR_IMAGE_SIZE,
+        imageSize,
         neighbourCount: neighboursIn.length,
         neighbourHashes,
         priorTurnsApplied: priorTurns.length,

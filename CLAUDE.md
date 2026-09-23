@@ -202,6 +202,222 @@ gains nothing from a name it has never seen. The OBJECT is what had to be right.
 against the constant** (section below). Under the old hand-copied literals it
 would have taken Call 1 down a second time.
 
+## 🧾 THE DESIGN ENGINE RAN AND COULD NOT SAY SO: A HAND-WRITTEN PROJECTION ATE FOUR RECEIPTS (owner, Trish 2026-09-23: "I need these design edge functions it's my design engine")
+
+Two of the five design-engine fixes of 2026-09-22 read as NOT LANDED on the
+owner's own live run, and **the edge, the transport and the assembler were all
+correct**. Measured on generation `848be1c6`:
+
+| field | projected by `proof.sheet`? | value on the revision |
+|---|---|---|
+| `intake.briefSource` | yes | **`"raw"`** — real |
+| `promptChars` | yes | **4887** — real |
+| **`mode`** | **no** | **null** |
+| **`designAnchor`** | **no** | **null** |
+| **`artboardQualityExamplesApplied`** | **no** | **0** |
+| **`promptVersion`** | **no** | **null** |
+
+**The split is exactly the projection list.** `proof.sheet` and `proof.assemble`
+are two node rows, claimable by two different worker processes, so the only
+thing the assembler sees of the sheet is what the sheet node puts in its
+output — and that was a hand-written inline object carrying 11 of the 16 fields
+the assembler reads. Production runs `CALL1_GRAPH=on`, so this was EVERY
+customer run; the in-process path (the fallback) was always correct, which is
+why no fixture caught it.
+
+**What was lost is not a pixel, and that is what makes it expensive.** `mode` is
+WHICH DESIGNER PERSONA RAN — the whole point of the 2026-09-22 fix that stopped
+`mode: "commercial"` being a hardcoded literal. `designAnchor` is the designer's
+own description of the design it just drew, which Call 2's photographer is
+handed as `designAnchorText` so all seven views photograph ONE design; absent,
+it falls back to a generic pointer at the attached panel. So the design engine
+went on designing correctly while being unable to report what it did — and two
+sessions in a row (this one included) read the null receipts, recorded "not
+fixed", and moved on. **A receipt that cannot report a fix is how a shipped fix
+becomes an unshipped one.**
+
+**THE REMEDY IS THE SHAPE, NOT THE FOUR NAMES.** `sheetOutputFields(sheet)` is
+now a named exported function, and
+`tests/atlas-panel-proof-sheet-crosses-the-node.test.mjs` RECONCILES it: every
+`sheet.<field>` the assembler reads must be projected, with three documented
+exceptions (`bytes`, `width`, `height` — RULE 0.39 keeps pixels off the boundary
+and the cut owns the decoded size) and one explicit rename (`contract` →
+`proofContract`, re-mapped by the assemble node). Add a field to the transport
+and consume it in the assembler, and the build fails naming it. Verified against
+the pre-fix tree, its failure message reads:
+
+```
+the assembler reads these sheet fields and the sheet node does not project
+them, so they are null on every graph run: artboardQualityExamplesApplied,
+mode, designAnchor
+```
+
+**An inline object literal cannot be compared to anything.** That is the whole
+reason four fields went missing with every test green, and it is the same class
+as the transport that was not forwarded through this same node an hour earlier.
+**Whenever a value crosses a node boundary through a hand-written list, make the
+list a function and reconcile it against its consumer.**
+
+`promptVersion` was a second, smaller case of the same dishonesty: the edge
+names its CONTRACT and emits no separate prompt version, so
+`promptVersion: sheet.promptVersion || null` wrote null on every run while
+`masterProvenance` two hundred lines above already fell back to `sheet.contract`
+for the identical value. Both now fall back, so the two paths agree.
+
+**NOT PROVEN:** no live generation has run with the projection repaired. What it
+changes is what the receipts can SAY; whether the restyle persona is right for a
+given brief, and whether the real DESIGN ANCHOR improves the seven proofs, is
+the owner's eye on a fresh run.
+
+## 🔍 THE SOFT PANELS ARE ONE NUMBER: 5 PIXELS PER INCH. NO PROMPT CHANGE ADDS A PIXEL. (owner, Trish 2026-09-23)
+
+Owner, on her own New Aura run: *"still not a high quality design my prompt was
+specific, it didn't follow direction ... the resolution will not work see each
+panel some look a diff sheen almost like real while others look like print
+files"*, against the Practical Magic wrap this system produced last November.
+
+**Measured from the row (`848be1c6` / revision `a9d6dd85`), not argued:**
+
+```
+sheet delivered      5056 x 3392
+Zone 1 band          25.8% of the height -> 875 px tall
+six panels ACROSS    5056 / 6            -> ~843 px per cell
+passenger, 166.8"    843 px              -> 5.05 PIXELS PER INCH
+150 PPI would need   25,020 px           -> 30x short
+```
+
+Every complaint in that sentence follows from that one number, and they are not
+four problems:
+
+- **the mush.** Topaz at 5 px/in is not sharpening, it is INVENTING.
+- **the mismatched sheen.** At 843 px the model composes each cell as its own
+  small picture, so the flanks got a photograph and the roof got an abstract.
+  They are not one design because they were never one canvas.
+- **the colours.** Five named colours need room to be placed as a SYSTEM; at
+  thumbnail scale the model averages them, which is the mauve that came back.
+- **"logo on back".** The rear is the smallest cell on the sheet.
+
+**ONE IMAGE CALL IS ONE IMAGE, AND SIX PANELS SHARE IT. More resolution requires
+more calls. That is arithmetic, and it is why the four prompt passes of the last
+two days moved none of it.** The brief is also ~245 of 4,887 prompt characters
+(~5%) — the dilution shape this file already records for WallPro — but a
+persona-diluted brief and a 5 px/in canvas are different defects and only the
+second one explains soft pixels.
+
+### THE RESOLUTION PASS — `runtime/atlas-panel-refine.cjs`, OFF BY DEFAULT
+
+After the sheet is accepted — so the DESIGN is already decided and the gates
+have passed it — each Zone 1 cell is re-authored on its OWN ~4096 px canvas
+through `authorSurface`, shown its own cell from that sheet and continuing the
+same conversation. Measured on the live manifest: driver 5.91 → 24.56 px/in,
+every surface at least 3×, aspect drift < 0.002.
+
+- **It is a RESOLUTION pass, never a second creative authority (RULE 0.26).**
+  The sheet is the design and the sheet's own cell is the reference every panel
+  is drawn from. `brandedSource` therefore stays `sheet-drawn` — it answers WHO
+  DREW Zone 1, and the answer is unchanged. **Do not invent a third
+  `brandedSource` value:** `scripts/production-canary.mjs` refuses any name but
+  `sheet-drawn` and `composited`, so a new one fails every run the moment the
+  flag turns on.
+- **IT FAILS SOFT, PER SURFACE.** A refused panel keeps its original crop, so
+  the worst case it can produce is exactly the sheet the customer would have had
+  without it. That is RULE 0.15's cut-out ruling and the lesson of the
+  2026-09-17 cascade, where ONE refused surface threw away four good ones.
+- **`fit` IS RE-MEASURED on the refined pixels.** It came from the cell's
+  rectangle ON THE SHEET; carrying that number onto different bytes reports a
+  density nobody measured. `inkFraction` now takes an optional rectangle for
+  exactly this and is exported rather than re-typed (RULE 0.21).
+- **ORDER: the die-cut gate runs FIRST.** Refining before it would buy six
+  images for a sheet about to be refused AND defeat the gate, whose comparison
+  is branded-against-clean — re-authored bytes are no longer the cell the clean
+  twin is the twin of.
+- **THE TRANSPORT IS PASSED IN, NEVER BUILT.** `createAtlasAuthorTransport` is
+  constructed once by the caller (`flat-first-atlas.cjs` in process, the node
+  worker's own `callEdge` on the durable path) and handed down. The topology
+  module builds no door — asserted, comments stripped first so a doc comment
+  cannot satisfy the scan.
+- **BOTH PATHS ARE WIRED, and the durable one is the live one.** `CALL1_GRAPH=on`
+  in production, so `proof.assemble` is where this actually runs; wiring only
+  the in-process half would have shipped a module nothing calls.
+- **THE RELEASE MANIFEST CAUGHT WHAT THE LOGIC LOCKS COULD NOT.**
+  `source-tests/runtime/runtime-closure.test.mjs` failed with *"required but
+  never packaged: atlas-panel-refine.cjs"* — the droplet ships `ops/release-files.txt`,
+  not the repo, so a new runtime module absent from that list is a deploy that
+  crashes on require with every test green. **Add a new `runtime/*.cjs` to
+  `ops/release-files.txt` in the same commit.**
+
+### THE CANVAS SIZE IS A PROPERTY OF THE ASK NOW, NOT OF THE ENDPOINT
+
+`ATLAS_AUTHOR_IMAGE_SIZE` was hardcoded `"2K"`, so the panel was contain-fitted
+UP to the 4096 target rather than emitted at it — half the gain, and a receipt
+reporting the canvas alone would have claimed pixels that were interpolated.
+
+The default stays 2K (right for the hero cascade: one surface at 2K beats its
+share of a 4096² six-surface sheet, and it returns faster). The caller may now
+name `imageSize` on the body; the edge validates it against {1K, 2K, 4K} and
+falls back to 2K on anything else, and the vehicle-view stage is excluded
+because it is a photograph the flatten reads, not artwork. The refine asks 4K.
+It rides `modelRequest`, which `providerCacheMaterial` hashes, so a 4K ask can
+never read a 2K answer back out of the provider cache.
+
+**AND THE LOCK ENCODED THE HARDCODING — the tenth time this file has recorded
+that shape.** `tests/atlas-hero-driver-topology.test.mjs` asserted the literal
+`imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE }`, so the
+constant could not leave the call site without the suite going red. It is
+inverted, and what replaces it is stricter than the literal was: the default is
+still pinned to 2K, the value must be validated against a closed set, an
+unrecognised value must fall back rather than reach the provider, and the
+resolved size must reach `imageConfig`. **A lock on a literal pins today's
+value; a lock on the contract pins the property you actually care about.**
+
+**Two numbers on the receipt, and they are not the same claim:**
+`pxPerInchAfter` is the panel FILE's own resolution; `pxPerInchDelivered` is
+what the model actually emitted before `containExtend` fitted it. On a 166.8″
+flank: 5.0 px/in cut from the shared sheet, 12.3 re-authored at 2K, 24.6 at 4K.
+Report the delivered number when asked whether this pass bought real pixels.
+
+### AND THE FLAG WAS UNREACHABLE FROM A DEPLOY — THE THIRD TIME (caught pre-ship, 2026-09-23)
+
+`panelRefineEnabled()` reads `DESIGNPRO_ATLAS_PANEL_REFINE`, and
+`configure-env.sh` wrote that key **nowhere**. So the resolution fix would have
+deployed in a state where it could never run, on the one defect blocking the
+owner from shipping. That is exactly what this file records for
+`DESIGNPRO_ATLAS_FIELD_FIRST` (weeks) and `DESIGNPRO_ATLAS_HERO_FIRST` (repeated
+within hours of documenting the first), and the rule written then —
+***"Do not add an env-gated routing flag without adding it to that list"*** —
+was not followed by the session that wrote this one.
+
+It is now threaded exactly like `atlas_topology`: deploy input
+`atlas_panel_refine` (`unchanged` | `on` | `off`), sticky in `configure-env.sh`,
+an exact `{on,off}` vocabulary in `validate-env.py`, printed in the resolved-flag
+banner, and in `ci-dark-deploy.sh`'s reconfigure condition so a flip on the
+already-running release restarts rather than printing `ALREADY_COMPLETE`. Added
+to the CLASS list in `ops/tests/deploy-workflow.test.mjs`, which is what caught
+it — the list works, and it only works if the next flag is added to it.
+
+**THE SAME PASS CAUGHT A SECOND, DIFFERENT BUG.** The deploy-log banner had
+EIGHT flags and SEVEN `%s=%s` pairs. **A `printf` given more arguments than
+placeholders REUSES the format string**, so it would have emitted a second,
+malformed line — the same defect the element-graph flag produced on the
+2026-09-17 log. The parity assertion (`args.length * 2 === placeholders`) is
+what convicts it; containment alone passes. Do not weaken it to a
+`includes()` check.
+
+**COST, STATED SO IT IS A DECISION AND NOT A SURPRISE:** the pass turns ONE
+image request into SEVEN (driver alone, then five at concurrency 3), taking Call
+1 from ~85 s to roughly three minutes. The owner has ruled on latency before
+("it should never take 7 minutes", "under 45 seconds"), so this flag is never
+turned on as part of a routine deploy — it is her call each time, and flipping it
+back is one dispatch with no rebuild.
+
+**NOT PROVEN:** no live generation has run with the flag on. `DESIGNPRO_ATLAS_PANEL_REFINE=on`
+exists precisely so the same brief can be run both ways and the two exported
+sheets judged side by side, which is the owner's acceptance standard. Locked by
+`tests/atlas-panel-refine.test.mjs` (the arithmetic, on the live manifest) and
+`tests/atlas-panel-refine-wiring.test.mjs` (the wiring, asserted on the master's
+PIXELS rather than its receipt; verified to fail against the pre-fix tree on
+both the topology half and the graph half).
+
 ## 🔪 EVERY INSTRUMENT SAW THE DIE-CUT HOOD AND NONE OF THEM COULD STOP IT (live 848be1c6, 2026-09-23)
 
 Owner, on the PanelPro board: *"see hood also fail cut to share of hood that's

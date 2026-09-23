@@ -97,6 +97,57 @@ const COMPOSITE_NODE = "master.composite";
 // They do not shorten Call 1 -- the critical path is still one image call.
 const PROOF_SHEET_NODE = "proof.sheet";
 const PROOF_ASSEMBLE_NODE = "proof.assemble";
+
+/**
+ * EVERYTHING THE SHEET CARRIES ACROSS THE NODE BOUNDARY — EXCEPT ITS PIXELS.
+ *
+ * `proof.sheet` and `proof.assemble` are two node rows, possibly claimed by two
+ * different worker processes, so the only thing the assembler can see of the
+ * sheet is what this function projects. RULE 0.39 keeps the BYTES out (they are
+ * re-read from storage and hash-verified there); everything else the assembler
+ * reads must be in here or it silently becomes `null` on every graph run.
+ *
+ * Measured on the owner's own live run `848be1c6`: `intake` and `promptChars`
+ * were projected and carried real values; `mode`, `designAnchor` and the
+ * artboard quality examples were not, and read null / 0 on the revision — so
+ * the design engine's own receipts said two fixes had not landed when the edge,
+ * the transport and the assembler were all doing their jobs correctly.
+ *
+ * ⛔ IT IS A FUNCTION, NOT AN INLINE OBJECT, SO A TEST CAN RECONCILE IT against
+ * every `sheet.<field>` the assembler reads. An inline literal cannot be
+ * compared to anything, which is how five fields went missing unnoticed.
+ */
+function sheetOutputFields(sheet) {
+  return {
+    storagePath: sheet.storagePath,
+    contentHash: sheet.contentHash,
+    byteSize: Number(sheet.byteSize || sheet.bytes?.length || 0),
+    model: sheet.model || null,
+    // The assembler reads `sheet.contract`; the wire name says which contract.
+    proofContract: sheet.contract || null,
+    promptChars: Number(sheet.promptChars || 0),
+    sheetShape: sheet.sheetShape || null,
+    generatedElements: sheet.generatedElements || [],
+    imageRequestCount: Number(sheet.imageRequestCount || 1),
+    intake: sheet.intake || null,
+    containerSource: sheet.containerSource || null,
+    // WHICH DESIGNER PERSONA RAN — commercial or restyle. Without it no run can
+    // answer "did A.C.E. design this in the customer's own mode", which is the
+    // first question asked of the design engine.
+    mode: sheet.mode || null,
+    // THE DESIGNER'S OWN WORDS ABOUT THE DESIGN IT DREW. Call 2's photographer
+    // is handed this as `designAnchorText` so all seven views photograph ONE
+    // design; absent, it falls back to a generic pointer at the panel.
+    designAnchor: sheet.designAnchor || null,
+    // WHAT THE DESIGNER WAS SHOWN AS A QUALITY STANDARD.
+    artboardQualityExamplesApplied: Number(sheet.artboardQualityExamplesApplied || 0),
+    artboardQualityExampleIdentities: Array.isArray(sheet.artboardQualityExampleIdentities)
+      ? sheet.artboardQualityExampleIdentities : [],
+    // The edge names its contract and nothing else, so this is the contract on
+    // both paths rather than a `null` the in-process run would not produce.
+    promptVersion: sheet.promptVersion || sheet.contract || null,
+  };
+}
 const NODE_LEASE_SECONDS = 600;
 const HEARTBEAT_MS = 30_000;
 const POLL_MS = 2_000;
@@ -498,15 +549,28 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
     logger(`atlas call 1 graph ${run.id}: ${PROOF_SHEET_NODE} ${sheet.contentHash.slice(0, 12)} (${sheet.byteSize || sheet.bytes?.length} B)`);
     // THE OUTPUT CARRIES NO PIXELS. An identity plus the paperwork the assemble
     // half needs; the bytes are re-read from storage and hash-verified there.
+    //
+    // ⛔ THIS LIST IS A HAND-WRITTEN ALLOWLIST, AND A FIELD LEFT OFF IT DIES
+    // SILENTLY ON THE NODE BOUNDARY. Measured on the owner's own live run
+    // `848be1c6` (2026-09-23), where the split is exact:
+    //
+    //   IN the list   -> intake.briefSource "raw", promptChars 4887   (real)
+    //   OFF the list  -> mode null, designAnchor null, quality examples 0
+    //
+    // `mode` is WHICH DESIGNER PERSONA RAN and `designAnchor` is the designer's
+    // own description of the design it just drew, which Call 2's photographer
+    // is handed so all seven views photograph ONE design. Both were emitted by
+    // the edge, parsed by the transport and written by the assembler — and
+    // dropped here, in between, so two of the owner's five design-engine fixes
+    // read as "not fixed" on every graph-executed run. Production runs the
+    // graph (`CALL1_GRAPH=on`), so that is every customer run.
+    //
+    // `sheetOutputFields` is the reconcile: every `sheet.<field>` the assembler
+    // reads must appear there, asserted by
+    // `tests/atlas-panel-proof-sheet-crosses-the-node.test.mjs`. Add a field to
+    // the transport and the build fails until it crosses here too.
     return { state: "completed", output: { contract: GRAPH_CONTRACT, stage: "proof-sheet",
-      sheet: {
-        storagePath: sheet.storagePath, contentHash: sheet.contentHash,
-        byteSize: Number(sheet.byteSize || sheet.bytes?.length || 0),
-        model: sheet.model || null, proofContract: sheet.contract || null,
-        promptChars: Number(sheet.promptChars || 0), sheetShape: sheet.sheetShape || null,
-        generatedElements: sheet.generatedElements || [], imageRequestCount: Number(sheet.imageRequestCount || 1),
-        intake: sheet.intake || null, containerSource: sheet.containerSource || null,
-      },
+      sheet: sheetOutputFields(sheet),
       panelRows, customerAssets,
       retryable: false, leaseOwner: node.lease_owner, attempt: node.attempt, durationMs: Date.now() - startedAt } };
   }
@@ -543,6 +607,21 @@ async function executeNode({ claim, supabase, store, callEdge, callProofEdge, ca
       // The sheet node's own timing travels forward, so the receipt keeps ONE
       // shape whether Call 1 ran as a graph or in process.
       stageTimings: [{ stage: PROOF_SHEET_NODE, ms: Number(sheetOutput.durationMs || 0) }],
+      // THE atlas-author TRANSPORT — the SAME `callEdge` the surface nodes use,
+      // owner-bound per call exactly as they bind it. It reaches the resolution
+      // pass that re-authors each Zone 1 panel on its own canvas; with
+      // DESIGNPRO_ATLAS_PANEL_REFINE unset it is never called, and this node is
+      // byte-identical to before. It is passed rather than constructed here for
+      // the reason RULE 0.26 gives: one Call-1 door, built once by the caller.
+      callAuthorEdge: typeof callEdge === "function"
+        ? (body, meta) => callEdge(body, { ...(meta || {}), ownerId: run.owner_id })
+        : null,
+      ownerId: run.owner_id,
+      providerRequest: definition.providerRequest ? { ...definition.providerRequest, claimToken } : {},
+      // Absent on the panel-proof definition on purpose (a new field would
+      // change the definition hash and orphan every run created before it);
+      // the assembler derives it from `input`, which both paths carry.
+      creativeContext: String(definition.creativeContext || ""),
     });
     const stored = await store.putImmutableBytes({
       storagePath: `${SURFACE_STORAGE_PREFIX}/${run.id}/panel-proof-master-${assembled.contentHash}.png`,
@@ -1421,5 +1500,5 @@ module.exports = {
   GRAPH_CONTRACT, MASTER_NODE, DRIVER_VIEW_NODE, viewNode, TYPESET_NODE, CONTACT_NODE, LOGO_NODE, LOCKUP_NODE, COMPOSITE_NODE, NODE_LEASE_SECONDS, DEFAULT_CONCURRENCY,
   PROOF_SHEET_NODE, PROOF_ASSEMBLE_NODE,
   AtlasCall1GraphError, graphEnabled, elementGraphEnabled, contactLinesFrom, validateGraph, compileHeroDriverGraph, compileElementGraph, compilePanelProofGraph, elementNodes, readyNodes, hashJson, panelProofExecutionDefinition,
-  createAtlasCall1NodeWorker, executeNode, failurePayload,
+  createAtlasCall1NodeWorker, executeNode, failurePayload, sheetOutputFields,
 };

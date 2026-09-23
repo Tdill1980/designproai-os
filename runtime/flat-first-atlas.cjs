@@ -4357,6 +4357,15 @@ async function generateOrReuseFlatAtlasResolved(options) {
         // resumes V1's run and candidate 2 never reads candidate 1's sheet.
         revision: panelProofRevision, candidate: attempt,
         logger,
+        // THE atlas-author TRANSPORT, FOR THE RESOLUTION PASS.
+        //
+        // The same door the hero cascade and the element graph use, built ONCE
+        // here and handed down (RULE 0.26: one Call-1 network endpoint, and the
+        // topology module may not build its own). It is only ever called when
+        // DESIGNPRO_ATLAS_PANEL_REFINE=on; unset, this argument is carried and
+        // never invoked, so the pass is byte-identical to before.
+        callAuthorEdge: createAtlasAuthorTransport({ supabase, callAuthorEdge, ownerId }),
+        creativeContext: [String(input?.companyName || "").trim(), String(input?.industryType || "").trim(), String(input?.brandColors || "").trim()].filter(Boolean).join(" · ").slice(0, 600),
       };
       const onProofSheetReady = typeof options.onProofSheetReady === "function"
         ? (payload) => options.onProofSheetReady({ ...payload, revisionId: mintedRevisionId })

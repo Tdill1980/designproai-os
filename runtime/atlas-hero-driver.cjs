@@ -571,6 +571,17 @@ async function authorHeroVehicleView({
 async function authorSurface({
   surfaceKey, zone, first, neighbours, priorExchanges, heroRequest, creativeContext,
   store, callEdge, providerRequest, logger = () => {}, heroView = null,
+  /**
+   * THE DELIVERED CANVAS SIZE, when the caller has a reason to name it.
+   *
+   * Omitted — every existing caller — the edge applies its own 2K default and
+   * the request is byte-identical to before. The resolution pass names "4K"
+   * because delivered pixels are the only thing it exists to move: a 166.8"
+   * flank is 12.3 px/in at 2K and 24.6 at 4K, against 5.0 cut from the shared
+   * sheet. The edge validates the value and falls back to 2K on anything it
+   * does not recognise.
+   */
+  imageSize = null,
 }) {
   const { pixelWidth, pixelHeight } = zonePixelSize(zone);
   const staged = await Promise.all(neighbours.map(async (n) => ({
@@ -621,6 +632,7 @@ async function authorSurface({
           heroViewContentHash: heroView.contentHash,
           heroFlattenTier: attempt - 1,
         } : {}),
+        ...(imageSize ? { imageSize } : {}),
         ...(providerRequest ? { providerRequest: { ...providerRequest, attemptKey: `author:${surfaceKey}:${attempt}` } } : {}),
       }, { attempt });
       imageRequestCount += Number(candidate?.imageRequestCount || 0);

@@ -126,13 +126,18 @@ test("the derived receipt carries the four fields the logo-placement handoff req
   const p = result.provenance;
   assert.deepEqual(Object.keys(p.threeZoneLayout).sort(),
     ["backgrounds", "branded", "brandedSource", "dieCut", "graphics", "graphicsFormat",
-      "productionApproved", "required"]);
+      "panelRefine", "productionApproved", "required"]);
   // `dieCut` is the outer-die-cut gate's measurements, and it is NULL here on
   // purpose: the derived path composites Zone 1 from the clean panels, which
   // carry a hardcoded `fit: 1`, so a branded-against-clean comparison would
   // convict every legacy revision. The key is present either way so a reader
   // can tell "measured and clean" from "not applicable to this path".
   assert.equal(p.threeZoneLayout.dieCut, null);
+  // `panelRefine` is null here for the same reason and one more: the resolution
+  // pass re-authors the SHEET'S OWN Zone 1 cells, and this path has no sheet.
+  // Null is "not applicable", and it is also what every run reads with
+  // DESIGNPRO_ATLAS_PANEL_REFINE unset -- which is the default.
+  assert.equal(p.threeZoneLayout.panelRefine, null);
   // THE DERIVED PATH IS THE ONE THAT STILL COMPOSITES, AND IT SAYS SO. A legacy
   // six-surface or field revision has no authored three-zone sheet to publish,
   // so code builds its Zone 1 from the clean panels plus a typeset lockup.

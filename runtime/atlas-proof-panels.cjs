@@ -64,9 +64,14 @@ function scaleCell(cell, layout, sheet) {
  * pixels that are not the page — because anything cleverer would be a second
  * definition of "artwork" competing with the gates that already own it.
  */
-async function inkFraction(sharp, bytes, rect) {
-  const { data, info } = await sharp(bytes)
-    .extract(rect)
+async function inkFraction(sharp, bytes, rect = null) {
+  // `rect` is the cell's rectangle ON THE SHEET. Omitted, the bytes ARE the
+  // panel -- which is the case once a panel has been re-authored on its own
+  // canvas. Measuring the refined panel with a sheet rectangle would extract a
+  // corner of it and call that the paint density of the whole thing.
+  const pipeline = sharp(bytes);
+  if (rect) pipeline.extract(rect);
+  const { data, info } = await pipeline
     .resize({ width: 64, height: 64, fit: "fill" })
     .removeAlpha()
     .raw()
@@ -170,4 +175,4 @@ async function cutProofPanels({
   return { contract: PANELS_CONTRACT, sheet, panels, refused: null };
 }
 
-module.exports = { PANELS_CONTRACT, QUADRANTS, cutProofPanels, scaleCell };
+module.exports = { PANELS_CONTRACT, QUADRANTS, cutProofPanels, scaleCell, inkFraction };

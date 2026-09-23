@@ -261,3 +261,68 @@ conversation — RULE 0.35's cascade, currently off behind the aspect gate — a
 it is a build, not a prompt edit. Timings on this run: `totalMs` 84,083 of which
 `panelProofMs` 61,650 (73%) is the single image call; `geniePrepHit: true`,
 `genieMs: 74`.
+
+### The resolution pass — BUILT AND WIRED, off by default (2026-09-23)
+
+The paragraph above ends *"the fix is per-panel authoring ... and it is a build,
+not a prompt edit."* That build exists now: `runtime/atlas-panel-refine.cjs`,
+reached from both Call-1 paths behind `DESIGNPRO_ATLAS_PANEL_REFINE`.
+
+**The aspect gate that shelved per-panel authoring is already retired** and the
+paragraph above is stale on that point. `MAX_ASPECT_DRIFT_RATIO = 1.12` is gone;
+`evaluateAuthored` contain-fits and edge-extends against
+`MAX_CONTAIN_DRIFT_RATIO = 2.0`, and a 166.8 × 59.4 flank is 2.81:1 against an
+emittable 21:9 — drift 1.20, comfortably inside. Read the ceiling in
+`runtime/atlas-hero-driver.cjs` before re-raising it as a blocker.
+
+- [x] **Each Zone 1 panel is re-authored on its own ~4096 px canvas**, shown its
+      own cell from the accepted sheet and continuing the same conversation.
+      Measured on the live manifest: driver **5.91 → 24.56 px/in**, every
+      surface at least 3×, aspect drift < 0.002.
+      Evidence: `tests/atlas-panel-refine.test.mjs`.
+- [x] **It fails soft, per surface.** A refused panel keeps its original crop;
+      the assembled master still ships. Evidence:
+      `tests/atlas-panel-refine-wiring.test.mjs` case 3 (five of six zones
+      re-authored, asserted on the master's pixels).
+- [x] **`fit` is re-measured on the refined pixels**, never carried from the
+      sheet crop. `inkFraction` takes an optional rectangle and is exported
+      rather than re-typed.
+- [x] **The die-cut gate still runs first** and refuses before an image request
+      is spent. Evidence: wiring lock case 5.
+- [x] **Both Call-1 paths forward the transport** — in-process and the durable
+      `proof.assemble` node, which is the live one (`CALL1_GRAPH=on`). The
+      topology builds no door of its own (RULE 0.26). Evidence: wiring lock
+      case 6, verified to fail against the pre-fix tree.
+- [x] **`ops/release-files.txt` carries the new module.** The droplet ships that
+      list, not the repo; `source-tests/runtime/runtime-closure.test.mjs` caught
+      its absence, which would have been a deploy that crashes on require with
+      every logic lock green.
+- [ ] **A live generation with the flag on.** Nothing below is claimed until the
+      same New Aura brief has been run both ways on the validated **F250** and
+      the two exported sheets judged side by side. That is the owner's
+      acceptance standard, not a green suite.
+- [x] **The canvas size is a property of the ask.** `ATLAS_AUTHOR_IMAGE_SIZE`
+      stays 2K as the DEFAULT (right for the hero cascade, and an unchanged
+      caller cannot be surprised by a bigger, slower ask); the caller may name
+      `imageSize`, validated against {1K, 2K, 4K}, and the refine asks 4K. On a
+      166.8″ flank: 5.0 px/in from the shared sheet, 12.3 at 2K, 24.6 at 4K.
+      The receipt reports `pxPerInchDelivered` beside `pxPerInchAfter`, because
+      the canvas number alone would claim interpolated pixels.
+      Evidence: wiring lock case 7. **Needs an edge deploy of
+      `design-panel-ai-generate` — until then the edge answers at 2K and the
+      receipt says so, which is the honest half-gain, not a failure.**
+- [x] **`mode` and `designAnchor` were being eaten at the node boundary, not
+      failing to be produced.** The edge emits both (read back from the deployed
+      body), the transport parses both, the assembler writes both — and
+      `proof.sheet`'s hand-written output projection carried 11 of the 16 fields
+      the assembler reads. Measured on `848be1c6`: every projected field carried
+      a real value, every unprojected one read null/0. Four were lost — `mode`,
+      `designAnchor`, `artboardQualityExamplesApplied`, `promptVersion`.
+      Fixed by `sheetOutputFields`, a named function reconciled against the
+      assembler's own reads (`tests/atlas-panel-proof-sheet-crosses-the-node.test.mjs`,
+      verified to fail pre-fix and to NAME the missing fields).
+      **Runtime-only — no edge deploy needed.**
+- [ ] **A live run showing `mode` and `designAnchor` populated.** The fix makes
+      the receipts able to report; only a fresh generation proves they do. Judge
+      the seven proofs against the design once the real DESIGN ANCHOR reaches
+      Call 2's photographer.

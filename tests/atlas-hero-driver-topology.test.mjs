@@ -153,10 +153,27 @@ test("the hero prompt branch leaves the six-surface and field assemblies byte-id
   assert.match(continuation, /carry that artwork straight across the shared edge/);
 });
 
-test("the locked model, 2K at the closest native aspect, no Flash fallback, no Vertex, no Imagen", () => {
+test("the locked model, 2K by default at the closest native aspect, no Flash fallback, no Vertex, no Imagen", () => {
   assert.match(edgeSrc, /const ATLAS_AUTHOR_MODEL = "gemini-3-pro-image"/);
+  // ⛔ THIS ASSERTED `imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE }`,
+  // WHICH PINNED THE HARDCODING RATHER THAN THE CONTRACT.
+  //
+  // 2K is the right DEFAULT — one surface at 2K carries more pixels on its long
+  // edge than its share of a 4096² six-surface sheet, and it returns faster —
+  // and it is the wrong FIXED value for the resolution pass, whose only purpose
+  // is delivered pixels-per-inch (a 166.8" flank: 12.3 px/in at 2K, 24.6 at 4K,
+  // against 5.0 cut from the shared proof sheet). A constant spelled inline at
+  // the call site made the size a property of the endpoint instead of the ask.
+  //
+  // What is locked now is the contract, which is stricter than the literal was:
+  // the default is still 2K, the value is VALIDATED against a closed set, an
+  // unrecognised value falls back rather than reaching the provider, and the
+  // resolved size reaches imageConfig.
   assert.match(edgeSrc, /const ATLAS_AUTHOR_IMAGE_SIZE = "2K"/);
-  assert.match(edgeSrc, /imageConfig: \{ aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE \}/);
+  assert.match(edgeSrc, /const ATLAS_AUTHOR_IMAGE_SIZES = new Set\(\["1K", "2K", "4K"\]\);/);
+  assert.match(edgeSrc, /return ATLAS_AUTHOR_IMAGE_SIZES\.has\(want\) \? want : ATLAS_AUTHOR_IMAGE_SIZE;/);
+  assert.match(edgeSrc, /const imageSize = heroView \? ATLAS_AUTHOR_IMAGE_SIZE : atlasAuthorImageSize\(body\.imageSize\);/);
+  assert.match(edgeSrc, /imageConfig: \{ aspectRatio, imageSize \}/);
   assert.match(edgeSrc, /responseModalities: \["TEXT", "IMAGE"\]/);
   assert.ok(!/flash-image/i.test(heroSrc), "no Flash model in the cascade");
   // Code only: the module's header QUOTES the owner's "DO NOT USE VERTEX or
