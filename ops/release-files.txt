@@ -105,6 +105,7 @@ runtime/atlas-proof-container-template.cjs
 runtime/atlas-three-zone-example.cjs
 runtime/atlas-proof-panels.cjs
 runtime/atlas-panel-proof-contract.cjs
+runtime/atlas-panel-refine.cjs
 runtime/atlas-proof-panel-locator.cjs
 runtime/atlas-typeset-layer.cjs
 runtime/atlas-logo-prepare.cjs

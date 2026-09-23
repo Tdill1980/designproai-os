@@ -202,6 +202,97 @@ gains nothing from a name it has never seen. The OBJECT is what had to be right.
 against the constant** (section below). Under the old hand-copied literals it
 would have taken Call 1 down a second time.
 
+## 🔍 THE SOFT PANELS ARE ONE NUMBER: 5 PIXELS PER INCH. NO PROMPT CHANGE ADDS A PIXEL. (owner, Trish 2026-09-23)
+
+Owner, on her own New Aura run: *"still not a high quality design my prompt was
+specific, it didn't follow direction ... the resolution will not work see each
+panel some look a diff sheen almost like real while others look like print
+files"*, against the Practical Magic wrap this system produced last November.
+
+**Measured from the row (`848be1c6` / revision `a9d6dd85`), not argued:**
+
+```
+sheet delivered      5056 x 3392
+Zone 1 band          25.8% of the height -> 875 px tall
+six panels ACROSS    5056 / 6            -> ~843 px per cell
+passenger, 166.8"    843 px              -> 5.05 PIXELS PER INCH
+150 PPI would need   25,020 px           -> 30x short
+```
+
+Every complaint in that sentence follows from that one number, and they are not
+four problems:
+
+- **the mush.** Topaz at 5 px/in is not sharpening, it is INVENTING.
+- **the mismatched sheen.** At 843 px the model composes each cell as its own
+  small picture, so the flanks got a photograph and the roof got an abstract.
+  They are not one design because they were never one canvas.
+- **the colours.** Five named colours need room to be placed as a SYSTEM; at
+  thumbnail scale the model averages them, which is the mauve that came back.
+- **"logo on back".** The rear is the smallest cell on the sheet.
+
+**ONE IMAGE CALL IS ONE IMAGE, AND SIX PANELS SHARE IT. More resolution requires
+more calls. That is arithmetic, and it is why the four prompt passes of the last
+two days moved none of it.** The brief is also ~245 of 4,887 prompt characters
+(~5%) — the dilution shape this file already records for WallPro — but a
+persona-diluted brief and a 5 px/in canvas are different defects and only the
+second one explains soft pixels.
+
+### THE RESOLUTION PASS — `runtime/atlas-panel-refine.cjs`, OFF BY DEFAULT
+
+After the sheet is accepted — so the DESIGN is already decided and the gates
+have passed it — each Zone 1 cell is re-authored on its OWN ~4096 px canvas
+through `authorSurface`, shown its own cell from that sheet and continuing the
+same conversation. Measured on the live manifest: driver 5.91 → 24.56 px/in,
+every surface at least 3×, aspect drift < 0.002.
+
+- **It is a RESOLUTION pass, never a second creative authority (RULE 0.26).**
+  The sheet is the design and the sheet's own cell is the reference every panel
+  is drawn from. `brandedSource` therefore stays `sheet-drawn` — it answers WHO
+  DREW Zone 1, and the answer is unchanged. **Do not invent a third
+  `brandedSource` value:** `scripts/production-canary.mjs` refuses any name but
+  `sheet-drawn` and `composited`, so a new one fails every run the moment the
+  flag turns on.
+- **IT FAILS SOFT, PER SURFACE.** A refused panel keeps its original crop, so
+  the worst case it can produce is exactly the sheet the customer would have had
+  without it. That is RULE 0.15's cut-out ruling and the lesson of the
+  2026-09-17 cascade, where ONE refused surface threw away four good ones.
+- **`fit` IS RE-MEASURED on the refined pixels.** It came from the cell's
+  rectangle ON THE SHEET; carrying that number onto different bytes reports a
+  density nobody measured. `inkFraction` now takes an optional rectangle for
+  exactly this and is exported rather than re-typed (RULE 0.21).
+- **ORDER: the die-cut gate runs FIRST.** Refining before it would buy six
+  images for a sheet about to be refused AND defeat the gate, whose comparison
+  is branded-against-clean — re-authored bytes are no longer the cell the clean
+  twin is the twin of.
+- **THE TRANSPORT IS PASSED IN, NEVER BUILT.** `createAtlasAuthorTransport` is
+  constructed once by the caller (`flat-first-atlas.cjs` in process, the node
+  worker's own `callEdge` on the durable path) and handed down. The topology
+  module builds no door — asserted, comments stripped first so a doc comment
+  cannot satisfy the scan.
+- **BOTH PATHS ARE WIRED, and the durable one is the live one.** `CALL1_GRAPH=on`
+  in production, so `proof.assemble` is where this actually runs; wiring only
+  the in-process half would have shipped a module nothing calls.
+- **THE RELEASE MANIFEST CAUGHT WHAT THE LOGIC LOCKS COULD NOT.**
+  `source-tests/runtime/runtime-closure.test.mjs` failed with *"required but
+  never packaged: atlas-panel-refine.cjs"* — the droplet ships `ops/release-files.txt`,
+  not the repo, so a new runtime module absent from that list is a deploy that
+  crashes on require with every test green. **Add a new `runtime/*.cjs` to
+  `ops/release-files.txt` in the same commit.**
+
+**The remaining lever, not taken here:** `ATLAS_AUTHOR_IMAGE_SIZE` is hardcoded
+`"2K"` in `design-panel-ai-generate/index.ts` (~:2681, applied at `imageConfig`
+~:3014), so the edge caps its own delivery and the panel is contain-fitted up to
+the 4096 target rather than emitted at it. Parameterising it to 4K is an edge
+change plus an edge deploy and is the next step, not a claim made by this one.
+
+**NOT PROVEN:** no live generation has run with the flag on. `DESIGNPRO_ATLAS_PANEL_REFINE=on`
+exists precisely so the same brief can be run both ways and the two exported
+sheets judged side by side, which is the owner's acceptance standard. Locked by
+`tests/atlas-panel-refine.test.mjs` (the arithmetic, on the live manifest) and
+`tests/atlas-panel-refine-wiring.test.mjs` (the wiring, asserted on the master's
+PIXELS rather than its receipt; verified to fail against the pre-fix tree on
+both the topology half and the graph half).
+
 ## 🔪 EVERY INSTRUMENT SAW THE DIE-CUT HOOD AND NONE OF THEM COULD STOP IT (live 848be1c6, 2026-09-23)
 
 Owner, on the PanelPro board: *"see hood also fail cut to share of hood that's

@@ -120,7 +120,15 @@ const { PROOF_REGIONS } = require("./atlas-panel-proof-contract.cjs");
 // QUADRANTS is the ONE definition of the three role names. It is imported
 // rather than retyped because a retyped copy is exactly how "clean-panel"
 // drifted from "clean" and blanked every derived proof behind a 502.
-const { cutProofPanels, scaleCell, QUADRANTS } = require("./atlas-proof-panels.cjs");
+const { cutProofPanels, scaleCell, QUADRANTS, inkFraction } = require("./atlas-proof-panels.cjs");
+// THE RESOLUTION PASS. Off unless DESIGNPRO_ATLAS_PANEL_REFINE=on, and it
+// re-authors each Zone 1 cell on its own full canvas rather than leaving it at
+// the ~843 px a six-across band gives a 166" flank. Read the module header
+// before judging it: the cause of the soft panels is that one number, and no
+// prompt change adds a pixel to it.
+const {
+  refineZoneOnePanels, panelRefineEnabled, PANEL_REFINE_CONTRACT,
+} = require("./atlas-panel-refine.cjs");
 const {
   parsePanelRows, renderContainerTemplate, containerLayout,
 } = require("./atlas-proof-container-template.cjs");
@@ -1090,6 +1098,23 @@ async function assemblePanelProofMaster({
    * and Zone 2's bar says so instead of asserting "NO TEXT OR LOGO" over them.
    */
   cleanBaseZone2 = true,
+  /**
+   * THE ONE atlas-author TRANSPORT, PASSED IN (RULE 0.26).
+   *
+   * The resolution pass re-authors each Zone 1 panel through
+   * `design-panel-ai-generate` mode `atlas-author` — the same door the hero
+   * cascade and the element graph already use. This module must NEVER build
+   * its own: a second door is a second Call-1 network endpoint, which is the
+   * thing RULE 0.26 names. So the caller hands it over, and a caller that has
+   * none simply gets no refine (the panels stay exactly as cut).
+   */
+  callAuthorEdge = null,
+  /** Whose request this is — the provider cache's isolation key. */
+  ownerId = null,
+  /** The identity the refine's own image requests are authorised against. */
+  providerRequest = null,
+  /** Company · industry · brand colours, the same string the cascade passes. */
+  creativeContext = "",
 } = {}) {
   const mark = (stage, at) => stageTimings.push({ stage, ms: Date.now() - at });
   if (!sheet?.bytes) throw new PanelProofRefusal("the assemble stage was handed no sheet bytes");
@@ -1227,6 +1252,86 @@ async function assemblePanelProofMaster({
       );
     }
   }
+
+  // ═══ THE PRINT PANELS GET THEIR OWN CANVAS ═══════════════════════════════
+  //
+  // Owner, 2026-09-23: "the resolution will not work see each panel some look a
+  // diff sheen almost like real while others look like print files".
+  //
+  // Measured on her own run (`848be1c6` / `a9d6dd85`): the sheet is delivered at
+  // 5056 x 3392, Zone 1 is 25.8% of the height, and six panels sit ACROSS it —
+  // so a 166.8" passenger flank is drawn at 843 px. That is 5.0 PIXELS PER INCH.
+  // Topaz at 5 px/in is not sharpening, it is inventing; and at 843 px the model
+  // composes each cell as its own small picture, which is why one panel came
+  // back photographic and another abstract. ONE image call is one image, and six
+  // panels share it. More resolution requires more calls. That is arithmetic,
+  // and no prompt change moves it.
+  //
+  // So AFTER the design is decided and the gates above have accepted it, each
+  // Zone 1 cell is re-authored on its own ~4096 px canvas, shown its own cell
+  // from this sheet and continuing the same conversation. It is a RESOLUTION
+  // pass, never a second creative authority: the sheet is the design, and the
+  // sheet's own cell is the reference every panel is drawn from.
+  //
+  // ⛔ IT FAILS SOFT, PER SURFACE. A refused panel keeps its original crop, so
+  // the worst case this block can produce is exactly the sheet the customer
+  // would have had without it. That is RULE 0.15's cut-out ruling — a defect
+  // that only exists in the panel must not destroy the design — and the lesson
+  // of the 2026-09-17 cascade, where one refused surface threw away four good ones.
+  //
+  // WHY `brandedSource` STAYS "sheet-drawn": it answers WHO DREW ZONE 1, and the
+  // answer is unchanged — the designer, from this sheet, in this conversation.
+  // Code composited nothing (`placements: []` still holds). What changed is the
+  // canvas, and that is its own receipt below. Do not invent a third
+  // `brandedSource` value: the canary refuses any name but these two, so a new
+  // one would fail every run the moment the flag turns on.
+  let panelRefine = null;
+  if (zone1.length === 6 && panelRefineEnabled() && typeof callAuthorEdge === "function") {
+    const refineAt = Date.now();
+    panelRefine = await refineZoneOnePanels({
+      zone1, callEdge: callAuthorEdge, store, providerRequest, ownerId, logger,
+      // DERIVED HERE WHEN THE CALLER DID NOT SUPPLY IT, and deliberately not
+      // added to the graph run's DEFINITION: the definition hash keys the run,
+      // so a new field there would orphan every V1 run created before it. The
+      // same three facts the cascade passes, read off the input both paths
+      // already carry.
+      creativeContext: String(creativeContext || "").trim()
+        || [input?.companyName, input?.industryType, input?.brandColors]
+          .map((value) => String(value || "").trim()).filter(Boolean).join(" · ").slice(0, 600),
+    });
+    if (panelRefine.refinedCount) {
+      zone1 = await Promise.all(zone1.map(async (panel) => {
+        const bytes = panelRefine.panels.get(panel.surfaceKey);
+        if (!bytes) return panel;
+        return {
+          ...panel,
+          bytes,
+          byteSize: bytes.length,
+          // RE-MEASURED ON THE PANEL'S OWN PIXELS. `fit` came from the cell's
+          // rectangle on the sheet; carrying that number onto different bytes
+          // would report a density nobody measured, which is the
+          // receipts-green/pixels-wrong shape this file records five times.
+          // The die-cut gate above has already run on the ORIGINAL fits, which
+          // is where the branded-versus-clean comparison is meaningful.
+          fit: await inkFraction(sharp, bytes),
+          identity: { ...(panel.identity || {}), refined: true, refineContract: PANEL_REFINE_CONTRACT },
+        };
+      }));
+    }
+    mark("panel.refine", refineAt);
+    logger(`atlas call 1: panel refine ${panelRefine.refinedCount}/${zone1.length} re-authored at ${panelRefine.longEdgePx || 0} px, ${panelRefine.retainedCount} kept as cut`);
+  }
+
+  // THE RECEIPT CARRIES NO PIXEL MAP. `panelRefine.panels` is a Map of Buffers;
+  // it is how the bytes reach the panels above and it must never reach a JSON
+  // column. What a reader needs is per surface: was it re-authored, and at what
+  // pixels-per-inch before and after.
+  const panelRefineReceipt = panelRefine ? {
+    contract: panelRefine.contract, applied: panelRefine.applied,
+    longEdgePx: panelRefine.longEdgePx ?? null,
+    refinedCount: panelRefine.refinedCount ?? 0, retainedCount: panelRefine.retainedCount ?? 0,
+    surfaces: panelRefine.surfaces || [],
+  } : null;
 
   // Zone 3 comes from original files and outlined typography, NEVER sheet crops.
   const assets = [];
@@ -1680,7 +1785,7 @@ async function assemblePanelProofMaster({
         // later reader needs to judge the thresholds from real runs,
         // and a convicted one never reaches a receipt at all. Null on
         // the derived path, which has no sheet-drawn Zone 1.
-        dieCut },
+        dieCut, panelRefine: panelRefineReceipt },
         masterSha256: sheet.contentHash || null,
         composition: { contract: composed.contract, layoutContract: productionLayout.contract,
           placements: productionLayout.placements, brandedSource: zone1Source,
@@ -1824,7 +1929,7 @@ async function assemblePanelProofMaster({
         // later reader needs to judge the thresholds from real runs,
         // and a convicted one never reaches a receipt at all. Null on
         // the derived path, which has no sheet-drawn Zone 1.
-        dieCut },
+        dieCut, panelRefine: panelRefineReceipt },
       // `omitted` is the answer to "which asset did not reach which panel, and
       // why". Empty means every Zone-3 original was drawn onto every branded
       // surface that carries branding; it is never absent, so a reader can tell
@@ -1918,6 +2023,10 @@ async function authorPanelProofMaster({
   providerRequest = {}, callProofEdge, downloadAsset,
   assembleFinishedMaster, sharp = require("sharp"),
   startedAt = Date.now(),
+  // THE atlas-author TRANSPORT, FOR THE RESOLUTION PASS ONLY. Absent — which
+  // is every caller that has not been given one — the panels stay exactly as
+  // cut from the sheet, so this is additive in the strictest sense.
+  callAuthorEdge = null, ownerId = null, creativeContext = "",
   // See `requestProofSheet`: the revision (null on a first generation) and the
   // bounded candidate index, both part of the durable operation identity.
   revision = null, candidate = 1,
@@ -1937,6 +2046,7 @@ async function authorPanelProofMaster({
     // and the provider cache name one generation.
     generationId: providerRequest?.generationId || "",
     revisionSequence: Number(revision?.sequence || 1),
+    callAuthorEdge, ownerId, creativeContext, providerRequest,
   });
 }
 
