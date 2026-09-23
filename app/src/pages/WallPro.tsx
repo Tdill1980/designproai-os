@@ -1254,10 +1254,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * well gets one copy, not two.
    */
   const bandProofs = useMemo(() => {
-    const rest = curatedProofs ?? theme.proofs;
-    // The gym proof is the owner-approved hero. Do not filter the first shared
-    // proof out of the tool page: that silently removed the before/after slider
-    // whenever no curator row existed.
+    const rest = (curatedProofs ?? theme.proofs)
+      .filter(p => !WALL_HERO_PROOF || (p.before !== WALL_HERO_PROOF.before && p.after !== WALL_HERO_PROOF.after));
+    // The owner-approved gym proof always leads; curator rows follow without
+    // duplicating it.
     return WALL_HERO_PROOF ? [WALL_HERO_PROOF, ...rest] : rest;
   }, [curatedProofs, theme.proofs]);
 
