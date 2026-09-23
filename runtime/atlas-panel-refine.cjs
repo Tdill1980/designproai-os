@@ -35,7 +35,7 @@
  * WHAT THIS DOES. After the three-zone sheet is accepted — so the DESIGN is
  * already decided and approved by the gates — each Zone 1 panel is re-authored
  * on its OWN full canvas, shown its own cell from that sheet, continuing the
- * same conversation. ~843 px becomes ~4096 px: 5 px/in becomes ~30.
+ * same conversation. ~843 px becomes ~4096 px: 5 px/in becomes ~25.
  *
  * IT INVENTS NO DESIGN. The sheet is the design authority and the sheet's own
  * cell is the reference every panel is drawn from, so this is a RESOLUTION
@@ -78,6 +78,22 @@ const PANEL_REFINE_CONTRACT = "designpro.atlas-panel-refine.v1";
  * contain-fitted into, not a promise about what the model emits.
  */
 const REFINE_LONG_EDGE_PX = 4096;
+
+/**
+ * THE SIZE THE EDGE IS ASKED TO DELIVER.
+ *
+ * `REFINE_LONG_EDGE_PX` is the rectangle the return is contain-fitted INTO; it
+ * is not a promise about what the model emitted, and reporting it as one would
+ * be a claim about interpolated pixels. `imageSize` is the ask that actually
+ * moves delivered pixels. The edge defaults to 2K — right for the hero cascade,
+ * wrong here — and validates the value, so an edge that has not been deployed
+ * yet simply answers at 2K and the receipt says so.
+ *
+ *   cut from the shared proof sheet   ~843 px  ->   5.0 px/in
+ *   re-authored at 2K                ~2048 px  ->  12.3 px/in
+ *   re-authored at 4K                ~4096 px  ->  24.6 px/in   (166.8" flank)
+ */
+const REFINE_IMAGE_SIZE = "4K";
 
 /**
  * Driver is authored alone and first so the rest can be shown it; the others
@@ -184,22 +200,34 @@ async function refineZoneOnePanels({
         priorExchanges,
         creativeContext,
         store,
+        imageSize: REFINE_IMAGE_SIZE,
         callEdge: (body, opts) => callEdge(body, { ownerId, ...(opts || {}) }),
         providerRequest: providerRequest ? { ...providerRequest, attemptKey: `refine:${cell.surfaceKey}` } : null,
         logger,
       });
       const after = pixelsPerInch(authored.pixelWidth, cell.widthIn);
+      // ⛔ TWO NUMBERS, AND THEY ARE NOT THE SAME CLAIM.
+      //
+      // `pxPerInchAfter` is the panel's CANVAS — real pixels in the file every
+      // downstream stage reads. `pxPerInchDelivered` is what the model actually
+      // EMITTED before `containExtend` fitted it into that canvas. When the
+      // edge answers at 2K the two differ by half, and reporting only the first
+      // would claim resolution that was interpolated. A reviewer asking "did
+      // this pass buy real pixels" must be able to read the answer off the row.
+      const delivered = pixelsPerInch(
+        authored.containment?.deliveredWidthPx ?? authored.deliveredWidthPx, cell.widthIn);
       panels.set(cell.surfaceKey, authored.bytes);
       surfaces.push({
         surfaceKey: cell.surfaceKey, refined: true,
+        imageSizeRequested: REFINE_IMAGE_SIZE,
         pixelWidth: authored.pixelWidth, pixelHeight: authored.pixelHeight,
-        pxPerInchBefore: before, pxPerInchAfter: after,
+        pxPerInchBefore: before, pxPerInchAfter: after, pxPerInchDelivered: delivered,
         contentHash: authored.contentHash, attempts: authored.attempts,
         imageRequestCount: authored.imageRequestCount,
         deliveredWidthPx: authored.deliveredWidthPx ?? null,
         containment: authored.containment ?? null,
       });
-      logger(`panel refine ${cell.surfaceKey}: ${before ?? "?"} -> ${after ?? "?"} px/in`);
+      logger(`panel refine ${cell.surfaceKey}: ${before ?? "?"} -> ${after ?? "?"} px/in canvas, ${delivered ?? "?"} px/in delivered`);
       return authored;
     } catch (cause) {
       // ⛔ FAIL SOFT. The original crop stands. A refused panel is a panel that
@@ -254,6 +282,7 @@ async function refineZoneOnePanels({
 module.exports = {
   PANEL_REFINE_CONTRACT,
   REFINE_LONG_EDGE_PX,
+  REFINE_IMAGE_SIZE,
   REFINE_CONCURRENCY,
   panelRefineEnabled,
   refineZone,

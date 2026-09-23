@@ -279,11 +279,35 @@ every surface at least 3×, aspect drift < 0.002.
   crashes on require with every test green. **Add a new `runtime/*.cjs` to
   `ops/release-files.txt` in the same commit.**
 
-**The remaining lever, not taken here:** `ATLAS_AUTHOR_IMAGE_SIZE` is hardcoded
-`"2K"` in `design-panel-ai-generate/index.ts` (~:2681, applied at `imageConfig`
-~:3014), so the edge caps its own delivery and the panel is contain-fitted up to
-the 4096 target rather than emitted at it. Parameterising it to 4K is an edge
-change plus an edge deploy and is the next step, not a claim made by this one.
+### THE CANVAS SIZE IS A PROPERTY OF THE ASK NOW, NOT OF THE ENDPOINT
+
+`ATLAS_AUTHOR_IMAGE_SIZE` was hardcoded `"2K"`, so the panel was contain-fitted
+UP to the 4096 target rather than emitted at it — half the gain, and a receipt
+reporting the canvas alone would have claimed pixels that were interpolated.
+
+The default stays 2K (right for the hero cascade: one surface at 2K beats its
+share of a 4096² six-surface sheet, and it returns faster). The caller may now
+name `imageSize` on the body; the edge validates it against {1K, 2K, 4K} and
+falls back to 2K on anything else, and the vehicle-view stage is excluded
+because it is a photograph the flatten reads, not artwork. The refine asks 4K.
+It rides `modelRequest`, which `providerCacheMaterial` hashes, so a 4K ask can
+never read a 2K answer back out of the provider cache.
+
+**AND THE LOCK ENCODED THE HARDCODING — the tenth time this file has recorded
+that shape.** `tests/atlas-hero-driver-topology.test.mjs` asserted the literal
+`imageConfig: { aspectRatio, imageSize: ATLAS_AUTHOR_IMAGE_SIZE }`, so the
+constant could not leave the call site without the suite going red. It is
+inverted, and what replaces it is stricter than the literal was: the default is
+still pinned to 2K, the value must be validated against a closed set, an
+unrecognised value must fall back rather than reach the provider, and the
+resolved size must reach `imageConfig`. **A lock on a literal pins today's
+value; a lock on the contract pins the property you actually care about.**
+
+**Two numbers on the receipt, and they are not the same claim:**
+`pxPerInchAfter` is the panel FILE's own resolution; `pxPerInchDelivered` is
+what the model actually emitted before `containExtend` fitted it. On a 166.8″
+flank: 5.0 px/in cut from the shared sheet, 12.3 re-authored at 2K, 24.6 at 4K.
+Report the delivered number when asked whether this pass bought real pixels.
 
 **NOT PROVEN:** no live generation has run with the flag on. `DESIGNPRO_ATLAS_PANEL_REFINE=on`
 exists precisely so the same brief can be run both ways and the two exported

@@ -301,11 +301,16 @@ emittable 21:9 — drift 1.20, comfortably inside. Read the ceiling in
       same New Aura brief has been run both ways on the validated **F250** and
       the two exported sheets judged side by side. That is the owner's
       acceptance standard, not a green suite.
-- [ ] **`ATLAS_AUTHOR_IMAGE_SIZE` parameterised from 2K to 4K.** It is hardcoded
-      in `design-panel-ai-generate/index.ts` (~:2681, applied at `imageConfig`
-      ~:3014), so the edge caps its own delivery and the panel is contain-fitted
-      up to the 4096 target rather than emitted at it. An edge change plus an
-      edge deploy; it is the rest of the gain and it is not claimed here.
+- [x] **The canvas size is a property of the ask.** `ATLAS_AUTHOR_IMAGE_SIZE`
+      stays 2K as the DEFAULT (right for the hero cascade, and an unchanged
+      caller cannot be surprised by a bigger, slower ask); the caller may name
+      `imageSize`, validated against {1K, 2K, 4K}, and the refine asks 4K. On a
+      166.8″ flank: 5.0 px/in from the shared sheet, 12.3 at 2K, 24.6 at 4K.
+      The receipt reports `pxPerInchDelivered` beside `pxPerInchAfter`, because
+      the canvas number alone would claim interpolated pixels.
+      Evidence: wiring lock case 7. **Needs an edge deploy of
+      `design-panel-ai-generate` — until then the edge answers at 2K and the
+      receipt says so, which is the honest half-gain, not a failure.**
 - [ ] **`panelProofAuthoring.mode` is null** on the live row — the Part A2 mode
       passthrough is not recording.
 - [ ] **`panelProofAuthoring.designAnchor` is null** — Part B's anchor capture

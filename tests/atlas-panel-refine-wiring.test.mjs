@@ -101,9 +101,13 @@ function authorEdgeStub({ refuse = [] } = {}) {
       if (refuse.includes(body.surfaceKey)) {
         throw Object.assign(new Error("provider said no"), { code: "provider_refused" });
       }
+      // HALF the requested canvas, on purpose: it is what the edge returns when
+      // it answers at 2K against a 4K ask, and it is the case where "canvas
+      // pixels" and "delivered pixels" are two different claims.
       const bytes = await sharp({
         create: {
-          width: Number(body.targetWidthPx), height: Number(body.targetHeightPx),
+          width: Math.round(Number(body.targetWidthPx) / 2),
+          height: Math.round(Number(body.targetHeightPx) / 2),
           channels: 3, background: "#ff00ff",
         },
       }).png().toBuffer();
@@ -196,6 +200,23 @@ test("ON re-authors all six panels on their own canvas and lands the pixels", as
     assert.ok(surface.pxPerInchAfter > surface.pxPerInchBefore * 3,
       `${surface.surfaceKey}: ${surface.pxPerInchBefore} -> ${surface.pxPerInchAfter} px/in is not the point of this pass`);
   }
+  // ⛔ THE ASK NAMES ITS OWN CANVAS SIZE, and the receipt reports DELIVERED
+  // pixels beside canvas pixels. `pxPerInchAfter` is the panel file's own
+  // resolution; `pxPerInchDelivered` is what the model actually emitted before
+  // `containExtend` fitted it. The edge defaults to 2K — right for the hero
+  // cascade, wrong for a pass that exists only to move pixels — so reporting
+  // only the canvas number would claim resolution that was interpolated.
+  assert.deepEqual([...new Set(edge.calls.map((c) => c.imageSize))], ["4K"],
+    "the resolution pass must ask the edge for its largest canvas");
+  for (const surface of receipt.surfaces) {
+    assert.equal(surface.imageSizeRequested, "4K");
+    assert.ok(surface.pxPerInchDelivered > 0);
+    assert.ok(surface.pxPerInchDelivered < surface.pxPerInchAfter,
+      "a stub answering at half the ask must be reported as delivering half, not as the canvas");
+    assert.ok(surface.pxPerInchDelivered > surface.pxPerInchBefore,
+      `${surface.surfaceKey}: even a half-size return must beat the shared sheet's crop`);
+  }
+
   // ⛔ THE PIXEL MAP MUST NEVER REACH A JSON COLUMN.
   assert.equal(receipt.panels, undefined);
   assert.ok(!JSON.stringify(receipt).includes("Buffer"));
@@ -318,4 +339,27 @@ test("both callers hand the transport down, and the topology builds no door of i
     "proof.assemble must forward the transport or the refine never runs on the live durable path");
   assert.match(assembleBlock, /ownerId: run\.owner_id/,
     "the provider cache isolates on the owner; a graph-claimed node must send the run's owner");
+});
+
+test("the edge lets the caller name the canvas and falls back to 2K on anything else", async () => {
+  // The ask only moves pixels if the EDGE honours it. 2K is right for the hero
+  // cascade (one surface at 2K beats its share of a 4096² sheet) and wrong for
+  // a pass whose only purpose is delivered resolution, so the size became a
+  // property of the request rather than of the endpoint.
+  const edge = fs.readFileSync(
+    new URL("../supabase/functions/design-panel-ai-generate/index.ts", import.meta.url), "utf8");
+  assert.match(edge, /const ATLAS_AUTHOR_IMAGE_SIZE = "2K";/,
+    "the default must stay 2K: an unchanged caller cannot be surprised by a bigger, slower ask");
+  assert.match(edge, /const ATLAS_AUTHOR_IMAGE_SIZES = new Set\(\["1K", "2K", "4K"\]\);/);
+  assert.match(edge, /return ATLAS_AUTHOR_IMAGE_SIZES\.has\(want\) \? want : ATLAS_AUTHOR_IMAGE_SIZE;/,
+    "an unrecognised value must fall back, never reach the provider");
+  assert.match(edge, /const imageSize = heroView \? ATLAS_AUTHOR_IMAGE_SIZE : atlasAuthorImageSize\(body\.imageSize\);/,
+    "stage 1 is a photograph the flatten reads; only the artwork asks may name their own size");
+  assert.match(edge, /imageConfig: \{ aspectRatio, imageSize \},/,
+    "the resolved size must reach imageConfig, or the ask is decoration");
+  // It rides `modelRequest`, which `providerCacheMaterial` hashes, so a 4K ask
+  // can never read a 2K answer back out of the provider cache.
+  const requestBlock = edge.slice(edge.indexOf("const modelRequest = JSON.stringify({"),
+    edge.indexOf("const modelRequestByteSize"));
+  assert.match(requestBlock, /imageSize/);
 });
