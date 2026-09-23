@@ -753,14 +753,10 @@ function assertAtlasViewLineage({ views, flatAtlas, requireComplete = false }) {
       || providerMetadata.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT
       || providerMetadata.atlasZoneContentHash !== panelAuthority.contentHash
       || providerMetadata.atlasZoneSurfaceKey !== panelAuthority.surfaceKey
-      || (
-        flatAtlas.proofSheet?.contentHash
-          ? (providerMetadata.proofArtworkAuthorityContract !== ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT
-            || providerMetadata.proofArtworkAuthorityRole !== "three-zone-production-proof"
-            || providerMetadata.proofArtworkAuthorityHash !== flatAtlas.proofSheet.contentHash
-            || providerMetadata.sourcePanelHash !== flatAtlas.proofSheet.contentHash)
-          : providerMetadata.sourcePanelHash !== panelAuthority.contentHash
-      )) {
+      || providerMetadata.proofArtworkAuthorityContract !== ATLAS_PANEL_AUTHORITY_CONTRACT
+      || providerMetadata.proofArtworkAuthorityRole !== "surface-panel"
+      || providerMetadata.proofArtworkAuthorityHash !== panelAuthority.contentHash
+      || providerMetadata.sourcePanelHash !== panelAuthority.contentHash) {
       throw atlasLineageError(`${sourceViewType} points at a different Atlas revision`);
     }
     if (authority.contract !== flatAtlas.contract
