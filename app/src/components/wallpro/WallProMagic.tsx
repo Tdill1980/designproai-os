@@ -49,22 +49,22 @@ export function WallProMagic() {
         <Step n={2} title="Touch 4 corners" copy="Four touches define the exact wall geometry.">
           <Frame label="Corner geometry">
             <Room src={before} alt="Full room photo with the wall boundary marked" />
-            <div className="pointer-events-none absolute left-[18%] right-[18%] top-[9%] bottom-[14%] border-2 border-dashed border-violet-300/90 bg-violet-400/5">
-              {['-left-2 -top-2','-right-2 -top-2','-left-2 -bottom-2','-right-2 -bottom-2'].map((c,i)=><span key={i} className={'absolute h-4 w-4 rounded-full border-2 border-white bg-violet-500 shadow '+c} />)}
+            <div className="pointer-events-none absolute left-[18%] right-[18%] top-[9%] bottom-[14%] border-2 border-dashed border-white/90 bg-white/5">
+              {['-left-2 -top-2','-right-2 -top-2','-left-2 -bottom-2','-right-2 -bottom-2'].map((c,i)=><span key={i} className={'absolute h-4 w-4 rounded-full border-2 border-white bg-slate-950/90 shadow '+c} />)}
             </div>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-violet-500 px-2.5 py-1 text-[10px] font-bold text-white shadow"><CornerDownRight className="mr-1 inline h-3 w-3" />4 corners mapped</span>
+            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-950/90 px-2.5 py-1 text-[10px] font-bold text-white shadow"><CornerDownRight className="mr-1 inline h-3 w-3" />4 corners mapped</span>
           </Frame>
         </Step>
 
         <Step n={3} title="1-touch masking" copy="Tap curtains, windows or objects once to protect them.">
           <Frame label="Protected">
             <Room src={before} alt="Full room showing curtains protected by one-touch masking" />
-            <div className="absolute left-[29%] top-[8%] h-[54%] w-[17%] border-2 border-violet-200/90 bg-violet-300/20 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute right-[29%] top-[8%] h-[54%] w-[17%] border-2 border-violet-200/90 bg-violet-300/20 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute left-[45%] top-[16%] h-[45%] w-[10%] border-2 border-violet-200/90 bg-violet-300/15" />
+            <div className="absolute left-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
+            <div className="absolute right-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
+            <div className="absolute left-[45%] top-[16%] h-[45%] w-[10%] border-2 border-white/90 bg-white/10" />
             <span className="absolute left-[28%] top-[30%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
             <span className="absolute right-[27%] top-[46%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
-            <span className="absolute left-1/2 top-[12%] -translate-x-1/2 bg-white px-2 py-1 text-[9px] font-bold text-slate-900 shadow"><MousePointerClick className="mr-1 inline h-3 w-3 text-violet-500" />one touch</span>
+            <span className="absolute left-1/2 top-[12%] -translate-x-1/2 bg-white px-2 py-1 text-[9px] font-bold text-slate-900 shadow"><MousePointerClick className="mr-1 inline h-3 w-3 text-slate-700" />one touch</span>
           </Frame>
         </Step>
 
