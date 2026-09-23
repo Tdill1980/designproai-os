@@ -11,6 +11,58 @@ export function rectangularWallMask(a: Point, b: Point): Point[] {
   if (right - left < .002 || bottom - top < .002) throw new Error('Choose opposite corners of the window or drapes, with some space between them.');
   return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
 }
+/**
+ * A MASK DRAWN AS A RECTANGLE RESIZES AS A RECTANGLE (owner, Trish 2026-09-23:
+ * "the one touch masking tool isn't so finicky should easily allow you to
+ * adjust mask size").
+ *
+ * `rectangularWallMask` returns a plain 4-point polygon and keeps no record
+ * that it was a rectangle, so the editor's only editing tool — drag one vertex
+ * — SHEARED it. Pulling the corner of a box over a closet produced a
+ * parallelogram, never a bigger box. There was no other way to change its size
+ * at all: no edge handle, no corner handle, no way to move it.
+ *
+ * So the shape is recognised from its own points. Four points that read
+ * top-left, top-right, bottom-right, bottom-left with shared edges ARE a
+ * rectangle, whatever made them, and dragging one corner of one rebuilds the
+ * box against the corner diagonally opposite — which is what every drawing
+ * tool on earth does and what a hand expects.
+ *
+ * A traced polygon (the "protect a busy area" path) is not a rectangle and
+ * keeps per-vertex dragging, which is the right tool for that shape.
+ */
+const RECT_EPS = 1e-4;
+export function isRectangularMask(mask: Point[]): boolean {
+  if (mask.length !== 4 || mask.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false;
+  const [tl, tr, br, bl] = mask;
+  return Math.abs(tl.y - tr.y) < RECT_EPS && Math.abs(br.y - bl.y) < RECT_EPS
+    && Math.abs(tl.x - bl.x) < RECT_EPS && Math.abs(tr.x - br.x) < RECT_EPS;
+}
+
+/**
+ * The box rebuilt against the corner opposite the one being dragged. Returns
+ * null when the drag would collapse it — `rectangularWallMask` owns that floor,
+ * so a pinch past zero keeps the last good box instead of throwing at a finger.
+ */
+export function resizeRectangularMask(mask: Point[], vertex: number, next: Point): Point[] | null {
+  if (!isRectangularMask(mask) || !Number.isInteger(vertex) || vertex < 0 || vertex > 3) return null;
+  try { return rectangularWallMask(mask[(vertex + 2) % 4], next); } catch { return null; }
+}
+
+/**
+ * The whole mask moved by a delta, clamped so it can never leave the photo.
+ * The SHAPE is preserved exactly: if the drag would push it past an edge, the
+ * delta is shortened rather than the near side being squashed against the
+ * border, which is what clamping each point independently would do.
+ */
+export function translateMask(mask: Point[], dx: number, dy: number): Point[] {
+  if (!mask.length || ![dx, dy].every(Number.isFinite)) return mask;
+  const xs = mask.map(p => p.x), ys = mask.map(p => p.y);
+  const clampedX = Math.max(-Math.min(...xs), Math.min(dx, 1 - Math.max(...xs)));
+  const clampedY = Math.max(-Math.min(...ys), Math.min(dy, 1 - Math.max(...ys)));
+  return mask.map(p => ({ x: p.x + clampedX, y: p.y + clampedY }));
+}
+
 // Printable panel width on the production roll: 53 inches.
 //
 // THIS IS WHAT THE PRESS CAN IMAGE, NOT WHAT THE ROLL MEASURES. The live

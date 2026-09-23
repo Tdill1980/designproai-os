@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { rectangularWallMask, type Point } from '@/lib/wallpro-geometry';
+import { rectangularWallMask, isRectangularMask, resizeRectangularMask, translateMask, type Point } from '@/lib/wallpro-geometry';
 import type { WallItem } from '@/lib/wallpro-items';
 // The overlay colours live in ONE place so the FAQ can show the customer the
 // same glass this editor draws, and cannot be left behind by a restyle here.
@@ -27,13 +27,22 @@ type Props = {
   onCorners: (points: Point[]) => void;
   onMasks: (masks: Point[][]) => void;
 };
-type Handle = { kind: 'wall' | 'mask'; mask: number; vertex: number };
+/**
+ * `body` is a whole-mask drag; its `vertex` is unused. Moving a mask was
+ * impossible before -- the only affordance was one vertex at a time, which
+ * changes the shape rather than its position.
+ */
+type Handle = { kind: 'wall' | 'mask' | 'body'; mask: number; vertex: number };
+/** Touch radius in viewBox units (~4% of the photo's width): a thumb, not a
+ *  cursor. The drawn dot stays at 1.1 so it never hides what it sits on. */
+const HANDLE_TOUCH_R = 4;
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const coords = (points: Point[]) => points.map(p => `${p.x * 100},${p.y * 100}`).join(' ');
 
 export function WallPhotoEditor(p: Props) {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<Handle | null>(null);
+  const bodyFrom = useRef<Point | null>(null);
   const rectangle = useRef<{ start: Point; down: Point; hadStart: boolean; moved: boolean } | null>(null);
   const [hover, setHover] = useState<Point | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -42,12 +51,25 @@ export function WallPhotoEditor(p: Props) {
     return { x: clamp((e.clientX - bounds.left) / bounds.width), y: clamp((e.clientY - bounds.top) / bounds.height) };
   };
   function moveHandle(handle: Handle, next: Point) {
-    if (handle.kind === 'wall') p.onCorners(p.corners.map((q,i) => i === handle.vertex ? next : q));
-    else p.onMasks(p.masks.map((mask,i) => i === handle.mask ? mask.map((q,j) => j === handle.vertex ? next : q) : mask));
+    if (handle.kind === 'wall') { p.onCorners(p.corners.map((q,i) => i === handle.vertex ? next : q)); return; }
+    if (handle.kind === 'body') {
+      const from = bodyFrom.current; if (!from) return; bodyFrom.current = next;
+      p.onMasks(p.masks.map((mask,i) => i === handle.mask ? translateMask(mask, next.x - from.x, next.y - from.y) : mask));
+      return;
+    }
+    // A RECTANGLE RESIZES AS A RECTANGLE. Dragging one corner used to move that
+    // point alone and shear the box into a parallelogram, so its SIZE could not
+    // be changed at all -- the owner's "adjust mask size" was impossible.
+    p.onMasks(p.masks.map((mask,i) => {
+      if (i !== handle.mask) return mask;
+      return (isRectangularMask(mask) && resizeRectangularMask(mask, handle.vertex, next))
+        || mask.map((q,j) => j === handle.vertex ? next : q);
+    }));
   }
   function startHandle(e: React.PointerEvent<SVGCircleElement>, handle: Handle) {
     e.stopPropagation(); if (p.busy) return;
     e.preventDefault(); drag.current = handle; p.onEditing(true); e.currentTarget.setPointerCapture(e.pointerId);
+    bodyFrom.current = handle.kind === 'body' ? point(e) : null;
   }
   function keyboardHandle(e: React.KeyboardEvent<SVGCircleElement>, handle: Handle, current: Point) {
     const deltas: Record<string,Point> = { ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0}, ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1} };
@@ -72,13 +94,13 @@ export function WallPhotoEditor(p: Props) {
       if(rectangle.current && Math.hypot(next.x-rectangle.current.down.x,next.y-rectangle.current.down.y)>.004)rectangle.current.moved=true;
     }}
     onPointerUp={e => {
-      if(drag.current){moveHandle(drag.current,point(e));drag.current=null;p.onEditing(false);return;}
+      if(drag.current){moveHandle(drag.current,point(e));drag.current=null;bodyFrom.current=null;p.onEditing(false);return;}
       const active=rectangle.current; rectangle.current=null;
       if(active && !p.busy){ if(active.moved)p.onRectangle(active.start,point(e)); else if(active.hadStart)p.onPoint(point(e)); }
       setHover(null);
     }}
-    onPointerCancel={() => {p.onEditing(false);drag.current=null;rectangle.current=null;setHover(null);}}
-    onLostPointerCapture={() => {p.onEditing(false);drag.current=null;rectangle.current=null;}}
+    onPointerCancel={() => {p.onEditing(false);drag.current=null;bodyFrom.current=null;rectangle.current=null;setHover(null);}}
+    onLostPointerCapture={() => {p.onEditing(false);drag.current=null;bodyFrom.current=null;rectangle.current=null;}}
     onPointerLeave={() => {if(!rectangle.current && !drag.current)setHover(null);}}>
     <img src={p.url} alt={p.alt} className="pointer-events-none absolute inset-0 h-full w-full object-contain" draggable={false}/>
     {overlays && p.maskUrl && <img src={p.maskUrl} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-35" style={{ filter: `drop-shadow(0 0 1px ${WALL_GLASS.protected.stroke})` }} draggable={false}/>}
@@ -89,10 +111,19 @@ export function WallPhotoEditor(p: Props) {
         const x=Math.min(...mask.map(q=>q.x))*100, y=Math.min(...mask.map(q=>q.y))*100;
         return <g key={i}>
           <polygon points={coords(mask)} fill="rgba(0,120,220,.10)" stroke={WALL_GLASS.protected.halo} strokeWidth=".65" filter={WALL_HALO_FILTER}/>
-          <polygon points={coords(mask)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:'pointer'}} onPointerDown={e=>{e.stopPropagation();setSelected(i);}}/>
+          <polygon points={coords(mask)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:selected===i?'move':'pointer',touchAction:'none'}} onPointerDown={e=>{e.stopPropagation();if(selected===i)startHandle(e as unknown as React.PointerEvent<SVGCircleElement>,{kind:'body',mask:i,vertex:-1});else setSelected(i);}}/>
           <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill={WALL_GLASS.protected.chip} fillOpacity=".9"/>
           <text x={x+1.2} y={y+2.4} fill="white" fontSize="1.5">Protected {i+1}</text>
-          {(selected===i || !!p.marking) && mask.map((q,j)=><circle key={j} cx={q.x*100} cy={q.y*100} r=".7" fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".3" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} point ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>)}
+          {(selected===i || !!p.marking) && mask.map((q,j)=><g key={j}>
+            {/* THE HIT TARGET IS THE FINGER'S, NOT THE DOT'S. The visible
+                handle was r=.7 on a 100-unit viewBox -- about three pixels on
+                a phone, which is why the owner called the tool finicky. The
+                dot stays small so it does not hide the wall; an invisible
+                circle around it takes the tap at a size a thumb can actually
+                land on. */}
+            <circle cx={q.x*100} cy={q.y*100} r={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} ${isRectangularMask(mask)?'corner':'point'} ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>
+            <circle cx={q.x*100} cy={q.y*100} r="1.1" fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".35" className="pointer-events-none"/>
+          </g>)}
         </g>;
       })}
       {/* THE DETECTED ITEMS, ONE TAP EACH.
@@ -134,7 +165,7 @@ export function WallPhotoEditor(p: Props) {
           </text>
         </g>;
       })}
-      {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r=".85" fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".2" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><text x={q.x*100+1.2} y={q.y*100-1.2} fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g>)}
+      {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><circle cx={q.x*100} cy={q.y*100} r="1.1" fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".25" className="pointer-events-none"/><text x={q.x*100+1.2} y={q.y*100-1.2} fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g>)}
       {p.seams.map((seam,i)=><line key={i} x1={seam.top.x*100} y1={seam.top.y*100} x2={seam.bottom.x*100} y2={seam.bottom.y*100} stroke={WALL_GLASS.seam} strokeWidth=".3" strokeDasharray="1 .8"/>)}
       {p.marking==='exclude' && <polygon points={coords([...p.draft,...(hover?[hover]:[])])} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3" strokeDasharray=".8 .5"/>}
       {rectanglePreview.length>0 && <polygon points={coords(rectanglePreview)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3"/>}
