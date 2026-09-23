@@ -2524,7 +2524,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               Printed as {billing.panels} {billing.panels === 1 ? 'panel' : 'panels'} × {billing.panelLengthIn}″ long on the {billing.billedWidthIn}″ roll ({billing.linearFeet} linear ft), Avery HP MPI 2610 wall vinyl, matte/luster. Half-inch overlap at every seam.
             </p>}
           </div>}
-          <WallProPurchaseCard
+          {artwork && <WallProPurchaseCard
             showPrintOffer={theme.showPrintOffer}
             billing={billing}
             designMode={designMode}
@@ -2537,7 +2537,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro'));
               });
             }}
-          />
+          />}
           <WallPrintOutput artwork={versions.length > 0 ? (approvedVersion && approvedVersion.id === currentVersionId ? tileArtwork : null) : tileArtwork} name={name} projectId={projectId} layout={layout} seamless={seamReceipt} settings={printSettings} onSettings={setPrintSettings} busy={!!busy} run={run} />
           {/* THE PRODUCT PAGE'S THIRD PURCHASE. Owner, 2026-09-14: this is
               "THE Product Page ... that they will purchase design and files
