@@ -160,6 +160,97 @@ table.** When a fixture stands in for a schema, build it FROM the migrations.
 **Not proven:** no purchase has been confirmed on production since the patch.
 Tick it when an entitlement row appears for a real checkout.
 
+## 📄 CALL 1'S DELIVERABLE IS THE **PRODUCTION PANEL PROOF**, NEVER "A PRINT FILE" (owner, Trish 2026-09-23)
+
+Owner, reading the corrected prompt: *"But deliverable is not a single print
+file it's the trizone production panel proof."*
+
+She is right, and it was a category error, not a wording preference. The
+**document** Call 1 returns is the TriZone™ Production Panel Proof: one sheet,
+three bands. The **print files** are cut from Zone 1 afterwards, upscaled by
+Call 12 and packed. Telling the model "THE DELIVERABLE IS A PRINT FILE"
+collapses the document into one of its own downstream outputs, and a model told
+it is making a single file has no reason to draw three bands.
+
+The overcorrection is traceable: the previous wording said the panels look *"as
+they look coming off the printer"*, which made the model photograph wrap film on
+a table. The fix for THAT is "flat design artwork, the file a designer builds" —
+a statement about the MEDIUM. It is not a licence to rename the OBJECT.
+
+```
+THE DELIVERABLE IS A PRODUCTION PANEL PROOF: ONE sheet, three bands, in exactly
+the form of the attached finished proof. Everything on it is flat design artwork
+— the file a wrap-shop graphic designer builds. The print files are cut from the
+top band afterwards.
+```
+
+The A.C.E. proof-sheet scene moves with it: *"Design the wrap artwork for a
+{vehicle}: six flat design panels for the production panel proof, drawn the way a
+wrap-shop graphic designer builds them."* Both scenes, both files, and the
+generated `designiq-assembly.ts` slice regenerated.
+
+**Medium and object are two separate statements. Keep both, and do not let a fix
+to one rewrite the other.**
+
+The model-facing text says PRODUCTION PANEL PROOF rather than the trademark:
+`PROOF_BRAND` in `app/src/lib/os-brand.ts` is the ONE place the word TriZone™ is
+spelled, and the runtime cannot import it. Adding the mark to the prompt would
+create a third home for the brand word needing a third mirror lock, and the model
+gains nothing from a name it has never seen. The OBJECT is what had to be right.
+
+**This change was safe to make only because the phase-1 guard now compares
+against the constant** (section below). Under the old hand-copied literals it
+would have taken Call 1 down a second time.
+
+## 🚨 A FAIL-CLOSED AUDIT THAT RESTATES THE TEXT IT GUARDS TOOK CALL 1 DOWN (live 2026-09-22)
+
+`production-panel-proof`'s **phase-1 payload contract** refuses the request
+before the provider is called unless it can find the persona and the layout in
+the assembled prompt. Two of its four probes were **hand-copied literals** of
+`SYSTEM_JOB` and `SHEET_LAYOUT`:
+
+```ts
+flatPanelProductionProofInjected:
+  /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
+templateLayoutLocked:
+  /Fill the attached template; do not re-flow it\./.test(prompt)
+```
+
+The owner's print-file ruling changed `SYSTEM_JOB` to *"THE DELIVERABLE IS A
+PRINT FILE"*. The guard still searched for the retired sentence, so from the
+edge deploy at 22:00Z **every customer generation threw
+`panel_proof_phase1_contract_missing:flatPanelProductionProofInjected` before
+one token reached Gemini** — a fail-closed audit convicting the very prompt it
+exists to protect. The positive-framing pass would have broken
+`templateLayoutLocked` the same way one deploy later.
+
+**Both probes now compare against the EXPORTED CONSTANT**
+(`prompt.includes(SYSTEM_JOB)`, `prompt.includes(SHEET_LAYOUT)`), which cannot
+drift: if the sentence is in the prompt the probe is true, whatever the sentence
+says. **Never write a guard that restates the text it guards.** The same rule
+that makes a fixture slice its DDL from the migrations makes an audit compare
+against the constant.
+
+**Why nothing caught it:** `tests/production-panel-proof-clean-prompt.test.mjs`
+does cover this guard, and it was not in the set run for either wording change.
+CI runs no suite, so the only protection is running the locks a change touches —
+and "what reads this constant" is part of what a wording change touches. Its VM
+harness now receives both constants, or it is not running the code the edge runs.
+
+**Two more locks broke on the same day for the same reason, both found by the
+full local suite and neither by CI:**
+
+- `tests/panelpro-version-asset-manifest.test.mjs` sliced the board between
+  `SurfacePairRows(` and `function Fact(`. Removing the engine's provenance
+  block deleted `Fact`, so `indexOf` returned **-1**, the slice ran to end of
+  file, and the QC controls fell inside a region asserted not to contain them.
+  **A slice boundary that no longer exists does not fail loudly; it silently
+  widens.** Repointed to `AtlasForensicRecord(`.
+- `tests/atlas-master-resolution.test.mjs` asserted the delivered pixel size on
+  `AdminGeminiCompareStudio`. That readout moved with the deleted block — but
+  the FACT was never lost: it renders on `PanelProStudioBoard`, the per-surface
+  page the owner named as the QC path. The lock reads that file now.
+
 ## 🗣️ THE DOCUMENT CONTRACT SPEAKS ONLY IN THE POSITIVE (owner, Trish 2026-09-22)
 
 Owner, on the prompt framework she drafted: *"Image models are notoriously bad

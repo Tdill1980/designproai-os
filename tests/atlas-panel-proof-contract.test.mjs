@@ -195,9 +195,9 @@ test("the ask is for a PROOF, and the installation fact is POSITIVE", () => {
   // of the attached finished proof (owner, 2026-09-22: "as they look coming
   // off the printer" read as a photograph of printed film, and the model
   // drew a piece of wrap film on a table).
-  assert.match(runtime.SYSTEM_JOB, /THE DELIVERABLE IS A PRINT FILE: six flat vehicle-wrap design panels/);
-  assert.match(runtime.SYSTEM_JOB, /in exactly the form of the attached finished proof/);
-  assert.match(runtime.SYSTEM_JOB, /the PNG or TIFF\na wrap-shop graphic designer hands to the printer/);
+  assert.match(runtime.SYSTEM_JOB, /THE DELIVERABLE IS A PRODUCTION PANEL PROOF: ONE sheet, three bands/);
+  assert.match(runtime.SYSTEM_JOB, /in exactly the form of the\s+attached finished proof/);
+  assert.match(runtime.SYSTEM_JOB, /the file a wrap-shop graphic\n"?\s*"?designer builds|the file a wrap-shop graphic/);
   assert.ok(!/coming off the printer|as printed|printed panels/.test(runtime.SYSTEM_JOB), "the job names a file, never how printed film looks");
 
   // THE ASK IS NOW THE ARTWORK, NOT THE DOCUMENT — and that is the fix for the
@@ -953,7 +953,7 @@ test("the head accepts either persona: the commercial designer or the restyle Le
   assert.match(head, /You are WePrintWraps\.com Lead Vehicle Wrap Designer/);
   assert.match(head, /DESIGN AMPLIFICATION: Elevate and enhance the brief/);
   // The restyle branch names the proof's own object, as the commercial one does.
-  assert.match(head, /six flat design panels, laid out the way a wrap-shop graphic designer builds the PNG or TIFF that goes to the printer — flat artwork on the sheet, in exactly the form of the attached finished proof\. ONE design across all of them/);
+  assert.match(head, /six flat design panels for the production panel proof, drawn the way a wrap-shop graphic designer builds them — flat artwork on the sheet, in exactly the form of the attached finished proof\. ONE design across all of them/);
   assert.ok(!/coming off the printer/.test(head), "the object is a FILE, never how printed film looks (owner, 2026-09-22)");
   assert.ok(!head.includes("OUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"), "the artboard tail is cut on restyle too");
   assert.throws(() => runtime.panelProofCreativeHead("no designer here\nOUTPUT FORMAT — ONE FLAT A.T.L.A.S. ARTBOARD"),
@@ -994,7 +994,7 @@ test("the model-facing document contract carries no negative instruction", () =>
     manifest: { zones: [] },
     creativeDirection: "Custom wrap for New Aura Day Spa.",
   });
-  assert.ok(prompt.includes("THE DELIVERABLE IS A PRINT FILE"), "the contract must be present at all");
+  assert.ok(prompt.includes("THE DELIVERABLE IS A PRODUCTION PANEL PROOF"), "the contract must be present at all");
   const found = [];
   for (const line of prompt.split("\n")) {
     const hits = line.match(NEGATION);

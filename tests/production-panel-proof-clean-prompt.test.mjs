@@ -8,7 +8,11 @@ import { loadDesignIQ, ATLAS_PANELS } from './helpers/load-designiq.mjs';
 import { resolveEsbuild } from '../scripts/build-control-prompt.mjs';
 
 const require=createRequire(import.meta.url);
-const { buildPanelProofPrompt, panelProofCreativeHead }=require('../runtime/atlas-panel-proof-contract.cjs');
+// SYSTEM_JOB and SHEET_LAYOUT are now READ by the edge's phase-1 audit, which
+// compares the prompt against the constants themselves rather than against
+// hand-copied literals -- the drift that took Call 1 down on 2026-09-22. The
+// harness must supply them or it is not running the code the edge runs.
+const { buildPanelProofPrompt, panelProofCreativeHead, SYSTEM_JOB, SHEET_LAYOUT }=require('../runtime/atlas-panel-proof-contract.cjs');
 const source=readFileSync(new URL('../supabase/functions/production-panel-proof/index.ts',import.meta.url),'utf8');
 const start=source.indexOf('    const customerAssets =');
 const end=source.indexOf('    const parts: Array<Record<string, unknown>> = [{ text: prompt }];',start);
@@ -25,7 +29,8 @@ async function assemble(body={}) {
   const request={...BODY,...body};
   const {buildDesignIQPrompt}=await loadDesignIQ();
   return runInNewContext(assembly,{body:request,field:name=>String(request[name]||'').trim(),
-    customerPrompt:'',intake:null,panelRows:[],buildDesignIQPrompt,buildPanelProofPrompt,panelProofCreativeHead,ATLAS_PANELS});
+    customerPrompt:'',intake:null,panelRows:[],buildDesignIQPrompt,buildPanelProofPrompt,panelProofCreativeHead,
+    SYSTEM_JOB,SHEET_LAYOUT,ATLAS_PANELS});
 }
 
 test('active separated Call 1 injects exact persona and omits contradictory branded generation directions',async()=>{

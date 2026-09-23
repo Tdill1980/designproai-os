@@ -1046,7 +1046,7 @@ DESIGN BRIEF: "${briefForArtboard}"`;
     // for the printer, in the form of the attached finished proof, is the
     // deliverable, and the sentence says so.
     const atlasScene = atlasProofSheet
-      ? `Build the print file for a ${vehicle} (${atlasBodyClass}) wrap: six flat design panels, laid out the way a wrap-shop graphic designer builds the PNG or TIFF that goes to the printer — flat artwork on the sheet, in exactly the form of the attached finished proof. ONE design across all of them. It is built from layered elements — background color and texture, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes. The company name reads clearly at a glance; how the branding is composed is your creative call.`
+      ? `Design the wrap artwork for a ${vehicle} (${atlasBodyClass}): six flat design panels for the production panel proof, drawn the way a wrap-shop graphic designer builds them — flat artwork on the sheet, in exactly the form of the attached finished proof. ONE design across all of them. It is built from layered elements — background color and texture, mid-ground graphic motion, and foreground accent detail — with real dimension rather than flat shapes. The company name reads clearly at a glance; how the branding is composed is your creative call.`
       : atlasHero
       ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, true)
       : atlasField
@@ -1249,7 +1249,7 @@ CLIENT BRIEF:`;
   // commercial branch does above: the panels themselves, as printed, one design
   // across all of them — restyle's layered-depth brief intact.
   const atlasRestyleScene = atlasProofSheet
-    ? `Build the print file for a ${vehicle} (${atlasBodyClass}) wrap: six flat design panels, laid out the way a wrap-shop graphic designer builds the PNG or TIFF that goes to the printer — flat artwork on the sheet, in exactly the form of the attached finished proof. ONE design across all of them. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes.`
+    ? `Design the wrap artwork for a ${vehicle} (${atlasBodyClass}): six flat design panels for the production panel proof, drawn the way a wrap-shop graphic designer builds them — flat artwork on the sheet, in exactly the form of the attached finished proof. ONE design across all of them. Elevate the brief into a bold composition built from layered thematic elements — background atmosphere, mid-ground motion, foreground accent detail and a strong focal treatment — rich with depth and texture, with real dimension rather than flat shapes.`
     : atlasHero
     ? atlasHeroScene(vehicle, atlasBodyClass, atlasHero, false)
     : atlasField

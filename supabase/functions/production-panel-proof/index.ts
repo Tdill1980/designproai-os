@@ -54,6 +54,8 @@ import {
   ATLAS_PANEL_PROOF_CONTRACT,
   PANEL_PROOF_CONTAINER_TEMPLATE,
   PANEL_PROOF_FORMAT_EXAMPLE,
+  SHEET_LAYOUT,
+  SYSTEM_JOB,
   buildPanelProofPrompt,
   buildPanelProofTurns,
   panelProofCreativeHead,
@@ -745,12 +747,27 @@ serve(async (req) => {
       nativeGeminiImageKnowledgeInjected: mode === "restyle"
         ? /DESIGN AMPLIFICATION: Elevate and enhance the brief/.test(prompt)
         : /Use your native Gemini 3 Pro Image design knowledge\./.test(prompt),
+      // ⚠️ THESE TWO PROBES ARE THE CONSTANTS THEMSELVES, NEVER A COPY OF THEM.
+      //
+      // They were hand-copied literals, and on 2026-09-22 that took Call 1 down
+      // on production. The owner's print-file wording changed SYSTEM_JOB from
+      // "THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION
+      // PROOF" to "THE DELIVERABLE IS A PRINT FILE"; this guard still searched
+      // for the retired sentence, so every customer generation threw
+      // `panel_proof_phase1_contract_missing:flatPanelProductionProofInjected`
+      // BEFORE the provider was called -- a fail-closed audit convicting the
+      // prompt it was written to protect. The positive-framing pass would have
+      // broken `templateLayoutLocked` the same way one deploy later.
+      //
+      // A guard that restates the text it guards can only ever drift from it.
+      // Comparing against the exported constant cannot: if the sentence is in
+      // the prompt the probe is true, whatever the sentence says.
       flatPanelProductionProofInjected:
-        /THE DELIVERABLE IS THE ARTWORK FOR A VEHICLE WRAP PANEL PRODUCTION PROOF/.test(prompt)
+        prompt.includes(SYSTEM_JOB)
         || (/OUTPUT: six clean printed background artworks/.test(prompt)
           && /six unlabelled gray rectangles/.test(prompt)),
       templateLayoutLocked:
-        /Fill the attached template; do not re-flow it\./.test(prompt)
+        prompt.includes(SHEET_LAYOUT)
         || /ARTWORK STAGING CANVAS/.test(prompt),
     };
     const missingPhase1 = Object.entries(phase1Audit)

@@ -15,7 +15,14 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const edge = readFileSync(join(ROOT, "supabase/functions/design-panel-ai-generate/index.ts"), "utf8");
 const runtime = readFileSync(join(ROOT, "runtime/flat-first-atlas.cjs"), "utf8");
-const board = readFileSync(join(ROOT, "app/src/pages/AdminGeminiCompareStudio.tsx"), "utf8");
+// THE DELIVERED SIZE LIVES ON THE PER-SURFACE PANELPRO BOARD, NOT THE CONTROL
+// ROOM (2026-09-22). The owner deleted the retired engine's provenance block
+// from AdminGeminiCompareStudio ("Delete defunct ace"), and the delivered-pixel
+// readout sat inside it. The fact itself was NOT lost -- it renders on
+// PanelProStudioBoard, the per-surface page the owner uses for QC and the ZIP
+// ("do not delete this qc path"). This lock now reads the file that actually
+// shows it, which is the whole point: 4K checkable rather than claimed.
+const board = readFileSync(join(ROOT, "app/src/pages/designpro/PanelProStudioBoard.tsx"), "utf8");
 const handler = edge.slice(edge.indexOf("async function handleAtlasArtboard"));
 
 test("Call 1 asks for the model's maximum, square", () => {
@@ -46,5 +53,9 @@ test("a re-roll is the identical primary request — no corrective note rides an
 
 test("PanelPro shows the delivered size, so 4K is checkable rather than claimed", () => {
   assert.match(board, /deliveredWidthPx.*deliveredHeightPx/s);
-  assert.match(board, /native 4K/);
+  assert.match(board, /Native 4K/);
+  // And it is a READOUT of the measurement, never a hardcoded claim: both
+  // values come off the revision's own provenance.
+  assert.match(board, /selected\.provenance\?\.nativelyFourK/);
+  assert.match(board, /selected\.provenance\?\.deliveredWidthPx/);
 });
