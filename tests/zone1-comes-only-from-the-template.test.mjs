@@ -48,12 +48,23 @@ test("the per-panel re-author module is deleted, not merely switched off", () =>
   }
 });
 
-test("no deploy can turn it back on: the flag exists nowhere", () => {
-  for (const f of ["ops/configure-env.sh", "ops/validate-env.py",
-    ".github/workflows/deploy-production.yml", "ops/ci-dark-deploy.sh"]) {
+test("no deploy can turn it back on: nothing SETS the flag", () => {
+  // The three files that can put a value on the droplet. None may name it.
+  for (const f of ["ops/configure-env.sh", ".github/workflows/deploy-production.yml",
+    "ops/ci-dark-deploy.sh"]) {
     assert.doesNotMatch(read(f), /PANEL_REFINE|panel_refine/,
       `${f} must not carry a switch for a producer that no longer exists`);
   }
+  // ⛔ THE VALIDATOR IS DIFFERENT, AND CONFLATING THE TWO COST A DEPLOY.
+  // It reads the LIVE runtime.env before that file is rewritten, so while the
+  // retired line is still on the droplet it must be TOLERATED or the deploy
+  // that removes it is the one refused -- measured: "runtime.env has
+  // unapproved keys: DESIGNPRO_ATLAS_PANEL_REFINE", exit 1, production
+  // untouched. Tolerating a dead key is not a switch. GIVING IT LEGAL VALUES
+  // would be, so that is what is forbidden here.
+  const validator = read("ops/validate-env.py");
+  assert.doesNotMatch(validator, /"DESIGNPRO_ATLAS_PANEL_REFINE", \{/,
+    "a retired flag no code reads must never be given a value vocabulary");
 });
 
 test("the Call-1 assembler produces Zone 1 from the sheet and calls no author edge", () => {
