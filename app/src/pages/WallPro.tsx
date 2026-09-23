@@ -305,7 +305,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * together.
    */
   const focusPhoto = () => {
-    setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    // `#wall-preview` is the step-4 HEADING, above the tabs and the whole flat
+    // master pane -- so "take me to the photo" landed on a title with the photo
+    // still off screen. Go to the picture itself, centred.
+    setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
   };
   // The AI picture is for one design, one photo and one pattern size; a step
   // Bigger or Smaller makes it stale, the exact-geometry view updates at once,
@@ -647,6 +651,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const validated = await validateWallUpload(ready);
       const asset = { ...validated, file: ready, url: retain(validated.url) };
       if (role === 'photo') {
+        // THE PHOTO SHE JUST CHOSE RENDERS ~330 LINES BELOW THE UPLOAD BUTTON
+        // (owner, 2026-09-23: "when I upload the photo I see it and I don't
+        // need to scroll down to find my upload"). The editor is in the second
+        // grid column, which stacks under the ENTIRE left column below `lg`, so
+        // on a phone choosing a photo looked like it had done nothing.
+        focusPhoto();
         setPhoto(asset); setCorners([]); cornersOrigin.current = 'default'; setCornerSource('default'); setWallReadMissed(false); setExclusions([]); setDetectedMask(null); setRemoveMask(null); setExcludeDraft([]); setView('before');
         /**
          * ASK FOR THE FOUR CORNERS IMMEDIATELY (owner, 2026-09-18, with a photo
@@ -1344,7 +1354,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // push so I see the recreated design on the photo I provide". Nothing to
       // push: it goes on the photo by itself and the page moves to it.
       else if (imposable) setNotice('Your design is on your wall photo. "On your wall" is the exact print geometry; "Show me with AI" paints a photo-real picture of the room.');
-      if (photo) setTimeout(() => document.getElementById('wall-preview')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+      if (photo) setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
       try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
@@ -2296,7 +2306,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   </div>
                 </div>
               )}
+              <div id="wall-photo" style={{ scrollMarginTop: stickyTop + 96 }}>
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next.length === 4 ? orderWallCorners(next) ?? next : next); }} onMasks={setExclusions} />
+              </div>
               </div>}
               {/* THE TRUST SIGNAL (owner, 2026-09-12: "There is no trust signal").
                   The composite is not a preview of the print file, it IS the
@@ -2570,9 +2582,30 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         reach it (owner, 2026-09-12: "I'm scrolling down and up just to hit
         generate"). The action follows them instead. `bottom-16` clears the
         app's own bottom nav. */}
-    {!artwork && !busy && <div className="fixed inset-x-0 bottom-16 z-40 border-t wall-edge bg-[hsl(var(--wall-card))]/95 p-3 backdrop-blur lg:hidden" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
-      <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
-      {generationBlocker && <p className="mt-1 text-center text-[11px] wall-muted">{generationBlocker}</p>}
+    {/**
+      * THE BAR THAT HOLDS THE BUTTON ALSO HOLDS THE PROGRESS (owner,
+      * 2026-09-23: "when I hit generate it doesn't show the progress bar I
+      * have to scroll for it and I need to find the generate wall").
+      *
+      * It used to render only `!artwork && !busy`, so pressing Generate made
+      * the bar DISAPPEAR -- and the one "Generating wall artwork…" line lives
+      * at the bottom of step 4, below the editor and every mask control. On a
+      * phone that is a screen or two down: the button vanished and nothing
+      * replaced it, which reads as a dead tap.
+      *
+      * Now the busy state renders in the bar's own place, under the thumb that
+      * just pressed it. Nothing to scroll for, and the progress is where the
+      * action was.
+      */}
+    {(busy || !artwork) && <div className="fixed inset-x-0 bottom-16 z-40 border-t wall-edge bg-[hsl(var(--wall-card))]/95 p-3 backdrop-blur lg:hidden" style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
+      {busy
+        ? <p role="status" aria-live="polite" className="flex items-center justify-center gap-2 py-2 text-sm font-semibold wall-ink">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-500" />{busy}…
+          </p>
+        : <>
+            <Button className={`w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}><Wand2 className="mr-2 h-4 w-4" />{generateLabel}</Button>
+            {generationBlocker && <p className="mt-1 text-center text-[11px] wall-muted">{generationBlocker}</p>}
+          </>}
     </div>}
     <Dialog open={!!proof} onOpenChange={open => { if (!open) setProof(null); }}>
       <DialogContent className="max-w-[96vw] w-[1500px] max-h-[95vh] overflow-y-auto p-0">

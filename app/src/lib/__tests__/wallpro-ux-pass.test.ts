@@ -227,16 +227,24 @@ describe('marking works without scrolling', () => {
   });
 
   it('brings the photo into view from EVERY control that starts marking', () => {
-    // One helper, FIVE call sites: the card above step 1, the in-block
-    // Mark/Re-mark, both masking buttons, and -- added 2026-09-22 -- step 2 on
-    // the owner's four-step board, which is now the most likely place a
-    // customer starts marking. A control that starts a mode without it leaves
-    // the customer looking at the wrong half of the page.
+    // One helper, SIX call sites: the card above step 1, the in-block
+    // Mark/Re-mark, both masking buttons, step 2 on the owner's four-step
+    // board (added 2026-09-22), and -- added 2026-09-23 -- THE UPLOAD ITSELF.
+    //
+    // The sixth is not a marking control, and it belongs here anyway. Owner:
+    // "when I upload the photo I see it and I don't need to scroll down to
+    // find my upload." The editor renders in the second grid column, which
+    // stacks below the ENTIRE left column under `lg`, so on a phone choosing a
+    // photo left her looking at the brief box with her wall ~330 lines further
+    // down. Accepting a photo is exactly the moment the photo should be on
+    // screen, so it earns the same helper every marking control uses.
     //
     // The count is asserted rather than a minimum ON PURPOSE: this lock exists
     // because controls that start a mode kept being added WITHOUT the scroll,
     // so a new one must fail here and be looked at, not slide under a `>= 4`.
+    // It did its job on 2026-09-23 — the upload call above failed this line
+    // and had to be justified rather than absorbed.
     expect(page).toContain('const focusPhoto = () =>');
-    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(5);
+    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(6);
   });
 });
