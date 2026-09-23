@@ -11,6 +11,9 @@ name: Reclaim droplet disk for the next deploy
 # non-DesignPro path.
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       confirmation:
@@ -37,7 +40,9 @@ env:
 
 jobs:
   reclaim:
-    if: github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RECLAIM_DESIGNPROAI_DISK'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.confirmation == 'RECLAIM_DESIGNPROAI_DISK') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[reclaim-designproai-disk]'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
