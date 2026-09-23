@@ -161,18 +161,18 @@ describe('the style chips help the brief instead of spending it', () => {
   });
 });
 
-describe('the closing strip states outcomes the repo can point at', () => {
-  it('names the four', () => {
-    expect([...WALL_OUTCOMES]).toEqual([
-      'Auto-scaled to your wall',
-      'Panelized to the press width',
-      'Bleed & overlap included',
-      'Download print-ready files',
-    ]);
+describe('the empty-state proof shows the real five-step magic', () => {
+  it('uses the dedicated magic component before the workspace', () => {
+    expect(page).toContain('<WallProMagic />');
+    const magic = page.indexOf('<WallProMagic />');
+    const workspace = page.indexOf('Start your wall wrap');
+    expect(magic).toBeGreaterThan(-1);
+    expect(workspace).toBeGreaterThan(magic);
   });
 
-  it('shows before the work starts and steps aside once a design exists', () => {
-    expect(page).toContain('{!artwork && <WallProOutcomes />}');
+  it('keeps the working board only after the customer starts', () => {
+    expect(page).toContain('{(photo || artwork) && <div className="hidden sm:block">');
+    expect(page).toContain('<WallProStepBoard steps={boardSteps}');
   });
 });
 
