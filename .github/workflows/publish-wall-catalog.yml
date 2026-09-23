@@ -21,8 +21,13 @@ name: Publish the WallPro catalog
 # and run-designpro-output already do, and handed to the container as an
 # --env-file rather than an argument.
 #
-# START WITH dry_run: it plans and prints the selection, generates nothing and
-# writes nothing. And a real run STAGES by default (owner, 2026-09-23: "I'd
+# START WITH run_mode: check-auth. It mints the curator session, proves the
+# token resolves back to that user through auth/v1/user, checks the role, and
+# touches nothing else -- no generation, no storage write, no row. That is the
+# one step that cannot be tested anywhere but here, because the service key
+# lives only on the droplet. Then plan, then publish.
+#
+# A publish STAGES by default (owner, 2026-09-23: "I'd
 # rather check the library first make sure it's good") -- rows land hidden, the
 # public policy needs is_active AND approved, so nothing reaches a customer
 # until a human presses Active in the admin gallery.
@@ -38,11 +43,12 @@ on:
         options:
           - DO_NOT_PUBLISH
           - PUBLISH_WALL_CATALOG
-      dry_run:
-        description: "Plan only: print the selection, generate nothing, write nothing"
+      run_mode:
+        description: "check-auth = prove the curator session only · plan = print the selection · publish = generate and write"
         required: false
-        type: boolean
-        default: true
+        type: choice
+        default: check-auth
+        options: [check-auth, plan, publish]
       count:
         description: "How many designs to publish (1-60)"
         required: false
@@ -142,13 +148,22 @@ jobs:
           P_MODE: ${{ inputs.mode }}
           P_DOMAIN: ${{ inputs.domain }}
           P_EMAIL: ${{ inputs.curator_email }}
-          # A boolean input arrives as the STRING "true"/"false" and `${VAR:+…}`
-          # fires on any non-empty value, so it cannot be passed through raw.
-          # Value on the TRUE branch, empty on the false one -- the form
-          # CLAUDE.md records. Never `cond && '' || value`.
-          P_DRY: ${{ inputs.dry_run && '1' || '' }}
-          # Same shape as P_DRY: the value on the TRUE branch only. Anything that
-          # is not exactly "live" stages, so a typo hides rather than ships.
+          # THE MODE TRAVELS AS A VALUE THE SCRIPT VALIDATES, NOT AS FLAGS.
+          #
+          # The first draft derived two `${VAR:+…}` flags from this input, one
+          # per safe mode, so "publish" was the state where BOTH were empty --
+          # which means an unrecognised value (a typo, or an option a later
+          # edit adds to the list) would have fallen through to the one mode
+          # that generates and writes. The comment beside it claimed the
+          # opposite. A mode with three values is not two booleans, and
+          # encoding it as absence puts the dangerous branch at the bottom.
+          #
+          # Passed whole, the script tests it against an exact allowlist and
+          # refuses anything else before it reaches a credential.
+          P_RUN_MODE: ${{ inputs.run_mode }}
+          # `visibility` IS a two-state switch, so the equality form is right
+          # here: anything that is not exactly "live" stages, and a typo hides
+          # rather than ships. Never `cond && '' || value`.
           P_LIVE: ${{ inputs.visibility == 'live' && '1' || '' }}
         shell: bash
         run: |
@@ -163,7 +178,7 @@ jobs:
           test -n "$payload_file"
 
           ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
-            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' P_PAYLOAD_FILE='$payload_file' P_COUNT='$P_COUNT' P_MODE='$P_MODE' P_DOMAIN='$P_DOMAIN' P_EMAIL='$P_EMAIL' P_DRY='$P_DRY' P_LIVE='$P_LIVE' bash -s" <<'REMOTE'
+            "EXPECTED_HOSTNAME='$TARGET_HOSTNAME' P_PAYLOAD_FILE='$payload_file' P_COUNT='$P_COUNT' P_MODE='$P_MODE' P_DOMAIN='$P_DOMAIN' P_EMAIL='$P_EMAIL' P_RUN_MODE='$P_RUN_MODE' P_LIVE='$P_LIVE' bash -s" <<'REMOTE'
           set -Eeuo pipefail
           test "$(hostname)" = "$EXPECTED_HOSTNAME"
           env_file=/opt/designproai-os/shared/runtime.env
@@ -190,7 +205,7 @@ jobs:
             --entrypoint node "$image" \
             scripts/wallpro-catalog-batch.mjs \
               --email "$P_EMAIL" --count "$P_COUNT" --mode "$P_MODE" --domain "$P_DOMAIN" \
-              ${P_DRY:+--dry-run} ${P_LIVE:+--live}
+              --run-mode "$P_RUN_MODE" ${P_LIVE:+--live}
           REMOTE
 
       - name: Report the catalog as it now stands

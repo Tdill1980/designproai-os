@@ -34,7 +34,7 @@
  * that is not a real user -- correctly, because that user id becomes the
  * storage folder AND decides free-versus-charged. A service-role key is not a
  * user, so this mints a genuine session for the named curator through the
- * admin API (generate_link -> verify). It cannot reach a user who is not
+ * admin API, through the installed supabase-js client. It cannot reach a user who is not
  * already an admin/tester, because the catalog's own RLS and the batch's
  * charge exemption both key on `user_roles`. The token is never logged.
  *
@@ -53,11 +53,13 @@
  *
  * Already-published DesignIDs are skipped (`selectLibraryEntries` takes the
  * published set), each job is independent, and a failure is reported and
- * stepped over rather than taking the batch down. `--dry-run` plans and prints
- * without generating or writing anything.
+ * stepped over rather than taking the batch down. `--run-mode` picks how far
+ * it goes: `check-auth` proves only the credential, `plan` prints the
+ * selection, `publish` generates and writes.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
+import { createClient } from '@supabase/supabase-js';
 import { arg as parseArg, flag as parseFlag } from './wallpro-catalog-args.mjs';
 import {
   WALL_PRESETS, presetAsEntry,
@@ -79,7 +81,24 @@ const CURATOR_EMAIL = arg('email', process.env.WALLPRO_CURATOR_EMAIL);
 const COUNT = Number(arg('count', '12'));
 const MODE = arg('mode', 'mural');           // mural | repeat | both
 const DOMAIN = arg('domain', 'all');          // residential | commercial | all
-const DRY_RUN = flag('dry-run');
+// ONE MODE, VALIDATED AGAINST AN EXACT ALLOWLIST.
+//
+//   check-auth  mint the curator session, prove the token resolves back to
+//               that user, read the role. No generation, no write, no cost.
+//   plan        print the selection and the diversity tally. Nothing else.
+//   publish     generate through the edge function and write the rows.
+//
+// It is ONE value and not a flag per mode on purpose: with a flag per safe
+// mode, "publish" is the state where none of them is set, so an unrecognised
+// value falls through to the only branch that spends money and writes to a
+// public catalog. Anything not on this list is refused here, before a
+// credential is touched.
+const RUN_MODE = arg('run-mode', 'check-auth');
+if (!['check-auth', 'plan', 'publish'].includes(RUN_MODE)) {
+  throw new Error(`--run-mode must be check-auth, plan or publish; got "${RUN_MODE}".`);
+}
+const CHECK_AUTH = RUN_MODE === 'check-auth';
+const DRY_RUN = RUN_MODE === 'plan';
 // Staged unless explicitly told otherwise. A batch nobody has looked at must
 // not be able to reach a customer by default.
 const GO_LIVE = flag('live');
@@ -100,20 +119,52 @@ async function json(res, what) {
   return text ? JSON.parse(text) : null;
 }
 
-/** A real session for the curator. The token is returned and never printed. */
+/**
+ * A REAL session for the curator, minted through the CLIENT, not hand-rolled REST.
+ *
+ * `generate-wall-design` resolves `sb.auth.getUser(jwt)` and refuses anything
+ * that is not a user, so the batch needs a genuine access token for a named
+ * admin/tester. There is no user password here and there must not be one, so
+ * the session comes from the admin API: mint a one-time verification token for
+ * the account, then redeem it.
+ *
+ * ── WHY supabase-js AND NOT fetch ─────────────────────────────────────────
+ *
+ * The first draft POSTed `/auth/v1/admin/generate_link` and `/auth/v1/verify`
+ * by hand with a guessed body shape. GoTrue has moved that wire format more
+ * than once — `token` vs `token_hash`, the OTP type that redeems a magic link,
+ * where `hashed_token` sits in the response — and a guess that is wrong fails
+ * at the ONE step that cannot be tested without the service key. The installed
+ * client (`@supabase/supabase-js` 2.55.0, already in the runtime image) knows
+ * the format of the server it ships against, so it is the transport. RULE 1:
+ * use the proven implementation rather than reimplement the protocol.
+ *
+ * `verifyOtp` is still tried on both OTP types, because which one redeems a
+ * magic-link hash is exactly the detail that has moved; the one that works is
+ * REPORTED, so the next run is knowledge rather than another guess.
+ *
+ * The token is returned and never logged, and the one-time hash is consumed by
+ * the redeem, so nothing reusable is left behind.
+ */
 async function curatorToken(email) {
-  const link = await json(await fetch(`${SUPABASE_URL}/auth/v1/admin/generate_link`, {
-    method: 'POST', headers: svc({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ type: 'magiclink', email }),
-  }), 'Minting a curator session');
-  const hashed = link?.hashed_token || link?.properties?.hashed_token;
-  if (!hashed) throw new Error('The admin API returned no verification token for ' + email);
-  const session = await json(await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-    method: 'POST', headers: svc({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ type: 'magiclink', token: hashed }),
-  }), 'Verifying the curator session');
-  if (!session?.access_token || !session?.user?.id) throw new Error('No session came back for ' + email);
-  return { token: session.access_token, userId: session.user.id };
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const link = await admin.auth.admin.generateLink({ type: 'magiclink', email });
+  if (link.error) throw new Error(`Minting a curator session failed: ${link.error.message}`);
+  const hashed = link.data?.properties?.hashed_token;
+  if (!hashed) throw new Error(`The admin API returned no verification token for ${email}.`);
+
+  const reasons = [];
+  for (const type of ['magiclink', 'email']) {
+    const redeemed = await admin.auth.verifyOtp({ token_hash: hashed, type });
+    if (redeemed.error) { reasons.push(`${type}: ${redeemed.error.message}`); continue; }
+    const session = redeemed.data?.session;
+    if (!session?.access_token || !redeemed.data?.user?.id) { reasons.push(`${type}: no session returned`); continue; }
+    return { token: session.access_token, userId: redeemed.data.user.id, otpType: type };
+  }
+  throw new Error(`No session could be redeemed for ${email} — ${reasons.join(' · ')}`);
 }
 
 async function requireCurator(userId) {
@@ -251,6 +302,24 @@ async function publishOne(entry, mode, auth) {
 }
 
 async function main() {
+  if (CHECK_AUTH) {
+    const auth = await curatorToken(CURATOR_EMAIL);
+    const roles = await requireCurator(auth.userId);
+    console.log(`curator ${CURATOR_EMAIL} -> user ${auth.userId}`);
+    console.log(`roles: ${roles.join(', ')}`);
+    console.log(`session redeemed as OTP type "${auth.otpType}"`);
+    // Prove the token is a USER to the same door the batch must pass, rather
+    // than trusting that a session object means the edge will accept it.
+    const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${auth.token}` },
+    });
+    const seen = who.ok ? (await who.json())?.id : null;
+    if (seen !== auth.userId) throw new Error(`The minted token did not resolve back to ${auth.userId} (HTTP ${who.status}).`);
+    console.log('the token resolves to that user through auth/v1/user — the edge will accept it');
+    console.log('check-auth only: nothing generated, nothing written.');
+    return;
+  }
+
   const library = WALL_PRESETS.map(presetAsEntry)
     .filter(e => MODE === 'both' || engineForDesignType(e.designType) === MODE);
   const published = await publishedIds();
