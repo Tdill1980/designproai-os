@@ -49,7 +49,7 @@ describe('WallPro real PDF package', () => {
     const zip=await JSZip.loadAsync(pack.zip);
     const names=Object.keys(zip.files);
     expect(names).toContain('panels/panel-001-53x76in.pdf');expect(names).toContain('panels/panel-003-16x76in.pdf');
-    const pdf=Buffer.from(await zip.file('panels/panel-001-53x77in.pdf')!.async('uint8array')).toString('latin1');
+    const pdf=Buffer.from(await zip.file('panels/panel-001-53x76in.pdf')!.async('uint8array')).toString('latin1');
     expect(pdf).toContain('%PDF-1.6');expect(pdf).toMatch(/\/MediaBox \[0 0 3816(?:\.0*)? 5472(?:\.0*)?\]/);
     expect(pdf).toMatch(/\/Width 600\s/);expect(pdf).toMatch(/\/Height 400\s/);
     expect(pdf).toContain('/TrimBox');expect(pdf).toContain('/BleedBox');
