@@ -1,7 +1,7 @@
 import { layoutMetrics, validWallSize, WALLPRO_PRINT_WIDTH, type WallLayout } from './wallpro-geometry';
 
 export type WallPrintSettings = { bleed: number; overlap: number; minPpi: number };
-export const DEFAULT_WALL_PRINT: WallPrintSettings = { bleed: 1, overlap: 0.5, minPpi: 150 };
+export const DEFAULT_WALL_PRINT: WallPrintSettings = { bleed: 0.5, overlap: 0.5, minPpi: 150 };
 export type PrintRect = { x: number; y: number; width: number; height: number };
 export type WallPrintPanel = PrintRect & { number: number; overlapLeft: number };
 export type WallPrintPlan = {
