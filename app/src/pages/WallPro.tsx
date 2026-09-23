@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, LayoutGrid, Settings2, ArrowRight, PlayCircle, Sparkles, Scaling, FileText, type LucideIcon } from 'lucide-react';
+import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -28,7 +28,7 @@ import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail'
 import { WallProMagic } from '@/components/wallpro/WallProMagic';
 import { WallProPurchaseCard } from '@/components/wallpro/WallProPurchaseCard';
 import { WallProSidebar, WallProStepStrip } from '@/components/wallpro/WallProSidebar';
-import { WallProStepBoard, WallProOutcomes, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
+import { WallProStepBoard, activeStepId, type BoardStep } from '@/components/wallpro/WallProStepBoard';
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
