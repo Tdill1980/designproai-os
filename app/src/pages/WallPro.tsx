@@ -1489,18 +1489,32 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     { id: 'choose-design', n: 3, label: 'Describe your design', icon: Settings2, done: !!artwork || prompt.trim().length > 0,
       detail: artwork ? WALL_DESIGN_SKUS[designMode].label : prompt.trim() ? prompt.trim().slice(0, 90) : 'Try "modern tropical, dark background". More ways to start are under it.',
       action: { label: 'Describe it', onClick: () => jumpToStep('choose-design') } },
-    { id: 'wall-preview', n: 4, label: 'Generate & preview', icon: ImageIcon, done: !!artwork, preview: artwork?.url ?? null,
-      detail: artwork ? (photo && wallLocated ? 'Flat master and imposed on your wall' : 'Flat master ready') : 'Get options in seconds, then print-ready files.',
+    // Green only when the job this step names is actually finished. With a
+    // photo uploaded, "Generate & preview" is not done at a flat master: the
+    // owner photographed a ticked card over a design that had never reached
+    // her room, which is the step lying about its own outcome.
+    { id: 'wall-preview', n: 4, label: 'Generate & preview', icon: ImageIcon, done: !!artwork && (!photo || wallLocated), preview: artwork?.url ?? null,
+      detail: artwork ? (photo && wallLocated ? 'Flat master and imposed on your wall' : photo ? 'Flat master ready - mark the wall to see it in the room' : 'Flat master ready') : 'Get options in seconds, then print-ready files.',
       action: { label: generateLabel, onClick: () => void generate(), disabled: generateDisabled } },
   ];
 
   const wallSteps = [
-    { id: 'upload-wall', label: 'Your wall', done: width > 0 && height > 0,
-      detail: width > 0 && height > 0 ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Width and height' },
+    // ⚠️ "YOUR WALL" WAS ALWAYS GREEN (owner, 2026-09-22, from a phone:
+    // three ticked chips over a wall she had not marked and a design that was
+    // never on her photo). `width`/`height` DEFAULT to 120 x 96, so
+    // `width > 0 && height > 0` is true before the customer has touched
+    // anything -- the chip certified a default. A tick the page awards itself
+    // is the receipts-green/pixels-wrong shape this repo records elsewhere,
+    // scaled down to a progress rail.
+    { id: 'upload-wall', label: 'Your wall', done: !!photo && width > 0 && height > 0,
+      detail: photo ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Upload a photo, or set the size' },
     { id: 'choose-design', label: 'Your design', done: !!artwork,
       detail: artwork ? WALL_DESIGN_SKUS[designMode].label : 'Five ways in' },
-    { id: 'wall-preview', label: 'Preview', done: !!artwork,
-      detail: artwork ? (photo ? 'Flat and on your wall' : 'Flat master') : 'After you generate' },
+    // ...and "Preview" claimed the on-wall view while the design existed only
+    // as a flat master. With a photo uploaded, the preview is not finished
+    // until the wall is located and the composite actually exists.
+    { id: 'wall-preview', label: 'Preview', done: !!artwork && (!photo || wallLocated),
+      detail: !artwork ? 'After you generate' : !photo ? 'Flat master' : wallLocated ? 'Flat and on your wall' : 'Mark the wall to see it in the room' },
     { id: 'print-files', label: 'Print files', done: !!approvedVersion,
       detail: approvedVersion ? `V${approvedVersion.version_no} approved` : `${WALLPRO_PRINT_WIDTH}" panels, 150 PPI` },
     { id: 'order-printed-film', label: 'Buy film', done: false,
@@ -1909,7 +1923,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               It does no work itself — each card carries its own live state and
               opens its step, which is the owner's own ruling: a photo editor
               at a quarter of the screen cannot be tapped on a phone. */}
-          <WallProStepBoard steps={boardSteps} active={activeStepId(boardSteps)} busy={!!busy} onOpen={jumpToStep} />
+          {/* ⚠️ DESKTOP ONLY, AND THAT IS A CORRECTION (owner, 2026-09-22,
+              from a phone: "Terrible UI on mobile").
+              The board was built to snap-scroll below `sm` so four cards would
+              stay ONE row. On a real phone that is a carousel of half-cut
+              cards you swipe through -- and it is the THIRD progress indicator
+              on the screen, under the sticky step chips and above the very
+              sections it summarises. An overview is only an overview when you
+              can see it at once; when you have to swipe it, it is another
+              thing to get through.
+              So on a phone the sticky `WallProStepStrip` is the progress
+              indicator, which is what it was always for, and the board appears
+              at `sm` and up where four cards genuinely fit side by side. */}
+          <div className="hidden sm:block">
+            <WallProStepBoard steps={boardSteps} active={activeStepId(boardSteps)} busy={!!busy} onOpen={jumpToStep} />
+          </div>
           {/* What every path ends with, stated as facts the repo can point at:
               the scale brain, the 54" roll, the bleed/overlap plan and the
               TIFF/PDF/PNG set. Shown before the work starts, because "leave
@@ -2222,14 +2250,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   at the photo she is tapping, and the words telling her what
                   to tap were off screen. An instruction you have to scroll to
                   find is not an instruction.
-                  So it is an overlay pinned to the top of the image itself,
-                  inside the same box the taps land in. It only exists while
-                  marking, so it never covers the design at rest, and it is
-                  pointer-events-none apart from its own two buttons -- a
-                  banner that ate the first tap would be worse than silence. */}
+                  ⚠️ AND THEN IT WAS PINNED ON TOP OF THE PHOTO, WHICH IS
+                  WORSE (owner, 2026-09-22, from a phone: "there is a
+                  transparent overlay that covers half of image I can't even
+                  point to corners").
+                  The overlay sat `absolute inset-x-0 top-0` INSIDE the image
+                  box, so it covered the top quarter of her wall photo -- which
+                  is exactly where taps ONE and TWO land, because the
+                  instruction itself says "clockwise from the top left".
+                  `pointer-events-none` let the tap through; it did not let her
+                  SEE the corner she was aiming at, and a backdrop-blur over a
+                  photograph is a frosted pane over the target.
+                  So it sits directly ABOVE the image now, in the same card,
+                  scrolled to by `focusPhoto()`. Adjacent solves what the first
+                  pass solved -- no scrolling to find it -- and covers nothing.
+                  DO NOT move it back over the image. */}
               {marking && (
-                <div className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2">
-                  <div className="pointer-events-auto rounded-xl border border-blue-400/70 bg-slate-900/92 px-3 py-2 shadow-lg backdrop-blur">
+                <div className="mb-2">
+                  <div className="rounded-xl border border-blue-400/70 bg-slate-900 px-3 py-2 shadow-lg">
                     <p className="text-[13px] font-semibold leading-snug text-white">
                       {marking === 'wall'
                         ? `Tap the four corners of your wall, clockwise from the top left — ${4 - corners.length} to go`

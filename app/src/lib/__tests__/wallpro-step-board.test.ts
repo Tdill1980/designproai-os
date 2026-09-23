@@ -230,3 +230,70 @@ describe('the three inputs sit together', () => {
     expect(page).toContain("uploadControl('reference', reference ? 'Replace reference image'");
   });
 });
+
+/**
+ * THE BOARD IS DESKTOP FURNITURE, AND THE PHONE ALREADY HAD A RAIL.
+ *
+ * Owner, 2026-09-22, from a phone, on the pass that shipped it: "Terrible UI
+ * on mobile".
+ *
+ * The board was built to snap-scroll below `sm` so four cards would stay ONE
+ * row. On a real phone that is a carousel of half-cut cards you swipe through
+ * — and it is the THIRD progress indicator on one screen, under the sticky
+ * step chips and directly above the very sections it summarises. An overview
+ * is only an overview when it can be seen at once; when it has to be swiped,
+ * it is one more thing to get through.
+ *
+ * So the sticky `WallProStepStrip` is the phone's progress indicator, which is
+ * what it was always for, and the board appears from `sm` up where four cards
+ * genuinely fit side by side. The carousel classes stay for the `sm`–`lg`
+ * band, where two columns still scroll.
+ */
+describe('the board does not crowd a phone', () => {
+  it('is hidden below sm, where the sticky strip already reports progress', () => {
+    expect(page).toContain('<div className="hidden sm:block">');
+    const wrapper = page.indexOf('<div className="hidden sm:block">');
+    const mount = page.indexOf('<WallProStepBoard steps={boardSteps}');
+    expect(wrapper).toBeGreaterThan(-1);
+    expect(wrapper).toBeLessThan(mount);
+  });
+
+  it('the strip is still mounted on a phone, so progress is never unreported', () => {
+    expect(page).toContain('<WallProStepStrip steps={wallSteps}');
+    expect(page).not.toMatch(/<WallProStepStrip[^>]*className="hidden/);
+  });
+});
+
+/**
+ * A TICK THE PAGE AWARDS ITSELF IS A RECEIPT THAT LIES.
+ *
+ * The owner's phone screenshot carried three green chips — Your wall, Your
+ * design, Preview — over a wall she had never marked and a design that had
+ * never reached her photo.
+ *
+ * `width` and `height` DEFAULT to 120 x 96, so `width > 0 && height > 0` was
+ * true before she touched anything: the chip certified a default. And
+ * "Preview" claimed done at a flat master, while the whole point of uploading
+ * a room photo is seeing the design in it.
+ */
+describe('progress is reported, not awarded', () => {
+  it('"Your wall" needs a real photo, not the default dimensions', () => {
+    expect(page).toContain("{ id: 'upload-wall', label: 'Your wall', done: !!photo && width > 0 && height > 0,");
+  });
+
+  it('"Preview" is not finished at a flat master when a photo exists', () => {
+    expect(page).toContain("{ id: 'wall-preview', label: 'Preview', done: !!artwork && (!photo || wallLocated),");
+    // ...and it says what is missing rather than only withholding the tick.
+    expect(page).toContain('Mark the wall to see it in the room');
+  });
+
+  it('the board card agrees with the chip, rather than ticking on its own rule', () => {
+    expect(page).toContain("label: 'Generate & preview', icon: ImageIcon, done: !!artwork && (!photo || wallLocated)");
+  });
+
+  it('a wall with no photo can still finish — print files never wait for corners', () => {
+    // `!photo ||` is the whole reason this is not simply `wallLocated`: a
+    // customer who only typed wall inches gets a flat master and is done.
+    expect(page).toContain('(!photo || wallLocated)');
+  });
+});

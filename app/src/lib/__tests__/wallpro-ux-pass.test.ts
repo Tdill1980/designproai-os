@@ -179,20 +179,43 @@ describe('masking tells you what to do while you are doing it', () => {
 describe('marking works without scrolling', () => {
   const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
 
-  it('overlays the instruction inside the image box, not under it', () => {
+  /**
+   * ⚠️ THIS CASE USED TO PIN THE INSTRUCTION *ON TOP OF* THE PHOTO, AND THAT
+   * WAS THE NEXT DEFECT (owner, 2026-09-22, from a phone: "there is a
+   * transparent overlay that covers half of image I can't even point to
+   * corners").
+   *
+   * `absolute inset-x-0 top-0` inside the image box covered the top quarter of
+   * her wall -- which is exactly where taps ONE and TWO land, because the
+   * instruction itself says "clockwise from the top left".
+   * `pointer-events-none` let the tap through; it did not let her SEE the
+   * corner she was aiming at, and `backdrop-blur` over a photograph is a
+   * frosted pane across the target.
+   *
+   * ADJACENT, NOT ON TOP. The instruction sits directly ABOVE the image in the
+   * same card. That still solves what the previous pass solved -- nothing to
+   * scroll for, because `focusPhoto()` brings the pair into view together --
+   * and it covers nothing.
+   */
+  it('puts the instruction directly above the image, never over it', () => {
     expect(page).toContain('{marking && (');
-    expect(page).toContain('pointer-events-none absolute inset-x-0 top-0 z-20');
-    // The overlay must sit BEFORE the editor, inside the same relative box.
-    const overlay = page.indexOf('pointer-events-none absolute inset-x-0 top-0 z-20');
+    const banner = page.indexOf('{marking && (');
     const editor = page.indexOf('<WallPhotoEditor');
-    expect(overlay).toBeGreaterThan(-1);
-    expect(overlay).toBeLessThan(editor);
+    expect(banner).toBeGreaterThan(-1);
+    expect(banner).toBeLessThan(editor);
+    // Adjacent, in flow -- not positioned over the tap target.
+    expect(page.slice(banner, editor)).toContain('className="mb-2"');
   });
 
-  it('never lets the banner swallow the tap it is asking for', () => {
-    // pointer-events-none on the wrapper, auto only on the card's own buttons.
-    const overlay = page.indexOf('pointer-events-none absolute inset-x-0 top-0 z-20');
-    expect(page.slice(overlay, overlay + 400)).toContain('pointer-events-auto');
+  it('no longer floats anything over the photo while marking', () => {
+    // The taps land on the photo; nothing may sit between the customer's eye
+    // and the corner she is aiming at.
+    const banner = page.indexOf('{marking && (');
+    const editor = page.indexOf('<WallPhotoEditor');
+    const block = page.slice(banner, editor);
+    expect(block).not.toContain('absolute inset-x-0 top-0');
+    expect(block).not.toContain('backdrop-blur');
+    expect(block).not.toContain('pointer-events-none');
   });
 
   it('carries every marking mode, not just the rectangle', () => {
