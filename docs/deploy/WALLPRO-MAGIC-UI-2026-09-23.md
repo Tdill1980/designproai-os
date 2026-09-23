@@ -19,3 +19,11 @@ This file is a deployment marker only; product code is already merged in PR #642
 - Reduced WallPro-only corner radius
 - Stronger dark surface/card/divider contrast
 - Flatter hero treatment
+
+
+## Professional alignment correction
+- neutral progress states instead of blue/green traffic-light colors
+- six-column proof grid: three equal steps above two equal steps
+- equal step header heights
+- neutral geometry and mask overlays
+- brand gradient reserved for the primary CTA
