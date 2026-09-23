@@ -27,7 +27,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { activeStepId, WALL_OUTCOMES, type BoardStep } from '../../components/wallpro/WallProStepBoard';
+import { activeStepId, type BoardStep } from '../../components/wallpro/WallProStepBoard';
 import { WALL_STYLE_CHIPS, appendStyleChip } from '../wallpro-scale';
 
 const source = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
