@@ -29,19 +29,39 @@ source = source.slice(0, start) + `    // Compare the emitted payload with the a
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
       flatPanelProductionProofInjected:
-        flatProductionInstructions.length === 6 && prompt.includes(flatProductionInstructions[0]),
+        flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0]),
       templateLayoutLocked:
         flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction)),
     };
 ` + source.slice(end);
-// Preserve every output instruction and the entire designer/request assembly.
 const oldArray = original.slice(original.indexOf('    prompt = [\n      creativeHead,\n') + '    prompt = [\n      creativeHead,\n'.length);
 const oldInstructions = oldArray.slice(0, oldArray.indexOf('    ].join("\\n\\n");'));
 const newArray = source.slice(source.indexOf('    const flatProductionInstructions = [\n') + '    const flatProductionInstructions = [\n'.length);
 assert.equal(newArray.slice(0, newArray.indexOf('    ];')), oldInstructions, 'output prompt instructions remain byte-identical');
 writeFileSync(file, source);
-// Replace obsolete clean-background expectations with strict, executable tests
-// of the current designer-first request. Keep original-asset filtering covered.
+
+// #645 changed the selected persona, but both guards still required its old
+// opening. Accept the explicit old and new identities; keep the required
+// output seam and missing-persona rejection. These probes emit no prompt text.
+const twins = [
+  ['runtime/atlas-panel-proof-contract.cjs', 'bf71eaf8a411e34b0e5023f89b5c222a88b8c62e'],
+  ['supabase/functions/_shared/atlas-panel-proof-prompt.ts', '1f406f4239a346579050464f9e43f18a592ea23a'],
+];
+const oldGuard = String.raw`if (!/senior graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer/.test(head)) {`;
+const newGuard = String.raw`if (!/^(?:You are (?:the |a )?senior (?:professional )?graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer)\b/.test(head)) {`;
+for (const [path, sha] of twins) {
+  assert.equal(execFileSync('git', ['hash-object', path], {encoding:'utf8'}).trim(), sha, path);
+  const text = readFileSync(path, 'utf8');
+  assert.equal(text.split(oldGuard).length, 2, path + ': guard seam');
+  writeFileSync(path, text.replace(oldGuard, newGuard));
+}
+const parityPath = 'tests/designiq-shared-assembly.test.mjs';
+let parity = readFileSync(parityPath, 'utf8');
+assert.equal(execFileSync('git', ['hash-object', parityPath], {encoding:'utf8'}).trim(), '619f1c7443cf917d5505c093de487e35041376ad');
+parity = parity.replaceAll('/senior graphic designer and vehicle-wrap specialist/', '/senior (?:professional )?graphic designer and vehicle-wrap specialist/');
+parity = parity.replace('/native Gemini 3 Pro Image design knowledge/', '/native (?:Gemini 3 Pro Image )?design knowledge/');
+writeFileSync(parityPath, parity);
+
 let tests = readFileSync('tests/call1-startup-latency.test.mjs','utf8');
 tests += `
 
@@ -67,4 +87,6 @@ test('separated artwork cannot fall back to a labelled container or a full proof
 `;
 writeFileSync('tests/production-panel-proof-clean-prompt.test.mjs', tests);
 unlinkSync('tests/call1-startup-latency.test.mjs');
-console.log('Patched request-local prompt declaration and emitted-payload audit. Designer, model, geometry, Call 2 and UI unchanged.');
+// Stage the additional guard twins for the runner's single tested branch commit.
+execFileSync('git', ['add', ...twins.map(([path]) => path), parityPath]);
+console.log('Patched local prompt declaration and current-persona audit. Exact designer and output text unchanged.');
