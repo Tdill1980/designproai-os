@@ -2445,12 +2445,10 @@ function lateAtlasViewSet({ source, run, atlas, rows }) {
       || provider.atlasManifestContentHash !== atlas.manifest_content_hash
       || provider.atlasZoneContract !== ATLAS_PANEL_AUTHORITY_CONTRACT || provider.atlasZoneSurfaceKey !== surfaceKey
       || provider.atlasZoneContentHash !== panel.contentHash
-      || (sheetHash
-        ? (provider.proofArtworkAuthorityContract !== ATLAS_PROOF_SHEET_AUTHORITY_CONTRACT
-          || provider.proofArtworkAuthorityRole !== "three-zone-production-proof"
-          || provider.proofArtworkAuthorityHash !== sheetHash
-          || provider.sourcePanelHash !== sheetHash)
-        : provider.sourcePanelHash !== panel.contentHash)
+      || provider.proofArtworkAuthorityContract !== ATLAS_PANEL_AUTHORITY_CONTRACT
+      || provider.proofArtworkAuthorityRole !== "surface-panel"
+      || provider.proofArtworkAuthorityHash !== panel.contentHash
+      || provider.sourcePanelHash !== panel.contentHash
       || validation.contract !== ATLAS_PROOF_QC_CONTRACT || validation.proofHash !== row.content_hash
       || validation.expectedView !== ATLAS_QC_VIEW_CONTRACTS[sourceViewType]?.label
       || validation.atlasHash !== atlas.projection_content_hash || validation.zoneSurfaceKey !== surfaceKey
