@@ -160,6 +160,48 @@ table.** When a fixture stands in for a schema, build it FROM the migrations.
 **Not proven:** no purchase has been confirmed on production since the patch.
 Tick it when an entitlement row appears for a real checkout.
 
+## 📄 CALL 1'S DELIVERABLE IS THE **PRODUCTION PANEL PROOF**, NEVER "A PRINT FILE" (owner, Trish 2026-09-23)
+
+Owner, reading the corrected prompt: *"But deliverable is not a single print
+file it's the trizone production panel proof."*
+
+She is right, and it was a category error, not a wording preference. The
+**document** Call 1 returns is the TriZone™ Production Panel Proof: one sheet,
+three bands. The **print files** are cut from Zone 1 afterwards, upscaled by
+Call 12 and packed. Telling the model "THE DELIVERABLE IS A PRINT FILE"
+collapses the document into one of its own downstream outputs, and a model told
+it is making a single file has no reason to draw three bands.
+
+The overcorrection is traceable: the previous wording said the panels look *"as
+they look coming off the printer"*, which made the model photograph wrap film on
+a table. The fix for THAT is "flat design artwork, the file a designer builds" —
+a statement about the MEDIUM. It is not a licence to rename the OBJECT.
+
+```
+THE DELIVERABLE IS A PRODUCTION PANEL PROOF: ONE sheet, three bands, in exactly
+the form of the attached finished proof. Everything on it is flat design artwork
+— the file a wrap-shop graphic designer builds. The print files are cut from the
+top band afterwards.
+```
+
+The A.C.E. proof-sheet scene moves with it: *"Design the wrap artwork for a
+{vehicle}: six flat design panels for the production panel proof, drawn the way a
+wrap-shop graphic designer builds them."* Both scenes, both files, and the
+generated `designiq-assembly.ts` slice regenerated.
+
+**Medium and object are two separate statements. Keep both, and do not let a fix
+to one rewrite the other.**
+
+The model-facing text says PRODUCTION PANEL PROOF rather than the trademark:
+`PROOF_BRAND` in `app/src/lib/os-brand.ts` is the ONE place the word TriZone™ is
+spelled, and the runtime cannot import it. Adding the mark to the prompt would
+create a third home for the brand word needing a third mirror lock, and the model
+gains nothing from a name it has never seen. The OBJECT is what had to be right.
+
+**This change was safe to make only because the phase-1 guard now compares
+against the constant** (section below). Under the old hand-copied literals it
+would have taken Call 1 down a second time.
+
 ## 🚨 A FAIL-CLOSED AUDIT THAT RESTATES THE TEXT IT GUARDS TOOK CALL 1 DOWN (live 2026-09-22)
 
 `production-panel-proof`'s **phase-1 payload contract** refuses the request
