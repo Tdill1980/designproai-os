@@ -416,7 +416,7 @@ export function buildPanelProofTurns(params: PanelProofParams): { design: string
       ...rows.map((row) => `  ${row}`));
   }
   if (strings.length) {
-    design.push("", "EXACT TEXT, character for character — every word, numeral and web address on the wrap is here:",
+    design.push("", "EXACT TEXT, character for character — every word, numeral and web address on the wrap is here, in one drawn letterform:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
   // The turn-1 ask, stated last so it is the instruction the model leaves with.
@@ -488,8 +488,32 @@ export function buildPanelProofPrompt(params: PanelProofParams): string {
   // `panelProofCoverageSqFt` stays exported because the edge reports the figure
   // on its receipt. Asking the model for a number it is told not to draw is
   // noise in a prompt whose budget is the design's.
+  // ⛔ "IN ONE DRAWN LETTERING FAMILY" IS THE CUSTOM-LOGO-FONT RULE (owner,
+  // Trish 2026-09-23: "must be a custom logo font"). Live on New Aura Day Spa
+  // (7748e5d7): "NewAuraDaySpa" came back set in a stock book face on both
+  // flanks and again in the Zone 3 cut graphics.
+  //
+  // THREE CONSTRAINTS SHAPED IT INTO SIX WORDS ON AN EXISTING LINE, and each
+  // one was a lock convicting a longer draft:
+  //   1. NOT in `LOGO_REQUIREMENT`. That shared constant also feeds the field
+  //      and six-surface assemblies, whose prompts are byte-pinned to what the
+  //      owner approved and what is deployed; `atlas-one-field-call1` convicted
+  //      that by exactly the 150 characters of the first attempt.
+  //   2. POSITIVE. The document contract speaks only in the positive
+  //      (2026-09-22) and that lock convicts "rather than", which the second
+  //      draft used.
+  //   3. THE BUDGET IS FULL. The contract is capped at 2700 chars and sat at
+  //      2668; two new lines took it to 2788. The ceiling is not raised to fit
+  //      a sentence -- CLAUDE.md's own rule is that prompt length is the
+  //      quality killer and every word earns its place. So the rule rides the
+  //      line that already introduces the strings, for 23 characters -- "in one drawn letterform", after the first
+  //      wording came in ONE character over.
+  //
+  // It names a PROPERTY (drawn, one family) and never a FORM. Naming a form is
+  // what converged three unrelated trades on one centred badge in July and got
+  // the old mandate deleted; this cannot, because it describes no shape.
   if (strings.length) {
-    out.push("", "EXACT TEXT, character for character — every word, numeral and web address on the wrap is here:",
+    out.push("", "EXACT TEXT, character for character — every word, numeral and web address on the wrap is here, in one drawn letterform:",
       ...strings.map(([label, value]) => `  ${label}: ${value}`));
   }
   // THE SMALL-PANELS LINE IS GONE (owner, 2026-09-22: "Ace creates a logo

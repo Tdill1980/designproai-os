@@ -269,6 +269,77 @@ changes is what the receipts can SAY; whether the restyle persona is right for a
 given brief, and whether the real DESIGN ANCHOR improves the seven proofs, is
 the owner's eye on a fresh run.
 
+## ✍️ THE 5" BLEED WAS COMPUTED, CAPTIONED AND NEVER DRAWN — AND THE LOGO-FONT RULE LIVED IN A FILE CALL 1 DOES NOT READ (owner, Trish 2026-09-23)
+
+Owner, on her own live New Aura sheet: *"This design still not creating a custom
+logo font"*, then *"That's not a logo font it's also cutting off face"*, then
+*"Fix logo iss must me a custom logo font and fix bleed"*. Two defects, one
+screenshot, and neither was where it looked.
+
+### THE TRIM LINE
+
+`trimOf` / `printOf` compute the bleed from GENIE and **every caption on the
+sheet already states it** — `166.8" W x 59.4" H (TRIM: 156.8" x 49.4") with 5"
+bleed`. The cell itself was ONE rectangle. So the document said "there is a 5″
+sacrificial margin" in words the model reads as a caption, while the contract
+said *"the artwork alone, background to every edge"* and the drawing showed a
+single box to fill. The designer filled it corner to corner, correctly, and the
+model's face landed in the band the installer cuts off.
+
+`panelCell` now takes `trimInset` and draws **one dashed hairline rectangle**
+inside the cell; `row` derives it **per axis** from the cell's own proportion —
+5″ of 166.8″ is 3.0% of the width and 5″ of 59.4″ is 8.4% of the height, so a
+single averaged inset would miss the trim on both axes at once. Measured: 7.7px
+on the 1536 template, ~25px on the delivered 5056px sheet.
+
+- **It carries no text, no ticks and no registration crosses.** This repo has
+  been bitten exactly once by drawing geometry into the paint area —
+  `atlasFieldContract` printed six rectangles beside *"none of the map is
+  drawn"* and four consecutive live runs painted those digits onto the
+  customer's flanks. A hairline is not a numeral, and `map_drawn` already
+  convicts "drawn frames" if the model copies it.
+- **The customer never sees it.** The returned panel is composited OVER the cell
+  when the document is assembled, so the guide exists for the designer and is
+  painted out before anyone reads the proof.
+- **The requirement existed at the WRONG END.** PanelPro's human QC asks the
+  reviewer to confirm *"nothing important falling into openings or cut areas"* —
+  inspected after the fact, never asked for up front. This is that same rule,
+  moved to where the decision is made.
+- Both byte-locked template twins carry it (`runtime/atlas-proof-container-template.cjs`,
+  `_shared/atlas-proof-container-template.ts`), and the lock is by EXECUTION:
+  `tests/atlas-proof-container-template.test.mjs` transpiles the TS and asserts
+  the two draw a byte-identical sheet on two vehicles.
+
+### THE LETTERFORM
+
+The rule the owner is asking for — *"Ace creates a logo font, uses that
+throughout — never generic fonts"* — DOES exist, in the shared
+`LOGO_REQUIREMENT`. **Editing it there broke four byte pins at once**
+(`tests/atlas-one-field-call1.test.mjs`: 2696→2846, 3853→4003, plus two hashes),
+because that constant also feeds the owner-approved, DEPLOYED field and v24
+prompts. A shared creative constant is not the place to answer a defect seen on
+one route.
+
+So the rule rides the line Call 1 already sends, in both byte-locked twins:
+
+```
+EXACT TEXT, character for character — every word, numeral and web address on
+the wrap is here, in one drawn letterform:
+```
+
+**Two near-misses worth recording.** The first patch went into the `design.push`
+block — the two-turn path, `anchorTurns: false`, OFF — while the live path is
+`out.push`, which is the one the runtime twin mirrors; a second occurrence in
+the edge file made that easy to get wrong. And the document contract is capped
+at **2700 chars** with a **1200-char** ceiling over Call 1's own assembly: the
+first wording landed at 2788, the second at **1201 — over by one character**.
+Raising either ceiling to fit a sentence is how a prompt reaches 4,887
+characters; shortening the sentence is the move.
+
+**NOT PROVEN:** no live generation has run with either fix. Acceptance is the
+owner's eye on an exported sheet — the company name set in the design's own
+letterform, and nothing she cares about outside the dashed line.
+
 ## 🚫 ZONE 1 IS CUT FROM THE TEMPLATE. A SECOND PRODUCER IS NEVER THE ANSWER. (owner, Trish 2026-09-23)
 
 Owner: *"we must use the code built template that's already zoned tricolor"*,

@@ -285,3 +285,24 @@ Guarded by `tests/zone1-comes-only-from-the-template.test.mjs`.
 - [x] **150 PPI output already exists and runs** — Call 12 / Topaz targets
       `(widthInches + 10) × 150` for branded and clean panels. The gap was never
       the 150 PPI step; it is the real pixels going into it.
+
+### The logo font and the 5" bleed — 2026-09-23
+
+Owner, on the live New Aura sheet: *"This design still not creating a custom
+logo font"* / *"That's not a logo font it's also cutting off face"* / *"Fix logo
+iss must me a custom logo font and fix bleed"*. Full record in CLAUDE.md.
+
+- [x] **The lettering rule reaches the LIVE Call-1 path.** The EXACT TEXT line
+      in both byte-locked twins now reads *"every word, numeral and web address
+      on the wrap is here, in one drawn letterform"*. Scoped to the panel-proof
+      contract: the shared `LOGO_REQUIREMENT` also feeds the deployed field/v24
+      prompts, and editing it there broke four byte pins.
+- [x] **The 5" bleed is DRAWN, not only captioned.** `panelCell` draws one
+      dashed hairline rectangle at the trim; `row` derives the inset per axis
+      (3.0% of a flank's width, 8.4% of its height). ~25px on the delivered
+      sheet. Both template twins, locked by execution.
+- [ ] **Owner's eye on a fresh export** — the company name in the design's own
+      letterform, and nothing she cares about outside the dashed line. No live
+      generation has run on either fix.
+- [ ] **Edge deploy of `production-panel-proof`** read back, confirming the
+      new EXACT TEXT wording and `trimInset` in the deployed body.
