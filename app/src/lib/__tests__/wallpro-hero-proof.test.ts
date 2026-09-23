@@ -28,51 +28,28 @@ const source = (rel: string) =>
 
 describe('the hero proof band', () => {
   const band = source('../../components/wallpro/WallProHeroProof.tsx');
+  const page = source('../../pages/WallPro.tsx');
 
-  /**
-   * The root is now a ternary: the band keeps its centred, capped, definite
-   * width, and the landing hero mounts the SAME slider as an absolute fill
-   * (owner, 2026-09-17: the before/after "both need to be in hero"). The lock
-   * follows the BAND branch — what it guards is unchanged and still the thing
-   * that broke live, so it is re-pointed rather than relaxed.
-   */
-  const bandRoot = () => band.match(/'mx-auto mt-4[^']*'/);
-
-  it('gives its root a definite width, so auto margins cannot collapse it in a grid', () => {
-    const root = bandRoot();
-    expect(root, 'the band root class list moved; re-point this lock').not.toBeNull();
-    expect(root![0]).toContain('w-full');
+  it('keeps the original band and fill variants and adds a shallow tool hero', () => {
+    expect(band).toContain("export type HeroProofVariant = 'band' | 'fill' | 'shallow';");
+    expect(band).toContain("const shallow = variant === 'shallow';");
   });
 
-  it('is still capped and centred when it stands alone', () => {
-    const root = bandRoot()![0];
-    expect(root).toContain('mx-auto');
-    expect(root).toContain('max-w-6xl');
+  it('the shallow variant stays intentionally short and crops both halves together', () => {
+    expect(band).toContain("sm:h-52 lg:h-56");
+    expect(band).toContain("(fill || shallow) ? 'object-cover' : 'object-contain'");
   });
 
-  it('the fill variant drops the cap and the centring, which are band-only', () => {
-    // A hero panel owns its own shape. Leaving `max-w-6xl` or `mx-auto` on the
-    // fill branch would letterbox the slider inside a box that is already the
-    // right shape — the same class of defect, pointed the other way.
-    const fillRoot = band.match(/fill \? '([^']*)' : 'mx-auto mt-4/);
-    expect(fillRoot, 'the fill branch moved; re-point this lock').not.toBeNull();
-    expect(fillRoot![1]).toContain('absolute');
-    expect(fillRoot![1]).not.toContain('max-w-6xl');
-    expect(fillRoot![1]).not.toContain('mx-auto');
+  it('the tool page mounts the gym compare as the shallow variant', () => {
+    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
   });
 
-  it('is placed in the hero grid, which is why the width matters', () => {
-    const page = source('../../pages/WallPro.tsx');
-    // The band sits in the same grid as the headline copy. If this ever stops
-    // being true the lock above is merely harmless rather than load-bearing.
-    //
-    // The COPY TRACK'S WIDTH IS NOT THE CONTRACT. It was pinned at a literal
-    // 26rem and widened to 30rem on 2026-09-22 when the masthead became a full
-    // hero with a three-line headline -- a legitimate layout change that failed
-    // a test about something else entirely. What matters here is the SHAPE: a
-    // capped copy column beside a 1fr track the band has to stretch into.
-    expect(page).toMatch(/grid[^\n]*lg:grid-cols-\[minmax\(0,\d+rem\)_minmax\(0,1fr\)\]/);
-    expect(page).toContain('<WallProHeroProof proofs={bandProofs} />');
+  it('the normal standalone band still has a definite capped width', () => {
+    expect(band).toContain("'mx-auto mt-4 w-full max-w-6xl px-4'");
+  });
+
+  it('the fill variant still owns the whole landing-image box', () => {
+    expect(band).toContain("fill ? 'absolute inset-0'");
   });
 });
 
