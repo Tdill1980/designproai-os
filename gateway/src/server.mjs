@@ -2261,6 +2261,94 @@ const CALLS_1_7_V2_KEYS = [
 
 const CALLS_1_7_V3_KEYS = [...CALLS_1_7_V2_KEYS, "pipelineMode"];
 
+/**
+ * RUN THIS BRIEF AGAIN, ON TODAY'S CODE.
+ *
+ * Owner, 2026-09-23: *"Could you create a way to regenerate past jobs under
+ * this new code?"* Measured that day: 230 generations in sixty days, 124 of
+ * them FAILED — briefs a customer wrote that produced nothing, while Call 1
+ * has since gained the raw brief, both personas, the design anchor, the
+ * die-cut gate, the drawn trim line and the one-letterform rule.
+ *
+ * ⛔ IT IS A RE-SUBMIT, NEVER A SECOND PRODUCER. This helper only rebuilds the
+ * OPTIONS. The route hands them to `validatedGenerationRequest` and the same
+ * intake RPC a fresh design uses, so there is exactly one way a generation
+ * request is ever created. That is what RULE 0.21 forbids duplicating, and it
+ * is also what makes the whole feature removable: delete the route and this
+ * helper and the create path has not been touched.
+ *
+ * ⛔ AND IT REPLAYS THE CUSTOMER'S CONTENT, NEVER THE OLD ENVELOPE. A past job
+ * may carry `designpro.calls-1-7-input.v2`; replaying that verbatim would run
+ * the brief under the contract it already failed on, which is the opposite of
+ * what was asked. `contractVersion` and `pipelineMode` are therefore DROPPED
+ * and rebuilt — the gateway's own v2→v3 normalisation then applies exactly as
+ * it does for a new design.
+ */
+const REGENERATE_CARRIED_KEYS = CALLS_1_7_V2_KEYS
+  .filter((key) => key !== "contractVersion" && key !== "logoAsset");
+
+function regenerateInputFromStored(stored, ownerId, newGenerationId) {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return null;
+  const input = { contractVersion: "designpro.calls-1-7-input.v2" };
+  for (const key of REGENERATE_CARRIED_KEYS) {
+    if (stored[key] !== undefined && stored[key] !== null) input[key] = stored[key];
+  }
+  // A brief and a vehicle are what a generation IS. Without them there is
+  // nothing to run again, and inventing either would put a guess where the
+  // customer's own words belong.
+  if (!String(input.brief || "").trim()) return null;
+  if (!input.vehicle || typeof input.vehicle !== "object") return null;
+  if (!String(input.designName || "").trim()) {
+    input.designName = String(stored.designName || "Regenerated design").trim() || "Regenerated design";
+  }
+  return input;
+}
+
+/**
+ * THE UPLOADED LOGO IS BOUND TO ITS GENERATION, SO IT HAS TO BE COPIED.
+ *
+ * `referenceAssetIsInvalid` derives the expected path from the generation id:
+ * `users/{owner}/revisions/{generationId}/inputs/{kind}/{hash}.{ext}`. A new
+ * generation therefore CANNOT reference the old object — the validator would
+ * refuse it, correctly. Copying the bytes to the new generation's own prefix is
+ * what lets a commercial wrap be re-run WITH its brand mark instead of quietly
+ * without it (RULE 0.24: an uploaded logo is creative authority).
+ *
+ * It fails SOFT and says so. A regenerate that dies because a two-month-old
+ * logo object was tidied away would throw the brief out with it; the caller is
+ * told the logo could not be carried, and re-uploads it if it matters.
+ */
+async function copyRegenerateLogoAsset(fetchImpl, token, cfg, stored, ownerId, newGenerationId) {
+  const asset = stored?.logoAsset;
+  if (!asset || typeof asset !== "object" || Array.isArray(asset)) return { asset: null, carried: false };
+  const contentHash = String(asset.contentHash || "").toLowerCase();
+  const contentType = String(asset.contentType || "").trim().toLowerCase();
+  const extension = MIME_EXTENSION.get(contentType);
+  const from = String(asset.storagePath || "").trim();
+  if (!/^[0-9a-f]{64}$/.test(contentHash) || !extension || !from) return { asset: null, carried: false };
+  const to = `users/${ownerId}/revisions/${newGenerationId}/inputs/logo/${contentHash}.${extension}`;
+  try {
+    const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/storage/v1/object/copy`, {
+      method: "POST",
+      body: JSON.stringify({ bucketId: BUCKET, sourceKey: from, destinationKey: to }),
+    }, token, cfg);
+    // An object already at the destination is success, not a conflict: the
+    // path is content-addressed, so the bytes there ARE these bytes.
+    if (!response.ok && response.status !== 409) return { asset: null, carried: false };
+  } catch {
+    return { asset: null, carried: false };
+  }
+  return {
+    asset: {
+      byteSize: asset.byteSize,
+      contentHash,
+      contentType,
+      storagePath: to,
+    },
+    carried: true,
+  };
+}
+
 const VISIONBOARD_INTENTS = new Set(["exact_reference", "style_inspiration", "artboard_projection"]);
 const DESIGNPRO_SUBSTRATES = new Set(["standard", "color_change_film", "chrome_film", "satin_film"]);
 const REFERENCE_ASSET_URL_KEYS = ["url", "signedUrl", "publicUrl", "downloadUrl"];
@@ -2848,6 +2936,68 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           revisionSequence:result.revisionSequence,state:result.state,inputHash:result.inputHash,engineContractHash:result.engineContractHash,
           idempotent:result.idempotent===true,...validatedGenerationIdentity(result,result.idempotent!==true)});
       }
+      // RUN A PAST BRIEF AGAIN, UNDER TODAY'S CODE (owner, 2026-09-23).
+      // It mints a NEW generation and leaves the old one untouched -- RULE 0.22
+      // is explicit that a version is never silently replaced, and half of what
+      // this exists to re-run are FAILED jobs whose evidence must survive.
+      const regenerateFromMatch = url.pathname.match(
+        /^\/api\/generation\/requests\/([0-9a-f-]{36})\/regenerate$/);
+      if (req.method === "POST" && regenerateFromMatch) {
+        const sourceGenerationId = regenerateFromMatch[1].toLowerCase();
+        if (!UUID_PATTERN.test(sourceGenerationId)) {
+          throw Object.assign(new Error("generation_id_invalid"), { status: 400 });
+        }
+        const body = await readBody(req);
+        const newGenerationId = String(body?.generationId || "").toLowerCase();
+        if (!UUID_PATTERN.test(newGenerationId) || newGenerationId === sourceGenerationId) {
+          throw Object.assign(new Error("regenerate_target_id_invalid"), { status: 400 });
+        }
+        const stored = await rpc(fetchImpl, token, cfg,
+          "designpro_generation_regenerate_input",
+          { p_generation_id: sourceGenerationId }).catch(() => null);
+        // NULL covers "no such generation" and "not yours" alike, so the answer
+        // cannot be used to probe for another owner's designs.
+        if (!stored) throw Object.assign(new Error("generation_not_found"), { status: 404 });
+        const rebuilt = regenerateInputFromStored(stored, user.id, newGenerationId);
+        if (!rebuilt) {
+          throw Object.assign(new Error("regenerate_input_incomplete"), { status: 422 });
+        }
+        const logo = await copyRegenerateLogoAsset(
+          fetchImpl, token, cfg, stored, user.id, newGenerationId);
+        if (logo.asset) rebuilt.logoAsset = logo.asset;
+        // THE SAME DOOR. Validated by the same function and enqueued by the same
+        // RPC as a design created from the form -- this route rebuilds options,
+        // it does not create generation requests of its own.
+        const request = validatedGenerationRequest(
+          { generationId: newGenerationId, input: rebuilt }, user.id);
+        const intakeRpc = request.input.contractVersion === "designpro.calls-1-7-input.v3"
+          ? "create_designpro_flat_first_generation_request_v2"
+          : "create_designpro_generation_request";
+        const result = await rpc(fetchImpl, token, cfg, intakeRpc, {
+          p_generation_id: request.generationId,
+          p_input: request.input,
+          p_idempotency_key: request.idempotencyKey,
+        }).catch((error) => {
+          if (/generation_input_conflict/.test(String(error?.message || ""))) {
+            throw Object.assign(new Error("generation_input_conflict"), { status: 409 });
+          }
+          throw error;
+        });
+        if (!UUID_PATTERN.test(String(result?.requestId || ""))
+          || result?.generationId !== request.generationId) {
+          throw Object.assign(new Error("generation_request_response_invalid"), { status: 502 });
+        }
+        return json(res, 202, {
+          requestId: result.requestId,
+          generationId: result.generationId,
+          sourceGenerationId,
+          state: result.state,
+          // Stated, never assumed: a caller has to be able to tell a wrap that
+          // carries its brand mark from one that lost it to a tidied bucket.
+          logoCarried: logo.carried,
+        });
+      }
+
       if (req.method === "POST" && url.pathname === "/api/generation/requests") {
         const request = validatedGenerationRequest(await readBody(req), user.id);
         // A generationId already carrying a different brief is not a bad

@@ -3495,3 +3495,188 @@ test("completed three-zone proof is signed before an atlas revision or a 3D view
   assert.equal(proof.quadrants.branded.length,6);
   assert.equal(proof.quadrants.clean.length,6);
 });
+
+/**
+ * RUN A PAST BRIEF AGAIN, ON TODAY'S CODE (owner, 2026-09-23).
+ *
+ * Measured on production that day: 230 generations in sixty days, 124 of them
+ * FAILED. Those briefs are the reason this route exists, and the properties
+ * below are what keep it from becoming a liability.
+ */
+const REGEN_OWNER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const REGEN_SOURCE = "50000000-0000-4000-8000-000000000001";
+const REGEN_TARGET = "50000000-0000-4000-8000-000000000002";
+
+function regenGateway(storedInput, calls, { copyOk = true } = {}) {
+  return createGateway({
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const value = String(url);
+      calls.push({ url: value, init });
+      if (value.endsWith("/auth/v1/user")) return Response.json({ id: REGEN_OWNER });
+      if (value.endsWith("/rest/v1/rpc/designpro_generation_regenerate_input")) {
+        return Response.json(storedInput);
+      }
+      if (value.endsWith("/storage/v1/object/copy")) {
+        return copyOk ? Response.json({ Key: "ok" }) : new Response("no", { status: 404 });
+      }
+      if (value.endsWith("/rest/v1/rpc/create_designpro_flat_first_generation_request_v2")) {
+        return Response.json({
+          requestId: "60000000-0000-4000-8000-000000000001",
+          generationId: REGEN_TARGET,
+          state: "queued",
+          inputHash: "a".repeat(64),
+          engineContractHash: "b".repeat(64),
+          ...reservedGenerationIdentity(REGEN_TARGET),
+        });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+}
+
+const regenStored = (extra = {}) => ({
+  contractVersion: "designpro.calls-1-7-input.v2",
+  brief: "A botanical spa wrap in sage and cream",
+  designName: "New Aura Day Spa",
+  companyName: "New Aura Day Spa",
+  website: "newaura.example",
+  vehicle: { year: "2025", make: "Ford", model: "F-250", type: "truck" },
+  ...extra,
+});
+
+test("running a past brief again mints a NEW generation through the same intake RPC", async (t) => {
+  const calls = [];
+  const server = regenGateway(regenStored(), calls);
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_TARGET }),
+  });
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  assert.equal(body.generationId, REGEN_TARGET);
+  assert.equal(body.sourceGenerationId, REGEN_SOURCE);
+
+  // ONE DOOR. The same intake RPC a design created from the form uses -- this
+  // route rebuilds options, it never creates generation requests of its own.
+  const intake = calls.find((item) => item.url.endsWith(
+    "/rpc/create_designpro_flat_first_generation_request_v2"));
+  assert.ok(intake, "a regenerate must enqueue through the create path's own RPC");
+
+  // THE CONTENT IS REPLAYED; THE ENVELOPE IS REBUILT. The stored job is v2, and
+  // replaying that would re-run the brief under the contract it already failed
+  // on -- the opposite of "under this new code".
+  const sent = JSON.parse(intake.init.body);
+  assert.equal(sent.p_input.contractVersion, "designpro.calls-1-7-input.v3");
+  assert.equal(sent.p_input.pipelineMode, "flat-first-atlas-v1");
+  assert.equal(sent.p_input.brief, "A botanical spa wrap in sage and cream");
+  assert.equal(sent.p_input.companyName, "New Aura Day Spa");
+  assert.equal(sent.p_generation_id, REGEN_TARGET);
+});
+
+test("the source generation is never written to", async (t) => {
+  const calls = [];
+  const server = regenGateway(regenStored(), calls);
+  t.after(() => server.close());
+  const base = await listen(server);
+  await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_TARGET }),
+  });
+  // RULE 0.22: a version is never silently replaced, and for the failed half of
+  // the library the old row is the only evidence of what went wrong.
+  const wrote = calls.filter((item) => (item.init?.method || "GET") !== "GET"
+    && JSON.stringify(item.init?.body || "").includes(REGEN_SOURCE)
+    && !item.url.endsWith("/rpc/designpro_generation_regenerate_input"));
+  assert.deepEqual(wrote, []);
+});
+
+test("an uploaded logo is copied to the new generation's own input prefix", async (t) => {
+  const calls = [];
+  const logo = {
+    byteSize: 4096,
+    contentHash: "c".repeat(64),
+    contentType: "image/png",
+    storagePath: `users/${REGEN_OWNER}/revisions/${REGEN_SOURCE}/inputs/logo/${"c".repeat(64)}.png`,
+  };
+  const server = regenGateway(regenStored({ logoAsset: logo }), calls);
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_TARGET }),
+  });
+  assert.equal((await response.json()).logoCarried, true);
+
+  // The validator derives the expected path from the GENERATION ID, so the old
+  // object can never be referenced by a new generation. Copying is what lets a
+  // commercial wrap be re-run WITH its brand mark (RULE 0.24).
+  const copy = calls.find((item) => item.url.endsWith("/storage/v1/object/copy"));
+  assert.ok(copy, "the logo bytes must be copied, not referenced in place");
+  const intake = calls.find((item) => item.url.endsWith(
+    "/rpc/create_designpro_flat_first_generation_request_v2"));
+  const sentLogo = JSON.parse(intake.init.body).p_input.logoAsset;
+  assert.equal(sentLogo.storagePath,
+    `users/${REGEN_OWNER}/revisions/${REGEN_TARGET}/inputs/logo/${"c".repeat(64)}.png`,
+    "the identity sent must name the NEW generation's copy, not the old object");
+  assert.equal(sentLogo.contentHash, "c".repeat(64),
+    "the bytes are the same bytes — the path moved, the content did not");
+});
+
+test("a logo that cannot be copied fails SOFT and is reported, never silently dropped", async (t) => {
+  const calls = [];
+  const logo = {
+    byteSize: 4096,
+    contentHash: "c".repeat(64),
+    contentType: "image/png",
+    storagePath: `users/${REGEN_OWNER}/revisions/${REGEN_SOURCE}/inputs/logo/${"c".repeat(64)}.png`,
+  };
+  const server = regenGateway(regenStored({ logoAsset: logo }), calls, { copyOk: false });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_TARGET }),
+  });
+  // The brief still runs -- throwing the design away because a two-month-old
+  // object was tidied up is the wrong blast radius -- but the caller is TOLD.
+  assert.equal(response.status, 202);
+  assert.equal((await response.json()).logoCarried, false);
+});
+
+test("a generation the caller does not own is not found, and nothing is enqueued", async (t) => {
+  const calls = [];
+  // NULL covers absent and other-owner alike, so the answer cannot be used to
+  // probe for another customer's designs.
+  const server = regenGateway(null, calls);
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_TARGET }),
+  });
+  assert.equal(response.status, 404);
+  assert.equal(calls.some((item) => item.url.includes("/rpc/create_designpro")), false);
+});
+
+test("regenerating onto the SAME id is refused before anything is read", async (t) => {
+  const calls = [];
+  const server = regenGateway(regenStored(), calls);
+  t.after(() => server.close());
+  const base = await listen(server);
+  const response = await fetch(`${base}/api/generation/requests/${REGEN_SOURCE}/regenerate`, {
+    method: "POST",
+    headers: { cookie: "dp_session=test-token", "content-type": "application/json" },
+    body: JSON.stringify({ generationId: REGEN_SOURCE }),
+  });
+  // Re-using the id would collide with the design it is meant to preserve.
+  assert.equal(response.status, 400);
+  assert.equal(calls.some((item) => item.url.includes("/rpc/")), false);
+});

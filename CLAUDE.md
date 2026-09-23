@@ -340,6 +340,75 @@ characters; shortening the sentence is the move.
 owner's eye on an exported sheet — the company name set in the design's own
 letterform, and nothing she cares about outside the dashed line.
 
+## ♻️ RUN A PAST BRIEF AGAIN, ON TODAY'S CODE (owner, Trish 2026-09-23: "Could you create a way to regenerate past jobs under this new code?")
+
+**Why it was worth building, measured on production the same day:** 230
+generation requests in sixty days — **99 delivered and 124 FAILED**. Every one
+of those failures is a brief a customer wrote, sitting in `request_input`, that
+produced nothing, while Call 1 has since gained the raw brief, both personas,
+the design anchor crossing the node boundary, the die-cut gate, the drawn trim
+line and the one-letterform rule. There was no way to put any of that in front
+of an old brief.
+
+`POST /api/generation/requests/:id/regenerate` mints a **new** generation from
+the stored input and returns its id.
+
+**FOUR PROPERTIES, AND EACH ONE IS THERE FOR A REASON THIS FILE ALREADY RECORDS.**
+
+1. **It is a re-submit, never a second producer.** The route rebuilds OPTIONS
+   and hands them to `validatedGenerationRequest` and the same intake RPC a
+   design created from the form uses. There is exactly one way a generation
+   request is ever created (RULE 0.21), and that is also what makes the whole
+   feature removable.
+2. **It replays the CONTENT, never the old envelope.** A past job may carry
+   `designpro.calls-1-7-input.v2`; replaying that verbatim would re-run the
+   brief under the contract it already failed on, which is the opposite of what
+   was asked. `contractVersion` and `pipelineMode` are dropped and rebuilt, so
+   the gateway's own v2→v3 normalisation applies exactly as for a new design.
+3. **The source generation is never written to.** RULE 0.22 forbids silently
+   replacing a version, and for the failed half the old row is the only
+   evidence of what went wrong. New id, own lineage, original untouched.
+4. **THE UPLOADED LOGO HAS TO BE COPIED, AND THAT IS NOT OPTIONAL.**
+   `referenceAssetIsInvalid` derives the expected path from the generation id —
+   `users/{owner}/revisions/{generationId}/inputs/{kind}/{hash}.{ext}` — so a
+   new generation **cannot** reference the old object; the validator refuses it,
+   correctly. The bytes are copied to the new prefix and the identity rewritten.
+   The copy fails SOFT and the response states `logoCarried`, because throwing a
+   brief away over a tidied-up object is the wrong blast radius and dropping a
+   brand mark silently is the honest-looking lie this file keeps recording.
+   Measured: 22 of 230 jobs carry a logo, **0 carry visionBoardImages**.
+
+**The read is a new PUBLIC function, on purpose.** `designpro_generation_regenerate_input`
+(`20260923170000`) is SECURITY DEFINER, owner-scoped, and returns NULL for an
+absent generation and another owner's alike. It is public because **PostgREST
+only exposes configured schemas and `designpro_private` is not one of them** — a
+definer helper there is reachable from SQL and NOT from the gateway, which is
+why `designpro_generation_workspace` and `designpro_atlas_panel_proof_paths` are
+both public too. It carries its own `owner_id = auth.uid()` test rather than
+borrowing `designpro_private.caller_owns_generation`, which exists in production
+and in NO migration.
+
+**Widening `designpro_generation_workspace` instead was rejected**: it returns
+only brief/designName/companyName/finish/vehicle/pipelineMode/contractVersion,
+so a regenerate built on it would quietly drop the commercial identity and the
+logo — and text-patching a live function several surfaces read, to add a field
+one surface wants, is more risk than a new door.
+
+**TO TAKE IT OUT** (the owner asked): delete the route, `regenerateInputFromStored`,
+`copyRegenerateLogoAsset` and `REGENERATE_CARRIED_KEYS` from the gateway, the
+`regenerateGeneration` helper, and the button plus `runAgain` in `DesignLibrary`.
+Nothing else references them, no existing path changed, and the migration is
+safe to leave applied — an unused definer function reads nothing and grants
+nothing beyond what the caller already owns.
+
+Locked by seven cases in `gateway/tests/gateway.test.mjs`. Four fail against the
+pre-fix tree; the other three — no writes to the source, not-found for another
+owner, same-id refused — **also pass when the route is simply absent**, so they
+are property guards rather than defect locks and must not be cited as proof the
+feature works.
+
+**NOT PROVEN:** no past job has been re-run on production.
+
 ## 📱 A FIVE-MINUTE LEASE NOBODY RENEWED, AND TWO CONTROLS A PHONE CANNOT REACH (owner, Trish 2026-09-23: "It better be mobile friendly 60% of our users will be using on a mobile phone")
 
 Three defects on the surfaces a phone actually gets, each found in the source
