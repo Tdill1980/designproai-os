@@ -222,7 +222,7 @@ const COMMERCIAL_DEPTH =
 // but a list of them is also a list of aesthetics handed to every customer,
 // which is the convergence failure this file has already been around twice.
 const COMMERCIAL_TRANSLATION =
-  "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted panels with sharp swept edges). What the client named should be obvious at a glance.";
+  "Translate anything the brief names into concrete design — color story, layout, graphic motifs, focal treatment (\"stealth bomber\" becomes angular faceted panels with sharp swept edges). What the client named should be obvious at a glance. Build the visual concept from this business and this brief: make the named subject or idea the hero focal treatment, then derive the supporting shapes, motion, depth and hierarchy from it. Abstract sweeps, waves, gradients or stock-looking decoration are supporting devices only; the finished wrap must read as a specific custom concept for this customer rather than a generic commercial-wrap template.";
 // The one-field call keeps this sentence byte for byte except its example
 // object: "panels" is production vocabulary the field contract keeps out of the
 // model request (harness swap 7, run 33659500846).
