@@ -48,17 +48,39 @@ const at = (needle: string) => {
 };
 
 describe('a phone reads the page in the order the steps are numbered', () => {
-  it('puts the photo between the upload and the design picker', () => {
-    // THE LOAD-BEARING LINE. Before this pass the editor sat AFTER step 3 in
-    // the DOM, which is exactly why a phone showed the picker where the wall
-    // should have been.
-    const upload = at('<section id="upload-wall"');
+  /**
+   * ⚠️ THIS CASE WAS ONCE "BEFORE STEP 3", AND THAT WAS TOO WEAK — SHE
+   * REPORTED IT A THIRD TIME (owner, 2026-09-23: "when you upload you have to
+   * scroll down to find it").
+   *
+   * Moving the photo out of step 4 and in front of step 3 closed a 330-line
+   * gap and left a real one: step 1 still carried the style reference, the
+   * brief, the style chips, the wall size and the film price, so the photo was
+   * five controls below the button that produced it. "Before step 3" was
+   * satisfied the whole time. So the assertion is now the thing she actually
+   * asked for — the photo is between the UPLOAD CONTROL and the BRIEF.
+   */
+  it('puts the photo directly under the upload control, above the brief', () => {
+    const upload = at("uploadControl('photo'");
     const photoSection = at('id="select-wall-area"');
     const editor = at('<WallPhotoEditor');
+    const brief = at('min-h-28');           // the brief textarea
     const describe3 = at('<StepHeading n={3} icon={Settings2}>');
-    expect(upload).toBeLessThan(photoSection);
+    expect(upload, 'the photo block must follow the upload control').toBeLessThan(photoSection);
     expect(photoSection).toBeLessThan(editor);
-    expect(editor).toBeLessThan(describe3);
+    expect(editor, 'nothing may sit between the upload and its own photo').toBeLessThan(brief);
+    expect(brief).toBeLessThan(describe3);
+  });
+
+  it('keeps the photo and the upload inside ONE section, not two cards apart', () => {
+    // The 09-22 grouping ruling: wall upload, style reference and the prompt
+    // are one block. The photo is not a fourth input — it is what the first
+    // upload produced — so it belongs in the same card, not after it.
+    const section = at('<section id="upload-wall"');
+    const editor = at('<WallPhotoEditor');
+    const closes = CODE.indexOf('</section>', editor);
+    expect(section).toBeLessThan(editor);
+    expect(closes).toBeGreaterThan(-1);
   });
 
   it('keeps the result last, after the design it is a result of', () => {
@@ -100,11 +122,21 @@ describe('the desktop keeps form on the left and the wall on the right', () => {
     // child stays in this order. The placement is written down so a fifth
     // child cannot silently re-flow the page.
     for (const placement of [
-      'lg:col-start-1 lg:row-start-1',   // 1 · upload
-      'lg:col-start-2 lg:row-start-1 lg:row-span-2', // 2 · the photo, full height beside 1 and 3
-      'lg:col-start-1 lg:row-start-2',   // 3 · the design
+      'lg:col-span-2 lg:row-start-1',    // the prompt card, the board, the outcomes
+      'lg:col-span-2 lg:row-start-2',    // 1 · upload AND 2 · the photo, full width
+      'lg:col-start-1 lg:row-start-3',   // 3 · the design
       'lg:col-start-2 lg:row-start-3',   // 4 · the result
     ]) expect(CODE).toContain(placement);
+  });
+
+  it('never re-wraps the photo in a fieldset that greys out mid-generation', () => {
+    // `<fieldset disabled>` is how the surrounding form gets its disable for
+    // free, and free is exactly the problem: it reaches the SVG corner handles
+    // too, so pressing Generate would stop her nudging the corner the render
+    // is waiting on. The three controls that lost the fieldset carry their own.
+    expect(CODE).toContain("<textarea className={inputClass + ' min-h-28'} disabled={!!busy}");
+    expect((CODE.match(/type="number" min="1" max="2400"/g) ?? []).length).toBe(2);
+    expect((CODE.match(/disabled=\{!!busy\} type="number" min="1" max="2400"/g) ?? []).length).toBe(2);
   });
 
   it('still has the two-column grid it had before', () => {

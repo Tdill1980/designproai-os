@@ -35,8 +35,49 @@ export type DetectedMask = { label: string; box: { x0: number; y0: number; x1: n
 export const MASK_THRESHOLD = 127;
 export const MASK_MAX_EDGE = 1600;
 
+/**
+ * ⚠️ `crossOrigin` IS LOAD-BEARING HERE, AND ITS ABSENCE WAS A LIVE CRASH
+ * (owner, Trish 2026-09-23, from her phone: "The operation is insecure.").
+ *
+ * That sentence is Safari's wording for a SecurityError, and the error was
+ * real: a mask arrives as a SIGNED SUPABASE URL, which is a different origin
+ * from os.designproai.com. An <img> loaded WITHOUT `crossOrigin` taints the
+ * canvas it is drawn into, and every `getImageData` in this file then throws.
+ * The masks are exactly what this page reads pixels back from, so the one
+ * loader that had to be CORS-clean was the one that was not.
+ *
+ * Its sibling one file away -- `loadWallImage` in `wallpro-render.ts`, which
+ * imports `maskFlags` FROM here -- has always set it, and loads from the same
+ * bucket. So the header was known to work; this loader simply never got it.
+ *
+ * TWO LOADERS, ONE FILE APART, AND THE UNGUARDED ONE WAS THE ONE THAT READS
+ * PIXELS. Do not add a third: if another module needs to decode a mask, import
+ * this one.
+ */
 function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('A protected-area mask could not be read.')); img.src = src; });
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('A protected-area mask could not be read.'));
+    img.src = src;
+  });
+}
+
+/**
+ * A mask that cannot be read means NOTHING IS PROTECTED -- it never means the
+ * page is broken.
+ *
+ * The taint above threw from `getImageData`, not from the load, so the two
+ * `try { await loadImage(...) } catch` guards below could not catch it: the
+ * image loaded fine and the READBACK was refused. A protected area is a
+ * preview refinement (print panels stay full rectangles either way), so it has
+ * no business taking down a generation. This keeps every readback soft, so a
+ * future taint, a zero-sized canvas or a browser with canvas reads disabled
+ * degrades to "nothing protected" instead of a red error over Generate.
+ */
+function readPixels(ctx: CanvasRenderingContext2D, width: number, height: number): ImageData | null {
+  try { return ctx.getImageData(0, 0, width, height); } catch { return null; }
 }
 
 /** Rasterises detection masks into one union canvas sized to the photo (capped
@@ -47,7 +88,10 @@ export async function rasterizeDetectionMasks(masks: DetectedMask[], photoWidth:
   const width = Math.max(1, Math.round(photoWidth * scale)), height = Math.max(1, Math.round(photoHeight * scale));
   const union = document.createElement('canvas'); union.width = width; union.height = height;
   const uctx = union.getContext('2d', { willReadFrequently: true })!;
-  const out = uctx.getImageData(0, 0, width, height);
+  // A blank canvas read can only fail on a browser that refuses canvas reads
+  // outright; there is nothing to protect with if it does.
+  const out = readPixels(uctx, width, height);
+  if (!out) return null;
   let painted = 0;
   const fill = (left: number, top: number, w: number, h: number) => {
     for (let y = 0; y < h; y++) {
@@ -74,7 +118,11 @@ export async function rasterizeDetectionMasks(masks: DetectedMask[], photoWidth:
     const scratch = document.createElement('canvas'); scratch.width = w; scratch.height = h;
     const sctx = scratch.getContext('2d', { willReadFrequently: true })!;
     sctx.drawImage(img, 0, 0, w, h);
-    const data = sctx.getImageData(0, 0, w, h).data;
+    const scratchPixels = readPixels(sctx, w, h);
+    // Unreadable pixels are the same case as a missing PNG: fall back to the
+    // coarse box rather than losing the object entirely.
+    if (!scratchPixels) { fill(left, top, w, h); continue; }
+    const data = scratchPixels.data;
     for (let y = 0; y < h; y++) {
       const oy = top + y; if (oy < 0 || oy >= height) continue;
       for (let x = 0; x < w; x++) {
@@ -130,8 +178,12 @@ export async function maskFlags(maskUrl: string, width: number, height: number):
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(img, 0, 0, width, height);
-  const data = ctx.getImageData(0, 0, width, height).data;
+  const pixels = readPixels(ctx, width, height);
   const flags = new Uint8Array(width * height);
+  // All-zero flags read downstream as "nothing protected", which is exactly
+  // the honest answer when the mask could not be measured.
+  if (!pixels) return flags;
+  const data = pixels.data;
   for (let i = 0; i < flags.length; i++) flags[i] = data[i * 4 + 3] > MASK_THRESHOLD ? 1 : 0;
   return flags;
 }
