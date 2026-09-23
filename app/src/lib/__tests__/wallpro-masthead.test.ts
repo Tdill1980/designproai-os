@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
+const magic = readFileSync(fileURLToPath(new URL('../../components/wallpro/WallProMagic.tsx', import.meta.url)), 'utf8');
 
 describe('the WallPro opening experience', () => {
   it('shows the transformation only before the customer starts', () => {
@@ -21,7 +22,7 @@ describe('the WallPro opening experience', () => {
   });
 
   it('starts on the same page rather than inventing another upload route', () => {
-    expect(page).toContain('href="#upload-wall"');
+    expect(magic).toContain('href="#upload-wall"');
     expect(page).toContain('<section id="upload-wall"');
   });
 
