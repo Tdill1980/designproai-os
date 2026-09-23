@@ -47,10 +47,11 @@ const OPENING_REVEAL = 52;
  * and a third written for the landing would drift from both the first time the
  * interaction changed.
  */
-export type HeroProofVariant = 'band' | 'fill';
+export type HeroProofVariant = 'band' | 'fill' | 'shallow';
 
 export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallProof[]; variant?: HeroProofVariant }) {
   const fill = variant === 'fill';
+  const shallow = variant === 'shallow';
   const [index, setIndex] = useState(0);
   const [reveal, setReveal] = useState(OPENING_REVEAL);
   const [held, setHeld] = useState(false);
@@ -169,7 +170,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
          the auto margins to eat. Behaviour off the grid is unchanged, because
          `max-w-6xl` still caps it and `mx-auto` still centres it once the
          viewport is wider than that cap. */
-      className={fill ? 'absolute inset-0' : 'mx-auto mt-4 w-full max-w-6xl px-4'}
+      className={fill ? 'absolute inset-0' : shallow ? 'mx-auto w-full' : 'mx-auto mt-4 w-full max-w-6xl px-4'}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocusCapture={() => setHeld(true)}
@@ -197,7 +198,9 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
            letterbox the slider inside a box that is already the right shape. */
         className={fill
           ? 'relative h-full w-full select-none overflow-hidden bg-slate-900'
-          : 'relative h-52 w-full select-none overflow-hidden rounded-xl border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]'}
+          : shallow
+            ? 'relative h-44 w-full select-none overflow-hidden rounded-2xl border wall-edge bg-slate-900 shadow-xl sm:h-52 lg:h-56'
+            : 'relative h-52 w-full select-none overflow-hidden rounded-xl border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]'}
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
         onPointerMove={e => { if (e.buttons === 1) track(e.clientX); }}
@@ -214,7 +217,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
           /* `fill` is a full-bleed hero panel whose shape is set by the layout,
              not by the photograph, so it crops rather than letterboxes. Both
              halves switch together or they fall out of register. */
-          className={`absolute inset-0 h-full w-full ${fill ? 'object-cover' : 'object-contain'}`}
+          className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -226,7 +229,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className={`absolute inset-y-0 left-0 h-full max-w-none ${fill ? 'object-cover' : 'object-contain'}`}
+            className={`absolute inset-y-0 left-0 h-full max-w-none ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
             style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
@@ -240,7 +243,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
             src={mark.src}
             alt={mark.alt}
             onError={() => fail(mark.src)}
-            className={`absolute inset-0 h-full w-full ${fill ? 'object-cover' : 'object-contain'}`}
+            className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
             draggable={false}
           />
         )}
