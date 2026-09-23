@@ -58,6 +58,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
+import { arg as parseArg, flag as parseFlag } from './wallpro-catalog-args.mjs';
 import {
   WALL_PRESETS, presetAsEntry,
   designUpsertRow, catalogMasterPath, catalogThumbPath, briefForEntry,
@@ -67,11 +68,10 @@ import {
 } from './catalog-lib.mjs';
 
 const BUCKET = 'wallpro-files';
-const arg = (name, fallback = null) => {
-  const hit = process.argv.find(a => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
-const flag = name => process.argv.includes(`--${name}`);
+// Both `--name value` and `--name=value`, in a module a test can execute --
+// see scripts/wallpro-catalog-args.mjs for why that matters.
+const arg = (name, fallback = null) => parseArg(process.argv, name, fallback);
+const flag = name => parseFlag(process.argv, name);
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';

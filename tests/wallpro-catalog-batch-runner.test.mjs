@@ -181,6 +181,54 @@ test("staging is a shared rule, not a second definition of a row", () => {
   assert.ok(!/row\.is_active\s*=/.test(RUNNER), "the runner must not mutate the validated row");
 });
 
+test("the parser reads the argument form the workflow actually passes", async () => {
+  // THIS IS THE CASE TWELVE GREEN LOCKS DID NOT HAVE. The first dry run reached
+  // the droplet, started the container and died on `Pass --email=<curator>`,
+  // because the parser took only `--email=value` while the workflow passes
+  // `--email "value"`. Every lock had matched strings in the file; none had
+  // ever run the parser. So this one runs it, on the exact vector the workflow
+  // builds -- a fixture laxer than the real thing catches nothing.
+  const { arg, flag } = await import("../scripts/wallpro-catalog-args.mjs");
+
+  const asWorkflowPasses = [
+    "--email", "trish@weprintwraps.com",
+    "--count", "12", "--mode", "mural", "--domain", "all", "--dry-run",
+  ];
+  assert.equal(arg(asWorkflowPasses, "email"), "trish@weprintwraps.com");
+  assert.equal(arg(asWorkflowPasses, "count"), "12");
+  assert.equal(arg(asWorkflowPasses, "mode"), "mural");
+  assert.equal(arg(asWorkflowPasses, "domain"), "all");
+  assert.equal(flag(asWorkflowPasses, "dry-run"), true);
+  assert.equal(flag(asWorkflowPasses, "live"), false);
+
+  // The equals form keeps working, and both forms agree.
+  const equalsForm = ["--email=trish@weprintwraps.com", "--count=12", "--live"];
+  assert.equal(arg(equalsForm, "email"), "trish@weprintwraps.com");
+  assert.equal(arg(equalsForm, "count"), "12");
+  assert.equal(flag(equalsForm, "live"), true);
+
+  // A switch immediately before another switch has no value to steal, or
+  // `--dry-run --mode mural` would read "mural" as the dry-run's argument.
+  assert.equal(arg(["--dry-run", "--mode", "mural"], "dry-run", null), null);
+  assert.equal(arg(["--dry-run", "--mode", "mural"], "mode"), "mural");
+  // A trailing switch must not read past the end of the vector.
+  assert.equal(arg(["--mode"], "mode", "fallback"), "fallback");
+  assert.equal(arg([], "email", null), null);
+});
+
+test("the workflow ships the parser it imports", () => {
+  // The runner imports a sibling module; a payload without it dies on import
+  // inside the container, after the SSH hop has already succeeded.
+  assert.match(RUNNER, /from '\.\/wallpro-catalog-args\.mjs'/);
+  assert.match(WORKFLOW, /tar -cz[^\n]*scripts\/wallpro-catalog-args\.mjs/);
+  // Every local module the runner imports must be in that tar.
+  const tarLine = WORKFLOW.split("\n").find((l) => l.includes("tar -cz"));
+  for (const [, spec] of RUNNER.matchAll(/from '(\.\/[^']+)'/g)) {
+    const file = spec.replace("./", "scripts/");
+    assert.ok(tarLine.includes(file), `${file} is imported but never shipped`);
+  }
+});
+
 test("re-running skips what is already published", () => {
   assert.match(RUNNER, /selectLibraryEntries\(library, \{ domain: DOMAIN \}, published\)/);
   assert.match(RUNNER, /wallpro_designs\?select=design_id/);

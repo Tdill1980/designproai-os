@@ -156,7 +156,7 @@ jobs:
           set +x
           ssh_args=(-i "$KEY_FILE" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KNOWN_HOSTS" -o ServerAliveInterval=30 -o ServerAliveCountMax=20)
 
-          tar -cz scripts/wallpro-catalog-batch.mjs scripts/catalog-lib.mjs > "$RUNNER_TEMP/catalog-payload.tgz"
+          tar -cz scripts/wallpro-catalog-batch.mjs scripts/wallpro-catalog-args.mjs scripts/catalog-lib.mjs > "$RUNNER_TEMP/catalog-payload.tgz"
           payload_file=$(ssh "${ssh_args[@]}" "root@$TARGET_HOST" \
             'f=$(mktemp /tmp/wallpro-catalog.XXXXXX) && cat > "$f" && echo "$f"' \
             < "$RUNNER_TEMP/catalog-payload.tgz")
