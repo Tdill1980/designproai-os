@@ -199,7 +199,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
         className={fill
           ? 'relative h-full w-full select-none overflow-hidden bg-slate-900'
           : shallow
-            ? 'relative h-44 w-full select-none overflow-hidden rounded-2xl border wall-edge bg-slate-900 shadow-xl sm:h-52 lg:h-56'
+            ? 'relative h-44 w-full select-none overflow-hidden border wall-edge bg-slate-900 sm:h-52 lg:h-56'
             : 'relative h-52 w-full select-none overflow-hidden rounded-xl border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]'}
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
