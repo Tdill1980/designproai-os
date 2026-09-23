@@ -185,3 +185,79 @@ is the owner's eye on the exported sheet.
   the new migration neutered, the new case AND the pre-existing end-to-end
   webhook case both fail — the suite would have caught this from the start.
 - [ ] `parseCustomerIntake` is still a Flash call on the critical path whenever the form did not supply the company name; it no longer replaces the brief, it only fills structured fields the form left empty.
+
+---
+
+## Die-cut hood — live 848be1c6, 2026-09-23
+
+Owner: *"see hood also fail cut to share of hood that's wrong."* The hood panel
+was drawn as a hood silhouette on the document's white page and reached PanelPro
+as a Call 9 promoted production panel.
+
+- [x] **Root cause located, from the row and not from a theory.**
+      `masterOutputClass` convicted it — `vehicle_depiction`, confidence `1.0`,
+      `anatomyRectangles: 3`, evidence *"The hood panel is a vehicle-shaped
+      island of artwork on a plain white surround"* — and both master gates are
+      ADVISORY on this topology (owner ruling 2026-09-21), so the run recorded
+      `masterQcPassed: true`, `accepted: true`, `blockingFailures: []`.
+- [x] **The three structural instruments were blind, each for a stated reason.**
+      `edgeHoleRatio` 0.000 (darkness test, surround is 248,248,248);
+      `detectDieCut` convicts only ENCLOSED page colour and is wired to nothing;
+      `fit` measured 0.8088 against 0.9841–1.0000 and was consumed by nothing.
+- [x] **Deterministic gate shipped** — `dieCutFindings`, branded `fit` against
+      its own clean twin. Type adds ink and cannot subtract it, so the
+      comparison has no innocent reading, and being RELATIVE it cannot convict a
+      legitimately light design the way a floor would.
+- [x] **Corner discriminator closes the one innocent case.** A white banner
+      behind lettering is page colour, exists only in the branded band, and can
+      clear the band threshold on its own — so a candidate is convicted only
+      when its four corner boxes are page too. Fixtures measure die-cut 1.0000
+      against banner 0.0000; the threshold sits in the middle of an empty gap.
+      An unmeasurable corner clears rather than convicts.
+- [x] **It refuses through `refuse()`**, so the refusal carries the sheet
+      identity, classifies as creative in `flat-first-atlas`, re-rolls the
+      bounded second candidate, and lands the refused sheet in the ledger.
+- [x] **Lock built from the live numbers** —
+      `tests/atlas-proof-outer-die-cut.test.mjs`, every fit copied from
+      `a9d6dd85`'s `panelProofAuthoring.quadrants`. Verified to fail pre-fix in
+      both halves (threshold neutered → cases 1–2; refusal unwired → case 7).
+- [x] **`Number(null)` caught in the gate's own first draft** by the lock's
+      absence case: an unmeasured cell read as completely empty and was
+      convicted. `fitOf` now accepts `typeof raw === "number"` only.
+- [ ] **A live generation has run with the gate.** Nothing is proven on pixels.
+      Acceptance is a run where the hood either fills its cell or the sheet is
+      refused and re-rolled, read back from the row.
+- [ ] **Cross-surface fit deficit promoted to blocking.** Measured and recorded
+      (`threeZoneLayout.dieCut.surfaces[].brandedDeficit`); it catches a surface
+      die-cut in BOTH bands, which the twin comparison cannot see. Left
+      non-blocking because no fixture proves it will not convict a genuinely
+      lighter panel — `atlas-proof-zone-gate.cjs` is the precedent. Needs a
+      discriminator, not a threshold.
+- [ ] **`detectDieCut` given a consumer.** Built, measured, wired to nothing; it
+      owns the INTERIOR case (a window or arch enclosed by artwork) that the
+      outer-boundary gate cannot see. Its own false-positive story — a
+      white-filled logo counter is an enclosed page shape — is unresolved.
+- [ ] **The advisory inspector's conviction surfaced to human QC.** It was right
+      and nobody saw it; a blocking verdict recorded beside an accepted master
+      should read loudly on the PanelPro board, not sit in the receipt.
+
+### Resolution and cohesion — measured on the same run, NOT addressed here
+
+The sheet came back **5056 × 3392**. Zone 1 is 25.8% of its height and holds all
+six panels across, so each cell is ~843 px:
+
+| | |
+|---|---|
+| passenger, 166.8″ wide | ~843 px → **5.0 px/in** |
+| front, 75.3″ | ~843 px → 11.2 px/in |
+| 150 PPI on the passenger panel would need | 25,020 px — **30×** |
+
+One image call is one 4K output and six panels share it. No prompt, template
+re-layout or constraint change adds a pixel; more resolution requires more
+calls. The same cell size is why the treatments diverge (photographic flanks, an
+abstract roof), why five named colours averaged into one mauve, and why *"logo
+on back"* had nowhere to land. The fix is per-panel authoring sequenced as one
+conversation — RULE 0.35's cascade, currently off behind the aspect gate — and
+it is a build, not a prompt edit. Timings on this run: `totalMs` 84,083 of which
+`panelProofMs` 61,650 (73%) is the single image call; `geniePrepHit: true`,
+`genieMs: 74`.
