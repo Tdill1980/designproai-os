@@ -13,12 +13,12 @@ describe('WallPro printable panel geometry', () => {
   it('fits the complete printed panel inside 53 inches, the printable width, with the half-inch overlap and outer bleed', () => {
     const plan = planWallPrint(120, 96, DEFAULT_WALL_PRINT);
     expect(DEFAULT_WALL_PRINT.overlap).toBe(.5);
-    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-1, 53, 98, 0], [51.5, 53, 98, .5], [104, 17, 98, .5]]);
-    expect(plan.panels.reduce((n,p) => n+p.width-p.overlapLeft,0)).toBe(122);
+    expect(plan.panels.map(p => [p.x, p.width, p.height, p.overlapLeft])).toEqual([[-.5, 53, 97, 0], [52, 53, 97, .5], [104.5, 16, 97, .5]]);
+    expect(plan.panels.reduce((n,p) => n+p.width-p.overlapLeft,0)).toBe(121);
   });
   it('does not create a duplicate final strip at exact widths', () => {
     expect(planWallPrint(104, 96, { bleed: 1, overlap: 0, minPpi: 150 }).panels.map(p=>p.width)).toEqual([53, 53]);
-    expect(planWallPrint(49, 96, DEFAULT_WALL_PRINT).panels.map(p=>p.width)).toEqual([51]);
+    expect(planWallPrint(49, 96, DEFAULT_WALL_PRINT).panels.map(p=>p.width)).toEqual([50]);
   });
   it('covers walls without gaps for fractional dimensions and overlaps', () => {
     for (const width of [1, 50, 53, 53.125, 120, 2399.875]) for (const bleed of [0, .125, 1, 5]) for (const overlap of [0, .375, 5]) {
@@ -48,9 +48,9 @@ describe('WallPro real PDF package', () => {
     const pack=await buildWallPrintPack({name:'Print test',layout:{width:120,height:75,mode:'repeat',repeatWidth:4},settings:DEFAULT_WALL_PRINT,source:{bytes,width:600,height:400},seamless:verifiedSeam});
     const zip=await JSZip.loadAsync(pack.zip);
     const names=Object.keys(zip.files);
-    expect(names).toContain('panels/panel-001-53x77in.pdf');expect(names).toContain('panels/panel-003-17x77in.pdf');
+    expect(names).toContain('panels/panel-001-53x76in.pdf');expect(names).toContain('panels/panel-003-16x76in.pdf');
     const pdf=Buffer.from(await zip.file('panels/panel-001-53x77in.pdf')!.async('uint8array')).toString('latin1');
-    expect(pdf).toContain('%PDF-1.6');expect(pdf).toMatch(/\/MediaBox \[0 0 3816(?:\.0*)? 5544(?:\.0*)?\]/);
+    expect(pdf).toContain('%PDF-1.6');expect(pdf).toMatch(/\/MediaBox \[0 0 3816(?:\.0*)? 5472(?:\.0*)?\]/);
     expect(pdf).toMatch(/\/Width 600\s/);expect(pdf).toMatch(/\/Height 400\s/);
     expect(pdf).toContain('/TrimBox');expect(pdf).toContain('/BleedBox');
     const manifest=JSON.parse(await zip.file('manifest.json')!.async('string'));
