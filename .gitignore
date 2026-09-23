@@ -25,3 +25,8 @@ supabase/.temp/
 control-build/
 /node_modules/
 worker/node_modules/
+
+# Built by publish-wall-catalog.yml from scripts/wallpro-catalog-lib.ts, so the
+# headless catalog runner uses the app's own row rules rather than a copy.
+# A committed bundle is a stale second copy of exactly what it exists to avoid.
+scripts/catalog-lib.mjs

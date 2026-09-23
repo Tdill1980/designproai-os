@@ -540,6 +540,26 @@ machine of the person pushing. So, the rule for every session:
 4. **The migration gate is NOT affected.** `supabase-shadow` still applies
    every migration and runs pgTAP, and `production-migrate` still dry-runs the
    plan. Migration discipline is unchanged.
+5. **A `git worktree` of `main` CANNOT prove a failure is pre-existing, and it
+   lies in the direction that gets a false claim into a commit message.** The
+   standard move when the suite goes red is to check out `main` in a worktree
+   and see whether the same tests fail there. A worktree has **no
+   `node_modules`** — the real tree's live under `app/node_modules`, not the
+   repo root — so every lock that shells out dies on its toolchain instead of
+   its assertion. `node --test` reports that as an ordinary test failure:
+
+   ```
+   not ok 3 - tests/production-panel-proof-clean-prompt.test.mjs
+     error: 'test failed'     # the actual cause, buried in the TAP comments:
+                              # Error: spawnSync esbuild ENOENT
+   ```
+
+   Measured 2026-09-23: three locks were reported red on `main` and written
+   into a merge commit as *"proven pre-existing via a worktree"*. Two had
+   already been fixed by #621, and the third had never failed at all — run with
+   `PATH="$PWD/app/node_modules/.bin:$PATH"` all 31 cases pass. **Read the TAP
+   comment lines, not only `not ok`**, and put the real `.bin` on PATH before
+   concluding anything about a worktree run.
 
 The measured cost of the deleted step, for the record: 9m39s of `npm test` on
 the last green gate, all serial; the shadow job beside it took 2m50s. A
@@ -1559,7 +1579,30 @@ contracts; each names its lock.
 - **Ready-to-sell catalog (WrapReady Designs, wall medium).** DesignID =
   the library `WPB-0001..0500`; GenerationID + master SHA-256 are the
   canonical truth; SynthID is provenance only. `docs/wallpro/`,
-  `/admin/wallpro-batch`, `wallpro-catalog.test.ts`. **The batch generator
+  `/admin/wallpro-batch`, `wallpro-catalog.test.ts`.
+  **MEASURED 2026-09-23: `wallpro_designs` HAS ZERO ROWS.** Anything built on
+  the catalog — the customer-facing "choose from library" path above all —
+  opens onto an empty grid on production today, and a green test proves
+  nothing about that because every fixture seeds its own rows. Beside it,
+  `wallpro_generations` holds **34 completed generations with artwork**, all
+  the owner's own design sessions from 09-10 to 09-22. They are NOT a curated
+  batch: they are debugging runs, including ones the owner rejected by name
+  ("design gen is horrendous"). Publishing them wholesale would fill the shop
+  window with test output. The catalog is populated by RUNNING a batch and
+  pressing Publish on `/admin/wallpro-batch`; the recovery lane
+  (`publishRecovered`) exists for picking individual generations.
+  **It cannot be done headlessly from a session, and here is exactly why, so
+  the next one does not re-derive it:** `generate-wall-design` resolves a real
+  user JWT (`handler.ts` ~228) and a service-role key is not a user, so a
+  runner would have to bypass the edge function entirely; the service-role key
+  is not a GitHub secret (it lives on the droplet, `ops/configure-env.sh`); and
+  publishing COPIES STORAGE BYTES from `<owner>/generated/<id>` to
+  `catalog/<uuid>` — which no amount of SQL access can do. A headless runner is
+  therefore a SECOND PRODUCER of catalog rows reproducing the whole batch
+  pipeline (decode, seam measure, blend, thumbnail), which is what RULE 0.21
+  forbids by name. Curator permissions are NOT the blocker and should not be
+  investigated again: the owner carries `admin` in `user_roles` since
+  2026-08-14. **The batch generator
   calls the same `generate-wall-design` edge function the customer designer
   does** (`generateWall`), so every batch job already runs through the
   two-persona pipeline (RULE above) and its industry design knowledge — but it
