@@ -21,11 +21,15 @@ name: Publish the WallPro catalog
 # and run-designpro-output already do, and handed to the container as an
 # --env-file rather than an argument.
 #
-# START WITH run_mode: check-auth. It mints the curator session, proves the
-# token resolves back to that user through auth/v1/user, checks the role, and
-# touches nothing else -- no generation, no storage write, no row. That is the
-# one step that cannot be tested anywhere but here, because the service key
-# lives only on the droplet. Then plan, then publish.
+# START WITH run_mode: preflight. Two steps in this pipeline cannot be tested
+# anywhere but here, because the service key lives only on the droplet: minting
+# a real curator session, and copying storage bytes into catalog/. Finding
+# either one broken AFTER a dozen paid generations is the expensive way to
+# learn, so preflight proves both -- it mints the session, resolves the token
+# back through auth/v1/user, copies an artwork that ALREADY EXISTS into the
+# catalog, uploads its thumbnail, writes a row that every constraint must
+# accept, and then DELETES all three. No model call, nothing kept. Then plan,
+# then publish.
 #
 # A publish STAGES by default (owner, 2026-09-23: "I'd
 # rather check the library first make sure it's good") -- rows land hidden, the
@@ -44,11 +48,11 @@ on:
           - DO_NOT_PUBLISH
           - PUBLISH_WALL_CATALOG
       run_mode:
-        description: "check-auth = prove the curator session only · plan = print the selection · publish = generate and write"
+        description: "preflight = prove the credential AND the storage copy AND the row, then delete them · plan = print the selection · publish = generate and write"
         required: false
         type: choice
-        default: check-auth
-        options: [check-auth, plan, publish]
+        default: preflight
+        options: [preflight, plan, publish]
       count:
         description: "How many designs to publish (1-60)"
         required: false

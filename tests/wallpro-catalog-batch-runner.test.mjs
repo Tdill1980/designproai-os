@@ -119,8 +119,8 @@ test("the workflow is protected and its default mode touches nothing", () => {
   assert.match(WORKFLOW, /default: DO_NOT_PUBLISH/);
   assert.match(WORKFLOW, /inputs\.confirmation == 'PUBLISH_WALL_CATALOG'/);
   const mode = WORKFLOW.slice(WORKFLOW.indexOf("run_mode:"), WORKFLOW.indexOf("count:"));
-  assert.match(mode, /default: check-auth/);
-  assert.match(mode, /options: \[check-auth, plan, publish\]/);
+  assert.match(mode, /default: preflight/);
+  assert.match(mode, /options: \[preflight, plan, publish\]/);
 });
 
 test("the run mode is ONE validated value, never a flag per safe mode", () => {
@@ -134,8 +134,8 @@ test("the run mode is ONE validated value, never a flag per safe mode", () => {
   assert.match(WORKFLOW, /--run-mode "\$P_RUN_MODE"/);
   assert.ok(!/\$\{P_CHECK:\+|\$\{P_DRY:\+/.test(WORKFLOW), "the mode must not travel as presence-flags");
   // And the script refuses anything off the list BEFORE it touches a credential.
-  assert.match(RUNNER, /if \(!\['check-auth', 'plan', 'publish'\]\.includes\(RUN_MODE\)\)/);
-  const guard = RUNNER.indexOf("--run-mode must be check-auth");
+  assert.match(RUNNER, /if \(!\['preflight', 'plan', 'publish'\]\.includes\(RUN_MODE\)\)/);
+  const guard = RUNNER.indexOf("--run-mode must be preflight");
   const mint = RUNNER.indexOf("async function curatorToken");
   assert.ok(guard > 0 && guard < mint, "an unknown mode must be refused before the mint");
 });
@@ -151,17 +151,65 @@ test("visibility stays a two-state switch and does not invert", () => {
   assert.match(WORKFLOW, /Never `cond && '' \|\| value`/);
 });
 
-test("check-auth proves the session against the door the batch must pass", () => {
+test("preflight proves the session against the door the batch must pass", () => {
   // A session object is not proof the edge will accept the token. The check
   // resolves it back through auth/v1/user, which is the same question
   // `generate-wall-design` asks with sb.auth.getUser(jwt).
   assert.match(RUNNER, /auth\/v1\/user/);
   assert.match(RUNNER, /if \(seen !== auth\.userId\) throw new Error/);
-  // And it returns before any selection, generation or write.
-  const check = RUNNER.indexOf("if (CHECK_AUTH) {");
+  const check = RUNNER.indexOf("if (PREFLIGHT) {");
   const publish = RUNNER.indexOf("await publishOne(");
   assert.ok(check > 0 && check < publish);
-  assert.match(RUNNER, /check-auth only: nothing generated, nothing written/);
+});
+
+test("preflight proves the STORAGE COPY, which is the other untestable step", () => {
+  // The copy from `<owner>/generated/…` into `catalog/…` needs the service key
+  // and therefore cannot be exercised from a session. Discovering it broken
+  // after a dozen paid generations is the expensive way to learn, so preflight
+  // runs it for real — and the row too, which is where both foreign keys, the
+  // DesignID pattern and the master_path regex are first enforced.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /await storageCopy\(source\.artwork_path, masterPath\)/);
+  assert.match(block, /await storageUpload\(thumbPath/);
+  assert.match(block, /designUpsertRow\(\{/);
+  assert.match(block, /wallpro_designs\?on_conflict=design_id/);
+  // It uses artwork that ALREADY EXISTS, so it costs no model call.
+  assert.match(block, /state=eq\.completed&artwork_path=not\.is\.null/);
+  const blockCode = block.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.ok(!/generate-wall-design/.test(blockCode), "preflight must never call the generator");
+  // And the source object is read, never altered.
+  assert.ok(!/storageRemove\(\[source|rowRemove\(source/.test(block));
+});
+
+test("preflight cleans up even when it fails part-way", () => {
+  // A preflight that leaves a row or an object behind on a mid-way failure is
+  // one nobody runs twice, and it litters a production catalog. The teardown
+  // is in `finally`, and `made` is appended as each object lands so a failure
+  // after the copy still removes the copy.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /\} finally \{/);
+  const fin = block.indexOf("} finally {");
+  assert.ok(block.indexOf("await rowRemove(designId)") > fin, "the row is removed in finally");
+  assert.ok(block.indexOf("await storageRemove(made)") > fin, "the objects are removed in finally");
+  assert.ok(block.indexOf("made.push(masterPath)") < fin, "each object is tracked as it lands");
+  assert.ok(block.indexOf("made.push(thumbPath)") < fin);
+  // And a cleanup that did not work is REPORTED, not swallowed.
+  assert.match(block, /left behind: \$\{designId\}/);
+});
+
+test("the preflight row is hidden and disposable, never a real catalog entry", () => {
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  // Staged and inactive, so even a failed cleanup cannot put it in the shop
+  // window; and a random DesignID, so it can never collide with a real one.
+  assert.match(block, /approvalStatus: 'generated', isActive: false/);
+  assert.match(block, /'WPB-PREFLIGHT-' \+ randomUUID\(\)/);
+});
+
+test("preflight says plainly when the write path could not be reached", () => {
+  // With no completed generation there is nothing to copy. Reporting that as
+  // success would be the receipts-green/pixels-wrong shape CLAUDE.md records.
+  const block = RUNNER.slice(RUNNER.indexOf("if (PREFLIGHT) {"), RUNNER.indexOf("const library = WALL_PRESETS"));
+  assert.match(block, /the copy and the row are UNPROVEN/);
 });
 
 test("the mint uses the installed client, not a hand-written wire format", () => {

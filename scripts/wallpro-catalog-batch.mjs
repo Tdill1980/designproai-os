@@ -54,7 +54,7 @@
  * Already-published DesignIDs are skipped (`selectLibraryEntries` takes the
  * published set), each job is independent, and a failure is reported and
  * stepped over rather than taking the batch down. `--run-mode` picks how far
- * it goes: `check-auth` proves only the credential, `plan` prints the
+ * it goes: `preflight` proves the credential and the write path, `plan` prints the
  * selection, `publish` generates and writes.
  */
 import { createHash, randomUUID } from 'node:crypto';
@@ -83,8 +83,11 @@ const MODE = arg('mode', 'mural');           // mural | repeat | both
 const DOMAIN = arg('domain', 'all');          // residential | commercial | all
 // ONE MODE, VALIDATED AGAINST AN EXACT ALLOWLIST.
 //
-//   check-auth  mint the curator session, prove the token resolves back to
-//               that user, read the role. No generation, no write, no cost.
+//   preflight   mint the curator session, prove the token resolves back to
+//               that user, read the role, then COPY a real artwork into the
+//               catalog, upload its thumbnail and write a row -- and delete
+//               all three. Proves every step a paid run ends on, without a
+//               single model call.
 //   plan        print the selection and the diversity tally. Nothing else.
 //   publish     generate through the edge function and write the rows.
 //
@@ -93,11 +96,11 @@ const DOMAIN = arg('domain', 'all');          // residential | commercial | all
 // value falls through to the only branch that spends money and writes to a
 // public catalog. Anything not on this list is refused here, before a
 // credential is touched.
-const RUN_MODE = arg('run-mode', 'check-auth');
-if (!['check-auth', 'plan', 'publish'].includes(RUN_MODE)) {
-  throw new Error(`--run-mode must be check-auth, plan or publish; got "${RUN_MODE}".`);
+const RUN_MODE = arg('run-mode', 'preflight');
+if (!['preflight', 'plan', 'publish'].includes(RUN_MODE)) {
+  throw new Error(`--run-mode must be preflight, plan or publish; got "${RUN_MODE}".`);
 }
-const CHECK_AUTH = RUN_MODE === 'check-auth';
+const PREFLIGHT = RUN_MODE === 'preflight';
 const DRY_RUN = RUN_MODE === 'plan';
 // Staged unless explicitly told otherwise. A batch nobody has looked at must
 // not be able to reach a customer by default.
@@ -219,6 +222,21 @@ async function storageUpload(to, body, contentType) {
   if (!res.ok) throw new Error(`Uploading ${to} failed HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }
 
+async function storageRemove(paths) {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}`, {
+    method: 'DELETE', headers: svc({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ prefixes: paths }),
+  });
+  return res.ok;
+}
+
+async function rowRemove(designId) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/wallpro_designs?design_id=eq.${designId}`, {
+    method: 'DELETE', headers: svc({ Prefer: 'return=minimal' }),
+  });
+  return res.ok;
+}
+
 /** Zone 2 of this job: the seam ladder, run on real pixels. Murals never tile,
  * so they are returned untouched with no receipt -- which is what the table's
  * own `mode <> 'repeat' OR seam IS NOT NULL` CHECK expects. */
@@ -302,21 +320,87 @@ async function publishOne(entry, mode, auth) {
 }
 
 async function main() {
-  if (CHECK_AUTH) {
+  if (PREFLIGHT) {
+    // ── 1. THE CREDENTIAL ───────────────────────────────────────────────────
     const auth = await curatorToken(CURATOR_EMAIL);
     const roles = await requireCurator(auth.userId);
     console.log(`curator ${CURATOR_EMAIL} -> user ${auth.userId}`);
     console.log(`roles: ${roles.join(', ')}`);
     console.log(`session redeemed as OTP type "${auth.otpType}"`);
-    // Prove the token is a USER to the same door the batch must pass, rather
-    // than trusting that a session object means the edge will accept it.
+    // A session object is not proof the edge will accept the token. Resolve it
+    // back through the same question `generate-wall-design` asks.
     const who = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${auth.token}` },
     });
     const seen = who.ok ? (await who.json())?.id : null;
     if (seen !== auth.userId) throw new Error(`The minted token did not resolve back to ${auth.userId} (HTTP ${who.status}).`);
-    console.log('the token resolves to that user through auth/v1/user — the edge will accept it');
-    console.log('check-auth only: nothing generated, nothing written.');
+    console.log('  ✓ the token resolves to that user — the edge will accept it');
+
+    // ── 2. THE WRITE PATH, ON A REAL OBJECT, THEN REMOVED ───────────────────
+    //
+    // The storage copy is the other step that cannot be tested anywhere but
+    // here, and finding it broken AFTER a dozen paid generations is the
+    // expensive way to learn. So it runs for real against an artwork that
+    // already exists — read-only on the source, which is never touched — and
+    // everything it creates is deleted before this returns.
+    const [source] = (await json(await fetch(
+      `${SUPABASE_URL}/rest/v1/wallpro_generations`
+      + `?owner_id=eq.${auth.userId}&state=eq.completed&artwork_path=not.is.null`
+      + `&select=id,artwork_path,input_hash&limit=1`, { headers: svc() }),
+      'Finding an existing artwork to test the copy with')) || [];
+    if (!source) {
+      console.log('  — no completed generation exists yet, so the copy and the row are UNPROVEN');
+      console.log('preflight: credential proven, write path not reachable without an artwork.');
+      return;
+    }
+
+    const fileId = randomUUID();
+    const bytes = await download(source.artwork_path);
+    const meta = await sharp(bytes, { limitInputPixels: false }).metadata();
+    const mime = meta.format === 'jpeg' ? 'image/jpeg' : meta.format === 'webp' ? 'image/webp' : 'image/png';
+    const masterPath = catalogMasterPath(fileId, mime);
+    const thumbPath = catalogThumbPath(fileId);
+    const designId = 'WPB-PREFLIGHT-' + randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
+    const made = [];
+
+    try {
+      await storageCopy(source.artwork_path, masterPath);
+      made.push(masterPath);
+      console.log(`  ✓ storage copy into ${masterPath} (${meta.width}x${meta.height}, ${mime})`);
+
+      await storageUpload(thumbPath,
+        await sharp(bytes, { limitInputPixels: false }).resize(CATALOG_THUMB_PX).jpeg({ quality: 82 }).toBuffer(),
+        'image/jpeg');
+      made.push(thumbPath);
+      console.log(`  ✓ thumbnail upload into ${thumbPath}`);
+
+      // The row proves the constraints a paid run would otherwise discover at
+      // the very end: both foreign keys, the DesignID pattern, the master_path
+      // regex, the hash widths, and mode-versus-design_type.
+      const probe = designUpsertRow({
+        entry: { ...presetAsEntry(WALL_PRESETS.find(x => engineForDesignType(presetAsEntry(x).designType) === 'mural')), id: designId, title: 'Preflight probe' },
+        mode: 'mural', generationId: source.id, promptHash: source.input_hash,
+        masterPath, thumbPath, masterSha256: sha256(bytes),
+        widthPx: meta.width, heightPx: meta.height, seam: null,
+        batchId: 'preflight', createdBy: auth.userId,
+        approvalStatus: 'generated', isActive: false,
+      });
+      await json(await fetch(`${SUPABASE_URL}/rest/v1/wallpro_designs?on_conflict=design_id`, {
+        method: 'POST',
+        headers: svc({ 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }),
+        body: JSON.stringify([probe]),
+      }), 'Writing the preflight row');
+      console.log(`  ✓ catalog row ${designId} accepted by every constraint`);
+    } finally {
+      // Always, including on a failure part-way through: a preflight that
+      // leaves objects behind is a preflight nobody will run twice.
+      const rowGone = await rowRemove(designId);
+      const filesGone = made.length ? await storageRemove(made) : true;
+      console.log(`  ✓ cleaned up — row removed: ${rowGone}, objects removed: ${filesGone}`);
+      if (!rowGone || !filesGone) console.log(`    left behind: ${designId} ${made.join(' ')}`);
+    }
+
+    console.log('preflight: credential, storage copy, thumbnail and row all proven. Nothing generated, nothing kept.');
     return;
   }
 
