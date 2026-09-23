@@ -2553,6 +2553,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       {theme.showPrintOffer && <div className="mt-5">
         <WallProProductDetail faqHref="/wall-wrap/faq" />
       </div>}
+    </div>
     {/* On a phone the form and the wall photo stack, so marking corners puts
         Generate a full screen away and the customer scrolls up and down to
         reach it (owner, 2026-09-12: "I'm scrolling down and up just to hit
