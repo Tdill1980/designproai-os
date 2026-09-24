@@ -1,0 +1,74 @@
+name: RecreatePro owner-input migration release
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-upload-release.yml]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: recreatepro-input-migration-684
+  cancel-in-progress: false
+env:
+  GH_TOKEN: ${{ github.token }}
+  EXPECTED_PR_HEAD: 11bb92901428b46d051092ea11a69db7aed77d5d
+  APP_SHA: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Wait for reviewed policy PR to merge and require an exact scoped main
+        run: |
+          set -euo pipefail
+          merged=false
+          for attempt in $(seq 1 60); do
+            pr=$(gh api repos/$GITHUB_REPOSITORY/pulls/684)
+            test "$(echo "$pr" | jq -r .head.sha)" = "$EXPECTED_PR_HEAD"
+            if test "$(echo "$pr" | jq -r .merged)" = true; then merged=true; break; fi
+            sleep 10
+          done
+          test "$merged" = true
+          sha=$(echo "$pr" | jq -r .merge_commit_sha)
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$sha"
+          gh api repos/$GITHUB_REPOSITORY/compare/$APP_SHA...$sha --jq '.files[].filename' > /tmp/changed-paths
+          test "$(wc -l < /tmp/changed-paths)" -eq 2
+          grep -Fxq supabase/migrations/20260924120000_designpro_owned_reference_uploads.sql /tmp/changed-paths
+          grep -Fxq tests/recreatepro-owned-reference-upload.test.mjs /tmp/changed-paths
+          echo "MIGRATION_SHA=$sha" >> "$GITHUB_ENV"
+          mkdir -p migration-evidence
+          printf '%s\n' "$sha" > migration-evidence/migration-release-sha.txt
+          printf '%s\n' "$APP_SHA" > migration-evidence/unchanged-app-source-sha.txt
+      - name: Dispatch normal protected migration release, with all gates intact
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$MIGRATION_SHA"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f production_migration=APPLY_DESIGNPRO_PRODUCTION
+      - name: Require exact dispatched production migration to complete
+        run: |
+          set -euo pipefail
+          passed=false
+          for attempt in $(seq 1 120); do
+            runs=$(gh api --method GET repos/$GITHUB_REPOSITORY/actions/runs -f head_sha="$MIGRATION_SHA" -f event=workflow_dispatch -f per_page=10)
+            run=$(echo "$runs" | jq --arg sha "$MIGRATION_SHA" '[.workflow_runs[]|select(.head_sha==$sha and .path==".github/workflows/release.yml")]|sort_by(.id)|last')
+            echo "$run" | jq '{id,head_sha,status,conclusion,html_url}' > migration-evidence/protected-run.json
+            result=$(echo "$run" | jq -r '.conclusion // "pending"')
+            if test "$result" = success; then passed=true; break; fi
+            if test "$result" = failure || test "$result" = cancelled; then exit 1; fi
+            sleep 10
+          done
+          test "$passed" = true
+      - name: Run the previously upload-blocked one-side acceptance once
+        run: |
+          set -euo pipefail
+          # Prior evidence has no generation request ID: upload signing failed
+          # before submission. Retry one test, not an existing generation.
+          gh run rerun 35994571466 --repo "$GITHUB_REPOSITORY" --failed
+          curl --fail --silent --max-time 20 https://os.designproai.com/gateway-healthz | tee migration-evidence/gateway-healthz.json
+          grep -F "$APP_SHA" migration-evidence/gateway-healthz.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-owner-input-migration-release
+          path: migration-evidence/
+          retention-days: 14
