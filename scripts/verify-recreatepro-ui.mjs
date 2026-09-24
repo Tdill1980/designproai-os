@@ -4,11 +4,15 @@
 import { createServer } from '../app/node_modules/vite/dist/node/index.js';
 import { chromium } from '../app/node_modules/playwright-core/index.mjs';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-const root = resolve('app');
-const fixture = resolve('app/.recreatepro-browser-review');
-const out = resolve('recreatepro-review-evidence');
+const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(repository, 'app');
+const fixture = resolve(root, '.recreatepro-browser-review');
+const out = resolve(repository, 'recreatepro-review-evidence');
+// Tailwind's relative content and config discovery must use the actual app.
+process.chdir(root);
 await mkdir(fixture, { recursive: true }); await mkdir(out, { recursive: true });
 const stub = `
 export const apiCalls = window.__recreateCalls = { inputs:[], uploads:[], handoffs:[] };
@@ -37,14 +41,23 @@ await writeFile(resolve(fixture,'stub.tsx'), stub);
 await writeFile(resolve(fixture,'entry.tsx'), `import React from 'react';import{createRoot}from'react-dom/client';import{BrowserRouter}from'react-router-dom';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{HelmetProvider}from'react-helmet-async';import RecreatePro from '../src/pages/RecreatePro';import '../src/index.css';createRoot(document.getElementById('root')!).render(<HelmetProvider><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><BrowserRouter><RecreatePro/></BrowserRouter></QueryClientProvider></HelmetProvider>);`);
 await writeFile(resolve(fixture,'index.html'), '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module" src="/.recreatepro-browser-review/entry.tsx"></script></body></html>');
 const mockPath = resolve(fixture,'stub.tsx');
-const server = await createServer({configFile:false,root,esbuild:{jsx:'automatic'},plugins:[{name:'recreate-review-page',configureServer(server){server.middlewares.use((req,_res,next)=>{if(req.url?.startsWith('/recreatepro')||req.url?.startsWith('/login'))req.url='/.recreatepro-browser-review/index.html';next();});}}],define:{__BUILD_ID__:JSON.stringify('RECREATEPRO UI TEST FIXTURE')},resolve:{alias:[...['@/integrations/supabase/client','@/lib/designpro-api','@/hooks/useSubscriptionLimits','@/components/layout/ToolAccountMenu'].map(find=>({find,replacement:mockPath})),{find:'@',replacement:resolve(root,'src')}]},server:{port:4187,host:'127.0.0.1',strictPort:true}});
+const server = await createServer({
+ configFile:false,root,esbuild:{jsx:'automatic'},
+ // Do not scan unrelated production entrypoints against this fixture-only API.
+ optimizeDeps:{entries:[resolve(fixture,'entry.tsx')]},
+ plugins:[{name:'recreate-review-page',configureServer(server){server.middlewares.use((req,_res,next)=>{if(req.url?.startsWith('/recreatepro')||req.url?.startsWith('/login'))req.url='/.recreatepro-browser-review/index.html';next();});}}],
+ define:{__BUILD_ID__:JSON.stringify('RECREATEPRO UI TEST FIXTURE')},
+ resolve:{alias:[...['@/integrations/supabase/client','@/lib/designpro-api','@/hooks/useSubscriptionLimits','@/components/layout/ToolAccountMenu'].map(find=>({find,replacement:mockPath})),{find:'@',replacement:resolve(root,'src')}]},
+ server:{port:4187,host:'127.0.0.1',strictPort:true}
+});
 await server.listen();
 const browser = await chromium.launch({headless:true});
 const errors = []; const cases = [];
+let activePage;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
 const begin = async (width, query='') => {
  const context=await browser.newContext({viewport:{width,height:950},reducedMotion:'reduce'});
- const page=await context.newPage();page.on('pageerror',error=>errors.push(String(error)));
+ const page=await context.newPage();activePage=page;page.on('pageerror',error=>errors.push(String(error)));
  await page.goto('http://127.0.0.1:4187/recreatepro'+query);await page.getByRole('heading',{name:/Got the picture/}).waitFor();return{page,context};
 };
 const fill = async(page,path='Complete My Design')=>{
@@ -64,6 +77,8 @@ try {
   await fill(page);
   await page.screenshot({path:resolve(out,`recreatepro-input-${width}-fixture.png`),fullPage:true});
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,`overflow at ${width}`);
+  // The real UI debounces local drafts by 350 ms. Observe the persisted state.
+  await page.waitForTimeout(700);
   await page.reload();await page.waitForTimeout(700);
   assert.equal(await page.locator('textarea').inputValue(),'Keep the exact design. Change ONLY the phone to 623-555-0174.');
   assert.equal(await page.locator('img[alt="Original uploaded design"]').count(),1);
@@ -90,4 +105,11 @@ try {
   cases.push({case:'existing subscription '+(subscriber?'accepted':'not invented'),passed:true});await context.close();
  }
  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:cases.length,cases,browserErrors:errors},null,2));await writeFile(resolve(out,'browser-results.json'),JSON.stringify({passed:cases.length,cases,browserErrors:errors},null,2));
+} catch(error) {
+ await writeFile(resolve(out,'browser-failure.json'),JSON.stringify({message:String(error),cases,browserErrors:errors},null,2));
+ if(activePage&&!activePage.isClosed()){
+  await activePage.screenshot({path:resolve(out,'browser-failure-fixture.png'),fullPage:true}).catch(()=>undefined);
+  await writeFile(resolve(out,'browser-failure.html'),await activePage.content()).catch(()=>undefined);
+ }
+ throw error;
 } finally {await browser.close();await server.close();await rm(fixture,{recursive:true,force:true});}
