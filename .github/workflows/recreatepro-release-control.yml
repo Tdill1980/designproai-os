@@ -1,0 +1,81 @@
+name: RecreatePro exact Git release completion
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-release-control.yml]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: recreatepro-release-49750ba5
+  cancel-in-progress: false
+env:
+  EXACT_SHA: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  complete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require exact merged main and successful normal release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$EXACT_SHA"
+          mkdir -p release-evidence
+          printf '%s\n' "$EXACT_SHA" > release-evidence/release-sha.txt
+          passed=false
+          for attempt in $(seq 1 90); do
+            runs=$(gh api --method GET repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs -f head_sha="$EXACT_SHA" -f event=push)
+            echo "$runs" | jq '[.workflow_runs[] | {id,head_sha,head_branch,status,conclusion,html_url}]' > release-evidence/release-runs.json
+            result=$(echo "$runs" | jq -r --arg sha "$EXACT_SHA" '[.workflow_runs[]|select(.head_sha==$sha and .head_branch=="main")]|sort_by(.id)|last|.conclusion // "pending"')
+            if test "$result" = success; then passed=true; break; fi
+            if test "$result" = failure || test "$result" = cancelled; then echo 'Exact release did not pass'; exit 1; fi
+            sleep 10
+          done
+          test "$passed" = true
+      - name: Dispatch existing protected edge deployment without changing flags or workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$EXACT_SHA"
+          gh workflow run deploy-edge-functions.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f exact_sha="$EXACT_SHA" -f confirmation=DEPLOY_DESIGNPRO_FUNCTIONS \
+            -f functions=design-panel-ai-generate,production-panel-proof,persona-photographer-render
+          echo 'Existing production environment, release gates and function policies remain authoritative.'
+      - name: Require both existing server and edge deployment runs to pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workflow in deploy-production.yml deploy-edge-functions.yml; do
+            passed=false
+            for attempt in $(seq 1 75); do
+              runs=$(gh api --method GET repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs -f head_sha="$EXACT_SHA")
+              echo "$runs" | jq '[.workflow_runs[] | {id,head_sha,head_branch,event,status,conclusion,html_url}]' > "release-evidence/$workflow-runs.json"
+              result=$(echo "$runs" | jq -r --arg sha "$EXACT_SHA" '[.workflow_runs[]|select(.head_sha==$sha and .head_branch=="main")]|sort_by(.id)|last|.conclusion // "pending"')
+              if test "$result" = success; then passed=true; break; fi
+              if test "$result" = failure || test "$result" = cancelled; then echo "$workflow did not pass"; exit 1; fi
+              sleep 10
+            done
+            test "$passed" = true
+          done
+      - name: Read live release and function identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 https://os.designproai.com/gateway-healthz | tee release-evidence/gateway-healthz.json
+          grep -F "$EXACT_SHA" release-evidence/gateway-healthz.json
+          curl --fail --silent --show-error --max-time 30 https://os.designproai.com/release.json | tee release-evidence/os-release.json
+          grep -F "$EXACT_SHA" release-evidence/os-release.json
+          for fn in design-panel-ai-generate production-panel-proof persona-photographer-render; do
+            curl --fail --silent --show-error --max-time 30 -X OPTIONS -D "release-evidence/$fn.headers" -o /dev/null "https://wozyamlnygaddievzuwn.supabase.co/functions/v1/$fn"
+            actual=$(tr -d '\r' < "release-evidence/$fn.headers" | awk 'tolower($1)=="x-designpro-source-sha:" {print $2}')
+            test "$actual" = "$EXACT_SHA"
+            printf '%s source SHA: %s\n' "$fn" "$actual"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-live-release-49750ba5
+          path: release-evidence/
+          retention-days: 14
