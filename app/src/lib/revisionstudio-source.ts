@@ -323,12 +323,20 @@ export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignR
   // studio's own library and its card grid would have disagreed about what
   // exists. They read the same list now.
   const library = await dpApi.listDesignLibrary();
-  const rows = await Promise.all(
-    library.map(async (entry) => {
-      const detail = await detailFor(entry.generationId).catch(() => ({ views: [], artifacts: [], revision: null }));
-      return { ...designRowFromLibraryEntry(entry, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null };
-    }),
-  );
+  // Browsing needs the index, not every design's production assets. The old
+  // eager detailFor map opened 3 requests per row (711 for a 237-design shelf),
+  // even while the separate DesignLibrary was the visible grid. Opening one
+  // design already hydrates its exact revision through readRevisionStudioDesign.
+  // The library SQL only publishes an authorized, unsuperseded DRIVER proof as
+  // thumbnailUrl; retain that real camera preview, never a master or fake view.
+  const rows = library.map((entry) => {
+    const row = designRowFromLibraryEntry(entry, []);
+    row.render_urls = entry.thumbnailUrl
+      ? { side: entry.thumbnailUrl, driver: entry.thumbnailUrl } : {};
+    row.generation_status = ["failed", "cancelled"].includes(entry.state)
+      ? "failed" : entry.state === "outputs_ready" && entry.viewCount >= 7 ? "completed" : "processing";
+    return row;
+  });
   return rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
 }
 

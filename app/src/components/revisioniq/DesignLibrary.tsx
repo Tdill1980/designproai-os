@@ -25,7 +25,7 @@
  * NOT A PRODUCER. The two actions are navigation -- open this design here, or
  * open it in PanelPro. Nothing on this surface generates, re-cuts or mutates.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Search, RefreshCw, ImageOff, Layers, ExternalLink, Clock, AlertTriangle,
@@ -56,6 +56,7 @@ import { cn } from "@/lib/utils";
 const THUMBNAIL_TTL_MS = 300_000;
 /** Renew with a margin, so a slow round trip still lands before the lease ends. */
 const THUMBNAIL_RENEW_MS = THUMBNAIL_TTL_MS - 45_000;
+const LIBRARY_READ_TIMEOUT_MS = 20_000;
 
 /** The default window the product promises, and the two a designer asks for. */
 const WINDOWS = [
@@ -243,6 +244,40 @@ export function DesignLibrary({
    * fetch because the new rows carry fresh links.
    */
   const [expired, setExpired] = useState<Set<string>>(() => new Set());
+  const [loadedUrls, setLoadedUrls] = useState<Record<string, string>>({});
+  const [previewRetryPending, setPreviewRetryPending] = useState(false);
+  const previewRetryTimer = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const previewRecoveryUsed = useRef(false);
+
+  const refreshLibrary = useCallback(() => {
+    if (previewRetryTimer.current) clearTimeout(previewRetryTimer.current);
+    previewRetryTimer.current = undefined;
+    previewRecoveryUsed.current = false;
+    setPreviewRetryPending(false);
+    setReloadKey((key) => key + 1);
+  }, []);
+
+  // One re-sign for a burst of failed tiles, not one request per tile. A fresh
+  // URL that also fails stops here until the operator or lease timer retries.
+  const recoverPreview = () => {
+    if (loading || previewRecoveryUsed.current || document.visibilityState === "hidden") return;
+    previewRecoveryUsed.current = true;
+    setPreviewRetryPending(true);
+    previewRetryTimer.current = setTimeout(() => {
+      previewRetryTimer.current = undefined;
+      setPreviewRetryPending(false);
+      if (document.visibilityState !== "hidden") setReloadKey((key) => key + 1);
+    }, 250);
+  };
+
+  useEffect(() => {
+    previewRecoveryUsed.current = false;
+    setPreviewRetryPending(false);
+    return () => {
+      if (previewRetryTimer.current) clearTimeout(previewRetryTimer.current);
+      previewRetryTimer.current = undefined;
+    };
+  }, [windowKey]);
 
   useEffect(() => {
     let live = true;
@@ -251,15 +286,30 @@ export function DesignLibrary({
     const months = WINDOWS.find((entry) => entry.key === windowKey)?.months ?? 4;
     const since = new Date();
     since.setMonth(since.getMonth() - months);
+    // A stalled index read must release the Refresh button. Its late response
+    // is ignored; it cannot erase newer results or re-open an old window.
+    const timeout = setTimeout(() => {
+      if (!live) return;
+      live = false;
+      setLoading(false);
+      setError("The library is taking too long to respond. Your designs are unchanged. Use Refresh to retry.");
+    }, LIBRARY_READ_TIMEOUT_MS);
     dpApi.listDesignLibrary({ since })
       .then((rows) => { if (live) { setEntries(rows); setExpired(new Set()); } })
       .catch((cause) => {
         if (!live) return;
-        setEntries([]);
+        // Keep the last readable index during a transient server failure,
+        // but never retain another session's data after an authorization failure.
+        const statusCode = Number((cause as { status?: number })?.status);
+        if (statusCode === 401 || statusCode === 403) {
+          setEntries([]);
+          setExpired(new Set());
+          setLoadedUrls({});
+        }
         setError(cause instanceof Error ? cause.message : "The design library could not be read.");
       })
-      .finally(() => { if (live) setLoading(false); });
-    return () => { live = false; };
+      .finally(() => { clearTimeout(timeout); if (live) setLoading(false); });
+    return () => { live = false; clearTimeout(timeout); };
   }, [windowKey, reloadKey]);
 
   /**
@@ -272,8 +322,11 @@ export function DesignLibrary({
    * the common case, and it is precisely the one the old code failed.
    */
   useEffect(() => {
+    // Arm from the completed read, not the request's start. Initial mounting
+    // in a hidden tab must not arm a timer either.
+    if (loading) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const renew = () => setReloadKey((key) => key + 1);
+    const renew = () => refreshLibrary();
     const arm = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(renew, THUMBNAIL_RENEW_MS);
@@ -288,7 +341,7 @@ export function DesignLibrary({
       // Back on screen: the links may already have lapsed while away.
       renew();
     };
-    arm();
+    if (document.visibilityState !== "hidden" && entries) arm();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       if (timer) clearTimeout(timer);
@@ -296,7 +349,7 @@ export function DesignLibrary({
     };
     // Re-armed by every completed fetch, so the next renewal is measured from
     // the links actually on screen rather than from when the grid first mounted.
-  }, [reloadKey, windowKey]);
+  }, [loading, entries, windowKey, refreshLibrary]);
 
   // Filtering happens in memory on purpose: this is one shop's work over a
   // window, not a volume worth a round trip per keystroke, and every field the
@@ -333,7 +386,7 @@ export function DesignLibrary({
           size="sm"
           variant="outline"
           className="ml-auto h-7 border-zinc-700 text-[11px] text-zinc-300"
-          onClick={() => setReloadKey((key) => key + 1)}
+          onClick={refreshLibrary}
           disabled={loading}
         >
           <RefreshCw className={cn("mr-1.5 h-3 w-3", loading && "animate-spin")} />
@@ -459,32 +512,41 @@ export function DesignLibrary({
                 title={`Open ${titleOf(entry)}`}
               >
                 {entry.thumbnailUrl && !expired.has(entry.generationId) ? (
-                  <img
-                    src={entry.thumbnailUrl}
-                    alt={titleOf(entry)}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
-                    // The lease lapsed (or the object momentarily refused). Say
-                    // so and re-sign, rather than leaving the browser to paint
-                    // its broken-image icon over a design that is perfectly fine.
-                    onError={() => {
-                      setExpired((prev) => {
-                        if (prev.has(entry.generationId)) return prev;
-                        const next = new Set(prev);
-                        next.add(entry.generationId);
-                        return next;
-                      });
-                    }}
-                  />
+                  <>
+                    {loadedUrls[entry.generationId] !== entry.thumbnailUrl && (
+                      <span role="status" className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-zinc-400">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading preview…
+                      </span>
+                    )}
+                    <img
+                      src={entry.thumbnailUrl}
+                      alt={titleOf(entry)}
+                      loading="lazy"
+                      decoding="async"
+                      className="relative h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                      onLoad={() => setLoadedUrls((prev) => ({ ...prev, [entry.generationId]: entry.thumbnailUrl! }))}
+                      onError={() => {
+                        setExpired((prev) => {
+                          if (prev.has(entry.generationId)) return prev;
+                          const next = new Set(prev);
+                          next.add(entry.generationId);
+                          return next;
+                        });
+                        recoverPreview();
+                      }}
+                    />
+                  </>
                 ) : (
-                  // Honest, and specific about which of the reasons it is. A
-                  // lapsed preview link is NOT "produced no image": the design
-                  // exists and its bytes are in the bucket.
+                  // An image transport failure is not a failed generation.
+                  // Only say refreshing while a renewal is actually pending.
                   <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-zinc-600">
                     <ImageOff className="h-6 w-6" />
                     <span className="px-3 text-center text-[10px] leading-tight">
                       {entry.thumbnailUrl
-                        ? "Preview link expired — refreshing"
+                        ? loading || previewRetryPending
+                          ? "Refreshing preview…"
+                          : "Preview unavailable — use Refresh to retry"
                         : entry.viewsSuperseded
                           ? "Proofs withheld — superseded architecture"
                           : state === "failed"

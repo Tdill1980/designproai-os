@@ -78,20 +78,22 @@ test("a phone in a pocket re-signs on return, and a hidden tab renews nothing", 
     + "for a grid nobody is reading");
 });
 
-test("a broken tile says the LINK expired, never that the design produced nothing", () => {
+test("a broken tile reports a preview failure, never that the design produced nothing", () => {
   const src = code(read(LIBRARY));
   assert.match(src, /onError=/, "without this the browser paints its own broken-image icon");
-  assert.match(src, /Preview link expired/,
-    "the honest reason: the bytes and the row are fine, the lease lapsed");
+  assert.match(src, /Preview unavailable/,
+    "an image error does not prove expiry or missing artwork");
 
   // THE ORDER OF THE REASONS IS THE WHOLE POINT. A design WITH a thumbnailUrl
-  // that failed to load must reach the expired copy BEFORE the failure copy,
+  // that failed to load must reach the preview-error copy BEFORE the failure copy,
   // or the UI reports a live design as a dead one.
-  const expired = src.indexOf("Preview link expired");
+  const expired = src.indexOf("Preview unavailable");
   const producedNone = src.indexOf("This design produced no image");
   assert.ok(expired > -1 && producedNone > -1);
   assert.ok(expired < producedNone,
-    "a lapsed link must be reported as a lapsed link, not as a failed design");
+    "a failed preview must not be reported as a failed design");
+
+  assert.match(src, /Refreshing preview/, "pending renewal has its own truthful loading state");
 
   // And the tile must be chosen on BOTH facts, or a broken link keeps
   // rendering the dead <img> forever.
