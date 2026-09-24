@@ -445,9 +445,11 @@ describe('tap to mask reaches the page it was built for', () => {
   const page = source('../../pages/WallPro.tsx');
   const editor = source('../../components/wallpro/WallPhotoEditor.tsx');
 
-  it('is a marking mode the editor knows about, so a tap arrives as a point', () => {
-    expect(editor).toContain("'tap' | null");
-    expect(page).toContain("if (marking === 'tap') { void maskAtTap(p); return; }");
+  it('is two marking modes the editor knows about, so a tap arrives as a point', () => {
+    // Owner, 2026-09-24: "could we tap to remove it". Same gesture, same call,
+    // opposite instruction — `intent` is the only thing that differs.
+    expect(editor).toContain("'tap' | 'tap-remove' | null");
+    expect(page).toContain("if (marking === 'tap' || marking === 'tap-remove') { void maskAtTap(p, marking === 'tap' ? 'fixed' : 'movable'); return; }");
   });
 
   it('sends the tap to the SAME detector, not a second one', () => {
@@ -460,7 +462,8 @@ describe('tap to mask reaches the page it was built for', () => {
   it('feeds the result through applyItems, so the composites are rebuilt from the list', () => {
     // Not "add this to the protect mask": both composites are re-rasterised
     // from the whole item list, which is what keeps one source of truth.
-    expect(page).toContain('await applyItems(addWallItem(itemsRef.current, mask as DetectedMask))');
+    expect(page).toContain('addWallItem(itemsRef.current, mask as DetectedMask, intent)');
+    expect(page).toContain('await applyItems(added)');
   });
 
   it('reads the item list from a ref, because a tap resolves a round trip later', () => {
@@ -484,14 +487,49 @@ describe('tap to mask reaches the page it was built for', () => {
     expect(from).toBeGreaterThan(-1);
     expect(to).toBeGreaterThan(from);
     expect(page.slice(from, to)).not.toContain('setMarking');
-    expect(page).toContain("{marking === 'tap' ? 'Done' : 'Cancel'}");
+    expect(page).toContain("{tapMode ? 'Done' : 'Cancel'}");
   });
 
   it('offers no Undo in tap mode, because there is nothing there to undo', () => {
     // Each tap is a finished item; the way to reverse one is to tap it again
     // on the photo. An Undo reading `excludeDraft`, which a tap never fills,
     // would be a permanently dead button beside a live one.
-    expect(page).toContain("{marking !== 'tap' && <Button");
+    // ⚠️ `tapMode`, NOT `marking !== 'tap'`. The second mode would have walked
+    // straight through that literal and left a dead Undo button — reading
+    // `excludeDraft`, which neither tap mode fills — sitting in remove mode.
+    // One derived flag is why the banner, the Undo guard, the Done label and
+    // the switch cannot disagree about what counts as a tap.
+    expect(page).toContain('{!tapMode && <Button');
+    expect(page).toContain("const tapMode = marking === 'tap' || marking === 'tap-remove';");
+  });
+
+  it('applies the mode\'s class, and does not FLIP it', () => {
+    // A flip is right when she taps an item on the photo and is reversing
+    // whatever it is. In a mode she has already said which side she wants, so
+    // a flip would remove the first thing she taps and re-protect the second.
+    const from = page.indexOf('async function maskAtTap(');
+    const to = page.indexOf('/** Re-runs detection on demand', from);
+    expect(to).toBeGreaterThan(from);
+    const body = page.slice(from, to);
+    expect(body).toContain('applyItemClass(itemsRef.current, already.id, intent)');
+    expect(body).not.toContain('toggleItem');
+  });
+
+  it('costs nothing when the tap lands on an item the page already holds', () => {
+    // Switching a masked sofa to painted-through is instant and deterministic
+    // rather than a round trip to re-segment an outline already in hand.
+    const from = page.indexOf('async function maskAtTap(');
+    const body = page.slice(from, page.indexOf('/** Re-runs detection on demand', from));
+    expect(body.indexOf('itemAt(itemsRef.current')).toBeGreaterThan(-1);
+    expect(body.indexOf('itemAt(itemsRef.current')).toBeLessThan(body.indexOf('await detectWall('));
+  });
+
+  it('lets her switch sides without leaving the mode', () => {
+    // Masking a cluttered wall is a mix of both answers; pressing Done and
+    // finding the other button between every item is the friction one-touch
+    // exists to remove.
+    expect(page).toContain("{marking === 'tap' ? 'Switch to Remove' : 'Switch to Mask'}");
+    expect(page).toContain("'Tap an item to remove it'");
   });
 
   it('has a control that starts it, in the step that owns masking', () => {

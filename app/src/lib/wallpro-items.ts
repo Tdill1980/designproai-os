@@ -53,6 +53,22 @@ export function toWallItems(masks: DetectedMask[]): WallItem[] {
   });
 }
 
+/**
+ * SET, rather than flip (owner, 2026-09-24: "could we tap to remove it").
+ *
+ * `toggleItem` is the right verb for tapping an item on the photo, where the
+ * customer is reversing whatever it currently is. It is the WRONG verb for a
+ * tap-to-remove MODE: there she has already said which side she wants, so a
+ * flip would remove the first thing she taps and re-protect the second, and
+ * tapping something already removed would undo her.
+ *
+ * Idempotent on purpose — tapping the same item twice in remove mode leaves it
+ * removed.
+ */
+export function applyItemClass(items: WallItem[], id: string, applied: OcclusionClass): WallItem[] {
+  return items.map(item => (item.id === id ? { ...item, applied } : item));
+}
+
 /** One click: kept ⇄ painted through. Nothing else about the item changes. */
 export function toggleItem(items: WallItem[], id: string): WallItem[] {
   return items.map(item => (
@@ -124,9 +140,15 @@ export function itemAt(items: WallItem[], x: number, y: number): WallItem | null
  *
  * ids are `tap-<n>` and can never collide with the bulk pass's `item-<index>-`,
  * which is rebuilt from zero on every re-detect.
+ *
+ * `applied` is an EXPLICIT instruction and overrides the kept class when given
+ * — tap-to-remove has already said which side it wants, and the replace rule
+ * above exists to protect a decision she made, not to overrule one she is
+ * making right now. Omitted, the replace keeps the existing class, which is
+ * the plain re-tap case that rule was written for.
  */
 export const SAME_ITEM = 0.04;
-export function addWallItem(items: WallItem[], mask: DetectedMask): WallItem[] {
+export function addWallItem(items: WallItem[], mask: DetectedMask, applied?: OcclusionClass): WallItem[] {
   const centre = (b: DetectedMask['box']) => ({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 });
   const next = centre(mask.box);
   const at = items.findIndex(item => {
@@ -136,11 +158,11 @@ export function addWallItem(items: WallItem[], mask: DetectedMask): WallItem[] {
   const detected = classOf(mask);
   if (at >= 0) {
     const existing = items[at];
-    return items.map((item, i) => (i === at ? { ...mask, id: existing.id, detected, applied: existing.applied } : item));
+    return items.map((item, i) => (i === at ? { ...mask, id: existing.id, detected, applied: applied ?? existing.applied } : item));
   }
   let n = 1;
   while (items.some(item => item.id === `tap-${n}`)) n += 1;
-  return [...items, { ...mask, id: `tap-${n}`, detected, applied: detected }];
+  return [...items, { ...mask, id: `tap-${n}`, detected, applied: applied ?? detected }];
 }
 
 /** "kept 3 · painted through 2", for the one line above the photo. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  toWallItems, addWallItem, toggleItem, resetItems, hasOverride, splitItems, itemAt, itemSummary,
+  toWallItems, addWallItem, applyItemClass, toggleItem, resetItems, hasOverride, splitItems, itemAt, itemSummary,
 } from '../wallpro-items';
 import type { DetectedMask } from '../wallpro-masks';
 
@@ -160,5 +160,35 @@ describe('one tap adds one item', () => {
   it('defaults anything that is not a clean "movable" to protected, like the rest of this module', () => {
     expect(addWallItem([], mask(0, 0, 1, 1, 'x', 'movable'))[0].applied).toBe('movable');
     expect(addWallItem([], { ...mask(0, 0, 1, 1), class: 'wobbly' as never })[0].applied).toBe('fixed');
+  });
+});
+
+describe('tap to remove is the same gesture, other way up', () => {
+  const mask = (x0: number, y0: number, x1: number, y1: number, label = 'thing') =>
+    ({ label, box: { x0, y0, x1, y1 }, png: 'data:image/png;base64,AAA', class: 'fixed' as const });
+
+  it('SETS the class rather than flipping it, and is idempotent', () => {
+    // Owner, 2026-09-24: "could we tap to remove it". In a mode she has already
+    // said which side she wants: a flip would remove the first thing she taps
+    // and re-protect the second, and tapping something already removed would
+    // silently undo her.
+    const one = addWallItem([], mask(0.2, 0.2, 0.5, 0.5, 'bike'));
+    const gone = applyItemClass(one, one[0].id, 'movable');
+    expect(gone[0].applied).toBe('movable');
+    expect(applyItemClass(gone, gone[0].id, 'movable')[0].applied).toBe('movable');
+    expect(applyItemClass(gone, gone[0].id, 'fixed')[0].applied).toBe('fixed');
+    // ...and it touches nothing else about the item, or its neighbours.
+    expect(gone[0].label).toBe('bike');
+    expect(gone[0].detected).toBe('fixed');
+  });
+
+  it('an explicit instruction overrides the kept class; a plain re-tap does not', () => {
+    // The replace rule exists to protect a decision she MADE, never to
+    // overrule one she is making right now.
+    const kept = addWallItem([], mask(0.3, 0.3, 0.7, 0.7, 'sofa'));
+    expect(addWallItem(kept, mask(0.31, 0.31, 0.69, 0.69, 'sofa'))[0].applied).toBe('fixed');
+    expect(addWallItem(kept, mask(0.31, 0.31, 0.69, 0.69, 'sofa'), 'movable')[0].applied).toBe('movable');
+    // A brand-new item takes the instruction too.
+    expect(addWallItem(kept, mask(0.01, 0.01, 0.1, 0.1, 'vent'), 'movable')[1].applied).toBe('movable');
   });
 });
