@@ -40,11 +40,12 @@ jobs:
           b=$!
           wait "$a" || { tail -50 "$RUNNER_TEMP/runtime-install.log"; exit 1; }
           wait "$b" || { tail -50 "$RUNNER_TEMP/app-install.log"; exit 1; }
-      - name: Apply the bounded repair and reproduce the baseline regressions
+      - name: Apply repair and reproduce baseline regressions
         run: |
           set -euo pipefail
           mkdir -p evidence "$RUNNER_TEMP/fixed-code"
           python3 .ops-trizone-repair.py
+          python3 .ops-trizone-test-harness.py
           files=(supabase/functions/production-panel-proof/index.ts runtime/atlas-cutout-fill.cjs runtime/flat-first-atlas.cjs)
           for path in "${files[@]}"; do
             mkdir -p "$RUNNER_TEMP/fixed-code/$(dirname "$path")"
@@ -124,9 +125,9 @@ jobs:
           set -euo pipefail
           git reset --soft "$BASE"
           git reset
-          rm .ops-trizone-repair.py .github/workflows/repair-trizone-underlay.yml
-          git add supabase/functions/production-panel-proof/index.ts runtime/atlas-cutout-fill.cjs runtime/flat-first-atlas.cjs tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs
-          test "$(git diff --cached --name-only | wc -l)" -eq 5
+          rm .ops-trizone-repair.py .ops-trizone-test-harness.py .github/workflows/repair-trizone-underlay.yml
+          git add supabase/functions/production-panel-proof/index.ts runtime/atlas-cutout-fill.cjs runtime/flat-first-atlas.cjs tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs tests/atlas-panel-proof-contract.test.mjs tests/atlas-panel-proof-topology.test.mjs
+          test "$(git diff --cached --name-only | wc -l)" -eq 7
           test -z "$(git diff --cached --name-only -- app supabase/functions/_shared/designiq-assembly.ts supabase/functions/design-panel-ai-generate/index.ts supabase/functions/persona-photographer-render/index.ts)"
           git diff --cached --stat
           git -c user.name='Tdill1980' -c user.email='210197216+Tdill1980@users.noreply.github.com' commit -m 'fix: restore live TriZone instructions and preserve authored panel pixels'
