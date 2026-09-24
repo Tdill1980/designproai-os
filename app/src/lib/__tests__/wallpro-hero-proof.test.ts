@@ -17,9 +17,9 @@ describe('the hero proof band', () => {
     expect(band).toContain("const shallow = variant === 'shallow';");
   });
 
-  it('the shallow variant stays intentionally short and crops both halves together', () => {
-    expect(band).toContain("sm:h-64 lg:h-80");
-    expect(band).toContain("const SHALLOW_FOCUS = 'lg:object-[center_20%]';");
+  it('the shallow variant shows the whole 3:2 frame, both halves together', () => {
+    expect(band).toContain("aspect-[3/2] w-full max-w-4xl");
+    expect(band).not.toContain("SHALLOW_FOCUS");
     expect(band).toContain("(fill || shallow) ? 'object-cover' : 'object-contain'");
   });
 
