@@ -49,22 +49,14 @@ const OPENING_REVEAL = 52;
  */
 export type HeroProofVariant = 'band' | 'fill' | 'shallow';
 
-/**
- * WHERE THE SHALLOW BAND LOOKS (owner, 2026-09-24: "make the hero gym after the
- * same angle as the before"). The two gym frames ARE one camera position; a
- * short band cropped at the vertical centre showed only the athletes' torsos on
- * the after side, so it read as a different, closer shot. Aiming the crop high
- * keeps the whole mural lettering, the racks and the ceiling lights in both
- * halves, so the shared angle is visible. Applied to every photograph in the
- * band so they stay in register. Desktop only: below lg the band is taller
- * relative to its width, and a high crop there exposes the "BEFORE" caption
- * baked into the supplied before frame beside the band's own label.
- */
-const SHALLOW_FOCUS = 'lg:object-[center_20%]';
-
 export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallProof[]; variant?: HeroProofVariant }) {
   const fill = variant === 'fill';
   const shallow = variant === 'shallow';
+  /* THE WHOLE FRAME, NEVER A CROP (owner, 2026-09-24: "You zoomed way in on
+     what's posted / just make like the before angle / otherwise it looks like
+     a diff wall"). The shallow box is the photographs' own 3:2 shape, capped
+     at max-w-4xl, so both halves show the entire shot from the one camera
+     position and nothing is cropped away. */
   const [index, setIndex] = useState(0);
   const [reveal, setReveal] = useState(OPENING_REVEAL);
   const [held, setHeld] = useState(false);
@@ -212,7 +204,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
         className={fill
           ? 'relative h-full w-full select-none overflow-hidden bg-slate-900'
           : shallow
-            ? 'relative h-48 w-full select-none overflow-hidden rounded-sm border-2 wall-edge bg-slate-900 shadow-md sm:h-64 lg:h-80'
+            ? 'relative mx-auto aspect-[3/2] w-full max-w-4xl select-none overflow-hidden rounded-sm border-2 wall-edge bg-slate-900 shadow-md'
             : 'relative h-52 w-full select-none overflow-hidden rounded-sm border wall-edge bg-slate-900 sm:h-64 lg:h-auto lg:aspect-[1400/803]'}
         onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setHeld(true); track(e.clientX); }}
         onPointerUp={() => setHeld(false)}
@@ -230,7 +222,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
           /* `fill` is a full-bleed hero panel whose shape is set by the layout,
              not by the photograph, so it crops rather than letterboxes. Both
              halves switch together or they fall out of register. */
-          className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}${shallow ? ' ' + SHALLOW_FOCUS : ''}`}
+          className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
           draggable={false}
         />
         <div className="absolute inset-0 overflow-hidden" style={{ width: `${reveal}%` }}>
@@ -242,7 +234,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
             onError={() => fail(current.before)}
             /* Width is pinned to the BAND, not to this clipped box, so the two
                photographs stay in register as the handle moves. */
-            className={`absolute inset-y-0 left-0 h-full max-w-none ${(fill || shallow) ? 'object-cover' : 'object-contain'}${shallow ? ' ' + SHALLOW_FOCUS : ''}`}
+            className={`absolute inset-y-0 left-0 h-full max-w-none ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
             style={bandWidth ? { width: `${bandWidth}px` } : undefined}
             draggable={false}
           />
@@ -256,7 +248,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
             src={mark.src}
             alt={mark.alt}
             onError={() => fail(mark.src)}
-            className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}${shallow ? ' ' + SHALLOW_FOCUS : ''}`}
+            className={`absolute inset-0 h-full w-full ${(fill || shallow) ? 'object-cover' : 'object-contain'}`}
             draggable={false}
           />
         )}
@@ -267,7 +259,7 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
         {marking
           ? <span className="pointer-events-none absolute left-3 top-3 rounded bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Marking the wall</span>
           : <>
-              <span className="pointer-events-none absolute left-3 top-3 rounded bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Before</span>
+              {!current.beforeLabelled && <span className="pointer-events-none absolute left-3 top-3 rounded bg-black/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Before</span>}
               <span className="pointer-events-none absolute right-3 top-3 rounded bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">After</span>
             </>}
 

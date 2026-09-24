@@ -151,6 +151,9 @@ export type WallProof = {
   alt: string;
   headline: string;
   caption: string;
+  /** The before file already carries its own "BEFORE" caption in the pixels,
+   *  so the band does not draw a second one over it. */
+  beforeLabelled?: boolean;
   /**
    * THE MARKING STAGE — the step BETWEEN the two photographs (owner,
    * 2026-09-22: "Add image before and after show one touch masking when they
@@ -241,6 +244,7 @@ const WALL_PROOFS: WallProof[] = [
      */
     before: '/wallpro/proof-gym-before.jpg',
     after: '/wallpro/proof-gym-after.jpg',
+    beforeLabelled: true,
     alt: 'A gym training floor: the same bare grey wall behind the racks, and then the same wall covered edge to edge with a printed athletic mural',
     headline: 'A training floor, transformed.',
     caption: 'A gym wall in a full-height athletic mural, designed in WallPro.',
