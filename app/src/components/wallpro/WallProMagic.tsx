@@ -1,98 +1,146 @@
-import type { ReactNode } from 'react';
-import { CornerDownRight, Eye, FileCheck2, MousePointerClick, Upload, Wand2 } from 'lucide-react';
-import { WALL_GRADIENT } from '@/lib/wallpro-brand';
+import React from 'react';
+import { DEFAULT_CASE_STUDY } from '@/lib/wallpro-case-studies';
+import { DEFAULT_WALL_PRINT, planWallPrint } from '@/lib/wallpro-print-plan';
+import './wallpro-magic.css';
 
-const before = '/wallpro/proof-spa-before.jpg';
-const after = '/wallpro/proof-spa-after.jpg';
+const BEFORE = '/wallpro/studio-original.jpg';
+const AFTER = '/wallpro/studio-floral-preview.jpg';
+const STEPS = [
+  { title: 'Start with your room', short: 'Photo', detail: 'One photo. Your actual space.', caption: 'A blank wall is all you need to begin.' },
+  { title: 'Touch the four corners', short: 'Corners', detail: 'Tell WallPro where the design belongs.', caption: 'Four touches outline the wall, not the furniture or the floor.' },
+  { title: 'Keep what stays', short: 'Mask', detail: 'One touch protects each curtain.', caption: 'Try it: tap either curtain to switch its protection on or off.' },
+  { title: 'See your wall transformed', short: 'Preview', detail: 'Your design. In your room.', caption: 'The floral design wraps the wall. The curtains stay in view.' },
+  { title: 'Go from design to print', short: 'Panels', detail: 'Artwork becomes measured panels.', caption: 'Flat artwork, divided using the same panel planner as the tool.' },
+] as const;
+const CORNERS = [[238, 140], [1223, 111], [1223, 994], [229, 912]];
+// These outlines demonstrate the supplied photo only. They are not detector
+// results, saved customer masks, or production geometry.
+const CURTAINS = [
+  '378,117 414,113 468,115 641,122 649,643 421,649 394,690 359,711',
+  '684,122 832,111 864,102 959,105 966,727 931,701 912,655 684,646',
+];
+type State = { active: number; playing: boolean; visible: boolean; reduced: boolean; left: boolean; right: boolean; imageError: boolean };
 
-function Frame({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <div className="relative overflow-hidden border wall-edge bg-[hsl(var(--wall-field))]">
-      {children}
-      <span className="absolute left-2 top-2 bg-slate-950/88 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{label}</span>
+function PanelExample() {
+  const study = DEFAULT_CASE_STUDY;
+  if (!study.wall || !study.photos.artwork) return <p>Print layout appears after your design is approved.</p>;
+  const plan = planWallPrint(study.wall.widthIn, study.wall.heightIn, DEFAULT_WALL_PRINT);
+  return <div className="wm-panels">
+    <div className="wm-panel-heading"><span>FROM THE FLAT ARTWORK</span><strong>{plan.panels.length} production panels</strong></div>
+    <div className="wm-panel-row">
+      {plan.panels.map(panel => <figure key={panel.number} style={{ flex: panel.width }}>
+        <svg viewBox={`${panel.x} ${panel.y} ${panel.width} ${panel.height}`} role="img" aria-label={`Artwork panel ${panel.number}`}>
+          <image href={study.photos.artwork!} x={plan.bounds.x} y={plan.bounds.y} width={plan.bounds.width} height={plan.bounds.height} preserveAspectRatio="xMidYMid slice" />
+        </svg>
+        <figcaption><b>0{panel.number}</b><span>{panel.width}″ × {panel.height}″</span></figcaption>
+      </figure>)}
     </div>
-  );
+    <p className="wm-panel-note">Example wall: {plan.wall.width}″ × {plan.wall.height}″<br />{plan.settings.bleed}″ perimeter bleed · {plan.settings.overlap}″ seam overlap</p>
+  </div>;
 }
 
-function Room({ src, alt }: { src: string; alt: string }) {
-  return <img src={src} alt={alt} className="block h-auto w-full" draggable={false} />;
-}
+/** A read-only, illustrated walkthrough. It has no API, checkout, upload,
+ * production, or customer-project side effects. Both WallPro themes use it. */
+export class WallProMagic extends React.PureComponent<Record<string, never>, State> {
+  state: State = { active: 3, playing: false, visible: false, reduced: false, left: true, right: true, imageError: false };
+  private root: HTMLElement | null = null;
+  private stepButtons: Array<HTMLButtonElement | null> = [];
+  private observer: IntersectionObserver | null = null;
+  private motion: MediaQueryList | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private isMountedHere = false;
 
-function Step({ n, title, copy, children }: { n: number; title: string; copy: string; children: ReactNode }) {
-  return (
-    <article className={"bg-[hsl(var(--wall-card))] " + (n <= 3 ? "md:col-span-2" : "md:col-span-3")}>
-      <div className="flex min-h-[76px] items-start gap-3 border-b wall-edge px-4 py-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-[hsl(var(--wall-card-edge))] bg-[hsl(var(--wall-field))] text-xs font-black wall-ink">{n}</span>
-        <div><h3 className="text-sm font-bold wall-ink">{title}</h3><p className="mt-0.5 text-[11px] wall-muted">{copy}</p></div>
+  componentDidMount() {
+    this.isMountedHere = true;
+    this.motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.motion.addEventListener?.('change', this.onMotion);
+    // Start with the finished room; the visitor chooses when the walkthrough
+    // plays. There is no automatic motion or moving target on page entry.
+    this.setState({ reduced: this.motion.matches });
+    if (typeof IntersectionObserver !== 'undefined' && this.root) {
+      this.observer = new IntersectionObserver(([entry]) => this.setState({ visible: entry.isIntersecting }), { threshold: 0.15 });
+      this.observer.observe(this.root);
+    } else this.setState({ visible: true });
+    document.addEventListener('visibilitychange', this.schedule);
+    [BEFORE, AFTER, DEFAULT_CASE_STUDY.photos.artwork].forEach(src => { if (src) { const image = new Image(); image.src = src; } });
+  }
+  componentDidUpdate(_: Record<string, never>, previous: State) {
+    if (previous.active !== this.state.active || previous.playing !== this.state.playing || previous.visible !== this.state.visible) this.schedule();
+  }
+  componentWillUnmount() {
+    this.isMountedHere = false;
+    if (this.timer) clearTimeout(this.timer);
+    this.observer?.disconnect();
+    this.motion?.removeEventListener?.('change', this.onMotion);
+    document.removeEventListener('visibilitychange', this.schedule);
+  }
+  private onMotion = (event: MediaQueryListEvent) => this.setState({ reduced: event.matches, playing: false });
+  private schedule = () => {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    if (!this.isMountedHere || !this.state.playing || !this.state.visible || document.hidden) return;
+    this.timer = setTimeout(() => this.setState(state => state.active === STEPS.length - 1
+      ? { active: state.active, playing: false }
+      : { active: state.active + 1, playing: true }), 4000);
+  };
+  private choose = (active: number) => this.setState({ active, playing: false, imageError: false });
+  private play = () => {
+    if (this.state.playing) this.setState({ playing: false });
+    else this.setState({ playing: true, active: 0, left: true, right: true, imageError: false });
+  };
+  private toggleCurtain = (index: number) => this.setState(state => ({
+    playing: false, left: index === 0 ? !state.left : state.left, right: index === 1 ? !state.right : state.right,
+  }));
+  private moveStep = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (index + 1) % STEPS.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (index + STEPS.length - 1) % STEPS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = STEPS.length - 1;
+    else return;
+    event.preventDefault(); this.choose(next); this.stepButtons[next]?.focus();
+  };
+
+  render() {
+    const { active, playing, reduced, left, right, imageError } = this.state;
+    const step = STEPS[active];
+    const original = active < 3;
+    return <section ref={el => { this.root = el; }} className="wallpro-magic" aria-labelledby="wallpro-magic-heading" data-motion={reduced ? 'reduced' : 'full'}>
+      <div className="wm-heading">
+        <div><p className="wm-eyebrow">THE WALLPRO EXPERIENCE</p><h2 id="wallpro-magic-heading">Your room. Reimagined.</h2></div>
+        <button type="button" className="wm-play" onClick={this.play} aria-label={playing ? 'Pause walkthrough' : 'Play the 20-second walkthrough'}>
+          <span aria-hidden="true">{playing ? 'Ⅱ' : '▷'}</span>{playing ? 'Pause demo' : 'Watch the magic'}<small>{playing ? `${active + 1} / 5` : '20 sec'}</small>
+        </button>
       </div>
-      <div className="p-3">{children}</div>
-    </article>
-  );
-}
-
-export function WallProMagic() {
-  return (
-    <section aria-labelledby="wallpro-magic-heading" className="mx-auto max-w-7xl border-y wall-edge py-5">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] wall-muted">The WallPro magic</p>
-          <h2 id="wallpro-magic-heading" className="mt-1 text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">See the wall. Touch it. Protect it. Print it.</h2>
+      <div className="wm-workspace">
+        <div className="wm-visual">
+          <div className="wm-stage-top"><span>INTERACTIVE EXAMPLE</span><span>Exotic floral · Interior wall</span></div>
+          <div id="wallpro-magic-stage" className="wm-stage" role="region" aria-label={step.title}>
+            {active === 4 ? <PanelExample /> : imageError ? <div className="wm-image-error" role="status">The example photo could not load. Your wall tool is still available below.</div> :
+              <svg key={original ? 'original' : 'preview'} className="wm-room" viewBox={original ? '0 0 1253 1122' : '0 0 1254 1254'} preserveAspectRatio="xMidYMid meet" role="group" aria-label={original ? 'Full original room photo' : 'Full room with the floral wall design'}>
+                <image href={original ? BEFORE : AFTER} width={original ? 1253 : 1254} height={original ? 1122 : 1254} onError={() => this.setState({ imageError: true, playing: false })} />
+                {active === 1 && <g className="wm-geometry" aria-label="Four wall corner markers">
+                  <polygon points={CORNERS.map(point => point.join(',')).join(' ')} />
+                  {CORNERS.map(([x, y], i) => <g key={i} className="wm-pin" style={{ animationDelay: `${i * 0.35}s` }}><circle cx={x} cy={y} r="16" /><text x={x} y={y + 6} textAnchor="middle">{i + 1}</text></g>)}
+                </g>}
+                {active === 2 && CURTAINS.map((points, i) => <polygon key={i} className="wm-mask" data-protected={(i === 0 ? left : right) ? 'true' : 'false'} points={points} onClick={() => this.toggleCurtain(i)} aria-hidden="true" />)}
+              </svg>}
+          </div>
+          <div className="wm-caption" aria-live={playing ? 'off' : 'polite'}>
+            <p>{step.caption}</p>
+            {active === 2 && <div className="wm-mask-controls">{[left, right].map((protectedNow, i) => <button type="button" key={i} onClick={() => this.toggleCurtain(i)} aria-pressed={protectedNow}><span aria-hidden="true">{protectedNow ? '✓' : '+'}</span>{i === 0 ? 'Left' : 'Right'} curtain{protectedNow ? ' protected' : ' unprotected'}</button>)}</div>}
+          </div>
         </div>
-        <p className="text-xs font-semibold wall-muted">The room stays visible through every step.</p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-px border wall-edge bg-[hsl(var(--wall-card-edge))] md:grid-cols-6">
-        <Step n={1} title="Upload your photo" copy="See the entire room — never a cropped thumbnail.">
-          <Frame label="Your room"><Room src={before} alt="Full room before a wall wrap is designed" /></Frame>
-        </Step>
-
-        <Step n={2} title="Touch 4 corners" copy="Four touches define the exact wall geometry.">
-          <Frame label="Corner geometry">
-            <Room src={before} alt="Full room photo with the wall boundary marked" />
-            <div className="pointer-events-none absolute left-[18%] right-[18%] top-[9%] bottom-[14%] border-2 border-dashed border-white/90 bg-white/5">
-              {['-left-2 -top-2','-right-2 -top-2','-left-2 -bottom-2','-right-2 -bottom-2'].map((c,i)=><span key={i} className={'absolute h-4 w-4 rounded-full border-2 border-white bg-slate-950/90 shadow '+c} />)}
-            </div>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-950/90 px-2.5 py-1 text-[10px] font-bold text-white shadow"><CornerDownRight className="mr-1 inline h-3 w-3" />4 corners mapped</span>
-          </Frame>
-        </Step>
-
-        <Step n={3} title="1-touch masking" copy="Tap curtains, windows or objects once to protect them.">
-          <Frame label="Protected">
-            <Room src={before} alt="Full room showing curtains protected by one-touch masking" />
-            <div className="absolute left-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute right-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute left-[45%] top-[16%] h-[45%] w-[10%] border-2 border-white/90 bg-white/10" />
-            <span className="absolute left-[28%] top-[30%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
-            <span className="absolute right-[27%] top-[46%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
-            <span className="absolute left-1/2 top-[12%] -translate-x-1/2 bg-white px-2 py-1 text-[9px] font-bold text-slate-900 shadow"><MousePointerClick className="mr-1 inline h-3 w-3 text-slate-700" />one touch</span>
-          </Frame>
-        </Step>
-
-        <Step n={4} title="Preview on your wall" copy="Your design lands inside the geometry you marked.">
-          <Frame label="On your wall">
-            <Room src={after} alt="The full room with the exotic floral wall design installed" />
-            <span className="absolute bottom-2 right-2 bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow"><Eye className="mr-1 inline h-3 w-3" />exact placement</span>
-          </Frame>
-        </Step>
-
-        <Step n={5} title="Print-ready panels" copy="Panelized at press width with ½″ perimeter bleed.">
-          <Frame label="Production">
-            <Room src={after} alt="Full exotic floral wall design divided into three print panels" />
-            <div className="absolute inset-y-0 left-1/3 border-l-2 border-dashed border-white/90" />
-            <div className="absolute inset-y-0 left-2/3 border-l-2 border-dashed border-white/90" />
-            <div className="absolute inset-x-0 top-2 flex justify-around px-4">{[1,2,3].map(n=><span key={n} className="flex h-6 w-6 items-center justify-center bg-white text-[10px] font-black text-slate-900 shadow">{n}</span>)}</div>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow"><FileCheck2 className="mr-1 inline h-3 w-3" />3 panels · ½″ bleed</span>
-          </Frame>
-        </Step>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border wall-edge bg-[hsl(var(--wall-card))] px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className={"flex h-10 w-10 items-center justify-center text-white " + WALL_GRADIENT}><Wand2 className="h-5 w-5" /></span>
-          <div><p className="text-sm font-bold wall-ink">Ready to try it on your wall?</p><p className="text-xs wall-muted">Enter dimensions, upload the photo, then touch the wall and protect what stays.</p></div>
+        <div className="wm-controls">
+          <p className="wm-rail-label">ONE PHOTO. FIVE SIMPLE STEPS.</p>
+          <ol className="wm-steps" aria-label="Explore the WallPro walkthrough">
+            {STEPS.map((item, i) => <li key={item.short}><button ref={el => { this.stepButtons[i] = el; }} type="button" onClick={() => this.choose(i)} onKeyDown={event => this.moveStep(event, i)} aria-current={active === i ? 'step' : undefined} aria-controls="wallpro-magic-stage" className={active === i ? 'wm-step is-active' : 'wm-step'}>
+              <span className="wm-number">0{i + 1}</span><span className="wm-step-copy"><strong>{item.title}</strong><small>{item.detail}</small></span><span className="wm-mobile-title">{item.short}</span><span className="wm-step-arrow" aria-hidden="true">↗</span>
+            </button></li>)}
+          </ol>
+          <div className="wm-next"><p>Now make it your wall.</p><a href="#upload-wall">Start your wall wrap <span aria-hidden="true">→</span></a><small>Enter dimensions. Upload your photo.</small></div>
         </div>
-        <a href="#upload-wall" className={"inline-flex items-center px-4 py-2 text-sm font-bold text-white " + WALL_GRADIENT}><Upload className="mr-2 h-4 w-4" />Start your wall wrap</a>
       </div>
-    </section>
-  );
+    </section>;
+  }
 }
