@@ -1642,7 +1642,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             <a href="#upload-wall" className={'ml-1 inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm ' + WALL_GRADIENT}>
               Create Your Wall<ArrowRight className="ml-2 h-4 w-4" />
             </a>
-            {!theme.showPrintOffer && <ToolAccountMenu />}
+            {!theme.showPrintOffer && <ToolAccountMenu tone={theme.surface === 'light' ? 'light' : 'dark'} />}
           </nav>
         </div>
       </header>
@@ -1745,16 +1745,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           table exists. */}
       {!photo && !artwork && (
         <div className="mx-auto mt-4 max-w-6xl space-y-6">
-          {/* THE HERO, PER THE OWNER'S MOCKUP (2026-09-24): copy and three
-              claims on the left, the real before/after on the right. */}
-          <section aria-labelledby="wallpro-hero-heading" className="grid items-center gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Same space. A completely new story.</p>
-              <h1 id="wallpro-hero-heading" className="mt-2 text-3xl font-extrabold leading-tight tracking-tight wall-ink sm:text-4xl">
-                See the transformation <span className="block bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
-              </h1>
-              <p className="mt-3 max-w-md text-base wall-muted">WallPro sees the wall, previews the design, and prepares print-ready files.</p>
-              <ul className="mt-5 grid grid-cols-3 gap-3">
+          {/* THE HERO: copy and three claims in one compact row, then the gym
+              before/after as a NARROW full-width band (owner, 2026-09-24:
+              "show the hero of the gym before and after narrow"). */}
+          <section aria-labelledby="wallpro-hero-heading">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Same space. A completely new story.</p>
+                <h1 id="wallpro-hero-heading" className="mt-1 text-2xl font-extrabold tracking-tight wall-ink sm:text-3xl">
+                  See the transformation <span className="bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
+                </h1>
+                <p className="mt-1 text-sm wall-muted">WallPro sees the wall, previews the design, and prepares print-ready files.</p>
+              </div>
+              <ul className="grid grid-cols-3 gap-3 sm:max-w-md">
                 {([
                   [Crosshair, 'Exact wall geometry', 'Accurate and true to your space', 'from-blue-600 to-blue-400'],
                   [Wand2, '1-touch masking', 'Automatically protects what matters', 'from-violet-600 to-fuchsia-500'],

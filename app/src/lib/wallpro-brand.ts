@@ -318,8 +318,10 @@ export const WALL_BRANDS: Record<WallBrandKey, WallBrand> = {
     // print offer -- it is what the tool makes.
     showPrintOffer: false,
     proofs: WALL_PROOFS,
-    // Dark: this page is mounted inside the OS shell, which is dark around it.
-    surface: 'dark',
+    // LIGHT, BY THE OWNER'S MOCKUP (Trish 2026-09-24, on os.designproai.com:
+    // "It's under os.designproai" -- the white WallPro page is THIS page).
+    // It was dark to sit inside the dark OS shell; the owner chose white.
+    surface: 'light',
   },
   weprintwraps: {
     // The real mark off weprintwraps.com, vendored into public/ so the header

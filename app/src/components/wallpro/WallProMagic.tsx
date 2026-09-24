@@ -26,8 +26,9 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
   );
 }
 
-/* ONE ROW, FIVE STEPS, ARROWS BETWEEN (owner, Trish 2026-09-24, against a
-   mockup: "Fix my Wallpro ui so it looks like this exactly"). Step 5 shows the
+/* ONE ROW, FOUR STEPS, ARROWS BETWEEN -- upload and corner-marking are
+   ONE step (owner, 2026-09-24: "condense step 1 ... upload and mark wall"). (owner, Trish 2026-09-24, against a
+   Earlier the same day: "Fix my Wallpro ui so it looks like this exactly". Step 4 shows the
    flat artwork itself cut into six numbered roll-width panels -- the print
    file, not the room -- because that is what the customer is buying. */
 const Arrow = () => (
@@ -39,15 +40,11 @@ export function WallProMagic() {
     <section aria-labelledby="wallpro-magic-heading" className="mx-auto max-w-7xl">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <h2 id="wallpro-magic-heading" className="text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">The WallPro Magic — From Photo to Print-Ready Panels</h2>
-        <p className="text-sm wall-muted">5 simple steps. Extraordinary results.</p>
+        <p className="text-sm wall-muted">4 simple steps. Extraordinary results.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
-        <Step n={1} title="Upload Your Photo" copy="Start with a photo of your space.">
-          <Frame><Room src={before} alt="A room before a wall wrap is designed" /></Frame>
-        </Step>
-        <Arrow />
-        <Step n={2} title="Touch 4 Corners" copy="Define your wall geometry.">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
+        <Step n={1} title="Upload & Mark Wall" copy="Upload a photo, then touch its 4 corners.">
           <Frame>
             <Room src={before} alt="The room photo with the wall boundary marked by four corners" />
             <div className="pointer-events-none absolute left-[16%] right-[16%] top-[8%] bottom-[12%] border-2 border-blue-500 bg-blue-500/10">
@@ -56,7 +53,7 @@ export function WallProMagic() {
           </Frame>
         </Step>
         <Arrow />
-        <Step n={3} title="1-Touch Masking" copy="Automatically protect windows, curtains, and objects.">
+        <Step n={2} title="1-Touch Masking" copy="Automatically protect windows, curtains, and objects.">
           <Frame>
             <Room src={before} alt="The room with curtains and window protected by one-touch masking" />
             <div className="absolute left-[29%] top-[6%] h-[56%] w-[17%] rounded-sm border-2 border-blue-500 bg-blue-500/35" />
@@ -68,11 +65,11 @@ export function WallProMagic() {
           </Frame>
         </Step>
         <Arrow />
-        <Step n={4} title="Preview On Your Wall" copy="See your design in your space instantly.">
+        <Step n={3} title="Preview On Your Wall" copy="See your design in your space instantly.">
           <Frame><Room src={after} alt="The room with the tropical floral wall design installed" /></Frame>
         </Step>
         <Arrow />
-        <Step n={5} title="Print-Ready Panels" copy="Get production-ready files.">
+        <Step n={4} title="Print-Ready Panels" copy="Get production-ready files.">
           <Frame>
             <Room src={artwork} alt="The flat floral wall artwork divided into six numbered print panels" />
             <div className="absolute inset-0 grid grid-cols-6">
