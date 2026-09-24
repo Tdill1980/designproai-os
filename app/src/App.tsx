@@ -199,6 +199,7 @@ const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/Producti
 const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelProStudioBoard"));
 const AdminGeminiCompareStudio = lazyWithRetry(() => import("./pages/AdminGeminiCompareStudio"));
 const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
+const Layerize = lazyWithRetry(() => import("./pages/Layerize"));
 const PanelProFileOutput = lazyWithRetry(() => import("./pages/PanelProFileOutput"));
 const PanelProFileOutputPreparation = lazyWithRetry(() => import("./pages/PanelProFileOutput").then((module) => ({ default: module.PanelProFileOutputPreparation })));
 const PanelProTemplateReview = lazyWithRetry(() => import("./pages/PanelProTemplateReview"));
@@ -646,6 +647,7 @@ const App = () => {
           {/* ProductionFlow drove run-production-flow / generate-2d-proof from
               the browser. The runtime owns the whole pipeline now, so the job
               page is the one place a job's state is reported. */}
+          <Route path="/productionflow/layerize" element={<RequireAuth><Layerize /></RequireAuth>} />
           <Route path="/productionflow" element={<Navigate to="/designpro/jobs" replace />} />
           {/* The GENIE progress page exists again, server-backed. The bare
               /productionflow still lands on the job list because it names no job. */}
