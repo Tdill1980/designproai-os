@@ -23,6 +23,33 @@ const REPEAT_REQUEST_WORDS = /\b(repeat|repeats|repeating|repeated|seamless|tile
 /** Words that mean one composition sized to the wall. */
 const MURAL_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest|map|logo|logos|brand|branding|wordmark|typography|lettering|quote|quotes|slogan|tagline|manifesto|mission|values|portrait|photo|photograph|illustration|artwork|painting|collage|timeline|wayfinding|donor)\b/i;
 
+/**
+ * ⚠️ ON A MATCH, ONLY THESE WORDS MEAN "ONE SCENE" (owner, 2026-09-24, on a
+ * 143" x 96" wall: "Does the system understand fucking scale ???").
+ *
+ * Her brief was "Match attached PHOTO of wall wrap exact". `MURAL_WORDS`
+ * carries `photo`, so the scale brain read it as a request for one
+ * photographic composition, set placement `cover`, and stretched a tropical
+ * WALLPAPER once across the whole wall. There was no repeat at all.
+ *
+ * That misfire is not bad luck, it is structural: on a match the customer is
+ * describing THE FILE THEY ATTACHED, and the natural words for it -- photo,
+ * photograph, artwork, illustration, painting, portrait -- are every one of
+ * them in `MURAL_WORDS`. Saying "match the attached artwork" would have failed
+ * identically.
+ *
+ * The comment on the match branch already stated the rule -- "naming the
+ * material describes the reference and never re-scales it; only a brief asking
+ * for one scene makes it a mural" -- and the code did not honour it. This is
+ * that rule, expressed: a scene is a subject that genuinely occupies a whole
+ * wall once. A noun for the attachment is not.
+ *
+ * DESCRIBE-FROM-SCRATCH INTENTS KEEP THE FULL LIST, deliberately. There,
+ * "a photo of the coast" IS a request for one photographic mural. It is only
+ * the match intent where those nouns point at the upload instead.
+ */
+const MURAL_SCENE_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest)\b/i;
+
 /** Materials whose repeat is genuinely small: the unit is a slat, a plank, a
  * tile or a weave, and it has a real-world width of a few inches. A botanical
  * or a damask is not one of these, and asking for four of them across a wall
@@ -207,7 +234,7 @@ export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; 
   // made it double. Naming the material ("slatted", "floral", "stone")
   // describes the reference and never re-scales it — only a brief that asks
   // for one scene makes it a mural.
-  if (input.intent === 'match') return saysMural && !REPEAT_REQUEST_WORDS.test(brief)
+  if (input.intent === 'match') return MURAL_SCENE_WORDS.test(brief) && !REPEAT_REQUEST_WORDS.test(brief)
     ? mural('The design you uploaded is one scene.')
     : {
       placement: 'repeat',
