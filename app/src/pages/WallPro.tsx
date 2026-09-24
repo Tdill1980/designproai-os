@@ -2176,29 +2176,28 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <span className="text-sm font-semibold wall-ink">Wall photo added</span>
                 <button type="button" className="text-xs font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
                   onClick={() => uploadInputs.current.photo?.click()}>Replace</button>
-                <span className="ml-auto flex items-center gap-2 text-xs wall-muted">
-                  {reference ? <img src={reference.url} alt="Your style reference" className="h-8 w-10 shrink-0 rounded object-cover" /> : null}
-                  <span>{reference ? 'Style reference added' : 'No style reference'}</span>
-                  <button type="button" className="font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
-                    onClick={() => uploadInputs.current.reference?.click()}>{reference ? 'Replace' : 'Add'}</button>
-                </span>
+                {/* THE REFERENCE CONTROL MOVED TO THE BRIEF (owner, 2026-09-24:
+                    "I need uploader next to prompt"). It sat here, in the wall
+                    UPLOAD step, three sections above the box she types the
+                    design into — so attaching a design she wanted matched
+                    happened nowhere near the words describing what to do with
+                    it, and the choice between matching it and being inspired
+                    by it was buried in "More ways to start" below the fold.
+                    One door, beside the brief. Do not add a second here. */}
                 {/* The inputs themselves still have to be mounted for those two
                     links to open a picker, so both controls render here with
                     their tiles hidden rather than being conditionally absent. */}
                 <span className="hidden">{uploadControl('photo', 'Replace Wall Photo')}{uploadControl('reference', 'Replace Style Reference')}</span>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
-                  <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
-                </div>
-                <div>
-                  {uploadControl('reference', reference ? 'Replace Style Reference' : 'Optional Style Reference', 'Design inspiration (optional)')}
-                  <p className="mt-2 text-xs wall-muted">{intent === 'match'
-                    ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale.'
-                    : 'Optional. Your description alone is enough.'}</p>
-                </div>
+              <div>
+                {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
+                <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
+                {/* The reference tile used to take a third of this row, before
+                    the customer had said anything about a design. Its control
+                    lives with the brief now; the input stays mounted so that
+                    control has a picker to open. */}
+                <span className="hidden">{uploadControl('reference', 'Attach a reference')}</span>
               </div>
             )}
             <p className={'mt-4 inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
@@ -2600,6 +2599,62 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 {WALL_STYLE_CHIPS.map(chip => <button key={chip} type="button" disabled={!!busy}
                   onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
                   className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
+              </div>
+              {/* ATTACH, AND THE TWO ANSWERS, WHERE SHE IS ALREADY TYPING
+                  (owner, 2026-09-24: "I need uploader next to prompt and it to
+                  have two buttons match this exact design and a create a
+                  design inspired by attached").
+
+                  Both answers already existed as `designMode` — 'match' and
+                  'ai' — and both were reachable only from the "More ways to
+                  start" disclosure further down, phrased as SKUs rather than
+                  as the question a person actually has when they hold a
+                  picture: do exactly this, or something like this. So the
+                  choice is asked here, in those words, and only once there is
+                  a reference to ask it about.
+
+                  ⚠️ SWITCHING COSTS NOTHING AND THE SCREEN SAYS SO. `ai` and
+                  `match` are the SAME price and the SAME gateway product in
+                  WALL_DESIGN_SKUS (both $149, `wallpro_custom_file`) — the
+                  table says as much in its own comment. A choice that looks
+                  like it might re-price the job is a choice people avoid
+                  making, so the line under the buttons states it. If those two
+                  SKUs ever diverge, this sentence becomes a lie and must go.
+
+                  Each button clears `artwork`, exactly as typing does: the
+                  design on screen was made under the other reading of the
+                  reference, and leaving it up would show a result that no
+                  longer matches what the button now promises. */}
+              <div className="mt-3 rounded-xl border wall-edge p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {reference
+                    ? <img src={reference.url} alt="The design you attached" className="h-14 w-14 shrink-0 rounded object-cover" />
+                    : <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed wall-edge" aria-hidden="true"><ImageIcon className="h-5 w-5 text-blue-400/70" /></span>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold wall-ink">{reference ? 'Design attached' : 'Have a design already?'}</p>
+                    <p className="text-xs wall-muted">{reference
+                      ? 'Choose what we should do with it.'
+                      : 'Attach a photo, a pattern or a design and we can match it exactly — or design something new inspired by it.'}</p>
+                  </div>
+                  <Button size="sm" variant={reference ? 'outline' : 'default'} disabled={!!busy}
+                    onClick={() => uploadInputs.current.reference?.click()}>
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />{reference ? 'Replace' : 'Attach a design'}
+                  </Button>
+                  {reference && <Button size="sm" variant="ghost" disabled={!!busy}
+                    onClick={() => { setReference(null); setArtwork(null); if (designMode === 'match') setDesignMode('ai'); }}>Remove</Button>}
+                </div>
+                {reference && <>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button variant={designMode === 'match' ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignMode('match'); setArtwork(null); }}>Match this exact design</Button>
+                    <Button variant={designMode === 'ai' ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignMode('ai'); setArtwork(null); }}>Create a design inspired by it</Button>
+                  </div>
+                  <p className="mt-2 text-xs wall-muted">{designMode === 'match'
+                    ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. Anything you type above is applied to it as a change.'
+                    : 'Your attachment guides the style; the design itself is new, and what you type above drives it.'}
+                    {' '}Same price either way.</p>
+                </>}
               </div>
             </div>
             {/* THE CARD ENDS IN ITS ACTION (owner's mockup, 2026-09-24). The
