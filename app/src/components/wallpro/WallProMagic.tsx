@@ -16,13 +16,15 @@ function Room({ src, alt }: { src: string; alt: string }) {
 
 function Step({ n, title, copy, children }: { n: number; title: string; copy: string; children: ReactNode }) {
   return (
+    /* EQUAL CARDS (owner, 2026-09-24: "the 4 cards are diff sizes"). The text
+       block has a fixed height and the picture is pinned to the bottom, so
+       copy of different lengths can never push one card's image lower. */
     <article className="flex min-w-0 flex-col rounded-xl border wall-edge bg-[hsl(var(--wall-card))] p-3 shadow-sm">
-      <div className="mb-3 flex items-start gap-3">
+      <div className="mb-3 flex min-h-[64px] items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
         <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
-      {n === 1 && <p className="mb-2 text-[10px] font-semibold leading-snug wall-muted">Don’t want to design on your photo? Just prompt WallPro with your design idea.</p>}
-      {children}
+      <div className="mt-auto">{children}</div>
     </article>
   );
 }
@@ -47,7 +49,7 @@ export function WallProMagic() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
-        <Step n={1} title="Upload, Pin & Prompt" copy="Upload your wall, pinpoint the 4 corners, and prompt WallPro with your design idea.">
+        <Step n={1} title="Upload, Pin & Prompt" copy="Pin your wall’s 4 corners, or skip the photo and just describe your idea.">
           <Frame>
             <Room src={before} alt="The room photo with the wall boundary marked by four corners" />
             <div className="pointer-events-none absolute left-[16%] right-[16%] top-[8%] bottom-[12%] border-2 border-blue-500 bg-blue-500/10">
@@ -72,7 +74,7 @@ export function WallProMagic() {
           <Frame><Room src={after} alt="The room with the tropical floral wall design installed" /></Frame>
         </Step>
         <Arrow />
-        <Step n={4} title="Your Print-Ready Files" copy="Your custom design, automatically prepared as seamless 53″ production panels with necessary bleed.">
+        <Step n={4} title="Your Print-Ready Files" copy="Your custom design as seamless 53″ panels with bleed.">
           <Frame>
             <Room src={artwork} alt="The flat floral wall artwork divided into three production panels for a 120 inch wall" />
             <div className="absolute inset-0 flex">
