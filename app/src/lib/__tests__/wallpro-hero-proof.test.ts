@@ -1,31 +1,13 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-/**
- * THE BAND MUST FILL ITS TRACK.
- *
- * Owner, 2026-09-16, looking at the live DesignProAI page: "This is missing
- * images." Nothing was missing. Every photograph loaded (measured in a real
- * browser: naturalWidth 1400, rendered 206px tall) and the band was 34 PIXELS
- * WIDE on a 430px phone -- a sliver that reads as a thin vertical line.
- *
- * The cause is a CSS rule with no runtime error to report it. The band's root
- * carries `mx-auto`, which sets both inline margins to auto. On an ordinary
- * block that centres a capped box. As a GRID ITEM -- which it became when the
- * hero put the copy and the band in one grid -- auto inline margins suppress
- * the stretch that would otherwise size it to its track, and the box falls
- * back to shrink-to-fit. Its photographs are absolutely positioned, so there
- * is no intrinsic width to shrink to, and it collapses to its own padding.
- *
- * `w-full` is the fix: a definite width leaves the auto margins no free space
- * to absorb. This test reads the source because the defect is pure layout --
- * jsdom performs no grid sizing, so a render test would pass on the broken
- * markup, and only a real browser or this assertion can convict it.
- */
 const source = (rel: string) =>
   readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
+// These structural checks complement real-browser sizing tests. A DOM-only
+// renderer cannot detect a collapsed grid track or a stretched comparison.
 describe('the hero proof band', () => {
   const band = source('../../components/wallpro/WallProHeroProof.tsx');
   const page = source('../../pages/WallPro.tsx');
@@ -53,22 +35,8 @@ describe('the hero proof band', () => {
   });
 });
 
-/**
- * THE THIRD STAGE: WHAT THE CUSTOMER HAS TO DO.
- *
- * Owner, 2026-09-22: "Add image before and after show one touch masking when
- * they click." Before and after answer "what do I get"; they say nothing about
- * the step a visitor actually stalls on, and that step — mark the wall, tap
- * what to keep — is the part of this product that sounds hardest and is
- * easiest. So the band gets a frame reached by a click.
- *
- * Three things are pinned, each for a defect it would otherwise re-introduce:
- * the control is a BUTTON (the box is already a drag surface, so a bare click
- * target over it fires on every attempt to drag the compare handle); the frame
- * carries its OWN caption (it makes a different claim from the photographs and
- * must say so itself); and the pair is OPTIONAL (every historical proof has
- * two stages and must keep working untouched).
- */
+// The optional marking frame remains separate from the drag interaction.
+// Replacing the approved photographs must not remove this existing feature.
 describe('the marking stage', () => {
   const band = source('../../components/wallpro/WallProHeroProof.tsx');
   const brand = source('../wallpro-brand.ts');
@@ -80,8 +48,6 @@ describe('the marking stage', () => {
   });
 
   it('hides the compare handle and its range while the marking frame is up', () => {
-    // Leaving the wipe control live over a third image lets the customer drag
-    // a handle that reveals nothing, which reads as a broken slider.
     expect(band).toContain('{!marking && <div className="pointer-events-none absolute inset-y-0 w-0.5');
     expect(band).toContain('{!marking && <input');
   });
@@ -96,8 +62,6 @@ describe('the marking stage', () => {
   });
 
   it('stops the carousel and drops the frame when the example changes', () => {
-    // A marking frame left up while the carousel advanced would show one
-    // room's wall plan over another room's photograph.
     expect(band).toContain('useEffect(() => { setMarking(false); }, [index]);');
     expect(band).toContain('held || marking || reducedMotion');
   });
@@ -114,60 +78,41 @@ describe('the marking stage', () => {
 });
 
 /**
- * THE GYM PAIR IS BACK, WITHOUT THE MARK.
- *
- * It was withdrawn 2026-09-21 because the generated mural carried a real
- * company's wordmark, and WALL_PROOFS went empty (which then took the tool's
- * whole masthead down with it — a separate defect, fixed the same day). The
- * mark was measured at x 1207-1320, y 393-410 of the 1400x803 frame and
- * removed by blending between two clean anchor rows. The pair leads again.
+ * On 2026-09-23 the owner supplied the original 1536×1024 gym before image
+ * and the matching BUILT TO MOVE after image. These replace the older
+ * 1400×803 retouched pair. The old wordmark pixel coordinates describe THAT
+ * retired bitmap, not these approved photographs; applying them here would
+ * reject an approved image or encourage repainting it merely to satisfy a
+ * stale test. Exact file digests now prevent the retracted artwork or a
+ * low-resolution substitute from silently returning. Photographed equipment
+ * labels are preserved as supplied; these tests do not claim the frame has
+ * no manufacturer marks.
  */
-describe('the restored gym pair', () => {
+describe('the owner-approved high-resolution gym pair', () => {
   const brand = source('../wallpro-brand.ts');
 
-  it('leads the band with a real file, not the retraction placeholder', () => {
+  it('leads the band with the existing stable asset paths', () => {
+    expect(brand).toContain("before: '/wallpro/proof-gym-before.jpg',");
     expect(brand).toContain("after: '/wallpro/proof-gym-after.jpg',");
     expect(brand).not.toMatch(/REPLACEMENT[_-]?REQUIRED/i);
   });
 
-  it('records WHERE the mark was, so nobody has to find it twice', () => {
-    // A comment that says "the trademark was removed" and not where is a
-    // comment the next person cannot check.
-    expect(brand).toMatch(/x 1207-1320, y 393-410/);
-  });
-
-  it('carries the marking frame that the third stage renders', () => {
+  it('retains the optional gym marking demonstration', () => {
     expect(brand).toContain("src: '/wallpro/proof-gym-mask.jpg',");
   });
 
-  /**
-   * The pixels themselves, because a comment saying "the mark was removed"
-   * is not evidence and this file has twice been the place someone looked.
-   * Both regions are measured from the shipped frame, not asserted in prose.
-   */
-  it('has no ink left where either removed wordmark was', async () => {
+  it.each([
+    ['before', 'df146b1887d0efb69e39c3ef784115c6430dbe4080bc85dbf12031c578df8cf2'],
+    ['after', 'eeaeb2c42be347a82c32b23052f3a8147d548bd561868c13c31daa98b6a5c287'],
+  ])('ships the approved %s pixels at matching full resolution', async (side, digest) => {
     const sharp = (await import('sharp')).default;
-    const file = fileURLToPath(new URL('../../../public/wallpro/proof-gym-after.jpg', import.meta.url));
-    const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
-    const lum = (x: number, y: number) => {
-      const i = (y * info.width + x) * 3;
-      return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    };
-    const ink = (x0: number, y0: number, x1: number, y1: number, t: number) => {
-      let n = 0;
-      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (lum(x, y) > t) n++;
-      return n;
-    };
-    expect(info.width).toBe(1400);
-    expect(info.height).toBe(803);
-    // The third-party wordmark in the MURAL -- the one that forced the
-    // retraction. Zero, or the retracted frame is back in the build.
-    expect(ink(1207, 393, 1320, 410, 120), 'mural wordmark region').toBe(0);
-    // The plyo box's manufacturer mark.
-    expect(ink(1039, 467, 1070, 474, 105), 'plyo wordmark region').toBe(0);
-    // And the two size markings must NOT have been scrubbed with them: they
-    // are what a plyo box says, not a brand, and a frame with them missing
-    // means somebody widened a patch rectangle.
-    expect(ink(1095, 520, 1140, 540, 120), '20-inch size marking').toBeGreaterThan(100);
+    const file = fileURLToPath(new URL(`../../../public/wallpro/proof-gym-${side}.jpg`, import.meta.url));
+    const bytes = readFileSync(file);
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(digest);
+    const info = await sharp(bytes).metadata();
+    expect(info.width).toBe(1536);
+    expect(info.height).toBe(1024);
+    expect(info.format).toBe('jpeg');
+    expect(info.channels).toBe(3);
   });
 });
