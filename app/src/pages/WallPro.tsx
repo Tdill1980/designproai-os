@@ -1623,8 +1623,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         style={{ top: stickyTop }}
         className="wallpro-compact-header sticky z-30 -mx-4 px-4 md:-mx-8 md:px-8"
       >
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-3">
           <WallProLockup theme={theme} tone="dark" inline />
+          <div aria-label="Breadcrumb" className="wallpro-breadcrumb hidden min-w-0 items-center gap-1.5 border-l border-white/20 pl-3 text-[11px] font-medium text-white/55 md:flex">
+            <span>{theme.showPrintOffer ? 'WePrintWraps' : 'DesignProAI'}</span><span aria-hidden="true">/</span><span className="text-white/90">WallPro</span>
+          </div>
           <nav aria-label="WallPro" className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
             <button type="button" className="wallpro-header-link" disabled={!!busy} title="My wall designs"
               onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>

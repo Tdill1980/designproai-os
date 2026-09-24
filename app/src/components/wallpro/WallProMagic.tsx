@@ -21,6 +21,7 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
         <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
+      {n === 1 && <p className="mb-2 text-[10px] font-semibold leading-snug wall-muted">Don’t want to design on your photo? Just prompt WallPro with your design idea.</p>}
       {children}
     </article>
   );
@@ -30,7 +31,7 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
    ONE step (owner, 2026-09-24: "condense step 1 ... upload and mark wall"). (owner, Trish 2026-09-24, against a
    Earlier the same day: "Fix my Wallpro ui so it looks like this exactly". Step 4 shows the
    flat artwork itself split into the three production panels required for the
-   120-inch example wall. Each panel may use up to 53.5 inches of print width;
+   120-inch example wall. Each panel may use up to 53 inches of production print width;
    the third panel is the remainder. A glassmorphism proof layer sits over the
    artwork so the customer can read the panel plan without hiding the design. */
 const Arrow = () => (
@@ -46,7 +47,7 @@ export function WallProMagic() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
-        <Step n={1} title="Upload & Mark Wall" copy="Upload a photo, then touch its 4 corners.">
+        <Step n={1} title="Upload, Pin & Prompt" copy="Upload your wall, pinpoint the 4 corners, and prompt WallPro with your design idea.">
           <Frame>
             <Room src={before} alt="The room photo with the wall boundary marked by four corners" />
             <div className="pointer-events-none absolute left-[16%] right-[16%] top-[8%] bottom-[12%] border-2 border-blue-500 bg-blue-500/10">
@@ -71,11 +72,11 @@ export function WallProMagic() {
           <Frame><Room src={after} alt="The room with the tropical floral wall design installed" /></Frame>
         </Step>
         <Arrow />
-        <Step n={4} title="Print-Ready Panels" copy="120″ wall · 3 production panels · up to 53.5″ each.">
+        <Step n={4} title="Your Print-Ready Files" copy="Your custom design, automatically prepared as seamless 53″ production panels with necessary bleed.">
           <Frame>
             <Room src={artwork} alt="The flat floral wall artwork divided into three production panels for a 120 inch wall" />
             <div className="absolute inset-0 flex">
-              {[53.5, 53.5, 13].map((panelWidth, index) => (
+              {[53, 53, 14].map((panelWidth, index) => (
                 <div
                   key={index}
                   className={'relative h-full border-white/85 ' + (index > 0 ? 'border-l-2 border-dashed' : '')}
@@ -90,7 +91,7 @@ export function WallProMagic() {
             </div>
             <div className="absolute inset-x-2 bottom-2 flex items-center justify-between border border-white/35 bg-white/14 px-2 py-1.5 text-[8px] font-semibold text-white shadow-xl backdrop-blur-md">
               <span>120″ WALL</span>
-              <span>53.5″ MAX PANEL WIDTH</span>
+              <span>53″ PRODUCTION PANELS</span>
               <span>3 PANELS</span>
             </div>
           </Frame>
