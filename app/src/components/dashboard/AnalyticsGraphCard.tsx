@@ -448,10 +448,6 @@ export const AnalyticsGraphCard = ({ className, compact = false }: AnalyticsGrap
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
   });
-  const conversionRate = totalQuotesInPeriod > 0 && totalQuotes > 0
-    ? Math.round((totalQuotes / totalQuotesInPeriod) * 1000) / 10
-    : 0;
-
   // Use all date points so the area chart fills properly
   const graphPoints = useMemo(() => {
     if (!points) return [];
@@ -479,6 +475,23 @@ export const AnalyticsGraphCard = ({ className, compact = false }: AnalyticsGrap
         : `${formatMoney(delta)} vs first half`;
     return { total: t, totalQuotes: q, avgQuote: avg, trendLabel: label, trendPositive: delta >= 0, hasData: t > 0 };
   }, [points]);
+
+  /* ⚠️ THIS LINE USED TO SIT TEN LINES ABOVE THE useMemo THAT DEFINES
+     `totalQuotes`, AND IT WAS A LATENT CRASH (found 2026-09-24 by the first
+     typecheck that actually opened this file — TS2448, twice).
+
+     A `const` read above its own declaration is a temporal dead zone, thrown
+     during render. It survived unnoticed because `&&` short-circuits: with no
+     quotes in the period the left operand is false and `totalQuotes` is never
+     evaluated. The card therefore worked on an empty account and threw on the
+     first real quote — the worst possible shape for a defect, because it waits
+     for the data that makes it matter.
+
+     Same class as the one that took WallPro down the same day. It is moved,
+     not rewritten: the arithmetic is untouched. */
+  const conversionRate = totalQuotesInPeriod > 0 && totalQuotes > 0
+    ? Math.round((totalQuotes / totalQuotesInPeriod) * 1000) / 10
+    : 0;
 
   const xInterval = range <= 3 ? 0 : range === 7 ? 1 : 5;
 
