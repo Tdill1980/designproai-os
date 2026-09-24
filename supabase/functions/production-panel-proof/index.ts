@@ -700,7 +700,7 @@ serve(async (req) => {
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
       flatPanelProductionProofInjected: body.separatedArtwork === true
-        ? flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0])
+        ? flatProductionInstructions.length === 7 && prompt.includes(flatProductionInstructions[0])
         : prompt.includes(SYSTEM_JOB)
           && ["ZONE 1", "ZONE 2", "ZONE 3"].every(zone => prompt.includes(zone)),
       templateLayoutLocked: body.separatedArtwork === true

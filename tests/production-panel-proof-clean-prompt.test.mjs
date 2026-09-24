@@ -58,7 +58,7 @@ for (const mode of ['commercial', 'restyle']) {
       const result = await assemble({ mode, separatedArtwork });
       assert.ok(result.prompt.startsWith(result.creativeHead + '\n\n'), 'retain the exact selected designer head');
       assert.ok(result.prompt.includes(fixture.prompt), 'preserve raw client wording including negative preferences');
-      if (separatedArtwork) assert.match(result.prompt, /FLAT PRODUCTION DESTINATION:/);
+      if (separatedArtwork) assert.match(result.prompt, /MASTER WRAP AUTHORING:/);
       else {
         assert.ok(result.prompt.includes(SYSTEM_JOB));
         assert.ok(result.prompt.includes(SHEET_LAYOUT));
