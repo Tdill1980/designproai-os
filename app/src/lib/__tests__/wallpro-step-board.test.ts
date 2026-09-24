@@ -205,12 +205,52 @@ describe('the three inputs sit together', () => {
 
   it('puts the style reference beside the wall upload, not below the picker', () => {
     const wall = page.indexOf("uploadControl('photo'");
-    const ref = page.indexOf("uploadControl('reference', reference ? 'Replace Style Reference'");
+    const ref = page.indexOf("uploadControl('reference'");
     const step3 = page.indexOf('<section id="choose-design"');
     expect(ref).toBeGreaterThan(wall);
     expect(ref).toBeLessThan(step3);
     // Side by side on anything wider than a phone, stacked on one.
-    expect(page).toContain('<div className="grid gap-3 sm:grid-cols-2">');
+    //
+    // ⚠️ THE RATIO IS NOT 1:1 ANY MORE, AND THE LOCK PINNED THE RATIO RATHER
+    // THAN THE RULE (owner, 2026-09-24: "upload is waisting ui space"). The
+    // wall photo is REQUIRED and the other tile says "optional" on its face,
+    // so equal width was the layout claiming they are equal choices. What this
+    // case is actually for — the reference sits with the wall upload instead
+    // of being buried under the priced picker — is asserted above.
+    expect(page).toMatch(/grid gap-3 sm:grid-cols-3/);
+    expect(page).toContain('sm:col-span-2');
+  });
+
+  /**
+   * ONCE YOU HAVE UPLOADED, THE UPLOAD STOPS TAKING THE FOLD (owner, Trish
+   * 2026-09-24: "upload is waisting ui space").
+   *
+   * Two equal tiles plus two helper paragraphs is a full block of screen, and
+   * it stayed that size forever — including after the photo was chosen, when
+   * both tiles are instructions for a thing already done and the only screen
+   * that matters is the wall itself, one section below. On a phone that was
+   * the whole fold, which is the same complaint as "I have to scroll to find
+   * my photo" arriving from the other direction.
+   */
+  it('collapses to one line with a thumbnail once a photo exists', () => {
+    expect(page).toContain('{photo ? (');
+    expect(page).toContain('Wall photo added');
+    expect(page).toMatch(/alt="Your wall photo"/);
+  });
+
+  it('still offers Replace and Add — nothing is removed, only shrunk', () => {
+    // The collapsed row is a LINK to the same picker, not a different control.
+    expect(page).toContain("onClick={() => uploadInputs.current.photo?.click()}>Replace<");
+    expect(page).toMatch(/uploadInputs\.current\.reference\?\.click\(\)}>\{reference \? 'Replace' : 'Add'\}/);
+  });
+
+  it('keeps both file inputs mounted, or the links open nothing', () => {
+    // `uploadControl` owns the <input> and the ref that the links call
+    // `.click()` on, so the collapsed state has to render both controls even
+    // though their tiles are hidden. Dropping them would leave two links
+    // pointing at a null ref — a control that silently does nothing, which is
+    // the exact defect class this page has already shipped twice.
+    expect(page).toContain('<span className="hidden">{uploadControl(\'photo\'');
   });
 
   it('the chips travel with the brief rather than staying behind', () => {

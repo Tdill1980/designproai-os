@@ -1947,18 +1947,55 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 Each control is the SAME one as before -- same state, same
                 handler -- moved, never copied: two boxes writing one `prompt`
                 is the drift this page has already paid for twice. */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                {uploadControl('photo', photo ? 'Replace Wall Photo' : 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
-                <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
+            {/* ⚠️ THE UPLOAD BLOCK SHRINKS ONCE IT HAS BEEN USED (owner,
+                Trish 2026-09-24: "upload is waisting ui space").
+                Two equal tiles plus two helper paragraphs is a full block of
+                screen, and it stayed that size FOREVER — including after the
+                photo was chosen, when both tiles are instructions for a thing
+                already done and the only screen that matters is the wall
+                itself, one section below. On a phone that was the whole fold.
+
+                So the block has two states. Empty: the wall photo takes two
+                thirds, because it is the required input and the other one is
+                literally labelled optional — equal width said they were equal
+                choices. Chosen: both collapse to ONE line with a thumbnail,
+                and the helper text goes, because it explained a decision the
+                customer has already made.
+
+                NOTHING IS REMOVED. Replace is the same control with the same
+                handler; it is a link rather than a tile because replacing a
+                photo is rare and the tile was spending fold on it. */}
+            {photo ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border wall-edge bg-[hsl(var(--wall-field))] p-2">
+                <img src={photo.url} alt="Your wall photo" className="h-10 w-14 shrink-0 rounded object-cover" />
+                <span className="text-sm font-semibold wall-ink">Wall photo added</span>
+                <button type="button" className="text-xs font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
+                  onClick={() => uploadInputs.current.photo?.click()}>Replace</button>
+                <span className="ml-auto flex items-center gap-2 text-xs wall-muted">
+                  {reference ? <img src={reference.url} alt="Your style reference" className="h-8 w-10 shrink-0 rounded object-cover" /> : null}
+                  <span>{reference ? 'Style reference added' : 'No style reference'}</span>
+                  <button type="button" className="font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
+                    onClick={() => uploadInputs.current.reference?.click()}>{reference ? 'Replace' : 'Add'}</button>
+                </span>
+                {/* The inputs themselves still have to be mounted for those two
+                    links to open a picker, so both controls render here with
+                    their tiles hidden rather than being conditionally absent. */}
+                <span className="hidden">{uploadControl('photo', 'Replace Wall Photo')}{uploadControl('reference', 'Replace Style Reference')}</span>
               </div>
-              <div>
-                {uploadControl('reference', reference ? 'Replace Style Reference' : 'Optional Style Reference', 'Add a design inspiration image (optional)')}
-                <p className="mt-2 text-xs wall-muted">{intent === 'match'
-                  ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. A screenshot is fine.'
-                  : 'Optional. Your description alone is enough.'}</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
+                  <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
+                </div>
+                <div>
+                  {uploadControl('reference', reference ? 'Replace Style Reference' : 'Optional Style Reference', 'Design inspiration (optional)')}
+                  <p className="mt-2 text-xs wall-muted">{intent === 'match'
+                    ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale.'
+                    : 'Optional. Your description alone is enough.'}</p>
+                </div>
               </div>
-            </div>
+            )}
             <p className="mt-4 text-sm font-bold wall-ink">Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
