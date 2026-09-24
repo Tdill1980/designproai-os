@@ -169,3 +169,56 @@ test('the live audit rejects a missing continuous underlay requirement', async (
   await assert.rejects(assemble({ separatedArtwork: undefined, anchorTurns: false }, broken),
     /panel_proof_phase1_contract_missing:.*templateLayoutLocked/);
 });
+
+// Regression from real request 65aec7ec: the early copyist check passed but
+// the final provider-bound phase1 audit refused the missing designer role and
+// native-knowledge instructions. Execute the actual endpoint section above.
+const recreateReference = {
+  storagePath: 'atlas-call1-inputs/' + 'a'.repeat(64) + '.png',
+  contentHash: 'a'.repeat(64), contentType: 'image/png',
+};
+const recreateEdits = 'Only the driver side is available. Keep the same wrap and change the phone to 623-555-0174.';
+for (const mode of ['commercial', 'restyle']) {
+  for (const path of ['exact', 'complete', 'transfer']) {
+    for (const separatedArtwork of [true, undefined]) {
+      test(`RecreatePro ${mode}/${path}/separated=${separatedArtwork}: actual provider request satisfies phase1`, async () => {
+        const task = `RecreatePro / ${path}. Preserve supplied artwork. Complete only requested missing surfaces; adapt only to the selected vehicle. Customer edits override named details only.`;
+        const result = await assemble({ mode, separatedArtwork, anchorTurns: false,
+          prompt: recreateEdits, customerPrompt: recreateEdits, companyName: '', phone: '', website: '',
+          customerAssets: [recreateReference], visionboard_intent: 'exact_reference', styleDescriptors: task,
+          panelRows: livePanels });
+        assert.ok(result.prompt.startsWith(result.creativeHead + '\n\n'));
+        assert.ok(result.prompt.includes(recreateEdits));
+        assert.ok(result.creativeHead.includes(task));
+        assert.match(result.creativeHead.split(/\n\s*\n/)[0], /\bdesigner\b/i);
+        assert.match(result.creativeHead, /native image-generation and graphic-design knowledge/);
+        assert.match(result.creativeHead, /explicit requested edits supersede exact-copy instructions/);
+        assert.equal(result.customerAssets.length, 1);
+        assert.equal(result.customerAssets[0].storagePath, recreateReference.storagePath);
+        for (const [key, value] of Object.entries(result.phase1Audit)) {
+          if (key !== 'contract') assert.equal(value, true, key);
+        }
+        if (separatedArtwork !== true) {
+          for (const zone of ['ZONE 1', 'ZONE 2', 'ZONE 3']) assert.ok(result.prompt.includes(zone));
+          assert.match(result.prompt, /same continuous background artwork beneath/);
+        }
+      });
+    }
+  }
+}
+
+test('RecreatePro still fails the actual audit when native knowledge is removed', async () => {
+  const removeKnowledge = head => head.split('\n').filter(line => !/\bnative\b.*\bknowledge\b|DESIGN AMPLIFICATION:/i.test(line)).join('\n');
+  await assert.rejects(assemble({ mode: 'restyle', separatedArtwork: undefined,
+    prompt: recreateEdits, customerAssets: [recreateReference], visionboard_intent: 'exact_reference',
+    styleDescriptors: 'RecreatePro / complete. Continue only the missing sides.' }, compiled, removeKnowledge),
+    /panel_proof_phase1_contract_missing:.*nativeGeminiImageKnowledgeInjected/);
+});
+
+test('RecreatePro still fails the actual audit when its graphic designer role is removed', async () => {
+  const removeRole = head => head.replace(/ As the reproduction graphic designer,[^\n]*?(?= Reproduce| Your job)/, '');
+  await assert.rejects(assemble({ mode: 'restyle', separatedArtwork: undefined,
+    prompt: recreateEdits, customerAssets: [recreateReference], visionboard_intent: 'exact_reference',
+    styleDescriptors: 'RecreatePro / exact. Keep the supplied design.' }, compiled, removeRole),
+    /panel_proof_phase1_contract_missing:.*graphicDesignerPersonaInjected/);
+});

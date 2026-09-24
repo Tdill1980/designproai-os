@@ -843,7 +843,7 @@ function atlasCreativeDirection(value: string): string {
 function recreateReferenceTask(styleDescriptors?: string): string {
   if (typeof styleDescriptors !== "string" || styleDescriptors.length > 2000
     || !/^RecreatePro \/ (exact|complete|transfer)\./.test(styleDescriptors)) return "";
-  return `\n\nRECREATION TASK (applies to the supplied artwork):\n${styleDescriptors}\nThe customer's explicit requested edits supersede exact-copy instructions for those named details only. Preserve every other supplied detail. Missing surfaces are new continuations of the same design language, subject to customer review.`;
+  return `\n\nRECREATION TASK (applies to the supplied artwork):\n${styleDescriptors}\nUse your native image-generation and graphic-design knowledge to reconstruct the supplied artwork faithfully, complete only the requested missing surfaces, and adapt placement only for the selected vehicle or explicitly requested edits.\nThe customer's explicit requested edits supersede exact-copy instructions for those named details only. Preserve every other supplied detail. Missing surfaces are new continuations of the same design language, subject to customer review.`;
 }
 
 function buildDesignIQPrompt(params: DesignIQParams): string {
@@ -1251,6 +1251,14 @@ CLIENT BRIEF:`;
   // non-recreate path (typed briefs, style_inspiration, no visionboard) is byte-for-
   // byte the golden prompt below, untouched.
   const isExactRecreate = visionboard_intent === 'exact_reference';
+  // A real RecreatePro request carries the proof endpoint's designer and
+  // native-knowledge contract, bounded by source fidelity and edits.
+  // Untagged legacy exact-reference and ordinary VehiclePro stay unchanged.
+  const recreateDesignerRole = isExactRecreate && Array.isArray(visionBoardImages)
+    && visionBoardImages.length > 0 && recreateReferenceTask(styleDescriptors)
+    ? " As the reproduction graphic designer, preserve the supplied artwork as the design authority; reconstruct its production layout, complete only requested missing surfaces, and honor the customer's named edits."
+    : "";
+
 
   // View-specific scene framing — avoids contradicting camera angle for hood/roof/close-up
   const restyleScene = viewType === 'hood_detail'
@@ -1268,10 +1276,10 @@ CLIENT BRIEF:`;
   // Copyist identity for recreate; the golden designer identity for every other path.
   const restyleIdentity = atlasFlatMaster
     ? isExactRecreate
-      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Reproduce the customer's approved wrap faithfully as one cohesive flattened A.T.L.A.S. for the exact target vehicle, including every supplied color, graphic, pattern, logo, wordmark and line of text at its true relative scale and position.`
+      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com.${recreateDesignerRole} Reproduce the customer's approved wrap faithfully as one cohesive flattened A.T.L.A.S. for the exact target vehicle, including every supplied color, graphic, pattern, logo, wordmark and line of text at its true relative scale and position.`
       : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create premium vehicle wraps with depth and texture that are printed and installed on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`
     : isExactRecreate
-      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com. Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
+      ? `You are a vehicle wrap REPRODUCTION specialist at WePrintWraps.com.${recreateDesignerRole} Your job is to reproduce an existing, approved wrap design EXACTLY as shown in the reference image, re-fitted onto a different vehicle. You do NOT redesign, restyle, recolor, simplify, or invent — you copy the reference faithfully, including every logo and line of text, and change only the vehicle it sits on. If the reference image contains anything besides the design itself (a browser window, app interface, dark panels, menus, thumbnails, captions), IGNORE all of that completely — reproduce ONLY the wrap design shown on the vehicle within it, at FULL fidelity. Copy EVERY design element at its true relative size and position: colored panels, swooshes, and shapes behind or around the logo are part of the design — never drop, shrink, or simplify them, and never shrink the logo lockup.`
       : `You are WePrintWraps.com Lead Vehicle Wrap Designer. You create both restyle and commercial wraps with depth and texture — your designs are seen in car shows around the world. You take a customer's order and create amazing, modern vehicle wrap designs that we sell to wrap shops who then print and install them on real vehicles. You amplify each customer's vision while staying true to their request — a chameleon who reads every brief, absorbs references, and creates something uniquely RIGHT.`;
 
   // ATLAS FLAT-MASTER: same restyle creative brief and layered-depth
