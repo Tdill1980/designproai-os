@@ -34,7 +34,7 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
+import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, viewIsPrintFile, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
@@ -1087,7 +1087,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // by the same deterministic switch that picks the DESIGNER on the
       // generate side — so a bedroom brief is both designed and shot like a
       // bedroom. It never picks an artwork authority: the render may not
-      // redesign, which is what canCommitFromView still guards.
+      // redesign, which is what viewIsPrintFile keeps honest at commit time.
       const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height, designDomain });
       // The design or the photo may have changed while the model painted.
       if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
@@ -1266,20 +1266,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   }
   async function approveCurrent() {
     if (!currentVersion) return;
-    // NEVER FROM THE AI VIEW. Approving starts the 150 PPI panel build and is a
-    // statement about the print file; the AI view is a freehand painting of one
-    // and its motifs do not match. The guard lives here, on the action, rather
-    // than only on who can see the view, so it survives the view ever being put
-    // back in front of customers.
-    if (!canCommitFromView(view)) {
-      setView('after');
-      setNotice('That was the artist\u2019s impression, not your print file. This is the real one \u2014 approve from here.');
-      return;
-    }
+    // APPROVING IS ALWAYS A STATEMENT ABOUT THE PRINT FILE, so the pane shows
+    // the print file as part of approving. It used to RETURN here instead,
+    // sending her to another tab to press the same button again — correct
+    // while the AI view was staff-only, and a dead button once that view
+    // became the default for everyone (see viewIsPrintFile). Measured on the
+    // owner's own account the day this was found: 19 drafts, 2 approvals, none
+    // for eleven days, and every production job that ever ran succeeded. The
+    // file path was never the problem; the first press was being eaten.
+    //
+    // The rule is kept — nobody commits without seeing the real file — by
+    // SHOWING it, not by refusing. One press.
+    const wasImpression = !viewIsPrintFile(view);
+    if (wasImpression) setView('after');
     await run('Approving V' + currentVersion.version_no, async () => {
       await approveWallVersion(projectId, currentVersion.id);
       setVersions(await listWallVersions(projectId));
-      setNotice(`V${currentVersion.version_no} approved. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
+      setNotice(`V${currentVersion.version_no} approved${wasImpression ? ' \u2014 this is your actual print file, not the AI impression' : ''}. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
       // Approval auto-runs production: the 150 PPI panels start on the server
       // without another click (owner, 2026-09-11).
       setProductionKick(k => k + 1);
@@ -2938,11 +2941,18 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             showPrintOffer={theme.showPrintOffer}
             billing={billing}
             designMode={designMode}
-            canBuyFile={!!currentVersionId && canCommitFromView(view)}
+            /* ⚠️ NOT GATED ON THE VIEW ANY MORE. Disabled here, the card's own
+               tooltip read "Generate and save this design first" — untrue on
+               the default view, and impossible to act on. The handler shows
+               the print file before checkout instead. */
+            canBuyFile={!!currentVersionId}
             fileUnlocked={entitled}
             busy={!!busy}
             onBuyFile={() => {
               if (!currentVersionId) return;
+              // What she is buying is the print file, so that is what the pane
+              // shows on the way to checkout.
+              if (!viewIsPrintFile(view)) setView('after');
               void run('Opening checkout', async () => {
                 window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro'));
               });

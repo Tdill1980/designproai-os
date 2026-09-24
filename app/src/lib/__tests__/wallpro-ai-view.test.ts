@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { aiViewAvailable, canCommitFromView, resolveWallView, AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE } from '../wallpro-ai-view';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { aiViewAvailable, viewIsPrintFile, resolveWallView, AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE } from '../wallpro-ai-view';
 
 describe('the AI view is the on-wall view, for everyone', () => {
   // ⚠️ THIS BLOCK IS AN INVERSION, AND THE ONE IT REPLACED WAS CORRECT WHEN IT
@@ -49,17 +51,42 @@ describe('losing access never strands the pane on the AI view', () => {
   });
 });
 
-describe('nothing is committed from a painting of the design', () => {
-  // The guard sits on the ACTION, not only on who can see the view, so it
-  // holds if the view is ever put back in front of customers.
-  it('blocks approval and checkout from the AI view', () => {
-    expect(canCommitFromView('ai')).toBe(false);
+describe('nothing is committed without seeing the print file', () => {
+  // ⚠️ INVERTED FROM "blocks approval and checkout from the AI view", six
+  // hours after it was written. Refusing was right while the AI view was
+  // staff-only. On the DEFAULT view it made Approve eat the first press and
+  // left Buy disabled behind "Generate and save this design first" — a
+  // sentence that was not true and could not be acted on.
+  //
+  // Measured that day on the owner's own account: 19 draft versions, 2
+  // approvals, none in eleven days, and three production jobs, all succeeded.
+  // The file path was never broken; the commit was.
+  //
+  // The rule is unchanged — nobody commits without seeing the real file. It is
+  // kept by SHOWING the file, which is what this predicate now tells a caller
+  // to do.
+  it('knows the AI view is not the print file', () => {
+    expect(viewIsPrintFile('ai')).toBe(false);
   });
 
-  it('allows them from every view that shows the real file', () => {
+  it('recognises every other view as the real file', () => {
     for (const view of ['before', 'design', 'after'] as const) {
-      expect(canCommitFromView(view)).toBe(true);
+      expect(viewIsPrintFile(view)).toBe(true);
     }
+  });
+
+  // THE ONE PRESS, ASSERTED ON THE PAGE. Approve must not return early on the
+  // AI view — it switches the pane and goes on to approve in the same press —
+  // and Buy must not be disabled by the view at all.
+  it('approves in one press, showing the file rather than refusing', () => {
+    const page = readFileSync(fileURLToPath(new URL('../../pages/WallPro.tsx', import.meta.url)), 'utf8');
+    expect(page).toContain('const wasImpression = !viewIsPrintFile(view);');
+    expect(page).toContain("if (wasImpression) setView('after');");
+    // The early return is gone, not merely unreachable.
+    expect(page).not.toContain("setNotice('That was the artist\u2019s impression, not your print file. This is the real one \u2014 approve from here.');");
+    // ...and the buy button no longer reads the view.
+    expect(page).toContain('canBuyFile={!!currentVersionId}');
+    expect(page).toContain("if (!viewIsPrintFile(view)) setView('after');");
   });
 });
 
@@ -100,8 +127,8 @@ describe('the compare view is a real file view', () => {
   // Before/after is the most screenshot-and-send picture WallPro makes. It is
   // built from the deterministic composite, so it may be committed from; the
   // AI view stays the only view that cannot.
-  it('allows approval and checkout from the before/after', () => {
-    expect(canCommitFromView('compare')).toBe(true);
+  it('treats the before/after as the print file, because it is built from it', () => {
+    expect(viewIsPrintFile('compare')).toBe(true);
   });
 
   it('is never rewritten when the AI view goes away', () => {
