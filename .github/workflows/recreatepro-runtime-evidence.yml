@@ -1,0 +1,52 @@
+name: RecreatePro failed request evidence
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-runtime-evidence.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Read only exact request logs and saved authoring context
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$RUNNER_TEMP/key"
+          ssh-keygen -y -f "$RUNNER_TEMP/key" > "$RUNNER_TEMP/key.pub"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/key.pub" -E sha256 | awk '{print $2}')" = SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+          ssh-keyscan -T 10 -t ed25519 137.184.0.4 2>/dev/null > "$RUNNER_TEMP/known_hosts"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/known_hosts" -E sha256 | awk '{print $2}' | sort -u)" = SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+          mkdir -p runtime-evidence
+          ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/known_hosts" root@137.184.0.4 'bash -s' > runtime-evidence/exact-request.txt <<'REMOTE'
+          set -Eeuo pipefail
+          sha=49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+          test "$(basename "$(readlink -f /opt/designproai-os/current)")" = "$sha"
+          for name in $(docker ps --filter ancestor="designproai-runtime:$sha" --format '{{.Names}}'); do
+            printf '\nCONTAINER %s\n' "$name"
+            docker logs --since 30m "$name" 2>&1 | grep -E -C 8 '65aec7ec-222f-474c-a38f-07230dba46fc|7a3baea9-b1d1-4541-a146-2d158bb2ffe0|flat_atlas_context_invalid' | tail -n 200 || true
+          done
+          docker run --rm -i --network host --env-file /opt/designproai-os/shared/runtime.env "designproai-runtime:$sha" node --input-type=module <<'JS'
+          import{createClient}from'@supabase/supabase-js';import{createHash}from'node:crypto';
+          const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false}});
+          const path='designpro-atlas-private/v1/user_b073eef2-52a0-4681-bcf9-427ca4a35d21/7a3baea9-b1d1-4541-a146-2d158bb2ffe0/65aec7ec-222f-474c-a38f-07230dba46fc/context.json';
+          const{data,error}=await db.storage.from('wrap-files').download(path);
+          if(error)console.log('CONTEXT_READ',JSON.stringify({message:error.message,status:error.statusCode}));
+          else{
+            const bytes=Buffer.from(await data.arrayBuffer());console.log('CONTEXT_BYTES',bytes.length);console.log('CONTEXT',bytes.toString('utf8'));
+          }
+          JS
+          REMOTE
+          cat runtime-evidence/exact-request.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-exact-failed-request-evidence
+          path: runtime-evidence/
+          retention-days: 14
