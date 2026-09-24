@@ -1,0 +1,104 @@
+name: RecreatePro one-side live acceptance
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-live-acceptance.yml]
+permissions:
+  contents: read
+concurrency:
+  group: recreatepro-one-side-live-49750ba5
+  cancel-in-progress: false
+env:
+  EXACT_SHA: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    environment: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Bundle released intake and actual API transport, with authenticated test session adapter only
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$EXACT_SHA" -- app runtime gateway supabase
+          npm ci --prefix app --no-audit --no-fund
+          node --input-type=module <<'JS'
+          import{writeFile}from'node:fs/promises';import{resolve}from'node:path';import{build}from'./app/node_modules/esbuild/lib/main.js';
+          const shim=resolve('app/.recreatepro-canary-auth.ts');
+          await writeFile(shim,'export const supabase={auth:{getSession:async()=>({data:{session:globalThis.__recreateTestSession||null}})}};');
+          await build({stdin:{contents:'export {dpApi} from "./app/src/lib/designpro-api";export{buildRecreateRequest,recreationLinks}from"./app/src/lib/recreatepro-intake";',resolveDir:process.cwd()},outfile:'scripts/recreatepro-client-bundle.mjs',bundle:true,platform:'node',format:'esm',target:'node22',define:{'import.meta.env':JSON.stringify({VITE_DP_API_BASE_URL:'https://os.designproai.com/api'})},alias:{'@/integrations/supabase/client':shim,'@':resolve('app/src')}});
+          JS
+      - name: Wait for server and all three deployed function identities
+        run: |
+          set -euo pipefail
+          ready=false
+          for attempt in $(seq 1 75); do
+            ready=true
+            curl --fail --silent --max-time 15 https://os.designproai.com/gateway-healthz | grep -Fq "$EXACT_SHA" || ready=false
+            for fn in design-panel-ai-generate production-panel-proof persona-photographer-render; do
+              actual=$(curl --fail --silent --max-time 15 -X OPTIONS -D - -o /dev/null "https://wozyamlnygaddievzuwn.supabase.co/functions/v1/$fn" | tr -d '\r' | awk 'tolower($1)=="x-designpro-source-sha:" {print $2}') || actual=unavailable
+              test "$actual" = "$EXACT_SHA" || ready=false
+            done
+            test "$ready" = true && break
+            sleep 10
+          done
+          test "$ready" = true
+      - name: Pin SSH identities and run one real test in the released runtime image
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$RUNNER_TEMP/recreatepro-key"
+          ssh-keygen -y -f "$RUNNER_TEMP/recreatepro-key" > "$RUNNER_TEMP/recreatepro-key.pub"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/recreatepro-key.pub" -E sha256 | awk '{print $2}')" = SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+          ssh-keyscan -T 10 -t ed25519 137.184.0.4 2>/dev/null > "$RUNNER_TEMP/recreatepro-known-hosts"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/recreatepro-known-hosts" -E sha256 | awk '{print $2}' | sort -u)" = SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+          payload=$(tar -cz scripts/recreatepro-live-acceptance.mjs scripts/recreatepro-client-bundle.mjs | base64 -w0)
+          set +e
+          ssh -i "$RUNNER_TEMP/recreatepro-key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/recreatepro-known-hosts" -o ServerAliveInterval=30 -o ServerAliveCountMax=20 root@137.184.0.4 "PAYLOAD='$payload' EXPECTED_SHA='$EXACT_SHA' bash -s" > "$RUNNER_TEMP/recreatepro-live.log" 2>&1 <<'REMOTE'
+          set -Eeuo pipefail
+          test "$(basename "$(readlink -f /opt/designproai-os/current)")" = "$EXPECTED_SHA"
+          image="designproai-runtime:$EXPECTED_SHA"
+          docker image inspect "$image" >/dev/null
+          work=$(mktemp -d /tmp/recreatepro-live.XXXXXX)
+          mkdir -p "$work/output"
+          trap 'rm -rf "$work"' EXIT
+          printf '%s' "$PAYLOAD" | base64 -d | tar -C "$work" -xz
+          chown -R 10001:10001 "$work"
+          chmod -R u+rwX,go-rwx "$work"
+          set +e
+          docker run --rm --network host --env-file /opt/designproai-os/shared/runtime.env \
+            -v "$work/scripts/recreatepro-live-acceptance.mjs:/app/recreatepro-live-acceptance.mjs:ro" \
+            -v "$work/scripts/recreatepro-client-bundle.mjs:/app/recreatepro-client-bundle.mjs:ro" \
+            -v "$work/output:/evidence" "$image" node /app/recreatepro-live-acceptance.mjs
+          status=$?
+          set -e
+          echo '---RECREATEPRO-EVIDENCE-TAR---'
+          tar -C "$work/output" -cz . | base64 -w0
+          exit "$status"
+          REMOTE
+          status=$?
+          set -e
+          mkdir -p recreatepro-live-acceptance
+          if grep -q -- '---RECREATEPRO-EVIDENCE-TAR---' "$RUNNER_TEMP/recreatepro-live.log"; then
+            sed -n '1,/---RECREATEPRO-EVIDENCE-TAR---/p' "$RUNNER_TEMP/recreatepro-live.log" | sed '$d' > recreatepro-live-acceptance/run.log
+            sed -n '/---RECREATEPRO-EVIDENCE-TAR---/,$p' "$RUNNER_TEMP/recreatepro-live.log" | tail -n +2 | tr -d '\n' | base64 -d | tar -C recreatepro-live-acceptance -xz
+          else
+            cp "$RUNNER_TEMP/recreatepro-live.log" recreatepro-live-acceptance/run.log
+          fi
+          cat recreatepro-live-acceptance/run.log
+          exit "$status"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-one-side-live-49750ba5
+          path: recreatepro-live-acceptance/
+          retention-days: 30
