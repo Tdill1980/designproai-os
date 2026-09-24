@@ -250,10 +250,12 @@ const WALL_PROOFS: WallProof[] = [
       // SAY WHAT THE FRAME IS. This is an overlay drawn on the before
       // photograph, not a screen recording of the tool, and the caption has to
       // carry that or the band is claiming a capture it does not have. The
-      // GEOMETRY is measured off that photograph rather than invented: the
-      // bottom edge follows the bench line sampled at x=880/1000/1180/1240/1300
-      // and the top edge the ceiling boundary at x=500/900/1300, each
-      // extrapolated to the frame. Replace with a real capture when one exists.
+      // REDRAWN 2026-09-24 on the CURRENT 1536x1024 before frame (owner: "make
+      // the hero gym after the same angle as the before"). The old overlay was
+      // drawn on the retired 1400x803 photograph, so tapping it jumped to a
+      // different camera. Corners follow the mural's own edges in the after
+      // frame: TL (350,282) TR (1536,52) BR (1536,655) BL (350,622). Replace
+      // with a real capture when one exists.
       caption: 'Four taps mark the wall. Everything in front of it stays put.',
     },
   },
