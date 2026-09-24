@@ -9,11 +9,11 @@ describe('the WallPro opening experience', () => {
   it('shows the transformation only before the customer starts', () => {
     expect(page).toMatch(/\{!photo && !artwork && \(/);
     expect(page).toContain('See the transformation');
-    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
+    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="split" />');
   });
 
   it('shows the product magic before the working form', () => {
-    const hero = page.indexOf('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
+    const hero = page.indexOf('<WallProHeroProof proofs={bandProofs} variant="split" />');
     const magic = page.indexOf('<WallProMagic />');
     const upload = page.indexOf('<section id="upload-wall"');
     expect(hero).toBeGreaterThan(-1);

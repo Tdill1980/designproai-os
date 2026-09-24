@@ -13,7 +13,7 @@ describe('the hero proof band', () => {
   const page = source('../../pages/WallPro.tsx');
 
   it('keeps the original band and fill variants and adds a shallow tool hero', () => {
-    expect(band).toContain("export type HeroProofVariant = 'band' | 'fill' | 'shallow';");
+    expect(band).toContain("export type HeroProofVariant = 'band' | 'fill' | 'shallow' | 'split';");
     expect(band).toContain("const shallow = variant === 'shallow';");
   });
 
@@ -23,8 +23,10 @@ describe('the hero proof band', () => {
     expect(band).toContain("(fill || shallow) ? 'object-cover' : 'object-contain'");
   });
 
-  it('the tool page mounts the gym compare as the shallow variant', () => {
-    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="shallow" />');
+  it('the tool page mounts the gym compare as two whole frames side by side', () => {
+    expect(band).toContain("if (variant === 'split') {");
+    expect(band).toContain('object-cover object-top');
+    expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="split" />');
   });
 
   it('the normal standalone band still has a definite capped width', () => {

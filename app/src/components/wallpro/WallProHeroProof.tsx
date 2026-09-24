@@ -47,7 +47,7 @@ const OPENING_REVEAL = 52;
  * and a third written for the landing would drift from both the first time the
  * interaction changed.
  */
-export type HeroProofVariant = 'band' | 'fill' | 'shallow';
+export type HeroProofVariant = 'band' | 'fill' | 'shallow' | 'split';
 
 export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallProof[]; variant?: HeroProofVariant }) {
   const fill = variant === 'fill';
@@ -153,6 +153,36 @@ export function WallProHeroProof({ proofs, variant = 'band' }: { proofs: WallPro
   const mark = current?.marking;
 
   if (!current) return null;
+
+  /* SIDE BY SIDE, EACH FRAME WHOLE (owner, 2026-09-24, against her mockup:
+     "make like the before angle / otherwise it looks like a diff wall", then
+     "Crop some of the floor out ... it should be like I showed you").
+     A wipe shows the left half of one photo beside the right half of the
+     other, so the two halves are different parts of the room and read as two
+     walls. Here each panel is the complete shot, the same camera position
+     twice, cropped only from the bottom (the empty floor), never the sides. */
+  if (variant === 'split') {
+    const panel = 'relative aspect-[1536/820] overflow-hidden bg-slate-900';
+    const img = 'absolute inset-0 h-full w-full object-cover object-top';
+    return (
+      <figure className="w-full">
+        <div className="relative grid grid-cols-2 gap-1 overflow-hidden rounded-xl border wall-edge bg-white shadow-md">
+          <div className={panel}>
+            <img key={current.before} src={current.before} alt="" aria-hidden="true" onError={() => fail(current.before)} className={img} draggable={false} />
+            {/* Always drawn here: at this size the caption baked into the file is
+                unreadable, and this chip sits over it. */}
+            <span className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">Before</span>
+          </div>
+          <div className={panel}>
+            <img key={current.after} src={current.after} alt={current.alt} onError={() => fail(current.after)} className={img} draggable={false} />
+            <span className="pointer-events-none absolute right-2 top-2 rounded bg-gradient-to-r from-blue-600 to-fuchsia-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-white">After</span>
+          </div>
+          <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-700 shadow-md"><MoveHorizontal className="h-4 w-4" /></span>
+        </div>
+        <figcaption className="mt-1.5 text-xs wall-muted">{current.caption}</figcaption>
+      </figure>
+    );
+  }
 
   return (
     <section
