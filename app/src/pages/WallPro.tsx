@@ -1810,7 +1810,18 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           <nav aria-label="WallPro" className="ml-auto flex min-w-0 shrink-0 items-center gap-1 pl-2 sm:gap-2">
             <button type="button" className="wallpro-header-link inline-flex" disabled={!!busy} title="My wall designs"
               onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>
-            <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/wallpro') + '#examples'} className="wallpro-header-link hidden lg:inline-flex">Gallery</Link>
+            {/* ⚠️ THIS LINK IS WHAT SHE REPORTED (owner, 2026-09-24: "Gallery
+                is showing wallpro landing page. It should show a MyDesigns
+                Page and show my tagged designs"). On DesignProAI it goes to My
+                Designs and is NAMED that: a link called Gallery that opens a
+                private design list is the same confusion the other way up.
+                On WePrintWraps it stays the marketing examples, because that
+                brand's visitors have no account and nothing of their own to
+                show — pointing them at a sign-in wall would be worse than the
+                defect being fixed. */}
+            {theme.showPrintOffer
+              ? <Link to="/wall-wrap#examples" className="wallpro-header-link hidden lg:inline-flex">Gallery</Link>
+              : <Link to="/my-designs" className="wallpro-header-link hidden lg:inline-flex">My Designs</Link>}
             <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro') + '/faq'} className="wallpro-header-link hidden lg:inline-flex">Pricing</Link>
             <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro') + '/how-it-works'} className="wallpro-header-link hidden sm:inline-flex">Help</Link>
             <button type="button" className="wallpro-header-icon inline-flex" disabled={!!busy} title="Start fresh"

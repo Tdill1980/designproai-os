@@ -107,6 +107,7 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+const MyDesigns = lazyWithRetry(() => import("./pages/MyDesigns"));
 const WallProLanding = lazyWithRetry(() => import("./pages/WallProLanding"));
 const AdminWallProLanding = lazyWithRetry(() => import("./pages/AdminWallProLanding"));
 // MY SHOPFLOW — the WePrintWraps account page, ported from restylepro-os
@@ -517,6 +518,12 @@ const App = () => {
               was always meant to be is what /revision-studio renders. */}
           <Route path="/revision-studio" element={<RequireAuth><RevisionStudioIQ /></RequireAuth>} />
           <Route path="/gallery" element={<Gallery />} />
+          {/* MY DESIGNS — every design this account owns, whichever tool made
+              it (owner, 2026-09-24: "It should show a MyDesigns Page and show
+              my tagged designs"). Distinct from /gallery, which is the PUBLIC
+              showcase built from the marketing carousels and needs no account.
+              Behind RequireAuth because it is the account's own work. */}
+          <Route path="/my-designs" element={<RequireAuth><MyDesigns /></RequireAuth>} />
           <Route path="/printpro/wallpro" element={<WallPro />} />
           {/* THE PRODUCT PAGE. Owner, 2026-09-14: "No its THE Product Page ...
               that they will purchase design and files and print from", and it

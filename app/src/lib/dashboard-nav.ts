@@ -139,6 +139,18 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
   // it is not, and the upload surface is an operator path reached from the
   // production pages, not a headline tool. The route still serves.
   {
+    // Her own work, across every tool. Sits ABOVE Gallery because that is the
+    // one a signed-in customer wants: /gallery is the public showcase and has
+    // nothing of hers in it.
+    key: "my-designs",
+    label: "My Designs",
+    route: "/my-designs",
+    icon: ImageIcon,
+    pillar: "design",
+    tier: "starter",
+    description: "Every design you have made, in one place",
+  },
+  {
     key: "gallery",
     label: "Gallery",
     route: "/gallery",
