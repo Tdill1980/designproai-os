@@ -1,0 +1,37 @@
+name: RecreatePro owner reference upload acceptance
+on:
+  push:
+    branches: [codex/recreatepro-owned-reference-upload-20260924]
+    paths: [.github/workflows/recreatepro-upload-verify.yml]
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Remove temporary runner from final change and pin source
+        run: |
+          test "$GITHUB_REF" = refs/heads/codex/recreatepro-owned-reference-upload-20260924
+          git rm .github/workflows/recreatepro-upload-verify.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(recreatepro): retain only scoped upload policy and regression tests'
+          git push origin HEAD:refs/heads/codex/recreatepro-owned-reference-upload-20260924
+          mkdir -p upload-policy-evidence
+          git rev-parse HEAD > upload-policy-evidence/source-sha.txt
+      - run: npm ci --prefix runtime --no-audit --no-fund
+      - name: Execute actual SQL policies with denied cross-tenant cases
+        run: |
+          set -o pipefail
+          node --test tests/recreatepro-owned-reference-upload.test.mjs | tee upload-policy-evidence/tests.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-upload-policy-evidence
+          path: upload-policy-evidence/
+          retention-days: 14
