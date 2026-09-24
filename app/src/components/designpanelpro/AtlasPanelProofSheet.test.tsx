@@ -2,82 +2,68 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  AtlasPanelProofSheet,
-  PANEL_PROOF_POLL_MS,
-  PANEL_PROOF_URL_REFRESH_MS,
-  panelProofBelongsToOtherRevision,
-  panelProofRefreshInterval,
-  panelProofRendered,
-  panelProofStillLanding,
+  AtlasPanelProofSheet, PROOF_DISPLAY_SIZE, fitProofPanel,
+  PANEL_PROOF_POLL_MS, PANEL_PROOF_URL_REFRESH_MS,
+  panelProofBelongsToOtherRevision, panelProofRefreshInterval,
+  panelProofRendered, panelProofStillLanding,
 } from "./AtlasPanelProofSheet";
 import type { AtlasPanelProof, PanelProofPanel } from "@/lib/designpro-api";
 
 const SURFACES = ["driver", "passenger", "hood", "roof", "front", "rear"];
 const CUT_SLOTS = ["logo", "tagline", "contact", "promo", "icons"];
-
 function panel(over: Partial<PanelProofPanel> & Pick<PanelProofPanel, "surfaceKey" | "role">): PanelProofPanel {
-  return {
-    byteSize: 90000,
-    fit: 0.98,
-    widthIn: 163.2,
-    heightIn: 66.1,
-    persisted: true,
-    signedUrl: `https://signed.example/${over.role}/${over.surfaceKey}`,
-    ...over,
-  };
+  return { byteSize: 90000, fit: 0.98, widthIn: 163.2, heightIn: 66.1, persisted: true,
+    signedUrl: `https://signed.example/${over.role}/${over.surfaceKey}`, ...over };
 }
-
 function proof(over: Partial<AtlasPanelProof> = {}): AtlasPanelProof {
   return {
     requestId: "10000000-0000-4000-8000-000000000001",
-    revisionId: "70000000-0000-4000-8000-000000000001",
-    panelProof: true,
-    sheet: { contentHash: "1".repeat(64), signedUrl: "https://signed.example/sheet", expiresIn: 300 },
+    revisionId: "70000000-0000-4000-8000-000000000001", panelProof: true,
+    sheet: { contentHash: "1".repeat(64), signedUrl: "https://signed.example/sheet", expiresIn: 300,
+      geometry: { width: 1536, height: 1024 } },
     quadrants: {
-      branded: SURFACES.map((surfaceKey) => panel({ surfaceKey, role: "branded", signedUrl: undefined })),
-      clean: SURFACES.map((surfaceKey) => panel({ surfaceKey, role: "clean" })),
-      cutGraphics: CUT_SLOTS.map((surfaceKey) => panel({
-        // A cut graphic is sized at the plotter, so it has NO inches.
-        surfaceKey, role: "cut-graphic", widthIn: null, heightIn: null, fit: 0.24,
-      })),
-    },
-    ...over,
+      branded: SURFACES.map((surfaceKey, i) => panel({ surfaceKey, role: "branded", signedUrl: undefined,
+        sheetRect: { left: 30 + i * 240, top: 140, width: 230, height: 90 } })),
+      clean: SURFACES.map(surfaceKey => panel({ surfaceKey, role: "clean" })),
+      cutGraphics: CUT_SLOTS.map(surfaceKey => panel({ surfaceKey, role: "cut-graphic", widthIn: null, heightIn: null, fit: 0.24 })),
+    }, ...over,
   };
 }
+const htmlFor = (p: AtlasPanelProof | undefined, status: "pending" | "success" | "error" = "success") =>
+  renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status={status} />);
 
 describe("AtlasPanelProofSheet", () => {
-  it("shows a completed three-zone proof before any accepted revision or 3D view", () => {
-    const early = proof({ revisionId: null, masterContentHash: null });
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={early} status="success" />);
+  it("shows one 16:9 three-zone proof before any accepted revision or 3D view", () => {
+    const html = htmlFor(proof({ revisionId: null, masterContentHash: null }));
+    expect(PROOF_DISPLAY_SIZE.width / PROOF_DISPLAY_SIZE.height).toBe(16 / 9);
+    expect((html.match(/viewBox="0 0 1600 900"/g) || [])).toHaveLength(1);
+    expect((html.match(/data-proof-panel=/g) || [])).toHaveLength(17);
+    for (const label of ["Zone 1 — print panels", "Zone 2 — panels without type or logos", "Zone 3 — logo, text and graphic elements"])
+      expect((html.split(label).length - 1)).toBe(1);
+    expect(html).not.toMatch(/<ul|<li/);
     expect(html).toContain("https://signed.example/sheet");
-    expect(html).toContain("Zone 1 — print panels");
-    expect(html).toContain("Zone 2 — panels without type or logos");
-    expect(html).toContain("Zone 3 — logo, text and graphic elements");
-    expect(html).not.toContain("These are what get printed");
-    expect(panelProofRefreshInterval({ ...early, panelProof: false }, true)).toBe(PANEL_PROOF_POLL_MS);
-    expect(panelProofRefreshInterval(early, true)).toBe(PANEL_PROOF_URL_REFRESH_MS);
-    expect(panelProofRefreshInterval(undefined, false)).toBe(false);
   });
 
-  it("re-reads every ~2s while Call 1 can still land the sheet, and stops once it has rendered or the run is terminal", () => {
-    // The sheet is written by Call 1's proof.assemble node, before the master
-    // is accepted and before any 3D view — so how soon a customer sees it is
-    // decided by this cadence, not by "See All Views".
-    expect(PANEL_PROOF_POLL_MS).toBe(1_000);
-    // Authoring / landing states keep polling. `{panelProof:false}` is a STATE
-    // (six-surface / field / hero-driver), never an error, and during authoring
-    // it is also what the read answers before the node lands.
-    for (const state of ["queued", "leased", "retryable"]) {
-      expect(panelProofStillLanding(state)).toBe(true);
+  it("fits real physical panel ratios without changing dimensions or artwork", () => {
+    for (const [w, h] of [[233, 67.46], [79.28, 75.43], [142.5, 44]]) {
+      const fit = fitProofPanel(w, h, 410, 174)!;
+      expect(fit.width / fit.height).toBeCloseTo(w / h, 10);
+      expect(fit.width).toBeLessThanOrEqual(410);
+      expect(fit.height).toBeLessThanOrEqual(174);
     }
+    const roof = fitProofPanel(79.28, 75.43, 164, 174)!;
+    expect(roof.width).toBeGreaterThan(roof.height);
+    for (const bad of [null, undefined, 0, -1, NaN, Infinity]) expect(fitProofPanel(bad, 60, 410, 174)).toBeNull();
+    const p = proof(), before = JSON.stringify(p); htmlFor(p); expect(JSON.stringify(p)).toBe(before);
+  });
+
+  it("keeps one-second landing and five-minute signed-link renewal behavior", () => {
+    expect(PANEL_PROOF_POLL_MS).toBe(1_000);
+    for (const state of ["queued", "leased", "retryable"]) expect(panelProofStillLanding(state)).toBe(true);
+    for (const state of ["outputs_ready", "failed", "cancelled", "", null, undefined]) expect(panelProofStillLanding(state)).toBe(false);
     expect(panelProofRefreshInterval(undefined, true)).toBe(PANEL_PROOF_POLL_MS);
     expect(panelProofRefreshInterval({ requestId: "r", revisionId: null, panelProof: false }, true)).toBe(PANEL_PROOF_POLL_MS);
-    // Terminal, or finished: nothing can land any more, so nothing polls.
-    for (const state of ["outputs_ready", "failed", "cancelled", "", null, undefined]) {
-      expect(panelProofStillLanding(state)).toBe(false);
-    }
-    expect(panelProofRefreshInterval({ requestId: "r", revisionId: null, panelProof: false }, false)).toBe(false);
-    // Rendered: the poll stops; only the five-minute signed previews refresh.
+    expect(panelProofRefreshInterval(undefined, false)).toBe(false);
     expect(panelProofRendered(proof())).toBe(true);
     expect(panelProofRendered({ ...proof(), sheet: { contentHash: "1".repeat(64) } })).toBe(false);
     expect(panelProofRefreshInterval(proof(), true)).toBe(PANEL_PROOF_URL_REFRESH_MS);
@@ -85,122 +71,79 @@ describe("AtlasPanelProofSheet", () => {
     expect(PANEL_PROOF_URL_REFRESH_MS).toBeLessThan(300_000);
   });
 
-  it("every mount site bounds its polling to a live generation, and none adds a second reader", () => {
+  it("every mount bounds polling to its live generation and uses the same reader", () => {
     const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
     const loader = read("./AtlasPanelProofSheet.tsx");
-    // ONE endpoint, read through the one loader.
     expect(loader).toMatch(/dpApi\.getAtlasPanelProof\(requestId\)/);
     expect(loader).toMatch(/refetchInterval: q => panelProofRefreshInterval\(q\.state\.data, pollWhilePending\)/);
-    // The customer's own page: Call 1 in flight.
-    const create = read("../../pages/DesignPanelProPremium.tsx");
-    expect(create).toMatch(/pollWhilePending=\{pipelineActive \|\| panelProofStillLanding\(generationRequestState\.state\)\}/);
-    // RevisionStudio: a revision's Call 1 in flight, bounded by the observed state.
-    const studio = read("../../pages/RevisionStudioIQ.tsx");
-    expect(studio).toMatch(/pollWhilePending=\{Boolean\(render\?\._revisionRequest\) && panelProofStillLanding\(render\?\._revisionState \?\? "queued"\)\}/);
-    // The two boards: only while the run is doing automatic work, never forever.
+    expect(read("../../pages/DesignPanelProPremium.tsx")).toMatch(/pollWhilePending=\{pipelineActive \|\| panelProofStillLanding\(generationRequestState\.state\)\}/);
+    expect(read("../../pages/RevisionStudioIQ.tsx")).toMatch(/pollWhilePending=\{Boolean\(render\?\._revisionRequest\) && panelProofStillLanding\(render\?\._revisionState \?\? "queued"\)\}/);
     const board = read("../../pages/designpro/PanelProStudioBoard.tsx");
     expect(board).toMatch(/pollWhilePending=\{job\?\.state === "queued" \|\| job\?\.state === "running"\}/);
     expect(board).not.toMatch(/pollWhilePending\s*\n/);
-    const admin = read("../../pages/AdminGeminiCompareStudio.tsx");
-    expect(admin).toMatch(/pollWhilePending=\{job\.state === "queued" \|\| job\.state === "running"\}/);
+    expect(read("../../pages/AdminGeminiCompareStudio.tsx")).toMatch(/pollWhilePending=\{job\.state === "queued" \|\| job\.state === "running"\}/);
   });
 
-  it("shows branded panels using bounded regions of their own composed sheet", () => {
+  it("uses bounded regions of the same source sheet, never guessed crops", () => {
     const p = proof();
-    p.sheet!.geometry = { width: 1536, height: 1024 };
-    p.quadrants!.branded = SURFACES.map((surfaceKey) => panel({ surfaceKey, role: "branded", signedUrl: undefined,
-      sheetRect: { left: 30, top: 140, width: 250, height: 90 } }));
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
-    expect((html.match(/viewBox="30 140 250 90"/g) || [])).toHaveLength(6);
+    const html = htmlFor(p);
     expect((html.match(/<image href="https:\/\/signed.example\/sheet"/g) || [])).toHaveLength(6);
-    expect(html).not.toContain("Shown on the master sheet above");
+    for (let i = 0; i < 6; i++) expect(html).toContain(`viewBox="${30 + i * 240} 140 230 90"`);
     p.quadrants!.branded[0].sheetRect!.left = 1500;
-    const invalid = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
-    expect((invalid.match(/<image href=/g) || [])).toHaveLength(5);
-    expect(invalid).toContain("Shown on the master sheet above");
+    const invalid = htmlFor(p);
+    expect((invalid.match(/<image href="https:\/\/signed.example\/sheet"/g) || [])).toHaveLength(5);
+    expect(invalid).toContain("Preview not available");
   });
 
-  it("shows all three zones from the one sheet, with the sheet itself", () => {
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
-    expect(html).toContain("https://signed.example/sheet");
-    expect(html).toContain("Zone 1 — print panels");
-    expect(html).toContain("Zone 2 — panels without type or logos");
-    expect(html).toContain("Zone 3 — logo, text and graphic elements");
-    // Every Zone 2 panel and every Zone 3 element is present and named.
-    for (const surfaceKey of SURFACES) {
-      expect(html).toContain(`https://signed.example/clean/${surfaceKey}`);
-    }
-    expect(html).toContain("Primary logo");
-    expect(html).toContain("Icons / service graphics");
-    for (const surfaceKey of CUT_SLOTS) {
-      expect(html).toContain(`https://signed.example/cut-graphic/${surfaceKey}`);
-    }
-  });
-
-  it("never prints a dimension a cut graphic does not have", () => {
-    // A Zone 3 slot carries widthIn/heightIn null BY CONTRACT. The bug this
-    // pins is the one already found one layer down in the gateway: Number(null)
-    // is 0, so a naive reader reports every cut graphic as 0" x 0" and a UI
-    // prints it as a real size.
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
-    expect(html).not.toContain('0" × 0"');
-    expect(html).not.toContain("0&quot; × 0&quot;");
-    // The panels that DO have inches still state them.
+  it("retains every saved background and cut element without extra galleries", () => {
+    const html = htmlFor(proof());
+    for (const surface of SURFACES) expect(html).toContain(`https://signed.example/clean/${surface}`);
+    for (const slot of CUT_SLOTS) expect(html).toContain(`https://signed.example/cut-graphic/${slot}`);
+    expect(html).toContain("Primary logo"); expect(html).toContain("Icons / service graphics");
+    expect(html).not.toContain('0&quot; × 0&quot;'); expect(html).not.toContain('0″ × 0″');
     expect(html).toContain("163.2");
   });
 
-  it("states why an unstored panel has no image instead of showing a gap", () => {
-    // The quadrant write fails soft on purpose (Zone 1 is an accepted master by
-    // then). A silent gap would read as a broken design.
-    const p = proof();
-    p.quadrants!.clean[0] = panel({
-      surfaceKey: "driver", role: "clean", persisted: false,
-      reason: "storage_quota_exceeded", signedUrl: undefined,
-    });
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
-    expect(html).toContain("storage_quota_exceeded");
-    expect(html).toContain("not saved");
+  it("retains the reason an unstored panel has no image", () => {
+    const p = proof(); p.quadrants!.clean[0] = panel({ surfaceKey: "driver", role: "clean", persisted: false,
+      reason: "storage_quota_exceeded", signedUrl: undefined });
+    const html = htmlFor(p); expect(html).toContain("storage_quota_exceeded"); expect(html).toContain("Not saved");
   });
 
-  it("does not promise a vector cut file for a raster element", () => {
-    // The owner's instruction, verbatim: do not represent raster crops as
-    // editable layers or vector cut files. Original raster uploads remain raster;
-    // production contours still require downstream validation.
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={proof()} status="success" />);
-    expect(html).not.toMatch(/editable layer/i);
-    expect(html).not.toMatch(/vector file|\.svg|\.eps/i);
+  it("does not claim raster previews are editable vector cut files", () => {
+    const html = htmlFor(proof());
+    expect(html).not.toMatch(/editable layer|vector file|\.svg|\.eps/i);
     expect(html).toContain("Plotter-ready contours are validated in the production pack");
   });
 
-  it("renders nothing for a run with no three-zone document, and nothing on error", () => {
-    // A six-surface / field / hero-driver revision is a real design with no
-    // panel proof. That is routing, not failure, and must not print a warning.
-    expect(renderToStaticMarkup(
-      <AtlasPanelProofSheet proof={{ requestId: "r", revisionId: null, panelProof: false }} status="success" />,
-    )).toBe("");
-    expect(renderToStaticMarkup(<AtlasPanelProofSheet proof={undefined} status="error" />)).toBe("");
+  it("keeps the same cached proof visible during transport errors", () => {
+    expect(htmlFor(proof(), "error")).toContain('viewBox="0 0 1600 900"');
+    expect(htmlFor(proof(), "error")).toContain("Your saved proof remains visible");
+    expect(htmlFor(undefined, "error")).toBe("");
+    expect(htmlFor({ requestId: "r", revisionId: null, panelProof: false })).toBe("");
   });
 
-  it("treats an unbound proof (revisionId null) as this request's, never as another revision's", () => {
-    // The RPC's `call1_graph` branch answers `panelProof: true, revisionId: null`
-    // before the revision row lands. A revision is its own generation request,
-    // so `requestId` already names it; only a NON-NULL id naming another
-    // revision is a mismatch. The old guard compared null !== "70…01" and printed
-    // "The production proof belongs to a different revision." over a live proof.
+  it("treats an unbound proof as this request and refuses a different named revision", () => {
     const pinned = "70000000-0000-4000-8000-000000000001";
     expect(panelProofBelongsToOtherRevision(proof({ revisionId: null }), pinned)).toBe(false);
     expect(panelProofBelongsToOtherRevision(proof({ revisionId: pinned }), pinned)).toBe(false);
-    expect(panelProofBelongsToOtherRevision(proof({ revisionId: "70000000-0000-4000-8000-000000000002" }), pinned)).toBe(true);
-    // Nothing pinned, or no proof yet: nothing to mismatch.
-    expect(panelProofBelongsToOtherRevision(proof({ revisionId: "70000000-0000-4000-8000-000000000002" }), undefined)).toBe(false);
+    expect(panelProofBelongsToOtherRevision(proof({ revisionId: "other" }), pinned)).toBe(true);
+    expect(panelProofBelongsToOtherRevision(proof(), undefined)).toBe(false);
     expect(panelProofBelongsToOtherRevision(undefined, pinned)).toBe(false);
     expect(panelProofBelongsToOtherRevision({ panelProof: false, revisionId: "x" }, pinned)).toBe(false);
   });
 
-  it("keeps the panels when the sheet itself cannot be previewed", () => {
+  it("keeps saved panels when the original sheet URL is unavailable", () => {
     const p = proof({ sheet: { contentHash: "1".repeat(64) } });
-    const html = renderToStaticMarkup(<AtlasPanelProofSheet proof={p} status="success" />);
-    expect(html).toContain("The panels below are unaffected");
-    expect(html).toContain("https://signed.example/clean/driver");
+    expect(htmlFor(p)).toContain("https://signed.example/clean/driver");
+    expect(htmlFor(p)).toContain('viewBox="0 0 1600 900"');
+  });
+
+  it("preserves historical whole-sheet-only previews once, without inventing regions", () => {
+    const p = proof(); p.quadrants!.branded.forEach(panel => { delete panel.sheetRect; });
+    const html = htmlFor(p);
+    expect((html.match(/<img /g) || [])).toHaveLength(1);
+    expect(html).toContain("object-contain");
+    expect(html).not.toContain("data-proof-panel=");
   });
 });
