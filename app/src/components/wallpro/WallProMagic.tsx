@@ -44,7 +44,7 @@ export function WallProMagic() {
   return (
     <section aria-labelledby="wallpro-magic-heading" className="mx-auto max-w-7xl">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-        <h2 id="wallpro-magic-heading" className="text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">The WallPro Magic — From Photo to Print-Ready Panels</h2>
+        <h2 id="wallpro-magic-heading" className="text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">The WallPro Magic <span className="ml-1 font-semibold wall-muted">From Photo to Print-Ready Panels</span></h2>
         <p className="text-sm wall-muted">4 simple steps. Extraordinary results.</p>
       </div>
 
