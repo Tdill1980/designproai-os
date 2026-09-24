@@ -62,3 +62,20 @@ describe('a customer with no wall photo has a door', () => {
     expect(page).toContain("onClick={() => jumpToStep('choose-design')}");
   });
 });
+
+describe('measuring your wallpaper never costs you the design', () => {
+  // Owner, 2026-09-24, mid-demo: "Design no longer lands on my wall photo."
+  // The repeat-width field shipped that afternoon ran `setArtwork(null)` on
+  // EVERY keystroke, so typing one character threw the generated master away
+  // and the design vanished off her room photo. It was never necessary: a
+  // repeat width is a PLACEMENT parameter, and renderWallPreview and
+  // planWallPrint both re-tile the same master from it, deterministically and
+  // for free -- which is exactly what the pattern-size slider does.
+  it('does not discard the artwork when the repeat width is typed', () => {
+    expect(page).not.toContain('setMatchRepeat(e.target.value); setArtwork(null);');
+  });
+
+  it('re-tiles the master instead, live', () => {
+    expect(page).toContain("if (stated) { setPlacement('repeat'); setRepeatWidth(stated); setPatternScale(100); }");
+  });
+});

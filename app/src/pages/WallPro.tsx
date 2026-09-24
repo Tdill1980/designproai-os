@@ -2796,7 +2796,23 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     <span className="mt-2 flex items-center gap-2">
                       <input className="h-9 w-28 rounded-md border px-2 text-sm" disabled={!!busy} type="number" min="1" max="2400" step="0.25" inputMode="decimal"
                         placeholder="Estimate" aria-label="Repeat width in inches"
-                        value={matchRepeat} onChange={e => { setMatchRepeat(e.target.value); setArtwork(null); }} />
+                        value={matchRepeat} onChange={e => {
+                          /* ⚠️ THIS FIELD USED TO DO `setArtwork(null)` ON EVERY
+                             KEYSTROKE (owner, 2026-09-24: "Design no longer
+                             lands on my wall photo"). Typing one character
+                             threw the generated master away, so the design
+                             vanished off her room photo mid-demo.
+                             It was never needed: a repeat width is a PLACEMENT
+                             parameter. `renderWallPreview` and `planWallPrint`
+                             both re-tile the SAME master from it, deterministic
+                             and free -- exactly as the pattern-size slider
+                             does. Measuring your wallpaper must never cost you
+                             the design you already have. */
+                          const next = e.target.value;
+                          setMatchRepeat(next);
+                          const stated = statedRepeatWidthIn(next);
+                          if (stated) { setPlacement('repeat'); setRepeatWidth(stated); setPatternScale(100); }
+                        }} />
                       <span className="wall-muted">inches</span>
                       {statedRepeatWidthIn(matchRepeat) && width > 0
                         ? <span className="font-semibold wall-ink">≈ {Math.max(1, Math.round(width / statedRepeatWidthIn(matchRepeat)!))} across your {width}&Prime; wall</span>
