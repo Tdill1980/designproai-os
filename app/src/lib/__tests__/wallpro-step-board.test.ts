@@ -25,6 +25,7 @@
  *    this whole pass exists to fix.
  */
 import { describe, it, expect } from 'vitest';
+import { WALL_DESIGN_SKUS } from '../wallpro-pricing';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { activeStepId, type BoardStep } from '../../components/wallpro/WallProStepBoard';
@@ -247,22 +248,35 @@ describe('the three inputs sit together', () => {
     expect(brief).toBeLessThan(step3);
   });
 
-  it('puts the style reference beside the wall upload, not below the picker', () => {
+  /**
+   * ⚠️ THIS CASE IS INVERTED, AND THE RULING IT PINNED WAS THE OWNER'S TOO.
+   *
+   * It read "puts the style reference beside the wall upload, not below the
+   * picker", from the 2026-09-24 pass that pulled the reference out of the
+   * priced picker. That was right at the time: the alternative then was
+   * burying it under "More ways to start".
+   *
+   * Owner, later the same day: "I need uploader next to prompt and it to have
+   * two buttons match this exact design and a create a design inspired by
+   * attached". Beside the WALL UPLOAD is still three sections above the box
+   * she types the design into, so attaching a design happened nowhere near the
+   * words about what to do with it. The reference now lives with the brief.
+   *
+   * The rule that survives both rulings is the one asserted here: there is
+   * exactly ONE control that opens the reference picker, and it sits with the
+   * thing it belongs to. Two doors writing one `reference` is the confusion
+   * every one of these moves has been trying to remove.
+   */
+  it('keeps the wall upload to itself, with the reference gone from that step', () => {
     const wall = page.indexOf("uploadControl('photo'");
-    const ref = page.indexOf("uploadControl('reference'");
     const step3 = page.indexOf('<section id="choose-design"');
-    expect(ref).toBeGreaterThan(wall);
-    expect(ref).toBeLessThan(step3);
-    // Side by side on anything wider than a phone, stacked on one.
-    //
-    // ⚠️ THE RATIO IS NOT 1:1 ANY MORE, AND THE LOCK PINNED THE RATIO RATHER
-    // THAN THE RULE (owner, 2026-09-24: "upload is waisting ui space"). The
-    // wall photo is REQUIRED and the other tile says "optional" on its face,
-    // so equal width was the layout claiming they are equal choices. What this
-    // case is actually for — the reference sits with the wall upload instead
-    // of being buried under the priced picker — is asserted above.
-    expect(page).toMatch(/grid gap-3 sm:grid-cols-3/);
-    expect(page).toContain('sm:col-span-2');
+    expect(wall).toBeGreaterThan(-1);
+    // The reference input is still MOUNTED up there — a hidden picker the
+    // brief's own button opens — but it is not a visible tile competing with
+    // the wall photo, and the row it used to share is gone.
+    expect(page).not.toMatch(/grid gap-3 sm:grid-cols-3/);
+    expect(page.slice(wall, step3)).toContain("uploadControl('reference', 'Attach a reference')");
+    expect(page.slice(wall, step3)).not.toContain('Optional Style Reference');
   });
 
   /**
@@ -330,10 +344,15 @@ describe('the three inputs sit together', () => {
     expect(page).toMatch(/alt="Your wall photo"/);
   });
 
-  it('still offers Replace and Add — nothing is removed, only shrunk', () => {
+  it('still offers Replace — nothing is removed, only shrunk', () => {
     // The collapsed row is a LINK to the same picker, not a different control.
     expect(page).toContain("onClick={() => uploadInputs.current.photo?.click()}>Replace<");
-    expect(page).toMatch(/uploadInputs\.current\.reference\?\.click\(\)}>\{reference \? 'Replace' : 'Add'\}/);
+    // ⚠️ The reference half of this line moved out with the control itself
+    // (owner, 2026-09-24: "I need uploader next to prompt"). It is asserted in
+    // its new home — beside the brief — by "the reference is attached where
+    // the design is described" below. What stays here is the WALL photo's
+    // link, which is what this collapsed row is for.
+    expect(page).not.toContain("'Style reference added'");
   });
 
   it('keeps both file inputs mounted, or the links open nothing', () => {
@@ -363,9 +382,16 @@ describe('the three inputs sit together', () => {
     // records taking Call 1 down. What matters is that the hint still BRANCHES
     // on the active path and still says the two load-bearing things: on match
     // the upload becomes a print-ready master, otherwise it is optional.
-    expect(page).toContain("{intent === 'match'");
+    //
+    // ⚠️ AND IT NOW BRANCHES ON `designMode`, NOT `intent` (owner, 2026-09-24:
+    // two buttons, "match this exact design" and "create a design inspired by
+    // attached"). The hint sits under those buttons and has to describe the
+    // one that is SELECTED, which is exactly what they set. `intent` is
+    // derived from `designMode`, so this is the same fact read one step
+    // earlier — and the two load-bearing sentences are unchanged.
+    expect(page).toContain("{designMode === 'match'");
     expect(page).toMatch(/print-ready 4K master/);
-    expect(page).toMatch(/Optional\. Your description alone is enough/);
+    expect(page).toMatch(/the design itself is new/);
   });
 
   it('the refine panel keeps its own reference control, which is a different thing', () => {
@@ -571,5 +597,60 @@ describe('the auto-paint effect can name what it depends on', () => {
       expect(declaredAt, `${name} must be declared before the dependency array that reads it`).toBeGreaterThan(-1);
       expect(declaredAt, `${name} is declared BELOW the array that reads it — a temporal dead zone on every render`).toBeLessThan(arrayAt);
     }
+  });
+});
+
+describe('the reference is attached where the design is described', () => {
+  const page = source('../../pages/WallPro.tsx');
+
+  // Owner, 2026-09-24: "I need uploader next to prompt and it to have two
+  // buttons match this exact design and a create a design inspired by
+  // attached". It sat in the wall UPLOAD step, three sections above the box
+  // she types the design into, and the choice between the two readings was
+  // buried in the "More ways to start" disclosure below the fold.
+  it('puts the attach control after the brief, not in the wall upload step', () => {
+    const brief = page.indexOf("setPrompt(e.target.value); setArtwork(null);");
+    const attach = page.indexOf("'Attach a design'");
+    expect(brief).toBeGreaterThan(-1);
+    expect(attach).toBeGreaterThan(brief);
+    // And it is the ONLY door: two controls writing one `reference` is the
+    // confusion this move exists to remove.
+    expect((page.match(/uploadInputs\.current\.reference\?\.click\(\)/g) || []).length).toBe(1);
+  });
+
+  it('asks the question in the customer\'s words, not as SKU names', () => {
+    expect(page).toContain('Match this exact design');
+    expect(page).toContain('Create a design inspired by it');
+  });
+
+  it('only asks once there is something to ask about', () => {
+    // The two buttons live behind `reference &&` — a choice about an
+    // attachment that does not exist is noise in the middle of the brief.
+    const attach = page.indexOf("'Attach a design'");
+    const buttons = page.indexOf('Match this exact design');
+    expect(page.slice(attach, buttons)).toContain('{reference && <>');
+  });
+
+  it('says switching is free, and that claim is true in the pricing table', () => {
+    expect(page).toContain('Same price either way.');
+    // ⚠️ NOT PROSE: the sentence is only honest while these two paths are the
+    // same product at the same price. If they ever diverge this fails, and the
+    // sentence has to go rather than the assertion.
+    expect(WALL_DESIGN_SKUS.ai.cents).toBe(WALL_DESIGN_SKUS.match.cents);
+    expect(WALL_DESIGN_SKUS.ai.sku).toBe(WALL_DESIGN_SKUS.match.sku);
+  });
+
+  it('clears the design on either button, as typing already does', () => {
+    // The artwork on screen was made under the OTHER reading of the
+    // reference; leaving it up shows a result the button no longer promises.
+    expect(page).toContain("onClick={() => { setDesignMode('match'); setArtwork(null); }}");
+    expect(page).toContain("onClick={() => { setDesignMode('ai'); setArtwork(null); }}");
+  });
+
+  it('removing the attachment cannot strand the run in match mode', () => {
+    // `match` with no reference is refused at generate ("Upload the design to
+    // match first"), so Remove drops back to the describe path.
+    expect(page).toContain("setReference(null); setArtwork(null); if (designMode === 'match') setDesignMode('ai');");
+    expect(page).toContain("if (intent === 'match' && !reference) throw new Error('Upload the design to match first.');");
   });
 });
