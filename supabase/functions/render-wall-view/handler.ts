@@ -75,6 +75,73 @@ export function viewPrompt(input: { placement: string; repeatWidthIn: number | n
   ].join(' ');
 }
 
+/** WHAT THE PROVIDER REQUEST MAY CARRY, AND WHY EXCEEDING IT IS NOT AN ERROR.
+ *
+ * Owner, 2026-09-24, on her own project: the page showed "The wall photo and
+ * design together must be under 14 MB for the AI view." That is this function
+ * refusing, and on the day the AI render became the on-wall view for everyone
+ * it means her main view simply does not exist — for the sin of photographing
+ * her wall with a modern phone and generating a 4K master. Both are things
+ * WallPro told her to do.
+ *
+ * Nothing was gained by refusing. The model reads these images at roughly 2K
+ * whatever is sent, so a 12 MB photo buys no fidelity, costs upload time and
+ * is the only reason the ceiling is ever reached. So an oversized image is
+ * RESIZED to fit and the request goes ahead. The refusal survives only as the
+ * last resort, for something that cannot be decoded at all.
+ *
+ * `prepareWallUpload` on the client deliberately passes a JPG/PNG/WebP through
+ * byte for byte so a print-ready upload is never re-compressed — that rule is
+ * right and untouched. This shrink is for the MODEL REQUEST only; the stored
+ * original, the composite and every print file still read the full-size file.
+ */
+export const PROVIDER_BUDGET_BYTES = 14 * 1024 * 1024;
+const PROVIDER_MAX_EDGE = 2048;
+
+/** The policy, pure and with the codec injected, so it is exercised by a plain
+ * test: the Deno-only decode/resize/encode is the caller's default `shrink`.
+ * Under budget, the array is returned untouched and nothing is decoded — the
+ * common case pays nothing at all. */
+export async function fitProviderImages<T extends { bytes: Uint8Array; mimeType: string }>(
+  sources: T[],
+  budget: number,
+  shrink: (source: T) => Promise<{ bytes: Uint8Array; mimeType: string } | null>,
+): Promise<T[]> {
+  const total = (list: T[]) => list.reduce((sum, s) => sum + s.bytes.length, 0);
+  if (total(sources) <= budget) return sources;
+  const out = [...sources];
+  // Largest first. One 12 MB photograph beside a 1 MB design is the ordinary
+  // shape of this, and decoding the small one would spend a decode for nothing.
+  const bySize = out.map((_, i) => i).sort((a, b) => out[b].bytes.length - out[a].bytes.length);
+  for (const index of bySize) {
+    if (total(out) <= budget) break;
+    const smaller = await shrink(out[index]);
+    // A source that cannot be decoded is left exactly as it was: a failed
+    // resize must never truncate or corrupt the image it was trying to help.
+    if (smaller) out[index] = { ...out[index], ...smaller };
+  }
+  return out;
+}
+
+/** Deno-only, like `recompositeProtectedAreas` and for the same reason: the
+ * vitest suite cannot resolve an `https:` specifier at module-load time. It is
+ * thin, uncomposable image-library glue; `fitProviderImages` above holds the
+ * decision this file actually needs to be sure of. */
+async function shrinkForProvider(source: { bytes: Uint8Array; mimeType: string }): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  try {
+    const { Image } = await import("https://deno.land/x/imagescript@1.2.15/mod.ts");
+    const img = await Image.decode(source.bytes) as any;
+    const longest = Math.max(img.width, img.height);
+    if (longest <= PROVIDER_MAX_EDGE) return null;
+    const scale = PROVIDER_MAX_EDGE / longest;
+    const resized = img.resize(Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)));
+    return { bytes: await resized.encodeJPEG(82), mimeType: 'image/jpeg' };
+  } catch (e) {
+    console.error('[render-wall-view] provider shrink failed', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 function nearestAspect(width: number, height: number): string {
   const options: [string, number][] = [['1:1', 1], ['4:3', 4 / 3], ['3:4', 3 / 4], ['3:2', 1.5], ['2:3', 2 / 3], ['16:9', 16 / 9], ['9:16', 9 / 16], ['5:4', 1.25], ['4:5', 0.8], ['21:9', 21 / 9]];
   const target = width / height;
@@ -218,17 +285,27 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     const key = deps.apiKey();
     if (!key) return response({ error: 'The wall view is not configured.', code: 'NOT_CONFIGURED' }, 503);
     const parts: any[] = [{ text: viewPrompt(input) }];
-    let wallDims: { width: number; height: number } | null = null, total = 0, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
+    let wallDims: { width: number; height: number } | null = null, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
+    const sources: { label: string; path: string; bytes: Uint8Array; mimeType: string }[] = [];
     for (const [label, path] of [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]] as const) {
       const downloaded = await sb.storage.from(BUCKET).download(path);
       if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + (path === input.wallPath ? 'wall photo' : 'design') + ' could not be read.', code: 'UPLOAD_UNREADABLE' }, 400);
       const blob = downloaded.data as Blob;
       if (!imageTypes.includes(blob.type) || blob.size > 20 * 1024 * 1024) return response({ error: 'Images must be JPG, PNG or WebP and no larger than 20 MB.' }, 400);
-      total += blob.size;
-      if (total > 14 * 1024 * 1024) return response({ error: 'The wall photo and design together must be under 14 MB for the AI view.' }, 400);
-      const raw = new Uint8Array(await blob.arrayBuffer());
-      if (path === input.wallPath) { wallDims = imageDimensions(raw); wallPhotoBytes = raw; wallPhotoMimeType = blob.type; }
-      parts.push({ text: label }, { inlineData: { mimeType: blob.type, data: toBase64(raw) } });
+      sources.push({ label, path, bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: blob.type });
+    }
+    // Oversized is resized, not refused (see fitProviderImages). Under budget
+    // this is a no-op and the bytes below are the stored originals.
+    const fitted = await fitProviderImages(sources, PROVIDER_BUDGET_BYTES, shrinkForProvider);
+    if (fitted.reduce((sum, s) => sum + s.bytes.length, 0) > PROVIDER_BUDGET_BYTES) {
+      return response({ error: 'Your wall photo and design are too large to paint together, and could not be resized. Try a JPG photo.', code: 'IMAGES_TOO_LARGE' }, 400);
+    }
+    for (const source of fitted) {
+      // From the FITTED bytes: a proportional resize leaves the aspect alone,
+      // so `nearestAspect` is unchanged, and the recomposite resizes the photo
+      // to the model's own output size regardless.
+      if (source.path === input.wallPath) { wallDims = imageDimensions(source.bytes); wallPhotoBytes = source.bytes; wallPhotoMimeType = source.mimeType; }
+      parts.push({ text: source.label }, { inlineData: { mimeType: source.mimeType, data: toBase64(source.bytes) } });
     }
     // Both optional masks are best effort: a missing, unreadable or oversized
     // mask silently drops that mask alone, never the whole view -- the

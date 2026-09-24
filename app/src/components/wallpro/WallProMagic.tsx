@@ -6,7 +6,28 @@ const after = '/wallpro/studio-floral-preview.jpg';
 
 const artwork = '/wallpro/case-studio-artwork.jpg';
 
-function Frame({ children }: { children: ReactNode }) {
+/* ─────────────────────────────────────────────────────────────────────────────
+ * THIS FILE OWNS THE FOUR-STEP LOOK, AND IT OWNS IT FOR THE WORKING PAGE TOO.
+ *
+ * Owner, 2026-09-24, holding a screenshot of the working page beside this row:
+ * "Fix my UI Look what happened" → "Its supposed to look like this."
+ *
+ * The row she pointed at is THIS component, and it renders on the page she was
+ * already on — it is what shows before a project is open. Open a project and it
+ * was replaced by `WallProStepBoard`, a second, thinner set of cards built from
+ * a different ruling four days earlier: dashed placeholder boxes, a ghost
+ * "Open" button, a snap-scrolling carousel. Two components drawing the same
+ * four steps in two visual languages, swapped by whether a project is loaded.
+ *
+ * So the chrome is EXPORTED rather than copied. `WallProStepBoard` imports
+ * `MagicStep`, `MagicFrame`, `MagicArrow` and `MAGIC_GRID` and renders the
+ * customer's own artifacts inside them. A second hand-built copy of this card
+ * is exactly how the two drifted apart in the first place — one producer of
+ * this look, and a change here lands on both.
+ * ───────────────────────────────────────────────────────────────────────────*/
+
+/** The 4:3 picture well. Children are positioned against it. */
+export function MagicFrame({ children }: { children: ReactNode }) {
   return <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[hsl(var(--wall-field))]">{children}</div>;
 }
 
@@ -14,22 +35,48 @@ function Room({ src, alt }: { src: string; alt: string }) {
   return <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover" draggable={false} />;
 }
 
-function Step({ n, title, copy, children }: { n: number; title: string; copy: string; children: ReactNode }) {
+/** One row of four with arrows between from `lg`, two-up below it. The arrow
+ *  columns are `auto`, so they collapse to nothing when the arrows hide. */
+export const MAGIC_GRID = 'grid grid-cols-2 gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2';
+
+export const MagicArrow = () => (
+  <span aria-hidden="true" className="hidden items-center justify-center text-blue-500 lg:flex"><ArrowRight className="h-5 w-5" /></span>
+);
+
+export function MagicStep({ n, title, copy, children, badge, active, footer }: {
+  n: number; title: string; copy: string; children: ReactNode;
+  /** Replaces the numeral once the step is done — the board passes a tick. */
+  badge?: ReactNode;
+  /** The step the customer is on. Ringed, never recoloured: the four cards
+   *  must still read as one row. */
+  active?: boolean;
+  /** The step's one action, below the picture. The landing row has none —
+   *  it is illustrative — so this is omitted there and the card is identical. */
+  footer?: ReactNode;
+}) {
   return (
     /* BLUE-GRAY CARDS (owner, 2026-09-24: "Make the cards a bit darker of
        that blue") on the white page, so they separate without a darker ground.
        EQUAL CARDS (owner, 2026-09-24: "the 4 cards are diff sizes"). The text
        block has a fixed height and the picture is pinned to the bottom, so
        copy of different lengths can never push one card's image lower. */
-    <article className="flex min-w-0 flex-col rounded-xl border border-[#cfdbea] bg-[#e8eef6] p-3 shadow-sm">
+    <article
+      aria-current={active ? 'step' : undefined}
+      className={'flex min-w-0 flex-col rounded-xl border bg-[#e8eef6] p-3 shadow-sm '
+        + (active ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-[#cfdbea]')}
+    >
       <div className="mb-3 flex min-h-[64px] items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{badge ?? n}</span>
         <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
       <div className="mt-auto">{children}</div>
+      {footer ? <div className="mt-2">{footer}</div> : null}
     </article>
   );
 }
+
+const Frame = MagicFrame;
+const Step = MagicStep;
 
 /* ONE ROW, FOUR STEPS, ARROWS BETWEEN -- upload and corner-marking are
    ONE step (owner, 2026-09-24: "condense step 1 ... upload and mark wall"). (owner, Trish 2026-09-24, against a
@@ -38,9 +85,7 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
    120-inch example wall. Each panel may use up to 53 inches of production print width;
    the third is the remainder plus bleed and seam overlap (53 + 53 + 16). A glassmorphism proof layer sits over the
    artwork so the customer can read the panel plan without hiding the design. */
-const Arrow = () => (
-  <span aria-hidden="true" className="hidden items-center justify-center text-blue-500 lg:flex"><ArrowRight className="h-5 w-5" /></span>
-);
+const Arrow = MagicArrow;
 
 export function WallProMagic() {
   return (
@@ -50,7 +95,7 @@ export function WallProMagic() {
         <p className="text-sm wall-muted">4 simple steps. Extraordinary results.</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
+      <div className={MAGIC_GRID}>
         <Step n={1} title="Upload, Pin & Prompt" copy="Pin your wall’s 4 corners, or skip the photo and just describe your idea.">
           <Frame>
             <Room src={before} alt="The room photo with the wall boundary marked by four corners" />
