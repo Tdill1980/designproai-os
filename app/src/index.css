@@ -1282,16 +1282,12 @@ p {
 
 /* White WPW gets a cool SaaS canvas behind crisp white cards. Dark WallPro
    uses a restrained navy-indigo canvas behind graphite cards. */
-/* A DARKER BLUE-GRAY GROUND so the white cards read as objects (owner,
-   2026-09-24: "make the back ui a bit more darker blue or gray ... so you can
-   see contrast of white cards"). Scoped to WallPro; the shared light token
-   stays as it is for every other page that reads it. */
+/* WHITE (owner, 2026-09-24: "I hate this make it white", reversing the
+   darker blue-gray ground she asked for an hour earlier). Near-white so the
+   white cards still separate by their border and shadow. */
 [data-wall-theme="light"].wallpro-page {
-  --wall-ground: 215 30% 89%;
-  --wall-card-edge: 214 28% 82%;
-  background:
-    radial-gradient(circle at 78% 10%, rgba(99,102,241,.08), transparent 30rem),
-    linear-gradient(135deg, #dbe3ee 0%, #e1e8f1 52%, #e4e2ef 100%);
+  --wall-ground: 210 40% 98%;
+  background: #f8fafc;
 }
 [data-wall-theme="dark"].wallpro-page {
   background:
