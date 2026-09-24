@@ -699,6 +699,7 @@ serve(async (req) => {
         && prompt.startsWith(creativeHead + "\n\n"),
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
+      // Keep this count coupled to the focused Edge contract test; prompt expansion must fail CI before production.
       flatPanelProductionProofInjected: body.separatedArtwork === true
         ? flatProductionInstructions.length === 7 && prompt.includes(flatProductionInstructions[0])
         : prompt.includes(SYSTEM_JOB)
