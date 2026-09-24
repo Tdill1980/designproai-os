@@ -502,7 +502,8 @@ export async function listWallDesignsForStudio(limit = 60): Promise<WallStudioDe
     const whole = wholeWallFile(j);
     return {
       projectId: v.project_id, projectName: names.get(v.project_id) || 'Wall design', versionId: v.id, versionNo: v.version_no,
-      approved: v.status === 'approved', designId: wallDesignId(v.id), artworkPath: v.artwork_path, artworkUrl: views[v.artwork_path] || null,
+      approved: v.status === 'approved', designId: wallDesignId(v.id), generationId: (v as { generation_id?: string | null }).generation_id ?? null,
+      artworkPath: v.artwork_path, artworkUrl: views[v.artwork_path] || null,
       placement: v.placement, repeatWidthIn: v.repeat_width_in ? Number(v.repeat_width_in) : null, createdAt: v.created_at, approvedAt: v.approved_at,
       versions: allVersions.filter(x => x.project_id === v.project_id).sort((a, b) => a.version_no - b.version_no)
         .map(x => ({ id: x.id, versionNo: x.version_no, kind: x.kind, approved: x.status === 'approved', prompt: x.prompt, createdAt: x.created_at, url: views[x.artwork_path] || null })),

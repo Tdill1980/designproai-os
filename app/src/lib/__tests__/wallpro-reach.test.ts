@@ -131,3 +131,86 @@ describe('a mask can be resized and moved from the editor', () => {
     expect(ends.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * THE PHOTO STOPS EATING THE SCREEN, AND THE PAGE SAYS WHAT IT IS DOING
+ * (owner, Trish 2026-09-24: "its displaying photo too large and now you cant
+ * see your prompt or any words thst say design is generating. I know thee is a
+ * progress bar but thats not the same we need the words and visible prompt"
+ * ... "so they can resad the propt they submitted" ... "otherwiae your looking
+ * sround wondering what happened").
+ *
+ * Two defects, one cause: everything that explains what is happening was
+ * pushed off screen by the picture. The editor box had `w-full` and an
+ * aspectRatio and NO CEILING, so a ~2:1 phone photo rendered as tall as the
+ * column is wide.
+ */
+describe('the wall photo has a ceiling', () => {
+  const EDITOR = src('../../components/wallpro/WallPhotoEditor.tsx');
+  const EDITOR_CODE = EDITOR.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('caps the height instead of filling the column', () => {
+    expect(EDITOR_CODE).toContain("maxHeight:'min(70svh, 560px)'");
+  });
+
+  it('uses svh, because iOS vh counts chrome that is not there', () => {
+    expect(EDITOR_CODE).not.toMatch(/maxHeight:'min\(70vh/);
+  });
+
+  it('letterboxes centred rather than cropping', () => {
+    // aspect-ratio + max-height shrinks the WIDTH to match; mx-auto keeps the
+    // narrower box centred in the column instead of hugging the left edge.
+    expect(EDITOR_CODE).toContain('relative mx-auto w-full overflow-hidden');
+    expect(EDITOR_CODE).toContain('aspectRatio:p.aspect');
+  });
+});
+
+describe('a running design says so, in words, with the brief', () => {
+  it('announces it in plain language rather than a stage log line', () => {
+    expect(CODE).toContain("'Your design is generating…'");
+    expect(CODE).toContain("'Your design is updating…'");
+  });
+
+  it('shows the brief they submitted, which is otherwise scrolled away', () => {
+    const card = CODE.indexOf('{designBusy && <div role="status"');
+    expect(card).toBeGreaterThan(-1);
+    const block = CODE.slice(card, card + 900);
+    expect(block).toContain('Your brief:');
+    expect(block).toContain('{prompt.trim()}');
+  });
+
+  it('sits ABOVE the photo, where the eye already is', () => {
+    expect(CODE.indexOf('{designBusy && <div role="status"')).toBeLessThan(CODE.indexOf('id="wall-photo"'));
+  });
+
+  it('is announced to a screen reader too, not only drawn', () => {
+    const card = CODE.indexOf('{designBusy && <div role="status"');
+    expect(CODE.slice(card, card + 120)).toContain('aria-live="polite"');
+  });
+
+  /**
+   * ⚠️ THE SCOPE IS THE LOAD-BEARING PART. `busy` is the page's ONE status
+   * string and carries every slow operation — "Opening image", "Saving
+   * project", "Downloading artwork". Keyed on `busy` this card would announce
+   * "Your design is generating" while she was saving a project, which is worse
+   * than saying nothing at all.
+   */
+  it('never claims a design is running when something else is', () => {
+    expect(CODE).toContain("const designBusy = busy === 'Generating wall artwork'");
+    expect(CODE).toMatch(/: null;/);
+    expect(CODE).not.toContain('{!!busy && <div role="status" aria-live="polite" className="mb-2 rounded-xl border-2');
+  });
+
+  /**
+   * ⚠️ A STEPPED WIZARD WAS BUILT HERE AND REJECTED ("Not wizard"), and she
+   * was right on the engineering as well as the taste: `busy` is ONE string
+   * for the whole generation — consultant persona, designer and image are a
+   * single edge call that reports nothing in between — so ticking sub-steps
+   * would be a progress display telling a story the system cannot see.
+   */
+  it('invents no sub-steps the system cannot observe', () => {
+    for (const invented of ['Writing your brief', 'Choosing a palette', 'Placing it on your photo']) {
+      expect(CODE, invented).not.toContain(invented);
+    }
+  });
+});

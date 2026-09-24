@@ -80,7 +80,17 @@ export function WallPhotoEditor(p: Props) {
   let rectanglePreview: Point[] = [];
   if (p.marking === 'rectangle' && p.draft[0] && hover) { try { rectanglePreview = rectangularWallMask(p.draft[0],hover); } catch { /* Pointer has not moved yet. */ } }
   const overlays = p.showMasks || !!p.marking;
-  return <div ref={box} className="relative w-full overflow-hidden rounded-lg bg-[hsl(var(--wall-ground))] select-none" style={{ aspectRatio:p.aspect, cursor:p.marking ? 'crosshair' : 'default', touchAction:p.marking ? 'none' : 'auto' }} aria-label="Wall placement photo"
+  /* ⚠️ THE PHOTO NEEDS A CEILING (owner, Trish 2026-09-24: "its displaying
+     photo too large and now you cant see your prompt").
+     This box had `w-full` and an aspectRatio and NOTHING ELSE, so a wide room
+     shot -- about 2:1 on a phone camera -- rendered as tall as the column is
+     wide and ate the viewport whole. Everything that explains what is
+     happening (the brief, the generating notice, the controls) was pushed off
+     screen by the picture itself.
+     `maxHeight` with an aspect-ratio shrinks the WIDTH to match rather than
+     cropping, so the photo letterboxes into the column and centres. svh, not
+     vh, because iOS vh includes the browser chrome that is not actually there. */
+  return <div ref={box} className="relative mx-auto w-full overflow-hidden rounded-lg bg-[hsl(var(--wall-ground))] select-none" style={{ aspectRatio:p.aspect, maxHeight:'min(70svh, 560px)', cursor:p.marking ? 'crosshair' : 'default', touchAction:p.marking ? 'none' : 'auto' }} aria-label="Wall placement photo"
     onPointerDown={e => {
       if (p.busy || !p.marking) return; e.preventDefault();
       const next=point(e); e.currentTarget.setPointerCapture(e.pointerId);

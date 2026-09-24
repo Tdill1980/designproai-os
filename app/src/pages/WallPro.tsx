@@ -64,11 +64,32 @@ type History = Awaited<ReturnType<typeof wallHistory>>;
  * result", the same narrative the mockup asked for, without reshaping a
  * working, tested form to match a screenshot's grid.
  */
+/**
+ * THE BRAND BAR — ONE DEFINITION, THREE USES (owner, Trish 2026-09-24, who
+ * circled "Upload your wall" and "Describe the design" and asked for "a
+ * gradiant blue magenta with white text or blue gradiant — you tell me whats
+ * best").
+ *
+ * BLUE→MAGENTA, not blue alone, and the reason is consistency rather than
+ * taste: `from-blue-600 to-fuchsia-600` is ALREADY the product's gradient —
+ * the step number badge, the Generate CTA and the header's Create Your Wall
+ * all run it. A blue-only bar would introduce a second, weaker identity on the
+ * same screen, and the page would stop reading as one thing.
+ *
+ * It is declared ONCE because a heading and a field label that drift apart by
+ * one shade is exactly the kind of thing nobody notices until the page looks
+ * cheap. Change the hue here and every bar moves together.
+ */
+const BRAND_BAR = 'bg-gradient-to-r from-blue-600 to-fuchsia-600 text-white';
+
 function StepHeading({ n, icon: Icon, children }: { n: number; icon: LucideIcon; children: ReactNode }) {
   return (
-    <h2 className="mb-3 flex items-center gap-2 font-semibold">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600 text-xs font-bold text-white">{n}</span>
-      <Icon className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+    /* The number badge WAS the gradient; on a gradient bar it would vanish into
+       its own background, so it becomes a translucent white disc and the icon
+       goes white with it. Same three elements, still legible. */
+    <h2 className={'mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-base font-bold ' + BRAND_BAR}>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/25 text-xs font-bold text-white">{n}</span>
+      <Icon className="h-4 w-4 shrink-0 text-white" aria-hidden="true" />
       {children}
     </h2>
   );
@@ -454,6 +475,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const uploadInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const retain = (url: string) => { if (url.startsWith('blob:')) urls.current.add(url); return url; };
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
+  /**
+   * HOME OR BUSINESS — ASKED, NEVER GUESSED (owner, Trish 2026-09-24, on a
+   * living-room wall that came back as oversized commercial florals: "massive
+   * regression that looks like shit that doeant look like a wall wrap" ... "I
+   * had even two designer persoas / a commercial sign and graphics shop and a
+   * interior designer persona").
+   *
+   * Both personas exist and always have. `domain.ts` picks between them, and
+   * its LAST line is `designDomain: 'commercial'` for any brief with no room
+   * word in it — a documented compatibility default, so briefs written before
+   * the residential branch existed kept their old output. A living room
+   * therefore drew the Senior Environmental Graphic Designer "working inside a
+   * commercial sign company", which is exactly the picture she rejected.
+   *
+   * ⚠️ THE OVERRIDE WAS ALREADY BUILT AND UNREACHABLE. `overrideDomain` wins
+   * over every inference in `classifyWallDomain`, and the app has never sent
+   * it — the same built-but-inert shape CLAUDE.md records for the element
+   * graph and for two routing flags. One control closes it.
+   *
+   * Deterministic: no model chooses the persona, which is the rule domain.ts
+   * states about itself. Defaulting to `residential` is the honest default for
+   * a wall-covering tool, and naming a business type still routes commercial
+   * through the customer's own words.
+   */
+  const [designDomain, setDesignDomain] = useState<'residential' | 'commercial'>('residential');
   const dimensionsValid = validWallSize(width, height);
   const cornersValid = validWallCorners(corners);
   // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
@@ -703,6 +749,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   /* With a `hint`, the tile is the mockup's icon + title + one-line hint
      (owner, 2026-09-24); without one it is the plain dashed button. Same
      input, same handler either way. */
+  /**
+   * THE SENTENCE A CUSTOMER ASKED FOR, IN HER WORDS (owner, 2026-09-24: "just
+   * a way to show Your design is generating").
+   *
+   * `busy` is the page's own stage text and reads like an engineer's log line
+   * -- "Generating wall artwork". This maps the two operations that actually
+   * produce a design onto plain sentences, and returns null for every other
+   * slow operation so the card cannot announce a design that is not running.
+   */
+  const designBusy = busy === 'Generating wall artwork' ? 'Your design is generating…'
+    : busy === 'Refining the design' ? 'Your design is updating…'
+      : null;
+
   const uploadControl = (role: 'photo' | 'artwork' | 'reference', label: string, hint?: string) => (
     <div>
       <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
@@ -1133,7 +1192,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const sourcePath = source.path || await uploadWallAsset(source, user.id);
       const maskPath = rects.length ? await uploadWallAsset({ url: '', aspect: source.aspect, file: await maskPng(source) }, user.id) : null;
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
-      const result = await generateWall({ requestId: crypto.randomUUID(), intent: 'refine', prompt: changes, width, height, placement, sourcePath, maskPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent: 'refine', prompt: changes, width, height, placement, sourcePath, maskPath, referencePath, designDomain });
       const image = await loadWallImage(result.image_url);
       let art: WallAsset = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       let kind: WallVersionKind = 'refine', sha: string | null = null;
@@ -1355,7 +1414,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
       const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
       setPlacement(placement); setRepeatWidth(repeatWidth); setPatternScale(100);
-      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath, designDomain });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master and is shown first. With a wall
       // photo and four valid corners the renderWallPreview compositor runs at once
@@ -1996,8 +2055,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 </div>
               </div>
             )}
-            <p className="mt-4 text-sm font-bold wall-ink">Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            <p className={'mt-4 inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
                 2026-09-14: "on enter wall size should give price for printed
                 wrap from wpw film"). The wall's own square footage at the live
@@ -2131,6 +2190,55 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   </div>
                 </div>
               )}
+              {/* ⚠️ THE WORDS, AND THE PROMPT, WHILE IT RUNS (owner, Trish
+                  2026-09-24: "now you cant see your prompt or any words thst
+                  say design is generating. I know thee is a progress bar but
+                  thats not the same we need the words and visible prompt").
+                  A spinner says SOMETHING is happening. It does not say WHAT,
+                  and it does not say what you asked for -- and the brief is a
+                  textarea three sections away that scrolls out of sight the
+                  moment the photo is on screen. So while a generation runs
+                  this sits directly above the photo, where the eye already is,
+                  and quotes her own words back. `busy` carries the live stage
+                  text ("Generating wall artwork"), so the line is the real
+                  state rather than a fixed sentence. */}
+              {/* ⚠️ THE WORDS, AND THE PROMPT THEY SUBMITTED (owner, Trish
+                  2026-09-24: "you cant see your prompt or any words thst say
+                  design is generating. I know thee is a progress bar but thats
+                  not the same we need the words and visible prompt", then "so
+                  they can resad the propt they submitted").
+
+                  A spinner says SOMETHING is happening; it never says WHAT,
+                  and it never says what you asked for. The brief is a textarea
+                  three sections away that scrolls out of sight the moment the
+                  photo is on screen, so while it runs there was no way to
+                  re-read your own words.
+
+                  ⚠️ A STEPPED WIZARD WAS BUILT HERE AND THE OWNER REJECTED IT
+                  ("Not wizard"). She was right twice over: `busy` is ONE
+                  string for the whole generation -- the consultant persona,
+                  the designer and the image are a single edge call that
+                  reports nothing in between -- so ticking sub-steps would have
+                  been a progress display telling a story the system cannot
+                  see. Do not add one. The live stage text plus the submitted
+                  brief is the whole ask. */}
+              {/* ⚠️ ONLY WHEN A DESIGN IS ACTUALLY RUNNING. `busy` is the
+                  page's ONE status string and it carries every slow operation
+                  -- "Opening image", "Saving project", "Downloading artwork".
+                  Showing this card for all of them would announce "Your design
+                  is generating" while she was saving a project, which is worse
+                  than saying nothing. Two operations produce a design; those
+                  two get the card, and everything else keeps the small status
+                  line it already had. */}
+              {designBusy && <div role="status" aria-live="polite" className="mb-2 rounded-xl border-2 border-blue-400 bg-blue-50 p-3">
+                <p className="flex items-center gap-2 text-base font-bold text-blue-900">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" />{designBusy}
+                </p>
+                {prompt.trim() && <p className="mt-2 border-t border-blue-200 pt-2 text-xs text-blue-900/90">
+                  <span className="font-semibold">Your brief:</span> &ldquo;{prompt.trim()}&rdquo;
+                </p>}
+                <p className="mt-1 text-xs text-blue-900/70">Usually 1&ndash;2 minutes. Your print files never wait for the wall photo.</p>
+              </div>}
               <div id="wall-photo" style={{ scrollMarginTop: stickyTop + 96 }}>
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next.length === 4 ? orderWallCorners(next) ?? next : next); }} onMasks={setExclusions} />
               </div>
@@ -2269,7 +2377,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
           </section>}
             <div className="mt-4">
-              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              {/* Which designer composes. One tap, above the brief, because it
+                  changes the whole result and the customer is the only one who
+                  knows the answer. */}
+              <div className="mb-3">
+                <span className="mb-1.5 block text-sm font-bold wall-ink">This wall is in a</span>
+                <div className="flex flex-wrap gap-2">
+                  {([['residential', 'Home'], ['commercial', 'Business']] as const).map(([value, label]) => (
+                    <Button key={value} type="button" size="sm" variant={designDomain === value ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignDomain(value); setArtwork(null); }}>{label}</Button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs wall-muted">{designDomain === 'residential'
+                  ? 'An interior designer composes it — wallcovering for a room.'
+                  : 'A commercial sign and graphics designer composes it — environmental graphics for a space.'}</p>
+              </div>
+              <label className="block text-sm"><span className={'mb-2 inline-block rounded-md px-2.5 py-1 font-bold ' + BRAND_BAR}>{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}</span><textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
                   the brief rather than replacing it, and they are not a
                   taxonomy: the two personas read prose, so a chip is a word

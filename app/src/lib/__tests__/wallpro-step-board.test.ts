@@ -232,6 +232,54 @@ describe('the three inputs sit together', () => {
    * the whole fold, which is the same complaint as "I have to scroll to find
    * my photo" arriving from the other direction.
    */
+  /**
+   * THE BRAND BAR IS DECLARED ONCE (owner, 2026-09-24, circling "Upload your
+   * wall" and "Describe the design": "a gradiant blue magenta with white
+   * text").
+   *
+   * Blue→magenta rather than blue alone because `from-blue-600
+   * to-fuchsia-600` is ALREADY the product's gradient — the step badge, the
+   * Generate CTA and the header CTA all run it — so a blue-only bar would put
+   * a second identity on the same screen.
+   *
+   * What is worth locking is not the hue, it is the SINGLE DEFINITION. Three
+   * hand-copied gradients drift by one shade and nobody notices until the page
+   * looks cheap; this repo has recorded that class of drift repeatedly.
+   */
+  it('declares the gradient once and reuses it', () => {
+    expect(page).toContain("const BRAND_BAR = 'bg-gradient-to-r from-blue-600 to-fuchsia-600 text-white'");
+    // ⚠️ COUNT THE CODE, NOT THE PROSE. The first draft of this line counted
+    // raw occurrences and convicted the comment that EXPLAINS the constant —
+    // the third time in one session an assertion has fired on the words
+    // beside the thing rather than the thing. Strip comments, then count.
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect((code.match(/from-blue-600 to-fuchsia-600/g) ?? []).length).toBe(1);
+    expect((code.match(/\+ BRAND_BAR/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the step number legible on the bar it now sits on', () => {
+    // The badge WAS the gradient; on a gradient ground it would disappear into
+    // its own background, so it is a translucent white disc and the icon is
+    // white. A gradient-on-gradient badge is the defect this pins.
+    expect(page).toContain('rounded-full bg-white/25');
+    expect(page).not.toContain('rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600');
+  });
+
+  it('bands the label, never the field it labels', () => {
+    // The <textarea> stays outside the banded <span>: banding the whole
+    // <label> would paint the input itself.
+    const label = page.indexOf("'Describe the design'");
+    const span = page.lastIndexOf('<span', label);
+    expect(page.slice(span, label)).toContain('BRAND_BAR');
+    expect(page.slice(label, label + 200)).toContain('</span><textarea');
+  });
+
+  it('states the square footage in ink, not muted grey', () => {
+    // Owner: "then make 80 sq ft darker". It is a measurement the customer
+    // checks with a tape, not a caption.
+    expect(page).toContain('text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid');
+  });
+
   it('collapses to one line with a thumbnail once a photo exists', () => {
     expect(page).toContain('{photo ? (');
     expect(page).toContain('Wall photo added');
