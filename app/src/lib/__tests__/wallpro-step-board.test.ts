@@ -538,3 +538,38 @@ describe('tap to mask reaches the page it was built for', () => {
     expect(page.lastIndexOf('Tap an item to mask it', step)).toBeGreaterThan(-1);
   });
 });
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * A DEPENDENCY ARRAY IS EVALUATED DURING RENDER.
+ *
+ * Owner, 2026-09-24, from a phone: "I can't access Wallpro page", over
+ * `Cannot access 'pt' before initialization.` WallPro was down in production
+ * and it was a temporal dead zone I shipped: the move that made the AI view
+ * paint the seam-corrected file put its effect between `tileArtwork` and
+ * `seamReady`, and the SAME edit added `seamReady` to the dependency array. A
+ * `const` read two lines above its own declaration, thrown on every render,
+ * minified to a two-letter name that says nothing about the cause.
+ *
+ * ⚠️ AND `npx tsc --noEmit` DID NOT CATCH IT, BECAUSE IT CHECKS NOTHING.
+ * app/tsconfig.json is `"files": []` plus project references, and references
+ * are not followed without `--build`. TypeScript reports exactly this defect
+ * as TS2448 when it is actually pointed at the file. Every "tsc clean" in this
+ * session was a typecheck with no files in it.
+ *
+ * So this lock does what the typecheck should have: it reads the page's own
+ * source and fails when any name in this effect's dependency array is declared
+ * BELOW the array that reads it.
+ * ───────────────────────────────────────────────────────────────────────────*/
+describe('the auto-paint effect can name what it depends on', () => {
+  const page = source('../../pages/WallPro.tsx');
+
+  it('declares every dependency above the array that reads it', () => {
+    const arrayAt = page.indexOf('}, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);');
+    expect(arrayAt).toBeGreaterThan(-1);
+    for (const name of ['tileArtwork', 'aiAvailable', 'seamReady']) {
+      const declaredAt = page.indexOf(`const ${name} =`);
+      expect(declaredAt, `${name} must be declared before the dependency array that reads it`).toBeGreaterThan(-1);
+      expect(declaredAt, `${name} is declared BELOW the array that reads it — a temporal dead zone on every render`).toBeLessThan(arrayAt);
+    }
+  });
+});
