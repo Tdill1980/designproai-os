@@ -60,7 +60,7 @@ function extractPaths(svg) {
   const out = [];
   const groupFills = [];
   const groupOpacities = [];
-  const tagRx = /<(\\/?)(g|path)\\b([^>]*)>/gi;
+  const tagRx = /<(\/?)(g|path)\b([^>]*)>/gi;
   let match;
   let sourceIndex = 0;
   while ((match = tagRx.exec(svg)) !== null) {
