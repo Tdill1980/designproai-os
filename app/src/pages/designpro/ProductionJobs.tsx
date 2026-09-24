@@ -31,9 +31,12 @@ export default function ProductionJobs() {
         title="Production jobs"
         description="Every DesignProAI job, from the seven frozen source views through the verified production ZIP."
         aside={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button asChild>
               <Link to="/designpro/create">Start a design</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/productionflow/layerize">Layerize artwork</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to="/designpro/revisions/new">Upload seven views</Link>
