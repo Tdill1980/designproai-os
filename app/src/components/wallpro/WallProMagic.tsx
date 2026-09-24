@@ -1,97 +1,89 @@
 import type { ReactNode } from 'react';
-import { CornerDownRight, Eye, FileCheck2, MousePointerClick, Upload, Wand2 } from 'lucide-react';
-import { WALL_GRADIENT } from '@/lib/wallpro-brand';
+import { ArrowRight } from 'lucide-react';
 
 const before = '/wallpro/proof-spa-before.jpg';
 const after = '/wallpro/proof-spa-after.jpg';
 
-function Frame({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <div className="relative overflow-hidden border wall-edge bg-[hsl(var(--wall-field))]">
-      {children}
-      <span className="absolute left-2 top-2 bg-slate-950/88 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{label}</span>
-    </div>
-  );
+const artwork = '/wallpro/case-studio-artwork.jpg';
+
+function Frame({ children }: { children: ReactNode }) {
+  return <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[hsl(var(--wall-field))]">{children}</div>;
 }
 
 function Room({ src, alt }: { src: string; alt: string }) {
-  return <img src={src} alt={alt} className="block h-auto w-full" draggable={false} />;
+  return <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover" draggable={false} />;
 }
 
 function Step({ n, title, copy, children }: { n: number; title: string; copy: string; children: ReactNode }) {
   return (
-    <article className={"bg-[hsl(var(--wall-card))] " + (n <= 3 ? "md:col-span-2" : "md:col-span-3")}>
-      <div className="flex min-h-[76px] items-start gap-3 border-b wall-edge px-4 py-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-[hsl(var(--wall-card-edge))] bg-[hsl(var(--wall-field))] text-xs font-black wall-ink">{n}</span>
-        <div><h3 className="text-sm font-bold wall-ink">{title}</h3><p className="mt-0.5 text-[11px] wall-muted">{copy}</p></div>
+    <article className="flex min-w-0 flex-col rounded-xl border wall-edge bg-[hsl(var(--wall-card))] p-3 shadow-sm">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
+        <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
-      <div className="p-3">{children}</div>
+      {children}
     </article>
   );
 }
 
+/* ONE ROW, FIVE STEPS, ARROWS BETWEEN (owner, Trish 2026-09-24, against a
+   mockup: "Fix my Wallpro ui so it looks like this exactly"). Step 5 shows the
+   flat artwork itself cut into six numbered roll-width panels -- the print
+   file, not the room -- because that is what the customer is buying. */
+const Arrow = () => (
+  <span aria-hidden="true" className="hidden items-center justify-center text-blue-500 lg:flex"><ArrowRight className="h-5 w-5" /></span>
+);
+
 export function WallProMagic() {
   return (
-    <section aria-labelledby="wallpro-magic-heading" className="mx-auto max-w-7xl border-y wall-edge py-5">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] wall-muted">The WallPro magic</p>
-          <h2 id="wallpro-magic-heading" className="mt-1 text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">See the wall. Touch it. Protect it. Print it.</h2>
-        </div>
-        <p className="text-xs font-semibold wall-muted">The room stays visible through every step.</p>
+    <section aria-labelledby="wallpro-magic-heading" className="mx-auto max-w-7xl">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <h2 id="wallpro-magic-heading" className="text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">The WallPro Magic — From Photo to Print-Ready Panels</h2>
+        <p className="text-sm wall-muted">5 simple steps. Extraordinary results.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-px border wall-edge bg-[hsl(var(--wall-card-edge))] md:grid-cols-6">
-        <Step n={1} title="Upload your photo" copy="See the entire room — never a cropped thumbnail.">
-          <Frame label="Your room"><Room src={before} alt="Full room before a wall wrap is designed" /></Frame>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr_auto_1fr] lg:gap-2">
+        <Step n={1} title="Upload Your Photo" copy="Start with a photo of your space.">
+          <Frame><Room src={before} alt="A room before a wall wrap is designed" /></Frame>
         </Step>
-
-        <Step n={2} title="Touch 4 corners" copy="Four touches define the exact wall geometry.">
-          <Frame label="Corner geometry">
-            <Room src={before} alt="Full room photo with the wall boundary marked" />
-            <div className="pointer-events-none absolute left-[18%] right-[18%] top-[9%] bottom-[14%] border-2 border-dashed border-white/90 bg-white/5">
-              {['-left-2 -top-2','-right-2 -top-2','-left-2 -bottom-2','-right-2 -bottom-2'].map((c,i)=><span key={i} className={'absolute h-4 w-4 rounded-full border-2 border-white bg-slate-950/90 shadow '+c} />)}
+        <Arrow />
+        <Step n={2} title="Touch 4 Corners" copy="Define your wall geometry.">
+          <Frame>
+            <Room src={before} alt="The room photo with the wall boundary marked by four corners" />
+            <div className="pointer-events-none absolute left-[16%] right-[16%] top-[8%] bottom-[12%] border-2 border-blue-500 bg-blue-500/10">
+              {['-left-2 -top-2','-right-2 -top-2','-left-2 -bottom-2','-right-2 -bottom-2'].map((c,i)=><span key={i} className={'absolute h-3.5 w-3.5 rounded-full border-2 border-white bg-blue-600 shadow '+c} />)}
             </div>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-950/90 px-2.5 py-1 text-[10px] font-bold text-white shadow"><CornerDownRight className="mr-1 inline h-3 w-3" />4 corners mapped</span>
           </Frame>
         </Step>
-
-        <Step n={3} title="1-touch masking" copy="Tap curtains, windows or objects once to protect them.">
-          <Frame label="Protected">
-            <Room src={before} alt="Full room showing curtains protected by one-touch masking" />
-            <div className="absolute left-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute right-[29%] top-[8%] h-[54%] w-[17%] border-2 border-white/90 bg-white/15 shadow-[0_0_0_1px_rgba(255,255,255,.7)]" />
-            <div className="absolute left-[45%] top-[16%] h-[45%] w-[10%] border-2 border-white/90 bg-white/10" />
-            <span className="absolute left-[28%] top-[30%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
-            <span className="absolute right-[27%] top-[46%] bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow">Protected curtain</span>
-            <span className="absolute left-1/2 top-[12%] -translate-x-1/2 bg-white px-2 py-1 text-[9px] font-bold text-slate-900 shadow"><MousePointerClick className="mr-1 inline h-3 w-3 text-slate-700" />one touch</span>
+        <Arrow />
+        <Step n={3} title="1-Touch Masking" copy="Automatically protect windows, curtains, and objects.">
+          <Frame>
+            <Room src={before} alt="The room with curtains and window protected by one-touch masking" />
+            <div className="absolute left-[29%] top-[6%] h-[56%] w-[17%] rounded-sm border-2 border-blue-500 bg-blue-500/35" />
+            <div className="absolute right-[29%] top-[6%] h-[56%] w-[17%] rounded-sm border-2 border-blue-500 bg-blue-500/35" />
+            <div className="absolute left-[45%] top-[14%] h-[46%] w-[10%] rounded-sm border-2 border-blue-500 bg-blue-500/25" />
+            <span className="absolute left-[37.5%] top-[12%] -translate-x-1/2 whitespace-nowrap rounded bg-blue-600 px-1 py-0.5 text-[8px] font-bold text-white shadow">Protected 1</span>
+            <span className="absolute left-[62.5%] top-[30%] -translate-x-1/2 whitespace-nowrap rounded bg-blue-600 px-1 py-0.5 text-[8px] font-bold text-white shadow">Protected 2</span>
+            <span className="absolute left-1/2 top-[50%] -translate-x-1/2 whitespace-nowrap rounded bg-blue-600 px-1 py-0.5 text-[8px] font-bold text-white shadow">Protected 3</span>
           </Frame>
         </Step>
-
-        <Step n={4} title="Preview on your wall" copy="Your design lands inside the geometry you marked.">
-          <Frame label="On your wall">
-            <Room src={after} alt="The full room with the exotic floral wall design installed" />
-            <span className="absolute bottom-2 right-2 bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow"><Eye className="mr-1 inline h-3 w-3" />exact placement</span>
+        <Arrow />
+        <Step n={4} title="Preview On Your Wall" copy="See your design in your space instantly.">
+          <Frame><Room src={after} alt="The room with the tropical floral wall design installed" /></Frame>
+        </Step>
+        <Arrow />
+        <Step n={5} title="Print-Ready Panels" copy="Get production-ready files.">
+          <Frame>
+            <Room src={artwork} alt="The flat floral wall artwork divided into six numbered print panels" />
+            <div className="absolute inset-0 grid grid-cols-6">
+              {[1,2,3,4,5,6].map(n => (
+                <div key={n} className={'relative ' + (n > 1 ? 'border-l-2 border-dashed border-white/90' : '')}>
+                  <span className="absolute left-1/2 top-2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-[10px] font-black text-slate-900 shadow">{n}</span>
+                </div>
+              ))}
+            </div>
           </Frame>
         </Step>
-
-        <Step n={5} title="Print-ready panels" copy="Panelized at press width with ½″ perimeter bleed.">
-          <Frame label="Production">
-            <Room src={after} alt="Full exotic floral wall design divided into three print panels" />
-            <div className="absolute inset-y-0 left-1/3 border-l-2 border-dashed border-white/90" />
-            <div className="absolute inset-y-0 left-2/3 border-l-2 border-dashed border-white/90" />
-            <div className="absolute inset-x-0 top-2 flex justify-around px-4">{[1,2,3].map(n=><span key={n} className="flex h-6 w-6 items-center justify-center bg-white text-[10px] font-black text-slate-900 shadow">{n}</span>)}</div>
-            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/90 px-2 py-1 text-[9px] font-bold text-white shadow"><FileCheck2 className="mr-1 inline h-3 w-3" />3 panels · ½″ bleed</span>
-          </Frame>
-        </Step>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border wall-edge bg-[hsl(var(--wall-card))] px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className={"flex h-10 w-10 items-center justify-center text-white " + WALL_GRADIENT}><Wand2 className="h-5 w-5" /></span>
-          <div><p className="text-sm font-bold wall-ink">Ready to try it on your wall?</p><p className="text-xs wall-muted">Enter dimensions, upload the photo, then touch the wall and protect what stays.</p></div>
-        </div>
-        <a href="#upload-wall" className={"inline-flex items-center px-4 py-2 text-sm font-bold text-white " + WALL_GRADIENT}><Upload className="mr-2 h-4 w-4" />Start your wall wrap</a>
       </div>
     </section>
   );

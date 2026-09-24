@@ -22,7 +22,7 @@ describe('the WallPro opening experience', () => {
   });
 
   it('starts on the same page rather than inventing another upload route', () => {
-    expect(magic).toContain('href="#upload-wall"');
+    expect(page).toContain('href="#upload-wall"');
     expect(page).toContain('<section id="upload-wall"');
   });
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Crosshair, Printer, Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -21,7 +21,7 @@ import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings 
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset, useElementHeight } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, WALL_HERO_PROOF, type WallBrandKey } from '@/lib/wallpro-brand';
-import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
+import { WallProLockup } from '@/components/wallpro/WallProLockup';
 import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
 import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -700,14 +700,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // and a tap that does nothing is indistinguishable from a broken app. The
   // accept list stays wide so the iOS photo picker offers every photo —
   // `prepareWallUpload` converts whatever comes back.
-  const uploadControl = (role: 'photo' | 'artwork' | 'reference', label: string) => (
+  /* With a `hint`, the tile is the mockup's icon + title + one-line hint
+     (owner, 2026-09-24); without one it is the plain dashed button. Same
+     input, same handler either way. */
+  const uploadControl = (role: 'photo' | 'artwork' | 'reference', label: string, hint?: string) => (
     <div>
       <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
         onChange={e => { void fileSelected(e.target.files?.[0], role); e.target.value = ''; }} />
-      <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
-        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed wall-edge bg-[hsl(var(--wall-field))] p-4 text-sm font-medium hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-        <Upload size={18} />{label}
-      </button>
+      {hint ? (
+        <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
+          className="flex w-full cursor-pointer items-center gap-3 rounded-xl border wall-edge bg-[hsl(var(--wall-field))] p-3 text-left hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">{role === 'reference' ? <ImageIcon size={20} /> : <Upload size={20} />}</span>
+          <span className="min-w-0"><span className="block text-sm font-bold wall-ink">{label}</span><span className="mt-0.5 block text-xs wall-muted">{hint}</span></span>
+        </button>
+      ) : (
+        <button type="button" style={{ touchAction: 'manipulation' }} onClick={() => uploadInputs.current[role]?.click()}
+          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border-2 border-dashed wall-edge bg-[hsl(var(--wall-field))] p-4 text-sm font-medium hover:border-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Upload size={18} />{label}
+        </button>
+      )}
     </div>
   );
   async function storedAsset(path: string): Promise<WallAsset> {
@@ -1599,68 +1610,41 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           bar from eating the preview it sits above. The tagline is desktop
           only for the same reason. It bleeds to the screen edges with a
           blurred ground so content scrolling under it stays readable. */}
+      {/* THE HEADER, PER THE OWNER'S MOCKUP (Trish 2026-09-24: "Fix my
+          Wallpro ui so it looks like this exactly"): wordmark, a hairline, the
+          tagline on the same line, then Projects / Gallery / Pricing / Help and
+          one gradient "Create Your Wall" action. White on the light surface,
+          black on the dark OS surface -- the tokens decide, not a second copy.
+          Every link is an EXISTING destination: Projects is My wall designs,
+          Gallery is the landing's examples, Pricing is Prices & FAQ, Help is
+          How it works, and Create Your Wall scrolls to step 1 on this page. */}
       <header
         id="wallpro-header"
         style={{ top: stickyTop }}
-        className="sticky z-30 -mx-4 bg-black px-4 py-3 text-white md:-mx-8 md:px-8 md:py-4"
+        className={'sticky z-30 -mx-4 px-4 py-3 md:-mx-8 md:px-8 md:py-4 ' + (theme.surface === 'light' ? 'border-b border-gray-200 bg-white text-gray-900' : 'bg-black text-white')}
       >
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-          {/* A PROPER HEADER, on both breakpoints (owner, 2026-09-12: "there is
-              no break under logo no tagline"). The eyebrow, the wordmark and
-              the tagline each get their own line, the way a product header
-              reads, rather than the one cramped row this was. The tagline is
-              what tells a first-time visitor what WallPro is, so it earns its
-              line on a phone too. */}
-          {/* The lockup lives in WallProLockup so the case study wears the
-              identical brand identity instead of a second copy of it. */}
-          <WallProLockup theme={theme} />
-          {/* The rail carries these on desktop, so the header would show them
-              twice. The rail is hidden below lg (a pinned sidebar on a phone
-              eats the screen), so on a phone the header keeps them. Brands
-              without a rail keep them at every width. */}
-          <div className="flex shrink-0 items-center gap-2">
-            <span className={`flex items-center gap-2${theme.showPrintOffer ? ' lg:hidden' : ''}`}>
-              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="Start a blank wall. Saved projects remain in My wall designs." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
-                <RotateCcw className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Start fresh</span>
-              </Button>
-              <Button variant="outline" size="sm" className="md:h-10 md:px-4" disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>
-                <FolderOpen className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">My wall designs</span>
-              </Button>
-            </span>
-            {/* THE ACCOUNT CONTROL, ON THE DESIGNPROAI TOOL PAGE ONLY.
-                Removing the marketing <Header> from this route took the only
-                user menu an app route had with it: the sidebar carries a plan
-                pill and the tool list, no identity and no sign-out. This is the
-                far-right slot of the one bar the tool owns -- the standard SaaS
-                shape -- and it is what "persistent header" was actually asking
-                for, since the bar itself already sticks at top: 0.
-                NOT on the partner page: a WePrintWraps visitor has no
-                DesignProAI account, and offering them one is our brand on
-                somebody else's storefront. */}
-            {/* THE FAQ, IN THE HEADER (owner, 2026-09-16: "standard wallpro
-                that has header faq page on os.designpro"). The body already
-                links it, but the body link sits under the fold on a phone and
-                the header is the one bar that never moves. Text, not a button:
-                it is a reference, and it must not compete with Generate.
-                Hidden on the narrowest widths only because the header's other
-                two controls already wrap there; the sidebar carries it. */}
-            <Link
-              to={theme.showPrintOffer ? '/wall-wrap/faq' : '/printpro/wallpro/faq'}
-              className="hidden shrink-0 text-sm font-semibold text-white/80 underline-offset-4 hover:text-white hover:underline sm:inline"
-            >
-              FAQ
-            </Link>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 xl:flex-nowrap">
+          <WallProLockup theme={theme} tone={theme.surface === 'light' ? 'light' : 'dark'} inline />
+          <nav aria-label="WallPro" className="ml-auto flex shrink-0 flex-wrap items-center gap-1 sm:gap-2">
+            {(() => {
+              const link = 'rounded-md px-2 py-1.5 text-sm font-medium ' + (theme.surface === 'light' ? 'text-gray-700 hover:text-gray-900' : 'text-white/80 hover:text-white');
+              const base = theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro';
+              return <>
+                <button type="button" className={link} disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>
+                <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/wallpro') + '#examples'} className={link + ' hidden sm:inline'}>Gallery</Link>
+                <Link to={base + '/faq'} className={link + ' hidden sm:inline'}>Pricing</Link>
+                <Link to={base + '/how-it-works'} className={link + ' hidden sm:inline'}>Help</Link>
+                <button type="button" className={link} disabled={!!busy} title="Start a blank wall. Saved projects remain in Projects." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
+                  <RotateCcw className="h-4 w-4" /><span className="sr-only">Start fresh</span>
+                </button>
+              </>;
+            })()}
+            <a href="#upload-wall" className={'ml-1 inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm ' + WALL_GRADIENT}>
+              Create Your Wall<ArrowRight className="ml-2 h-4 w-4" />
+            </a>
             {!theme.showPrintOffer && <ToolAccountMenu />}
-            {!theme.showPrintOffer && <Link to="/wallpro" className="hidden text-sm font-semibold text-white/80 hover:text-white sm:inline">Overview</Link>}
-          </div>
+          </nav>
         </div>
-        {/* THE RULE between the header and the page (owner, 2026-09-14: "Add a
-            border blue and white gradiant in between persistent header and
-            page"). It replaces the flat slate hairline, and it bleeds past the
-            header's own padding so it reads as an edge of the bar rather than a
-            line drawn inside it. Two pixels: enough to carry a gradient, not so
-            much that it becomes a band of its own. */}
-        <WallProHeaderRule />
       </header>
       {/* The progress strip, directly under the header it sticks below. Shown
           at every width inside the OS shell (where there is no WallPro rail)
@@ -1761,15 +1745,27 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           table exists. */}
       {!photo && !artwork && (
         <div className="mx-auto mt-4 max-w-6xl space-y-6">
-          <section aria-labelledby="wallpro-hero-heading">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-blue-500">Before you design</p>
-                <h1 id="wallpro-hero-heading" className="mt-1 text-2xl font-extrabold tracking-tight wall-ink sm:text-3xl">
-                  See the transformation <span className="bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
-                </h1>
-              </div>
-              <p className="max-w-xl text-sm wall-muted">The slider is a real before-and-after wall. Drag it, then see how WallPro gets from a photo to production below.</p>
+          {/* THE HERO, PER THE OWNER'S MOCKUP (2026-09-24): copy and three
+              claims on the left, the real before/after on the right. */}
+          <section aria-labelledby="wallpro-hero-heading" className="grid items-center gap-6 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Same space. A completely new story.</p>
+              <h1 id="wallpro-hero-heading" className="mt-2 text-3xl font-extrabold leading-tight tracking-tight wall-ink sm:text-4xl">
+                See the transformation <span className="block bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
+              </h1>
+              <p className="mt-3 max-w-md text-base wall-muted">WallPro sees the wall, previews the design, and prepares print-ready files.</p>
+              <ul className="mt-5 grid grid-cols-3 gap-3">
+                {([
+                  [Crosshair, 'Exact wall geometry', 'Accurate and true to your space', 'from-blue-600 to-blue-400'],
+                  [Wand2, '1-touch masking', 'Automatically protects what matters', 'from-violet-600 to-fuchsia-500'],
+                  [Printer, 'Print-ready panels', 'Production files in minutes', 'from-fuchsia-600 to-pink-500'],
+                ] as const).map(([Icon, title, copy, tint]) => (
+                  <li key={title} className="flex items-start gap-2">
+                    <span className={'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white shadow-sm ' + tint}><Icon className="h-4 w-4" /></span>
+                    <span className="min-w-0"><span className="block text-xs font-bold leading-tight wall-ink">{title}</span><span className="mt-0.5 block text-[11px] leading-snug wall-muted">{copy}</span></span>
+                  </li>
+                ))}
+              </ul>
             </div>
             <WallProHeroProof proofs={bandProofs} variant="shallow" />
           </section>
@@ -1816,9 +1812,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           IS the order, and step 2 is the photo itself rather than two
           buttons naming a photo somewhere else. */}
       <div className="mx-auto mt-6 max-w-6xl">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-500">Start your wall wrap</p>
-        <h2 className="mt-1 text-2xl font-extrabold tracking-tight wall-ink">Enter dimensions, upload your wall, then make it yours.</h2>
-        <p className="mt-1 text-sm wall-muted">Your dimensions drive the panel plan. Your photo drives the geometry, masking and on-wall preview.</p>
+        <h2 className="text-2xl font-extrabold tracking-tight wall-ink">Start Your Wall Wrap</h2>
+        <p className="mt-1 text-sm wall-muted">Turn your space into something extraordinary.</p>
       </div>
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-span-2 lg:row-start-1">
@@ -1951,17 +1946,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 is the drift this page has already paid for twice. */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                {uploadControl('photo', photo ? 'Replace wall photo' : 'Upload wall photo')}
+                {uploadControl('photo', photo ? 'Replace Wall Photo' : 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
                 <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
               </div>
               <div>
-                {uploadControl('reference', reference ? 'Replace style reference' : 'Upload a style reference')}
+                {uploadControl('reference', reference ? 'Replace Style Reference' : 'Optional Style Reference', 'Add a design inspiration image (optional)')}
                 <p className="mt-2 text-xs wall-muted">{intent === 'match'
                   ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. A screenshot is fine.'
                   : 'Optional. Your description alone is enough.'}</p>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3"><label className="text-sm">Width (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (inches)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-4 text-sm font-bold wall-ink">Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
             <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
                 2026-09-14: "on enter wall size should give price for printed
@@ -2250,6 +2245,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
               </div>
             </div>
+            {/* THE CARD ENDS IN ITS ACTION (owner's mockup, 2026-09-24). The
+                same generate() and the same guard as step 3's button. */}
+            <Button className={`mt-4 h-11 w-full ${WALL_GRADIENT} text-white`} disabled={generateDisabled} onClick={() => void generate()}>{generateLabel}<ArrowRight className="ml-2 h-4 w-4" /></Button>
 
           </section>
 
