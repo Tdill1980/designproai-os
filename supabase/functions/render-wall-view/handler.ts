@@ -47,9 +47,9 @@ const toBase64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.
  * a bedroom and a lobby like a lobby. No model picks it.
  */
 const RESIDENTIAL_PHOTOGRAPHER =
-  'You are an interior photographer shooting a finished custom wallcovering installation for the manufacturer\'s own lookbook: a real room in a real home, photographed after the installer has packed up.';
+  'You are a senior interior-visualization retoucher and wallcovering photographer. Work like an expert Photoshop mockup artist: preserve the exact design placement and perspective, then make printed wallcovering look physically installed in the real room.';
 const COMMERCIAL_PHOTOGRAPHER =
-  'You are an environmental-graphics photographer shooting a finished large-format wall graphic for a sign company\'s portfolio: a real commercial interior, photographed after the installer has packed up.';
+  'You are a senior environmental-graphics retoucher and large-format installation photographer. Work like an expert Photoshop mockup artist: preserve the exact design placement and perspective, then make the printed wall graphic look physically installed in the real space.';
 
 /** Selected by code from a classification that is itself deterministic, exactly
  * as `designerPersonaFor` selects the designer. Absent (an older client), the
@@ -59,19 +59,30 @@ export function viewPhotographerFor(domain: string | null | undefined): string {
   return domain === 'residential' ? RESIDENTIAL_PHOTOGRAPHER : COMMERCIAL_PHOTOGRAPHER;
 }
 
-export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null; designDomain?: string | null }): string {
+export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null; designDomain?: string | null; geometryPath?: string | null; corners?: { x: number; y: number }[] | null }): string {
   const scale = input.placement === 'repeat' && input.repeatWidthIn
     ? `The design is a repeating tile about ${input.repeatWidthIn} inches wide; repeat it seamlessly at that real-world size across the wall${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`
     : `The design is one mural that fills the whole wall edge to edge${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`;
+  const geometryAuthority = input.geometryPath
+    ? [
+        'Image 1 is WallPro\'s GEOMETRY-LOCKED installation guide. It was built deterministically from the customer\'s real room photo, the actual print master, the four pinned wall corners, the measured wall dimensions and the current repeat/mural scale.',
+        'IMAGE 1 IS PLACEMENT AUTHORITY. Do not choose or infer a different wall. Do not move, expand, shrink, crop or relocate the covered region. Preserve the exact coverage boundary, perspective, motif scale and motif positions shown in Image 1. Your job is only to make that exact Photoshop-style composite look like a real finished wallcovering installation photographed in the room.',
+      ]
+    : [
+        'Image 1 is the customer\'s room photograph. Image 2 is the flat print master.',
+        'Render the SAME photograph with the covering installed on the wall. Keep camera, framing and room geometry unchanged.',
+      ];
+  const pinned = input.corners?.length === 4 ? 'Pinned wall quadrilateral, normalized to the source photograph: ' + input.corners.map(p => '(' + p.x.toFixed(4) + ',' + p.y.toFixed(4) + ')').join(' ') + '.' : '';
   return [
     viewPhotographerFor(input.designDomain),
-    'Image 1 is that photograph of the customer\'s room. Image 2 is the flat print master of the covering that was installed.',
-    'Render the SAME photograph with the covering installed on its main wall. Keep the camera, framing, lens, lighting and colours exactly as photographed. Every object that is not the flat wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork -- stays untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal, in which case follow that instruction instead.',
+    ...geometryAuthority,
+    pinned,
+    'Keep every object that is not the wrapped wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches and artwork -- untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal.',
     // THE SENTENCE THAT WAS MISSING. Everything above only ever said where the
     // covering goes; nothing said what it is made of, so it arrived as a decal.
     'MATERIAL: this is printed vinyl wallcovering bonded flat to the wall, not a decal, a poster, a framed picture or a projection. It lies in the wall\'s own plane and takes the wall\'s own perspective, and it is lit by the room and not by itself: brighter where the room\'s light falls across it, falling into shadow in the corners, under the ceiling and behind every object, with the faint satin sheen printed vinyl shows where a light source rakes along it and the wall\'s own surface texture reading faintly through. It is trimmed clean into the ceiling line, the baseboard and the inside corners, and continues behind furniture, the window casing and the drapes. No visible seam, outline, border, frame, drop shadow, curl or lifted corner anywhere.',
     scale,
-    'Do not restyle the room, move the camera, crop, add borders or text, and do not redraw, restyle, recolour or rearrange the design itself -- its motifs, palette, spacing and scale are fixed by Image 2 and are not yours to improve. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
+    'Do not restyle the room, move the camera, crop, add borders or text, and do not redraw, restyle, recolour or rearrange the design itself. The guide/master fixes its motifs, palette, spacing, scale and placement. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
   ].join(' ');
 }
 
@@ -205,6 +216,11 @@ export function parseViewInput(body: any, owner: string) {
   return {
     wallPath: check(body?.wallPath, ['uploads']),
     artworkPath: check(body?.artworkPath, ['uploads', 'generated', 'catalog']),
+    geometryPath: body?.geometryPath == null ? null : check(body.geometryPath, ['uploads']),
+    corners: Array.isArray(body?.corners) && body.corners.length === 4 && body.corners.every((p: any) =>
+      typeof p?.x === 'number' && Number.isFinite(p.x) && p.x >= 0 && p.x <= 1 &&
+      typeof p?.y === 'number' && Number.isFinite(p.y) && p.y >= 0 && p.y <= 1)
+      ? body.corners.map((p: any) => ({ x: p.x, y: p.y })) : null,
     // Optional: a protected-area PNG built client-side from the customer's own
     // hand-drawn masks / detected objects (see buildProtectedAreaMask). Absent
     // for the common case, in which this view behaves exactly as before.
@@ -375,7 +391,10 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     const parts: any[] = [{ text: viewPrompt(input) }];
     let wallDims: { width: number; height: number } | null = null, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
     const sources: { label: string; path: string; bytes: Uint8Array; mimeType: string }[] = [];
-    for (const [label, path] of [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]] as const) {
+    const sourceSpecs: [string, string][] = input.geometryPath
+      ? [['Image 1 — geometry-locked WallPro installation guide', input.geometryPath]]
+      : [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]];
+    for (const [label, path] of sourceSpecs) {
       const downloaded = await sb.storage.from(BUCKET).download(path);
       if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + (path === input.wallPath ? 'wall photo' : 'design') + ' could not be read.', code: 'UPLOAD_UNREADABLE' }, 400);
       const blob = downloaded.data as Blob;
@@ -409,6 +428,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       // so `nearestAspect` is unchanged, and the recomposite resizes the photo
       // to the model's own output size regardless.
       if (source.path === input.wallPath) { wallDims = imageDimensions(source.bytes); wallPhotoBytes = source.bytes; wallPhotoMimeType = source.mimeType; }
+      else if (source.path === input.geometryPath) { wallDims = imageDimensions(source.bytes); }
       parts.push({ text: source.label }, { inlineData: { mimeType: source.mimeType, data: toBase64(source.bytes) } });
     }
     // Both optional masks are best effort: a missing, unreadable or oversized
@@ -488,7 +508,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       // customer. A recompositing failure (an undecodable mask, an unusual
       // photo codec) falls back to the model's own attempt rather than
       // failing a view that was otherwise successful.
-      if (maskBytes && wallPhotoBytes) {
+      if (maskBytes && wallPhotoBytes && !input.geometryPath) {
         try { bytes = await recompositeProtectedAreas(bytes, wallPhotoBytes, maskBytes); mimeType = 'image/png'; recomposited = true; }
         catch (e) { console.error('[render-wall-view] mask recomposite failed', e instanceof Error ? e.message : e); }
       }
@@ -497,7 +517,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false });
       if (uploaded.error) throw new Error('The wall view could not be saved.');
       const signed = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
-      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, removalVerified, removalRetried, recomposited }));
+      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, geometryPath: input.geometryPath, geometryLocked: !!input.geometryPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, removalVerified, removalRetried, recomposited }));
       return response({ view_path: path, view_url: signed.data?.signedUrl || null, model: VIEW_MODEL, aspect_ratio: aspectRatio, removal_verified: removalVerified });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The image service timed out. Try again.' : err instanceof Error ? err.message : 'The wall view failed.';
