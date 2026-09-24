@@ -43,24 +43,18 @@ test("Layerize native VTracer WASM is packaged inside the DigitalOcean runtime",
   assert.match(read("runtime/package.json"), /layerize-vtracer\/engine\.mjs/);
 });
 
-test("Layerize pay-per-use reservation is durable, idempotent and refundable", () => {
+test("Layerize private beta reservation is durable and free", () => {
   const migration = read("supabase/migrations/20260924053000_layerize_runs.sql");
   assert.match(migration, /UNIQUE\(owner_id, source_content_hash, output_mode\)/);
-  assert.match(migration, /role::text IN \('admin','tester'\)/);
-  assert.match(migration, /IF NOT FOUND OR t\.balance < 3 THEN/);
-  assert.match(migration, /balance=balance-3/);
-  assert.match(migration, /total_used=total_used\+3/);
+  assert.match(migration, /charge_source='beta_free'/);
+  assert.match(migration, /tokens_charged=0/);
   assert.match(migration, /CREATE OR REPLACE FUNCTION public\.fail_layerize_run/);
-  assert.match(migration, /balance=balance\+3/);
-  assert.match(migration, /total_used=greatest\(0,total_used-3\)/);
   assert.match(migration, /IF r\.state='completed' AND r\.output_storage_path IS NOT NULL THEN/);
 });
 
-test("Layerize is discoverable from Production Jobs and the pay-per-use catalog", () => {
+test("Layerize is discoverable from Production Jobs and stays outside the paid catalog during beta", () => {
   const jobs = read("app/src/pages/designpro/ProductionJobs.tsx");
   const pay = read("app/src/pages/PayPerUseLanding.tsx");
   assert.match(jobs, /to="\/productionflow\/layerize">Layerize artwork/);
-  assert.match(pay, /slug: "layerize"/);
-  assert.match(pay, /Got a flattened file\? Layerize it\./);
-  assert.match(pay, /1 Layerize run · 3 tokens/);
+  assert.doesNotMatch(pay, /slug: "layerize"/);
 });
