@@ -663,7 +663,23 @@ serve(async (req) => {
       "Keep critical brand marks and readable customer text inside the usable surface area while allowing noncritical artwork to continue through bleed.",
       "Return flat uninstalled artwork only. The application supplies the staging geometry and the coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
     ];
-    let prompt = [creativeHead, ...flatProductionInstructions].join("\n\n");
+    // The live caller requests the complete three-zone sheet, not the legacy
+    // separated-background canvas. Keep that request paired with the template
+    // and extractor. The designer head remains untouched and appears first.
+    const productionProofInstructions = [
+      "ZONE 2 UNDERLAY: Show the same continuous background artwork beneath the Zone 1 lettering and logos. Complete the underlying photography, illustration, color and texture through every covered area. Each panel is fully opaque, edge-to-edge artwork, including beneath every removed mark; transparency, checkerboards and logo-shaped blank patches are not background artwork.",
+      "PRODUCTION GEOMETRY: Each supplied outer rectangle includes 5-inch bleed on all four edges. Carry the background to every outer edge; keep all complete logos, text and focal subjects inside the trim and safe area.",
+    ];
+    let prompt = body.separatedArtwork === true
+      ? [creativeHead, ...flatProductionInstructions].join("\n\n")
+      : [buildPanelProofPrompt({
+          creativeHead,
+          companyName: field("companyName"), tagline: field("tagline"),
+          phone: field("phone"), website: field("website"),
+          services: body?.services ?? intake?.services, promo: field("promo"),
+          vehicleYear: field("vehicleYear"), vehicleMake: field("vehicleMake"),
+          vehicleModel: field("vehicleModel"), creativeDirection, panelRows,
+        }), ...productionProofInstructions].join("\n\n");
     // PHASE 1 PAYLOAD CONTRACT — fail closed before the provider sees a request.
     // The live canary reports this object next to the full prompt so the exact
     // persona/layout injection can be proved from the provider payload rather
@@ -681,10 +697,14 @@ serve(async (req) => {
         && prompt.startsWith(creativeHead + "\n\n"),
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
-      flatPanelProductionProofInjected:
-        flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0]),
-      templateLayoutLocked:
-        flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction)),
+      flatPanelProductionProofInjected: body.separatedArtwork === true
+        ? flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0])
+        : prompt.includes(SYSTEM_JOB)
+          && ["ZONE 1", "ZONE 2", "ZONE 3"].every(zone => prompt.includes(zone)),
+      templateLayoutLocked: body.separatedArtwork === true
+        ? flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction))
+        : prompt.includes(SHEET_LAYOUT)
+          && productionProofInstructions.every(instruction => prompt.includes(instruction)),
     };
     const missingPhase1 = Object.entries(phase1Audit)
       .filter(([key, value]) => key !== "contract" && value !== true)

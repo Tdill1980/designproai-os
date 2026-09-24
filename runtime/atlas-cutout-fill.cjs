@@ -32,6 +32,9 @@
  */
 
 const sharp = require("sharp");
+// Explicit identity contract for authored TriZone panels. Old revisions keep
+// their recorded v1/v2 repair behavior; new proof sheets never clone over ink.
+const FILL_CONTRACT_PRESERVE = "designpro.atlas-cutout-fill.v3-preserve-authored";
 const {
   CUTOUT_ALPHA_MAX,
   FLAT_BLACK_CHANNEL_MAX,
@@ -1124,12 +1127,18 @@ async function fillMasterCutouts(masterBytes, manifest, surfaceKeys = [], option
   // current, because silently rebuilding under the wrong rules is exactly the
   // failure this versioning exists to prevent.
   const contract = String(options.contract || FILL_CONTRACT);
-  if (contract !== FILL_CONTRACT_V1 && contract !== FILL_CONTRACT_V2) {
+  if (![FILL_CONTRACT_V1, FILL_CONTRACT_V2, FILL_CONTRACT_PRESERVE].includes(contract)) {
     throw new AtlasCutoutFillError("atlas_cutout_fill_contract_unknown", `Unknown fill contract ${contract}`);
   }
   const applyFill = contract === FILL_CONTRACT_V1 ? diffuseInto : fillHole;
   if (!Buffer.isBuffer(masterBytes) || !masterBytes.length) {
     throw new AtlasCutoutFillError("atlas_cutout_fill_master_invalid", "The master bytes are required");
+  }
+  if (contract === FILL_CONTRACT_PRESERVE) {
+    // Do not turn opaque black lettering, shading or a requested illustration
+    // into a hole and then clone over it. Real defects stay visible for review.
+    // Identity is recorded so a resumed job cannot silently apply legacy fill.
+    return { bytes: masterBytes, contract, filled: [], changed: false };
   }
   const wanted = new Set((surfaceKeys || []).map(String));
   const zones = (manifest?.zones || []).filter((zone) => wanted.has(String(zone.surfaceKey)));
@@ -1355,6 +1364,7 @@ module.exports = {
   FILL_CONTRACT,
   FILL_CONTRACT_V1,
   FILL_CONTRACT_V2,
+  FILL_CONTRACT_PRESERVE,
   LIFT_ALPHA_CEILING,
   LIFT_ALPHA_FLOOR,
   MAX_ERASE_FRACTION,
