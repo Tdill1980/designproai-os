@@ -273,9 +273,28 @@ export function wallDesignPrompt(input: { prompt: string; width: number; height:
     // should be a baseline"). The generic tile sentence below tells the model
     // to draw "a bloom a few inches across", which directly contradicts
     // reproducing the reference faithfully. A match never receives it.
+    //
+    // ⚠️ AND THE MATCH TILE IS **ONE CYCLE**, NOT THE WHOLE PHOTOGRAPH (owner,
+    // 2026-09-24: "I need to match my photo of the other wall wrap", then, of
+    // the result, motifs too small and too busy).
+    //
+    // This sentence used to end "filling this tile with the same number of
+    // elements it has". Read against a flat swatch that is correct. Read
+    // against what customers actually upload -- A PHOTOGRAPH OF THEIR
+    // INSTALLED WALL, which the reference branch below explicitly anticipates
+    // -- it is a density bug: the photo shows the pattern repeating two or
+    // three times across the room, so "the same number of elements" packs two
+    // or three cycles into one tile and every motif arrives at a half or a
+    // third of life size. That is the THIRD time this repo has recorded that
+    // exact symptom.
+    //
+    // The remedy is NOT an inch range for the hero motif: the paragraph above
+    // records why a match may never receive one -- it would override the
+    // reference, which is the only scale authority a match has. Naming the
+    // UNIT is enough, and it costs the reference nothing.
     intent === 'match'
       ? (tile
-        ? `Create one square seamless repeating tile${input.repeatWidthIn ? ` that prints ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it` : ''}. Opposite edges must join and motifs must continue cleanly across every boundary. Hold the reference's own motif scale: reproduce its composition at the size the reference shows it, filling this tile with the same number of elements it has, not with many smaller copies of them.`
+        ? `Create one square seamless repeating tile${input.repeatWidthIn ? ` that prints ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it` : ''}. Opposite edges must join and motifs must continue cleanly across every boundary. Hold the reference's own motif scale: this tile is ONE cycle of that pattern. A photograph of a finished wall shows the pattern repeating several times across the room, so reproduce a SINGLE repeat of it, filling this tile edge to edge, with each bloom, leaf, slat or motif as large in this tile as it is on the real wall.`
         : `Reproduce the reference as one continuous covering for a wall ${input.width} inches wide by ${input.height} inches high. The reference is the scale baseline: every leaf, bloom, slat, stripe or tile lands at the size it appears in the reference. Do not shrink the design into many small repeats and do not blow one element up past the wall.`)
       : tile ? `Create one square seamless repeating tile. Opposite edges must join; motifs must continue cleanly across every boundary. Output one tile, not a room full of repeats.${input.repeatWidthIn ? ` This tile prints ${input.repeatWidthIn} inches wide on the wall and repeats about ${Math.max(1, Math.round(input.width / input.repeatWidthIn))} times across it, so compose it at architectural scale: a few large, confident forms with real negative space between them — a hero bloom or frond ${Math.max(6, Math.round(input.repeatWidthIn / 4))} to ${Math.max(10, Math.round(input.repeatWidthIn / 2))} inches across, drawn with the detail of a hand-painted panel. Do not fill the tile with many small motifs, do not make a busy all-over craft print, and do not let one motif fill the whole tile edge to edge.` : ''}`
       : `Compose one complete mural in the requested aspect ratio. Keep important text and logos clear of the edges. The mural prints at ${input.width} by ${input.height} inches: scale every element to that real size, so a wall this large carries many elements at true scale rather than two or three blown past life size, unless the brief asks for one hero element.`,
