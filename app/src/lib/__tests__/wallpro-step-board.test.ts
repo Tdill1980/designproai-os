@@ -165,9 +165,11 @@ describe('the empty-state proof shows the real five-step magic', () => {
   it('uses the dedicated magic component before the workspace', () => {
     expect(page).toContain('<WallProMagic />');
     const magic = page.indexOf('<WallProMagic />');
-    const workspace = page.indexOf('Start Your Wall Wrap');
+    const workspace = page.indexOf('<section id="upload-wall"');
     expect(magic).toBeGreaterThan(-1);
     expect(workspace).toBeGreaterThan(magic);
+    // Owner, 2026-09-24: the separate "Start Your Wall Wrap" heading is gone.
+    expect(page).not.toContain('>Start Your Wall Wrap</h2>');
   });
 
   it('keeps the working board only after the customer starts', () => {
