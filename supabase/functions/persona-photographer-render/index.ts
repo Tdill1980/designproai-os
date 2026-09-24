@@ -583,6 +583,10 @@ async function handleAtlasProof(body: Record<string, unknown>, ownerId: string):
         + `${Number(body.panelBleedIn) > 0 ? ` including ${Number(body.panelBleedIn)}" bleed on all four edges` : ""}`
         + ` — an aspect ratio of ${(panelW / panelH).toFixed(2)}:1. Map the artwork onto the vehicle at that true proportion:`
         + ` do not stretch, squeeze, crop or re-scale it to fit the body differently.`
+        + ` Treat the print rectangle as a measured coordinate plane, not as a new design prompt.`
+        + ` Preserve every element at the same normalized X/Y position and relative size it has in IMAGE 1.`
+        + ` The centered trim rectangle is inset by the stated bleed from each print edge; map that trim rectangle to the corresponding painted vehicle surface, then let the bleed continue beyond the install boundary for trimming.`
+        + ` Never move, enlarge or shrink a logo, word, photograph or graphic independently to make it look better on the vehicle.`
         + ` The bleed is trimmed at installation and is never visible on the finished vehicle.`
       : "";
     const authorityInstruction = threeZoneAuthority ? {
