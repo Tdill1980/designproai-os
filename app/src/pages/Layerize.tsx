@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Download, FileImage, Layers3, Loader2, LockKeyhole, Scissors, ShieldCheck, Shirt, Upload, WalletCards } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FileImage, Layers3, Loader2, LockKeyhole, Scissors, ShieldCheck, Shirt, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -84,31 +84,10 @@ export default function Layerize() {
   const [file,setFile] = useState<File|null>(null);
   const [preview,setPreview] = useState("");
   const [mode,setMode] = useState<OutputMode>("editable_layers");
-  const [balance,setBalance] = useState<number|null>(null);
-  const [privileged,setPrivileged] = useState(false);
-  const [loadingAccess,setLoadingAccess] = useState(true);
   const [running,setRunning] = useState(false);
   const [message,setMessage] = useState("");
   const [result,setResult] = useState<LayerizeResult|null>(null);
   const selected = useMemo(() => MODES.find(x => x.id === mode)!, [mode]);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      const userResult = await supabase.auth.getUser();
-      const user = userResult.data.user;
-      if (!user) { if (live) setLoadingAccess(false); return; }
-      const responses = await Promise.all([
-        supabase.from("user_roles").select("role").eq("user_id",user.id).in("role",["admin","tester"]).limit(1),
-        supabase.from("user_tokens").select("balance").eq("user_id",user.id).maybeSingle(),
-      ]);
-      if (!live) return;
-      setPrivileged(Boolean(responses[0].data?.length));
-      setBalance(Number(responses[1].data?.balance || 0));
-      setLoadingAccess(false);
-    })();
-    return () => { live = false; };
-  }, []);
 
   useEffect(() => {
     if (!file) { setPreview(""); return; }
@@ -137,18 +116,15 @@ export default function Layerize() {
 
   const run = async () => {
     if (!file) return;
-    if (!privileged && (balance ?? 0) < 3) { navigate("/try#layerize"); return; }
     setRunning(true);
     setResult(null);
     try {
       const asset = await uploadSource(file);
       const output = await api<LayerizeResult>("/layerize/run", {asset,fileName:file.name,outputMode:mode});
       setResult(output);
-      if (!privileged && !output.idempotent) setBalance(v => Math.max(0,(v ?? 3) - (output.tokensCharged ?? 3)));
       toast({title:"Layerize complete",description:String(output.layerCount) + " production layers · " + String(output.pathCount) + " source-derived paths"});
     } catch (error) {
       toast({title:"Layerize stopped",description:friendlyError(error),variant:"destructive"});
-      if ((error as {status?:number})?.status === 402) navigate("/try#layerize");
     } finally {
       setRunning(false);
     }
@@ -181,11 +157,11 @@ export default function Layerize() {
               </div>
             </div>
             <div className="rounded-2xl bg-slate-950 p-6 text-white shadow-xl">
-              <div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-[.18em] text-cyan-300">Pay to play</p><p className="mt-2 text-3xl font-black">{privileged?"Team access":"3 tokens"}</p><p className="mt-1 text-sm text-slate-300">{privileged?"Admin/tester runs are free.":"One $25 pay-per-use pack = one Layerize run."}</p></div><WalletCards className="h-7 w-7 text-cyan-300"/></div>
-              <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
-                {loadingAccess ? <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin"/>Checking access…</p>
-                : privileged ? <p className="flex items-center gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="h-4 w-4"/>Internal access unlocked</p>
-                : <><div className="flex items-center justify-between text-sm"><span className="text-slate-400">Token balance</span><b>{balance??0}</b></div>{(balance??0)<3 && <button onClick={() => navigate("/try#layerize")} className="mt-4 min-h-11 w-full rounded-lg bg-blue-600 px-4 text-sm font-black hover:bg-blue-500">Buy one Layerize run — $25</button>}</>}
+              <p className="text-xs font-black uppercase tracking-[.18em] text-cyan-300">Private beta</p>
+              <p className="mt-2 text-3xl font-black">Free testing</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">Layerize is unlocked for signed-in DesignProAI users during private beta. No token charge while Carley and the team validate fidelity and production output.</p>
+              <div className="mt-6 flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm font-bold text-emerald-300">
+                <CheckCircle2 className="h-4 w-4"/> Beta access unlocked
               </div>
             </div>
           </div>
@@ -213,8 +189,7 @@ export default function Layerize() {
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between"><div><h2 className="font-black">3. Layerize it</h2><p className="text-sm text-slate-500">{selected.title} · Fidelity Lock ON</p></div><ShieldCheck className="h-7 w-7 text-emerald-600"/></div>
-              {!privileged&&!loadingAccess&&(balance??0)<3 ? <button onClick={()=>navigate("/try#layerize")} className="min-h-12 w-full rounded-xl bg-blue-600 px-5 text-sm font-black text-white hover:bg-blue-500">Buy one Layerize run — $25</button>
-              : <button onClick={run} disabled={!file||running||loadingAccess} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 px-5 text-sm font-black text-white shadow-lg shadow-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50">{running?<><Loader2 className="h-5 w-5 animate-spin"/>Layerizing…</>:<><Layers3 className="h-5 w-5"/>Layerize My Artwork</>}</button>}
+              <button onClick={run} disabled={!file||running} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-500 px-5 text-sm font-black text-white shadow-lg shadow-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50">{running?<><Loader2 className="h-5 w-5 animate-spin"/>Layerizing…</>:<><Layers3 className="h-5 w-5"/>Layerize My Artwork — Free Beta</>}</button>
               {running && <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3"><p className="text-sm font-black text-blue-950">{message}</p><p className="mt-1 text-xs text-blue-700">No font substitution. No generative redraw. No post-trace simplification on the master.</p></div>}
             </div>
           </div>
@@ -227,7 +202,7 @@ export default function Layerize() {
             <div className="grid gap-4 p-5 md:grid-cols-3 md:p-6">
               <div className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Typography</p><p className="mt-2 font-black">Source-derived outlines</p><p className="mt-1 text-xs text-slate-500">No font matching or substitution.</p></div>
               <div className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Fidelity master</p><p className="mt-2 font-black">Unsimplified trace</p><a href={result.masterSvgUrl} className="mt-2 inline-block text-xs font-black text-blue-700">Open master SVG →</a></div>
-              <div className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Charge</p><p className="mt-2 font-black">{result.tokensCharged ? String(result.tokensCharged)+" tokens" : "Team access"}</p><p className="mt-1 text-xs text-slate-500">{result.idempotent?"Retry reused the same paid result.":"Failed runs are automatically refunded."}</p></div>
+              <div className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-wider text-slate-400">Beta access</p><p className="mt-2 font-black">Free during testing</p><p className="mt-1 text-xs text-slate-500">{result.idempotent?"Retry reused the same result.":"No tokens charged in private beta."}</p></div>
             </div>
             {!!result.warnings?.length && <div className="border-t border-amber-100 bg-amber-50 px-5 py-4 md:px-6"><p className="text-xs font-black uppercase tracking-wider text-amber-800">Production notes</p>{result.warnings.map(x=><p key={x} className="mt-1 text-sm text-amber-900">• {x}</p>)}</div>}
           </div>}
