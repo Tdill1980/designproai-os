@@ -21,7 +21,7 @@ import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings 
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
 import { useStickyOffset, useElementHeight } from '@/lib/use-sticky-offset';
 import { wallBrand, WALL_GRADIENT, WALL_CARD, WALL_PAGE_GROUND, WALL_HERO_PROOF, type WallBrandKey } from '@/lib/wallpro-brand';
-import { WallProLockup } from '@/components/wallpro/WallProLockup';
+import { WallProLockup, WallProHeaderRule } from '@/components/wallpro/WallProLockup';
 import { ToolAccountMenu } from '@/components/layout/ToolAccountMenu';
 import { listWallProofs, wallProofUrl, wallDesignId } from '@/lib/wallpro-api';
 import { WallProProductDetail } from '@/components/wallpro/WallProProductDetail';
@@ -1624,21 +1624,27 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
         className="wallpro-compact-header sticky z-30 -mx-4 px-4 md:-mx-8 md:px-8"
       >
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3">
-          <WallProLockup theme={theme} tone="dark" inline />
-          <div aria-label="Breadcrumb" className="wallpro-breadcrumb hidden min-w-0 items-center gap-1.5 border-l border-white/20 pl-3 text-[11px] font-medium text-white/55 md:flex">
-            <span>{theme.showPrintOffer ? 'WePrintWraps' : 'DesignProAI'}</span><span aria-hidden="true">/</span><span className="text-white/90">WallPro</span>
+          <WallProLockup theme={theme} tone="light" compact inline />
+          <div aria-label="Breadcrumb" className="wallpro-breadcrumb hidden shrink-0 items-center gap-1.5 border-l border-gray-200 pl-3 text-[11px] font-medium text-gray-500 2xl:flex">
+            <span>{theme.showPrintOffer ? 'WePrintWraps' : 'DesignProAI'}</span><span aria-hidden="true">/</span><span className="text-gray-900">WallPro</span>
           </div>
-          <nav aria-label="WallPro" className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
-            <button type="button" className="wallpro-header-link" disabled={!!busy} title="My wall designs"
+          <nav aria-label="WallPro" className="ml-auto flex min-w-0 shrink-0 items-center gap-1 pl-2 sm:gap-2">
+            <button type="button" className="wallpro-header-link inline-flex" disabled={!!busy} title="My wall designs"
               onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>
+            <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/wallpro') + '#examples'} className="wallpro-header-link hidden lg:inline-flex">Gallery</Link>
+            <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro') + '/faq'} className="wallpro-header-link hidden lg:inline-flex">Pricing</Link>
             <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro') + '/how-it-works'} className="wallpro-header-link hidden sm:inline-flex">Help</Link>
-            <button type="button" className="wallpro-header-icon" disabled={!!busy} title="Start fresh"
+            <button type="button" className="wallpro-header-icon inline-flex" disabled={!!busy} title="Start fresh"
               onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
               <RotateCcw className="h-4 w-4" /><span className="sr-only">Start fresh</span>
             </button>
-            {!theme.showPrintOffer && <ToolAccountMenu tone="dark" />}
+            <a href="#upload-wall" className={'inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold text-white shadow-sm sm:px-4 ' + WALL_GRADIENT}>
+              <span className="wallpro-create-label mr-1">Create Your</span>Wall<ArrowRight className="ml-1.5 h-4 w-4" />
+            </a>
+            {!theme.showPrintOffer && <ToolAccountMenu tone="light" />}
           </nav>
         </div>
+        <WallProHeaderRule />
       </header>
       {/* The progress strip, directly under the header it sticks below. Shown
           at every width inside the OS shell (where there is no WallPro rail)

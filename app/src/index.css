@@ -1203,30 +1203,34 @@ p {
 
 
 /* WallPro compact working chrome — the tool owns the screen, not navigation. */
+/* WHITE, NARROW, PERSISTENT, WITH A GRADIENT LINE (owner, Trish 2026-09-24:
+   "I just needed the header to have a gradiant line so it was persistent and
+   narrow"). 56px, white, and the one blue gradient rule along its bottom
+   edge (WallProHeaderRule) -- not a navy bar. */
 .wallpro-compact-header {
   min-height: 3.5rem;
-  background: linear-gradient(100deg, #071426 0%, #0d1b38 58%, #111a3f 100%);
-  border-bottom: 1px solid rgba(96, 165, 250, .28);
-  color: white;
-  box-shadow: 0 8px 24px -18px rgba(2, 6, 23, .8);
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 8px 24px -20px rgba(15, 23, 42, .45);
 }
-.wallpro-compact-header .wall-muted { color: rgba(255,255,255,.64); }
+/* No `display` here: this stylesheet loads after Tailwind's utilities, so a
+   display set on the class would beat `hidden` and put every link on a phone. */
 .wallpro-header-link,
 .wallpro-header-icon {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
   height: 2rem;
   border: 0;
+  border-radius: .375rem;
   background: transparent;
-  color: rgba(255,255,255,.78);
-  font-size: .78rem;
-  font-weight: 650;
+  color: #374151;
+  font-size: .8rem;
+  font-weight: 600;
   padding: 0 .6rem;
 }
 .wallpro-header-icon { width: 2rem; padding: 0; }
 .wallpro-header-link:hover,
-.wallpro-header-icon:hover { color: #fff; background: rgba(255,255,255,.07); }
+.wallpro-header-icon:hover { color: #0f172a; background: #f1f5f9; }
 
 .wallpro-progress {
   background: color-mix(in srgb, hsl(var(--wall-ground)) 96%, transparent);
@@ -1278,10 +1282,16 @@ p {
 
 /* White WPW gets a cool SaaS canvas behind crisp white cards. Dark WallPro
    uses a restrained navy-indigo canvas behind graphite cards. */
+/* A DARKER BLUE-GRAY GROUND so the white cards read as objects (owner,
+   2026-09-24: "make the back ui a bit more darker blue or gray ... so you can
+   see contrast of white cards"). Scoped to WallPro; the shared light token
+   stays as it is for every other page that reads it. */
 [data-wall-theme="light"].wallpro-page {
+  --wall-ground: 215 30% 89%;
+  --wall-card-edge: 214 28% 82%;
   background:
-    radial-gradient(circle at 78% 10%, rgba(99,102,241,.07), transparent 30rem),
-    linear-gradient(135deg, #f5f8fc 0%, #edf3fa 52%, #f5f2fb 100%);
+    radial-gradient(circle at 78% 10%, rgba(99,102,241,.08), transparent 30rem),
+    linear-gradient(135deg, #dbe3ee 0%, #e1e8f1 52%, #e4e2ef 100%);
 }
 [data-wall-theme="dark"].wallpro-page {
   background:
@@ -1300,6 +1310,7 @@ p {
 
 @media (max-width: 639px) {
   .wallpro-compact-header .wallpro-lockup-tagline { display: none; }
+  .wallpro-compact-header .wallpro-create-label { display: none; }
   .wallpro-header-link { padding-inline: .45rem; }
   .wallpro-progress-step { padding-inline: .65rem; }
 }
