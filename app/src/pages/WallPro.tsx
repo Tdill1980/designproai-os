@@ -32,7 +32,7 @@ import { WallProStepBoard, activeStepId, type BoardStep } from '@/components/wal
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
-import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
+import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, renderCornerThumb, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
 import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, viewIsPrintFile, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
@@ -469,6 +469,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // customer sees; the reversal that put the AI view in front of customers is
   // recorded in wallpro-ai-view.ts, and this is the half of it that lives here.
   useEffect(() => { if (artwork && photo && wallLocated && !aiViewCurrent) setView('after'); }, [!!artwork, !!photo, wallLocated, !!aiViewCurrent]);
+  /* THE BOARD'S STEP 2 SHOWS THE MARKED WALL, NOT THE BARE PHOTO (owner,
+     2026-09-24: "if it says pin corners for geometry it should show the corners
+     I pinned"). The card said "Corners set by you" over an untouched
+     photograph, so the one place she could check her corners at a glance
+     showed her nothing. Keyed on the corners themselves, so moving one
+     redraws it and nothing else does. */
+  const [cornerThumb, setCornerThumb] = useState<{ key: string; url: string } | null>(null);
+  const cornerThumbKey = photo && corners.length >= 3 ? photo.url + '|' + JSON.stringify(corners) : '';
+  useEffect(() => {
+    if (!photo || !cornerThumbKey) { setCornerThumb(null); return; }
+    let live = true;
+    renderCornerThumb(photo.url, corners)
+      .then(canvas => { if (live) setCornerThumb({ key: cornerThumbKey, url: canvas.toDataURL('image/jpeg', 0.85) }); })
+      .catch(() => { /* the bare photo is the fallback, exactly as before */ });
+    return () => { live = false; };
+  }, [cornerThumbKey]);
   const [history, setHistory] = useState<History | null>(null);
   /** The last project the customer worked on — OFFERED, not opened. See the
    *  restore effect below for why this is a banner and not a page load. */
@@ -1716,7 +1732,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     { id: 'upload-wall', n: 1, label: 'Upload your wall', icon: Upload, done: !!photo, preview: photo?.url ?? null,
       detail: photo ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Any photo from your phone, including iPhone HEIC. JPG, PNG, HEIC, max 20 MB.',
       action: { label: photo ? 'Replace photo' : 'Upload your wall', onClick: () => uploadInputs.current.photo?.click() } },
-    { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: photo?.url ?? null,
+    { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: (cornerThumb?.key === cornerThumbKey ? cornerThumb.url : null) ?? photo?.url ?? null,
       detail: !photo ? 'Upload a wall photo first. Print files never wait for this.'
         : wallLocated ? `Corners set ${cornerSource === 'detected' ? 'automatically' : 'by you'}${exclusions.length || items.length ? ` - ${exclusions.length + items.length} protected` : ''}`
           : detecting ? 'Looking for your wall...' : 'Tap the four corners, clockwise from the top left. We exclude windows, doors and furniture.',
