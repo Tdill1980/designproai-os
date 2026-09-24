@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.layerize_runs (
   source_storage_path text NOT NULL,
   source_file_name text NOT NULL,
   state text NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','working','completed','failed')),
-  charge_source text CHECK (charge_source IN ('tokens','privileged')),
+  charge_source text CHECK (charge_source IN ('beta_free','tokens','privileged')),
   tokens_charged integer NOT NULL DEFAULT 0 CHECK (tokens_charged IN (0,3)),
   tokens_refunded boolean NOT NULL DEFAULT false,
   output_storage_path text,
@@ -98,55 +98,22 @@ BEGIN
       VALUES(p_owner,3,coalesce(v_balance,3),'Layerize stale-run recovery refund',r.id);
   END IF;
 
-  SELECT EXISTS(
-    SELECT 1 FROM public.user_roles
-    WHERE user_id=p_owner AND role::text IN ('admin','tester')
-  ) INTO v_privileged;
-
-  IF v_privileged THEN
-    UPDATE public.layerize_runs SET
-      source_storage_path=p_source_path,
-      source_file_name=left(p_file_name,255),
-      state='working',
-      charge_source='privileged',
-      tokens_charged=0,
-      tokens_refunded=false,
-      failure_reason=NULL,
-      started_at=now(),
-      completed_at=NULL,
-      updated_at=now()
-    WHERE id=r.id
-    RETURNING * INTO r;
-  ELSE
-    SELECT * INTO t FROM public.user_tokens WHERE user_id=p_owner FOR UPDATE;
-    IF NOT FOUND OR t.balance < 3 THEN
-      RAISE EXCEPTION 'layerize_tokens_required';
-    END IF;
-
-    UPDATE public.user_tokens SET
-      balance=balance-3,
-      total_used=total_used+3,
-      updated_at=now()
-    WHERE user_id=p_owner
-    RETURNING balance INTO v_balance;
-
-    INSERT INTO public.token_transactions(user_id,amount,balance_after,reason,action_id)
-      VALUES(p_owner,-3,v_balance,'Layerize reconstruction',r.id);
-
-    UPDATE public.layerize_runs SET
-      source_storage_path=p_source_path,
-      source_file_name=left(p_file_name,255),
-      state='working',
-      charge_source='tokens',
-      tokens_charged=3,
-      tokens_refunded=false,
-      failure_reason=NULL,
-      started_at=now(),
-      completed_at=NULL,
-      updated_at=now()
-    WHERE id=r.id
-    RETURNING * INTO r;
-  END IF;
+  -- LAYERIZE PRIVATE BETA (2026-09-24): DesignProAI is not yet public.
+  -- Every authenticated owner may test Layerize without tokens. The durable
+  -- run ledger stays in place so duplicate submits still reuse one result.
+  UPDATE public.layerize_runs SET
+    source_storage_path=p_source_path,
+    source_file_name=left(p_file_name,255),
+    state='working',
+    charge_source='beta_free',
+    tokens_charged=0,
+    tokens_refunded=false,
+    failure_reason=NULL,
+    started_at=now(),
+    completed_at=NULL,
+    updated_at=now()
+  WHERE id=r.id
+  RETURNING * INTO r;
 
   RETURN jsonb_build_object(
     'runId',r.id,'fresh',true,'state','working','chargeSource',r.charge_source,
