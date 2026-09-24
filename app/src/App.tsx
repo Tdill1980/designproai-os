@@ -201,6 +201,7 @@ const DesignProWorkflow = lazyWithRetry(() => import("./pages/designpro/Producti
 const PanelProStudioBoard = lazyWithRetry(() => import("./pages/designpro/PanelProStudioBoard"));
 const AdminGeminiCompareStudio = lazyWithRetry(() => import("./pages/AdminGeminiCompareStudio"));
 const GenieProgress = lazyWithRetry(() => import("./pages/designpro/GenieProgress"));
+const Layerize = lazyWithRetry(() => import("./pages/Layerize"));
 const PanelProFileOutput = lazyWithRetry(() => import("./pages/PanelProFileOutput"));
 const PanelProFileOutputPreparation = lazyWithRetry(() => import("./pages/PanelProFileOutput").then((module) => ({ default: module.PanelProFileOutputPreparation })));
 const PanelProTemplateReview = lazyWithRetry(() => import("./pages/PanelProTemplateReview"));

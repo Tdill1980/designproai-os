@@ -40,6 +40,7 @@ const { reservePanelProfileForProduction,attachPanelProfileToProduction } = requ
 const { createAtlasRevisionIntake } = require("./atlas-revision-intake.cjs");
 const { erasePanelRegions, MAX_ERASE_FRACTION } = require("./atlas-cutout-fill.cjs");
 const { createWallProProductionWorker } = require("./wallpro-production.cjs");
+const { createLayerizeService } = require("./layerize.cjs");
 
 const PORT = Number(process.env.PORT || 3001);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim();
@@ -163,6 +164,7 @@ const atlasCall1Graph = createAtlasCall1NodeWorker({
 const wallProProduction = createWallProProductionWorker({
   supabase, supabaseUrl: SUPABASE_URL, serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY, tusEndpoint: SUPABASE_TUS_ENDPOINT, workerId: `${WORKER_ID}-wallpro`,
 });
+const layerize = createLayerizeService({ supabase });
 let deliveryTimer = null;
 let deliveryBusy = false;
 const notificationReadiness = resendReadiness(process.env);
@@ -287,6 +289,19 @@ async function refreshReadiness() {
   }
 }
 app.get("/health", (_req, res) => res.status(readiness.ready ? 200 : 503).json(readiness));
+
+app.post("/internal/layerize/run", authMiddleware, async (req, res) => {
+  try {
+    const ownerId = canonicalUuid(req.body?.ownerId, "ownerId");
+    const payload = req.body?.payload || {};
+    const result = await layerize.run({ ownerId, asset: payload.asset, fileName: payload.fileName, outputMode: payload.outputMode });
+    return res.status(200).json(result);
+  } catch (error) {
+    const status = Number(error?.status) || 400;
+    console.error(`[LAYERIZE] ${String(error?.message || error)}`);
+    return res.status(status).json({ error: String(error?.message || "layerize_failed").replace(/[^a-z0-9_:-]/gi, "_").slice(0, 120) });
+  }
+});
 
 app.post("/internal/panelpro-file-output/:action",authMiddleware,async(req,res)=>{
   try {

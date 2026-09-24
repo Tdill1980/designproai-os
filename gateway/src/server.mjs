@@ -2825,6 +2825,23 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
         return json(res, 200, { asset: await verifyStoredAsset(fetchImpl, token, cfg, user.id, (await readBody(req)).asset || {}) });
       }
 
+      if (req.method === "POST" && url.pathname === "/api/layerize/run") {
+        if (!cfg.internalRuntimeUrl || cfg.workerSecret.length < 32) return json(res, 503, { error: "layerize_service_unavailable" });
+        const body = await readBody(req);
+        const outputMode = String(body?.outputMode || "");
+        if (!["editable_layers", "screen_print", "embroidery_prep"].includes(outputMode)) return json(res, 400, { error: "layerize_output_mode_invalid" });
+        const fileName = String(body?.fileName || "artwork").trim();
+        if (!fileName || fileName.length > 255 || /[\u0000-\u001f\u007f]/.test(fileName)) return json(res, 400, { error: "layerize_file_name_invalid" });
+        const asset = await verifyStoredAsset(fetchImpl, token, cfg, user.id, body?.asset || {});
+        const response = await fetchImpl(`${cfg.internalRuntimeUrl}/internal/layerize/run`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${cfg.workerSecret}` },
+          body: JSON.stringify({ ownerId: user.id, payload: { asset, fileName, outputMode } }),
+        });
+        const result = await response.json().catch(() => ({ error: "layerize_service_unavailable" }));
+        return json(res, response.status, result);
+      }
+
       if(req.method==="POST" && url.pathname==="/api/generation/requests/revisions") {
         if(!cfg.internalRuntimeUrl || cfg.workerSecret.length<32)return json(res,503,{error:"generation_revision_service_unavailable"});
         const payload=await readBody(req);
