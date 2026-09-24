@@ -475,6 +475,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const uploadInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const retain = (url: string) => { if (url.startsWith('blob:')) urls.current.add(url); return url; };
   useEffect(() => () => urls.current.forEach(url => URL.revokeObjectURL(url)), []);
+  /**
+   * HOME OR BUSINESS — ASKED, NEVER GUESSED (owner, Trish 2026-09-24, on a
+   * living-room wall that came back as oversized commercial florals: "massive
+   * regression that looks like shit that doeant look like a wall wrap" ... "I
+   * had even two designer persoas / a commercial sign and graphics shop and a
+   * interior designer persona").
+   *
+   * Both personas exist and always have. `domain.ts` picks between them, and
+   * its LAST line is `designDomain: 'commercial'` for any brief with no room
+   * word in it — a documented compatibility default, so briefs written before
+   * the residential branch existed kept their old output. A living room
+   * therefore drew the Senior Environmental Graphic Designer "working inside a
+   * commercial sign company", which is exactly the picture she rejected.
+   *
+   * ⚠️ THE OVERRIDE WAS ALREADY BUILT AND UNREACHABLE. `overrideDomain` wins
+   * over every inference in `classifyWallDomain`, and the app has never sent
+   * it — the same built-but-inert shape CLAUDE.md records for the element
+   * graph and for two routing flags. One control closes it.
+   *
+   * Deterministic: no model chooses the persona, which is the rule domain.ts
+   * states about itself. Defaulting to `residential` is the honest default for
+   * a wall-covering tool, and naming a business type still routes commercial
+   * through the customer's own words.
+   */
+  const [designDomain, setDesignDomain] = useState<'residential' | 'commercial'>('residential');
   const dimensionsValid = validWallSize(width, height);
   const cornersValid = validWallCorners(corners);
   // Hard gate: a wall photo with fewer than four valid corners cannot be projected,
@@ -1167,7 +1192,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const sourcePath = source.path || await uploadWallAsset(source, user.id);
       const maskPath = rects.length ? await uploadWallAsset({ url: '', aspect: source.aspect, file: await maskPng(source) }, user.id) : null;
       const referencePath = reference ? await uploadWallAsset(reference, user.id) : null;
-      const result = await generateWall({ requestId: crypto.randomUUID(), intent: 'refine', prompt: changes, width, height, placement, sourcePath, maskPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent: 'refine', prompt: changes, width, height, placement, sourcePath, maskPath, referencePath, designDomain });
       const image = await loadWallImage(result.image_url);
       let art: WallAsset = { url: result.image_url, path: result.storage_path, aspect: image.naturalWidth / image.naturalHeight, width: image.naturalWidth, height: image.naturalHeight };
       let kind: WallVersionKind = 'refine', sha: string | null = null;
@@ -1389,7 +1414,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
       const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
       setPlacement(placement); setRepeatWidth(repeatWidth); setPatternScale(100);
-      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath });
+      const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath, designDomain });
       const image = await loadWallImage(result.image_url);
       // The flat artwork is the production master and is shown first. With a wall
       // photo and four valid corners the renderWallPreview compositor runs at once
@@ -2352,6 +2377,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
           </section>}
             <div className="mt-4">
+              {/* Which designer composes. One tap, above the brief, because it
+                  changes the whole result and the customer is the only one who
+                  knows the answer. */}
+              <div className="mb-3">
+                <span className="mb-1.5 block text-sm font-bold wall-ink">This wall is in a</span>
+                <div className="flex flex-wrap gap-2">
+                  {([['residential', 'Home'], ['commercial', 'Business']] as const).map(([value, label]) => (
+                    <Button key={value} type="button" size="sm" variant={designDomain === value ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignDomain(value); setArtwork(null); }}>{label}</Button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-xs wall-muted">{designDomain === 'residential'
+                  ? 'An interior designer composes it — wallcovering for a room.'
+                  : 'A commercial sign and graphics designer composes it — environmental graphics for a space.'}</p>
+              </div>
               <label className="block text-sm"><span className={'mb-2 inline-block rounded-md px-2.5 py-1 font-bold ' + BRAND_BAR}>{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}</span><textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
                   the brief rather than replacing it, and they are not a
