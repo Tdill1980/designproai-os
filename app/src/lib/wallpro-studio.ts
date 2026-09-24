@@ -26,6 +26,12 @@ export type WallStudioJob = {
 export type WallStudioVersion = { id: string; versionNo: number; kind: string; approved: boolean; prompt: string | null; createdAt: string; url: string | null };
 export type WallStudioDesign = {
   projectId: string; projectName: string; versionId: string; versionNo: number; approved: boolean; designId: string;
+  /** The wallpro_generations row this version came from. DesignID is the
+   *  library label; GENERATION ID + master sha256 are the canonical truth
+   *  (docs/wallpro), so the studio has to carry it or a wall design cannot
+   *  be looked up the way a vehicle one can. Null for an upload or a
+   *  catalog pick, which have no generation behind them. */
+  generationId: string | null;
   artworkPath: string; artworkUrl: string | null; placement: string; repeatWidthIn: number | null;
   createdAt: string; approvedAt: string | null;
   /** Every version of the project, oldest first. Never only the newest. */
@@ -56,7 +62,11 @@ export function wallStudioRow(d: WallStudioDesign): RevisionStudioDesignRow {
     created_at: d.createdAt,
     updated_at: d.approvedAt || d.createdAt,
     generation_status: 'completed',
-    admin_notes: JSON.stringify({ design_id: d.designId, wallpro: d }),
+    // TAGGED SO IT IS FOUND, not just shown. RevisionStudio reads a vehicle
+    // row's generation from `admin_notes.designiq_generation_id`; a wall row
+    // carried none, so searching a wall design by its GenerationID matched
+    // nothing. Same key, same parse, so one search covers both products.
+    admin_notes: JSON.stringify({ design_id: d.designId, designiq_generation_id: d.generationId, generation_id: d.generationId, tool: WALL_MODE, wallpro: d }),
     custom_design_url: null,
     custom_swatch_url: null,
     custom_styling_prompt_key: null,

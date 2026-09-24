@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wallDesignOf, wallProjectPath, wallStudioRow, type WallStudioDesign } from '../wallpro-studio';
+import { WALL_MODE, wallDesignOf, wallProjectPath, wallStudioRow, type WallStudioDesign } from '../wallpro-studio';
 
 const design: WallStudioDesign = {
   projectId: 'e174885a-bc93-4689-85bd-33fd2a352e71', projectName: 'My wall design',
@@ -32,5 +32,55 @@ describe('WallPro designs in RevisionStudioIQ', () => {
   });
   it('reopens in WallPro by project', () => {
     expect(wallProjectPath(design.projectId)).toBe('/printpro/wallpro?project=' + design.projectId);
+  });
+});
+
+/**
+ * A WALL DESIGN CARRIES ITS GENERATION ID, AND IT IS TAGGED SO IT IS FOUND
+ * (owner, 2026-09-24: "needs Generation ID" ... "amd tagged so that its parsed
+ * and found in revisionstudioiq").
+ *
+ * DesignID (`DID-…`) is the library label; `docs/wallpro` is explicit that the
+ * GENERATION ID plus the master sha256 are the canonical truth. The wall row
+ * carried only the DesignID, so a wall design could be SEEN in the grid and
+ * not LOOKED UP the way a vehicle one can.
+ *
+ * `RevisionStudioIQ`'s `genIdOf` reads exactly one key —
+ * `JSON.parse(row.admin_notes).designiq_generation_id` — so the tag has to be
+ * that key, not a new one beside it. Same key, same parse, one search across
+ * both products.
+ */
+describe('the wall row is findable by GenerationID', () => {
+  const design = {
+    projectId: 'p-1', projectName: 'Living room', versionId: 'v-1', versionNo: 2,
+    approved: true, designId: 'DID-ABCD1234', generationId: 'gen-9876',
+    artworkPath: 'o/generated/a.png', artworkUrl: null, placement: 'cover',
+    repeatWidthIn: null, createdAt: '2026-09-24T00:00:00Z', approvedAt: '2026-09-24T01:00:00Z',
+    job: null,
+  };
+
+  it('puts the generation id on the key RevisionStudio already parses', () => {
+    const notes = JSON.parse(wallStudioRow(design as never).admin_notes || '{}');
+    expect(notes.designiq_generation_id).toBe('gen-9876');
+  });
+
+  it('tags the row as WallPro so a parser can tell the product', () => {
+    const notes = JSON.parse(wallStudioRow(design as never).admin_notes || '{}');
+    expect(notes.tool).toBe(WALL_MODE);
+    expect(notes.generation_id).toBe('gen-9876');
+  });
+
+  it('keeps the DesignID beside it rather than replacing it', () => {
+    const row = wallStudioRow(design as never);
+    const notes = JSON.parse(row.admin_notes || '{}');
+    expect(notes.design_id).toBe('DID-ABCD1234');
+    expect(row.design_id).toBe('DID-ABCD1234');
+  });
+
+  it('survives a design with no generation behind it', () => {
+    // An upload or a catalog pick has no wallpro_generations row. Null must
+    // stay null rather than becoming the string "null" or the project id.
+    const notes = JSON.parse(wallStudioRow({ ...design, generationId: null } as never).admin_notes || '{}');
+    expect(notes.designiq_generation_id).toBeNull();
   });
 });
