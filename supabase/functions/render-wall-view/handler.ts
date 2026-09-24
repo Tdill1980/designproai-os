@@ -65,12 +65,14 @@ export function viewPrompt(input: { placement: string; repeatWidthIn: number | n
     : `The design is one mural that fills the whole wall edge to edge${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`;
   const geometryAuthority = input.geometryPath
     ? [
-        'Image 1 is WallPro\'s GEOMETRY-LOCKED installation guide. It was built deterministically from the customer\'s real room photo, the actual print master, the four pinned wall corners, the measured wall dimensions and the current repeat/mural scale.',
-        'IMAGE 1 IS PLACEMENT AUTHORITY. Do not choose or infer a different wall. Do not move, expand, shrink, crop or relocate the covered region. Preserve the exact coverage boundary, perspective, motif scale and motif positions shown in Image 1. Your job is only to make that exact Photoshop-style composite look like a real finished wallcovering installation photographed in the room.',
+        'Image 1 is the customer\'s ORIGINAL ROOM PHOTO and remains visual authority for the room, furnishings, architecture, camera, lighting and perspective.',
+        'Image 2 is the FLAT PRINT MASTER that must appear on the selected wall without redesign.',
+        'Image 3 is a geometry guide created from the customer\'s four pinned wall corners and measured dimensions. Use it ONLY to identify the exact wall surface, physical scale and coverage boundary. Do not copy the guide\'s flat pasted appearance; it is a mask/placement constraint, not the desired visual result.',
+        'Create the wall treatment natively in Image 1 as if a professional installer had actually wrapped that wall and an architectural photographer then photographed the unchanged room. The furniture, curtains, shelves, doors, windows, trim, floor, ceiling, lighting and every unselected object stay where they are and keep their photographed appearance.',
       ]
     : [
-        'Image 1 is the customer\'s room photograph. Image 2 is the flat print master.',
-        'Render the SAME photograph with the covering installed on the wall. Keep camera, framing and room geometry unchanged.',
+        'Image 1 is the customer\'s original room photograph and visual authority for the room.',
+        'Image 2 is the flat print master. Render that exact design natively onto the selected wall while preserving the room and furnishings.',
       ];
   const pinned = input.corners?.length === 4 ? 'Pinned wall quadrilateral, normalized to the source photograph: ' + input.corners.map(p => '(' + p.x.toFixed(4) + ',' + p.y.toFixed(4) + ')').join(' ') + '.' : '';
   return [
@@ -392,7 +394,11 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     let wallDims: { width: number; height: number } | null = null, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
     const sources: { label: string; path: string; bytes: Uint8Array; mimeType: string }[] = [];
     const sourceSpecs: [string, string][] = input.geometryPath
-      ? [['Image 1 — geometry-locked WallPro installation guide', input.geometryPath]]
+      ? [
+          ['Image 1 — ORIGINAL room photograph, visual authority', input.wallPath],
+          ['Image 2 — flat print master, artwork authority', input.artworkPath],
+          ['Image 3 — pinned-wall geometry guide, placement constraint only', input.geometryPath],
+        ]
       : [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]];
     for (const [label, path] of sourceSpecs) {
       const downloaded = await sb.storage.from(BUCKET).download(path);
@@ -508,7 +514,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       // customer. A recompositing failure (an undecodable mask, an unusual
       // photo codec) falls back to the model's own attempt rather than
       // failing a view that was otherwise successful.
-      if (maskBytes && wallPhotoBytes && !input.geometryPath) {
+      if (maskBytes && wallPhotoBytes) {
         try { bytes = await recompositeProtectedAreas(bytes, wallPhotoBytes, maskBytes); mimeType = 'image/png'; recomposited = true; }
         catch (e) { console.error('[render-wall-view] mask recomposite failed', e instanceof Error ? e.message : e); }
       }
