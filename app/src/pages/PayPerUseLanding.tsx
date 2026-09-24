@@ -96,18 +96,6 @@ const TOOLS: Tool[] = [
     imageAlt: "GraphicsPro render with custom panel graphics",
   },
   {
-    slug: "layerize",
-    name: "Layerize™",
-    tagline: "Got a flattened file? Layerize it.",
-    description:
-      "Reconstruct production SVG/EPS layers from flattened artwork without substituting fonts or generatively redrawing the customer's art.",
-    priceCents: 2500,
-    unitLabel: "1 Layerize run · 3 tokens",
-    accent: "from-blue-500 to-cyan-500",
-    image: "/screenshots/production-proof.png",
-    imageAlt: "ProductionFlow proof and production artwork",
-  },
-  {
     slug: "printpro",
     name: "PrintPro",
     tagline: "Print-ready in one click.",
