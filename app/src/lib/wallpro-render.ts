@@ -143,7 +143,19 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
  * Deliberately small and deliberately not the composite: this is a thumbnail,
  * the design may not exist yet, and `renderWallPreview` needs artwork.
  */
-export async function renderCornerThumb(photoUrl: string, corners: Point[], maxPx = 480): Promise<HTMLCanvasElement> {
+/**
+ * THE STEP-2 TILE SHOWS WHAT SHE MARKED — CORNERS **AND** PROTECTED AREAS
+ * (owner, 2026-09-24: "I clearly marked it correctly yet on step two doesnt
+ * show that").
+ *
+ * It drew the wall quad and nothing else, so a customer who had just outlined
+ * a closet looked at a tile with no closet on it and reasonably concluded the
+ * marking had not taken. The caption beside it said "1 protected" while the
+ * picture showed none — a tile that contradicts its own caption is worse than
+ * no tile. The protected polygons are drawn in the editor's own cyan, so the
+ * tile and the editor are the same picture at two sizes.
+ */
+export async function renderCornerThumb(photoUrl: string, corners: Point[], exclusions: Point[][] = [], maxPx = 480): Promise<HTMLCanvasElement> {
   const img = await loadWallImage(photoUrl);
   const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement('canvas');
@@ -159,6 +171,20 @@ export async function renderCornerThumb(photoUrl: string, corners: Point[], maxP
     ctx.fillStyle = 'rgba(124,58,237,0.18)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(124,58,237,0.95)';
+    ctx.lineWidth = Math.max(2, canvas.width * 0.006);
+    ctx.stroke();
+  }
+  // Protected areas sit ON TOP of the wall fill, because that is the order the
+  // render itself applies them in: the covering fills the quad, then the
+  // protected pixels are restored over it.
+  for (const poly of exclusions) {
+    if (poly.length < 3) continue;
+    ctx.beginPath();
+    poly.forEach((c, i) => { const x = c.x * canvas.width, y = c.y * canvas.height; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(34,211,238,0.28)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(34,211,238,0.95)';
     ctx.lineWidth = Math.max(2, canvas.width * 0.006);
     ctx.stroke();
   }

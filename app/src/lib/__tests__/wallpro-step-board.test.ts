@@ -590,9 +590,14 @@ describe('the auto-paint effect can name what it depends on', () => {
   const page = source('../../pages/WallPro.tsx');
 
   it('declares every dependency above the array that reads it', () => {
-    const arrayAt = page.indexOf('}, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);');
+    // `maskKey` joined the array on 2026-09-24 so that marking a closet
+    // repaints the view -- and this lock is why that addition was checked
+    // rather than assumed. A dependency array is evaluated DURING RENDER, so
+    // every name in it must be declared above it or WallPro throws on every
+    // render, which is how the page went down from a phone two days earlier.
+    const arrayAt = page.indexOf('}, [tileArtwork?.url, photo?.url, aiAvailable, seamReady, maskKey]);');
     expect(arrayAt).toBeGreaterThan(-1);
-    for (const name of ['tileArtwork', 'aiAvailable', 'seamReady']) {
+    for (const name of ['tileArtwork', 'aiAvailable', 'seamReady', 'maskKey']) {
       const declaredAt = page.indexOf(`const ${name} =`);
       expect(declaredAt, `${name} must be declared before the dependency array that reads it`).toBeGreaterThan(-1);
       expect(declaredAt, `${name} is declared BELOW the array that reads it — a temporal dead zone on every render`).toBeLessThan(arrayAt);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView } from '../wallpro-scale';
+import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView , statedRepeatWidthIn } from '../wallpro-scale';
 
 // A 142 x 96 wall and a square master.
 const wall = { width: 142, height: 96, aspect: 1 };
@@ -138,5 +138,43 @@ describe('the flat pane never shows a bare tile as the design', () => {
 
   it('falls back to the tile only when the wall geometry is unknown', () => {
     expect(flatPaneView({ maskActive: false, settling: false, hasCanvas: false, hasCssTile: false })).toBe('tile');
+  });
+});
+
+describe('a repeat the customer measured beats every estimate', () => {
+  // Owner, 2026-09-24: "the ai needs to match my other wall so I just upload
+  // it." Matching an INSTALLED wall from a photograph already worked — the
+  // prompt strips the room, the perspective and the lighting and returns the
+  // covering as flat artwork. What a photograph cannot carry is the REPEAT
+  // SIZE: the model can see a pattern and cannot measure it. The estimate put
+  // it at about two across — 72" on her 143" wall — against the 20-30" real
+  // wallpaper repeats at. A 2-3x error on the one number she can read with a
+  // tape measure, so it is asked rather than inferred.
+  it('uses the stated width instead of the two-across estimate', () => {
+    const guessed = autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143 });
+    expect(guessed.repeatWidthIn).toBe(72);
+    const measured = autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143, stated: 27 });
+    expect(measured.repeatWidthIn).toBe(27);
+    expect(measured.reason).toMatch(/as you measured it/);
+  });
+
+  it('estimates exactly as before when nothing is stated', () => {
+    for (const stated of [null, undefined]) {
+      expect(autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143, stated }).repeatWidthIn).toBe(72);
+    }
+  });
+
+  it('refuses a number that is not a usable measurement', () => {
+    // Bounded to the range the edge validator accepts, so a typo can never
+    // reach the generator as a real instruction — it falls back to the
+    // estimate rather than producing a wall of 0-inch tiles.
+    for (const bad of ['', 'abc', 0, -5, 3000, NaN, null]) expect(statedRepeatWidthIn(bad)).toBeNull();
+    for (const good of [1, 27, '27', 30.5, 2400]) expect(statedRepeatWidthIn(good)).toBe(Number(good));
+  });
+
+  it('applies to a stated width on any intent, not just match', () => {
+    // The field is only offered on match today, but the decision function must
+    // not care: a measurement is a measurement.
+    expect(autoWallScale({ intent: 'prompt', prompt: 'botanical', wallWidthIn: 143, stated: 18 }).repeatWidthIn).toBe(18);
   });
 });

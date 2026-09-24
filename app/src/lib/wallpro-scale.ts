@@ -167,14 +167,38 @@ export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: num
  *          composition would blow every motif up past life size.
  * A customer's explicit choice (`chosen`) always wins.
  */
-export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null }): WallScaleDecision {
+/** A repeat width the CUSTOMER stated, in inches, or null for "estimate it".
+ *  Bounded to the same range the edge validator accepts, so a typo can never
+ *  reach the generator as a real instruction. */
+export function statedRepeatWidthIn(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 2400 ? n : null;
+}
+
+export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null; stated?: number | null }): WallScaleDecision {
+  // ⚠️ A STATED REPEAT WINS OVER EVERY ESTIMATE (owner, 2026-09-24: "the ai
+  // needs to match my other wall so I just upload it").
+  //
+  // Matching an INSTALLED wall from a photograph is a real and common job, and
+  // the prompt already handles it — it strips the room, the perspective and
+  // the lighting and returns the covering as flat artwork. What a photograph
+  // cannot carry is the REPEAT SIZE: the model can see the pattern and cannot
+  // measure it. `autoMatchRepeatWidthIn` therefore guessed about two repeats
+  // across, which on the owner's 143" wall is 72" — while real wallpaper
+  // repeats every 20 to 30 inches. That is a 2-3x error on the one number the
+  // customer is standing in front of and can read with a tape measure.
+  //
+  // So it is ASKED rather than inferred, and when she answers, nothing
+  // second-guesses her. The estimate stays for everyone who does not.
+  const stated = statedRepeatWidthIn(input.stated);
   // A matched design keeps the reference's own scale, so its repeat is the
   // wallpaper baseline (about two across), not the generic four across.
-  const repeatWidthIn = input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn, input.prompt || '');
+  const repeatWidthIn = stated ?? (input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn, input.prompt || ''));
   if (input.chosen) return { placement: input.chosen, repeatWidthIn, reason: input.chosen === 'repeat' ? `Repeating pattern, as chosen, at ${repeatWidthIn}″ for a ${input.wallWidthIn}″ wall.` : 'Mural, as chosen: one composition sized to the wall.' };
   const brief = input.prompt || '';
   const saysMural = MURAL_WORDS.test(brief), saysPattern = PATTERN_WORDS.test(brief);
-  const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall so motifs print at real size.` });
+  const source = stated ? 'as you measured it' : 'so motifs print at real size';
+  const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall ${source}.` });
   const mural = (why: string) => ({ placement: 'cover' as const, repeatWidthIn, reason: `${why} One composition sized to the ${input.wallWidthIn}″ wall.` });
   // MATCH: the uploaded reference IS the design, so it keeps its own scale.
   // The baseline is MEASURED, not assumed: `autoMatchRepeatWidthIn` above puts
@@ -185,7 +209,15 @@ export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; 
   // for one scene makes it a mural.
   if (input.intent === 'match') return saysMural && !REPEAT_REQUEST_WORDS.test(brief)
     ? mural('The design you uploaded is one scene.')
-    : { placement: 'repeat', repeatWidthIn, reason: `The design you uploaded sets the scale: it repeats every ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall, about twice, the way wallpaper is hung.` };
+    : {
+      placement: 'repeat',
+      repeatWidthIn,
+      // The sentence has to tell her WHERE the number came from: an estimate
+      // she can override reads very differently from the measurement she gave.
+      reason: stated
+        ? `Repeating every ${repeatWidthIn}″ as you measured it, about ${Math.max(1, Math.round(input.wallWidthIn / repeatWidthIn))} times across a ${input.wallWidthIn}″ wall.`
+        : `The design you uploaded sets the scale: it repeats every ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall, about twice, the way wallpaper is hung. Measure one repeat on the wall you are matching to set it exactly.`,
+    };
   if (saysPattern && !saysMural) return repeat('The brief describes a pattern.');
   if (saysMural && !saysPattern) return mural('The brief describes a mural.');
   if (input.intent === 'wall') return repeat('Designing for the room.');

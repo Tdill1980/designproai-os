@@ -125,8 +125,20 @@ describe('AI view on the wall', () => {
       expect(out[0].bytes.length).toBe(90);
     });
 
-    it('is the real budget the handler enforces', () => {
-      expect(PROVIDER_BUDGET_BYTES).toBe(14 * 1024 * 1024);
+    // ⚠️ ASSERT THE RULE, NOT THE NUMBER. This pinned 14 MB, which was the
+    // number that was WRONG: inline images travel as base64, so a raw budget
+    // is 1.333x that on the wire, and 14 MB of images is 18.7 MB of request
+    // against a 20 MB ceiling -- with masks attached afterwards and counted
+    // against nothing. A lock that repeats the constant cannot notice that.
+    // What actually has to hold is that the budget leaves room once base64 is
+    // paid for, so that is what is checked here.
+    it('leaves the request under the provider ceiling once base64 is paid for', () => {
+      const wire = PROVIDER_BUDGET_BYTES * 4 / 3;
+      expect(wire).toBeLessThanOrEqual(16 * 1024 * 1024);
+      // ...and is still generous enough to carry a phone photo beside a 4K
+      // master without degrading either: the refusal this replaced is worse
+      // than a resize (see the handler's own note).
+      expect(PROVIDER_BUDGET_BYTES).toBeGreaterThanOrEqual(8 * 1024 * 1024);
     });
   });
 
@@ -237,11 +249,35 @@ describe('applyProtectedAreaMask — the actual guarantee, as pixel math', () =>
     applyProtectedAreaMask(outPx, wallPx, maskPx);
     expect(Array.from(outPx)).toEqual([1, 2, 3, 255, 200, 210, 220, 128]);
   });
-  it('is a no-op when nothing in the mask exceeds the threshold', () => {
+  /**
+   * ⚠️ INVERTED 2026-09-24, DELIBERATELY. This case asserted a BINARY
+   * threshold: alpha 127 was "not protected" and the pixel was left alone.
+   * That threshold is what the owner photographed -- "look at that hideous
+   * seam" -- because it pastes untouched photograph hard against AI-painted
+   * wall along a one-pixel line, and no amount of prompt wording softens a
+   * step function.
+   *
+   * A partly-opaque mask pixel now means partly protected, which is what a
+   * feathered edge IS. The guarantee this function exists for is untouched and
+   * is asserted by the case above: at alpha 255 the photograph wins outright,
+   * pixel for pixel.
+   */
+  it('blends by weight at a feathered edge instead of stepping', () => {
     const outPx = new Uint8ClampedArray([10, 20, 30, 255]);
     const wallPx = new Uint8ClampedArray([99, 98, 97, 255]);
     const maskPx = new Uint8ClampedArray([127, 127, 127, 127]);
     applyProtectedAreaMask(outPx, wallPx, maskPx);
+    const w = 127 / 255;
+    expect(Array.from(outPx)).toEqual([
+      Math.round(10 * (1 - w) + 99 * w),
+      Math.round(20 * (1 - w) + 98 * w),
+      Math.round(30 * (1 - w) + 97 * w),
+      255,
+    ]);
+  });
+  it('still leaves a fully transparent mask pixel completely alone', () => {
+    const outPx = new Uint8ClampedArray([10, 20, 30, 255]);
+    applyProtectedAreaMask(outPx, new Uint8ClampedArray([99, 98, 97, 255]), new Uint8ClampedArray([0, 0, 0, 0]));
     expect(Array.from(outPx)).toEqual([10, 20, 30, 255]);
   });
 });

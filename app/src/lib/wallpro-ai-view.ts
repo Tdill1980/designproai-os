@@ -174,3 +174,15 @@ export const AI_VIEW_EXPLAINER =
 export const PRINT_TRUTH_BADGE = 'Exact print geometry';
 export const PRINT_TRUTH_LINE =
   'This is your actual print file on your wall \u2014 not a simulation of it. What you approve is what the press prints.';
+/**
+ * HOW LONG A REPAINT WAITS FOR THE MARKING TO SETTLE.
+ *
+ * Marking a room is a burst: a closet, then a door, then a window. Each
+ * committed polygon changes what the render must protect, and repainting on
+ * every one of them would buy a ~30s image call per polygon. Waiting a beat
+ * turns a burst into one render.
+ *
+ * It applies ONLY to a repaint. The FIRST paint of a design is the one the
+ * customer is sitting there waiting for and is never delayed.
+ */
+export const AI_REPAINT_SETTLE_MS = 2500;
