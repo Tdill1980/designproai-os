@@ -202,7 +202,7 @@ export async function detectWall(wallPath: string): Promise<{ wall: { x: number;
  * classified as movable (see wallpro-occlusion.ts) are erased and painted
  * through instead, best effort, as an installer would after clearing them
  * out of the room. */
-export async function renderWallView(input: { wallPath: string; artworkPath: string; maskPath?: string | null; removePath?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number }): Promise<{ view_path: string; view_url: string; model: string }> {
+export async function renderWallView(input: { wallPath: string; artworkPath: string; maskPath?: string | null; removePath?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number; designDomain?: 'residential' | 'commercial' | null }): Promise<{ view_path: string; view_url: string; model: string }> {
   const { data, error } = await supabase.functions.invoke('render-wall-view', { body: input });
   if (error) {
     const response = (error as any).context;

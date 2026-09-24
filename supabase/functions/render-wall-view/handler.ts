@@ -15,16 +15,63 @@ const response = (data: unknown, status = 200) => new Response(JSON.stringify(da
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 const toBase64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192)); return btoa(s); };
 
-export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null }): string {
+/** THE RENDER IS PRESENTATION AUTHORITY, NEVER ARTWORK AUTHORITY (RULE 0.29).
+ *
+ * Owner, 2026-09-24, on her own on-wall picture: "massive regression that looks
+ * like shit that doesnt look like a wall wrap" — then, with the good one beside
+ * it, "I am saying how it DISPLAYED my other wall". Two separate defects sat
+ * behind that and only one of them was the design.
+ *
+ * The DESIGN defect was `domain.ts` defaulting every brief to `commercial`, so
+ * a living-room brief was drawn by the sign-shop persona while `overrideDomain`
+ * sat there unreachable. Fixed on the generate side; the app sends the domain.
+ *
+ * The DISPLAY defect is this prompt, and it was never missing a persona so much
+ * as missing a MATERIAL. Five sentences, four of them prohibitions, and not one
+ * of them ever said what the thing on the wall physically IS. "Render the
+ * photograph with the wall covering installed" names no substance, no finish
+ * and no edge, so the model did the literal thing: it pasted the master onto
+ * the wall at the master's own flat lighting, like a decal. That is exactly
+ * what "doesn't look like a wall wrap" describes — printed vinyl bonded to a
+ * real wall takes the room's light, not its own.
+ *
+ * ⚠️ AND THE DESIGNER PERSONA IS NOT THE FIX EITHER — DO NOT IMPORT IT HERE.
+ * Handing WALL_DESIGNER or RESIDENTIAL_DESIGNER to this call invites the model
+ * to DESIGN, and designing is the one thing this call may never do: the
+ * customer approves what they see and receives what prints, and that gap is
+ * what took this view off the customer path on 2026-09-12. So the persona is
+ * the one the vehicle stack already uses for precisely this job — a
+ * PHOTOGRAPHER (`persona-photographer-render`; RULE 0.29: "photographer +
+ * angles + studio + lighting = presentation authority only") — chosen by the
+ * SAME deterministic domain that chose the designer, so a bedroom is shot like
+ * a bedroom and a lobby like a lobby. No model picks it.
+ */
+const RESIDENTIAL_PHOTOGRAPHER =
+  'You are an interior photographer shooting a finished custom wallcovering installation for the manufacturer\'s own lookbook: a real room in a real home, photographed after the installer has packed up.';
+const COMMERCIAL_PHOTOGRAPHER =
+  'You are an environmental-graphics photographer shooting a finished large-format wall graphic for a sign company\'s portfolio: a real commercial interior, photographed after the installer has packed up.';
+
+/** Selected by code from a classification that is itself deterministic, exactly
+ * as `designerPersonaFor` selects the designer. Absent (an older client), the
+ * commercial voice runs — the same fallback `classifyWallDomain` itself takes,
+ * so the two halves of the product can never disagree about who is speaking. */
+export function viewPhotographerFor(domain: string | null | undefined): string {
+  return domain === 'residential' ? RESIDENTIAL_PHOTOGRAPHER : COMMERCIAL_PHOTOGRAPHER;
+}
+
+export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null; designDomain?: string | null }): string {
   const scale = input.placement === 'repeat' && input.repeatWidthIn
     ? `The design is a repeating tile about ${input.repeatWidthIn} inches wide; repeat it seamlessly at that real-world size across the wall${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`
     : `The design is one mural that fills the whole wall edge to edge${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`;
   return [
-    'Image 1 is a photograph of a customer\'s room. Image 2 is the flat print master of a printed wall covering.',
-    'Render the SAME photograph with the wall covering installed on its main wall. Keep the camera, framing, lens, lighting and colours exactly as photographed. Every object that is not the flat wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork -- stays untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal, in which case follow that instruction instead.',
-    'The covering appears only on the flat wall surface, running behind furniture and around the window and drapes, with correct perspective, realistic lighting, soft shadows and the wall\'s own texture where the room lighting falls on it.',
+    viewPhotographerFor(input.designDomain),
+    'Image 1 is that photograph of the customer\'s room. Image 2 is the flat print master of the covering that was installed.',
+    'Render the SAME photograph with the covering installed on its main wall. Keep the camera, framing, lens, lighting and colours exactly as photographed. Every object that is not the flat wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork -- stays untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal, in which case follow that instruction instead.',
+    // THE SENTENCE THAT WAS MISSING. Everything above only ever said where the
+    // covering goes; nothing said what it is made of, so it arrived as a decal.
+    'MATERIAL: this is printed vinyl wallcovering bonded flat to the wall, not a decal, a poster, a framed picture or a projection. It lies in the wall\'s own plane and takes the wall\'s own perspective, and it is lit by the room and not by itself: brighter where the room\'s light falls across it, falling into shadow in the corners, under the ceiling and behind every object, with the faint satin sheen printed vinyl shows where a light source rakes along it and the wall\'s own surface texture reading faintly through. It is trimmed clean into the ceiling line, the baseboard and the inside corners, and continues behind furniture, the window casing and the drapes. No visible seam, outline, border, frame, drop shadow, curl or lifted corner anywhere.',
     scale,
-    'Do not restyle the room, move the camera, crop, add borders or text, or change the design\'s colours or motifs. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
+    'Do not restyle the room, move the camera, crop, add borders or text, and do not redraw, restyle, recolour or rearrange the design itself -- its motifs, palette, spacing and scale are fixed by Image 2 and are not yours to improve. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
   ].join(' ');
 }
 
@@ -71,6 +118,11 @@ export function parseViewInput(body: any, owner: string) {
     removePath: body?.removePath == null ? null : check(body.removePath, ['uploads']),
     placement: body?.placement === 'repeat' ? 'repeat' : 'cover',
     repeatWidthIn: num(body?.repeatWidthIn), wallWidthIn: num(body?.wallWidthIn), wallHeightIn: num(body?.wallHeightIn),
+    // Which photographer speaks (viewPhotographerFor). Whitelisted rather than
+    // passed through: this string reaches the model, so an unknown value is
+    // dropped to null and takes the documented fallback, never carried into the
+    // prompt as free text from the request body.
+    designDomain: body?.designDomain === 'residential' ? 'residential' : body?.designDomain === 'commercial' ? 'commercial' : null,
   };
 }
 

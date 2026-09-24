@@ -445,25 +445,18 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
-  // The photo pane opens on the DETERMINISTIC composite, always. It used to
-  // open on the AI picture whenever one existed, which made a freehand repaint
-  // the first thing a customer saw of their own design (owner, 2026-09-12:
-  // "the design it generated and design on photo appear to be different that
-  // should never be the case").
-  useEffect(() => { if (artwork && photo && wallLocated) setView('after'); }, [!!artwork, !!photo, wallLocated]);
-  // The photo pane opens on the AI picture by itself: the model puts the
-  // covering on the wall and leaves the window, drapes, shelves and furniture
-  // as photographed, with no masks to mark (owner, 2026-09-11: "it should know
-  // to not wrap but keep in image"). Once per design-and-photo pair, in the
-  // background, never charged; the exact-geometry view stays one tab away.
-  const aiAutoKey = useRef<string | null>(null);
-  useEffect(() => {
-    if (!artwork || !photo || aiViewCurrent || !aiAvailable) return;
-    const key = artwork.url + '|' + photo.url;
-    if (aiAutoKey.current === key) return;
-    aiAutoKey.current = key;
-    void paintAiView(artwork, photo, true);
-  }, [artwork?.url, photo?.url, aiAvailable]);
+  // The photo pane opens on the AI room view when one has landed, and on the
+  // deterministic composite until then (owner, 2026-09-24: "Its only supposed
+  // to use ai" / "we use the composit for outputting files").
+  //
+  // ⚠️ THE `aiViewCurrent` CLAUSE IS THE WHOLE POINT OF THIS LINE. Without it
+  // this effect re-fires the moment the fourth corner is marked and snaps the
+  // pane back off a finished AI render onto the composite — for a customer who
+  // did nothing but finish marking her wall. It used to read `always`, on the
+  // 09-12 ruling that a freehand repaint must never be the first thing a
+  // customer sees; the reversal that put the AI view in front of customers is
+  // recorded in wallpro-ai-view.ts, and this is the half of it that lives here.
+  useEffect(() => { if (artwork && photo && wallLocated && !aiViewCurrent) setView('after'); }, [!!artwork, !!photo, wallLocated, !!aiViewCurrent]);
   const [history, setHistory] = useState<History | null>(null);
   /** The last project the customer worked on — OFFERED, not opened. See the
    *  restore effect below for why this is a banner and not a page load. */
@@ -523,6 +516,29 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // seam-derived artwork; the layout carries mirror when that method was chosen.
   const tileArtwork = seamCurrent ? seamCurrent.artwork : previewArt;
   const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
+  // The photo pane paints itself: the model puts the covering on the wall and
+  // leaves the window, drapes, shelves and furniture as photographed, with no
+  // masks to mark (owner, 2026-09-11: "it should know to not wrap but keep in
+  // image"). Once per design-and-photo pair, in the background, never charged.
+  //
+  // ⚠️ IT PAINTS `tileArtwork`, NOT `artwork`, AND THAT IS WHY IT LIVES DOWN
+  // HERE. It used to sit two hundred lines above — before `tileArtwork` is
+  // declared, so it could only reach the raw generation — and `showAiView`'s
+  // own comment has said since 09-12 why that is wrong: the seam-corrected
+  // file is what the composite and the print file both use, so painting the
+  // raw one makes the AI view differ from the print on TWO counts rather than
+  // one. That was survivable while staff were the only people who could see
+  // it. It is not survivable now that this is the view a customer buys from.
+  // Moving it is not cosmetic: `tileArtwork`'s dependency entry is evaluated
+  // during render, so an effect above line 517 cannot name it at all.
+  const aiAutoKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tileArtwork || !photo || aiViewCurrent || !aiAvailable || !seamReady) return;
+    const key = tileArtwork.url + '|' + photo.url;
+    if (aiAutoKey.current === key) return;
+    aiAutoKey.current = key;
+    void paintAiView(tileArtwork, photo, true);
+  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);
   const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
   const seamReady = placement !== 'repeat' || !!seamCurrent;
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
@@ -1047,17 +1063,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           }
         } catch { /* the AI view still renders from the prose instruction alone */ }
       }
-      const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height });
+      // designDomain picks the PHOTOGRAPHER on the edge (viewPhotographerFor),
+      // by the same deterministic switch that picks the DESIGNER on the
+      // generate side — so a bedroom brief is both designed and shot like a
+      // bedroom. It never picks an artwork authority: the render may not
+      // redesign, which is what canCommitFromView still guards.
+      const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height, designDomain });
       // The design or the photo may have changed while the model painted.
       if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
       setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0) }); setView('ai');
-      setNotice('AI view ready. It is a picture for showing the design; the flat master and the production panels are what print. "On your wall" is the exact-geometry view.');
+      setNotice('Your design is on your wall. This is an impression of the installed covering; the flat master and the production panels are what print. "Print geometry" shows the exact print file mapped onto your wall.');
     };
     if (!background) { await run('Painting the design onto your wall', paint); return; }
     // Background: the form stays usable; a signed-out or failed paint just
     // leaves the exact-geometry view, which never needed the model.
     setAiPainting(true);
-    try { await paint(); } catch (e) { if (artworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The exact-geometry view is on the "On your wall" tab.'); }
+    try { await paint(); } catch (e) { if (artworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The "Print geometry" tab shows the exact print file on your wall.'); }
     finally { setAiPainting(false); }
   }
   async function showAiView() {
@@ -1430,7 +1451,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // looked like nothing had happened — owner, 2026-09-12: "what button do I
       // push so I see the recreated design on the photo I provide". Nothing to
       // push: it goes on the photo by itself and the page moves to it.
-      else if (imposable) setNotice('Your design is on your wall photo. "On your wall" is the exact print geometry; "Show me with AI" paints a photo-real picture of the room.');
+      else if (imposable) setNotice('Your design is on your wall photo. "On your wall" is the AI room view; "Print geometry" is the exact print file the press receives.');
       if (photo) setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
@@ -2101,13 +2122,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
               <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
-            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'On your wall'}</Button>)}
+            {/* ⚠️ THE ORDER AND THE WORDS ARE THE OWNER'S RULING (2026-09-24:
+                "Its only supposed to use ai" / "we use the composit for
+                outputting files" / "Keep it, demoted").
+                "On your wall" now means the AI room view, because that is what
+                the customer is being shown; the deterministic composite keeps
+                its place one tab along and is renamed to what it actually is —
+                PRINT GEOMETRY — rather than competing for the same words. Two
+                peer buttons both called some version of "your wall", with
+                nothing saying which one prints, is precisely the ambiguity the
+                09-12 ruling was written about. Naming them apart is what makes
+                demoting one of them honest rather than hiding it. */}
+            {photo && <div className="mb-4 flex flex-wrap items-center gap-2">{(['before','after'] as const).map(v => <Button size="sm" variant={(view === v) || (view === 'design' && v === 'before') ? 'default' : 'outline'} key={v} onClick={() => setView(v)} disabled={v === 'after' && !(artwork && wallLocated)}>{v === 'before' ? 'Original wall' : 'Print geometry'}</Button>)}
               {/* Before and after (owner, 2026-09-12: "Before and afters will
                   speak volumes"). Offered only once a real composite exists --
                   a comparison against nothing is a broken picture, not a tease.
                   The after is always the deterministic composite. */}
               {canCompare && <Button size="sm" variant={view === 'compare' ? 'default' : 'outline'} onClick={() => setView('compare')}><MoveHorizontal className="mr-1 h-3 w-3" />Before &amp; after</Button>}
-              {artwork && aiAvailable && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting AI view…' : aiViewCurrent ? 'AI view' : 'Show me with AI'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs wall-muted"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
+              {artwork && aiAvailable && <Button size="sm" variant={view === 'ai' ? 'default' : 'outline'} disabled={!!busy || aiPainting} onClick={() => aiViewCurrent ? setView('ai') : void showAiView()}><Wand2 className={'mr-1 h-3 w-3' + (aiPainting ? ' animate-pulse' : '')} />{aiPainting ? 'Painting your room…' : aiViewCurrent ? 'On your wall' : 'Show me on my wall'}</Button>}{rendering && <span className="flex items-center gap-1 text-xs wall-muted"><Loader2 className="h-3 w-3 animate-spin" />Placing the design on your wall</span>}</div>}
               {/* Two wraps on one photo: the mural on the wall, brick on the
                   fireplace. Each zone is its own design and its own purchase. */}
               <div className="mb-3 flex flex-wrap items-center gap-2">
