@@ -1621,28 +1621,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       <header
         id="wallpro-header"
         style={{ top: stickyTop }}
-        className={'sticky z-30 -mx-4 px-4 py-3 md:-mx-8 md:px-8 md:py-4 ' + (theme.surface === 'light' ? 'border-b border-gray-200 bg-white text-gray-900' : 'bg-black text-white')}
+        className="wallpro-compact-header sticky z-30 -mx-4 px-4 md:-mx-8 md:px-8"
       >
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 xl:flex-nowrap">
-          <WallProLockup theme={theme} tone={theme.surface === 'light' ? 'light' : 'dark'} inline />
-          <nav aria-label="WallPro" className="ml-auto flex shrink-0 flex-wrap items-center gap-1 sm:gap-2">
-            {(() => {
-              const link = 'rounded-md px-2 py-1.5 text-sm font-medium ' + (theme.surface === 'light' ? 'text-gray-700 hover:text-gray-900' : 'text-white/80 hover:text-white');
-              const base = theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro';
-              return <>
-                <button type="button" className={link} disabled={!!busy} title="My wall designs" onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>
-                <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/wallpro') + '#examples'} className={link + ' hidden sm:inline'}>Gallery</Link>
-                <Link to={base + '/faq'} className={link + ' hidden sm:inline'}>Pricing</Link>
-                <Link to={base + '/how-it-works'} className={link + ' hidden sm:inline'}>Help</Link>
-                <button type="button" className={link} disabled={!!busy} title="Start a blank wall. Saved projects remain in Projects." onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
-                  <RotateCcw className="h-4 w-4" /><span className="sr-only">Start fresh</span>
-                </button>
-              </>;
-            })()}
-            <a href="#upload-wall" className={'ml-1 inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm ' + WALL_GRADIENT}>
-              Create Your Wall<ArrowRight className="ml-2 h-4 w-4" />
-            </a>
-            {!theme.showPrintOffer && <ToolAccountMenu tone={theme.surface === 'light' ? 'light' : 'dark'} />}
+        <div className="mx-auto flex h-16 max-w-7xl items-center gap-3">
+          <WallProLockup theme={theme} tone="dark" inline />
+          <nav aria-label="WallPro" className="ml-auto flex min-w-0 items-center gap-1 sm:gap-2">
+            <button type="button" className="wallpro-header-link" disabled={!!busy} title="My wall designs"
+              onClick={() => void run('Opening wall designs', async () => setHistory(await wallHistory()))}>Projects</button>
+            <Link to={(theme.showPrintOffer ? '/wall-wrap' : '/printpro/wallpro') + '/how-it-works'} className="wallpro-header-link hidden sm:inline-flex">Help</Link>
+            <button type="button" className="wallpro-header-icon" disabled={!!busy} title="Start fresh"
+              onClick={() => { try { localStorage.removeItem(LAST_PROJECT_KEY); } catch { /* nothing remembered */ } window.location.assign(window.location.pathname); }}>
+              <RotateCcw className="h-4 w-4" /><span className="sr-only">Start fresh</span>
+            </button>
+            {!theme.showPrintOffer && <ToolAccountMenu tone="dark" />}
           </nav>
         </div>
       </header>
