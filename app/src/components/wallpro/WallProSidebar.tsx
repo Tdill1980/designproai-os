@@ -140,41 +140,24 @@ export function WallProSidebar({
  * would drift the first time a step moved.
  */
 export function WallProStepStrip({ steps, top, className = '' }: { steps: WallStep[]; top: number; className?: string }) {
-  const jump = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const firstIncomplete = Math.max(0, steps.findIndex(step => !step.done));
   return (
-    <nav
-      aria-label="WallPro steps"
-      className={`sticky z-20 -mx-4 mb-4 border-b wall-edge bg-[hsl(var(--wall-ground))]/95 px-4 py-2 backdrop-blur md:-mx-8 md:px-8 ${className}`}
-      style={{ top }}
-    >
-      {/* Horizontally scrollable rather than wrapped: five chips wrapping to
-          three lines on a phone is a block of furniture, not a progress bar. */}
-      <ol className="flex snap-x gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {steps.map((step, i) => (
-          <li key={step.id} className="snap-start">
-            <button
-              type="button"
-              onClick={() => jump(step.id)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-sm border px-3 py-1.5 text-xs font-semibold transition ${
-                step.done
-                  ? 'border-[hsl(var(--wall-card-edge))] bg-[hsl(var(--wall-card))] wall-ink'
-                  : 'wall-edge bg-[hsl(var(--wall-card))] wall-muted hover:wall-ink'
-              }`}
-            >
-              <span
-                aria-hidden="true"
-                className={`flex h-4 w-4 items-center justify-center rounded-sm text-[9px] font-bold ${
-                  step.done ? 'border wall-edge bg-[hsl(var(--wall-field))] wall-ink' : 'border wall-edge'
-                }`}
-              >
+    <nav aria-label="WallPro steps" className={`wallpro-progress sticky z-20 -mx-4 mb-4 border-b wall-edge px-4 md:-mx-8 md:px-8 ${className}`} style={{ top }}>
+      <ol className="flex h-9 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {steps.map((step, i) => {
+          const current = i === firstIncomplete;
+          return <li key={step.id} className="relative flex min-w-[112px] flex-1 items-stretch">
+            <button type="button" onClick={() => jump(step.id)}
+              aria-current={current ? 'step' : undefined}
+              className={`wallpro-progress-step flex w-full items-center justify-center gap-1.5 px-3 text-[11px] font-semibold transition ${step.done ? 'is-complete' : current ? 'is-current' : 'is-future'}`}>
+              <span aria-hidden="true" className="wallpro-progress-index flex h-4 w-4 items-center justify-center text-[9px] font-bold">
                 {step.done ? <Check className="h-2.5 w-2.5" /> : i + 1}
               </span>
-              {step.label}
+              <span className="whitespace-nowrap">{step.label}</span>
             </button>
-          </li>
-        ))}
+          </li>;
+        })}
       </ol>
     </nav>
   );
