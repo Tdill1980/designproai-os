@@ -46,6 +46,9 @@ select ok(
 select policies_are(
   'storage','objects',
   ARRAY['designpro_customer_read_wrapbox_delivery','designpro_owner_insert_revision_inputs',
+        -- Canonical owner-only attachment inputs (20260924120000). These grant
+        -- immutable reference upload/read only, never production output access.
+        'designpro_owner_insert_reference_inputs','designpro_owner_read_reference_inputs',
         'designpro_owner_read_flat_atlas_previews','designpro_owner_read_generation_views',
         'designpro_owner_read_wrap_files','designpro_owner_sign_atlas_refusals',
         -- The three-zone production panel proof (20260919180000). Signing only,
