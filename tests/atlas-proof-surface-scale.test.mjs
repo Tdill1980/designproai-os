@@ -36,10 +36,19 @@ test('zero bleed is a real full-panel rectangle, not a missing value',()=>{
   assert.match(text,/100 by 50 inch trim rectangle/);
   assert.match(text,/x=0% to x=100%, and y=0% to y=100%/);
 });
-test('missing or unusable print dimensions preserve compatibility without fabricated sizes',async()=>{
+test('missing or unusable print dimensions keep the full-surface rule without fabricated sizes',async()=>{
   for(const missing of [null,undefined,'', '  ',true,[],0,-1,Infinity,NaN]) {
-    assert.equal(await targetPanelPart({body:{...measured,panelPrintWidthIn:missing},surfaceKey:'driver',bucket:noDownload}),null);
-    assert.equal(await targetPanelPart({body:{...measured,panelPrintHeightIn:missing},surfaceKey:'driver',bucket:noDownload}),null);
+    for(const key of ['panelPrintWidthIn','panelPrintHeightIn']) {
+      const part=await targetPanelPart({body:{...measured,[key]:missing},surfaceKey:'driver',bucket:noDownload});
+      assert.equal(typeof part?.text,'string',`${key}=${String(missing)} must still send the scale rule`);
+      assert.match(part.text,/complete driver wrap panel, edge to edge/);
+      assert.match(part.text,/full-surface texture, not a door-sized decal/);
+      assert.match(part.text,/front fender, doors, and rear quarter/);
+      assert.match(part.text,/then clip/);
+      // No inches and no trim math when the size is not on file.
+      assert.doesNotMatch(part.text,/inches|TRIM REGISTRATION|NaN|Infinity|x=/);
+      assert.equal(part.inlineData,undefined);
+    }
   }
 });
 test('missing, invalid or contradictory bleed does not invent a trim registration',()=>{

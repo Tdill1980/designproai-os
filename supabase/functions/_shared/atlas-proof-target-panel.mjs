@@ -18,12 +18,13 @@ export function surfacePanelScalePart(body, surfaceKey) {
   if (body.sourceAuthorityRole !== 'surface-panel') return null;
   const width = positive(body.panelPrintWidthIn);
   const height = positive(body.panelPrintHeightIn);
-  if (!width || !height) return null; // Older callers: do not invent dimensions.
-
-  const lines = [
-    `SURFACE SCALE REGISTRATION: IMAGE 1 is the complete ${surfaceKey} wrap panel, ${readable(width)} inches wide by ${readable(height)} inches high. It is a full-surface texture, not a door-sized decal.`,
-  ];
-  const rawBleed = body.panelBleedIn;
+  // No size on file (the runtime already fell back through GENIE): never
+  // invent inches, but the full-surface rule below needs no numbers, so it
+  // still applies. Skipping it is what let the artwork shrink into the doors.
+  const lines = width && height
+    ? [`SURFACE SCALE REGISTRATION: IMAGE 1 is the complete ${surfaceKey} wrap panel, ${readable(width)} inches wide by ${readable(height)} inches high. It is a full-surface texture, not a door-sized decal.`]
+    : [`SURFACE SCALE REGISTRATION: IMAGE 1 is the complete ${surfaceKey} wrap panel, edge to edge. It is a full-surface texture, not a door-sized decal.`];
+  const rawBleed = width && height ? body.panelBleedIn : undefined;
   const bleed = (typeof rawBleed === 'number' || (typeof rawBleed === 'string' && rawBleed.trim() !== ''))
     ? Number(rawBleed) : NaN;
   if (Number.isFinite(bleed) && bleed >= 0 && 2 * bleed < Math.min(width, height)) {
