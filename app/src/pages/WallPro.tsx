@@ -249,7 +249,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const [items, setItems] = useState<WallItem[]>([]);
   // The AI picture of the design on the wall: presentation only, never print.
-  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string; forMask: string } | null>(null);
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string; forMask: string; forGeometry: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
   /**
@@ -271,7 +271,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * Partial saves now start from this and change only what they own.
    */
   const savedConfig = useRef<Record<string, unknown> | null>(null);
-  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
+  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null), tileArtworkRef = useRef<WallAsset | null>(null);
   // itemsRef, because a tap resolves a network round trip later and must append
   // to the list as it is THEN -- two quick taps on a busy wall would otherwise
   // have the second one overwrite the first from a stale closure.
@@ -441,7 +441,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // wallMaskKey for the sequence that produced exactly that on the owner's own
   // wall. Every input the render consumes belongs in this test.
   const maskKey = wallMaskKey(exclusions, detectedMask?.path || detectedMask?.url || null, removeMask?.path || removeMask?.url || null);
-  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey && aiView.forMask === maskKey;
+  const geometryKey = [width, height, scaleKey, JSON.stringify(corners), maskKey].join('|');
+  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey && aiView.forMask === maskKey && aiView.forGeometry === geometryKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
    * "the pattern design size larger and smaller … look at PatternPro, we
    * literally had this"): 30 to 300 percent of the size the design was
@@ -576,6 +577,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // What the preview samples and the print embeds. For a repeat this is the
   // seam-derived artwork; the layout carries mirror when that method was chosen.
   const tileArtwork = seamCurrent ? seamCurrent.artwork : previewArt;
+  tileArtworkRef.current = tileArtwork;
   const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
   const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
   const seamReady = placement !== 'repeat' || !!seamCurrent;
@@ -617,7 +619,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   useEffect(() => {
     if (!tileArtwork || !photo || aiViewCurrent || !aiAvailable || !seamReady) return;
     const base = tileArtwork.url + '|' + photo.url;
-    const key = base + '|' + maskKey;
+    const key = base + '|' + geometryKey;
     if (aiAutoKey.current === key) return;
     const wait = aiAutoBase.current === base ? AI_REPAINT_SETTLE_MS : 0;
     const timer = setTimeout(() => {
@@ -625,7 +627,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       void paintAiView(tileArtwork, photo, true);
     }, wait);
     return () => clearTimeout(timer);
-  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady, maskKey]);
+  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady, geometryKey]);
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (previewArt) metrics = layoutMetrics(layout, previewArt.aspect); } catch { /* visible validation below */ }
   // The flat pane shows the print master as it prints across the wall at the
@@ -1124,7 +1126,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const wallPath = wall.path || await uploadWallAsset(wall, user.id);
       if (!wall.path) setPhoto(old => old && old.url === wall.url ? { ...old, path: wallPath } : old);
       const artworkPath = art.path || await uploadWallAsset(art, user.id);
-      if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+      if (!art.path && artworkRef.current?.url === art.url) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+
+      if (!validWallCorners(cornersRef.current)) throw new Error('Mark all four wall corners before painting the AI room view.');
+      const guideCanvas = await renderWallPreview(
+        wall.url, art.url, cornersRef.current, exclusionsRef.current,
+        { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' },
+        () => false, detectedMask?.url ?? null,
+      );
+      const guideBlob = await new Promise<Blob>((resolve, reject) =>
+        guideCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare the wall geometry guide.')), 'image/jpeg', 0.84));
+      const geometryPath = await uploadWallAsset({
+        url: wall.url, aspect: wall.aspect,
+        file: new File([guideBlob], 'wall-geometry-guide.jpg', { type: 'image/jpeg' }),
+      }, user.id);
+
       // Hand-drawn masks and any auto-detected protected areas apply to the AI
       // view too, not only the deterministic "on your wall" composite -- best
       // effort: a mask that fails to build or upload just leaves the AI view
@@ -1158,17 +1174,26 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // generate side — so a bedroom brief is both designed and shot like a
       // bedroom. It never picks an artwork authority: the render may not
       // redesign, which is what viewIsPrintFile keeps honest at commit time.
-      const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height, designDomain });
-      // The design or the photo may have changed while the model painted.
-      if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
-      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0), forMask: maskKey }); setView('ai');
+      const result = await renderWallView({
+        wallPath, artworkPath, geometryPath, corners: cornersRef.current,
+        maskPath, removePath, placement,
+        repeatWidthIn: placement === 'repeat' ? repeatWidth : null,
+        wallWidthIn: width, wallHeightIn: height, designDomain,
+      });
+      if (tileArtworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
+      setAiView({
+        url: result.view_url, path: result.view_path, artwork: artworkPath,
+        forArtwork: artworkRef.current?.url || art.url, forPhoto: wall.url,
+        forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0),
+        forMask: maskKey, forGeometry: geometryKey,
+      }); setView('ai');
       setNotice('Your design is on your wall. This is an impression of the installed covering; the flat master and the production panels are what print. "Print geometry" shows the exact print file mapped onto your wall.');
     };
     if (!background) { await run('Painting the design onto your wall', paint); return; }
     // Background: the form stays usable; a signed-out or failed paint just
     // leaves the exact-geometry view, which never needed the model.
     setAiPainting(true);
-    try { await paint(); } catch (e) { if (artworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The "Print geometry" tab shows the exact print file on your wall.'); }
+    try { await paint(); } catch (e) { if (tileArtworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The "Print geometry" tab shows the exact print file on your wall.'); }
     finally { setAiPainting(false); }
   }
   async function showAiView() {
