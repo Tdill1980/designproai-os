@@ -29,8 +29,10 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
 /* ONE ROW, FOUR STEPS, ARROWS BETWEEN -- upload and corner-marking are
    ONE step (owner, 2026-09-24: "condense step 1 ... upload and mark wall"). (owner, Trish 2026-09-24, against a
    Earlier the same day: "Fix my Wallpro ui so it looks like this exactly". Step 4 shows the
-   flat artwork itself cut into six numbered roll-width panels -- the print
-   file, not the room -- because that is what the customer is buying. */
+   flat artwork itself split into the three production panels required for the
+   120-inch example wall. Each panel may use up to 53.5 inches of print width;
+   the third panel is the remainder. A glassmorphism proof layer sits over the
+   artwork so the customer can read the panel plan without hiding the design. */
 const Arrow = () => (
   <span aria-hidden="true" className="hidden items-center justify-center text-blue-500 lg:flex"><ArrowRight className="h-5 w-5" /></span>
 );
@@ -69,15 +71,27 @@ export function WallProMagic() {
           <Frame><Room src={after} alt="The room with the tropical floral wall design installed" /></Frame>
         </Step>
         <Arrow />
-        <Step n={4} title="Print-Ready Panels" copy="Get production-ready files.">
+        <Step n={4} title="Print-Ready Panels" copy="120″ wall · 3 production panels · up to 53.5″ each.">
           <Frame>
-            <Room src={artwork} alt="The flat floral wall artwork divided into six numbered print panels" />
-            <div className="absolute inset-0 grid grid-cols-6">
-              {[1,2,3,4,5,6].map(n => (
-                <div key={n} className={'relative ' + (n > 1 ? 'border-l-2 border-dashed border-white/90' : '')}>
-                  <span className="absolute left-1/2 top-2 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full bg-white text-[10px] font-black text-slate-900 shadow">{n}</span>
+            <Room src={artwork} alt="The flat floral wall artwork divided into three production panels for a 120 inch wall" />
+            <div className="absolute inset-0 flex">
+              {[53.5, 53.5, 13].map((panelWidth, index) => (
+                <div
+                  key={index}
+                  className={'relative h-full border-white/85 ' + (index > 0 ? 'border-l-2 border-dashed' : '')}
+                  style={{ width: `${(panelWidth / 120) * 100}%` }}
+                >
+                  <div className="absolute inset-x-1 top-2 border border-white/45 bg-slate-950/28 px-1.5 py-1 text-center text-white shadow-lg backdrop-blur-md">
+                    <span className="block text-[9px] font-black tracking-wide">PANEL {index + 1}</span>
+                    <span className="block text-[8px] font-semibold text-white/90">{panelWidth}″ wide</span>
+                  </div>
                 </div>
               ))}
+            </div>
+            <div className="absolute inset-x-2 bottom-2 flex items-center justify-between border border-white/35 bg-white/14 px-2 py-1.5 text-[8px] font-semibold text-white shadow-xl backdrop-blur-md">
+              <span>120″ WALL</span>
+              <span>53.5″ MAX PANEL WIDTH</span>
+              <span>3 PANELS</span>
             </div>
           </Frame>
         </Step>
