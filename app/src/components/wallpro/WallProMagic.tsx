@@ -21,6 +21,7 @@ function Step({ n, title, copy, children }: { n: number; title: string; copy: st
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
         <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
+      {n === 1 && <p className="mb-2 text-[10px] font-semibold leading-snug wall-muted">Don’t want to design on your photo? Just prompt WallPro with your design idea.</p>}
       {children}
     </article>
   );
