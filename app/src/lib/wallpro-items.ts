@@ -103,6 +103,46 @@ export function itemAt(items: WallItem[], x: number, y: number): WallItem | null
   return best;
 }
 
+/**
+ * ONE TAP ADDS ONE ITEM (owner, 2026-09-23: "The busy wall marking is
+ * impossinle it should be a one touch that coveres the item so that the wrap
+ * appears under the phots").
+ *
+ * The bulk detector answers a capped list in one shot, and on a cluttered wall
+ * the object she cares about is the one it left out. A tap appends to the same
+ * list the bulk pass produced, so everything downstream — the composites, the
+ * toggle, persistence, the summary line — works on a tapped item without
+ * knowing it was tapped.
+ *
+ * ⚠️ IT REPLACES A NEAR-DUPLICATE RATHER THAN STACKING ONE. Tapping the same
+ * sofa twice, which is what a person does when the first outline looked wrong,
+ * would otherwise leave two overlapping sofas and two chips on the photo, and
+ * toggling one would visibly do nothing because the other still protects those
+ * pixels. Centres within `SAME_ITEM` of each other on both axes is the same
+ * object; the newer outline wins and keeps the older row's APPLIED class, so a
+ * re-tap never silently undoes a kept/painted-through decision she already made.
+ *
+ * ids are `tap-<n>` and can never collide with the bulk pass's `item-<index>-`,
+ * which is rebuilt from zero on every re-detect.
+ */
+export const SAME_ITEM = 0.04;
+export function addWallItem(items: WallItem[], mask: DetectedMask): WallItem[] {
+  const centre = (b: DetectedMask['box']) => ({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 });
+  const next = centre(mask.box);
+  const at = items.findIndex(item => {
+    const c = centre(item.box);
+    return Math.abs(c.x - next.x) <= SAME_ITEM && Math.abs(c.y - next.y) <= SAME_ITEM;
+  });
+  const detected = classOf(mask);
+  if (at >= 0) {
+    const existing = items[at];
+    return items.map((item, i) => (i === at ? { ...mask, id: existing.id, detected, applied: existing.applied } : item));
+  }
+  let n = 1;
+  while (items.some(item => item.id === `tap-${n}`)) n += 1;
+  return [...items, { ...mask, id: `tap-${n}`, detected, applied: detected }];
+}
+
 /** "kept 3 · painted through 2", for the one line above the photo. */
 export function itemSummary(items: WallItem[]): { kept: number; through: number } {
   const { fixed, movable } = splitItems(items);

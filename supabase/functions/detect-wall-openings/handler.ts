@@ -100,6 +100,71 @@ export function normalizeMasks(raw: unknown): WallMask[] {
   return out;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * TAP TO MASK: THE SAME QUESTION, POINTED AT ONE OBJECT.
+ *
+ * Owner, 2026-09-23, with a photo of a room full of gym equipment: "The busy
+ * wall marking is impossinle it should be a one touch that coveres the item so
+ * that the wrap appears under the phots."
+ *
+ * She is describing the failure mode of a BULK detector, and it is real:
+ * `SEGMENTATION_PROMPT` asks for every object at once, is capped at
+ * `MAX_MASKS`, and on a cluttered wall the one thing she actually cares about
+ * is the one it left out. Her only recovery was tracing a polygon by hand, on
+ * a phone, around an upside-down exercise machine.
+ *
+ * ⚠️ THIS IS NOT A SECOND SEGMENTER, AND MUST NOT BECOME ONE. It is the same
+ * model, the same 0..1000 grid, the same `normalizeMasks` with its box-only
+ * recovery, the same auth and the same download — only the QUESTION is scoped
+ * to a point. Everything a bulk detection learns, a tap learns too; a separate
+ * producer of these masks is what RULE 0.21 forbids by name, and it would have
+ * meant two places to fix the next time this channel gets flaky.
+ *
+ * A TAP IS A POLICY DECISION, SO THE MODEL DOES NOT GET TO MAKE IT. The bulk
+ * pass asks for `fixed` / `movable` because nobody has said what they want. A
+ * tap has already said it — "cover this, put the wrap behind it" — so the
+ * model is asked only for the OUTLINE and the client applies `fixed`. She can
+ * still flip it to painted-through with the one-tap control that already
+ * exists; what she cannot get is a tap that erases the thing she just pointed
+ * at because a classifier disagreed with her.
+ * ───────────────────────────────────────────────────────────────────────────*/
+export function pointSegmentationPrompt(point: Point): string {
+  // Stated twice, in plain language and on the model's own grid. `box_2d` is
+  // [ymin, xmin, ymax, xmax] on 0..1000, so a bare pair is ambiguous about
+  // order at exactly the moment being unambiguous matters most.
+  const gx = Math.round(point.x * 1000), gy = Math.round(point.y * 1000);
+  return [
+    `The customer has tapped a single point in this photograph: ${Math.round(point.x * 100)}% across from the left edge and ${Math.round(point.y * 100)}% down from the top edge. On the same 0-1000 grid you use for box_2d, that point is y=${gy}, x=${gx}.`,
+    'Identify the ONE whole object at that exact point — the object a person would say they were pointing at, complete, including the parts of it that extend away from the point. If the point lands on a piece of exercise equipment, return that whole machine; if it lands on a curtain, return that whole curtain and its rod; if it lands on a sofa, return the whole sofa. Do not return the wall itself, the floor, the ceiling, or a part of an object when the whole object is what was tapped.',
+    'Give the segmentation mask for that one object.',
+    'Output a JSON list containing exactly one entry, with the 2D bounding box in the key "box_2d", the segmentation mask in key "mask", and a short text label in the key "label".',
+  ].join(' ');
+}
+
+/** WHICH MASK THE TAP ACTUALLY MEANT, AND WHEN TO ADMIT A MISS.
+ *
+ * The model is asked for one object and usually returns one, but it can return
+ * several, or one that is nowhere near the tap. Pasting an outline of the wrong
+ * object onto the customer's photo because she tapped her treadmill is worse
+ * than telling her to try again — she would then have to find and undo it.
+ *
+ * So: of the masks whose box contains the tap, the SMALLEST wins. A tap inside
+ * a sofa that is inside a room-wide box means the sofa; the enclosing box is
+ * the less specific answer by construction. Nothing containing the tap is a
+ * MISS and returns null, after one forgiving retry at `PAD` — a box a whisker
+ * off the point it was asked about is the model being imprecise, not wrong,
+ * and the pad is small enough that it cannot reach a different object.
+ */
+export const POINT_MATCH_PAD = 0.03;
+export function maskAtPoint(masks: WallMask[], point: Point): WallMask | null {
+  const area = (m: WallMask) => Math.abs(m.box.x1 - m.box.x0) * Math.abs(m.box.y1 - m.box.y0);
+  const hit = (pad: number) => masks
+    .filter(m => point.x >= Math.min(m.box.x0, m.box.x1) - pad && point.x <= Math.max(m.box.x0, m.box.x1) + pad
+      && point.y >= Math.min(m.box.y0, m.box.y1) - pad && point.y <= Math.max(m.box.y0, m.box.y1) + pad)
+    .sort((a, b) => area(a) - area(b))[0] ?? null;
+  return hit(0) ?? hit(POINT_MATCH_PAD);
+}
+
 export const DETECTION_PROMPT = [
   'This is a photograph of an interior wall that will receive a printed wall covering. Answer with JSON only.',
   '"wall": the four corners of the largest flat wall surface the covering will be installed on, as normalized image coordinates from 0 to 1 (x to the right, y downward), in the order top-left, top-right, bottom-right, bottom-left, following the perspective of the wall plane. Corners may be hidden behind furniture or drapes: estimate where the wall plane meets the ceiling, the floor and the adjacent walls. If the photograph clearly shows no single wall plane, set "wall" to null.',
@@ -160,12 +225,19 @@ export function createDetectHandler(deps: { createClient: (...args: any[]) => an
     const { data: auth, error: authError } = jwt ? await sb.auth.getUser(jwt).catch(() => ({ data: null, error: true })) : { data: null, error: true };
     if (authError || !auth?.user?.id) return response({ error: 'Sign in to detect your wall.', code: 'AUTH_REQUIRED' }, 401);
     const owner = auth.user.id;
-    let wallPath: string;
+    let wallPath: string, tap: Point | null = null;
     try {
       const body = JSON.parse(await req.text());
       const parts = typeof body?.wallPath === 'string' ? body.wallPath.split('/') : [];
       if (parts.length !== 3 || parts[0] !== owner || parts[1] !== 'uploads' || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(parts[2])) throw new Error('The wall photo is not one of your uploaded files.');
       wallPath = body.wallPath;
+      // Optional. Present = tap-to-mask (one object at this point); absent =
+      // the bulk pass, byte-for-byte the request this function always took.
+      if (body?.point != null) {
+        const x = clamp(body.point?.x), y = clamp(body.point?.y);
+        if (x === null || y === null) throw new Error('That tap could not be read. Try again.');
+        tap = { x, y };
+      }
     } catch (err) { return response({ error: err instanceof Error ? err.message : 'Invalid request' }, 400); }
     const key = deps.apiKey();
     if (!key) return response({ error: 'Wall detection is not configured.', code: 'NOT_CONFIGURED' }, 503);
@@ -188,6 +260,29 @@ export function createDetectHandler(deps: { createClient: (...args: any[]) => an
         const text = result?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '';
         return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
       };
+      // A TAP ASKS ONE QUESTION AND RETURNS ONE OBJECT. The corner pass is not
+      // run: she is not re-detecting her wall, she is pointing at a treadmill,
+      // and re-answering `wall` here would overwrite corners she has already
+      // dragged into place. `wall: null` / `openings: []` say so explicitly
+      // rather than leaving the client to guess from an absence.
+      if (tap) {
+        const provider = await ask(pointSegmentationPrompt(tap), undefined, segmentationConfig);
+        if (!provider.ok) throw new Error(provider.status === 429 ? 'The detection service is busy. Try again in a moment.' : 'That item could not be outlined. Try tapping its middle, or draw it by hand.');
+        let picked: WallMask | null = null, answer: unknown = null;
+        try { answer = await parseText(provider); picked = maskAtPoint(normalizeMasks(answer), tap); }
+        catch (err) { console.warn(JSON.stringify({ event: 'wall_tap_unreadable', owner, wallPath, error: String(err) })); }
+        if (!picked) {
+          // A MISS IS REPORTED, NEVER PAPERED OVER. Returning the nearest
+          // outline would paste the wrong object onto her photo, and she would
+          // then have to find and undo it — worse than being asked to tap again.
+          console.warn(JSON.stringify({ event: 'wall_tap_missed', owner, wallPath, point: tap, answer: describeMaskAnswer(answer) }));
+          return response({ wall: null, openings: [], masks: [], model: DETECT_MODEL, notes: 'Nothing was found at that spot. Tap the middle of the item, or draw it by hand.' });
+        }
+        console.log(JSON.stringify({ event: 'wall_tap_masked', owner, wallPath, point: tap, label: picked.label, outlined: !!picked.png }));
+        // `class: fixed` because SHE decided by tapping — see the block above
+        // pointSegmentationPrompt. The one-tap toggle can still flip it.
+        return response({ wall: null, openings: [], masks: [{ ...picked, class: 'fixed' as OcclusionClass }], model: DETECT_MODEL, notes: null });
+      }
       // Corners and segmentation are independent questions, asked in parallel.
       // Segmentation is the better answer for protected areas; the polygon list
       // is kept only as the fallback when that call cannot be used.

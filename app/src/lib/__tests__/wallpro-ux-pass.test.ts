@@ -153,7 +153,12 @@ describe('masking tells you what to do while you are doing it', () => {
     expect(banner).toBeGreaterThan(-1);
     const rest = page.slice(banner, banner + 1800);
     expect(rest).toMatch(/>Undo( point)?<\/Button>/);
-    expect(rest).toContain('>Cancel</Button>');
+    // The leave-control is spelled by MODE since tap-to-mask landed
+    // (2026-09-24): a tap has nothing to cancel -- each one is a finished item
+    // on the photo -- so the same button reads Done there. What this lock
+    // protects is that a leave-control sits WITH the instruction, not which
+    // word is printed on it, so it matches either spelling.
+    expect(rest).toMatch(/>(Cancel|\{marking === 'tap' \? 'Done' : 'Cancel'\})<\/Button>/);
   });
 
   it('says the wall comes first, because a mask before it cuts nothing', () => {
@@ -244,7 +249,12 @@ describe('marking works without scrolling', () => {
     // so a new one must fail here and be looked at, not slide under a `>= 4`.
     // It did its job on 2026-09-23 — the upload call above failed this line
     // and had to be justified rather than absorbed.
+    //
+    // SEVENTH, 2026-09-24: "Tap an item to mask it". It is a marking control in
+    // the plainest sense — it turns the photo into the thing you tap — so it
+    // takes the helper like the other six, and this line caught it before the
+    // button shipped without one. Exactly what an exact count is for.
     expect(page).toContain('const focusPhoto = () =>');
-    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(6);
+    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(7);
   });
 });

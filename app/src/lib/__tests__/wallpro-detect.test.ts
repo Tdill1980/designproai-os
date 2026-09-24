@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createDetectHandler, describeMaskAnswer, normalizeDetection, normalizeMasks, DETECT_MODEL, DETECTION_PROMPT, SEGMENTATION_PROMPT } from '../../../../supabase/functions/detect-wall-openings/handler';
+import { createDetectHandler, describeMaskAnswer, normalizeDetection, normalizeMasks, DETECT_MODEL, DETECTION_PROMPT, SEGMENTATION_PROMPT, maskAtPoint, pointSegmentationPrompt, POINT_MATCH_PAD } from '../../../../supabase/functions/detect-wall-openings/handler';
 import { validWallCorners } from '../wallpro-geometry';
 
 const owner = '11111111-1111-4111-8111-111111111111';
@@ -22,7 +22,11 @@ function fixture(options: { auth?: boolean; answer?: unknown; segmentation?: unk
   const calls: any[] = [];
   const provider = vi.fn(async (_url: any, init: any) => {
     const body = JSON.parse(init.body); calls.push(body);
-    if (body.contents[0].parts[0].text === SEGMENTATION_PROMPT) return Response.json({ candidates: [{ content: { parts: [{ text: '```json\n' + JSON.stringify(options.segmentation ?? segmentation) + '\n```' }] } }] });
+    // Anything that is not the CORNER question is a segmentation question --
+    // the bulk prompt or a tap's scoped one. Keyed on SEGMENTATION_PROMPT, a
+    // tap fell through to the corner answer and the handler read `good.wall`
+    // as a mask list, which is a fixture lying about the shape of the reply.
+    if (body.contents[0].parts[0].text !== DETECTION_PROMPT) return Response.json({ candidates: [{ content: { parts: [{ text: '```json\n' + JSON.stringify(options.segmentation ?? segmentation) + '\n```' }] } }] });
     return options.status ? new Response('{}', { status: options.status }) : Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(options.answer ?? good) }] } }] });
   });
   const handler = createDetectHandler({ createClient: () => sb, supabaseUrl: 'https://own.supabase.co', serviceKey: 'k', apiKey: () => 'provider-test-key', fetch: provider as any });
@@ -122,5 +126,107 @@ describe('Detect my wall', () => {
   it('fails soft with a hand-marking instruction when the model cannot answer', async () => {
     const busy = fixture({ status: 429 }); const r1 = await busy.invoke(); expect(r1.status).toBe(502); expect((await r1.json()).error).toMatch(/busy/);
     const garbage = fixture({ answer: 'not json' }); const r2 = await garbage.invoke(); expect(r2.status).toBe(200); expect(await r2.json()).toMatchObject({ wall: null, openings: [] });
+  });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * TAP TO MASK (owner, 2026-09-23: "The busy wall marking is impossinle it
+ * should be a one touch that coveres the item so that the wrap appears under
+ * the phots").
+ *
+ * The bulk pass asks for everything at once, is capped at MAX_MASKS, and on a
+ * wall full of gym equipment the object she cares about is the one it left
+ * out. Her only recovery was tracing a polygon by hand, on a phone.
+ *
+ * These cases pin the three decisions that make a tap trustworthy rather than
+ * merely present: it asks the SAME segmenter (not a second producer), it
+ * refuses to guess when it misses, and the customer's tap — not the model —
+ * decides whether the item is protected.
+ * ───────────────────────────────────────────────────────────────────────────*/
+describe('one touch masks one item', () => {
+  const at = (x0: number, y0: number, x1: number, y1: number, label = 'item') =>
+    ({ label, box: { x0, y0, x1, y1 }, png, class: 'fixed' as const });
+
+  it('takes the SMALLEST box containing the tap, because the enclosing one is the less specific answer', () => {
+    // A tap inside a sofa that is inside a room-wide box means the sofa.
+    const room = at(0, 0, 1, 1, 'room'), sofa = at(0.3, 0.5, 0.6, 0.8, 'sofa');
+    expect(maskAtPoint([room, sofa], { x: 0.45, y: 0.65 })?.label).toBe('sofa');
+    expect(maskAtPoint([sofa, room], { x: 0.45, y: 0.65 })?.label).toBe('sofa');
+    // Outside the sofa, the room box is the only answer there is.
+    expect(maskAtPoint([room, sofa], { x: 0.05, y: 0.05 })?.label).toBe('room');
+  });
+
+  it('admits a miss instead of returning the nearest object', () => {
+    // Pasting the wrong outline onto her photo is worse than asking again:
+    // she would then have to find and undo it.
+    expect(maskAtPoint([at(0.6, 0.6, 0.9, 0.9)], { x: 0.1, y: 0.1 })).toBeNull();
+    expect(maskAtPoint([], { x: 0.5, y: 0.5 })).toBeNull();
+  });
+
+  it('forgives a box a whisker off the point, by a pad too small to reach another object', () => {
+    const near = { x: 0.6 - POINT_MATCH_PAD / 2, y: 0.7 };
+    expect(maskAtPoint([at(0.6, 0.6, 0.9, 0.9)], near)).not.toBeNull();
+    // ...and not one that is simply elsewhere.
+    expect(maskAtPoint([at(0.6, 0.6, 0.9, 0.9)], { x: 0.6 - POINT_MATCH_PAD * 3, y: 0.7 })).toBeNull();
+    expect(POINT_MATCH_PAD).toBeLessThan(0.05);
+  });
+
+  it('names the tapped point in plain language AND on the model\'s own grid', () => {
+    // box_2d is [ymin, xmin, ymax, xmax] on 0..1000, so a bare pair is
+    // ambiguous about order at exactly the moment being unambiguous matters.
+    const text = pointSegmentationPrompt({ x: 0.25, y: 0.8 });
+    expect(text).toContain('25% across from the left');
+    expect(text).toContain('80% down from the top');
+    expect(text).toContain('y=800, x=250');
+    expect(text).toContain('the ONE whole object at that exact point');
+  });
+
+  it('does not ask the model to classify a tapped item, because the tap already decided', () => {
+    // The bulk prompt asks fixed/movable because nobody has said what they
+    // want. A tap has said it. A tap that erased the thing she pointed at
+    // because a classifier disagreed would be the worst possible answer.
+    const text = pointSegmentationPrompt({ x: 0.5, y: 0.5 });
+    expect(text).not.toContain('movable');
+    expect(SEGMENTATION_PROMPT).toContain('movable');
+  });
+
+  it('asks ONE scoped question, skips the corner pass, and protects what was tapped', async () => {
+    const f = fixture({ segmentation: [{ box_2d: [500, 300, 800, 600], mask: png, label: 'treadmill', class: 'movable' }] });
+    const result = await f.invoke({ wallPath, point: { x: 0.45, y: 0.65 } });
+    expect(result.status).toBe(200);
+    const body = await result.json();
+    // ONE provider call: the corner question is not re-asked, or a tap would
+    // overwrite corners she has already dragged into place.
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].contents[0].parts[0].text).toContain('y=650, x=450');
+    expect(body.wall).toBeNull();
+    expect(body.openings).toEqual([]);
+    expect(body.masks).toHaveLength(1);
+    expect(body.masks[0].label).toBe('treadmill');
+    // The model said "movable". She tapped it to COVER it, so it is protected
+    // and she can still flip it with the one-tap toggle.
+    expect(body.masks[0].class).toBe('fixed');
+  });
+
+  it('reports a miss with somewhere to go, rather than a wrong outline or an error', async () => {
+    const f = fixture({ segmentation: [{ box_2d: [0, 0, 100, 100], mask: png, label: 'ceiling corner' }] });
+    const body = await (await f.invoke({ wallPath, point: { x: 0.9, y: 0.9 } })).json();
+    expect(body.masks).toEqual([]);
+    expect(body.notes).toMatch(/tap the middle|draw it by hand/i);
+  });
+
+  it('leaves the bulk request byte-for-byte what it always was', async () => {
+    const f = fixture();
+    await f.invoke({ wallPath });
+    // Both questions, exactly as before: corners and the capped segmentation.
+    expect(f.calls).toHaveLength(2);
+    expect(f.calls.some((c: any) => c.contents[0].parts[0].text === DETECTION_PROMPT)).toBe(true);
+    expect(f.calls.some((c: any) => c.contents[0].parts[0].text === SEGMENTATION_PROMPT)).toBe(true);
+  });
+
+  it('refuses a tap that is not a readable point', async () => {
+    const f = fixture();
+    expect((await f.invoke({ wallPath, point: { x: 'left', y: 0.5 } })).status).toBe(400);
+    expect((await f.invoke({ wallPath, point: {} })).status).toBe(400);
   });
 });
