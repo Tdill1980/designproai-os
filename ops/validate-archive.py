@@ -52,7 +52,7 @@ def allowed_file(name: str) -> bool:
 
 
 def allowed_directory(name: str) -> bool:
-    if name in {"runtime", "runtime/atlas-examples", "runtime/atlas-fonts", "runtime/atlas-fonts/licenses",
+    if name in {"runtime", "runtime/layerize-vtracer", "runtime/atlas-examples", "runtime/atlas-fonts", "runtime/atlas-fonts/licenses",
                 "runtime/vendor", "gateway", "gateway/src", "web", "web/dist", "ops",
                 "supabase", "supabase/functions", "supabase/functions/_shared"}:
         return True
