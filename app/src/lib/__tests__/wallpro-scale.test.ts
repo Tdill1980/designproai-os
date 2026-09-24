@@ -178,3 +178,37 @@ describe('a repeat the customer measured beats every estimate', () => {
     expect(autoWallScale({ intent: 'prompt', prompt: 'botanical', wallWidthIn: 143, stated: 18 }).repeatWidthIn).toBe(18);
   });
 });
+
+describe('a match names the attachment, not a mural', () => {
+  // Owner, 2026-09-24, on a 143" x 96" wall: "Does the system understand
+  // fucking scale ???" Her brief was "Match attached PHOTO of wall wrap
+  // exact". `photo` is in MURAL_WORDS, so placement came back `cover` and a
+  // tropical WALLPAPER was stretched once across the whole wall -- no repeat
+  // at all. Structural, not bad luck: every natural word for the upload
+  // (photo, artwork, illustration, painting, portrait) is in that list.
+  const wall = { intent: 'match' as const, wallWidthIn: 143 };
+  for (const brief of [
+    'Match attached photo of wall wrap exact',
+    'make exactly like the attached',
+    'match this artwork',
+    'match the attached illustration',
+    'reproduce the painting I uploaded',
+  ]) {
+    it(`repeats rather than stretching: ${JSON.stringify(brief)}`, () => {
+      expect(autoWallScale({ ...wall, prompt: brief }).placement).toBe('repeat');
+    });
+  }
+
+  // A brief that genuinely asks for ONE SCENE still gets one. The narrowing
+  // must not cost the real case.
+  it('still makes a mural when the brief asks for a scene', () => {
+    expect(autoWallScale({ ...wall, prompt: 'match my wall but make it a forest mural' }).placement).toBe('cover');
+    expect(autoWallScale({ ...wall, prompt: 'match the attached, a mountain landscape' }).placement).toBe('cover');
+  });
+
+  // Describe-from-scratch keeps the full vocabulary: there, "a photo of the
+  // coast" IS a request for one photographic mural.
+  it('leaves the describe intent alone', () => {
+    expect(autoWallScale({ intent: 'prompt', prompt: 'a photo of the coast at sunset', wallWidthIn: 143 }).placement).toBe('cover');
+  });
+});
