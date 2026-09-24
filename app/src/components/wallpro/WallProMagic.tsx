@@ -16,12 +16,14 @@ function Room({ src, alt }: { src: string; alt: string }) {
 
 function Step({ n, title, copy, children }: { n: number; title: string; copy: string; children: ReactNode }) {
   return (
-    /* EQUAL CARDS (owner, 2026-09-24: "the 4 cards are diff sizes"). The text
+    /* BLUE-GRAY CARDS (owner, 2026-09-24: "Make the cards a bit darker of
+       that blue") on the white page, so they separate without a darker ground.
+       EQUAL CARDS (owner, 2026-09-24: "the 4 cards are diff sizes"). The text
        block has a fixed height and the picture is pinned to the bottom, so
        copy of different lengths can never push one card's image lower. */
-    <article className="flex min-w-0 flex-col rounded-xl border wall-edge bg-[hsl(var(--wall-card))] p-3 shadow-sm">
+    <article className="flex min-w-0 flex-col rounded-xl border border-[#cfdbea] bg-[#e8eef6] p-3 shadow-sm">
       <div className="mb-3 flex min-h-[64px] items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-lg font-extrabold text-blue-600 ring-1 ring-blue-100">{n}</span>
         <div className="min-w-0"><h3 className="text-sm font-bold leading-tight wall-ink">{title}</h3><p className="mt-0.5 text-[11px] leading-snug wall-muted">{copy}</p></div>
       </div>
       <div className="mt-auto">{children}</div>

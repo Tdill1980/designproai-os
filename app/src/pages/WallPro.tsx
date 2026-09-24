@@ -1815,10 +1815,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           desktop keeps form-left / visuals-right. On a phone the DOM order
           IS the order, and step 2 is the photo itself rather than two
           buttons naming a photo somewhere else. */}
-      <div className="mx-auto mt-6 max-w-6xl">
-        <h2 className="text-2xl font-extrabold tracking-tight wall-ink">Start Your Wall Wrap</h2>
-        <p className="mt-1 text-sm wall-muted">Turn your space into something extraordinary.</p>
-      </div>
+      {/* The "Start Your Wall Wrap" heading that sat here was removed (owner,
+          2026-09-24: "Start your wall wrap is eating space. Just delete that").
+          Step 1's own heading introduces the form. */}
       <div className="grid gap-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start">
         <fieldset disabled={!!busy} className="min-w-0 space-y-5 disabled:opacity-70 lg:col-span-2 lg:row-start-1">
           {/* ── MARK THE WALL, ABOVE THE SCROLL (owner, 2026-09-22) ──────────
