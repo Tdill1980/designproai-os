@@ -70,12 +70,12 @@ export function WallPhotoEditor(p: Props) {
         || mask.map((q,j) => j === handle.vertex ? next : q);
     }));
   }
-  function startHandle(e: React.PointerEvent<SVGCircleElement>, handle: Handle) {
+  function startHandle(e: React.PointerEvent<SVGElement>, handle: Handle) {
     e.stopPropagation(); if (p.busy) return;
     e.preventDefault(); drag.current = handle; p.onEditing(true); e.currentTarget.setPointerCapture(e.pointerId);
     bodyFrom.current = handle.kind === 'body' ? point(e) : null;
   }
-  function keyboardHandle(e: React.KeyboardEvent<SVGCircleElement>, handle: Handle, current: Point) {
+  function keyboardHandle(e: React.KeyboardEvent<SVGElement>, handle: Handle, current: Point) {
     const deltas: Record<string,Point> = { ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0}, ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1} };
     if (p.busy || !deltas[e.key]) return; e.preventDefault();
     const step = e.shiftKey ? .01 : .001, delta = deltas[e.key];
@@ -84,6 +84,26 @@ export function WallPhotoEditor(p: Props) {
   let rectanglePreview: Point[] = [];
   if (p.marking === 'rectangle' && p.draft[0] && hover) { try { rectanglePreview = rectangularWallMask(p.draft[0],hover); } catch { /* Pointer has not moved yet. */ } }
   const overlays = p.showMasks || !!p.marking;
+  /* ⚠️ THE OVERLAY IS STRETCHED ON PURPOSE, SO ANYTHING ROUND MUST UNDO IT.
+     (owner, 2026-09-24, on her own marked wall: "Fix the numbers look they are
+     now distorted".)
+     `preserveAspectRatio="none"` maps this 100x100 viewBox onto a box whose
+     real shape is `p.aspect`, and that is what makes a normalized 0..1 point
+     land exactly where it belongs. Lines and polygons do not care — an affine
+     scale takes a straight line to a straight line — which is why the wall
+     outline always looked right. A CIRCLE and a GLYPH do care: one x-unit is
+     `aspect` times as many pixels as one y-unit, so every handle rendered as a
+     wide ellipse and every numeral came out stretched, and the wider the photo
+     the worse it got.
+     `kx` is the counter-scale. An x-extent multiplied by it covers the same
+     number of PIXELS as the matching y-extent, so `rx={r*kx} ry={r}` is a
+     round dot and `scale(kx 1)` is unstretched type. Nothing about where
+     anything sits changes — only how wide it is drawn. */
+  const aspect = Number.isFinite(p.aspect) && p.aspect > 0 ? p.aspect : 1;
+  const kx = 1 / aspect;
+  /** Type and chips, drawn at the origin inside a group that undoes the
+   *  stretch, so their own coordinates stay readable. */
+  const unstretch = (x: number, y: number) => `translate(${x} ${y}) scale(${kx} 1)`;
   /* ⚠️ THE PHOTO NEEDS A CEILING (owner, Trish 2026-09-24: "its displaying
      photo too large and now you cant see your prompt").
      This box had `w-full` and an aspectRatio and NOTHING ELSE, so a wide room
@@ -125,18 +145,22 @@ export function WallPhotoEditor(p: Props) {
         const x=Math.min(...mask.map(q=>q.x))*100, y=Math.min(...mask.map(q=>q.y))*100;
         return <g key={i}>
           <polygon points={coords(mask)} fill="rgba(0,120,220,.10)" stroke={WALL_GLASS.protected.halo} strokeWidth=".65" filter={WALL_HALO_FILTER}/>
-          <polygon points={coords(mask)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:selected===i?'move':'pointer',touchAction:'none'}} onPointerDown={e=>{e.stopPropagation();if(selected===i)startHandle(e as unknown as React.PointerEvent<SVGCircleElement>,{kind:'body',mask:i,vertex:-1});else setSelected(i);}}/>
-          <rect x={x+.4} y={y+.4} width="19" height="3.8" rx=".65" fill={WALL_GLASS.protected.chip} fillOpacity=".9"/>
-          <text x={x+1.2} y={y+2.4} fill="white" fontSize="1.5">Protected {i+1}</text>
+          <polygon points={coords(mask)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".35" style={{pointerEvents:!p.marking && !p.busy?'auto':'none',cursor:selected===i?'move':'pointer',touchAction:'none'}} onPointerDown={e=>{e.stopPropagation();if(selected===i)startHandle(e,{kind:'body',mask:i,vertex:-1});else setSelected(i);}}/>
+          <g transform={unstretch(x, y)}>
+            <rect x=".4" y=".4" width="19" height="3.8" rx=".65" fill={WALL_GLASS.protected.chip} fillOpacity=".9"/>
+            <text x="1.2" y="2.4" fill="white" fontSize="1.5">Protected {i+1}</text>
+          </g>
           {(selected===i || !!p.marking) && mask.map((q,j)=><g key={j}>
             {/* THE HIT TARGET IS THE FINGER'S, NOT THE DOT'S. The visible
                 handle was r=.7 on a 100-unit viewBox -- about three pixels on
                 a phone, which is why the owner called the tool finicky. The
                 dot stays small so it does not hide the wall; an invisible
                 circle around it takes the tap at a size a thumb can actually
-                land on. */}
-            <circle cx={q.x*100} cy={q.y*100} r={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} ${isRectangularMask(mask)?'corner':'point'} ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>
-            <circle cx={q.x*100} cy={q.y*100} r="1.1" fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".35" className="pointer-events-none"/>
+                land on. It is drawn as an ELLIPSE with `rx` counter-scaled by
+                `kx`, which is what makes it round ON SCREEN inside a viewBox
+                that does not preserve aspect — see the note beside `kx`. */}
+            <ellipse cx={q.x*100} cy={q.y*100} rx={HANDLE_TOUCH_R*kx} ry={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Mask ${i+1} ${isRectangularMask(mask)?'corner':'point'} ${j+1}`} onPointerDown={e=>startHandle(e,{kind:'mask',mask:i,vertex:j})} onKeyDown={e=>keyboardHandle(e,{kind:'mask',mask:i,vertex:j},q)}/>
+            <ellipse cx={q.x*100} cy={q.y*100} rx={1.1*kx} ry={1.1} fill="white" stroke={WALL_GLASS.protected.vertex} strokeWidth=".35" className="pointer-events-none"/>
           </g>)}
         </g>;
       })}
@@ -172,18 +196,20 @@ export function WallPhotoEditor(p: Props) {
             onPointerDown={e => { if (!p.onToggleItem || p.marking || p.busy) return; e.stopPropagation(); p.onToggleItem(item.id); }}
             onKeyDown={e => { if (!p.onToggleItem) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); p.onToggleItem(item.id); } }}
           />
-          <rect x={x0 + .4} y={y0 + .4} width={chipW} height="3.6" rx=".6"
-            fill={kept ? WALL_GLASS.protected.chip : WALL_GLASS.area.label} fillOpacity=".92" pointerEvents="none"/>
-          <text x={x0 + 1.1} y={y0 + 2.9} fill="white" fontSize="1.9" pointerEvents="none">
-            {kept ? '✓ ' : '× '}{item.label}
-          </text>
+          <g transform={unstretch(x0, y0)} pointerEvents="none">
+            <rect x=".4" y=".4" width={chipW} height="3.6" rx=".6"
+              fill={kept ? WALL_GLASS.protected.chip : WALL_GLASS.area.label} fillOpacity=".92"/>
+            <text x="1.1" y="2.9" fill="white" fontSize="1.9">
+              {kept ? '✓ ' : '× '}{item.label}
+            </text>
+          </g>
         </g>;
       })}
-      {overlays && p.corners.map((q,i)=><g key={i}><circle cx={q.x*100} cy={q.y*100} r={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><circle cx={q.x*100} cy={q.y*100} r="1.1" fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".25" className="pointer-events-none"/><text x={q.x*100+1.2} y={q.y*100-1.2} fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g>)}
+      {overlays && p.corners.map((q,i)=><g key={i}><ellipse cx={q.x*100} cy={q.y*100} rx={HANDLE_TOUCH_R*kx} ry={HANDLE_TOUCH_R} fill="transparent" style={{pointerEvents:p.busy?'none':'auto',cursor:'move',touchAction:'none'}} tabIndex={0} role="button" aria-label={`Wall corner ${i+1}`} onPointerDown={e=>startHandle(e,{kind:'wall',mask:0,vertex:i})} onKeyDown={e=>keyboardHandle(e,{kind:'wall',mask:0,vertex:i},q)}/><ellipse cx={q.x*100} cy={q.y*100} rx={1.1*kx} ry={1.1} fill={WALL_GLASS.area.handle} stroke="white" strokeWidth=".25" className="pointer-events-none"/><g transform={unstretch(q.x*100, q.y*100)}><text x="1.2" y="-1.2" fill={WALL_GLASS.area.label} fontSize="2.5">{i+1}</text></g></g>)}
       {p.seams.map((seam,i)=><line key={i} x1={seam.top.x*100} y1={seam.top.y*100} x2={seam.bottom.x*100} y2={seam.bottom.y*100} stroke={WALL_GLASS.seam} strokeWidth=".3" strokeDasharray="1 .8"/>)}
       {p.marking==='exclude' && <polygon points={coords([...p.draft,...(hover?[hover]:[])])} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3" strokeDasharray=".8 .5"/>}
       {rectanglePreview.length>0 && <polygon points={coords(rectanglePreview)} fill={WALL_PROTECTED_FILL} stroke={WALL_GLASS.protected.stroke} strokeWidth=".3"/>}
-      {p.draft.map((q,i)=><circle key={i} cx={q.x*100} cy={q.y*100} r=".65" fill={WALL_GLASS.protected.vertex}/>)}
+      {p.draft.map((q,i)=><ellipse key={i} cx={q.x*100} cy={q.y*100} rx={.65*kx} ry={.65} fill={WALL_GLASS.protected.vertex}/>)}
     </svg>
   </div>;
 }
