@@ -73,7 +73,7 @@ export function WallProLockup({ theme, compact = false, tone = 'dark', inline = 
       </div>
       {/* `inline`: the tagline sits beside the wordmark behind a hairline, as
           in the owner's 2026-09-24 mockup; stacked below it on a phone. */}
-      <p className={`mt-0.5 text-xs ${ink.tagline} md:text-sm` + (inline ? ` md:mt-0 md:border-l md:pl-4 ${tone === 'light' ? 'md:border-gray-300' : 'md:border-white/25'}` : '')}>{theme.tagline}</p>
+      <p className={`wallpro-lockup-tagline mt-0.5 text-xs ${ink.tagline} md:text-sm` + (inline ? ` md:mt-0 md:border-l md:pl-4 ${tone === 'light' ? 'md:border-gray-300' : 'md:border-white/25'}` : '')}>{theme.tagline}</p>
     </div>
   );
 }
