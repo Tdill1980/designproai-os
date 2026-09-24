@@ -724,6 +724,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   /* With a `hint`, the tile is the mockup's icon + title + one-line hint
      (owner, 2026-09-24); without one it is the plain dashed button. Same
      input, same handler either way. */
+  /**
+   * THE SENTENCE A CUSTOMER ASKED FOR, IN HER WORDS (owner, 2026-09-24: "just
+   * a way to show Your design is generating").
+   *
+   * `busy` is the page's own stage text and reads like an engineer's log line
+   * -- "Generating wall artwork". This maps the two operations that actually
+   * produce a design onto plain sentences, and returns null for every other
+   * slow operation so the card cannot announce a design that is not running.
+   */
+  const designBusy = busy === 'Generating wall artwork' ? 'Your design is generating…'
+    : busy === 'Refining the design' ? 'Your design is updating…'
+      : null;
+
   const uploadControl = (role: 'photo' | 'artwork' | 'reference', label: string, hint?: string) => (
     <div>
       <input ref={el => { uploadInputs.current[role] = el; }} aria-label={label} type="file" accept="image/*,.heic,.heif,.HEIC,.HEIF" className="sr-only"
@@ -2152,6 +2165,55 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   </div>
                 </div>
               )}
+              {/* ⚠️ THE WORDS, AND THE PROMPT, WHILE IT RUNS (owner, Trish
+                  2026-09-24: "now you cant see your prompt or any words thst
+                  say design is generating. I know thee is a progress bar but
+                  thats not the same we need the words and visible prompt").
+                  A spinner says SOMETHING is happening. It does not say WHAT,
+                  and it does not say what you asked for -- and the brief is a
+                  textarea three sections away that scrolls out of sight the
+                  moment the photo is on screen. So while a generation runs
+                  this sits directly above the photo, where the eye already is,
+                  and quotes her own words back. `busy` carries the live stage
+                  text ("Generating wall artwork"), so the line is the real
+                  state rather than a fixed sentence. */}
+              {/* ⚠️ THE WORDS, AND THE PROMPT THEY SUBMITTED (owner, Trish
+                  2026-09-24: "you cant see your prompt or any words thst say
+                  design is generating. I know thee is a progress bar but thats
+                  not the same we need the words and visible prompt", then "so
+                  they can resad the propt they submitted").
+
+                  A spinner says SOMETHING is happening; it never says WHAT,
+                  and it never says what you asked for. The brief is a textarea
+                  three sections away that scrolls out of sight the moment the
+                  photo is on screen, so while it runs there was no way to
+                  re-read your own words.
+
+                  ⚠️ A STEPPED WIZARD WAS BUILT HERE AND THE OWNER REJECTED IT
+                  ("Not wizard"). She was right twice over: `busy` is ONE
+                  string for the whole generation -- the consultant persona,
+                  the designer and the image are a single edge call that
+                  reports nothing in between -- so ticking sub-steps would have
+                  been a progress display telling a story the system cannot
+                  see. Do not add one. The live stage text plus the submitted
+                  brief is the whole ask. */}
+              {/* ⚠️ ONLY WHEN A DESIGN IS ACTUALLY RUNNING. `busy` is the
+                  page's ONE status string and it carries every slow operation
+                  -- "Opening image", "Saving project", "Downloading artwork".
+                  Showing this card for all of them would announce "Your design
+                  is generating" while she was saving a project, which is worse
+                  than saying nothing. Two operations produce a design; those
+                  two get the card, and everything else keeps the small status
+                  line it already had. */}
+              {designBusy && <div role="status" aria-live="polite" className="mb-2 rounded-xl border-2 border-blue-400 bg-blue-50 p-3">
+                <p className="flex items-center gap-2 text-base font-bold text-blue-900">
+                  <Loader2 className="h-5 w-5 shrink-0 animate-spin" />{designBusy}
+                </p>
+                {prompt.trim() && <p className="mt-2 border-t border-blue-200 pt-2 text-xs text-blue-900/90">
+                  <span className="font-semibold">Your brief:</span> &ldquo;{prompt.trim()}&rdquo;
+                </p>}
+                <p className="mt-1 text-xs text-blue-900/70">Usually 1&ndash;2 minutes. Your print files never wait for the wall photo.</p>
+              </div>}
               <div id="wall-photo" style={{ scrollMarginTop: stickyTop + 96 }}>
               <WallPhotoEditor onEditing={setEditingPhoto} url={view === 'after' && preview ? preview : photo.url} alt={view === 'after' && preview ? 'Your design scaled on your wall' : 'Your original wall'} aspect={photo.aspect} busy={!!busy} marking={marking} corners={corners} masks={exclusions} maskUrl={detectedMask?.url ?? null} items={items} onToggleItem={id => void applyItems(toggleItem(items, id))} draft={excludeDraft} showMasks={showMasks} seams={showPrintGuides ? printSeams : []} onPoint={markPoint} onRectangle={(a,b) => { try { finishMask(rectangularWallMask(a,b)); } catch (e) { setError(e instanceof Error ? e.message : 'Choose opposite corners.'); setExcludeDraft([]); } }} onCorners={next => { cornersOrigin.current = 'manual'; setCornerSource('manual'); setCorners(next.length === 4 ? orderWallCorners(next) ?? next : next); }} onMasks={setExclusions} />
               </div>
