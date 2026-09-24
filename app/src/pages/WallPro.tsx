@@ -1754,20 +1754,19 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               the first screen. */}
           <section aria-labelledby="wallpro-hero-heading" className="grid items-center gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Custom wall wrap design + print-ready files</p>
-              <h1 id="wallpro-hero-heading" className="mt-1.5 text-3xl font-extrabold leading-tight tracking-tight wall-ink sm:text-4xl">
+              <h1 id="wallpro-hero-heading" className="text-3xl font-extrabold leading-tight tracking-tight wall-ink sm:text-4xl">
                 Custom wall wraps, <span className="block bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">designed &amp; print-ready.</span>
               </h1>
-              <p className="mt-2 max-w-md text-base wall-muted">WallPro designs an original wrap for your exact wall and delivers print-ready panels.</p>
+              <p className="mt-2 max-w-md text-base wall-muted">Original designs for your exact wall, ready to print.</p>
               <ul className="mt-4 grid grid-cols-3 gap-3">
                 {([
-                  [Wand2, 'Original designs', 'From your prompt or style', 'from-blue-600 to-blue-400'],
-                  [Crosshair, 'Sized to your wall', 'Previewed on your photo', 'from-violet-600 to-fuchsia-500'],
-                  [Printer, 'Print-ready files', '150 PPI panels with bleed', 'from-fuchsia-600 to-pink-500'],
+                  [Wand2, 'Original designs', '', 'from-blue-600 to-blue-400'],
+                  [Crosshair, 'Sized to your wall', '', 'from-violet-600 to-fuchsia-500'],
+                  [Printer, '150 PPI print files', '', 'from-fuchsia-600 to-pink-500'],
                 ] as const).map(([Icon, title, copy, tint]) => (
-                  <li key={title} className="flex items-start gap-2">
+                  <li key={title} className="flex items-center gap-2">
                     <span className={'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white shadow-sm ' + tint}><Icon className="h-4 w-4" /></span>
-                    <span className="min-w-0"><span className="block text-xs font-bold leading-tight wall-ink">{title}</span><span className="mt-0.5 block text-[11px] leading-snug wall-muted">{copy}</span></span>
+                    <span className="min-w-0"><span className="block text-xs font-bold leading-tight wall-ink">{title}</span>{copy && <span className="mt-0.5 block text-[11px] leading-snug wall-muted">{copy}</span>}</span>
                   </li>
                 ))}
               </ul>
