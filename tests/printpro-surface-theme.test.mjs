@@ -74,10 +74,12 @@ test("text tokens exist in both themes, so nothing inherits an unthemed colour",
 test("both brands declare a surface, and the two tools disagree the same way", () => {
   const wall = read("app/src/lib/wallpro-brand.ts");
   const pattern = read("app/src/lib/patternpro-brand.ts");
-  for (const [name, src] of [["wallpro", wall], ["patternpro", pattern]]) {
-    assert.ok(src.includes("surface: 'dark',"), `${name}: the DesignProAI brand is not dark`);
-    assert.ok(src.includes("surface: 'light',"), `${name}: the partner brand is not light`);
-  }
+  // PatternPro: DesignProAI dark, partner light.
+  assert.ok(pattern.includes("surface: 'dark',"), "patternpro: the DesignProAI brand is not dark");
+  assert.ok(pattern.includes("surface: 'light',"), "patternpro: the partner brand is not light");
+  // WallPro: BOTH light since the owner's 2026-09-24 mockup ("It's under
+  // os.designproai"). Both brands still declare a surface explicitly.
+  assert.equal((wall.match(/surface: 'light',/g) || []).length, 2, "wallpro: both brands are light");
 });
 
 test("both pages scope the theme on their own root, never on :root", () => {

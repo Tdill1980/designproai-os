@@ -55,7 +55,11 @@ const initials = (email: string | null) => {
   return source.slice(0, 2).toUpperCase();
 };
 
-export function ToolAccountMenu() {
+/** `tone="light"` for a white header (WallPro, owner mockup 2026-09-24): the
+ *  default white-on-transparent controls vanish on white. The dropdown itself
+ *  is its own dark surface and is unchanged. */
+export function ToolAccountMenu({ tone = 'dark' }: { tone?: 'dark' | 'light' } = {}) {
+  const light = tone === 'light';
   const navigate = useNavigate();
   const [email, setEmail] = useState<string | null>(null);
   // `undefined` is "we have not asked yet" and renders nothing at all. A
@@ -87,7 +91,7 @@ export function ToolAccountMenu() {
     return (
       <Link
         to="/login"
-        className="rounded-md border border-white/25 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 md:text-sm"
+        className={'rounded-md border px-3 py-1.5 text-xs font-semibold transition md:text-sm ' + (light ? 'border-gray-300 text-gray-900 hover:bg-gray-100' : 'border-white/25 text-white hover:bg-white/10')}
       >
         Sign in
       </Link>
@@ -99,16 +103,16 @@ export function ToolAccountMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex shrink-0 items-center gap-2 rounded-full border border-white/20 py-1 pl-1 pr-2.5 text-white transition hover:bg-white/10"
+          className={'flex shrink-0 items-center gap-2 rounded-full border py-1 pl-1 pr-2.5 transition ' + (light ? 'border-gray-300 text-gray-900 hover:bg-gray-100' : 'border-white/20 text-white hover:bg-white/10')}
           // The email is the accessible name because the initials are a
           // decoration: "TD" tells a screen-reader user nothing about which
           // account they are about to spend a generation from.
           aria-label={`Account: ${email}`}
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600 text-[11px] font-bold">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600 text-[11px] font-bold text-white">
             {initials(email)}
           </span>
-          <span className="hidden text-[11px] font-semibold uppercase tracking-wide text-white/70 sm:inline">
+          <span className={'hidden text-[11px] font-semibold uppercase tracking-wide sm:inline ' + (light ? 'text-gray-600' : 'text-white/70')}>
             {TIER_LABELS[tier] || 'Free'}
           </span>
         </button>

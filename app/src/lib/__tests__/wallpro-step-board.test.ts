@@ -165,7 +165,7 @@ describe('the empty-state proof shows the real five-step magic', () => {
   it('uses the dedicated magic component before the workspace', () => {
     expect(page).toContain('<WallProMagic />');
     const magic = page.indexOf('<WallProMagic />');
-    const workspace = page.indexOf('Start your wall wrap');
+    const workspace = page.indexOf('Start Your Wall Wrap');
     expect(magic).toBeGreaterThan(-1);
     expect(workspace).toBeGreaterThan(magic);
   });
@@ -203,7 +203,7 @@ describe('the three inputs sit together', () => {
 
   it('puts the style reference beside the wall upload, not below the picker', () => {
     const wall = page.indexOf("uploadControl('photo'");
-    const ref = page.indexOf("uploadControl('reference', reference ? 'Replace style reference'");
+    const ref = page.indexOf("uploadControl('reference', reference ? 'Replace Style Reference'");
     const step3 = page.indexOf('<section id="choose-design"');
     expect(ref).toBeGreaterThan(wall);
     expect(ref).toBeLessThan(step3);

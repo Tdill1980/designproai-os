@@ -39,10 +39,10 @@ const INK: Record<LockupTone, { lead: string; accent: string; eyebrow: string; c
   light: { lead: 'text-gray-900', accent: 'text-blue-600', eyebrow: 'text-blue-600', cross: 'text-gray-400', tagline: 'text-gray-600' },
 };
 
-export function WallProLockup({ theme, compact = false, tone = 'dark' }: { theme: LockupBrand; compact?: boolean; tone?: LockupTone }) {
+export function WallProLockup({ theme, compact = false, tone = 'dark', inline = false }: { theme: LockupBrand; compact?: boolean; tone?: LockupTone; inline?: boolean }) {
   const ink = INK[tone];
   return (
-    <div className="min-w-0">
+    <div className={'min-w-0' + (inline ? ' md:flex md:items-center md:gap-4' : '')}>
       <div className="flex items-center gap-2.5">
         {/* NO PREFIX, NO "×", WHEN THE SHELL ALREADY SAYS WHO WE ARE (owner,
             2026-09-16: "REMOVE THE DUAL DESIGNPRO, SHOULD SAY WALLPRO").
@@ -68,10 +68,12 @@ export function WallProLockup({ theme, compact = false, tone = 'dark' }: { theme
             solid tone. */}
         <h1 className={compact ? 'text-xl font-bold leading-tight md:text-2xl' : 'text-2xl font-bold leading-tight md:text-3xl'}>
           <span className={ink.lead}>{theme.wordmarkLead}</span>
-          <span className={theme.logo ? ink.accent : 'bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent'}>{theme.wordmarkAccent}</span>
+          <span className={theme.logo ? ink.accent : 'bg-gradient-to-r from-blue-500 to-fuchsia-500 bg-clip-text text-transparent'}>{theme.wordmarkAccent}</span>{inline && <sup className={`ml-0.5 text-[0.45em] font-semibold ${ink.cross}`}>™</sup>}
         </h1>
       </div>
-      <p className={`mt-0.5 text-xs ${ink.tagline} md:text-sm`}>{theme.tagline}</p>
+      {/* `inline`: the tagline sits beside the wordmark behind a hairline, as
+          in the owner's 2026-09-24 mockup; stacked below it on a phone. */}
+      <p className={`mt-0.5 text-xs ${ink.tagline} md:text-sm` + (inline ? ` md:mt-0 md:border-l md:pl-4 ${tone === 'light' ? 'md:border-gray-300' : 'md:border-white/25'}` : '')}>{theme.tagline}</p>
     </div>
   );
 }

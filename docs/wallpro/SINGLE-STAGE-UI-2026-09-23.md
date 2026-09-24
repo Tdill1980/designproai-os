@@ -32,3 +32,15 @@ The earlier run `35942974808` additionally passed the strict TypeScript check fo
 ## Boundaries
 
 No changes to customer generation, masking algorithms, dimensions, bleed/overlap constants, auth, billing, checkout, Supabase, routes, dependencies or protected deployment controls are included. Temporary import/QA workflows remove themselves and are absent from the final PR diff. Production deployment must use the normal exact-main release process; these UI checks are not proof of production deployment.
+
+## SUPERSEDED — 2026-09-24
+
+The owner replaced the single-stage walkthrough with a mockup of her own
+("Fix my Wallpro ui so it looks like this exactly", then "condense step 1 …
+upload and mark wall … So 4 steps on same row"). `WallProMagic` is now four
+cards in one row — Upload & Mark Wall · 1-Touch Masking · Preview On Your
+Wall · Print-Ready Panels — using the full-size `studio-original.jpg` /
+`studio-floral-preview.jpg` supplied for this walkthrough. `wallpro-magic.css`,
+its test and `scripts/verify-wallpro-demo.mjs` were removed with it
+(`wallpro-magic-row.test.ts` locks the new row). The approved gym pair and its
+hashes above are unchanged and still lead the hero.
