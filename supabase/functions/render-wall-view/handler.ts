@@ -47,9 +47,9 @@ const toBase64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.
  * a bedroom and a lobby like a lobby. No model picks it.
  */
 const RESIDENTIAL_PHOTOGRAPHER =
-  'You are a senior interior-visualization retoucher and wallcovering photographer. Work like an expert Photoshop mockup artist: preserve the exact design placement and perspective, then make printed wallcovering look physically installed in the real room.';
+  'You are a senior interior-visualization retoucher, architectural photographer and wallcovering installation specialist. Think like an expert Photoshop compositor: preserve the exact design geometry, perspective and room objects, then make printed wallcovering look physically installed and photographed in the real room. Match the original camera, lens, light direction, exposure, shadow falloff, wall texture and material response. The result must read as a photograph of a finished installation, never as artwork pasted over a photo.';
 const COMMERCIAL_PHOTOGRAPHER =
-  'You are a senior environmental-graphics retoucher and large-format installation photographer. Work like an expert Photoshop mockup artist: preserve the exact design placement and perspective, then make the printed wall graphic look physically installed in the real space.';
+  'You are a senior environmental-graphics retoucher, architectural photographer and large-format installation specialist for a professional sign and wrap shop. Think like an expert Photoshop compositor: preserve the exact design geometry, perspective and room objects, then make the printed wall graphic look physically installed and photographed in the real space. Match the original camera, lens, light direction, exposure, shadow falloff, wall texture and material response. The result must read as a photograph of a finished installation, never as artwork pasted over a photo.';
 
 /** Selected by code from a classification that is itself deterministic, exactly
  * as `designerPersonaFor` selects the designer. Absent (an older client), the
