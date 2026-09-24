@@ -135,8 +135,12 @@ describe('the desktop keeps form on the left and the wall on the right', () => {
     // too, so pressing Generate would stop her nudging the corner the render
     // is waiting on. The three controls that lost the fieldset carry their own.
     expect(CODE).toContain("<textarea className={inputClass + ' min-h-28'} disabled={!!busy}");
-    expect((CODE.match(/type="number" min="1" max="2400"/g) ?? []).length).toBe(2);
-    expect((CODE.match(/disabled=\{!!busy\} type="number" min="1" max="2400"/g) ?? []).length).toBe(2);
+    // THREE since 2026-09-24: wall width, wall height, and the repeat width a
+    // customer measures off the wallpaper she is matching. The two counts must
+    // stay EQUAL -- that equality is the actual rule (every measured field
+    // disables itself), and the literal numbers are only how it is read.
+    expect((CODE.match(/type="number" min="1" max="2400"/g) ?? []).length).toBe(3);
+    expect((CODE.match(/disabled=\{!!busy\} type="number" min="1" max="2400"/g) ?? []).length).toBe(3);
   });
 
   it('still has the two-column grid it had before', () => {

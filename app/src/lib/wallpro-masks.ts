@@ -148,6 +148,40 @@ export async function rasterizeDetectionMasks(masks: DetectedMask[], photoWidth:
  * result a guarantee, not a hope) the exact same protected areas instead of
  * prose alone. Returns null when nothing is protected, so the AI view's
  * request is byte-for-byte unchanged in the common case. */
+/**
+ * THE IDENTITY OF "WHAT IS PROTECTED RIGHT NOW" (owner, 2026-09-24: "i drew a
+ * mask on inside of closet yet still wrapped", then "I masked the inside it
+ * should nothave wrapped that").
+ *
+ * Her mask was correct, it was saved, and it was never sent. The AI room view
+ * is cached, and its currency test compared the ARTWORK, the PHOTO and the
+ * SCALE — never the masks. So the sequence that every customer actually
+ * follows broke it:
+ *
+ *   1. design generates -> the view auto-paints with no mask yet
+ *   2. she marks the closet
+ *   3. the cached view is still "current", so nothing repaints, ever
+ *
+ * The closet stayed wrapped no matter how carefully she marked it, and the
+ * button said "On your wall" the whole time. This key is what that test was
+ * missing: change a protected area and the view is stale, exactly as changing
+ * the design or the pattern scale already made it stale.
+ *
+ * It keys on the stored PATH, falling back to the url only while the upload is
+ * still in flight, because a signed url is re-signed on every reopen and would
+ * invalidate a perfectly good view for no reason. Polygons round to 4 decimals
+ * -- finer than a pixel on any photo -- and a polygon with under three points
+ * is ignored here for the same reason `buildProtectedAreaMask` ignores it: it
+ * paints nothing, so it may not cost a render.
+ */
+export function wallMaskKey(exclusions: Point[][], detected: string | null, remove: string | null): string {
+  const polygons = exclusions
+    .filter(poly => poly.length >= 3)
+    .map(poly => poly.map(p => p.x.toFixed(4) + ',' + p.y.toFixed(4)).join(' '))
+    .join(';');
+  return [polygons, detected || '', remove || ''].join('|');
+}
+
 export async function buildProtectedAreaMask(exclusions: Point[][], detectedMaskUrl: string | null, photoWidth: number, photoHeight: number): Promise<HTMLCanvasElement | null> {
   if (!exclusions.length && !detectedMaskUrl) return null;
   const scale = Math.min(1, MASK_MAX_EDGE / Math.max(photoWidth, photoHeight));

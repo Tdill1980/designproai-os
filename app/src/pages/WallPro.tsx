@@ -14,7 +14,7 @@ import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
-import { rasterizeDetectionMasks, buildProtectedAreaMask, type DetectedMask } from '@/lib/wallpro-masks';
+import { rasterizeDetectionMasks, buildProtectedAreaMask, wallMaskKey, type DetectedMask } from '@/lib/wallpro-masks';
 import { toWallItems, addWallItem, applyItemClass, itemAt, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
@@ -34,11 +34,11 @@ import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
 import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, renderCornerThumb, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, viewIsPrintFile, resolveWallView } from '@/lib/wallpro-ai-view';
+import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, AI_REPAINT_SETTLE_MS, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, viewIsPrintFile, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
-import { WALL_STYLE_CHIPS, appendStyleChip, autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { WALL_STYLE_CHIPS, appendStyleChip, autoRepeatWidthIn, autoWallScale, statedRepeatWidthIn, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, wallFreeReason, saveWallItemsFile, readWallItemsFile, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -191,6 +191,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [prompt, setPrompt] = useState(() => params.get('prompt') || '');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
+  /** What the customer measured on the wall she is matching, in inches, as
+   *  typed. Empty means "estimate it", which is what every run did before. */
+  const [matchRepeat, setMatchRepeat] = useState('');
   // Tile-or-mural and the tile's width are decided by code from the brief and
   // the wall inches (wallpro-scale.ts). 'auto' is the product; Mural and
   // Repeating pattern are overrides a customer may still choose.
@@ -246,7 +249,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const [items, setItems] = useState<WallItem[]>([]);
   // The AI picture of the design on the wall: presentation only, never print.
-  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string } | null>(null);
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string; forMask: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
@@ -413,7 +416,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * customer's own choice instead of a single hardcoded design fee. */
   const quote = wallQuote({ path: 'design-and-print', designMode, billing });
   useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
-  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
+  // ⚠️ `forMask` IS LOAD-BEARING. Without it a mask drawn after the view was
+  // painted never reaches the model and never invalidates the cached picture:
+  // the closet stays wrapped and the button still reads "On your wall". See
+  // wallMaskKey for the sequence that produced exactly that on the owner's own
+  // wall. Every input the render consumes belongs in this test.
+  const maskKey = wallMaskKey(exclusions, detectedMask?.path || detectedMask?.url || null, removeMask?.path || removeMask?.url || null);
+  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey && aiView.forMask === maskKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
    * "the pattern design size larger and smaller … look at PatternPro, we
    * literally had this"): 30 to 300 percent of the size the design was
@@ -476,11 +485,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
      showed her nothing. Keyed on the corners themselves, so moving one
      redraws it and nothing else does. */
   const [cornerThumb, setCornerThumb] = useState<{ key: string; url: string } | null>(null);
-  const cornerThumbKey = photo && corners.length >= 3 ? photo.url + '|' + JSON.stringify(corners) : '';
+  // The key carries the exclusions too, or a newly marked closet would leave
+  // the tile showing the previous, closet-free render for the rest of the session.
+  const cornerThumbKey = photo && corners.length >= 3 ? photo.url + '|' + JSON.stringify(corners) + '|' + JSON.stringify(exclusions) : '';
   useEffect(() => {
     if (!photo || !cornerThumbKey) { setCornerThumb(null); return; }
     let live = true;
-    renderCornerThumb(photo.url, corners)
+    renderCornerThumb(photo.url, corners, exclusions)
       .then(canvas => { if (live) setCornerThumb({ key: cornerThumbKey, url: canvas.toDataURL('image/jpeg', 0.85) }); })
       .catch(() => { /* the bare photo is the fallback, exactly as before */ });
     return () => { live = false; };
@@ -569,14 +580,30 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // `const` declared two lines below it: a temporal dead zone, thrown on every
   // single render, minified to a two-letter name that says nothing.
   // EVERY name in the array below must be declared ABOVE this line.
-  const aiAutoKey = useRef<string | null>(null);
+  //
+  // ⚠️ AND IT REPAINTS WHEN THE MASKS CHANGE, WHICH IS THE WHOLE REASON A
+  // PROTECTED AREA EVER TOOK EFFECT. `maskKey` was missing from both this key
+  // and `aiViewCurrent`, so the view painted once — before any mask existed —
+  // and then nothing could ever dislodge it.
+  //
+  // The wait is NOT a uniform debounce: the first paint of a design must not
+  // be delayed by a second, because that is the paint the customer is standing
+  // there waiting for. Only a REPAINT settles, because marking arrives in
+  // bursts (a closet, then a door, then a window) and each committed polygon
+  // would otherwise buy its own ~30s image call. One burst, one render.
+  const aiAutoKey = useRef<string | null>(null), aiAutoBase = useRef<string | null>(null);
   useEffect(() => {
     if (!tileArtwork || !photo || aiViewCurrent || !aiAvailable || !seamReady) return;
-    const key = tileArtwork.url + '|' + photo.url;
+    const base = tileArtwork.url + '|' + photo.url;
+    const key = base + '|' + maskKey;
     if (aiAutoKey.current === key) return;
-    aiAutoKey.current = key;
-    void paintAiView(tileArtwork, photo, true);
-  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);
+    const wait = aiAutoBase.current === base ? AI_REPAINT_SETTLE_MS : 0;
+    const timer = setTimeout(() => {
+      aiAutoKey.current = key; aiAutoBase.current = base;
+      void paintAiView(tileArtwork, photo, true);
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady, maskKey]);
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (previewArt) metrics = layoutMetrics(layout, previewArt.aspect); } catch { /* visible validation below */ }
   // The flat pane shows the print master as it prints across the wall at the
@@ -1107,7 +1134,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height, designDomain });
       // The design or the photo may have changed while the model painted.
       if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
-      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0) }); setView('ai');
+      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0), forMask: maskKey }); setView('ai');
       setNotice('Your design is on your wall. This is an impression of the installed covering; the flat master and the production panels are what print. "Print geometry" shows the exact print file mapped onto your wall.');
     };
     if (!background) { await run('Painting the design onto your wall', paint); return; }
@@ -1543,7 +1570,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // WallPro decides tile-versus-mural and the tile's real-world width from
       // the brief and the wall inches; the generator is told that width so
       // motifs are drawn at the size they print.
-      const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
+      const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice, stated: intent === 'match' ? statedRepeatWidthIn(matchRepeat) : null });
       const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
       setPlacement(placement); setRepeatWidth(repeatWidth); setPatternScale(100);
       const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath, designDomain });
@@ -2673,6 +2700,31 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. Anything you type above is applied to it as a change.'
                     : 'Your attachment guides the style; the design itself is new, and what you type above drives it.'}
                     {' '}Same price either way.</p>
+                  {/* ⚠️ THE ONE THING A PHOTOGRAPH CANNOT CARRY (owner,
+                      2026-09-24: "the ai needs to match my other wall so I just
+                      upload it"). Matching an INSTALLED wall already works —
+                      the prompt strips the room, the perspective and the
+                      lighting and returns the covering as flat artwork. But the
+                      model can SEE a pattern and cannot MEASURE it, so the
+                      repeat was estimated at about two across: 72" on her 143"
+                      wall, against the 20-30" real wallpaper actually repeats
+                      at. A 2-3x error on the one number she is standing in
+                      front of and can read with a tape measure.
+                      So it is asked, of the only person who can answer, and
+                      left blank it estimates exactly as before. */}
+                  {designMode === 'match' && <label className="mt-3 block rounded-lg border wall-edge p-2.5 text-xs">
+                    <span className="font-semibold wall-ink">How wide is one repeat on the wall you are matching?</span>
+                    <span className="mt-0.5 block wall-muted">Measure one full pattern before it starts again — top of one bloom to the top of the next. Most wallpaper is 20–30&Prime;. Leave it blank and we will estimate.</span>
+                    <span className="mt-2 flex items-center gap-2">
+                      <input className="h-9 w-28 rounded-md border px-2 text-sm" disabled={!!busy} type="number" min="1" max="2400" step="0.25" inputMode="decimal"
+                        placeholder="Estimate" aria-label="Repeat width in inches"
+                        value={matchRepeat} onChange={e => { setMatchRepeat(e.target.value); setArtwork(null); }} />
+                      <span className="wall-muted">inches</span>
+                      {statedRepeatWidthIn(matchRepeat) && width > 0
+                        ? <span className="font-semibold wall-ink">≈ {Math.max(1, Math.round(width / statedRepeatWidthIn(matchRepeat)!))} across your {width}&Prime; wall</span>
+                        : null}
+                    </span>
+                  </label>}
                 </>}
               </div>
             </div>

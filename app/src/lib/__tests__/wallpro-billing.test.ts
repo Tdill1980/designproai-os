@@ -13,9 +13,15 @@ describe('WePrintWraps billing, per the shop spec sheet', () => {
     const billing = wallBilling(142, 96, DEFAULT_WALL_PRINT, roll)!;
     expect(billing.panels).toBe(3);
     expect(billing.billedWidthIn).toBe(53);
-    // 96" wall + 1" bleed top and bottom = 98" of roll per panel.
-    expect(billing.panelLengthIn).toBe(98);
-    expect(billing.linearFeet).toBe(Math.round((3 * 98 / 12) * 100) / 100);
+    // 96" wall + 0.5" bleed top and bottom = 97" of roll per panel.
+    // ⚠️ THIS LOCK WAS STALE AND RED ON MAIN. It still said 1" per edge after
+    // DEFAULT_WALL_PRINT moved to a half-inch bleed, so the suite was failing
+    // over a number the product had deliberately changed. Corrected to follow
+    // the shipped default rather than the other way round -- but note that it
+    // is BILLED length, so the owner should confirm the half-inch is what the
+    // shop wants to charge for before this is treated as settled.
+    expect(billing.panelLengthIn).toBe(97);
+    expect(billing.linearFeet).toBe(Math.round((3 * 97 / 12) * 100) / 100);
     // Billed area exceeds the wall's own area, which is the point of showing it.
     expect(billing.billedSqFt).toBeGreaterThan(billing.wallSqFt);
     expect(billing.wallSqFt).toBe(Math.round((142 * 96 / 144) * 100) / 100);
