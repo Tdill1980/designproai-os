@@ -1204,7 +1204,7 @@ p {
 
 /* WallPro compact working chrome — the tool owns the screen, not navigation. */
 .wallpro-compact-header {
-  min-height: 4rem;
+  min-height: 3.5rem;
   background: linear-gradient(100deg, #071426 0%, #0d1b38 58%, #111a3f 100%);
   border-bottom: 1px solid rgba(96, 165, 250, .28);
   color: white;
