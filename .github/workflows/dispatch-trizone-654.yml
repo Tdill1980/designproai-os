@@ -1,0 +1,62 @@
+name: Deploy tested TriZone repair 654
+on:
+  push:
+    branches: [ops/trizone-underlay-repair-20260923]
+    paths: [.github/workflows/dispatch-trizone-654.yml]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+concurrency:
+  group: dispatch-trizone-654
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_PR_HEAD: 8ae31905322a4e72d47c66a9a78bad7948da6453
+    steps:
+      - name: Require the exact reviewed PR to merge
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/ops/trizone-underlay-repair-20260923
+          for attempt in $(seq 1 90); do
+            gh api "repos/$GITHUB_REPOSITORY/pulls/654" > "$RUNNER_TEMP/pr.json"
+            jq -e --arg head "$EXPECTED_PR_HEAD" '.head.sha == $head and .base.ref == "main"' "$RUNNER_TEMP/pr.json" >/dev/null
+            if jq -e '.merged == true' "$RUNNER_TEMP/pr.json" >/dev/null; then
+              sha=$(jq -r '.merge_commit_sha' "$RUNNER_TEMP/pr.json")
+              [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+              echo "EXACT_SHA=$sha" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            jq -e '.state == "open"' "$RUNNER_TEMP/pr.json" >/dev/null
+            sleep 5
+          done
+          echo 'PR not merged; no deployment.'
+          exit 1
+      - name: Require successful exact-main release before deployment
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" -f head_sha="$EXACT_SHA" -f event=push > "$RUNNER_TEMP/release.json"
+            if jq -e --arg sha "$EXACT_SHA" 'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "main" and .conclusion == "success")' "$RUNNER_TEMP/release.json" >/dev/null; then exit 0; fi
+            if jq -e 'any(.workflow_runs[]; .status == "completed" and (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out"))' "$RUNNER_TEMP/release.json" >/dev/null; then
+              echo 'Release failed or superseded; no deployment.'; exit 1
+            fi
+            sleep 5
+          done
+          echo 'Exact main release not ready; no deployment.'
+          exit 1
+      - name: Dispatch existing protected runtime and single-edge workflows
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          test "$current" = "$EXACT_SHA" || { echo 'Main moved; refuse a mixed-version deployment.'; exit 1; }
+          jq -n --arg sha "$EXACT_SHA" '{ref:"main",inputs:{exact_sha:$sha,confirmation:"DEPLOY_DARK_TO_DESIGNPROAI_PROD_SFO3"}}' > "$RUNNER_TEMP/runtime.json"
+          jq -n --arg sha "$EXACT_SHA" '{ref:"main",inputs:{exact_sha:$sha,confirmation:"DEPLOY_DESIGNPRO_FUNCTIONS",functions:"production-panel-proof"}}' > "$RUNNER_TEMP/edge.json"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-production.yml/dispatches" --input "$RUNNER_TEMP/runtime.json"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-edge-functions.yml/dispatches" --input "$RUNNER_TEMP/edge.json"
+          echo "Requested existing protected deploys at $EXACT_SHA. Their own checks and approval requirements remain active."
+          echo "No feature flags, migration history, customer records or designer/model settings changed by this dispatcher."
