@@ -64,11 +64,32 @@ type History = Awaited<ReturnType<typeof wallHistory>>;
  * result", the same narrative the mockup asked for, without reshaping a
  * working, tested form to match a screenshot's grid.
  */
+/**
+ * THE BRAND BAR — ONE DEFINITION, THREE USES (owner, Trish 2026-09-24, who
+ * circled "Upload your wall" and "Describe the design" and asked for "a
+ * gradiant blue magenta with white text or blue gradiant — you tell me whats
+ * best").
+ *
+ * BLUE→MAGENTA, not blue alone, and the reason is consistency rather than
+ * taste: `from-blue-600 to-fuchsia-600` is ALREADY the product's gradient —
+ * the step number badge, the Generate CTA and the header's Create Your Wall
+ * all run it. A blue-only bar would introduce a second, weaker identity on the
+ * same screen, and the page would stop reading as one thing.
+ *
+ * It is declared ONCE because a heading and a field label that drift apart by
+ * one shade is exactly the kind of thing nobody notices until the page looks
+ * cheap. Change the hue here and every bar moves together.
+ */
+const BRAND_BAR = 'bg-gradient-to-r from-blue-600 to-fuchsia-600 text-white';
+
 function StepHeading({ n, icon: Icon, children }: { n: number; icon: LucideIcon; children: ReactNode }) {
   return (
-    <h2 className="mb-3 flex items-center gap-2 font-semibold">
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-fuchsia-600 text-xs font-bold text-white">{n}</span>
-      <Icon className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+    /* The number badge WAS the gradient; on a gradient bar it would vanish into
+       its own background, so it becomes a translucent white disc and the icon
+       goes white with it. Same three elements, still legible. */
+    <h2 className={'mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-base font-bold ' + BRAND_BAR}>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/25 text-xs font-bold text-white">{n}</span>
+      <Icon className="h-4 w-4 shrink-0 text-white" aria-hidden="true" />
       {children}
     </h2>
   );
@@ -1996,8 +2017,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 </div>
               </div>
             )}
-            <p className="mt-4 text-sm font-bold wall-ink">Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs wall-muted"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+            <p className={'mt-4 inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
                 2026-09-14: "on enter wall size should give price for printed
                 wrap from wpw film"). The wall's own square footage at the live
@@ -2269,7 +2290,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               {corners.length > 0 && <details className="mt-3 text-xs wall-muted"><summary className="cursor-pointer">Adjust corner positions</summary><div className="mt-2 grid grid-cols-2 gap-2">{corners.map((p,i) => <div key={i}><span>{i+1}. {cornerNames[i]}</span><div className="flex gap-1">{(['x','y'] as const).map(axis => <label key={axis}>{axis} %<input disabled={!!busy} aria-label={'Corner ' + (i+1) + ' ' + axis + ' percent'} type="number" min="0" max="100" step="0.1" className={inputClass} value={Number((p[axis]*100).toFixed(2))} onChange={e => setCorners(old => old.map((q,j) => j === i ? { ...q, [axis]: Number(e.target.value)/100 } : q))} onBlur={() => setCorners(old => old.length === 4 ? orderWallCorners(old) ?? old : old)} /></label>)}</div></div>)}</div></details>}
           </section>}
             <div className="mt-4">
-              <label className="block text-sm">{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}<textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
+              <label className="block text-sm"><span className={'mb-2 inline-block rounded-md px-2.5 py-1 font-bold ' + BRAND_BAR}>{intent === 'match' ? 'Changes to make (optional)' : intent === 'wall' ? 'Direction for the designer (optional)' : 'Describe the design'}</span><textarea className={inputClass + ' min-h-28'} disabled={!!busy} maxLength={6000} value={prompt} placeholder={intent === 'match' ? 'Keep it exactly as is, or: make the background ivory, fewer flowers…' : intent === 'wall' ? 'Calm, botanical, works with the grey drapes…' : 'Oversized blue botanicals on warm ivory, refined and hand-painted…'} onChange={e => { setPrompt(e.target.value); setArtwork(null); }} /></label>
               {/* THE STYLE CHIPS (owner's mockup, 2026-09-22). They APPEND to
                   the brief rather than replacing it, and they are not a
                   taxonomy: the two personas read prose, so a chip is a word
