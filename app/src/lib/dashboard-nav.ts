@@ -71,6 +71,15 @@ export const DASHBOARD_TOOLS: ToolNavItem[] = [
     brandAnchor: true,
   },
   {
+    key: "recreatepro",
+    label: OS_TOOLS.recreatepro.name,
+    route: "/recreatepro",
+    icon: Layers,
+    pillar: "design",
+    tier: "free",
+    description: OS_TOOLS.recreatepro.description,
+  },
+  {
     key: "wallpro",
     label: OS_TOOLS.wallpro.name,
     route: "/printpro/wallpro",

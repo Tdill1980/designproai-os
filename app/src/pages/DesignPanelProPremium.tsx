@@ -2267,7 +2267,7 @@ export default function DesignPanelProPremium({ embedded = false, embeddedBrief 
                             JSON.stringify({ refs: refs || [], year, make, model, savedAt: Date.now() }),
                           );
                         } catch { /* non-fatal — RecreatePro still opens, just empty */ }
-                        navigate("/productionflow?tab=prep");
+                        navigate("/recreatepro");
                       }}
                       leftColumnHeader={(<>
 

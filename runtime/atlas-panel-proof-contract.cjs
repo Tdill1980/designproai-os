@@ -221,7 +221,12 @@ function panelProofCreativeHead(aceAssembly) {
   // the restyle Lead Vehicle Wrap Designer (owner, 2026-09-22: "the persona
   // based design instruction for commercial and restyle"). Neither present and
   // the proof has no designer at all, which is the defect this exists to end.
-  if (!/^(?:You are (?:the |a )?senior (?:professional )?graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer)\b/.test(head)) {
+  // RecreatePro uses the EXISTING reproduction specialist, not the inventor.
+  // Admit that exact identity only with its explicit bounded recreation task;
+  // an arbitrary prompt still cannot masquerade as an executed designer.
+  const recreationHead = /^You are a vehicle wrap REPRODUCTION specialist at WePrintWraps\.com\./.test(head)
+    && /\n\nRECREATION TASK \(applies to the supplied artwork\):\nRecreatePro \/ (exact|complete|transfer)\./.test(head);
+  if (!/^(?:You are (?:the |a )?senior (?:professional )?graphic designer and vehicle-wrap specialist|You are WePrintWraps\.com Lead Vehicle Wrap Designer)\b/.test(head) && !recreationHead) {
     throw new Error("panel_proof_ace_persona_missing");
   }
   return head;

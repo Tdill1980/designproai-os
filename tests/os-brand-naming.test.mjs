@@ -58,7 +58,7 @@ test("os-brand.ts states the hierarchy the customer must read at a glance", () =
     assert.ok(BRAND.includes(`name: "${name}"`), `${name} is declared`);
     assert.ok(BRAND.includes(`tagline: "${tagline}"`), `${name} carries its tagline`);
   }
-  assert.match(BRAND, /OS_TOOL_ORDER[^=]*=\s*\["vehiclepro", "wallpro", "cutpro"\]/);
+  assert.match(BRAND, /OS_TOOL_ORDER[^=]*=\s*\["vehiclepro", "recreatepro", "wallpro", "cutpro"\]/);
 });
 
 test("the three-zone Production Panel Proof carries its own name, declared once", () => {

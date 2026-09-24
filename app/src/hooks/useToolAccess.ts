@@ -153,6 +153,8 @@ export const DESIGNPRO_PLUS_PRICING: TierPricing = {
  *   DesignPro → + DesignPro, GraphicsPro (anchor creative tier)
  */
 export const TOOL_TIER_REQUIREMENTS: Record<string, Tier> = {
+  // Discoverable for one-time buyers; server generation and purchase gates still apply.
+  recreatepro: "free",
   wallpro: "starter",
   // The two TENANT entries — the same apps wearing a partner's brand. They
   // resolved through the `|| "starter"` fallback below rather than being
