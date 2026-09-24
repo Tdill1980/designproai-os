@@ -1,0 +1,38 @@
+name: RecreatePro read-only rollout observation
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-rollout-observe.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: designproai-production
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.DESIGNPROAI_SSH_PRIVATE_KEY }}
+    steps:
+      - name: Read deployment identities and process names only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$RUNNER_TEMP/key"
+          ssh-keygen -y -f "$RUNNER_TEMP/key" > "$RUNNER_TEMP/key.pub"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/key.pub" -E sha256 | awk '{print $2}')" = SHA256:Kum4lu4ntmC5+Q1WIwbPZUCDhEfa0GyeVbdCn4Nsiic
+          ssh-keyscan -T 10 -t ed25519 137.184.0.4 2>/dev/null > "$RUNNER_TEMP/hosts"
+          test "$(ssh-keygen -lf "$RUNNER_TEMP/hosts" -E sha256 | awk '{print $2}' | sort -u)" = SHA256:2MADGyqFCuZYrIRL+/qm1EcxQOuFdQXFSN4/JWBjWng
+          ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$RUNNER_TEMP/hosts" root@137.184.0.4 'bash -s' <<'REMOTE'
+          set -eu
+          echo '== time =='; date -u
+          echo '== current/public =='; readlink -f /opt/designproai-os/current; readlink -f /opt/designproai-os/public
+          echo '== service state =='; systemctl show designproai-os.service -p ActiveState -p SubState
+          echo '== containers =='; docker ps --filter label=com.docker.compose.project=designproai-os --format '{{.Image}} {{.Status}}'
+          echo '== process names, never command arguments =='; ps -eo pid,ppid,comm,etime,pcpu,pmem --sort=-pcpu | head -25
+          echo '== disk free =='; df -h /opt/designproai-os /var/backups
+          echo '== staging names =='; find /opt/designproai-os/staging -mindepth 1 -maxdepth 1 -printf '%f\n'
+          echo '== latest backup size only =='; find /var/backups/designpro-cutover -mindepth 2 -maxdepth 2 -name designproai-os-before.tgz -printf '%T@ %s %p\n' | sort -nr | head -3
+          echo '== public gateway release =='; curl --fail --silent --max-time 15 https://os.designproai.com/gateway-healthz
+          REMOTE
