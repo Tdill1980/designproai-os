@@ -1,0 +1,108 @@
+name: Verify live WallPro release and UI
+on:
+  push:
+    branches: [wallpro-live-verify-20260923]
+    paths: ['.github/workflows/wallpro-live-verify.yml']
+permissions:
+  contents: read
+concurrency:
+  group: wallpro-live-verify-20260923
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_SHA: 5b9e54967e7816af37a65465e28086873908662e
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: 5b9e54967e7816af37a65465e28086873908662e
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - run: npm ci --prefix app
+      - name: Wait for the normal deployment and verify the public image bytes
+        run: |
+          python3 - <<'PY'
+          import urllib.request, json, hashlib, os, time, pathlib
+          out=pathlib.Path('/tmp/wallpro-live-qa'); out.mkdir()
+          host='https://os.designproai.com'
+          expected=os.environ['EXPECTED_SHA']
+          def get(url):
+              req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','User-Agent':'WallPro-release-verification/1.0'})
+              with urllib.request.urlopen(req, timeout=20) as r: return r.read()
+          for attempt in range(60):
+              try:
+                  release=json.loads(get(host+'/release.json'))
+                  if release.get('sourceSha') == expected: break
+                  print('Waiting for exact public release; observed',release.get('sourceSha'),flush=True)
+              except Exception as e: print('Public release not ready:',str(e),flush=True)
+              time.sleep(15)
+          else: raise RuntimeError('Expected release is not serving; no production changes were made by this check')
+          images={
+              'studio-original.jpg':'80e09c32449d11512cadfee2e1fafc1238080ed161f768bd5a846016e63025fa',
+              'studio-floral-preview.jpg':'b27d664f78801ec69f4a6ba74026bad2d81fc0a429b60b6a591791a74bb58843',
+              'proof-gym-before.jpg':'df146b1887d0efb69e39c3ef784115c6430dbe4080bc85dbf12031c578df8cf2',
+              'proof-gym-after.jpg':'eeaeb2c42be347a82c32b23052f3a8147d548bd561868c13c31daa98b6a5c287',
+          }
+          for name,digest in images.items():
+              actual=hashlib.sha256(get(host+'/wallpro/'+name)).hexdigest()
+              assert actual==digest,(name,actual)
+              print('VERIFIED_PUBLIC_IMAGE',name,actual,flush=True)
+          result={'sourceSha':expected,'images':images,'host':host}
+          try:
+              partner=json.loads(get('https://wallpro.weprintwraps.com/release.json'))
+              result['partnerSourceSha']=partner.get('sourceSha')
+          except Exception as e: result['partnerReadError']=str(e)
+          (out/'release-check.json').write_text(json.dumps(result,indent=2))
+          print('VERIFIED_PUBLIC_RELEASE',expected,flush=True)
+          PY
+      - name: Read both real tool pages in Chrome without logging in or generating
+        run: |
+          node --input-type=module <<'JS'
+          import {createRequire} from 'node:module';
+          import {writeFile} from 'node:fs/promises';
+          import {existsSync} from 'node:fs';
+          const require=createRequire(process.cwd()+'/app/package.json');
+          const puppeteer=require('puppeteer');
+          const browser=await puppeteer.launch({headless:true,...(existsSync('/usr/bin/google-chrome')?{executablePath:'/usr/bin/google-chrome'}:{}),args:['--no-sandbox','--disable-dev-shm-usage']});
+          const results=[];
+          try {
+            for(const [theme,url] of [['dark','https://os.designproai.com/printpro/wallpro'],['light','https://os.designproai.com/wallwrap-design']]) {
+              const page=await browser.newPage();
+              await page.setViewport({width:1440,height:1100,deviceScaleFactor:1});
+              const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+              await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
+              try {
+                await page.waitForSelector('.wallpro-magic',{timeout:25000});
+                await page.$eval('.wallpro-magic',el=>el.scrollIntoView({block:'center'}));
+                await new Promise(r=>setTimeout(r,2000));
+                const demo=await page.$('.wallpro-magic');
+                await demo.screenshot({path:`/tmp/wallpro-live-qa/${theme}-desktop-preview.png`});
+                await page.$$eval('.wm-step',(buttons)=>buttons[2].click());
+                const protectedCount=await page.$$eval('.wm-mask-controls button[aria-pressed="true"]',els=>els.length);
+                if(protectedCount!==2)throw new Error('Expected both demo curtains protected');
+                await demo.screenshot({path:`/tmp/wallpro-live-qa/${theme}-desktop-masking.png`});
+                await page.setViewport({width:390,height:844,deviceScaleFactor:1});
+                await new Promise(r=>setTimeout(r,200));
+                await demo.screenshot({path:`/tmp/wallpro-live-qa/${theme}-mobile-masking.png`});
+                results.push({theme,url:page.url(),rendered:true,protectedCount,errors});
+              } catch(error) {
+                await page.screenshot({path:`/tmp/wallpro-live-qa/${theme}-unavailable.png`,fullPage:false});
+                results.push({theme,url:page.url(),rendered:false,error:String(error),errors});
+              }
+              await page.close();
+            }
+            await writeFile('/tmp/wallpro-live-qa/browser-check.json',JSON.stringify(results,null,2));
+            console.log(JSON.stringify(results,null,2));
+          } finally {await browser.close();}
+          JS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wallpro-live-ui-verification
+          path: /tmp/wallpro-live-qa
+          if-no-files-found: warn
