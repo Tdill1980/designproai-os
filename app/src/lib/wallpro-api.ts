@@ -180,8 +180,12 @@ export async function writeWallBriefs(input: WallBriefRequest): Promise<{ prompt
 
 /** Detect my wall: proposes the wall corners and the openings to protect from
  * the uploaded wall photo. Preview-only; costs no token. */
-export async function detectWall(wallPath: string): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
-  const { data, error } = await supabase.functions.invoke('detect-wall-openings', { body: { wallPath } });
+/** `point` present = TAP TO MASK: the same segmenter, asked for the one object
+ * at that spot, answering `wall: null` and `openings: []` so a tap can never
+ * overwrite corners the customer has already dragged into place. Absent, this
+ * is the bulk pass and the request is byte-for-byte what it always was. */
+export async function detectWall(wallPath: string, point?: { x: number; y: number }): Promise<{ wall: { x: number; y: number }[] | null; openings: { label: string; points: { x: number; y: number }[] }[]; masks: { label: string; box: { x0: number; y0: number; x1: number; y1: number }; png: string }[]; notes: string | null; model: string }> {
+  const { data, error } = await supabase.functions.invoke('detect-wall-openings', { body: point ? { wallPath, point } : { wallPath } });
   if (error) {
     const response = (error as any).context;
     const body = await response?.clone?.().json().catch(() => null);

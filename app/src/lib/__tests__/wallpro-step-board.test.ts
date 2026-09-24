@@ -440,3 +440,63 @@ describe('progress is reported, not awarded', () => {
     expect(page).toContain('(!photo || wallLocated)');
   });
 });
+
+describe('tap to mask reaches the page it was built for', () => {
+  const page = source('../../pages/WallPro.tsx');
+  const editor = source('../../components/wallpro/WallPhotoEditor.tsx');
+
+  it('is a marking mode the editor knows about, so a tap arrives as a point', () => {
+    expect(editor).toContain("'tap' | null");
+    expect(page).toContain("if (marking === 'tap') { void maskAtTap(p); return; }");
+  });
+
+  it('sends the tap to the SAME detector, not a second one', () => {
+    // A separate producer of these masks is what RULE 0.21 forbids by name,
+    // and it would mean two places to fix the next time the channel is flaky.
+    expect(page).toContain('await detectWall(wallPath, point)');
+    expect(page).not.toMatch(/invoke\(['"]segment/);
+  });
+
+  it('feeds the result through applyItems, so the composites are rebuilt from the list', () => {
+    // Not "add this to the protect mask": both composites are re-rasterised
+    // from the whole item list, which is what keeps one source of truth.
+    expect(page).toContain('await applyItems(addWallItem(itemsRef.current, mask as DetectedMask))');
+  });
+
+  it('reads the item list from a ref, because a tap resolves a round trip later', () => {
+    // Two quick taps on a busy wall would otherwise race two appends against
+    // the same list and drop one of them.
+    expect(page).toContain('itemsRef.current = items');
+    expect(page).toContain('if (!asset || tapping) return;');
+  });
+
+  it('stays in marking mode between taps, and leaves by Done rather than Cancel', () => {
+    // A busy wall needs several items masked; closing the mode after each one
+    // is a trip back to the button between every tap.
+    //
+    // ⚠️ ASSERTED ON THE FUNCTION BODY, NOT ON THE WHOLE PAGE. The first draft
+    // was `not.toMatch(/maskAtTap[\s\S]{0,900}setMarking\(null\)/)` and it
+    // failed immediately -- on the CALL SITE inside markPoint, whose corner
+    // branch legitimately closes marking a few hundred characters later. A
+    // proximity regex over a 2,700-line file convicts its neighbours.
+    const from = page.indexOf('async function maskAtTap(');
+    const to = page.indexOf('/** Re-runs detection on demand', from);
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    expect(page.slice(from, to)).not.toContain('setMarking');
+    expect(page).toContain("{marking === 'tap' ? 'Done' : 'Cancel'}");
+  });
+
+  it('offers no Undo in tap mode, because there is nothing there to undo', () => {
+    // Each tap is a finished item; the way to reverse one is to tap it again
+    // on the photo. An Undo reading `excludeDraft`, which a tap never fills,
+    // would be a permanently dead button beside a live one.
+    expect(page).toContain("{marking !== 'tap' && <Button");
+  });
+
+  it('has a control that starts it, in the step that owns masking', () => {
+    expect(page).toContain("'Tap an item to mask it'");
+    const step = page.indexOf('Re-detect protected & removable areas');
+    expect(page.lastIndexOf('Tap an item to mask it', step)).toBeGreaterThan(-1);
+  });
+});

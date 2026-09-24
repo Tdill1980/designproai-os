@@ -14,8 +14,8 @@ import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
-import { rasterizeDetectionMasks, buildProtectedAreaMask } from '@/lib/wallpro-masks';
-import { toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
+import { rasterizeDetectionMasks, buildProtectedAreaMask, type DetectedMask } from '@/lib/wallpro-masks';
+import { toWallItems, addWallItem, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -214,6 +214,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [preparingProof, setPreparingProof] = useState(false);
   const [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [detecting, setDetecting] = useState(false);
+  /** One tap at a time: a second while the first is still resolving would race
+   *  two appends against the same list and drop one of them. */
+  const [tapping, setTapping] = useState(false);
   const [productionKick, setProductionKick] = useState(0);
   // Pixel-accurate protected areas from detection: one PNG, white where the
   // design must not paint. Preview-only; print panels stay full rectangles.
@@ -242,7 +245,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
-  photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork;
+  // itemsRef, because a tap resolves a network round trip later and must append
+  // to the list as it is THEN -- two quick taps on a busy wall would otherwise
+  // have the second one overwrite the first from a stale closure.
+  const itemsRef = useRef<WallItem[]>([]);
+  photoRef.current = photo; cornersRef.current = corners; exclusionsRef.current = exclusions; artworkRef.current = artwork; itemsRef.current = items;
   /** Where the detected-item list is stored, so a reopened project is tappable
    * again. Ref-mirrored because several saves run inside async closures that
    * would otherwise persist the path from the render they were created in. */
@@ -1154,6 +1161,46 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       publish(movableRaster, 'remove-areas.png', setRemoveMask),
     ]);
   }
+  /**
+   * TAP TO MASK: one touch, one object (owner, 2026-09-23: "The busy wall
+   * marking is impossinle it should be a one touch that coveres the item so
+   * that the wrap appears under the phots").
+   *
+   * The bulk detector answers a capped list in one shot, and on a wall full of
+   * gym equipment the thing she cares about is the one it left out. Her only
+   * recovery was tracing a polygon by hand, on a phone, around an upside-down
+   * exercise machine. This asks the SAME segmenter for the one object under her
+   * finger and appends it to the SAME item list — so the composites, the
+   * one-tap toggle, persistence and the summary line all work on it without
+   * knowing it arrived by tap. `applyItems` does the rest, unchanged.
+   *
+   * MARKING MODE STAYS ON. A busy wall needs several items masked, and closing
+   * the mode after each one would mean a trip back to the button between every
+   * tap — the exact friction being fixed. She leaves it with Done.
+   *
+   * A miss says so and changes nothing: the edge returns no mask rather than
+   * the nearest one, because pasting the wrong object's outline onto her photo
+   * is something she would then have to find and undo.
+   */
+  async function maskAtTap(point: Point) {
+    const asset = photoRef.current;
+    if (!asset || tapping) return;
+    setTapping(true);
+    try {
+      const user = await wallUser();
+      const wallPath = asset.path || await uploadWallAsset(asset, user.id);
+      if (!asset.path) setPhoto(old => (old && old.url === asset.url ? { ...old, path: wallPath } : old));
+      const found = await detectWall(wallPath, point);
+      // She may have replaced the photo while the model was thinking.
+      if (photoRef.current?.url !== asset.url) return;
+      const mask = found.masks[0];
+      if (!mask) { setNotice(found.notes || 'Nothing was found at that spot. Tap the middle of the item, or draw it by hand.'); return; }
+      await applyItems(addWallItem(itemsRef.current, mask as DetectedMask));
+      setNotice(`${mask.label} is masked — the design runs behind it. Tap it again on the photo to paint through it instead.`);
+    } catch (e) {
+      setNotice((e instanceof Error ? e.message : 'That item could not be outlined.') + ' You can still draw it by hand.');
+    } finally { setTapping(false); }
+  }
   /** Re-runs detection on demand (a different photo crop, or after the customer
    * moved things). The first pass happens automatically on upload. */
   function detectMyWall(applyMasks = false) {
@@ -1512,6 +1559,13 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       return;
     }
     if (marking === 'exclude') { setExcludeDraft(old => [...old, p]); return; }
+    // ONE TOUCH COVERS THE ITEM (owner, 2026-09-23: "The busy wall marking is
+    // impossinle it should be a one touch that coveres the item so that the
+    // wrap appears under the phots"). The tap is the whole gesture; the
+    // segmenter returns that object's outline and it joins the same item list
+    // the bulk pass fills, so the composites, the toggle and persistence all
+    // work on it without knowing it arrived by tap.
+    if (marking === 'tap') { void maskAtTap(p); return; }
     const tapped = corners.length >= 4 ? [p] : [...corners, p];
     // THE ORDER OF THE TAPS CARRIES NO INFORMATION THE GEOMETRY NEEDS.
     // Reading order (top-left, top-right, bottom-left, bottom-right) is what a
@@ -2134,6 +2188,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               <p className="-mt-1 mb-1 text-xs wall-muted">Drag the corners to mark your wall. We exclude windows, doors and furniture. Your print files never wait for this.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(false)}><Wand2 className={'mr-2 h-4 w-4' + (detecting ? ' animate-pulse' : '')} />{detecting ? 'Detecting…' : 'Detect wall corners again'}</Button>
+                {/* ONE TOUCH, IN THE STEP THAT OWNS MASKING. The bulk
+                    re-detect beside it answers a capped list in one shot; this
+                    is for the object that list missed, which on a busy wall is
+                    the one the customer actually cares about. */}
+                <Button variant={marking === 'tap' ? 'default' : 'outline'} disabled={!!busy || detecting || !photo}
+                  onClick={() => { setExcludeDraft([]); setMarking(marking === 'tap' ? null : 'tap'); setView('before'); focusPhoto(); }}>
+                  <Crosshair className={'mr-2 h-4 w-4' + (tapping ? ' animate-pulse' : '')} />{marking === 'tap' ? 'Done masking' : 'Tap an item to mask it'}
+                </Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
               <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
@@ -2217,7 +2279,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <div className="mb-2">
                   <div className="rounded-xl border border-blue-400/70 bg-slate-900 px-3 py-2 shadow-lg">
                     <p className="text-[13px] font-semibold leading-snug text-white">
-                      {marking === 'wall'
+                      {marking === 'tap'
+                        ? (tapping ? 'Outlining that item…' : 'Tap any item to mask it — the design runs behind it. Keep tapping; press Done when finished.')
+                        : marking === 'wall'
                         ? `Tap the four corners of your wall, clockwise from the top left — ${4 - corners.length} to go`
                         : marking === 'rectangle'
                           ? excludeDraft.length === 0
@@ -2229,10 +2293,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                     </p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       {marking === 'exclude' && <Button size="sm" className="h-7 px-2 text-xs" disabled={!!busy || excludeDraft.length < 3} onClick={() => finishMask(excludeDraft)}>Finish</Button>}
-                      <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || (marking === 'wall' ? !corners.length : !excludeDraft.length)}
-                        onClick={() => marking === 'wall' ? setCorners(old => old.slice(0, -1)) : setExcludeDraft(old => old.slice(0, -1))}>Undo</Button>
+                      {/* A TAP HAS NOTHING TO UNDO FROM HERE. Each tap is a
+                          finished item on the photo, and the way to reverse one
+                          is to tap it again — which is the control that was
+                          already there. An Undo reading `excludeDraft`, which a
+                          tap never fills, would have been a permanently dead
+                          button sitting next to a live one. */}
+                      {marking !== 'tap' && <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || (marking === 'wall' ? !corners.length : !excludeDraft.length)}
+                        onClick={() => marking === 'wall' ? setCorners(old => old.slice(0, -1)) : setExcludeDraft(old => old.slice(0, -1))}>Undo</Button>}
                       <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy}
-                        onClick={() => { setExcludeDraft([]); setMarking(null); }}>Cancel</Button>
+                        onClick={() => { setExcludeDraft([]); setMarking(null); }}>{marking === 'tap' ? 'Done' : 'Cancel'}</Button>
                     </div>
                   </div>
                 </div>

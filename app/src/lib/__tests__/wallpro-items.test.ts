@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  toWallItems, toggleItem, resetItems, hasOverride, splitItems, itemAt, itemSummary,
+  toWallItems, addWallItem, toggleItem, resetItems, hasOverride, splitItems, itemAt, itemSummary,
 } from '../wallpro-items';
 import type { DetectedMask } from '../wallpro-masks';
 
@@ -111,5 +111,54 @@ describe('a tap resolves to the item the customer meant', () => {
   it('handles a box given with its corners in either order', () => {
     const flipped = mask('drape', 'fixed', { x0: 0.8, y0: 0.8, x1: 0.2, y1: 0.2 });
     expect(itemAt(toWallItems([flipped]), 0.5, 0.5)?.label).toBe('drape');
+  });
+});
+
+describe('one tap adds one item', () => {
+  const mask = (x0: number, y0: number, x1: number, y1: number, label = 'thing', cls: 'fixed' | 'movable' = 'fixed') =>
+    ({ label, box: { x0, y0, x1, y1 }, png: 'data:image/png;base64,AAA', class: cls });
+
+  it('appends to the same list the bulk pass filled, with an id that cannot collide', () => {
+    // The bulk pass rebuilds `item-<index>-<label>` from zero on every
+    // re-detect, so a tap that reused that shape could be silently replaced.
+    const bulk = toWallItems([mask(0, 0, 0.2, 0.2, 'window')]);
+    const next = addWallItem(bulk, mask(0.6, 0.6, 0.9, 0.9, 'treadmill'));
+    expect(next).toHaveLength(2);
+    expect(next[1].label).toBe('treadmill');
+    expect(next[1].id).toBe('tap-1');
+    expect(next[1].id).not.toEqual(bulk[0].id);
+    expect(addWallItem(next, mask(0.1, 0.7, 0.3, 0.9, 'lamp'))[2].id).toBe('tap-2');
+  });
+
+  it('replaces a near-duplicate rather than stacking one on top of it', () => {
+    // Tapping the same sofa twice is what a person does when the first outline
+    // looked wrong. Two overlapping sofas would put two chips on the photo and
+    // make toggling one appear to do nothing, because the other still covers
+    // those pixels.
+    const once = addWallItem([], mask(0.3, 0.3, 0.7, 0.7, 'sofa'));
+    const twice = addWallItem(once, mask(0.31, 0.32, 0.69, 0.68, 'sectional sofa'));
+    expect(twice).toHaveLength(1);
+    expect(twice[0].label).toBe('sectional sofa');
+    expect(twice[0].id).toBe(once[0].id);
+  });
+
+  it('a re-tap keeps the class the customer chose, and never silently undoes it', () => {
+    const kept = addWallItem([], mask(0.3, 0.3, 0.7, 0.7, 'bike'));
+    const through = toggleItem(kept, kept[0].id);
+    expect(through[0].applied).toBe('movable');
+    const retapped = addWallItem(through, mask(0.31, 0.31, 0.69, 0.69, 'exercise bike'));
+    expect(retapped[0].applied).toBe('movable');
+    expect(retapped[0].label).toBe('exercise bike');
+  });
+
+  it('a different object nearby is its own item, not a replacement', () => {
+    const a = addWallItem([], mask(0.1, 0.1, 0.3, 0.3, 'left frame'));
+    const b = addWallItem(a, mask(0.5, 0.1, 0.7, 0.3, 'right frame'));
+    expect(b).toHaveLength(2);
+  });
+
+  it('defaults anything that is not a clean "movable" to protected, like the rest of this module', () => {
+    expect(addWallItem([], mask(0, 0, 1, 1, 'x', 'movable'))[0].applied).toBe('movable');
+    expect(addWallItem([], { ...mask(0, 0, 1, 1), class: 'wobbly' as never })[0].applied).toBe('fixed');
   });
 });
