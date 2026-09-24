@@ -80,7 +80,7 @@ export const PROOF_BRAND = {
   blurb: "One sheet, three zones: full print panels, the same panels without type or logos, and your logo, text and graphic elements. Every print-ready file is cut from it.",
 } as const;
 
-export type OsToolKey = "vehiclepro" | "wallpro" | "cutpro";
+export type OsToolKey = "vehiclepro" | "wallpro" | "cutpro" | "recreatepro";
 
 export interface OsTool {
   key: OsToolKey;
@@ -101,12 +101,23 @@ export interface OsTool {
    * code (`dashboard-nav.ts`, `useToolAccess.ts`, `ToolWordmark.tsx`). Never
    * rename these: tier gates, analytics and stored project rows read them.
    */
-  navKey: "designpro" | "wallpro" | "graphicspro";
+  navKey: "designpro" | "wallpro" | "graphicspro" | "recreatepro";
   /** Path prefixes that mean "the customer is inside this tool". */
   pathPrefixes: readonly string[];
 }
 
 export const OS_TOOLS: Record<OsToolKey, OsTool> = {
+  recreatepro: {
+    key: "recreatepro",
+    name: "RecreatePro",
+    wordmark: { base: "Recreate", suffix: "Pro" },
+    category: "Reference-to-print reconstruction",
+    tagline: "Your design. Rebuilt for print.",
+    description: "Recreate uploaded artwork, complete a partial wrap, or adapt it to another vehicle—then revise and prepare production files.",
+    route: "/recreatepro",
+    navKey: "recreatepro",
+    pathPrefixes: ["/recreatepro"],
+  },
   vehiclepro: {
     key: "vehiclepro",
     name: "VehiclePro",
@@ -161,8 +172,8 @@ export const OS_TOOLS: Record<OsToolKey, OsTool> = {
   },
 };
 
-/** The three tools in the order the customer should see them. */
-export const OS_TOOL_ORDER: readonly OsToolKey[] = ["vehiclepro", "wallpro", "cutpro"];
+/** Customer-facing tools, including the standalone reference-to-print entry. */
+export const OS_TOOL_ORDER: readonly OsToolKey[] = ["vehiclepro", "recreatepro", "wallpro", "cutpro"];
 
 /**
  * Which tool a path is inside, if any. The persistent header uses this to

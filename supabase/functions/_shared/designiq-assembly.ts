@@ -837,6 +837,15 @@ function atlasCreativeDirection(value: string): string {
     .trim();
 }
 
+/** RecreatePro reuses the designer, not a second producer. Ordinary exact-reference
+ * and inspiration requests remain byte-identical. The bounded tagged task is
+ * authored by RecreatePro intake; only named customer edits override fidelity. */
+function recreateReferenceTask(styleDescriptors?: string): string {
+  if (typeof styleDescriptors !== "string" || styleDescriptors.length > 2000
+    || !/^RecreatePro \/ (exact|complete|transfer)\./.test(styleDescriptors)) return "";
+  return `\n\nRECREATION TASK (applies to the supplied artwork):\n${styleDescriptors}\nThe customer's explicit requested edits supersede exact-copy instructions for those named details only. Preserve every other supplied detail. Missing surfaces are new continuations of the same design language, subject to customer review.`;
+}
+
 function buildDesignIQPrompt(params: DesignIQParams): string {
   const {
     mode,
@@ -1189,6 +1198,7 @@ CLIENT BRIEF:`;
         assembled += atlasFlatMaster
           ? `\n\nEXACT REFERENCE: The provided reference is the customer's approved artwork authority. Recreate its colors, patterns, typography, logos, layout, composition, proportions and visual hierarchy faithfully across ${atlasProofSheet ? "every panel" : atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}.`
           : `\n\nEXACT REFERENCE: The provided reference is the customer's own approved wrap design for their vehicle. Recreate it faithfully on the ${vehicle} — keep the colors, patterns, typography, logos, layout, and composition true to the reference, adapting only to fit the ${vehicle}'s body lines and preserving the design's identity, proportions, and visual hierarchy.`;
+        assembled += recreateReferenceTask(styleDescriptors);
       } else if (styleDescriptors) {
         assembled += `\n\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA extracted from references:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the reference images directly.`;
       } else {
@@ -1334,6 +1344,7 @@ ${PROFESSIONAL_JUDGMENT}`;
       assembled += atlasFlatMaster
         ? `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's approved artwork authority. Reproduce its exact colors, patterns, graphics, typography, layout, composition, logos, wordmarks and supplied text faithfully across ${atlasField ? "the whole continuous field" : atlasHero ? "this one sheet" : "the six mapped livery fields"}. Preserve its proportions, hierarchy, coverage and texture density.`
         : `\nEXACT REFERENCE (REPRODUCE, DO NOT REDESIGN): The provided reference is the customer's own approved wrap design. Reproduce it faithfully on the ${vehicle} — keep the exact colors, patterns, graphics, typography, layout, and composition true to the reference, adapting ONLY to fit the ${vehicle}'s body lines while preserving the design's identity, proportions, and visual hierarchy. Reproduce EVERY logo, wordmark, and line of text exactly once, in the same place and style as the reference — branding is PART of this design, never a separate layer to strip, relocate, duplicate, or reinvent. Do NOT redesign, reinterpret, recolor, simplify, or add elements; the ONLY thing that changes is the vehicle the design is applied to. Match the reference's full coverage and texture density — if it is an all-over textured wrap, cover the entire body edge to edge; where the reference leaves the body plain, keep it plain.`;
+      assembled += recreateReferenceTask(styleDescriptors);
     } else if (styleDescriptors) {
       assembled += `\nSTYLE INSPIRATION: Transform the visual style from the client's reference images into an ORIGINAL wrap design. Style DNA:\n${styleDescriptors}\nCreate something new that captures this energy — do not reproduce the references directly.`;
     } else {

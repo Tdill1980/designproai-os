@@ -55,8 +55,8 @@ export const DESIGN_TOOLS: DesignTool[] = [
   {
     id: "recreatepro",
     name: "RecreatePro",
-    description: "Recreate an existing design from a reference image.",
-    route: "/visualize",
+    description: "Recreate a design, complete a partial wrap or transfer it to another vehicle.",
+    route: "/recreatepro",
     rendersPerUse: 1,
   },
   {

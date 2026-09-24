@@ -26,6 +26,7 @@ export interface WordmarkSplit {
 // its raw key, which is how "revisionsource", "productionjobs" and "genieqc"
 // reached the sidebar in lowercase and unspaced.
 const TOOL_WORDMARKS: Record<string, WordmarkSplit> = {
+  recreatepro:      { base: "Recreate", suffix: "Pro" },
   wallpro:          { base: "Wall",       suffix: "Pro" },
   wallpro_wpw:      { base: "WPW × Wall", suffix: "Pro" },
   patternpro:       { base: "Pattern",    suffix: "Pro" },

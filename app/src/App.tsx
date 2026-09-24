@@ -107,6 +107,8 @@ const ApproveProUnavailable = () => (
 );
 import { RequireAuth } from "@/components/RequireAuth";
 const WallPro = lazyWithRetry(() => import("./pages/WallPro"));
+const RecreatePro = lazyWithRetry(() => import("./pages/RecreatePro"));
+const ProductionFlowEntry = lazyWithRetry(() => import("./components/recreatepro/ProductionFlowEntry"));
 const MyDesigns = lazyWithRetry(() => import("./pages/MyDesigns"));
 const WallProLanding = lazyWithRetry(() => import("./pages/WallProLanding"));
 const AdminWallProLanding = lazyWithRetry(() => import("./pages/AdminWallProLanding"));
@@ -431,6 +433,7 @@ const App = () => {
               orchestration pages below redirect in here rather than 404,
               because the edge functions they drove are not part of this
               standalone system. */}
+          <Route path="/recreatepro" element={<RecreatePro />} />
           <Route path="/designpro" element={<RequireAuth><DesignProAIHome /></RequireAuth>} />
           <Route path="/designpro/jobs" element={<RequireAuth><DesignProJobs /></RequireAuth>} />
           <Route path="/designpro/jobs/:generationId" element={<RequireAuth><DesignProWorkflow /></RequireAuth>} />
@@ -646,14 +649,14 @@ const App = () => {
           {/* ProductionFlow drove run-production-flow / generate-2d-proof from
               the browser. The runtime owns the whole pipeline now, so the job
               page is the one place a job's state is reported. */}
-          <Route path="/productionflow" element={<Navigate to="/designpro/jobs" replace />} />
+          <Route path="/productionflow" element={<ProductionFlowEntry />} />
           {/* The GENIE progress page exists again, server-backed. The bare
               /productionflow still lands on the job list because it names no job. */}
           <Route path="/productionflow/:generationId" element={<RequireAuth><GenieProgress /></RequireAuth>} />
           <Route path="/production-flow" element={<Navigate to="/designpro/jobs" replace />} />
           {/* Designer-side production QC — files land here first; writes to the SAME
               panelizer_jobs row the customer GENIE page on ProductionFlow polls. */}
-          {/* RecreatePro is now a single flow inside ProductionFlow's prep tab */}
+          {/* RecreatePro owns /recreatepro; legacy prep links resolve there. */}
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
