@@ -1141,7 +1141,7 @@ p {
      The card is LIGHTER than the ground here for the same reason it is in the
      light theme: a panel reads as an object only when it separates from what
      it sits on. */
-  --wall-ground: 222 48% 7%;       /* deep navy */
+  --wall-ground: 224 52% 9%;       /* deep navy */
   --wall-card: 220 12% 21%;        /* clearly separated charcoal surface */
   --wall-card-edge: 216 18% 36%;
   --wall-ink: 210 40% 98%;
@@ -1199,4 +1199,107 @@ p {
 .wallpro-page [class*="rounded-xl"],
 .wallpro-page [class*="rounded-2xl"] {
   border-radius: 0.375rem;
+}
+
+
+/* WallPro compact working chrome — the tool owns the screen, not navigation. */
+.wallpro-compact-header {
+  min-height: 4rem;
+  background: linear-gradient(100deg, #071426 0%, #0d1b38 58%, #111a3f 100%);
+  border-bottom: 1px solid rgba(96, 165, 250, .28);
+  color: white;
+  box-shadow: 0 8px 24px -18px rgba(2, 6, 23, .8);
+}
+.wallpro-compact-header .wall-muted { color: rgba(255,255,255,.64); }
+.wallpro-header-link,
+.wallpro-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2rem;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,.78);
+  font-size: .78rem;
+  font-weight: 650;
+  padding: 0 .6rem;
+}
+.wallpro-header-icon { width: 2rem; padding: 0; }
+.wallpro-header-link:hover,
+.wallpro-header-icon:hover { color: #fff; background: rgba(255,255,255,.07); }
+
+.wallpro-progress {
+  background: color-mix(in srgb, hsl(var(--wall-ground)) 96%, transparent);
+  backdrop-filter: blur(12px);
+}
+.wallpro-progress-step {
+  position: relative;
+  border: 0;
+  border-right: 1px solid hsl(var(--wall-card-edge));
+  background: hsl(var(--wall-card));
+  color: hsl(var(--wall-ink-soft));
+}
+.wallpro-progress-step.is-complete {
+  background: linear-gradient(90deg, #123d82 0%, #2563eb 100%);
+  color: white;
+  border-color: rgba(96,165,250,.35);
+}
+.wallpro-progress-step.is-current {
+  overflow: hidden;
+  background: linear-gradient(90deg, #071f4f 0%, #0b4fb3 48%, #1688f8 100%);
+  color: white;
+  border-color: rgba(96,165,250,.65);
+}
+.wallpro-progress-step.is-current::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -35%;
+  width: 28%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22), transparent);
+  transform: skewX(-18deg);
+  animation: wallpro-progress-sweep 2.8s ease-in-out infinite;
+}
+.wallpro-progress-index {
+  border: 1px solid currentColor;
+  border-radius: .2rem;
+  opacity: .9;
+}
+.wallpro-progress-step.is-complete .wallpro-progress-index,
+.wallpro-progress-step.is-current .wallpro-progress-index { border-color: rgba(255,255,255,.55); }
+@keyframes wallpro-progress-sweep {
+  0%, 55% { left: -35%; opacity: 0; }
+  65% { opacity: 1; }
+  100% { left: 115%; opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wallpro-progress-step.is-current::after { animation: none; display: none; }
+}
+
+/* White WPW gets a cool SaaS canvas behind crisp white cards. Dark WallPro
+   uses a restrained navy-indigo canvas behind graphite cards. */
+[data-wall-theme="light"].wallpro-page {
+  background:
+    radial-gradient(circle at 78% 10%, rgba(99,102,241,.07), transparent 30rem),
+    linear-gradient(135deg, #f5f8fc 0%, #edf3fa 52%, #f5f2fb 100%);
+}
+[data-wall-theme="dark"].wallpro-page {
+  background:
+    radial-gradient(circle at 80% 8%, rgba(67,56,202,.16), transparent 32rem),
+    linear-gradient(135deg, #061326 0%, #0b1933 55%, #15133b 100%);
+}
+[data-wall-theme="dark"] .wall-card {
+  background: linear-gradient(145deg, hsl(220 13% 23%), hsl(220 14% 18%));
+  border-color: hsl(216 20% 39%);
+}
+[data-wall-theme="light"] .wall-card {
+  background: #fff;
+  border-color: #d7e1ee;
+  box-shadow: 0 10px 30px -22px rgba(15,23,42,.38);
+}
+
+@media (max-width: 639px) {
+  .wallpro-compact-header .wallpro-lockup-tagline { display: none; }
+  .wallpro-header-link { padding-inline: .45rem; }
+  .wallpro-progress-step { padding-inline: .65rem; }
 }
