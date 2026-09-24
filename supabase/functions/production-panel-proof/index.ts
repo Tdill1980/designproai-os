@@ -647,23 +647,30 @@ serve(async (req) => {
       atlasCleanBase: body.separatedArtwork === true,
       atlasPanels: ATLAS_PANELS,
     } as Record<string, unknown>));
-    // CALL 1 CREATIVE AUTHORITY:
-    // The proven DesignIQ/A.C.E. assembly above is the designer. Do not replace
-    // it with a second "clean background" persona or strip its professional
-    // judgement. `separatedArtwork` is a downstream production concern:
-    // Turn 1 still authors the COMPLETE coherent wrap; layer separation happens
-    // only after that accepted design exists.
-    //
-    // The only additional instruction here is the flat production destination.
-    // It changes WHERE the golden designer renders, never HOW it designs.
-    const flatProductionInstructions = [
-      "FLAT PRODUCTION DESTINATION: Render the complete finished wrap design into the six supplied production rectangles: driver, passenger, roof, hood, front, and rear.",
-      "These rectangles are the fixed physical surface geometries of ONE vehicle wrap. They are not six separate creative assignments. Driver and passenger are corresponding sides of the same master campaign.",
-      "Fill every supplied production rectangle edge-to-edge with the finished artwork. Continue background, photography, illustration, color, texture, and graphic movement through the full outer boundary so code-owned trim and 5-inch bleed geometry can be preserved.",
-      "Keep critical brand marks and readable customer text inside the usable surface area while allowing noncritical artwork to continue through bleed.",
-      "Return flat uninstalled artwork only. The application supplies the staging geometry and the coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
-    ];
-    let prompt = [creativeHead, ...flatProductionInstructions].join("\n\n");
+    // CALL 1: DesignIQ owns the creative decision; the TriZone contract owns
+    // presentation/production structure. Do not substitute a clean-background
+    // persona and do not reduce the request to six unlabeled rectangles.
+    // buildPanelProofPrompt carries the dimensioned 3-zone document contract:
+    // Zone 1 complete design, Zone 2 the corresponding background artwork, and
+    // Zone 3 isolated brand/cut elements. The runtime calls this endpoint once.
+    let prompt = buildPanelProofPrompt({
+      creativeHead,
+      companyName: field("companyName"),
+      tagline: field("tagline"),
+      phone: field("phone"),
+      website: field("website"),
+      services: (body?.services ?? intake?.services),
+      promo: field("promo"),
+      vehicleYear: field("vehicleYear"),
+      vehicleMake: field("vehicleMake"),
+      vehicleModel: field("vehicleModel"),
+      proofDate: body?.proofDate,
+      orderNumber: body?.orderNumber,
+      designer: body?.designer,
+      proofVersion: body?.proofVersion,
+      creativeDirection,
+      panelRows,
+    });
     // PHASE 1 PAYLOAD CONTRACT — fail closed before the provider sees a request.
     // The live canary reports this object next to the full prompt so the exact
     // persona/layout injection can be proved from the provider payload rather
@@ -675,16 +682,17 @@ serve(async (req) => {
     const nativeKnowledgeInstruction = creativeHead.split("\n")
       .find(line => /\bnative\b.*\bknowledge\b|DESIGN AMPLIFICATION:/i.test(line));
     const phase1Audit = {
-      contract: "designpro.vehiclepro.phase1.graphic-designer-flat-first-opaque-edge.v1",
+      contract: "designpro.vehiclepro.phase1.graphic-designer-trizone.v2",
       graphicDesignerPersonaInjected:
         /^You are\b/i.test(designerIdentity) && /\bdesigner\b/i.test(designerIdentity)
-        && prompt.startsWith(creativeHead + "\n\n"),
+        && prompt.includes(creativeHead),
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
       flatPanelProductionProofInjected:
-        flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0]),
+        /ZONE 1|FULL DESIGN PANELS/i.test(prompt) && /ZONE 2|BACKGROUND/i.test(prompt)
+        && /ZONE 3|CUT GRAPHICS/i.test(prompt),
       templateLayoutLocked:
-        flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction)),
+        panelRows.length === 6 && panelRows.every((row) => prompt.includes(row)),
     };
     const missingPhase1 = Object.entries(phase1Audit)
       .filter(([key, value]) => key !== "contract" && value !== true)
