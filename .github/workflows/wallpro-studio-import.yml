@@ -1,0 +1,84 @@
+name: Stage and verify WallPro single-stage UI
+on:
+  push:
+    branches: [wallpro-single-stage-20260923]
+    paths: ['.github/workflows/wallpro-studio-import.yml']
+permissions:
+  contents: write
+concurrency:
+  group: wallpro-single-stage-review
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/wallpro-single-stage-20260923'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: wallpro-single-stage-20260923
+      - name: Import only the checksum-bound UI files and approved public website images
+        env:
+          PATCH_URL: 'https://sdmntprwestus.oaiusercontent.com/files/00000000-5d70-8230-a84d-f9ccee79c760/raw?se=2026-09-24T01%3A31%3A19Z&sp=r&sv=2026-02-06&sr=b&scid=d84abf18-363d-5f34-879e-6f558e7ae1ee&skoid=5e713cdb-766b-475e-a3ca-8adb6cf99aa0&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-24T01%3A01%3A33Z&ske=2026-09-25T01%3A01%3A33Z&sks=b&skv=2026-02-06&sig=pKlZd4Gi1//H5LCeOWQM%2BrQqNcxPL2xcptgHRf%2BIM08%3D'
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --max-time 60 "$PATCH_URL" -o /tmp/wallpro-studio-patch.zip
+          echo '87c0d1afb8d5694582027e8c6d353391b33d8dbaea59f5b9dacdd2ed99e65e55  /tmp/wallpro-studio-patch.zip' | sha256sum --check
+          python3 - <<'PY'
+          import zipfile, pathlib
+          allowed = {
+            'app/src/components/wallpro/WallProMagic.tsx',
+            'app/src/components/wallpro/wallpro-magic.css',
+            'app/src/lib/__tests__/wallpro-magic-studio.test.ts',
+            'scripts/verify-wallpro-demo.mjs',
+            'app/public/wallpro/studio-original.jpg',
+            'app/public/wallpro/studio-floral-preview.jpg',
+            'app/public/wallpro/proof-gym-before.jpg',
+            'app/public/wallpro/proof-gym-after.jpg',
+          }
+          root = pathlib.Path.cwd().resolve()
+          with zipfile.ZipFile('/tmp/wallpro-studio-patch.zip') as z:
+            assert set(z.namelist()) == allowed and len(z.infolist()) == len(allowed)
+            assert sum(i.file_size for i in z.infolist()) < 10000000
+            for name in allowed:
+              dest = root / name
+              assert dest.resolve().is_relative_to(root)
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(z.read(name))
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/components/wallpro/WallProMagic.tsx app/src/components/wallpro/wallpro-magic.css app/src/lib/__tests__/wallpro-magic-studio.test.ts scripts/verify-wallpro-demo.mjs app/public/wallpro/studio-original.jpg app/public/wallpro/studio-floral-preview.jpg app/public/wallpro/proof-gym-before.jpg app/public/wallpro/proof-gym-after.jpg
+          git rm .github/workflows/wallpro-studio-import.yml
+          git commit -m 'Replace WallPro thumbnail grid with single-stage walkthrough and original photos'
+          git push origin HEAD:wallpro-single-stage-20260923
+          git rev-parse HEAD
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - run: npm ci --prefix app
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+      - name: Check the changed TypeScript dependency graph
+        working-directory: app
+        run: |
+          node --input-type=module <<'JS'
+          import ts from 'typescript';
+          const program=ts.createProgram(['src/components/wallpro/WallProMagic.tsx','src/vite-env.d.ts'],{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,moduleResolution:ts.ModuleResolutionKind.Bundler,jsx:ts.JsxEmit.ReactJSX,noEmit:true,strict:true,skipLibCheck:true,esModuleInterop:true,baseUrl:process.cwd(),paths:{'@/*':['src/*']}});
+          const errors=ts.getPreEmitDiagnostics(program); console.log(ts.formatDiagnosticsWithColorAndContext(errors,{getCanonicalFileName:f=>f,getCurrentDirectory:()=>process.cwd(),getNewLine:()=> '\n'}));
+          if(errors.length)process.exit(1);
+          JS
+      - name: Run focused UI and planner tests
+        run: npm test --prefix app -- src/lib/__tests__/wallpro-magic-studio.test.ts src/lib/__tests__/wallpro-masthead.test.ts
+      - name: Browser-check both themes at five viewport widths
+        run: |
+          if ! test -x /usr/bin/google-chrome; then node app/node_modules/puppeteer/lib/cjs/puppeteer/node/cli.js browsers install chrome; fi
+          node scripts/verify-wallpro-demo.mjs
+      - name: Build the app without deploying
+        run: npm run build --prefix app
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: wallpro-single-stage-visual-check
+          path: /tmp/wallpro-demo-qa
+          if-no-files-found: warn
