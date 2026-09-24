@@ -528,6 +528,8 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // seam-derived artwork; the layout carries mirror when that method was chosen.
   const tileArtwork = seamCurrent ? seamCurrent.artwork : previewArt;
   const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
+  const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
+  const seamReady = placement !== 'repeat' || !!seamCurrent;
   // The photo pane paints itself: the model puts the covering on the wall and
   // leaves the window, drapes, shelves and furniture as photographed, with no
   // masks to mark (owner, 2026-09-11: "it should know to not wrap but keep in
@@ -541,8 +543,16 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // raw one makes the AI view differ from the print on TWO counts rather than
   // one. That was survivable while staff were the only people who could see
   // it. It is not survivable now that this is the view a customer buys from.
-  // Moving it is not cosmetic: `tileArtwork`'s dependency entry is evaluated
-  // during render, so an effect above line 517 cannot name it at all.
+  //
+  // ⚠️ AND IT SITS BELOW `seamReady`, NOT MERELY BELOW `tileArtwork` — WHICH
+  // IS WHAT TOOK WALLPRO DOWN (owner, 2026-09-24, from a phone: "I can't
+  // access Wallpro page", over `Cannot access 'pt' before initialization").
+  // The move that fixed the artwork put this effect between `tileArtwork` and
+  // `seamReady`, and the SAME edit added `seamReady` to the dependency array.
+  // A dependency array is evaluated DURING RENDER, so that array read a
+  // `const` declared two lines below it: a temporal dead zone, thrown on every
+  // single render, minified to a two-letter name that says nothing.
+  // EVERY name in the array below must be declared ABOVE this line.
   const aiAutoKey = useRef<string | null>(null);
   useEffect(() => {
     if (!tileArtwork || !photo || aiViewCurrent || !aiAvailable || !seamReady) return;
@@ -551,8 +561,6 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     aiAutoKey.current = key;
     void paintAiView(tileArtwork, photo, true);
   }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);
-  const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
-  const seamReady = placement !== 'repeat' || !!seamCurrent;
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (previewArt) metrics = layoutMetrics(layout, previewArt.aspect); } catch { /* visible validation below */ }
   // The flat pane shows the print master as it prints across the wall at the
