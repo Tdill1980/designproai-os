@@ -102,10 +102,20 @@ const PROVIDER_MAX_EDGE = 2048;
  * test: the Deno-only decode/resize/encode is the caller's default `shrink`.
  * Under budget, the array is returned untouched and nothing is decoded — the
  * common case pays nothing at all. */
+/* ⚠️ `shrink` TAKES THE NARROW SHAPE, NOT `T`, AND THAT IS LOAD-BEARING.
+ * Typed `(source: T) => ...`, TypeScript infers T from the ARGUMENT as well as
+ * from `sources`, and the caller's `shrinkForProvider` — which legitimately
+ * only needs the bytes — collapsed T to `{bytes, mimeType}`. The returned array
+ * then lost `path` and `label`, which the handler reads two lines later.
+ * Runtime was fine (the spread preserves every property and the tests pass),
+ * so nothing caught it until the first typecheck that actually opened the file
+ * (2026-09-24: `npx tsc --noEmit` resolves a tsconfig with "files": [] and
+ * checks NOTHING). A resize helper has no business narrowing its caller's rows.
+ */
 export async function fitProviderImages<T extends { bytes: Uint8Array; mimeType: string }>(
   sources: T[],
   budget: number,
-  shrink: (source: T) => Promise<{ bytes: Uint8Array; mimeType: string } | null>,
+  shrink: (source: { bytes: Uint8Array; mimeType: string }) => Promise<{ bytes: Uint8Array; mimeType: string } | null>,
 ): Promise<T[]> {
   const total = (list: T[]) => list.reduce((sum, s) => sum + s.bytes.length, 0);
   if (total(sources) <= budget) return sources;
