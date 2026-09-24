@@ -117,7 +117,19 @@ describe('the mask handles are sized for a thumb', () => {
   // without undoing the stretch. A bare <circle> or an un-transformed <text>
   // in this overlay is the defect, whatever it is drawing.
   it('draws nothing round or lettered without undoing the viewBox stretch', () => {
-    expect(EDITOR_CODE).toContain('const kx = 1 / aspect;');
+    // ⚠️ kx IS MEASURED NOW, NOT DERIVED (owner, 2026-09-24, after the first
+    // fix shipped: "Still looks wrong the pins look distorted still"). The box
+    // is w-full + aspect-ratio + a maxHeight cap: when the cap bites it clamps
+    // the HEIGHT and the pinned width does not follow, so the element is wider
+    // than the ratio it declares. Measured at 750px wide with a 1.350 photo —
+    // 760px viewport: real 1.410, declared-fix leaves 1.044
+    // 620px viewport: real 1.728, declared-fix leaves 1.280
+    // 480px viewport: real 2.232, declared-fix leaves 1.653  <- her ovals
+    // The measured correction is 1.000 at every one.
+    expect(EDITOR_CODE).toContain('const kx = boxSize ? boxSize.h / boxSize.w : 1 / aspect;');
+    expect(EDITOR_CODE).toContain('new ResizeObserver');
+    // The declared aspect survives only as the first-frame fallback.
+    expect(EDITOR_CODE).not.toMatch(/const kx = 1 \/ aspect;/);
     expect(EDITOR_CODE).toContain('preserveAspectRatio="none"');
     // No <circle> at all: every round mark is a counter-scaled ellipse.
     expect(EDITOR_CODE).not.toMatch(/<circle/);

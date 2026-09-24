@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { rectangularWallMask, isRectangularMask, resizeRectangularMask, translateMask, type Point } from '@/lib/wallpro-geometry';
 import type { WallItem } from '@/lib/wallpro-items';
 // The overlay colours live in ONE place so the FAQ can show the customer the
@@ -99,8 +99,38 @@ export function WallPhotoEditor(p: Props) {
      number of PIXELS as the matching y-extent, so `rx={r*kx} ry={r}` is a
      round dot and `scale(kx 1)` is unstretched type. Nothing about where
      anything sits changes — only how wide it is drawn. */
+  //
+  // ⚠️ AND `p.aspect` IS NOT THE BOX'S REAL SHAPE, WHICH IS WHY THE FIRST FIX
+  // ONLY HALF WORKED (owner, 2026-09-24, after it shipped: "Still looks wrong
+  // the pins look distorted still").
+  //
+  // The box is `w-full` + `aspectRatio: p.aspect` + `maxHeight: min(70svh,
+  // 560px)`. Width is pinned at 100%, so when the cap bites it clamps the
+  // HEIGHT and the width does not follow — the element ends up WIDER than the
+  // ratio it declares. Measured in a browser at 750px wide with a 1.350 photo
+  // on a 760px-tall viewport: the real box is 750 x 532, an aspect of 1.410,
+  // and a dot corrected from 1.350 still renders 1.043 wide. On a shorter
+  // window the cap bites harder and the error grows with it.
+  //
+  // So the box is MEASURED. A ResizeObserver is immune to the cap, to svh, to
+  // zoom and to any future CSS — whereas every number we could derive from
+  // props is a second opinion about something the browser already knows.
+  // `p.aspect` remains the fallback for the first frame only.
+  const [boxSize, setBoxSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (r && r.width > 0 && r.height > 0) setBoxSize({ w: r.width, h: r.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const aspect = Number.isFinite(p.aspect) && p.aspect > 0 ? p.aspect : 1;
-  const kx = 1 / aspect;
+  // Pixels per y-unit over pixels per x-unit: multiply an x-extent by it and it
+  // covers the same number of pixels as the matching y-extent.
+  const kx = boxSize ? boxSize.h / boxSize.w : 1 / aspect;
   /** Type and chips, drawn at the origin inside a group that undoes the
    *  stretch, so their own coordinates stay readable. */
   const unstretch = (x: number, y: number) => `translate(${x} ${y}) scale(${kx} 1)`;
