@@ -44,7 +44,7 @@ const { MIRROR_CONTRACT, mirrorPassengerFromDriver, extractFlankPanel } = requir
 const {
   LETTERING_READ_CONTRACT, readPanelLettering, mirroredBandsToDriverSpace, mergeBands,
 } = require("./atlas-lettering-read.cjs");
-const { FILL_CONTRACT, fillMasterCutouts, FILL_CONTRACT_V1 } = require("./atlas-cutout-fill.cjs");
+const { FILL_CONTRACT, fillMasterCutouts, FILL_CONTRACT_V1, FILL_CONTRACT_PRESERVE } = require("./atlas-cutout-fill.cjs");
 const { BUCKET } = require("./generation-store.cjs");
 // ONE-FIELD RESTORED (owner ruling, Trish 2026-09-07). The six-surface
 // authoring path is measurably not producing an acceptable master: canary
@@ -4791,7 +4791,12 @@ async function generateOrReuseFlatAtlasResolved(options) {
   // result still faces the structural re-validation below, and a fill that
   // cannot produce six valid regions still fails closed.)
   const repairStartedAt = Date.now();
-  const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces);
+  // TriZone already contains the designer's complete rectangular panels.
+  // Its dark ink is not a physical cutout mask. Preserve it, and persist the
+  // identity contract for recovery instead of cloning over intentional artwork.
+  const cutoutFill = await fillMasterCutouts(masterBytes, manifest, masterCutoutSurfaces, {
+    contract: panelProof ? FILL_CONTRACT_PRESERVE : FILL_CONTRACT,
+  });
   timings.repairMs += Date.now() - repairStartedAt;
   let surfaceSourceBytes = cutoutFill.bytes;
   let panelSourceHash = cutoutFill.changed ? sha256(surfaceSourceBytes) : masterHash;

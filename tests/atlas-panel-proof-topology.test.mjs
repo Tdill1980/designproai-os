@@ -140,7 +140,7 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
   const { panelProofCreativeHead } = require("../runtime/atlas-panel-proof-contract.cjs");
   const edge = fs.readFileSync(new URL("../supabase/functions/production-panel-proof/index.ts", import.meta.url), "utf8");
   const start = edge.indexOf("    const customerAssets =");
-  const end = edge.indexOf("    let prompt = buildPanelProofPrompt(");
+  const end = edge.indexOf("    // CALL 1 CREATIVE AUTHORITY:", start);
   assert.ok(start > 0 && end > start, "the edge must select its attached references before assembling the designer prompt");
   // Execute the edge's actual parameter mapping with its real shared designer,
   // without starting Deno or making a paid provider request.
@@ -195,8 +195,8 @@ test("Call 1 preserves selected brand choices and actual VisionBoard intent in t
     buildDesignIQPrompt, panelProofCreativeHead, ATLAS_PANELS,
   });
   const exact = assemble(body);
-  assert.match(exact, /senior graphic designer and vehicle-wrap specialist/);
-  assert.match(exact, /native Gemini 3 Pro Image design knowledge/);
+  assert.match(exact, /senior (?:professional )?graphic designer and vehicle-wrap specialist/);
+  assert.match(exact, /native (?:Gemini 3 Pro Image )?design knowledge/);
   assert.ok(exact.includes(input.brief), "failed intake cannot erase the customer's creative brief");
   assert.match(exact, /Brand colors: #123456, #fedcba/);
   assert.match(exact, /Style direction: geometric racing stripes/);

@@ -935,8 +935,8 @@ test("Call 1 reads the raw brief, selects the persona by the customer's mode, an
   assert.match(ace, /\n\s*mode,\n/, "buildDesignIQPrompt receives the resolved mode");
   assert.match(handler, /const mode = String\(body\?\.mode \|\| ""\)\.trim\(\)\.toLowerCase\(\) === "restyle" \? "restyle" : "commercial";/);
   // The phase-1 audit proves the persona the mode selects, on the payload.
-  assert.match(handler, /Lead Vehicle Wrap Designer\/\.test\(prompt\)/);
-  assert.match(handler, /DESIGN AMPLIFICATION: Elevate and enhance the brief\/\.test\(prompt\)/);
+  assert.ok(handler.includes('prompt.startsWith(creativeHead + "\\n\\n")'));
+  assert.ok(handler.includes('Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction))'));
   // The designer's text part is captured and returned for the photographer.
   assert.match(handler, /const designAnchor = candidateParts/);
   assert.match(handler, /\n\s*designAnchor,\n/);
