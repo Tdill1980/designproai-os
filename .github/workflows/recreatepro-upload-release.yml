@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 env:
   GH_TOKEN: ${{ github.token }}
-  EXPECTED_PR_HEAD: 11bb92901428b46d051092ea11a69db7aed77d5d
+  EXPECTED_PR_HEAD: 5f01dce81e223d544425459c5b0138a47c57dda8
   APP_SHA: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
 jobs:
   apply:
@@ -32,9 +32,10 @@ jobs:
           sha=$(echo "$pr" | jq -r .merge_commit_sha)
           test "$(gh api repos/$GITHUB_REPOSITORY/git/ref/heads/main --jq .object.sha)" = "$sha"
           gh api repos/$GITHUB_REPOSITORY/compare/$APP_SHA...$sha --jq '.files[].filename' > /tmp/changed-paths
-          test "$(wc -l < /tmp/changed-paths)" -eq 2
+          test "$(wc -l < /tmp/changed-paths)" -eq 3
           grep -Fxq supabase/migrations/20260924120000_designpro_owned_reference_uploads.sql /tmp/changed-paths
           grep -Fxq tests/recreatepro-owned-reference-upload.test.mjs /tmp/changed-paths
+          grep -Fxq supabase/tests/designpro_bootstrap.test.sql /tmp/changed-paths
           echo "MIGRATION_SHA=$sha" >> "$GITHUB_ENV"
           mkdir -p migration-evidence
           printf '%s\n' "$sha" > migration-evidence/migration-release-sha.txt
