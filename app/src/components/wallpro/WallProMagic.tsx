@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
 
-const before = '/wallpro/proof-spa-before.jpg';
-const after = '/wallpro/proof-spa-after.jpg';
+const before = '/wallpro/studio-original.jpg';
+const after = '/wallpro/studio-floral-preview.jpg';
 
 const artwork = '/wallpro/case-studio-artwork.jpg';
 
