@@ -90,20 +90,42 @@ describe('the mask handles are sized for a thumb', () => {
   const EDITOR = src('../../components/wallpro/WallPhotoEditor.tsx');
   const EDITOR_CODE = EDITOR.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '');
 
-  it('takes the tap on a large invisible circle, not on the drawn dot', () => {
+  // ⚠️ THESE THREE PINNED `<circle r=...>` AND HAD TO MOVE TO `<ellipse>`
+  // (owner, 2026-09-24: "Fix the numbers look they are now distorted"). The
+  // overlay's viewBox does NOT preserve aspect — that is what makes a
+  // normalized point land in the right place — so one x-unit covers `aspect`
+  // times as many pixels as one y-unit, and a `<circle>` rendered as a wide
+  // ellipse. Every round mark now counter-scales its x-radius by `kx`.
+  // The SIZE rule these locks exist for is unchanged; only the element is.
+  it('takes the tap on a large invisible target, not on the drawn dot', () => {
     // r=".7" on a 100-unit viewBox is ~3px on a phone: the "finicky".
     expect(EDITOR_CODE).toContain('const HANDLE_TOUCH_R = 4;');
-    expect(EDITOR_CODE).toMatch(/r=\{HANDLE_TOUCH_R\} fill="transparent"/);
+    expect(EDITOR_CODE).toMatch(/rx=\{HANDLE_TOUCH_R\*kx\} ry=\{HANDLE_TOUCH_R\} fill="transparent"/);
     expect(EDITOR_CODE).not.toMatch(/r="\.7" fill="white"/);
   });
 
   it('gives the wall corners the same target as the mask corners', () => {
-    expect((EDITOR_CODE.match(/r=\{HANDLE_TOUCH_R\}/g) || []).length).toBeGreaterThanOrEqual(2);
+    expect((EDITOR_CODE.match(/rx=\{HANDLE_TOUCH_R\*kx\}/g) || []).length).toBeGreaterThanOrEqual(2);
     expect(EDITOR_CODE).not.toMatch(/r="\.85" fill=\{WALL_GLASS\.area\.handle\}/);
   });
 
   it('keeps the drawn dot small and out of the way of the tap', () => {
-    expect(EDITOR_CODE).toMatch(/r="1\.1"[^>]*className="pointer-events-none"/);
+    expect(EDITOR_CODE).toMatch(/rx=\{1\.1\*kx\} ry=\{1\.1\}[^>]*className="pointer-events-none"/);
+  });
+
+  // THE ACTUAL FIX, ASSERTED AS A RULE: nothing round or lettered may be drawn
+  // without undoing the stretch. A bare <circle> or an un-transformed <text>
+  // in this overlay is the defect, whatever it is drawing.
+  it('draws nothing round or lettered without undoing the viewBox stretch', () => {
+    expect(EDITOR_CODE).toContain('const kx = 1 / aspect;');
+    expect(EDITOR_CODE).toContain('preserveAspectRatio="none"');
+    // No <circle> at all: every round mark is a counter-scaled ellipse.
+    expect(EDITOR_CODE).not.toMatch(/<circle/);
+    // Every <text> sits inside an unstretch() group.
+    for (const match of EDITOR_CODE.matchAll(/<text\b/g)) {
+      const before = EDITOR_CODE.slice(Math.max(0, match.index - 400), match.index);
+      expect(before, 'a <text> is drawn without unstretch()').toContain('unstretch(');
+    }
   });
 });
 
@@ -122,7 +144,12 @@ describe('a mask can be resized and moved from the editor', () => {
   it('drags the whole mask by its body once selected', () => {
     expect(EDITOR_CODE).toContain("'wall' | 'mask' | 'body'");
     expect(EDITOR_CODE).toContain('translateMask(mask, next.x - from.x, next.y - from.y)');
-    expect(EDITOR_CODE).toContain("startHandle(e as unknown as React.PointerEvent<SVGCircleElement>,{kind:'body',mask:i,vertex:-1})");
+    // The cast is gone: `startHandle` takes `React.PointerEvent<SVGElement>`
+    // since the handles became ellipses (2026-09-24), which a polygon already
+    // satisfies. What this line protects is that the mask BODY starts a
+    // 'body' drag, not the element type it arrives on.
+    expect(EDITOR_CODE).toContain("startHandle(e,{kind:'body',mask:i,vertex:-1})");
+    expect(EDITOR_CODE).toContain('React.PointerEvent<SVGElement>');
   });
 
   it('clears the drag origin on every way a gesture can end', () => {
