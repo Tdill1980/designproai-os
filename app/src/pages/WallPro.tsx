@@ -252,6 +252,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string; forMask: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
+  /**
+   * THE LAST CONFIG THIS PROJECT ACTUALLY HAS ON THE SERVER.
+   *
+   * `saveWallProject` REPLACES `config` wholesale -- it is an upsert of one
+   * jsonb column, not a merge. So any save that builds its object from React
+   * state erases every field whose state is not loaded at that instant, and
+   * the incidental saves (a slider resting, an items file landing) are exactly
+   * the ones that run while something else is still null.
+   *
+   * Measured on the owner's own project, 2026-09-24: the pattern-size slider
+   * rested at 150%, its save wrote `repeatWidth: 108` -- and `referencePath:
+   * null` in the same write, silently discarding the design she had uploaded
+   * to MATCH. A match project with no reference cannot be regenerated at all:
+   * `generate` refuses with "Upload the design to match first." A control that
+   * resizes a pattern took the design away.
+   *
+   * Partial saves now start from this and change only what they own.
+   */
+  const savedConfig = useRef<Record<string, unknown> | null>(null);
   const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
   // itemsRef, because a tap resolves a network round trip later and must append
   // to the list as it is THEN -- two quick taps on a busy wall would otherwise
@@ -463,7 +482,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
-      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+      // ⚠️ THREE FIELDS, NOT THE WHOLE PROJECT. This used to rebuild the
+      // entire config from state and so erased the matched reference; see
+      // `savedConfig`. The slider owns placement, repeat width and scale.
+      wallUser().then(user => saveProject(user.id, name, { placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
   // The photo pane opens on the AI room view when one has landed, and on the
@@ -865,6 +887,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   }
   async function restore(config: any, id?: string, title?: string) {
     const [wall, art, ref] = await Promise.all([config.wallPath ? storedAsset(config.wallPath) : null, config.artworkPath ? storedAsset(config.artworkPath) : null, config.referencePath ? storedAsset(config.referencePath) : null]);
+    // A REOPENED PROJECT'S BASELINE IS WHAT THE SERVER HOLDS, not what has
+    // loaded so far. This is the case the destructive save actually bit in:
+    // state fills in over several async hops, and any save landing during them
+    // used to write the gaps as null.
+    savedConfig.current = { ...config };
     setPhoto(wall); setArtwork(art); setReference(ref); setWidth(config.width || 120); setHeight(config.height || 96);
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
@@ -952,7 +979,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveProject(user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -1164,7 +1191,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try {
       const path = next.length ? await saveWallItemsFile(owner, serializeWallItems(next)) : null;
       setItemsPath(path); itemsPathRef.current = path;
-      if (projectId) await saveWallProject(projectId, owner, name, { ...liveConfig(), itemsPath: path });
+      if (projectId) await saveProject(owner, name, { ...liveConfig(), itemsPath: path });
     } catch { /* the list still works in this session */ }
   }
   /**
@@ -1304,7 +1331,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveProject(user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
@@ -1545,7 +1572,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
+    await saveProject(user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -1593,7 +1620,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (photo) setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveProject(user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, patternScale: 100, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
@@ -1601,6 +1628,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     });
   }
   /** The config this zone is currently sitting on, for a save before leaving it. */
+  /**
+   * THE ONE DOOR EVERY PROJECT SAVE GOES THROUGH.
+   *
+   * `patch` is merged onto the last config this project actually has, so a
+   * save that knows about three fields cannot delete the other eighteen. A
+   * full config is simply a patch that names every key, so the callers that
+   * build one are unchanged in effect -- what changes is that a PARTIAL one is
+   * now safe to write, which it was not. See `savedConfig` for what that cost.
+   */
+  async function saveProject(owner: string, title: string, patch: Record<string, unknown>) {
+    const merged = { ...(savedConfig.current ?? liveConfig()), ...patch };
+    await saveWallProject(projectId, owner, title, merged);
+    savedConfig.current = merged;
+  }
   function liveConfig() {
     return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
   }
@@ -1617,7 +1658,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     const zoneName = label.trim().slice(0, 40) || 'Accent zone';
     await run('Adding the zone', async () => {
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, liveConfig());
+      await saveProject(user.id, name, liveConfig());
       const id = crypto.randomUUID();
       const config = accentZoneConfig({ wallPath: photo.path }, zoneGroupId(projectId, { parentProjectId }), zoneName);
       await saveWallProject(id, user.id, zoneName, config);
@@ -1633,7 +1674,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (id === projectId) return;
     await run('Opening the zone', async () => {
       const user = await wallUser().catch(() => null);
-      if (user) await saveWallProject(projectId, user.id, name, liveConfig()).catch(() => { /* the zone still opens */ });
+      if (user) await saveProject(user.id, name, liveConfig()).catch(() => { /* the zone still opens */ });
       const row = await getWallProject(id);
       await restore(row.config, row.id, row.name);
     });
