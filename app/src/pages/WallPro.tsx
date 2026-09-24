@@ -1745,23 +1745,25 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           table exists. */}
       {!photo && !artwork && (
         <div className="mx-auto mt-4 max-w-6xl space-y-6">
-          {/* THE HERO, AS THE OWNER DREW IT (2026-09-24): copy and three
+          {/* THE HERO, AS THE OWNER DREW IT (2026-09-24). THE WORDS SAY WALLPRO
+              DESIGNS (owner, same day: "WallPro creates custom wall wrap designs
+              it's not just a visualizer"): copy and three
               claims on the left, the gym before and after on the right as two
               WHOLE frames side by side -- the same camera position twice, so it
               reads as one wall. Short on purpose so the steps below stay on
               the first screen. */}
           <section aria-labelledby="wallpro-hero-heading" className="grid items-center gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Same space. A completely new story.</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] wall-muted">Custom wall wrap design + print-ready files</p>
               <h1 id="wallpro-hero-heading" className="mt-2 text-3xl font-extrabold leading-tight tracking-tight wall-ink sm:text-4xl">
-                See the transformation <span className="block bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">before you print.</span>
+                Custom wall wraps, <span className="block bg-gradient-to-r from-blue-600 to-fuchsia-500 bg-clip-text text-transparent">designed &amp; print-ready.</span>
               </h1>
-              <p className="mt-3 max-w-md text-base wall-muted">WallPro sees the wall, previews the design, and prepares print-ready files.</p>
+              <p className="mt-3 max-w-md text-base wall-muted">Describe your idea or match a style. WallPro designs an original wrap for your exact wall, shows it in your room, and delivers print-ready panels.</p>
               <ul className="mt-5 grid grid-cols-3 gap-3">
                 {([
-                  [Crosshair, 'Exact wall geometry', 'Accurate and true to your space', 'from-blue-600 to-blue-400'],
-                  [Wand2, '1-touch masking', 'Automatically protects what matters', 'from-violet-600 to-fuchsia-500'],
-                  [Printer, 'Print-ready panels', 'Production files in minutes', 'from-fuchsia-600 to-pink-500'],
+                  [Wand2, 'Original custom designs', 'Created from your prompt or style', 'from-blue-600 to-blue-400'],
+                  [Crosshair, 'Sized to your wall', 'Fitted, masked and previewed on your photo', 'from-violet-600 to-fuchsia-500'],
+                  [Printer, 'Print-ready files', '150 PPI panels with bleed', 'from-fuchsia-600 to-pink-500'],
                 ] as const).map(([Icon, title, copy, tint]) => (
                   <li key={title} className="flex items-start gap-2">
                     <span className={'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white shadow-sm ' + tint}><Icon className="h-4 w-4" /></span>

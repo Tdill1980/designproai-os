@@ -8,7 +8,8 @@ const magic = readFileSync(fileURLToPath(new URL('../../components/wallpro/WallP
 describe('the WallPro opening experience', () => {
   it('shows the transformation only before the customer starts', () => {
     expect(page).toMatch(/\{!photo && !artwork && \(/);
-    expect(page).toContain('See the transformation');
+    expect(page).toContain('Custom wall wraps, ');
+    expect(page).toContain('designed &amp; print-ready.');
     expect(page).toContain('<WallProHeroProof proofs={bandProofs} variant="split" />');
   });
 
