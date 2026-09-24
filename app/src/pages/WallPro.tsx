@@ -1797,9 +1797,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * button — the lesson "Mark the corners" already learned.
    */
   const boardSteps: BoardStep[] = [
-    { id: 'upload-wall', n: 1, label: 'Upload your wall', icon: Upload, done: !!photo, preview: photo?.url ?? null,
-      detail: photo ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Any photo from your phone, including iPhone HEIC. JPG, PNG, HEIC, max 20 MB.',
-      action: { label: photo ? 'Replace photo' : 'Upload your wall', onClick: () => uploadInputs.current.photo?.click() } },
+    // ⚠️ STEP 1 IS THE MEASUREMENT, NOT THE PHOTO (owner, 2026-09-24: "I keep
+    // forgetting to add the dimension"). It used to tick green on a photo
+    // alone and print the dimensions as if they were settled -- so an unmeasured
+    // wall read as a finished step, which is the step lying about its own
+    // outcome, the same fault already corrected on step 4. The photo is
+    // optional everywhere (`wallGenerationBlocker` reads width and height and
+    // nothing else); the measurement is not.
+    { id: 'upload-wall', n: 1, label: 'Measure your wall', icon: Ruler, done: dimensionsValid, preview: photo?.url ?? null,
+      detail: dimensionsValid
+        ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft${photo ? ' - photo added' : ' - photo optional'}`
+        : 'Width and height in inches. This is all a print file needs; the photo is optional.',
+      action: dimensionsValid
+        ? { label: photo ? 'Replace photo' : 'Add a wall photo (optional)', onClick: () => uploadInputs.current.photo?.click() }
+        : { label: 'Enter the dimensions', onClick: () => jumpToStep('upload-wall') } },
     { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: (cornerThumb?.key === cornerThumbKey ? cornerThumb.url : null) ?? photo?.url ?? null,
       detail: !photo ? 'Upload a wall photo first. Print files never wait for this.'
         : wallLocated ? `Corners set ${cornerSource === 'detected' ? 'automatically' : 'by you'}${exclusions.length || items.length ? ` - ${exclusions.length + items.length} protected` : ''}`
@@ -2229,6 +2240,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             brief is not a fourth input -- it is the picture the first upload
             just produced. */}
         <section id="upload-wall" className={panelClass + ' lg:col-span-2 lg:row-start-2'}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
+            {/* ⚠️ MEASUREMENTS COME FIRST, BEFORE THE PHOTO (owner, 2026-09-24:
+                "I need the enter wall size before upload ... Its not good ui
+                upload first because I keep forgetting to add the dimension").
+                She is right, and the code already said so: `wallGenerationBlocker`
+                reads ONLY the width and height -- the photo is optional on every
+                path and print files never wait for it. Asking for the optional
+                thing first is what made the REQUIRED thing forgettable. */}
+            <p className={'inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE THREE INPUTS SIT TOGETHER (owner, 2026-09-22, before a demo:
                 "The upload style reference should be right next to upload wall
                 / And the text prompt").
@@ -2280,6 +2300,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
               <div>
                 {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
                 <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
+                {/* THE PHOTO IS OPTIONAL AND NOTHING SAID SO (owner, 2026-09-24:
+                    "we need a button or path that says something like dont have
+                    a photo of a wall"). `wallGenerationBlocker` has always
+                    accepted a measured wall with no photograph -- the flat
+                    rectangle IS the product and the print file -- but the only
+                    control on this step was an upload tile, so a customer
+                    standing somewhere other than the wall had no way to tell
+                    that they could carry on. This is not a new path: it is a
+                    door onto the one the generator already allows. The photo
+                    can be added at any point afterwards, and the design is
+                    imposed on it then. */}
+                <button type="button" disabled={!!busy || !dimensionsValid}
+                  onClick={() => jumpToStep('choose-design')}
+                  className="mt-2 text-xs font-semibold text-blue-700 underline underline-offset-2 disabled:no-underline disabled:opacity-60">
+                  {dimensionsValid
+                    ? 'No photo of the wall? Design from your measurements →'
+                    : 'No photo of the wall? Enter the width and height above first.'}
+                </button>
                 {/* The reference tile used to take a third of this row, before
                     the customer had said anything about a design. Its control
                     lives with the brief now; the input stays mounted so that
@@ -2287,8 +2325,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <span className="hidden">{uploadControl('reference', 'Attach a reference')}</span>
               </div>
             )}
-            <p className={'mt-4 inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
                 2026-09-14: "on enter wall size should give price for printed
                 wrap from wpw film"). The wall's own square footage at the live
