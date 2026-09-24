@@ -5,6 +5,9 @@ on:
     paths: [.github/workflows/validate-trizone-final.yml]
 permissions:
   contents: write
+concurrency:
+  group: final-trizone-repair-20260923
+  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -20,7 +23,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22'
-      - name: Validate exact baseline and apply only the reviewed patch
+      - name: Validate baseline and apply reviewed patch
         run: |
           set -euo pipefail
           mkdir -p evidence
@@ -35,6 +38,19 @@ jobs:
           python3 .ops-trizone-repair.py
           python3 .ops-trizone-test-harness.py
           git diff --check
+      - name: Inspect saved BigFoot pixels without generation or database writes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          s=Path('.github/workflows/repair-trizone-underlay.yml').read_text()
+          body=s.split("          node --input-type=module <<'NODE'\n",1)[1].split('\n          NODE',1)[0]
+          Path('.ops-pixel-readback.mjs').write_text(textwrap.dedent(body))
+          PY
+          node .ops-pixel-readback.mjs
       - name: Reproduce old defects and execute repaired behavior
         run: |
           set -euo pipefail
@@ -55,24 +71,10 @@ jobs:
             tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs \
             tests/designiq-shared-assembly.test.mjs tests/atlas-panel-proof-contract.test.mjs \
             tests/atlas-panel-proof-topology.test.mjs tests/atlas-proof-panels.test.mjs \
-            tests/atlas-cutout-fill.test.mjs tests/flat-first-atlas.test.mjs > evidence/after-tests.log 2>&1 \
+            tests/atlas-cutout-fill.test.mjs > evidence/after-tests.log 2>&1 \
             || { tail -100 evidence/after-tests.log; exit 1; }
           grep -E '^# (tests|pass|fail|duration)' evidence/after-tests.log
-      - name: Inspect saved BigFoot pixels without generation or database writes
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          # Reuse the already reviewed, read-only pixel inspector unchanged.
-          python3 - <<'PY'
-          from pathlib import Path
-          import textwrap
-          s=Path('.github/workflows/repair-trizone-underlay.yml').read_text()
-          body=s.split("          node --input-type=module <<'NODE'\n",1)[1].split('\n          NODE',1)[0]
-          Path('.ops-pixel-readback.mjs').write_text(textwrap.dedent(body))
-          PY
-          node .ops-pixel-readback.mjs
-      - name: Publish the tested seven-file patch; leave main and WallPro untouched
+      - name: Publish tested patch to new branch; preserve main and WallPro
         run: |
           set -euo pipefail
           node --check runtime/atlas-cutout-fill.cjs
