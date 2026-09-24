@@ -9,10 +9,11 @@ import {
 
 type Props = {
   url: string; alt: string; aspect: number; busy: boolean;
-  /** 'tap' is one-touch masking: a single tap is the whole gesture, so it
-   *  never enters `draft` and never needs a Finish. The page turns that point
-   *  into a segmentation request. */
-  marking: 'wall' | 'exclude' | 'rectangle' | 'tap' | null;
+  /** 'tap' is one-touch masking and 'tap-remove' its opposite: a single tap is
+   *  the whole gesture either way, so neither enters `draft` and neither needs
+   *  a Finish. The page turns that point into a segmentation request and
+   *  applies the mode's own class to whatever comes back. */
+  marking: 'wall' | 'exclude' | 'rectangle' | 'tap' | 'tap-remove' | null;
   corners: Point[]; masks: Point[][]; draft: Point[]; showMasks: boolean;
   /** Pixel-accurate protected areas from detection (white where protected). */
   maskUrl?: string | null;

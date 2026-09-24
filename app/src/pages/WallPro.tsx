@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { AlertTriangle, ArrowRight, Crosshair, Printer, Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Eraser, Crosshair, Printer, Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -15,7 +15,7 @@ import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
 import { rasterizeDetectionMasks, buildProtectedAreaMask, type DetectedMask } from '@/lib/wallpro-masks';
-import { toWallItems, addWallItem, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
+import { toWallItems, addWallItem, applyItemClass, itemAt, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
 import { WALL_DESIGN_SKUS, WPW_WALL_FILM_RATE_PER_SQFT, formatMoney, wallProSkuFor, wallQuote } from '@/lib/wallpro-pricing';
@@ -202,7 +202,12 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [seam, setSeam] = useState<{ key: string; receipt: SeamlessReceipt; artwork: WallAsset } | null>(null);
   const [seamBusy, setSeamBusy] = useState(false);
   const [corners, setCorners] = useState<Point[]>([]), [exclusions, setExclusions] = useState<Point[][]>([]);
-  const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | null>('wall');
+  const [marking, setMarking] = useState<'wall' | 'exclude' | 'rectangle' | 'tap' | 'tap-remove' | null>('wall');
+  /** Either one-touch mode. Declared once so the banner, the Undo guard, the
+   *  Done label and the switch cannot drift into disagreeing about which modes
+   *  are "a tap" -- which is exactly how `marking !== 'tap'` would have left a
+   *  dead Undo button sitting in remove mode. */
+  const tapMode = marking === 'tap' || marking === 'tap-remove';
   const [excludeDraft, setExcludeDraft] = useState<Point[]>([]);
   const [view, setView] = useState<'before' | 'after' | 'design' | 'ai' | 'compare'>('before');
   const showPrintGuides = false; // Print-seam guides on the photo are an internal aid; the customer page keeps them off.
@@ -1181,10 +1186,39 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * A miss says so and changes nothing: the edge returns no mask rather than
    * the nearest one, because pasting the wrong object's outline onto her photo
    * is something she would then have to find and undo.
+   *
+   * ── TAP TO REMOVE IS THE SAME GESTURE, OTHER WAY UP (owner, 2026-09-24:
+   *    "could we tap to remove it") ────────────────────────────────────────
+   *
+   * `intent` is what the tap MEANS — `fixed` covers the item and runs the
+   * design behind it, `movable` erases it and paints the design straight
+   * through, as if an installer had carried it out of the room first. The
+   * segmentation question is identical; only the class applied to the answer
+   * differs, so removing costs no extra call and no second producer.
+   *
+   * ⚠️ AND IT IS `applyItemClass`, NOT `toggleItem`. A flip is right when she
+   * taps an item on the photo and is reversing whatever it currently is. In a
+   * MODE she has already said which side she wants, so a flip would remove the
+   * first thing she taps and re-protect the second — and tapping something
+   * already removed would silently undo her.
+   *
+   * ⚠️ A TAP THAT LANDS ON AN ITEM SHE ALREADY HAS COSTS NOTHING. `itemAt` is
+   * checked first, so switching a masked sofa to painted-through is instant
+   * and deterministic rather than a ~2s round trip to re-segment an object the
+   * page is already holding the outline of. Only a tap on bare wall asks the
+   * model anything.
    */
-  async function maskAtTap(point: Point) {
+  async function maskAtTap(point: Point, intent: 'fixed' | 'movable') {
     const asset = photoRef.current;
     if (!asset || tapping) return;
+    const already = itemAt(itemsRef.current, point.x, point.y);
+    if (already) {
+      if (already.applied !== intent) await applyItems(applyItemClass(itemsRef.current, already.id, intent));
+      setNotice(intent === 'fixed'
+        ? `${already.label} is masked — the design runs behind it.`
+        : `${already.label} is removed — the design paints straight through it.`);
+      return;
+    }
     setTapping(true);
     try {
       const user = await wallUser();
@@ -1195,8 +1229,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (photoRef.current?.url !== asset.url) return;
       const mask = found.masks[0];
       if (!mask) { setNotice(found.notes || 'Nothing was found at that spot. Tap the middle of the item, or draw it by hand.'); return; }
-      await applyItems(addWallItem(itemsRef.current, mask as DetectedMask));
-      setNotice(`${mask.label} is masked — the design runs behind it. Tap it again on the photo to paint through it instead.`);
+      const added = addWallItem(itemsRef.current, mask as DetectedMask, intent);
+      await applyItems(added);
+      setNotice(intent === 'fixed'
+        ? `${mask.label} is masked — the design runs behind it. Switch to Remove and tap it to paint through instead.`
+        : `${mask.label} is removed — the design paints straight through it, as if it had been carried out of the room.`);
     } catch (e) {
       setNotice((e instanceof Error ? e.message : 'That item could not be outlined.') + ' You can still draw it by hand.');
     } finally { setTapping(false); }
@@ -1565,7 +1602,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // segmenter returns that object's outline and it joins the same item list
     // the bulk pass fills, so the composites, the toggle and persistence all
     // work on it without knowing it arrived by tap.
-    if (marking === 'tap') { void maskAtTap(p); return; }
+    if (marking === 'tap' || marking === 'tap-remove') { void maskAtTap(p, marking === 'tap' ? 'fixed' : 'movable'); return; }
     const tapped = corners.length >= 4 ? [p] : [...corners, p];
     // THE ORDER OF THE TAPS CARRIES NO INFORMATION THE GEOMETRY NEEDS.
     // Reading order (top-left, top-right, bottom-left, bottom-right) is what a
@@ -2196,6 +2233,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   onClick={() => { setExcludeDraft([]); setMarking(marking === 'tap' ? null : 'tap'); setView('before'); focusPhoto(); }}>
                   <Crosshair className={'mr-2 h-4 w-4' + (tapping ? ' animate-pulse' : '')} />{marking === 'tap' ? 'Done masking' : 'Tap an item to mask it'}
                 </Button>
+                {/* THE OPPOSITE INSTRUCTION, ON ITS OWN BUTTON (owner,
+                    2026-09-24: "could we tap to remove it"). Same gesture, same
+                    segmentation call, same item list -- only the class applied
+                    to the answer differs. It is a separate button rather than a
+                    modifier because the two answers are opposites and a
+                    customer must be able to see which one her next tap will
+                    give her BEFORE she taps, not after. */}
+                <Button variant={marking === 'tap-remove' ? 'default' : 'outline'} disabled={!!busy || detecting || !photo}
+                  onClick={() => { setExcludeDraft([]); setMarking(marking === 'tap-remove' ? null : 'tap-remove'); setView('before'); focusPhoto(); }}>
+                  <Eraser className={'mr-2 h-4 w-4' + (tapping ? ' animate-pulse' : '')} />{marking === 'tap-remove' ? 'Done removing' : 'Tap an item to remove it'}
+                </Button>
                 <Button variant="outline" disabled={!!busy || detecting} onClick={() => detectMyWall(true)}>Re-detect protected & removable areas</Button>
               </div>
               <p className="text-xs wall-muted">{detecting ? 'Tap the four corners on the photo — you do not have to wait for us. Enter the wall size whenever you like.' : wallMaskGuidance({ detecting, items, drawnCount: exclusions.length }).headline}</p>
@@ -2279,8 +2327,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <div className="mb-2">
                   <div className="rounded-xl border border-blue-400/70 bg-slate-900 px-3 py-2 shadow-lg">
                     <p className="text-[13px] font-semibold leading-snug text-white">
-                      {marking === 'tap'
-                        ? (tapping ? 'Outlining that item…' : 'Tap any item to mask it — the design runs behind it. Keep tapping; press Done when finished.')
+                      {marking === 'tap' || marking === 'tap-remove'
+                        ? (tapping ? 'Outlining that item…'
+                          : marking === 'tap'
+                            ? 'Tap any item to mask it — the design runs behind it. Keep tapping; press Done when finished.'
+                            : 'Tap any item to remove it — the design paints straight through, as if it had been carried out. Keep tapping; press Done when finished.')
                         : marking === 'wall'
                         ? `Tap the four corners of your wall, clockwise from the top left — ${4 - corners.length} to go`
                         : marking === 'rectangle'
@@ -2299,10 +2350,17 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                           already there. An Undo reading `excludeDraft`, which a
                           tap never fills, would have been a permanently dead
                           button sitting next to a live one. */}
-                      {marking !== 'tap' && <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || (marking === 'wall' ? !corners.length : !excludeDraft.length)}
+                      {!tapMode && <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || (marking === 'wall' ? !corners.length : !excludeDraft.length)}
                         onClick={() => marking === 'wall' ? setCorners(old => old.slice(0, -1)) : setExcludeDraft(old => old.slice(0, -1))}>Undo</Button>}
+                      {/* SWITCH SIDES WITHOUT LEAVING. Masking a wall full of
+                          clutter is a mix of both answers, and pressing Done,
+                          finding the other button and starting again between
+                          every item is the friction one-touch exists to remove. */}
+                      {tapMode && <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy || tapping}
+                        onClick={() => setMarking(marking === 'tap' ? 'tap-remove' : 'tap')}>
+                        {marking === 'tap' ? 'Switch to Remove' : 'Switch to Mask'}</Button>}
                       <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" disabled={!!busy}
-                        onClick={() => { setExcludeDraft([]); setMarking(null); }}>{marking === 'tap' ? 'Done' : 'Cancel'}</Button>
+                        onClick={() => { setExcludeDraft([]); setMarking(null); }}>{tapMode ? 'Done' : 'Cancel'}</Button>
                     </div>
                   </div>
                 </div>

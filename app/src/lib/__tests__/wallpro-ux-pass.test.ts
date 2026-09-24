@@ -151,14 +151,28 @@ describe('masking tells you what to do while you are doing it', () => {
     // an instruction with its controls somewhere else.
     const banner = page.indexOf('Tap ONE corner of the closet');
     expect(banner).toBeGreaterThan(-1);
-    const rest = page.slice(banner, banner + 1800);
+    // The window is the overlay's own block, not a round number: Undo, the
+    // mask/remove switch and the leave-control all live in one control row
+    // directly under the instruction. It was 1800 until tap-to-remove added
+    // that switch and pushed the leave-control to +2273 — a window that
+    // measures "adjacent" has to be widened when something genuinely adjacent
+    // is added, which is the honest version of this fix. If it ever needs
+    // widening past a few thousand, the controls really HAVE drifted and that
+    // is the defect this lock is for.
+    const rest = page.slice(banner, banner + 3000);
     expect(rest).toMatch(/>Undo( point)?<\/Button>/);
     // The leave-control is spelled by MODE since tap-to-mask landed
     // (2026-09-24): a tap has nothing to cancel -- each one is a finished item
     // on the photo -- so the same button reads Done there. What this lock
     // protects is that a leave-control sits WITH the instruction, not which
-    // word is printed on it, so it matches either spelling.
-    expect(rest).toMatch(/>(Cancel|\{marking === 'tap' \? 'Done' : 'Cancel'\})<\/Button>/);
+    // word is printed on it.
+    //
+    // ⚠️ AND IT BROKE AGAIN THE SAME DAY, on `{marking === 'tap' ? ...}`
+    // becoming `{tapMode ? ...}` when tap-to-remove arrived. A lock that pins
+    // the whole expression re-breaks on every rewording of a thing it does not
+    // care about, so it now asks only that the button says Cancel somewhere --
+    // as a bare label or inside a conditional -- which is the actual rule.
+    expect(rest).toMatch(/>(Cancel|\{[^}]*'Cancel'\})<\/Button>/);
   });
 
   it('says the wall comes first, because a mask before it cuts nothing', () => {
@@ -250,11 +264,13 @@ describe('marking works without scrolling', () => {
     // It did its job on 2026-09-23 — the upload call above failed this line
     // and had to be justified rather than absorbed.
     //
-    // SEVENTH, 2026-09-24: "Tap an item to mask it". It is a marking control in
-    // the plainest sense — it turns the photo into the thing you tap — so it
-    // takes the helper like the other six, and this line caught it before the
-    // button shipped without one. Exactly what an exact count is for.
+    // SEVENTH AND EIGHTH, 2026-09-24: "Tap an item to mask it" and its
+    // opposite, "Tap an item to remove it" (owner: "could we tap to remove
+    // it"). Both are marking controls in the plainest sense — they turn the
+    // photo into the thing you tap — so both take the helper like the other
+    // six, and this line caught each one before it shipped without a scroll.
+    // Exactly what an exact count is for, twice in one day.
     expect(page).toContain('const focusPhoto = () =>');
-    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(7);
+    expect((page.match(/focusPhoto\(\);/g) ?? []).length).toBe(8);
   });
 });
