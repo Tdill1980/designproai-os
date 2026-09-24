@@ -1,0 +1,95 @@
+name: Final TriZone repair validation
+on:
+  push:
+    branches: [ops/trizone-underlay-repair-20260923]
+    paths: [.github/workflows/validate-trizone-final.yml]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: designproai-production
+    env:
+      BASE: c582a80b81de411db071dca2847b067c51e898e1
+      PATCH_BRANCH: fix/trizone-underlay-preserve-artwork-20260923
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Validate exact baseline and apply only the reviewed patch
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          test "$GITHUB_REF" = refs/heads/ops/trizone-underlay-repair-20260923
+          git merge-base --is-ancestor "$BASE" origin/main
+          git diff --exit-code "$BASE" origin/main -- runtime supabase tests
+          git diff --exit-code "$BASE" HEAD -- runtime supabase tests
+          npm ci --prefix runtime --no-audit --no-fund > "$RUNNER_TEMP/runtime-install.log" 2>&1 & a=$!
+          npm ci --prefix app --no-audit --no-fund > "$RUNNER_TEMP/app-install.log" 2>&1 & b=$!
+          wait "$a" || { tail -30 "$RUNNER_TEMP/runtime-install.log"; exit 1; }
+          wait "$b" || { tail -30 "$RUNNER_TEMP/app-install.log"; exit 1; }
+          python3 .ops-trizone-repair.py
+          python3 .ops-trizone-test-harness.py
+          git diff --check
+      - name: Reproduce old defects and execute repaired behavior
+        run: |
+          set -euo pipefail
+          files=(supabase/functions/production-panel-proof/index.ts runtime/atlas-cutout-fill.cjs runtime/flat-first-atlas.cjs)
+          for path in "${files[@]}"; do
+            mkdir -p "$RUNNER_TEMP/fixed/$(dirname "$path")"
+            cp "$path" "$RUNNER_TEMP/fixed/$path"
+            git show "$BASE:$path" > "$path"
+          done
+          set +e
+          node --test tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs > evidence/before-tests.log 2>&1
+          before=$?
+          set -e
+          for path in "${files[@]}"; do cp "$RUNNER_TEMP/fixed/$path" "$path"; done
+          test "$before" -ne 0
+          grep -E '^not ok|^# (tests|pass|fail)' evidence/before-tests.log
+          NODE_PATH="$GITHUB_WORKSPACE/runtime/node_modules" node --test --test-concurrency=2 \
+            tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs \
+            tests/designiq-shared-assembly.test.mjs tests/atlas-panel-proof-contract.test.mjs \
+            tests/atlas-panel-proof-topology.test.mjs tests/atlas-proof-panels.test.mjs \
+            tests/atlas-cutout-fill.test.mjs tests/flat-first-atlas.test.mjs > evidence/after-tests.log 2>&1 \
+            || { tail -100 evidence/after-tests.log; exit 1; }
+          grep -E '^# (tests|pass|fail|duration)' evidence/after-tests.log
+      - name: Inspect saved BigFoot pixels without generation or database writes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Reuse the already reviewed, read-only pixel inspector unchanged.
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+          s=Path('.github/workflows/repair-trizone-underlay.yml').read_text()
+          body=s.split("          node --input-type=module <<'NODE'\n",1)[1].split('\n          NODE',1)[0]
+          Path('.ops-pixel-readback.mjs').write_text(textwrap.dedent(body))
+          PY
+          node .ops-pixel-readback.mjs
+      - name: Publish the tested seven-file patch; leave main and WallPro untouched
+        run: |
+          set -euo pipefail
+          node --check runtime/atlas-cutout-fill.cjs
+          node --check runtime/flat-first-atlas.cjs
+          git diff --check
+          git reset --soft "$BASE"
+          git reset
+          git add supabase/functions/production-panel-proof/index.ts runtime/atlas-cutout-fill.cjs runtime/flat-first-atlas.cjs tests/production-panel-proof-clean-prompt.test.mjs tests/trizone-authored-artwork-preservation.test.mjs tests/atlas-panel-proof-contract.test.mjs tests/atlas-panel-proof-topology.test.mjs
+          test "$(git diff --cached --name-only | wc -l)" -eq 7
+          test -z "$(git diff --cached --name-only -- app supabase/functions/_shared/designiq-assembly.ts supabase/functions/design-panel-ai-generate/index.ts supabase/functions/persona-photographer-render/index.ts)"
+          git -c user.name=Tdill1980 -c user.email=210197216+Tdill1980@users.noreply.github.com commit -m 'fix: restore live TriZone instructions and preserve authored panel pixels'
+          git push origin "HEAD:refs/heads/$PATCH_BRANCH"
+          git rev-parse HEAD | tee evidence/patch-sha.txt
+          git diff "$BASE" HEAD > evidence/repair.patch
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: trizone-final-validation
+          path: evidence/
+          retention-days: 2
