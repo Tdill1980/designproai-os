@@ -699,7 +699,7 @@ serve(async (req) => {
         && prompt.startsWith(creativeHead + "\n\n"),
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
-      flatPanelProductionProofInjected: body.separatedArtwork === true
+      // Keep this count coupled to the focused Edge contract test; prompt expansion must fail CI before production.\n      flatPanelProductionProofInjected: body.separatedArtwork === true
         ? flatProductionInstructions.length === 7 && prompt.includes(flatProductionInstructions[0])
         : prompt.includes(SYSTEM_JOB)
           && ["ZONE 1", "ZONE 2", "ZONE 3"].every(zone => prompt.includes(zone)),
