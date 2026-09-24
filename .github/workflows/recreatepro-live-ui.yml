@@ -1,0 +1,77 @@
+name: RecreatePro deployed UI smoke
+on:
+  push:
+    branches: [codex/recreatepro-release-control-20260924]
+    paths: [.github/workflows/recreatepro-live-ui.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      EXACT_SHA: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: 49750ba5dfa11955d73d44b4f43bbefd0b809d6d
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - run: npm ci --prefix app --no-audit --no-fund
+      - run: node app/node_modules/playwright-core/cli.js install --with-deps chromium
+      - name: Wait for the exact deployed source
+        run: |
+          mkdir -p recreatepro-live-ui
+          ready=false
+          for attempt in $(seq 1 75); do
+            if curl --fail --silent --max-time 15 https://os.designproai.com/gateway-healthz > recreatepro-live-ui/gateway-healthz.json && grep -Fq "$EXACT_SHA" recreatepro-live-ui/gateway-healthz.json; then ready=true; break; fi
+            sleep 10
+          done
+          test "$ready" = true
+      - name: Inspect actual public route at desktop and phone widths
+        run: |
+          node --input-type=module <<'JS'
+          import {chromium} from './app/node_modules/playwright-core/index.mjs';
+          import {writeFile} from 'node:fs/promises';
+          import assert from 'node:assert/strict';
+          const browser=await chromium.launch({headless:true});
+          const results=[];
+          try {
+            for (const width of [320,390,768,1440]) {
+              const context=await browser.newContext({viewport:{width,height:950},reducedMotion:'reduce'});
+              const page=await context.newPage();const errors=[];const mutations=[];
+              page.on('pageerror', e=>errors.push(String(e)));
+              // A public UI check must not author a job, purchase, or approve QC.
+              await page.route('**/api/generation/**',async route=>{
+                if(route.request().method()!=='GET'){mutations.push(route.request().url());await route.abort();}else await route.continue();
+              });
+              try {
+                await page.goto('https://os.designproai.com/recreatepro',{waitUntil:'domcontentloaded',timeout:45000});
+                await page.getByRole('heading',{name:/Got the picture/}).waitFor({timeout:30000});
+                await page.getByRole('button',{name:/^Complete My Design/}).click();
+                await page.getByLabel('Upload design references').waitFor({state:'attached'});
+                await page.evaluate(()=>scrollTo(0,0));await page.waitForTimeout(250);
+                const release=await page.evaluate(async()=>await(await fetch('/release.json',{cache:'no-store'})).text());
+                assert.ok(release.includes(process.env.EXACT_SHA),'browser app release must match');
+                assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'horizontal overflow');
+                const header=await page.locator('#recreatepro-header').boundingBox();
+                assert.ok(header&&header.y>=0&&header.y<180,'tool header must be visible near top');
+                assert.deepEqual(mutations,[]);assert.deepEqual(errors,[]);
+                await page.screenshot({path:`recreatepro-live-ui/live-recreatepro-${width}.png`,fullPage:true});
+                results.push({width,passed:true,release:process.env.EXACT_SHA,readOnly:true});
+              } catch(error) {
+                await page.screenshot({path:`recreatepro-live-ui/failure-${width}.png`,fullPage:true}).catch(()=>{});
+                await writeFile(`recreatepro-live-ui/failure-${width}.json`,JSON.stringify({message:String(error),errors,mutations,url:page.url()},null,2));
+                throw error;
+              } finally {await context.close();}
+            }
+          } finally {await browser.close();await writeFile('recreatepro-live-ui/results.json',JSON.stringify(results,null,2));}
+          JS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: recreatepro-deployed-ui-49750ba5
+          path: recreatepro-live-ui/
+          retention-days: 14
