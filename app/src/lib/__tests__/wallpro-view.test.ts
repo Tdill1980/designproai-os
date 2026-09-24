@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createViewHandler, parseViewInput, viewPrompt, VIEW_MODEL, applyProtectedAreaMask } from '../../../../supabase/functions/render-wall-view/handler';
+import { createViewHandler, parseViewInput, viewPrompt, VIEW_MODEL, applyProtectedAreaMask, fitProviderImages, PROVIDER_BUDGET_BYTES } from '../../../../supabase/functions/render-wall-view/handler';
 
 const owner = '11111111-1111-4111-8111-111111111111';
 const wallPath = owner + '/uploads/33333333-3333-4333-8333-333333333333.jpg';
@@ -90,6 +90,44 @@ describe('AI view on the wall', () => {
       // The render may not improve the artwork, whoever is holding the camera.
       expect(text).toMatch(/not yours to improve/i);
     }
+  });
+
+  // ⚠️ AN OVERSIZED IMAGE IS RESIZED, NOT REFUSED (owner, 2026-09-24: "Fix my
+  // UI Look what happened" — the top of her screen was this cap refusing, on
+  // the day the AI render became the on-wall view for everyone). The model
+  // reads these at roughly 2K whatever is sent, so refusing bought nothing and
+  // cost her the view entirely. The codec is injected so the POLICY is tested
+  // without one; the Deno-only resize is the caller's default.
+  describe('fitting the provider request', () => {
+    const img = (n: number, mimeType = 'image/png') => ({ bytes: new Uint8Array(n), mimeType });
+
+    it('does not decode anything at all when the request is already under budget', async () => {
+      const shrink = vi.fn(async () => ({ bytes: new Uint8Array(1), mimeType: 'image/jpeg' }));
+      const sources = [img(10), img(20)];
+      expect(await fitProviderImages(sources, 100, shrink)).toBe(sources);
+      expect(shrink).not.toHaveBeenCalled();
+    });
+
+    it('shrinks the largest first and stops as soon as it fits', async () => {
+      // The ordinary shape: a 12 MB phone photo beside a 1 MB design. Decoding
+      // the small one would spend a decode for nothing.
+      const shrink = vi.fn(async () => ({ bytes: new Uint8Array(5), mimeType: 'image/jpeg' }));
+      const out = await fitProviderImages([img(1), img(90)], 20, shrink);
+      expect(shrink).toHaveBeenCalledTimes(1);
+      expect(out.map(s => s.bytes.length)).toEqual([1, 5]);
+      expect(out[1].mimeType).toBe('image/jpeg');
+    });
+
+    it('leaves a source it cannot decode exactly as it was', async () => {
+      // A failed resize must never truncate or corrupt the image it was
+      // trying to help; the refusal below is what catches the leftover.
+      const out = await fitProviderImages([img(90)], 20, async () => null);
+      expect(out[0].bytes.length).toBe(90);
+    });
+
+    it('is the real budget the handler enforces', () => {
+      expect(PROVIDER_BUDGET_BYTES).toBe(14 * 1024 * 1024);
+    });
   });
 
   // Absent (an older client that never learned the field), the commercial

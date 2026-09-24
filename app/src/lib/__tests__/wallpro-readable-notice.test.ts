@@ -26,19 +26,48 @@ const css = readFileSync(fileURLToPath(new URL('../../index.css', import.meta.ur
  * `--wall-ink` is 98% lightness: white text on a white card, every notice the
  * page writes, invisible.
  */
+/* ⚠️ THIS SLICE BOUNDARY MOVED ONCE ALREADY, AND FAILED LOUDLY WHEN IT DID.
+ * It anchored on the literal `{notice && <p role="status"`, which stopped
+ * existing the moment the notice grew a tone branch (2026-09-24) — `indexOf`
+ * returned -1 and the assertions read a slice of nothing. That is the good
+ * version of this failure; `atlas-master-resolution` once had the same anchor
+ * vanish and the slice silently WIDEN to the end of the file instead.
+ * So it anchors on `{notice &&` — the one part that is the feature rather than
+ * this month's markup — and takes a window big enough to hold both branches. */
+const noticeBlock = () => {
+  const at = page.indexOf('{notice &&');
+  expect(at).toBeGreaterThan(-1);
+  return page.slice(at, at + 900);
+};
+
 describe('the notice is legible on both themes', () => {
   it('states its own colour instead of inheriting one', () => {
-    const notice = page.indexOf('{notice && <p role="status"');
-    expect(notice).toBeGreaterThan(-1);
-    const el = page.slice(notice, notice + 260);
-    expect(el).toContain('wall-ink');
+    expect(noticeBlock()).toContain('wall-ink');
   });
 
   it('does not paint a near-white Tailwind fill under theme-coloured text', () => {
-    const notice = page.indexOf('{notice && <p role="status"');
-    const el = page.slice(notice, notice + 260);
+    const el = noticeBlock();
     expect(el).not.toContain('bg-sky-50');
     expect(el).toContain('wall-card');
+  });
+
+  // Owner, 2026-09-24: "Fix my UI Look what happened". The top of her screen
+  // read "The wall photo and design together must be under 14 MB for the AI
+  // view" in the same calm blue rule as "Your design is on your wall" — the
+  // sentence saying her main view had just FAILED was indistinguishable from
+  // the one saying it worked. A failure is not a fact and may not share a
+  // voice with one.
+  it('tells a failure apart from a fact, and hardcodes a colour only there', () => {
+    const el = noticeBlock();
+    expect(el).toMatch(/could not\|must be under\|too large\|failed/);
+    expect(el).toContain('AlertTriangle');
+    // The failure branch is the ONLY one allowed an explicit Tailwind colour:
+    // it must stay legible whichever brand is rendering, and amber-950 on
+    // amber-50 is fixed rather than themed on purpose.
+    expect(el).toContain('border-amber-500 bg-amber-50 text-amber-950');
+    // ...and the ordinary branch still reads the theme, or the defect this
+    // file was written for comes straight back on the notices that are fine.
+    expect(el).toContain('border-blue-500/70 wall-card wall-ink');
   });
 
   it('and the two themes really do disagree about ink, which is the whole point', () => {

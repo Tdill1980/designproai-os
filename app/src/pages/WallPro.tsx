@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { ArrowRight, Crosshair, Printer, Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Crosshair, Printer, Upload, Wand2, Download, Save, ImageIcon, Ruler, RotateCcw, FolderOpen, Loader2, MoveHorizontal, ShieldCheck, Settings2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ProfessionalProofSheet } from '@/components/tools/ProfessionalProofSheet';
@@ -1871,7 +1871,22 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
           tokens. This one hardcoded Tailwind sky and therefore opted out of the
           theme while still living inside it. It uses the card tokens now, with
           a blue rule rather than a blue fill, so it is legible on both. */}
-      {notice && <p role="status" className="rounded-md border border-l-4 border-blue-500/70 wall-card p-3 text-sm wall-ink">{notice}</p>}
+      {/* ⚠️ A FAILURE IS NOT A FACT, AND THIS BAR SAID BOTH IN THE SAME VOICE
+          (owner, 2026-09-24: "Fix my UI Look what happened"). The top of her
+          screen read "The wall photo and design together must be under 14 MB
+          for the AI view" in the same calm blue rule as "Your design is on
+          your wall" — so the sentence telling her the main view had just
+          FAILED was indistinguishable from the one telling her it worked.
+          `noticeTone` reads the text for the shapes this page actually emits
+          when something went wrong; a notice with no such shape keeps the
+          blue rule it always had. */}
+      {notice && (() => {
+        const bad = /could not|must be under|too large|failed|unable|not be|try again|sign in/i.test(notice);
+        return <p role="status" aria-live="polite" className={'flex items-start gap-2 rounded-md border border-l-4 p-3 text-sm ' + (bad ? 'border-amber-500 bg-amber-50 text-amber-950' : 'border-blue-500/70 wall-card wall-ink')}>
+          {bad && <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+          <span>{notice}</span>
+        </p>;
+      })()}
       {history && <section className={panelClass}><div className="flex items-center justify-between"><h2 className="font-semibold">My wall designs</h2><Button variant="ghost" onClick={() => setHistory(null)}>Close</Button></div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">{history.projects.map((p: any) => <Button key={p.id} disabled={!!busy} variant="outline" className="justify-start truncate" onClick={() => void run('Opening project', () => restore(p.config, p.id, p.name))}>{p.name}</Button>)}</div>
         <h3 className="mt-5 text-sm font-semibold">Generated artwork</h3><div className="mt-2 grid gap-2 sm:grid-cols-2">{history.generations.map((g: any) => <button key={g.id} disabled={!!busy || g.state !== 'completed'} className="rounded-lg border p-3 text-left text-sm disabled:opacity-60" onClick={() => void run('Opening artwork', () => restore({ ...g.input, artworkPath: g.artwork_path }, crypto.randomUUID(), g.design_name))}>{g.design_name || 'Wall design'} · {g.state}{g.error && <span className="mt-1 block text-xs text-red-700">{g.error}</span>}</button>)}</div>

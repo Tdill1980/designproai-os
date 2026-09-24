@@ -34,10 +34,44 @@
  * the header; this is the board at the top of the page. Two different objects
  * with one steps source, per the "feeds the rail and the strip from ONE steps
  * array" rule the UX pass already set.
+ *
+ * ── AND THEN IT LOOKED NOTHING LIKE THE ROW SHE APPROVED (2026-09-24) ─────
+ *
+ * Owner, holding a screenshot of this board beside the landing row: "Fix my UI
+ * Look what happened" → "Its supposed to look like this."
+ *
+ * Both screenshots are the SAME page. `WallProMagic` — the polished four-step
+ * row with the white numeral badges, the 4:3 pictures and the arrows between —
+ * renders before a project is open; open one and it was swapped for this board,
+ * built two days earlier from a different ruling: dashed empty boxes where a
+ * picture belongs, a ghost "Open" button, a snap-scrolling carousel. Two
+ * components drawing the same four steps in two visual languages, and which one
+ * you got depended on whether a project was loaded.
+ *
+ * So the chrome is no longer written here at all. `WallProMagic` EXPORTS
+ * `MagicStep` / `MagicFrame` / `MagicArrow` / `MAGIC_GRID` and this file fills
+ * them with the customer's own artifacts and its own live state. Copying the
+ * card would rebuild the drift that caused this; one producer of the look means
+ * a change to it lands on both places at once.
+ *
+ * Two things the board keeps that the landing row does not have, because it is
+ * the working page and not a brochure: the ACTION button under each picture,
+ * and a ring on the step the customer is on. Both are additive props on
+ * `MagicStep`, so the landing row renders byte-identically without them.
+ *
+ * ⚠️ THE PHONE LAYOUT CHANGED WITH IT, AND THAT IS THE OWNER'S NEWER CHOICE.
+ * The 09-22 ruling made this a one-row snap carousel on a phone, reasoning that
+ * a grid which re-stacks rebuilds the scroll the board exists to remove. The
+ * row she approved on 09-24 is two-up on a phone — two rows, not four — and
+ * "supposed to look like this" is about that row. Half the scroll, and the two
+ * surfaces match. Do not reintroduce the carousel here alone: it would put the
+ * drift straight back.
  */
+import { Fragment } from 'react';
 import { Check } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MAGIC_GRID, MagicArrow, MagicFrame, MagicStep } from '@/components/wallpro/WallProMagic';
 
 export type BoardStep = {
   id: string;
@@ -66,59 +100,56 @@ export function WallProStepBoard({ steps, active, onOpen, busy }: {
 }) {
   return (
     <section aria-label="Start designing your wall" className="mb-4">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-bold wall-ink">Start designing your wall</h2>
-        <p className="text-xs wall-muted">It only takes a few minutes to go from photo to print-ready files.</p>
+      {/* The landing row's own heading scale, so the two surfaces read as one
+          product rather than two pages that happen to list four steps. */}
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <h2 className="text-xl font-extrabold tracking-tight wall-ink sm:text-2xl">Start designing your wall</h2>
+        <p className="text-sm wall-muted">It only takes a few minutes to go from photo to print-ready files.</p>
       </div>
-      {/* Snap-scroll below sm so four steps stay ONE row on a phone; a plain
-          grid from sm up. `-mx-4 px-4` lets the row bleed to the screen edge so
-          the fourth card peeks and reads as scrollable. */}
-      <ol className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
-        {steps.map(step => {
+      <div className={MAGIC_GRID}>
+        {steps.map((step, index) => {
           const isActive = step.id === active;
           const Icon = step.icon;
           return (
-            <li
-              key={step.id}
-              className={
-                'min-w-[78%] shrink-0 snap-start rounded-xl border p-3 sm:min-w-0 ' +
-                (isActive ? 'border-blue-500 ring-1 ring-blue-400/60 wall-card' : 'wall-edge wall-card')
-              }
-              aria-current={isActive ? 'step' : undefined}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ' +
-                    (step.done ? 'bg-emerald-600' : 'bg-gradient-to-br from-blue-600 to-fuchsia-600')
-                  }
-                >
-                  {step.done ? <Check className="h-3.5 w-3.5" aria-label="done" /> : step.n}
-                </span>
-                <Icon className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
-                <h3 className="truncate text-sm font-semibold wall-ink">{step.label}</h3>
-              </div>
-              {step.preview
-                ? <img src={step.preview} alt="" aria-hidden className="mt-2 h-20 w-full rounded-lg object-cover" />
-                : <div className="mt-2 h-20 rounded-lg border border-dashed wall-edge" aria-hidden />}
-              <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-xs wall-muted">{step.detail}</p>
-              {step.action
-                ? <Button
-                    size="sm"
-                    variant={isActive ? 'default' : 'outline'}
-                    className="mt-1 w-full"
-                    disabled={busy || step.action.disabled}
-                    onClick={step.action.onClick}
-                  >
-                    {step.action.label}
-                  </Button>
-                : <Button size="sm" variant="ghost" className="mt-1 w-full" disabled={busy} onClick={() => onOpen(step.id)}>
-                    Open
-                  </Button>}
-            </li>
+            <Fragment key={step.id}>
+              {index > 0 && <MagicArrow />}
+              <MagicStep
+                n={step.n}
+                title={step.label}
+                copy={step.detail}
+                active={isActive}
+                badge={step.done ? <Check className="h-5 w-5 text-emerald-600" aria-label="done" /> : undefined}
+                footer={step.action
+                  ? <Button
+                      size="sm"
+                      variant={isActive ? 'default' : 'outline'}
+                      className="w-full"
+                      disabled={busy || step.action.disabled}
+                      onClick={step.action.onClick}
+                    >
+                      {step.action.label}
+                    </Button>
+                  : <Button size="sm" variant="outline" className="w-full" disabled={busy} onClick={() => onOpen(step.id)}>
+                      Open
+                    </Button>}
+              >
+                <MagicFrame>
+                  {step.preview
+                    ? <img src={step.preview} alt="" aria-hidden className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                    /* NOT A DASHED BOX. An empty step in the middle of a row of
+                       photographs read as a broken image rather than as work
+                       still to do, which is half of "look what happened". The
+                       step's own icon, centred and faint, says "this is step
+                       three and it is waiting for you". */
+                    : <span className="absolute inset-0 flex items-center justify-center">
+                        <Icon className="h-8 w-8 text-blue-400/60" aria-hidden="true" />
+                      </span>}
+                </MagicFrame>
+              </MagicStep>
+            </Fragment>
           );
         })}
-      </ol>
+      </div>
     </section>
   );
 }

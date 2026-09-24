@@ -92,14 +92,58 @@ describe('the board opens the step; it is not the step', () => {
     expect(board).toContain('onOpen');
   });
 
-  it('stays ONE row on a phone instead of re-stacking into the scroll it removes', () => {
-    expect(board).toContain('snap-x snap-mandatory');
-    expect(board).toContain('overflow-x-auto');
-    expect(board).toContain('lg:grid-cols-4');
+  // ⚠️ AN INVERSION OF THE 09-22 CAROUSEL RULING, BY THE OWNER'S OWN NEWER
+  // CHOICE. This read `snap-x snap-mandatory` / `overflow-x-auto` /
+  // `lg:grid-cols-4`, from the reasoning that a grid which re-stacks on a
+  // phone rebuilds the scroll the board exists to remove. On 09-24, holding
+  // this board beside the landing row, she said "Its supposed to look like
+  // this" — and that row is two-up on a phone. Two rows, not four: half the
+  // scroll, and the two surfaces stop being two products.
+  //
+  // The point of the assertions below is that the board no longer draws the
+  // card AT ALL. It imports the chrome, so the two cannot drift again; a
+  // hand-built copy of MagicStep here is what this test now convicts.
+  it('renders in the landing row\'s own chrome instead of a second set of cards', () => {
+    expect(board).toContain("from '@/components/wallpro/WallProMagic'");
+    expect(board).toContain('<MagicStep');
+    expect(board).toContain('<MagicFrame>');
+    expect(board).toContain('<MagicArrow />');
+    expect(board).toContain('MAGIC_GRID');
+    // The old carousel and the hand-built card are gone, not merely unused.
+    expect(board).not.toContain('snap-x snap-mandatory');
+    expect(board).not.toContain('min-w-[78%]');
+    expect(board).not.toContain('bg-[#e8eef6]');
   });
 
+  // An empty step sitting in a row of photographs read as a broken image
+  // rather than as work still to do — half of "look what happened".
+  it('shows the step\'s own icon where a picture is still missing, never a dashed box', () => {
+    expect(board).not.toContain('border-dashed');
+    expect(board).toContain('<Icon className="h-8 w-8 text-blue-400/60"');
+  });
+
+  // The landing row is illustrative and has no buttons; the working board is
+  // the working page and must. Both are additive props, so the landing row
+  // renders identically without them.
+  it('adds the action and the active ring as props, so the landing row is unchanged', () => {
+    const magic = source('../../components/wallpro/WallProMagic.tsx');
+    expect(magic).toContain('footer?: ReactNode');
+    expect(magic).toContain('active?: boolean');
+    expect(magic).toContain('badge?: ReactNode');
+    expect(magic).toContain('{footer ? <div className="mt-2">{footer}</div> : null}');
+    // Every <Step> on the landing row is still plain: no footer, no ring.
+    const landingRow = magic.slice(magic.indexOf('export function WallProMagic'));
+    expect(landingRow).not.toContain('footer=');
+    expect(landingRow).not.toContain('active=');
+  });
+
+  // The board passes `active`; the shared card is what renders it, so the
+  // assertion follows the markup to where it now lives rather than pinning a
+  // literal the board no longer contains.
   it('marks the active card for a screen reader too, not only with a ring', () => {
-    expect(board).toContain("aria-current={isActive ? 'step' : undefined}");
+    expect(board).toContain('active={isActive}');
+    const magic = source('../../components/wallpro/WallProMagic.tsx');
+    expect(magic).toContain("aria-current={active ? 'step' : undefined}");
   });
 });
 
