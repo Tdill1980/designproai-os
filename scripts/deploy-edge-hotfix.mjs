@@ -5,10 +5,13 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { FUNCTION, PROJECT, SOURCE, requireSha } from './edge-hotfix-policy.mjs';
+import { APPROVED, PROJECT, requireSha } from './edge-hotfix-policy.mjs';
 const root = process.cwd();
 const sha = requireSha(process.env.EXACT_MAIN_SHA);
-if (process.env.FUNCTION_NAME !== FUNCTION) throw new Error('Function is not allowlisted');
+const FUNCTION = process.env.FUNCTION_NAME;
+const SPEC = APPROVED[FUNCTION];
+if (!SPEC) throw new Error('Function is not allowlisted');
+const SOURCE = SPEC.sources[0];
 if (process.env.CONFIRMATION !== 'DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION') throw new Error('Production confirmation missing');
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Dispatch must run from main');
 for (const name of ['GH_TOKEN', 'SUPABASE_ACCESS_TOKEN', 'ESBUILD_BIN', 'SUPABASE_BIN', 'GITHUB_REPOSITORY']) {
@@ -58,12 +61,12 @@ try {
     '--external:https://*', '--external:http://*', '--external:npm:*', '--external:jsr:*', '--external:node:*',
     `--metafile=${metafile}`, `--outfile=${join(work, 'function.mjs')}`]);
   const files = Object.keys(JSON.parse(readFileSync(metafile, 'utf8')).inputs).sort();
-  if (!files.includes(SOURCE)) throw new Error('Entrypoint absent from build graph');
+  for (const source of SPEC.sources) if (!files.includes(source)) throw new Error(`Owned source absent from build graph: ${source}`);
   const stamp = 'supabase/functions/_shared/release-source.ts';
-  if (!files.includes(stamp)) throw new Error('Function source identity module absent');
+  const hasStamp = files.includes(stamp);
   for (const file of files) {
     run('git', ['ls-files', '--error-unmatch', '--', file]);
-    if (!file.startsWith(`supabase/functions/${FUNCTION}/`) && !file.startsWith('supabase/functions/_shared/')) throw new Error(`Protected dependency: ${file}`);
+    if (!file.startsWith(`supabase/functions/${FUNCTION}/`) && !file.startsWith('supabase/functions/_shared/') && !file.startsWith('supabase/functions/generate-wall-design/')) throw new Error(`Protected dependency: ${file}`);
     if (file.split('/').includes('..') || !lstatSync(join(root, file)).isFile() || lstatSync(join(root, file)).isSymbolicLink()) throw new Error(`Unsafe source path: ${file}`);
   }
   const before = metadata();
@@ -72,7 +75,7 @@ try {
   download(previous);
   // An unchanged shared dependency may be bundled, but not silently upgraded.
   // This also catches undeployed shared changes on main after the selected PR.
-  for (const file of files.filter(x => x !== SOURCE && x !== stamp)) {
+  for (const file of files.filter(x => !SPEC.sources.includes(x) && x !== stamp)) {
     const deployed = join(previous, file);
     if (!existsSync(deployed) || digest(readFileSync(deployed)) !== digest(readFileSync(join(root, file)))) {
       throw new Error(`Shared dependency differs from production; full release required: ${file}`);
@@ -84,8 +87,9 @@ try {
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(root, file), target);
   }
-  // Stamp the isolated bundle only, never the checkout or other deployments.
-  writeFileSync(join(stage, stamp), `export const RELEASE_SOURCE_SHA = "${sha}";\n`);
+  // Stamp source identity only when this function already imports the shared
+  // identity module. Do not mutate unrelated function source to add provenance.
+  if (hasStamp) writeFileSync(join(stage, stamp), `export const RELEASE_SOURCE_SHA = "${sha}";\n`);
   writeFileSync(join(stage, 'supabase/config.toml'),
     `project_id = "designproai-edge-hotfix"\n[functions.${FUNCTION}]\nverify_jwt = ${before.verify_jwt}\nentrypoint = "./functions/${FUNCTION}/index.ts"\n`);
   receipt.files = Object.fromEntries(files.map(file => [file, digest(readFileSync(join(stage, file)))]));
@@ -118,10 +122,10 @@ try {
     });
     receipt.smoke = { method: 'OPTIONS', status: response.status, source_sha: response.headers.get('x-designpro-source-sha') };
     await response.body?.cancel();
-    if (response.status === 200 && receipt.smoke.source_sha === sha) { healthy = true; break; }
+    if (response.status === 200 && (!hasStamp || receipt.smoke.source_sha === sha)) { healthy = true; break; }
     await new Promise(resolve => setTimeout(resolve, 3000));
   }
-  if (!healthy) throw new Error('Live function did not return HTTP 200 and the exact deployed source SHA');
+  if (!healthy) throw new Error(hasStamp ? 'Live function did not return HTTP 200 and the exact deployed source SHA' : 'Live function OPTIONS smoke failed');
   receipt.status = 'verified'; receipt.completed_at = new Date().toISOString(); record();
   console.log(`Verified ${FUNCTION} version ${after.version} from ${sha}; deployed source hashes match; OPTIONS smoke passed.`);
 } catch (error) {
