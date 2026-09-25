@@ -295,8 +295,12 @@ function vehicleDescription(input) {
 }
 
 function pickupVehicle(input) {
-  return /\b(pickup|truck|f[- ]?\d{3}|silverado|sierra|tacoma|tundra|ridgeline|ranger|colorado|canyon|frontier|titan|ram|gladiator|maverick)\b/i
-    .test(vehicleDescription(input));
+  const description = vehicleDescription(input);
+  // Specific body/model evidence wins over a shared make or the word truck.
+  // The reported RAM ProMaster is a van, not a pickup with an open cargo bed.
+  if (/\b(van|pro[ -]?master|transit|sprinter|metris|savana|(?:chevrolet|chevy) express|box truck|cutaway|motorhome|bus)\b/i.test(description)) return false;
+  return /\b(pickup|truck|f[- ]?\d{3}|silverado|sierra|tacoma|tundra|ridgeline|ranger|colorado|canyon|frontier|titan|ram\s+(?:1500|2500|3500|4500|5500)|gladiator|maverick)\b/i
+    .test(description);
 }
 
 function atlasIdentity(atlas = {}) {
