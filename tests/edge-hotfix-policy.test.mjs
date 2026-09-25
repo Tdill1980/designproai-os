@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { classify, FAST_PATHS, SOURCE, parseDiff, requireSha, releaseIgnorePaths } from '../scripts/edge-hotfix-policy.mjs';
+import { APPROVED, classify, FAST_PATHS, SOURCE, parseDiff, requireSha, releaseIgnorePaths } from '../scripts/edge-hotfix-policy.mjs';
 const change = (path, status = 'M') => ({ path, status });
-test('single approved function and its focused tests use fast lane', () => {
-  assert.equal(classify(FAST_PATHS.map(p => change(p))).lane, 'fast-edge');
+test('each approved function and its focused tests use fast lane', () => {
+  for (const [fn, spec] of Object.entries(APPROVED)) {
+    const result = classify([...spec.sources, ...spec.tests].map(p => change(p)));
+    assert.equal(result.lane, 'fast-edge');
+    assert.equal(result.function_name, fn);
+  }
 });
 for (const path of ['runtime/index.js', 'gateway/src/server.mjs', 'supabase/migrations/20260924100000.sql',
   'supabase/functions/_shared/cors.ts', 'supabase/functions/_shared/release-source.ts',

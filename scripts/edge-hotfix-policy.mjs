@@ -3,16 +3,24 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const PROJECT = 'wozyamlnygaddievzuwn';
+export const APPROVED = Object.freeze({
+  'production-panel-proof': Object.freeze({
+    sources: Object.freeze(['supabase/functions/production-panel-proof/index.ts']),
+    tests: Object.freeze(['tests/production-panel-proof-clean-prompt.test.mjs', 'tests/edge-hotfix-call1.test.mjs']),
+  }),
+  'render-wall-view': Object.freeze({
+    sources: Object.freeze(['supabase/functions/render-wall-view/index.ts', 'supabase/functions/render-wall-view/handler.ts']),
+    tests: Object.freeze(['tests/wallpro-render-fast-edge.test.mjs']),
+  }),
+});
 export const FUNCTION = 'production-panel-proof';
-export const SOURCE = `supabase/functions/${FUNCTION}/index.ts`;
-// EXACT paths only. Never replace these with globs. Keeping fewer than 300
-// literal paths also makes GitHub's 300-file path-filter limit fail closed:
-// a 300-file subset cannot consist exclusively of this three-file allowlist.
-export const FAST_PATHS = Object.freeze([
-  SOURCE,
-  'tests/production-panel-proof-clean-prompt.test.mjs',
-  'tests/edge-hotfix-call1.test.mjs',
-]);
+export const SOURCE = 'supabase/functions/production-panel-proof/index.ts';
+export const FAST_PATHS = Object.freeze([...new Set(Object.values(APPROVED).flatMap(x => [...x.sources, ...x.tests]))]);
+function specFor(fn) {
+  const spec = APPROVED[fn];
+  if (!spec) throw new Error('Function is not approved; no deploy-all option');
+  return spec;
+}
 // No shared edits are approved initially. Existing unchanged shared modules
 // may be bundled; changes to shared code, auth, config, tooling or workflows
 // require the full lane. Add an exact shared path only with a full review.
@@ -23,12 +31,15 @@ export function requireSha(value) {
 }
 export function classify(entries) {
   if (!Array.isArray(entries) || entries.length === 0) return { lane: 'full', reason: 'empty or unknown diff' };
-  for (const { path, status } of entries) {
-    if (!FAST_PATHS.includes(path) || !['M', 'A'].includes(status) || (path === SOURCE && status !== 'M')) {
-      return { lane: 'full', reason: `protected change: ${status} ${path}` };
-    }
+  for (const [fn, spec] of Object.entries(APPROVED)) {
+    const allowed = new Set([...spec.sources, ...spec.tests]);
+    const allAllowed = entries.every(({ path, status }) =>
+      allowed.has(path) && ['M', 'A'].includes(status) && (!spec.sources.includes(path) || status === 'M'));
+    const sourceChanged = entries.some(x => spec.sources.includes(x.path));
+    if (allAllowed && sourceChanged) return { lane: 'fast-edge', function_name: fn, source_changed: true };
   }
-  return { lane: 'fast-edge', function_name: FUNCTION, source_changed: entries.some(x => x.path === SOURCE) };
+  const first = entries.find(({ path, status }) => !FAST_PATHS.includes(path) || !['M', 'A'].includes(status));
+  return { lane: 'full', reason: first ? `protected change: ${first.status} ${first.path}` : 'mixed approved-function change' };
 }
 export function parseDiff(text) {
   const fields = text.split('\0');
@@ -71,16 +82,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     } else if (command === 'candidate') {
       const [head, fn] = args;
       requireSha(head);
-      if (fn !== FUNCTION) throw new Error('Function is not approved; no deploy-all option');
+      const spec = specFor(fn);
       if (git('rev-parse', 'HEAD') !== head) throw new Error('Checkout differs from requested SHA');
-      // Scope the most recent MAIN integration that changed this function,
-      // not an arbitrary parent selected by an operator. A mixed integration
-      // can never be re-labelled as an Edge hotfix by selecting one of its files.
-      const change = requireSha(git('log', '--first-parent', '-1', '--format=%H', head, '--', SOURCE));
+      // Scope the most recent MAIN integration that changed any source owned by
+      // the selected function. A mixed integration cannot be relabelled fast.
+      const sourceArgs = spec.sources.flatMap(path => ['--', path]);
+      let change = '';
+      for (const source of spec.sources) {
+        const candidate = git('log', '--first-parent', '-1', '--format=%H', head, '--', source);
+        if (candidate && (!change || Number(git('rev-list', '--count', change + '..' + candidate)) > 0)) change = candidate;
+      }
+      change = requireSha(change);
       const parent = requireSha(git('rev-parse', `${change}^1`));
       const entries = diff(parent, change);
       const result = classify(entries);
-      if (result.lane !== 'fast-edge' || !result.source_changed) throw new Error(`Full release required: ${result.reason || 'no source change'}`);
+      if (result.lane !== 'fast-edge' || result.function_name !== fn || !result.source_changed) throw new Error(`Full release required: ${result.reason || 'no source change'}`);
       validateModes(head, entries);
       console.log(JSON.stringify({ ...result, head, change, parent, files: entries }, null, 2));
     } else throw new Error('Usage: edge-hotfix-policy.mjs classify BASE HEAD | candidate MAIN_SHA FUNCTION');
