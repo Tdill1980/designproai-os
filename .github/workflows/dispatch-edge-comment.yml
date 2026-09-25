@@ -1,0 +1,41 @@
+name: Request Fast Edge from owner PR command
+on:
+  issue_comment:
+    types: [created]
+permissions: {}
+concurrency:
+  group: fast-edge-command-${{ github.event.comment.id }}
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'Tdill1980/designproai-os' &&
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'closed' &&
+      github.event.comment.user.login == 'Tdill1980' &&
+      github.event.comment.user.id == 210197216 &&
+      github.event.sender.id == 210197216 &&
+      (startsWith(github.event.comment.body, '/deploy-edge ') ||
+       startsWith(github.event.comment.body, '/check-edge '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: write
+    steps:
+      # issue_comment GITHUB_SHA is trusted default-branch code, NEVER PR head.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Verify command adapter tests
+        run: node --test tests/edge-comment-dispatch.test.mjs
+      - name: Validate owner, merged PR, exact main and function; dispatch existing lane
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/dispatch-edge-comment.mjs
