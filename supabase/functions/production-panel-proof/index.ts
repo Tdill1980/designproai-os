@@ -510,8 +510,8 @@ serve(async (req) => {
   if (!hasGeminiKey()) return json({ error: "production_panel_proof_no_key" }, 503);
 
   // Reassigned by `runDurableImageProviderRequest` to the claim's own output
-  // id, so a recovered attempt reports the request it is recovering rather
-  // than a fresh one. A new uuid per invocation is exactly what made the
+  // id, so a recovered attempt reports the request it is recovering rather than
+  // a fresh one. A new uuid per invocation is exactly what made the
   // recovery contract unobservable.
   let requestId = crypto.randomUUID();
   try {
@@ -665,6 +665,14 @@ serve(async (req) => {
       "BRAND FIDELITY: Reuse the same custom logo system, lettering language, color system, and visual identity across all six surfaces. Do not substitute generic fonts or independently re-invent the company name on another surface.",
       "Return flat uninstalled artwork only. The application supplies the staging geometry and coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
     ];
+    // Wire the existing authoring contract into the actual sheet route too.
+    // Keep the designer head byte-for-byte and do not transfer the clean-only
+    // output sentence, which would contradict the three-zone sheet contract.
+    // Exact-reference/RecreatePro requests retain their reproduction authority.
+    const sheetDesignInstructions = body.separatedArtwork !== true
+      && body.visionboard_intent !== "exact_reference"
+      ? flatProductionInstructions.slice(0, -1) : [];
+    const proofCreativeHead = [creativeHead, ...sheetDesignInstructions].join("\n\n");
     // The live caller requests the complete three-zone sheet, not the legacy
     // separated-background canvas. Keep that request paired with the template
     // and extractor. The designer head remains untouched and appears first.
@@ -675,7 +683,7 @@ serve(async (req) => {
     let prompt = body.separatedArtwork === true
       ? [creativeHead, ...flatProductionInstructions].join("\n\n")
       : [buildPanelProofPrompt({
-          creativeHead,
+          creativeHead: proofCreativeHead,
           companyName: field("companyName"), tagline: field("tagline"),
           phone: field("phone"), website: field("website"),
           services: body?.services ?? intake?.services, promo: field("promo"),
@@ -708,6 +716,7 @@ serve(async (req) => {
         ? flatProductionInstructions.slice(1).every(instruction => prompt.includes(instruction))
         : prompt.includes(SHEET_LAYOUT)
           && productionProofInstructions.every(instruction => prompt.includes(instruction)),
+      masterCampaignInjected: sheetDesignInstructions.every(instruction => prompt.includes(instruction)),
     };
     const missingPhase1 = Object.entries(phase1Audit)
       .filter(([key, value]) => key !== "contract" && value !== true)
@@ -825,7 +834,7 @@ serve(async (req) => {
       // "MUST USE THIS" IS ENFORCED, NOT ASSUMED. The owner pinned the format
       // sheet by hash; a silently different teaching input is exactly how
       // canary 33389124918 taught wheel wells back into the source rectangles,
-      // and it took a request inspection to find out. Refuse rather than draw.
+      // and it took a request inspection to find out.
       if (pinned.sha256 && digest !== pinned.sha256) {
         throw new Error(`panel_proof_format_example_mismatch:${pinned.role}:${digest.slice(0, 16)}`);
       }
@@ -933,9 +942,9 @@ serve(async (req) => {
         // example may NOT influence. Wording preserved from the runtime port.
         parts.push({
           // The engine's words ("artboard", "topology") left this sentence on
-          // 2026-09-22 (owner: "much harder for it to understand atlas"): the
-          // model is told what the picture IS -- a finished wrap design -- and
-          // what decides the layout -- the template above -- in plain words.
+          // 2026-09-22 (owner: "much harder for it to understand atlas"):
+          // the model is told what the picture IS -- a finished wrap design --
+          // and what decides the layout -- the template above -- in plain words.
           text: `FINISHED WRAP DESIGN ${qualityExamples.length + 1} — PRODUCTION-QUALITY REFERENCE ONLY. `
             + `Match its professional depth, finish, typographic hierarchy, connected-wrap coherence and gallery-grade execution: `
             + `this is the standard of design the output must reach. `
@@ -1023,7 +1032,7 @@ serve(async (req) => {
     const anchorTurns = body.separatedArtwork !== true && body.anchorTurns !== false;
     const turns = anchorTurns
       ? buildPanelProofTurns({
-        creativeHead,
+        creativeHead: proofCreativeHead,
         companyName: field("companyName"), tagline: field("tagline"),
         phone: field("phone"), website: field("website"),
         services: (body?.services ?? intake?.services), promo: field("promo"),
@@ -1031,6 +1040,20 @@ serve(async (req) => {
         vehicleModel: field("vehicleModel"), creativeDirection, panelRows,
       })
       : null;
+    // The anchored layout is the actual second provider prompt. The ordinary
+    // prompt's underlay/bleed clauses did not reach that request before.
+    if (turns) turns.layout = [turns.layout, ...productionProofInstructions].join("\n\n");
+    const providerDesignPrompt = turns ? turns.design : prompt;
+    const providerLayoutPrompt = turns ? turns.layout : prompt;
+    const authoringPayloadAudit = {
+      contract: "designpro.trizone-authoring-wire.v1",
+      masterCampaignInjected: sheetDesignInstructions.every(instruction => providerDesignPrompt.includes(instruction)),
+      productionUnderlayInjected: body.separatedArtwork === true
+        || productionProofInstructions.every(instruction => providerLayoutPrompt.includes(instruction)),
+    };
+    if (!authoringPayloadAudit.masterCampaignInjected || !authoringPayloadAudit.productionUnderlayInjected) {
+      throw new Error("panel_proof_authoring_payload_missing");
+    }
     const imageConfig = { aspectRatio: "3:2", imageSize: "4K" };
     let designTurnRequestId: string | null = null;
     let designExchange: { user: Record<string, unknown>; model: Record<string, unknown> } | null = null;
@@ -1243,6 +1266,7 @@ serve(async (req) => {
       promptChars: prompt.length,
       prompt,
       phase1Audit,
+      authoringPayloadAudit,
       // WHICH DESIGNER RAN, and what the designer said about the design.
       mode,
       designAnchor,
