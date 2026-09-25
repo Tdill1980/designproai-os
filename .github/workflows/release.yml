@@ -10,15 +10,15 @@ on:
       - 'supabase/functions/render-wall-view/index.ts'
       - 'supabase/functions/render-wall-view/handler.ts'
       - 'tests/wallpro-render-fast-edge.test.mjs'
-      - 'supabase/functions/render-wall-view/index.ts'
-      - 'supabase/functions/render-wall-view/handler.ts'
-      - 'tests/wallpro-render-fast-edge.test.mjs'
   push:
     branches: [main]
     paths-ignore:
       - 'supabase/functions/production-panel-proof/index.ts'
       - 'tests/production-panel-proof-clean-prompt.test.mjs'
       - 'tests/edge-hotfix-call1.test.mjs'
+      - 'supabase/functions/render-wall-view/index.ts'
+      - 'supabase/functions/render-wall-view/handler.ts'
+      - 'tests/wallpro-render-fast-edge.test.mjs'
   workflow_dispatch:
     inputs:
       production_migration:

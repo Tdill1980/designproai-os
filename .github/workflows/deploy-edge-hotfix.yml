@@ -61,9 +61,14 @@ jobs:
           node --test tests/edge-hotfix-policy.test.mjs
       - name: Install only pinned Edge build tools
         run: |
-          npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9 supabase@2.111.0
+          npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9 supabase@2.111.0 typescript@5.8.3
           echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
           echo "SUPABASE_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/supabase" >> "$GITHUB_ENV"
+          echo "EDGE_TYPESCRIPT_PATH=$RUNNER_TEMP/edge-tools/node_modules/typescript/lib/typescript.js" >> "$GITHUB_ENV"
+      - name: Verify complete raw-source packaging before any production write
+        env:
+          EDGE_CLOSURE_REPO_TEST: '1'
+        run: node --test tests/edge-source-closure.test.mjs
       - name: Focused selected-function tests (no generation or provider charges)
         run: |
           case "$FUNCTION_NAME" in

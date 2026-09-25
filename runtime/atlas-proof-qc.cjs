@@ -524,7 +524,7 @@ async function buildAtlasProofQcRequestFromPreflight({
       requestByteSize,
       candidateTransportDerived: candidate.derived,
       atlasTransportDerived: canonical.derived,
-      candidateOriginalDimensions: candidate.originalDimensions,
+      candidateOriginalDimensions: proofDimensions,
       candidateTransportDimensions: candidate.transportDimensions,
       atlasOriginalDimensions: canonical.originalDimensions,
       atlasTransportDimensions: canonical.transportDimensions,
@@ -619,7 +619,11 @@ function rejectionFor(review, expected, confidenceThreshold) {
   const failure = (field) => review[field] !== "pass";
   const irrelevantFailure = (field) => review[field] !== "not_applicable";
   let code = null;
-  if (review.observedView !== expected.expectedView) code = "atlas_qc_view_mismatch";
+  // An explicit artwork-identity failure must not be hidden by an advisory
+  // camera finding. The validator already blocks this failure; uncertainty
+  // and all non-identity findings retain their existing advisory policy.
+  if (review.atlasContinuityContract === "fail") code = "atlas_qc_design_drift";
+  else if (review.observedView !== expected.expectedView) code = "atlas_qc_view_mismatch";
   else if (failure("cameraContract") || failure("framingContract")) code = "atlas_qc_camera_failed";
   else if (expected.orientation === "pass" ? failure("orientationContract") : irrelevantFailure("orientationContract")) code = "atlas_qc_orientation_failed";
   else if (expected.roofBoundary === "pass" ? failure("roofBoundaryContract") : irrelevantFailure("roofBoundaryContract")) code = "atlas_qc_roof_boundary_failed";
