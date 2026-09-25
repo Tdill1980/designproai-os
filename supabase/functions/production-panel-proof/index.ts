@@ -657,11 +657,13 @@ serve(async (req) => {
     // The only additional instruction here is the flat production destination.
     // It changes WHERE the golden designer renders, never HOW it designs.
     const flatProductionInstructions = [
-      "FLAT PRODUCTION DESTINATION: Render the complete finished wrap design into the six supplied production rectangles: driver, passenger, roof, hood, front, and rear.",
-      "These rectangles are the fixed physical surface geometries of ONE vehicle wrap. They are not six separate creative assignments. Driver and passenger are corresponding sides of the same master campaign.",
-      "Fill every supplied production rectangle edge-to-edge with the finished artwork. Continue background, photography, illustration, color, texture, and graphic movement through the full outer boundary so code-owned trim and 5-inch bleed geometry can be preserved.",
-      "Keep critical brand marks and readable customer text inside the usable surface area while allowing noncritical artwork to continue through bleed.",
-      "Return flat uninstalled artwork only. The application supplies the staging geometry and the coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
+      "MASTER WRAP AUTHORING: Use the complete DesignIQ/A.C.E. designer judgment above to create ONE unified professional vehicle-wrap concept first. Resolve the brand system, custom logo/lettering treatment, typography, photography, graphic movement, color, depth, hierarchy, and overall composition as one campaign before assigning anything to a vehicle surface.",
+      "SURFACE DERIVATION: Derive Driver, Passenger, Roof, Hood, Front, and Rear from that one master concept. Driver and Passenger are corresponding executions of the same campaign, never independent designs.",
+      "PHOTOGRAPHY FIDELITY: When the customer brief requests, names, or clearly describes a real person, place, product, building, landscape, vehicle, scene, or photographic image, create that content as genuinely photorealistic imagery inside the master wrap artwork: believable camera detail, natural light, materials, reflections, depth, and photographic texture. Carry that same photographic treatment through the coordinated surfaces where the master composition places it. Do not replace requested photography with clip-art, icons, vector illustration, painterly imagery, generic AI illustration, or an abstract substitute.",
+      "PRODUCTION GEOMETRY: The six supplied rectangles are fixed extraction targets for the completed surface artwork, not six separate creative canvases. Map each resolved surface into its exact rectangle after the master concept exists.",
+      "CONTINUOUS ARTWORK: Fill every supplied production rectangle edge-to-edge with the resolved surface artwork so code-owned trim and 5-inch bleed can be preserved. Do not shape artwork to resemble a hood, door, wheel opening, window, or vehicle silhouette inside the rectangle; installers trim the rectangular print at installation.",
+      "BRAND FIDELITY: Reuse the same custom logo system, lettering language, color system, and visual identity across all six surfaces. Do not substitute generic fonts or independently re-invent the company name on another surface.",
+      "Return flat uninstalled artwork only. The application supplies the staging geometry and coded TriZone presentation; do not invent a document, vehicle silhouette, wheels, windows, panel labels, dimensions, headers, or zone UI.",
     ];
     // The live caller requests the complete three-zone sheet, not the legacy
     // separated-background canvas. Keep that request paired with the template
@@ -697,8 +699,9 @@ serve(async (req) => {
         && prompt.startsWith(creativeHead + "\n\n"),
       nativeGeminiImageKnowledgeInjected:
         Boolean(nativeKnowledgeInstruction && prompt.includes(nativeKnowledgeInstruction)),
+      // Keep this count coupled to the focused Edge contract test; prompt expansion must fail CI before production.
       flatPanelProductionProofInjected: body.separatedArtwork === true
-        ? flatProductionInstructions.length === 5 && prompt.includes(flatProductionInstructions[0])
+        ? flatProductionInstructions.length === 7 && prompt.includes(flatProductionInstructions[0])
         : prompt.includes(SYSTEM_JOB)
           && ["ZONE 1", "ZONE 2", "ZONE 3"].every(zone => prompt.includes(zone)),
       templateLayoutLocked: body.separatedArtwork === true

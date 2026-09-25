@@ -130,6 +130,79 @@ export async function renderWallPreview(photoUrl: string, artworkUrl: string, co
  * behind it. Preview fidelity only: print files are produced per zone from
  * that zone's own master, and never from this composite.
  */
+/**
+ * The wall photo WITH the marked corners drawn on it.
+ *
+ * Owner, 2026-09-24: "if it says pin corners for geometry it should show the
+ * corners I pinned." The step board shows a thumbnail of each step's own
+ * artifact, and step 2's artifact is the MARKED WALL — not the bare photograph
+ * it was marked on. Showing the untouched photo under the words "Corners set
+ * by you" is the card claiming work it is not displaying, so the one place she
+ * could check her corners at a glance showed her nothing.
+ *
+ * Deliberately small and deliberately not the composite: this is a thumbnail,
+ * the design may not exist yet, and `renderWallPreview` needs artwork.
+ */
+/**
+ * THE STEP-2 TILE SHOWS WHAT SHE MARKED — CORNERS **AND** PROTECTED AREAS
+ * (owner, 2026-09-24: "I clearly marked it correctly yet on step two doesnt
+ * show that").
+ *
+ * It drew the wall quad and nothing else, so a customer who had just outlined
+ * a closet looked at a tile with no closet on it and reasonably concluded the
+ * marking had not taken. The caption beside it said "1 protected" while the
+ * picture showed none — a tile that contradicts its own caption is worse than
+ * no tile. The protected polygons are drawn in the editor's own cyan, so the
+ * tile and the editor are the same picture at two sizes.
+ */
+export async function renderCornerThumb(photoUrl: string, corners: Point[], exclusions: Point[][] = [], maxPx = 480): Promise<HTMLCanvasElement> {
+  const img = await loadWallImage(photoUrl);
+  const scale = Math.min(1, maxPx / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (corners.length >= 3) {
+    const pt = (c: Point) => [c.x * canvas.width, c.y * canvas.height] as const;
+    ctx.beginPath();
+    corners.forEach((c, i) => { const [x, y] = pt(c); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(124,58,237,0.18)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(124,58,237,0.95)';
+    ctx.lineWidth = Math.max(2, canvas.width * 0.006);
+    ctx.stroke();
+  }
+  // Protected areas sit ON TOP of the wall fill, because that is the order the
+  // render itself applies them in: the covering fills the quad, then the
+  // protected pixels are restored over it.
+  for (const poly of exclusions) {
+    if (poly.length < 3) continue;
+    ctx.beginPath();
+    poly.forEach((c, i) => { const x = c.x * canvas.width, y = c.y * canvas.height; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(34,211,238,0.28)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(34,211,238,0.95)';
+    ctx.lineWidth = Math.max(2, canvas.width * 0.006);
+    ctx.stroke();
+  }
+  // Round on screen, because this canvas is NOT the stretched viewBox the
+  // editor draws into — here one x-pixel is one y-pixel.
+  const r = Math.max(3, canvas.width * 0.012);
+  for (const c of corners) {
+    ctx.beginPath();
+    ctx.arc(c.x * canvas.width, c.y * canvas.height, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#7c3aed';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1, r * 0.35);
+    ctx.stroke();
+  }
+  return canvas;
+}
+
 export async function renderZonesPreview(
   photoUrl: string,
   zones: { artworkUrl: string; corners: Point[]; exclusions?: Point[][]; layout: WallLayout; maskUrl?: string | null }[],

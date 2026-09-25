@@ -153,7 +153,9 @@ function vehicleDescription(input) {
 
 function pickupVehicle(input) {
   const description = vehicleDescription(input).toLowerCase();
-  return /\b(pickup|truck|f[- ]?\d{3}|silverado|sierra|tacoma|tundra|ridgeline|ranger|colorado|canyon|frontier|ram)\b/.test(description);
+  // Match the producer: a ProMaster/van must not be judged as a RAM pickup.
+  if (/\b(van|pro[ -]?master|transit|sprinter|metris|savana|(?:chevrolet|chevy) express|box truck|cutaway|motorhome|bus)\b/.test(description)) return false;
+  return /\b(pickup|truck|f[- ]?\d{3}|silverado|sierra|tacoma|tundra|ridgeline|ranger|colorado|canyon|frontier|ram\s+(?:1500|2500|3500|4500|5500))\b/.test(description);
 }
 
 function atlasTopologySummary(atlas) {

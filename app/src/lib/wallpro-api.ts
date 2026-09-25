@@ -206,12 +206,17 @@ export async function detectWall(wallPath: string, point?: { x: number; y: numbe
  * classified as movable (see wallpro-occlusion.ts) are erased and painted
  * through instead, best effort, as an installer would after clearing them
  * out of the room. */
-export async function renderWallView(input: { wallPath: string; artworkPath: string; maskPath?: string | null; removePath?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number; designDomain?: 'residential' | 'commercial' | null }): Promise<{ view_path: string; view_url: string; model: string }> {
+export async function renderWallView(input: { wallPath: string; artworkPath: string; geometryPath?: string | null; corners?: { x: number; y: number }[]; maskPath?: string | null; removePath?: string | null; placement: 'cover' | 'contain' | 'repeat'; repeatWidthIn?: number | null; wallWidthIn?: number; wallHeightIn?: number; designDomain?: 'residential' | 'commercial' | null }): Promise<{ view_path: string; view_url: string; model: string }> {
   const { data, error } = await supabase.functions.invoke('render-wall-view', { body: input });
   if (error) {
     const response = (error as any).context;
     const body = await response?.clone?.().json().catch(() => null);
-    throw new Error(typeof body?.error === 'string' ? body.error : 'The wall view could not be rendered.');
+    // `detail` carries the image service's OWN reason (see the edge's
+    // wall_view_provider_error log). Without it a failure reaches the customer
+    // as four identical words and the only way to learn anything is another
+    // deploy, which is exactly what happened on 2026-09-24.
+    const detail = typeof body?.detail === 'string' && body.detail ? ' (' + body.detail + ')' : '';
+    throw new Error((typeof body?.error === 'string' ? body.error : 'The wall view could not be rendered.') + detail);
   }
   if (!data?.view_path) throw new Error(data?.error || 'No wall view was returned.');
   return { ...data, view_url: data.view_url || await openWallAsset(data.view_path) };

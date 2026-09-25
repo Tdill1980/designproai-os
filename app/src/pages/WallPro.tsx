@@ -14,7 +14,7 @@ import { WallPrintOutput } from '@/components/wallpro/WallPrintOutput';
 import { BeforeAfter } from '@/components/wallpro/BeforeAfter';
 import { WallProHeroProof } from '@/components/wallpro/WallProHeroProof';
 import { WallProductionPanels } from '@/components/wallpro/WallProductionPanels';
-import { rasterizeDetectionMasks, buildProtectedAreaMask, type DetectedMask } from '@/lib/wallpro-masks';
+import { rasterizeDetectionMasks, buildProtectedAreaMask, wallMaskKey, type DetectedMask } from '@/lib/wallpro-masks';
 import { toWallItems, addWallItem, applyItemClass, itemAt, toggleItem, resetItems, hasOverride, splitItems, itemSummary, serializeWallItems, parseWallItems, wallMaskGuidance, type WallItem } from '@/lib/wallpro-items';
 import { accentZoneConfig, isAccentZone, otherZonesWithArtwork, zoneGroupId, zonesInGroup, type WallZone } from '@/lib/wallpro-zones';
 import { wallBilling, DEFAULT_WALL_PRINT, planWallPrint, type WallPrintSettings } from '@/lib/wallpro-print-plan';
@@ -32,13 +32,13 @@ import { WallProStepBoard, activeStepId, type BoardStep } from '@/components/wal
 import { useInsideAppShell } from '@/hooks/useIsAppRoute';
 import { WALL_DESIGNS } from '@/components/wallpro/galleryData';
 import { validWallSize, validWallCorners, orderWallCorners, wallGenerationBlocker, wallPreviewBlocker, rectangularWallMask, layoutMetrics, WALLPRO_PRINT_WIDTH, homography, projectPoint, UNIT_WALL, type Point, type Placement, type WallLayout, looksLikeWholeFrame } from '@/lib/wallpro-geometry';
-import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, canvasBlob } from '@/lib/wallpro-render';
+import { prepareWallUpload, validateWallUpload, loadWallImage, renderWallPreview, renderZonesPreview, renderFlatWall, renderCornerThumb, canvasBlob } from '@/lib/wallpro-render';
 import { measureSeam, blendSeamless, seamLadder, shouldTryBlend, seamlessReceipt, type SeamReport, type SeamlessPreference, type SeamlessReceipt } from '@/lib/wallpro-seamless';
-import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, canCommitFromView, resolveWallView } from '@/lib/wallpro-ai-view';
+import { AI_VIEW_BADGE, AI_VIEW_EXPLAINER, AI_REPAINT_SETTLE_MS, PRINT_TRUTH_BADGE, PRINT_TRUTH_LINE, aiViewAvailable, viewIsPrintFile, resolveWallView } from '@/lib/wallpro-ai-view';
 import { supabase } from '@/integrations/supabase/client';
 import { isAllowlistedAdmin } from '@/lib/admin-allowlist';
 import { VIEW_AS_KEY } from '@/hooks/useUserTier';
-import { WALL_STYLE_CHIPS, appendStyleChip, autoRepeatWidthIn, autoWallScale, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
+import { WALL_STYLE_CHIPS, appendStyleChip, autoRepeatWidthIn, autoWallScale, statedRepeatWidthIn, clampPatternScale, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView, PATTERN_SCALE_MAX, PATTERN_SCALE_MIN, PATTERN_SCALE_PRESETS, PATTERN_SCALE_STEP, type PatternSize, type WallBox } from '@/lib/wallpro-scale';
 import { Slider } from '@/components/ui/slider';
 import { wallUser, wallFreeReason, saveWallItemsFile, readWallItemsFile, uploadWallAsset, openWallAsset, openWallAssets, generateWall, detectWall, renderWallView, saveWallProject, wallHistory, getWallProject, listWallCatalog, listWallVersions, createWallVersion, approveWallVersion, sha256Hex, wallProEntitlements, startWallProCheckout, type WallAsset, type WallVersion, type WallVersionKind, type WallProEntitlement } from '@/lib/wallpro-api';
 import type { WallCatalogRow } from '@/lib/wallpro-catalog';
@@ -191,6 +191,9 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   const [prompt, setPrompt] = useState(() => params.get('prompt') || '');
   const [width, setWidth] = useState(120), [height, setHeight] = useState(96);
   const [placement, setPlacement] = useState<Placement>('cover'), [repeatWidth, setRepeatWidth] = useState(24);
+  /** What the customer measured on the wall she is matching, in inches, as
+   *  typed. Empty means "estimate it", which is what every run did before. */
+  const [matchRepeat, setMatchRepeat] = useState('');
   // Tile-or-mural and the tile's width are decided by code from the brief and
   // the wall inches (wallpro-scale.ts). 'auto' is the product; Mural and
   // Repeating pattern are overrides a customer may still choose.
@@ -246,10 +249,29 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    */
   const [items, setItems] = useState<WallItem[]>([]);
   // The AI picture of the design on the wall: presentation only, never print.
-  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string } | null>(null);
+  const [aiView, setAiView] = useState<{ url: string; path: string; artwork: string; forArtwork: string; forPhoto: string; forScale: string; forMask: string; forGeometry: string } | null>(null);
   const [aiPainting, setAiPainting] = useState(false);
   // Latest photo and corners, readable from a detection that started earlier.
-  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null);
+  /**
+   * THE LAST CONFIG THIS PROJECT ACTUALLY HAS ON THE SERVER.
+   *
+   * `saveWallProject` REPLACES `config` wholesale -- it is an upsert of one
+   * jsonb column, not a merge. So any save that builds its object from React
+   * state erases every field whose state is not loaded at that instant, and
+   * the incidental saves (a slider resting, an items file landing) are exactly
+   * the ones that run while something else is still null.
+   *
+   * Measured on the owner's own project, 2026-09-24: the pattern-size slider
+   * rested at 150%, its save wrote `repeatWidth: 108` -- and `referencePath:
+   * null` in the same write, silently discarding the design she had uploaded
+   * to MATCH. A match project with no reference cannot be regenerated at all:
+   * `generate` refuses with "Upload the design to match first." A control that
+   * resizes a pattern took the design away.
+   *
+   * Partial saves now start from this and change only what they own.
+   */
+  const savedConfig = useRef<Record<string, unknown> | null>(null);
+  const photoRef = useRef<WallAsset | null>(null), cornersRef = useRef<Point[]>([]), exclusionsRef = useRef<Point[][]>([]), artworkRef = useRef<WallAsset | null>(null), tileArtworkRef = useRef<WallAsset | null>(null);
   // itemsRef, because a tap resolves a network round trip later and must append
   // to the list as it is THEN -- two quick taps on a busy wall would otherwise
   // have the second one overwrite the first from a stale closure.
@@ -413,7 +435,14 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * customer's own choice instead of a single hardcoded design fee. */
   const quote = wallQuote({ path: 'design-and-print', designMode, billing });
   useEffect(() => { setView(v => resolveWallView(v, aiAvailable)); }, [aiAvailable]);
-  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey;
+  // ⚠️ `forMask` IS LOAD-BEARING. Without it a mask drawn after the view was
+  // painted never reaches the model and never invalidates the cached picture:
+  // the closet stays wrapped and the button still reads "On your wall". See
+  // wallMaskKey for the sequence that produced exactly that on the owner's own
+  // wall. Every input the render consumes belongs in this test.
+  const maskKey = wallMaskKey(exclusions, detectedMask?.path || detectedMask?.url || null, removeMask?.path || removeMask?.url || null);
+  const geometryKey = [width, height, scaleKey, JSON.stringify(corners), maskKey].join('|');
+  const aiViewCurrent = !!aiView && !!artwork && !!photo && aiView.forArtwork === artwork.url && aiView.forPhoto === photo.url && aiView.forScale === scaleKey && aiView.forMask === maskKey && aiView.forGeometry === geometryKey;
   /** PATTERN SCALE, as RestylePro's PatternPro slider (owner, 2026-09-12:
    * "the pattern design size larger and smaller … look at PatternPro, we
    * literally had this"): 30 to 300 percent of the size the design was
@@ -454,7 +483,10 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     // The project remembers the slider once it rests, not on every tick.
     if (scaleSave.current) clearTimeout(scaleSave.current);
     scaleSave.current = setTimeout(() => {
-      wallUser().then(user => saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId })).catch(() => { /* signed out: the scale still applies on screen */ });
+      // ⚠️ THREE FIELDS, NOT THE WHOLE PROJECT. This used to rebuild the
+      // entire config from state and so erased the matched reference; see
+      // `savedConfig`. The slider owns placement, repeat width and scale.
+      wallUser().then(user => saveProject(user.id, name, { placement: next.placement, repeatWidth: next.repeatWidthIn, patternScale: pct })).catch(() => { /* signed out: the scale still applies on screen */ });
     }, 600);
   }
   // The photo pane opens on the AI room view when one has landed, and on the
@@ -469,6 +501,24 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // customer sees; the reversal that put the AI view in front of customers is
   // recorded in wallpro-ai-view.ts, and this is the half of it that lives here.
   useEffect(() => { if (artwork && photo && wallLocated && !aiViewCurrent) setView('after'); }, [!!artwork, !!photo, wallLocated, !!aiViewCurrent]);
+  /* THE BOARD'S STEP 2 SHOWS THE MARKED WALL, NOT THE BARE PHOTO (owner,
+     2026-09-24: "if it says pin corners for geometry it should show the corners
+     I pinned"). The card said "Corners set by you" over an untouched
+     photograph, so the one place she could check her corners at a glance
+     showed her nothing. Keyed on the corners themselves, so moving one
+     redraws it and nothing else does. */
+  const [cornerThumb, setCornerThumb] = useState<{ key: string; url: string } | null>(null);
+  // The key carries the exclusions too, or a newly marked closet would leave
+  // the tile showing the previous, closet-free render for the rest of the session.
+  const cornerThumbKey = photo && corners.length >= 3 ? photo.url + '|' + JSON.stringify(corners) + '|' + JSON.stringify(exclusions) : '';
+  useEffect(() => {
+    if (!photo || !cornerThumbKey) { setCornerThumb(null); return; }
+    let live = true;
+    renderCornerThumb(photo.url, corners, exclusions)
+      .then(canvas => { if (live) setCornerThumb({ key: cornerThumbKey, url: canvas.toDataURL('image/jpeg', 0.85) }); })
+      .catch(() => { /* the bare photo is the fallback, exactly as before */ });
+    return () => { live = false; };
+  }, [cornerThumbKey]);
   const [history, setHistory] = useState<History | null>(null);
   /** The last project the customer worked on — OFFERED, not opened. See the
    *  restore effect below for why this is a banner and not a page load. */
@@ -527,6 +577,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // What the preview samples and the print embeds. For a repeat this is the
   // seam-derived artwork; the layout carries mirror when that method was chosen.
   const tileArtwork = seamCurrent ? seamCurrent.artwork : previewArt;
+  tileArtworkRef.current = tileArtwork;
   const seamReceipt = seamCurrent ? seamCurrent.receipt : null;
   const layout: WallLayout = { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' };
   const seamReady = placement !== 'repeat' || !!seamCurrent;
@@ -553,14 +604,30 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   // `const` declared two lines below it: a temporal dead zone, thrown on every
   // single render, minified to a two-letter name that says nothing.
   // EVERY name in the array below must be declared ABOVE this line.
-  const aiAutoKey = useRef<string | null>(null);
+  //
+  // ⚠️ AND IT REPAINTS WHEN THE MASKS CHANGE, WHICH IS THE WHOLE REASON A
+  // PROTECTED AREA EVER TOOK EFFECT. `maskKey` was missing from both this key
+  // and `aiViewCurrent`, so the view painted once — before any mask existed —
+  // and then nothing could ever dislodge it.
+  //
+  // The wait is NOT a uniform debounce: the first paint of a design must not
+  // be delayed by a second, because that is the paint the customer is standing
+  // there waiting for. Only a REPAINT settles, because marking arrives in
+  // bursts (a closet, then a door, then a window) and each committed polygon
+  // would otherwise buy its own ~30s image call. One burst, one render.
+  const aiAutoKey = useRef<string | null>(null), aiAutoBase = useRef<string | null>(null);
   useEffect(() => {
     if (!tileArtwork || !photo || aiViewCurrent || !aiAvailable || !seamReady) return;
-    const key = tileArtwork.url + '|' + photo.url;
+    const base = tileArtwork.url + '|' + photo.url;
+    const key = base + '|' + geometryKey;
     if (aiAutoKey.current === key) return;
-    aiAutoKey.current = key;
-    void paintAiView(tileArtwork, photo, true);
-  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady]);
+    const wait = aiAutoBase.current === base ? AI_REPAINT_SETTLE_MS : 0;
+    const timer = setTimeout(() => {
+      aiAutoKey.current = key; aiAutoBase.current = base;
+      void paintAiView(tileArtwork, photo, true);
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [tileArtwork?.url, photo?.url, aiAvailable, seamReady, geometryKey]);
   let metrics: ReturnType<typeof layoutMetrics> | null = null;
   try { if (previewArt) metrics = layoutMetrics(layout, previewArt.aspect); } catch { /* visible validation below */ }
   // The flat pane shows the print master as it prints across the wall at the
@@ -822,6 +889,11 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
   }
   async function restore(config: any, id?: string, title?: string) {
     const [wall, art, ref] = await Promise.all([config.wallPath ? storedAsset(config.wallPath) : null, config.artworkPath ? storedAsset(config.artworkPath) : null, config.referencePath ? storedAsset(config.referencePath) : null]);
+    // A REOPENED PROJECT'S BASELINE IS WHAT THE SERVER HOLDS, not what has
+    // loaded so far. This is the case the destructive save actually bit in:
+    // state fills in over several async hops, and any save landing during them
+    // used to write the gaps as null.
+    savedConfig.current = { ...config };
     setPhoto(wall); setArtwork(art); setReference(ref); setWidth(config.width || 120); setHeight(config.height || 96);
     setPrintSettings({ ...DEFAULT_WALL_PRINT, ...config.printSettings });
     setPlacement(config.placement || 'cover'); setRepeatWidth(config.repeatWidth || 24); setPrompt(config.prompt || '');
@@ -909,7 +981,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try { user = await wallUser(); } catch { return null; }
     const artworkPath = art.path || await uploadWallAsset(art, user.id);
     if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
-    await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
+    await saveProject(user.id, name, { wallPath: photo?.path || null, artworkPath, referencePath: reference?.path || null, width, height, placement: extra.placement ?? placement, repeatWidth: extra.repeatWidthIn ?? repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: extra.designId ?? designId, currentVersionId });
     setParams({ project: projectId }, { replace: true });
     const version = await createWallVersion({ projectId, owner: user.id, parent: currentVersion, kind, versionNo: versions.length + 1, artworkPath, widthPx: art.width ?? null, heightPx: art.height ?? null,
       placement: extra.placement ?? placement, repeatWidthIn: extra.repeatWidthIn ?? repeatWidth, intent: extra.intent ?? null, prompt: extra.prompt ?? null, maskPath: extra.maskPath ?? null, referencePath: extra.referencePath ?? null,
@@ -1054,7 +1126,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       const wallPath = wall.path || await uploadWallAsset(wall, user.id);
       if (!wall.path) setPhoto(old => old && old.url === wall.url ? { ...old, path: wallPath } : old);
       const artworkPath = art.path || await uploadWallAsset(art, user.id);
-      if (!art.path) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+      if (!art.path && artworkRef.current?.url === art.url) setArtwork(old => old && old.url === art.url ? { ...old, path: artworkPath } : old);
+
+      if (!validWallCorners(cornersRef.current)) throw new Error('Mark all four wall corners before painting the AI room view.');
+      const guideCanvas = await renderWallPreview(
+        wall.url, art.url, cornersRef.current, exclusionsRef.current,
+        { width, height, mode: placement, repeatWidth, mirror: seamReceipt?.method === 'mirror' },
+        () => false, detectedMask?.url ?? null,
+      );
+      const guideBlob = await new Promise<Blob>((resolve, reject) =>
+        guideCanvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare the wall geometry guide.')), 'image/jpeg', 0.84));
+      const geometryPath = await uploadWallAsset({
+        url: wall.url, aspect: wall.aspect,
+        file: new File([guideBlob], 'wall-geometry-guide.jpg', { type: 'image/jpeg' }),
+      }, user.id);
+
       // Hand-drawn masks and any auto-detected protected areas apply to the AI
       // view too, not only the deterministic "on your wall" composite -- best
       // effort: a mask that fails to build or upload just leaves the AI view
@@ -1087,18 +1173,27 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // by the same deterministic switch that picks the DESIGNER on the
       // generate side — so a bedroom brief is both designed and shot like a
       // bedroom. It never picks an artwork authority: the render may not
-      // redesign, which is what canCommitFromView still guards.
-      const result = await renderWallView({ wallPath, artworkPath, maskPath, removePath, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallWidthIn: width, wallHeightIn: height, designDomain });
-      // The design or the photo may have changed while the model painted.
-      if (artworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
-      setAiView({ url: result.view_url, path: result.view_path, artwork: artworkPath, forArtwork: art.url, forPhoto: wall.url, forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0) }); setView('ai');
+      // redesign, which is what viewIsPrintFile keeps honest at commit time.
+      const result = await renderWallView({
+        wallPath, artworkPath, geometryPath, corners: cornersRef.current,
+        maskPath, removePath, placement,
+        repeatWidthIn: placement === 'repeat' ? repeatWidth : null,
+        wallWidthIn: width, wallHeightIn: height, designDomain,
+      });
+      if (tileArtworkRef.current?.url !== art.url || photoRef.current?.url !== wall.url) return;
+      setAiView({
+        url: result.view_url, path: result.view_path, artwork: artworkPath,
+        forArtwork: artworkRef.current?.url || art.url, forPhoto: wall.url,
+        forScale: placement + '|' + (placement === 'repeat' ? repeatWidth : 0),
+        forMask: maskKey, forGeometry: geometryKey,
+      }); setView('ai');
       setNotice('Your design is on your wall. This is an impression of the installed covering; the flat master and the production panels are what print. "Print geometry" shows the exact print file mapped onto your wall.');
     };
     if (!background) { await run('Painting the design onto your wall', paint); return; }
     // Background: the form stays usable; a signed-out or failed paint just
     // leaves the exact-geometry view, which never needed the model.
     setAiPainting(true);
-    try { await paint(); } catch (e) { if (artworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The "Print geometry" tab shows the exact print file on your wall.'); }
+    try { await paint(); } catch (e) { if (tileArtworkRef.current?.url === art.url) setNotice((e instanceof Error ? e.message : 'The AI view could not be painted.') + ' The "Print geometry" tab shows the exact print file on your wall.'); }
     finally { setAiPainting(false); }
   }
   async function showAiView() {
@@ -1121,7 +1216,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     try {
       const path = next.length ? await saveWallItemsFile(owner, serializeWallItems(next)) : null;
       setItemsPath(path); itemsPathRef.current = path;
-      if (projectId) await saveWallProject(projectId, owner, name, { ...liveConfig(), itemsPath: path });
+      if (projectId) await saveProject(owner, name, { ...liveConfig(), itemsPath: path });
     } catch { /* the list still works in this session */ }
   }
   /**
@@ -1261,25 +1356,28 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (version.design_id) setDesignId(version.design_id);
       setView(photo && cornersValid ? 'after' : 'design'); setMaskRects([]);
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
+      await saveProject(user.id, name, { wallPath: photo?.path || null, artworkPath: version.artwork_path, referencePath: reference?.path || null, width, height, placement: version.placement, repeatWidth: version.repeat_width_in ? Number(version.repeat_width_in) : repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId: version.design_id || designId, currentVersionId: version.id });
     });
   }
   async function approveCurrent() {
     if (!currentVersion) return;
-    // NEVER FROM THE AI VIEW. Approving starts the 150 PPI panel build and is a
-    // statement about the print file; the AI view is a freehand painting of one
-    // and its motifs do not match. The guard lives here, on the action, rather
-    // than only on who can see the view, so it survives the view ever being put
-    // back in front of customers.
-    if (!canCommitFromView(view)) {
-      setView('after');
-      setNotice('That was the artist\u2019s impression, not your print file. This is the real one \u2014 approve from here.');
-      return;
-    }
+    // APPROVING IS ALWAYS A STATEMENT ABOUT THE PRINT FILE, so the pane shows
+    // the print file as part of approving. It used to RETURN here instead,
+    // sending her to another tab to press the same button again — correct
+    // while the AI view was staff-only, and a dead button once that view
+    // became the default for everyone (see viewIsPrintFile). Measured on the
+    // owner's own account the day this was found: 19 drafts, 2 approvals, none
+    // for eleven days, and every production job that ever ran succeeded. The
+    // file path was never the problem; the first press was being eaten.
+    //
+    // The rule is kept — nobody commits without seeing the real file — by
+    // SHOWING it, not by refusing. One press.
+    const wasImpression = !viewIsPrintFile(view);
+    if (wasImpression) setView('after');
     await run('Approving V' + currentVersion.version_no, async () => {
       await approveWallVersion(projectId, currentVersion.id);
       setVersions(await listWallVersions(projectId));
-      setNotice(`V${currentVersion.version_no} approved. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
+      setNotice(`V${currentVersion.version_no} approved${wasImpression ? ' \u2014 this is your actual print file, not the AI impression' : ''}. Building its ${printSettings.minPpi} PPI production panels through Topaz now.`);
       // Approval auto-runs production: the 150 PPI panels start on the server
       // without another click (owner, 2026-09-11).
       setProductionKick(k => k + 1);
@@ -1499,7 +1597,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (photo && wallPath) setPhoto({ ...photo, path: wallPath });
     if (art && artworkPath) setArtwork({ ...art, path: artworkPath });
     if (reference && referencePath) setReference({ ...reference, path: referencePath });
-    await saveWallProject(projectId, user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
+    await saveProject(user.id, designName, { wallPath, artworkPath, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId });
     setParams({ project: projectId }, { replace: true }); setNotice('Project saved. You can reopen it from My wall designs.');
   }
   async function generate() {
@@ -1524,7 +1622,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       // WallPro decides tile-versus-mural and the tile's real-world width from
       // the brief and the wall inches; the generator is told that width so
       // motifs are drawn at the size they print.
-      const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice });
+      const scale = autoWallScale({ intent, prompt, wallWidthIn: width, chosen: scaleChoice === 'auto' ? null : scaleChoice, stated: intent === 'match' ? statedRepeatWidthIn(matchRepeat) : null });
       const placement = scale.placement, repeatWidth = scale.repeatWidthIn;
       setPlacement(placement); setRepeatWidth(repeatWidth); setPatternScale(100);
       const result = await generateWall({ requestId: crypto.randomUUID(), intent, prompt, width, height, placement, repeatWidthIn: placement === 'repeat' ? repeatWidth : null, wallPath, referencePath, designDomain });
@@ -1547,7 +1645,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
       if (photo) setTimeout(() => (document.getElementById('wall-photo') ?? document.getElementById('wall-preview'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
       // The server saves every generation before responding. Project save also
       // retains the measured wall and placement even if the customer reloads.
-      try { await saveWallProject(projectId, user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
+      try { await saveProject(user.id, result.design_name, { wallPath, artworkPath: result.storage_path, referencePath, width, height, placement, repeatWidth, patternScale: 100, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners: liveCorners, exclusions: liveExclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, currentVersionId }); setParams({ project: projectId }, { replace: true }); }
       catch { setNotice('Artwork is saved in My wall designs. Save this project again to retain the wall placement.'); }
       // V1 of a new session, or the next version when the customer generates
       // again inside an existing project.
@@ -1555,6 +1653,20 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     });
   }
   /** The config this zone is currently sitting on, for a save before leaving it. */
+  /**
+   * THE ONE DOOR EVERY PROJECT SAVE GOES THROUGH.
+   *
+   * `patch` is merged onto the last config this project actually has, so a
+   * save that knows about three fields cannot delete the other eighteen. A
+   * full config is simply a patch that names every key, so the callers that
+   * build one are unchanged in effect -- what changes is that a PARTIAL one is
+   * now safe to write, which it was not. See `savedConfig` for what that cost.
+   */
+  async function saveProject(owner: string, title: string, patch: Record<string, unknown>) {
+    const merged = { ...(savedConfig.current ?? liveConfig()), ...patch };
+    await saveWallProject(projectId, owner, title, merged);
+    savedConfig.current = merged;
+  }
   function liveConfig() {
     return { wallPath: photo?.path || null, artworkPath: artwork?.path || null, referencePath: reference?.path || null, width, height, placement, repeatWidth, patternScale, seamPreference, printWidth: WALLPRO_PRINT_WIDTH, printSettings, corners, exclusions, maskPath: detectedMask?.path || null, removeMaskPath: removeMask?.path || null, itemsPath: itemsPathRef.current, parentProjectId, zoneLabel, prompt, designMode, designId, currentVersionId };
   }
@@ -1571,7 +1683,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     const zoneName = label.trim().slice(0, 40) || 'Accent zone';
     await run('Adding the zone', async () => {
       const user = await wallUser();
-      await saveWallProject(projectId, user.id, name, liveConfig());
+      await saveProject(user.id, name, liveConfig());
       const id = crypto.randomUUID();
       const config = accentZoneConfig({ wallPath: photo.path }, zoneGroupId(projectId, { parentProjectId }), zoneName);
       await saveWallProject(id, user.id, zoneName, config);
@@ -1587,7 +1699,7 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
     if (id === projectId) return;
     await run('Opening the zone', async () => {
       const user = await wallUser().catch(() => null);
-      if (user) await saveWallProject(projectId, user.id, name, liveConfig()).catch(() => { /* the zone still opens */ });
+      if (user) await saveProject(user.id, name, liveConfig()).catch(() => { /* the zone still opens */ });
       const row = await getWallProject(id);
       await restore(row.config, row.id, row.name);
     });
@@ -1710,10 +1822,21 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
    * button — the lesson "Mark the corners" already learned.
    */
   const boardSteps: BoardStep[] = [
-    { id: 'upload-wall', n: 1, label: 'Upload your wall', icon: Upload, done: !!photo, preview: photo?.url ?? null,
-      detail: photo ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft` : 'Any photo from your phone, including iPhone HEIC. JPG, PNG, HEIC, max 20 MB.',
-      action: { label: photo ? 'Replace photo' : 'Upload your wall', onClick: () => uploadInputs.current.photo?.click() } },
-    { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: photo?.url ?? null,
+    // ⚠️ STEP 1 IS THE MEASUREMENT, NOT THE PHOTO (owner, 2026-09-24: "I keep
+    // forgetting to add the dimension"). It used to tick green on a photo
+    // alone and print the dimensions as if they were settled -- so an unmeasured
+    // wall read as a finished step, which is the step lying about its own
+    // outcome, the same fault already corrected on step 4. The photo is
+    // optional everywhere (`wallGenerationBlocker` reads width and height and
+    // nothing else); the measurement is not.
+    { id: 'upload-wall', n: 1, label: 'Measure your wall', icon: Ruler, done: dimensionsValid, preview: photo?.url ?? null,
+      detail: dimensionsValid
+        ? `${width}" x ${height}" - ${(width * height / 144).toFixed(1)} sq ft${photo ? ' - photo added' : ' - photo optional'}`
+        : 'Width and height in inches. This is all a print file needs; the photo is optional.',
+      action: dimensionsValid
+        ? { label: photo ? 'Replace photo' : 'Add a wall photo (optional)', onClick: () => uploadInputs.current.photo?.click() }
+        : { label: 'Enter the dimensions', onClick: () => jumpToStep('upload-wall') } },
+    { id: 'select-wall-area', n: 2, label: 'Select wall area', icon: Ruler, done: wallLocated, preview: (cornerThumb?.key === cornerThumbKey ? cornerThumb.url : null) ?? photo?.url ?? null,
       detail: !photo ? 'Upload a wall photo first. Print files never wait for this.'
         : wallLocated ? `Corners set ${cornerSource === 'detected' ? 'automatically' : 'by you'}${exclusions.length || items.length ? ` - ${exclusions.length + items.length} protected` : ''}`
           : detecting ? 'Looking for your wall...' : 'Tap the four corners, clockwise from the top left. We exclude windows, doors and furniture.',
@@ -2142,6 +2265,15 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             brief is not a fourth input -- it is the picture the first upload
             just produced. */}
         <section id="upload-wall" className={panelClass + ' lg:col-span-2 lg:row-start-2'}><StepHeading n={1} icon={Upload}>Upload your wall</StepHeading>
+            {/* ⚠️ MEASUREMENTS COME FIRST, BEFORE THE PHOTO (owner, 2026-09-24:
+                "I need the enter wall size before upload ... Its not good ui
+                upload first because I keep forgetting to add the dimension").
+                She is right, and the code already said so: `wallGenerationBlocker`
+                reads ONLY the width and height -- the photo is optional on every
+                path and print files never wait for it. Asking for the optional
+                thing first is what made the REQUIRED thing forgettable. */}
+            <p className={'inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
+            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
             {/* THE THREE INPUTS SIT TOGETHER (owner, 2026-09-22, before a demo:
                 "The upload style reference should be right next to upload wall
                 / And the text prompt").
@@ -2176,33 +2308,49 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                 <span className="text-sm font-semibold wall-ink">Wall photo added</span>
                 <button type="button" className="text-xs font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
                   onClick={() => uploadInputs.current.photo?.click()}>Replace</button>
-                <span className="ml-auto flex items-center gap-2 text-xs wall-muted">
-                  {reference ? <img src={reference.url} alt="Your style reference" className="h-8 w-10 shrink-0 rounded object-cover" /> : null}
-                  <span>{reference ? 'Style reference added' : 'No style reference'}</span>
-                  <button type="button" className="font-semibold text-blue-700 underline underline-offset-2" disabled={!!busy}
-                    onClick={() => uploadInputs.current.reference?.click()}>{reference ? 'Replace' : 'Add'}</button>
-                </span>
+                {/* THE REFERENCE CONTROL MOVED TO THE BRIEF (owner, 2026-09-24:
+                    "I need uploader next to prompt"). It sat here, in the wall
+                    UPLOAD step, three sections above the box she types the
+                    design into — so attaching a design she wanted matched
+                    happened nowhere near the words describing what to do with
+                    it, and the choice between matching it and being inspired
+                    by it was buried in "More ways to start" below the fold.
+                    One door, beside the brief. Do not add a second here. */}
                 {/* The inputs themselves still have to be mounted for those two
                     links to open a picker, so both controls render here with
                     their tiles hidden rather than being conditionally absent. */}
                 <span className="hidden">{uploadControl('photo', 'Replace Wall Photo')}{uploadControl('reference', 'Replace Style Reference')}</span>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
-                  <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
-                </div>
-                <div>
-                  {uploadControl('reference', reference ? 'Replace Style Reference' : 'Optional Style Reference', 'Design inspiration (optional)')}
-                  <p className="mt-2 text-xs wall-muted">{intent === 'match'
-                    ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale.'
-                    : 'Optional. Your description alone is enough.'}</p>
-                </div>
+              <div>
+                {uploadControl('photo', 'Upload Wall Photo', 'Drag and drop or click to upload · JPG, PNG, HEIC')}
+                <p className="mt-2 text-xs wall-muted">Any phone photo, including iPhone HEIC. We find the corners for you.</p>
+                {/* THE PHOTO IS OPTIONAL AND NOTHING SAID SO (owner, 2026-09-24:
+                    "we need a button or path that says something like dont have
+                    a photo of a wall"). `wallGenerationBlocker` has always
+                    accepted a measured wall with no photograph -- the flat
+                    rectangle IS the product and the print file -- but the only
+                    control on this step was an upload tile, so a customer
+                    standing somewhere other than the wall had no way to tell
+                    that they could carry on. This is not a new path: it is a
+                    door onto the one the generator already allows. The photo
+                    can be added at any point afterwards, and the design is
+                    imposed on it then. */}
+                <button type="button" disabled={!!busy || !dimensionsValid}
+                  onClick={() => jumpToStep('choose-design')}
+                  className="mt-2 text-xs font-semibold text-blue-700 underline underline-offset-2 disabled:no-underline disabled:opacity-60">
+                  {dimensionsValid
+                    ? 'No photo of the wall? Design from your measurements →'
+                    : 'No photo of the wall? Enter the width and height above first.'}
+                </button>
+                {/* The reference tile used to take a third of this row, before
+                    the customer had said anything about a design. Its control
+                    lives with the brief now; the input stays mounted so that
+                    control has a picker to open. */}
+                <span className="hidden">{uploadControl('reference', 'Attach a reference')}</span>
               </div>
             )}
-            <p className={'mt-4 inline-block rounded-md px-2.5 py-1 text-sm font-bold ' + BRAND_BAR}>Enter Dimensions (inches)</p><div className="mt-2 grid grid-cols-2 gap-3"><label className="text-sm">Width (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={width || ''} onChange={e => setWidth(Number(e.target.value))} /></label><label className="text-sm">Height (in)<input className={inputClass} disabled={!!busy} type="number" min="1" max="2400" step="0.25" value={height || ''} onChange={e => setHeight(Number(e.target.value))} /></label></div>
-            <p className="mt-2 flex items-center gap-1 text-xs font-semibold wall-ink"><Ruler size={14} />{dimensionsValid ? (width * height / 144).toFixed(1) + ' sq ft' : 'Enter positive wall dimensions.'}</p>
+
             {/* THE PRINT PRICE, THE MOMENT THE WALL IS MEASURED (owner,
                 2026-09-14: "on enter wall size should give price for printed
                 wrap from wpw film"). The wall's own square footage at the live
@@ -2601,6 +2749,103 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
                   onClick={() => { setPrompt(appendStyleChip(prompt, chip)); setArtwork(null); }}
                   className="rounded-full border wall-edge px-2.5 py-1 text-xs wall-ink hover:border-blue-400 disabled:opacity-60">{chip}</button>)}
               </div>
+              {/* ATTACH, AND THE TWO ANSWERS, WHERE SHE IS ALREADY TYPING
+                  (owner, 2026-09-24: "I need uploader next to prompt and it to
+                  have two buttons match this exact design and a create a
+                  design inspired by attached").
+
+                  Both answers already existed as `designMode` — 'match' and
+                  'ai' — and both were reachable only from the "More ways to
+                  start" disclosure further down, phrased as SKUs rather than
+                  as the question a person actually has when they hold a
+                  picture: do exactly this, or something like this. So the
+                  choice is asked here, in those words, and only once there is
+                  a reference to ask it about.
+
+                  ⚠️ SWITCHING COSTS NOTHING AND THE SCREEN SAYS SO. `ai` and
+                  `match` are the SAME price and the SAME gateway product in
+                  WALL_DESIGN_SKUS (both $149, `wallpro_custom_file`) — the
+                  table says as much in its own comment. A choice that looks
+                  like it might re-price the job is a choice people avoid
+                  making, so the line under the buttons states it. If those two
+                  SKUs ever diverge, this sentence becomes a lie and must go.
+
+                  Each button clears `artwork`, exactly as typing does: the
+                  design on screen was made under the other reading of the
+                  reference, and leaving it up would show a result that no
+                  longer matches what the button now promises. */}
+              <div className="mt-3 rounded-xl border wall-edge p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  {reference
+                    ? <img src={reference.url} alt="The design you attached" className="h-14 w-14 shrink-0 rounded object-cover" />
+                    : <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed wall-edge" aria-hidden="true"><ImageIcon className="h-5 w-5 text-blue-400/70" /></span>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold wall-ink">{reference ? 'Design attached' : 'Have a design already?'}</p>
+                    <p className="text-xs wall-muted">{reference
+                      ? 'Choose what we should do with it.'
+                      : 'Attach a photo, a pattern or a design and we can match it exactly — or design something new inspired by it.'}</p>
+                  </div>
+                  <Button size="sm" variant={reference ? 'outline' : 'default'} disabled={!!busy}
+                    onClick={() => uploadInputs.current.reference?.click()}>
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />{reference ? 'Replace' : 'Attach a design'}
+                  </Button>
+                  {reference && <Button size="sm" variant="ghost" disabled={!!busy}
+                    onClick={() => { setReference(null); setArtwork(null); if (designMode === 'match') setDesignMode('ai'); }}>Remove</Button>}
+                </div>
+                {reference && <>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <Button variant={designMode === 'match' ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignMode('match'); setArtwork(null); }}>Match this exact design</Button>
+                    <Button variant={designMode === 'ai' ? 'default' : 'outline'} disabled={!!busy}
+                      onClick={() => { setDesignMode('ai'); setArtwork(null); }}>Create a design inspired by it</Button>
+                  </div>
+                  <p className="mt-2 text-xs wall-muted">{designMode === 'match'
+                    ? 'Recreated as a print-ready 4K master — same composition, motifs, palette and scale. Anything you type above is applied to it as a change.'
+                    : 'Your attachment guides the style; the design itself is new, and what you type above drives it.'}
+                    {' '}Same price either way.</p>
+                  {/* ⚠️ THE ONE THING A PHOTOGRAPH CANNOT CARRY (owner,
+                      2026-09-24: "the ai needs to match my other wall so I just
+                      upload it"). Matching an INSTALLED wall already works —
+                      the prompt strips the room, the perspective and the
+                      lighting and returns the covering as flat artwork. But the
+                      model can SEE a pattern and cannot MEASURE it, so the
+                      repeat was estimated at about two across: 72" on her 143"
+                      wall, against the 20-30" real wallpaper actually repeats
+                      at. A 2-3x error on the one number she is standing in
+                      front of and can read with a tape measure.
+                      So it is asked, of the only person who can answer, and
+                      left blank it estimates exactly as before. */}
+                  {designMode === 'match' && <label className="mt-3 block rounded-lg border wall-edge p-2.5 text-xs">
+                    <span className="font-semibold wall-ink">How wide is one repeat on the wall you are matching?</span>
+                    <span className="mt-0.5 block wall-muted">Measure one full pattern before it starts again — top of one bloom to the top of the next. Most wallpaper is 20–30&Prime;. Leave it blank and we will estimate.</span>
+                    <span className="mt-2 flex items-center gap-2">
+                      <input className="h-9 w-28 rounded-md border px-2 text-sm" disabled={!!busy} type="number" min="1" max="2400" step="0.25" inputMode="decimal"
+                        placeholder="Estimate" aria-label="Repeat width in inches"
+                        value={matchRepeat} onChange={e => {
+                          /* ⚠️ THIS FIELD USED TO DO `setArtwork(null)` ON EVERY
+                             KEYSTROKE (owner, 2026-09-24: "Design no longer
+                             lands on my wall photo"). Typing one character
+                             threw the generated master away, so the design
+                             vanished off her room photo mid-demo.
+                             It was never needed: a repeat width is a PLACEMENT
+                             parameter. `renderWallPreview` and `planWallPrint`
+                             both re-tile the SAME master from it, deterministic
+                             and free -- exactly as the pattern-size slider
+                             does. Measuring your wallpaper must never cost you
+                             the design you already have. */
+                          const next = e.target.value;
+                          setMatchRepeat(next);
+                          const stated = statedRepeatWidthIn(next);
+                          if (stated) { setPlacement('repeat'); setRepeatWidth(stated); setPatternScale(100); }
+                        }} />
+                      <span className="wall-muted">inches</span>
+                      {statedRepeatWidthIn(matchRepeat) && width > 0
+                        ? <span className="font-semibold wall-ink">≈ {Math.max(1, Math.round(width / statedRepeatWidthIn(matchRepeat)!))} across your {width}&Prime; wall</span>
+                        : null}
+                    </span>
+                  </label>}
+                </>}
+              </div>
             </div>
             {/* THE CARD ENDS IN ITS ACTION (owner's mockup, 2026-09-24). The
                 same generate() and the same guard as step 3's button. */}
@@ -2883,11 +3128,18 @@ export default function WallPro({ brand = 'designpro' }: { brand?: WallBrandKey 
             showPrintOffer={theme.showPrintOffer}
             billing={billing}
             designMode={designMode}
-            canBuyFile={!!currentVersionId && canCommitFromView(view)}
+            /* ⚠️ NOT GATED ON THE VIEW ANY MORE. Disabled here, the card's own
+               tooltip read "Generate and save this design first" — untrue on
+               the default view, and impossible to act on. The handler shows
+               the print file before checkout instead. */
+            canBuyFile={!!currentVersionId}
             fileUnlocked={entitled}
             busy={!!busy}
             onBuyFile={() => {
               if (!currentVersionId) return;
+              // What she is buying is the print file, so that is what the pane
+              // shows on the way to checkout.
+              if (!viewIsPrintFile(view)) setView('after');
               void run('Opening checkout', async () => {
                 window.location.assign(await startWallProCheckout(currentVersionId, wallProSkuFor(designMode), brand === 'weprintwraps' ? '/wallwrap-design' : '/printpro/wallpro'));
               });

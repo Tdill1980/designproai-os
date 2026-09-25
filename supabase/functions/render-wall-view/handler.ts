@@ -47,9 +47,9 @@ const toBase64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.
  * a bedroom and a lobby like a lobby. No model picks it.
  */
 const RESIDENTIAL_PHOTOGRAPHER =
-  'You are an interior photographer shooting a finished custom wallcovering installation for the manufacturer\'s own lookbook: a real room in a real home, photographed after the installer has packed up.';
+  'You are a senior interior-visualization retoucher, architectural photographer and wallcovering installation specialist. Think like an expert Photoshop compositor: preserve the exact design geometry, perspective and room objects, then make printed wallcovering look physically installed and photographed in the real room. Match the original camera, lens, light direction, exposure, shadow falloff, wall texture and material response. The result must read as a photograph of a finished installation, never as artwork pasted over a photo.';
 const COMMERCIAL_PHOTOGRAPHER =
-  'You are an environmental-graphics photographer shooting a finished large-format wall graphic for a sign company\'s portfolio: a real commercial interior, photographed after the installer has packed up.';
+  'You are a senior environmental-graphics retoucher, architectural photographer and large-format installation specialist for a professional sign and wrap shop. Think like an expert Photoshop compositor: preserve the exact design geometry, perspective and room objects, then make the printed wall graphic look physically installed and photographed in the real space. Match the original camera, lens, light direction, exposure, shadow falloff, wall texture and material response. The result must read as a photograph of a finished installation, never as artwork pasted over a photo.';
 
 /** Selected by code from a classification that is itself deterministic, exactly
  * as `designerPersonaFor` selects the designer. Absent (an older client), the
@@ -59,19 +59,32 @@ export function viewPhotographerFor(domain: string | null | undefined): string {
   return domain === 'residential' ? RESIDENTIAL_PHOTOGRAPHER : COMMERCIAL_PHOTOGRAPHER;
 }
 
-export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null; designDomain?: string | null }): string {
+export function viewPrompt(input: { placement: string; repeatWidthIn: number | null; wallWidthIn: number | null; wallHeightIn: number | null; designDomain?: string | null; geometryPath?: string | null; corners?: { x: number; y: number }[] | null }): string {
   const scale = input.placement === 'repeat' && input.repeatWidthIn
     ? `The design is a repeating tile about ${input.repeatWidthIn} inches wide; repeat it seamlessly at that real-world size across the wall${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`
     : `The design is one mural that fills the whole wall edge to edge${input.wallWidthIn ? ` (the wall is about ${input.wallWidthIn} inches wide${input.wallHeightIn ? ` and ${input.wallHeightIn} inches tall` : ''})` : ''}.`;
+  const geometryAuthority = input.geometryPath
+    ? [
+        'Image 1 is the customer\'s ORIGINAL ROOM PHOTO and remains visual authority for the room, furnishings, architecture, camera, lighting and perspective.',
+        'Image 2 is the FLAT PRINT MASTER that must appear on the selected wall without redesign.',
+        'Image 3 is a geometry guide created from the customer\'s four pinned wall corners and measured dimensions. Use it ONLY to identify the exact wall surface, physical scale and coverage boundary. Do not copy the guide\'s flat pasted appearance; it is a mask/placement constraint, not the desired visual result.',
+        'Create the wall treatment natively in Image 1 as if a professional installer had actually wrapped that wall and an architectural photographer then photographed the unchanged room. The furniture, curtains, shelves, doors, windows, trim, floor, ceiling, lighting and every unselected object stay where they are and keep their photographed appearance.',
+      ]
+    : [
+        'Image 1 is the customer\'s original room photograph and visual authority for the room.',
+        'Image 2 is the flat print master. Render that exact design natively onto the selected wall while preserving the room and furnishings.',
+      ];
+  const pinned = input.corners?.length === 4 ? 'Pinned wall quadrilateral, normalized to the source photograph: ' + input.corners.map(p => '(' + p.x.toFixed(4) + ',' + p.y.toFixed(4) + ')').join(' ') + '.' : '';
   return [
     viewPhotographerFor(input.designDomain),
-    'Image 1 is that photograph of the customer\'s room. Image 2 is the flat print master of the covering that was installed.',
-    'Render the SAME photograph with the covering installed on its main wall. Keep the camera, framing, lens, lighting and colours exactly as photographed. Every object that is not the flat wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches, artwork -- stays untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal, in which case follow that instruction instead.',
+    ...geometryAuthority,
+    pinned,
+    'Keep every object that is not the wrapped wall surface -- furniture, bed, shelves, window, glass, curtains, drapes and rods, doors, outlets, switches and artwork -- untouched and in front of the covering, UNLESS a later image explicitly marks that exact object for removal.',
     // THE SENTENCE THAT WAS MISSING. Everything above only ever said where the
     // covering goes; nothing said what it is made of, so it arrived as a decal.
     'MATERIAL: this is printed vinyl wallcovering bonded flat to the wall, not a decal, a poster, a framed picture or a projection. It lies in the wall\'s own plane and takes the wall\'s own perspective, and it is lit by the room and not by itself: brighter where the room\'s light falls across it, falling into shadow in the corners, under the ceiling and behind every object, with the faint satin sheen printed vinyl shows where a light source rakes along it and the wall\'s own surface texture reading faintly through. It is trimmed clean into the ceiling line, the baseboard and the inside corners, and continues behind furniture, the window casing and the drapes. No visible seam, outline, border, frame, drop shadow, curl or lifted corner anywhere.',
     scale,
-    'Do not restyle the room, move the camera, crop, add borders or text, and do not redraw, restyle, recolour or rearrange the design itself -- its motifs, palette, spacing and scale are fixed by Image 2 and are not yours to improve. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
+    'Do not restyle the room, move the camera, crop, add borders or text, and do not redraw, restyle, recolour or rearrange the design itself. The guide/master fixes its motifs, palette, spacing, scale and placement. Do not add or remove any object except where a later image explicitly marks it for removal. Output only the rendered photograph.',
   ].join(' ');
 }
 
@@ -95,7 +108,27 @@ export function viewPrompt(input: { placement: string; repeatWidthIn: number | n
  * right and untouched. This shrink is for the MODEL REQUEST only; the stored
  * original, the composite and every print file still read the full-size file.
  */
-export const PROVIDER_BUDGET_BYTES = 14 * 1024 * 1024;
+/**
+ * ⚠️ THIS IS A **RAW** BUDGET FOR DATA THAT TRAVELS AS **BASE64**, AND 14 MB
+ * WAS OVER THE LINE (owner, 2026-09-24: "ALSO ITS BROKEN", over a banner
+ * reading "The wall view could not be rendered").
+ *
+ * Inline image data is base64 in a JSON body, so every raw byte is 1.333 on
+ * the wire. 14 MB of images is **18.7 MB** of request, against a provider
+ * ceiling of 20 MB -- about 1.3 MB of headroom for the prompt, the JSON, and
+ * any mask. Masks were attached AFTER the fit and counted against nothing, so
+ * the first time a customer protected an area the request could cross the
+ * ceiling and come back as a flat HTTP error naming no cause.
+ *
+ * It is stated as the wire ceiling now, with the base64 expansion applied
+ * where it belongs, so the arithmetic is visible instead of folded into one
+ * number nobody can check. `fitProviderImages` only shrinks what is OVER
+ * budget, and PROVIDER_MAX_EDGE already caps a photo near 1-2 MB, so this
+ * never touches an ordinary request -- it bites exactly on the 4K master and
+ * the modern phone photo that were crossing the ceiling.
+ */
+const PROVIDER_WIRE_CEILING_BYTES = 16 * 1024 * 1024;
+export const PROVIDER_BUDGET_BYTES = Math.floor(PROVIDER_WIRE_CEILING_BYTES * 3 / 4);
 const PROVIDER_MAX_EDGE = 2048;
 
 /** The policy, pure and with the codec injected, so it is exercised by a plain
@@ -185,6 +218,11 @@ export function parseViewInput(body: any, owner: string) {
   return {
     wallPath: check(body?.wallPath, ['uploads']),
     artworkPath: check(body?.artworkPath, ['uploads', 'generated', 'catalog']),
+    geometryPath: body?.geometryPath == null ? null : check(body.geometryPath, ['uploads']),
+    corners: Array.isArray(body?.corners) && body.corners.length === 4 && body.corners.every((p: any) =>
+      typeof p?.x === 'number' && Number.isFinite(p.x) && p.x >= 0 && p.x <= 1 &&
+      typeof p?.y === 'number' && Number.isFinite(p.y) && p.y >= 0 && p.y <= 1)
+      ? body.corners.map((p: any) => ({ x: p.x, y: p.y })) : null,
     // Optional: a protected-area PNG built client-side from the customer's own
     // hand-drawn masks / detected objects (see buildProtectedAreaMask). Absent
     // for the common case, in which this view behaves exactly as before.
@@ -211,9 +249,61 @@ export function parseViewInput(body: any, owner: string) {
  * wallpro-view.test.ts can assert the rule directly; the Deno-only
  * decode/resize/encode around it below is thin, uncomposable image-library
  * glue with nothing of its own to unit-test. */
+/** How far the restore is feathered, in pixels of the model's own output.
+ *
+ * Owner, 2026-09-24, on her first real AI room view: "look at that hideous
+ * seam." It was not a panel seam — her print panels are full-height vertical
+ * strips with a half-inch overlap and cannot produce one — it was THIS
+ * restore. The rule was binary: alpha over 127 and the photo's pixel replaced
+ * the model's outright. Against freshly painted pixels a binary edge reads as
+ * a rectangle cut out and pasted back, because that is exactly what it is.
+ *
+ * Three pixels is enough to stop the eye catching the boundary and far too
+ * few to leak the covering into a protected area: at 2K output that is about
+ * one part in seven hundred of the width.
+ */
+export const PROTECT_FEATHER_PX = 3;
+
+/** A box blur of the mask's ALPHA channel only, separable, in place-safe form.
+ * Blurring the mask rather than the image is what makes the restore fade
+ * instead of cutting: the weight goes 0 -> 1 across a few pixels and every
+ * pixel in between is a real blend of the two sources. */
+export function featherMaskAlpha(maskPx: Uint8ClampedArray, width: number, height: number, radius = PROTECT_FEATHER_PX): Uint8ClampedArray {
+  if (radius <= 0 || width <= 0 || height <= 0) return maskPx;
+  const n = width * height;
+  const a = new Float32Array(n), tmp = new Float32Array(n);
+  for (let i = 0; i < n; i++) a[i] = maskPx[i * 4 + 3];
+  const span = radius * 2 + 1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k++) sum += a[y * width + Math.min(width - 1, Math.max(0, x + k))];
+      tmp[y * width + x] = sum / span;
+    }
+  }
+  const out = new Uint8ClampedArray(maskPx);
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k++) sum += tmp[Math.min(height - 1, Math.max(0, y + k)) * width + x];
+      out[(y * width + x) * 4 + 3] = Math.round(sum / span);
+    }
+  }
+  return out;
+}
+
+/** The restore, as a WEIGHTED blend rather than a switch. Fully inside the
+ * mask (alpha 255) the photo wins outright, exactly as before — the guarantee
+ * that a protected window or shelf survives pixel-for-pixel is unchanged. Only
+ * the few pixels at the boundary are mixed, and that is the whole point. */
 export function applyProtectedAreaMask(outPx: Uint8ClampedArray, wallPx: Uint8ClampedArray, maskPx: Uint8ClampedArray): void {
   for (let i = 0; i < outPx.length; i += 4) {
-    if (maskPx[i + 3] > 127) { outPx[i] = wallPx[i]; outPx[i + 1] = wallPx[i + 1]; outPx[i + 2] = wallPx[i + 2]; }
+    const w = maskPx[i + 3] / 255;
+    if (w <= 0) continue;
+    if (w >= 1) { outPx[i] = wallPx[i]; outPx[i + 1] = wallPx[i + 1]; outPx[i + 2] = wallPx[i + 2]; continue; }
+    outPx[i] = Math.round(outPx[i] * (1 - w) + wallPx[i] * w);
+    outPx[i + 1] = Math.round(outPx[i + 1] * (1 - w) + wallPx[i + 1] * w);
+    outPx[i + 2] = Math.round(outPx[i + 2] * (1 - w) + wallPx[i + 2] * w);
   }
 }
 
@@ -276,7 +366,7 @@ async function recompositeProtectedAreas(outputBytes: Uint8Array, wallPhotoBytes
   const w = outImg.width, h = outImg.height;
   const wall = (wallImg.width === w && wallImg.height === h) ? wallImg : wallImg.resize(w, h);
   const mask = (maskImg.width === w && maskImg.height === h) ? maskImg : maskImg.resize(w, h);
-  applyProtectedAreaMask(outImg.bitmap as Uint8ClampedArray, wall.bitmap as Uint8ClampedArray, mask.bitmap as Uint8ClampedArray);
+  applyProtectedAreaMask(outImg.bitmap as Uint8ClampedArray, wall.bitmap as Uint8ClampedArray, featherMaskAlpha(mask.bitmap as Uint8ClampedArray, w, h));
   return await outImg.encode(6);
 }
 
@@ -294,20 +384,49 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     catch (err) { return response({ error: err instanceof Error ? err.message : 'Invalid request' }, 400); }
     const key = deps.apiKey();
     if (!key) return response({ error: 'The wall view is not configured.', code: 'NOT_CONFIGURED' }, 503);
+    const loadMask = async (path: string | null): Promise<Uint8Array | null> => {
+      if (!path) return null;
+      const downloaded = await sb.storage.from(BUCKET).download(path).catch(() => ({ data: null, error: true } as const));
+      if (!downloaded.data || (downloaded.data as Blob).type !== 'image/png' || (downloaded.data as Blob).size > 10 * 1024 * 1024) return null;
+      return new Uint8Array(await (downloaded.data as Blob).arrayBuffer());
+    };
     const parts: any[] = [{ text: viewPrompt(input) }];
     let wallDims: { width: number; height: number } | null = null, wallPhotoBytes: Uint8Array | null = null, wallPhotoMimeType = 'image/jpeg';
     const sources: { label: string; path: string; bytes: Uint8Array; mimeType: string }[] = [];
-    for (const [label, path] of [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]] as const) {
+    const sourceSpecs: [string, string][] = input.geometryPath
+      ? [
+          ['Image 1 — ORIGINAL room photograph, visual authority', input.wallPath],
+          ['Image 2 — flat print master, artwork authority', input.artworkPath],
+          ['Image 3 — pinned-wall geometry guide, placement constraint only', input.geometryPath],
+        ]
+      : [['Image 1 — the room photograph', input.wallPath], ['Image 2 — the flat print master of the wall covering', input.artworkPath]];
+    for (const [label, path] of sourceSpecs) {
       const downloaded = await sb.storage.from(BUCKET).download(path);
       if (downloaded.error || !downloaded.data) return response({ error: 'Your ' + (path === input.wallPath ? 'wall photo' : 'design') + ' could not be read.', code: 'UPLOAD_UNREADABLE' }, 400);
       const blob = downloaded.data as Blob;
       if (!imageTypes.includes(blob.type) || blob.size > 20 * 1024 * 1024) return response({ error: 'Images must be JPG, PNG or WebP and no larger than 20 MB.' }, 400);
       sources.push({ label, path, bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: blob.type });
     }
+    /**
+     * THE MASKS ARE LOADED BEFORE THE FIT, AND COUNT AGAINST THE SAME BUDGET.
+     *
+     * They used to be attached AFTER `fitProviderImages` had already spent the
+     * whole allowance on the photo and the design, so a request that measured
+     * exactly at budget went over it the moment a customer protected anything
+     * -- and inline image data is base64, so every byte here is 1.33 bytes on
+     * the wire. A request that is over the provider's own ceiling comes back
+     * as a flat HTTP error with no hint that a mask caused it.
+     *
+     * Reserving their bytes first means protecting an area can shrink the
+     * photo slightly; it can never fail the render.
+     */
+    const [protectMask, removeMask] = await Promise.all([loadMask(input.maskPath), loadMask(input.removePath)]);
+    const maskAllowance = (protectMask?.length || 0) + (removeMask?.length || 0);
+    const imageBudget = Math.max(1024 * 1024, PROVIDER_BUDGET_BYTES - maskAllowance);
     // Oversized is resized, not refused (see fitProviderImages). Under budget
     // this is a no-op and the bytes below are the stored originals.
-    const fitted = await fitProviderImages(sources, PROVIDER_BUDGET_BYTES, shrinkForProvider);
-    if (fitted.reduce((sum, s) => sum + s.bytes.length, 0) > PROVIDER_BUDGET_BYTES) {
+    const fitted = await fitProviderImages(sources, imageBudget, shrinkForProvider);
+    if (fitted.reduce((sum, s) => sum + s.bytes.length, 0) > imageBudget) {
       return response({ error: 'Your wall photo and design are too large to paint together, and could not be resized. Try a JPG photo.', code: 'IMAGES_TOO_LARGE' }, 400);
     }
     for (const source of fitted) {
@@ -315,6 +434,7 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       // so `nearestAspect` is unchanged, and the recomposite resizes the photo
       // to the model's own output size regardless.
       if (source.path === input.wallPath) { wallDims = imageDimensions(source.bytes); wallPhotoBytes = source.bytes; wallPhotoMimeType = source.mimeType; }
+      else if (source.path === input.geometryPath) { wallDims = imageDimensions(source.bytes); }
       parts.push({ text: source.label }, { inlineData: { mimeType: source.mimeType, data: toBase64(source.bytes) } });
     }
     // Both optional masks are best effort: a missing, unreadable or oversized
@@ -323,16 +443,12 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     // instruction. Image numbers advance dynamically so the wording is right
     // whether one, both, or neither mask is present.
     let nextImage = 3;
-    async function attachMask(path: string | null, instruction: string): Promise<Uint8Array | null> {
-      if (!path) return null;
-      const downloaded = await sb.storage.from(BUCKET).download(path).catch(() => ({ data: null, error: true } as const));
-      if (!downloaded.data || (downloaded.data as Blob).type !== 'image/png' || (downloaded.data as Blob).size > 10 * 1024 * 1024) return null;
-      const bytes = new Uint8Array(await (downloaded.data as Blob).arrayBuffer());
+    function pushMask(bytes: Uint8Array, instruction: string): void {
       parts.push({ text: `Image ${nextImage++} — ${instruction}` }, { inlineData: { mimeType: 'image/png', data: toBase64(bytes) } });
-      return bytes;
     }
-    const maskBytes = await attachMask(input.maskPath, 'protected areas: white and opaque marks anything that must stay pixel-for-pixel exactly as photographed (windows, drapes, furniture, framed art, mirrors, TVs, shelving and everything on it). The covering never paints over a white area; it continues on the wall behind it.');
-    const removeBytes = await attachMask(input.removePath, 'items to remove: white and opaque marks freestanding furniture or equipment that will be moved out of the room before the covering is installed. Erase it entirely and paint the covering through that area as if it were never there -- do not preserve it, and do not treat it as something to paint around.');
+    const maskBytes = protectMask, removeBytes = removeMask;
+    if (maskBytes) pushMask(maskBytes, 'protected areas: white and opaque marks anything that must stay pixel-for-pixel exactly as photographed (windows, drapes, furniture, framed art, mirrors, TVs, shelving and everything on it). The covering never paints over a white area; it continues on the wall behind it.');
+    if (removeBytes) pushMask(removeBytes, 'items to remove: white and opaque marks freestanding furniture or equipment that will be moved out of the room before the covering is installed. Erase it entirely and paint the covering through that area as if it were never there -- do not preserve it, and do not treat it as something to paint around.');
     const aspectRatio = wallDims ? nearestAspect(wallDims.width, wallDims.height) : '4:3';
     async function paint(requestParts: any[]): Promise<{ bytes: Uint8Array; mimeType: string }> {
       const provider = await deps.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + VIEW_MODEL + ':generateContent', {
@@ -340,7 +456,29 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
         body: JSON.stringify({ contents: [{ role: 'user', parts: requestParts }], generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio, imageSize: '2K' } } }),
         signal: AbortSignal.timeout(100_000),
       });
-      if (!provider.ok) throw new Error(provider.status === 429 ? 'The image service is busy. Try again in a moment.' : 'The wall view could not be rendered right now.');
+      /**
+       * READ THE BODY. A GATE THAT DISCARDS ITS REASON CANNOT BE DIAGNOSED.
+       *
+       * Owner, 2026-09-24, on a live failure: "ALSO ITS BROKEN". The banner
+       * read "The wall view could not be rendered" and that was the whole of
+       * what anyone -- her, or this codebase -- could learn about it: the
+       * status was dropped, the body was never read, and nothing was logged.
+       * Two sessions can be spent guessing at a 400 that the provider was
+       * willing to explain in one sentence.
+       *
+       * The body is logged in full and a short, redacted form rides back on
+       * `detail`, so the next failure names itself the first time it happens
+       * instead of costing a deploy cycle to instrument.
+       */
+      if (!provider.ok) {
+        const body = await provider.text().catch(() => '');
+        console.error(JSON.stringify({ event: 'wall_view_provider_error', status: provider.status, body: body.slice(0, 4000) }));
+        let reason = '';
+        try { reason = String(JSON.parse(body)?.error?.message || ''); } catch { reason = body.slice(0, 200); }
+        const err = new Error(provider.status === 429 ? 'The image service is busy. Try again in a moment.' : 'The wall view could not be rendered right now.') as Error & { detail?: string };
+        err.detail = 'HTTP ' + provider.status + (reason ? ': ' + reason.slice(0, 300) : '');
+        throw err;
+      }
       const final = finalWallImage(await provider.json());
       return { bytes: decodeWallImage(final.data), mimeType: final.mimeType };
     }
@@ -385,11 +523,13 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       const uploaded = await sb.storage.from(BUCKET).upload(path, bytes, { contentType: mimeType, upsert: false });
       if (uploaded.error) throw new Error('The wall view could not be saved.');
       const signed = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
-      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, removalVerified, removalRetried, recomposited }));
+      console.log(JSON.stringify({ event: 'wall_view_rendered', owner, wallPath: input.wallPath, artworkPath: input.artworkPath, geometryPath: input.geometryPath, geometryLocked: !!input.geometryPath, model: VIEW_MODEL, aspect_ratio: aspectRatio, bytes: bytes.length, masked: !!maskBytes, removeMasked: !!removeBytes, removalVerified, removalRetried, recomposited }));
       return response({ view_path: path, view_url: signed.data?.signedUrl || null, model: VIEW_MODEL, aspect_ratio: aspectRatio, removal_verified: removalVerified });
     } catch (err) {
       const message = err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name) ? 'The image service timed out. Try again.' : err instanceof Error ? err.message : 'The wall view failed.';
-      return response({ error: message.replace(/ Your render credit will be returned\.?/g, ''), code: 'VIEW_FAILED' }, 502);
+      const detail = err && typeof err === 'object' && typeof (err as { detail?: unknown }).detail === 'string' ? (err as { detail: string }).detail : null;
+      if (!detail) console.error(JSON.stringify({ event: 'wall_view_failed', message, name: err instanceof Error ? err.name : null }));
+      return response({ error: message.replace(/ Your render credit will be returned\.?/g, ''), code: 'VIEW_FAILED', detail }, 502);
     }
   };
 }

@@ -1,0 +1,57 @@
+name: Edge deployment policy and focused checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: edge-checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.EXACT_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Test fail-closed policy and matching full-release path filters
+        run: node --test tests/edge-hotfix-policy.test.mjs
+      - name: Classify the complete Git diff, not a truncated API file list
+        id: lane
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            BASE_SHA=$(git merge-base "$BASE_SHA" "$EXACT_SHA")
+          fi
+          node scripts/edge-hotfix-policy.mjs classify "$BASE_SHA" "$EXACT_SHA" > "$RUNNER_TEMP/edge-lane.json"
+          cat "$RUNNER_TEMP/edge-lane.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "lane=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).lane' "$RUNNER_TEMP/edge-lane.json")" >> "$GITHUB_OUTPUT"
+      - name: Install only the focused-test compiler
+        if: steps.lane.outputs.lane == 'fast-edge'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9
+          echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
+      - name: Focused selected-function contract tests
+        if: steps.lane.outputs.lane == 'fast-edge'
+        run: |
+          fn=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).function_name' "$RUNNER_TEMP/edge-lane.json")
+          case "$fn" in
+            production-panel-proof) node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs ;;
+            render-wall-view) node --test tests/wallpro-render-fast-edge.test.mjs ;;
+          esac
+      - name: Build only the approved Edge entrypoint
+        if: steps.lane.outputs.lane == 'fast-edge'
+        run: |
+          fn=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).function_name' "$RUNNER_TEMP/edge-lane.json")
+          "$ESBUILD_BIN" "supabase/functions/$fn/index.ts" --bundle --format=esm --platform=neutral --target=es2022 \
+            '--external:https://*' '--external:http://*' '--external:npm:*' '--external:jsr:*' '--external:node:*' \
+            --outfile="$RUNNER_TEMP/$fn.mjs"

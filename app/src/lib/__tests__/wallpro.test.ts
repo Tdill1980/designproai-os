@@ -410,7 +410,20 @@ describe('A match reproduces the reference at its own scale', () => {
     const tile = wallDesignPrompt({ prompt: '', width: 142, height: 96, placement: 'repeat', repeatWidthIn: 72, intent: 'match', referencePath: ref });
     expect(tile).toMatch(/prints 72 inches wide on the wall and repeats about 2 times across it/);
     expect(tile).toMatch(/Hold the reference's own motif scale/);
-    expect(tile).toMatch(/not with many smaller copies of them/);
+    // ⚠️ THIS LINE PINNED THE DEFECT. It asserted the clause that ended
+    // "filling this tile with the same number of elements it has, not with
+    // many smaller copies of them" -- which is right for a flat swatch and
+    // wrong for what customers upload. Owner, 2026-09-24: "I need to match my
+    // photo of the other wall wrap." A photograph of an installed wall shows
+    // the pattern two or three times over, so "the same number of elements"
+    // packs that many cycles into one tile and every motif lands at a half or
+    // a third of life size -- reported as motifs too small and too busy.
+    // The tile is ONE cycle. Naming the unit is what fixes the density.
+    expect(tile).toMatch(/this tile is ONE cycle of that pattern/);
+    expect(tile).toMatch(/reproduce a SINGLE repeat of it/);
+    expect(tile).toMatch(/as large in this tile as it is on the real wall/);
+    // The old wording may not come back: it is the density bug itself.
+    expect(tile).not.toMatch(/the same number of elements it has/);
     expect(tile).not.toMatch(/architectural scale/);
   });
   it('leaves the prompt and wall intents on the wall-sized scale brain', () => {

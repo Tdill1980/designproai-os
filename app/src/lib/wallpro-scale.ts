@@ -23,6 +23,33 @@ const REPEAT_REQUEST_WORDS = /\b(repeat|repeats|repeating|repeated|seamless|tile
 /** Words that mean one composition sized to the wall. */
 const MURAL_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest|map|logo|logos|brand|branding|wordmark|typography|lettering|quote|quotes|slogan|tagline|manifesto|mission|values|portrait|photo|photograph|illustration|artwork|painting|collage|timeline|wayfinding|donor)\b/i;
 
+/**
+ * ⚠️ ON A MATCH, ONLY THESE WORDS MEAN "ONE SCENE" (owner, 2026-09-24, on a
+ * 143" x 96" wall: "Does the system understand fucking scale ???").
+ *
+ * Her brief was "Match attached PHOTO of wall wrap exact". `MURAL_WORDS`
+ * carries `photo`, so the scale brain read it as a request for one
+ * photographic composition, set placement `cover`, and stretched a tropical
+ * WALLPAPER once across the whole wall. There was no repeat at all.
+ *
+ * That misfire is not bad luck, it is structural: on a match the customer is
+ * describing THE FILE THEY ATTACHED, and the natural words for it -- photo,
+ * photograph, artwork, illustration, painting, portrait -- are every one of
+ * them in `MURAL_WORDS`. Saying "match the attached artwork" would have failed
+ * identically.
+ *
+ * The comment on the match branch already stated the rule -- "naming the
+ * material describes the reference and never re-scales it; only a brief asking
+ * for one scene makes it a mural" -- and the code did not honour it. This is
+ * that rule, expressed: a scene is a subject that genuinely occupies a whole
+ * wall once. A noun for the attachment is not.
+ *
+ * DESCRIBE-FROM-SCRATCH INTENTS KEEP THE FULL LIST, deliberately. There,
+ * "a photo of the coast" IS a request for one photographic mural. It is only
+ * the match intent where those nouns point at the upload instead.
+ */
+const MURAL_SCENE_WORDS = /\b(mural|murals|scene|scenery|landscape|skyline|cityscape|sunset|sunrise|mountain|mountains|ocean|beach|forest)\b/i;
+
 /** Materials whose repeat is genuinely small: the unit is a slat, a plank, a
  * tile or a weave, and it has a real-world width of a few inches. A botanical
  * or a damask is not one of these, and asking for four of them across a wall
@@ -167,14 +194,38 @@ export function patternScaleLabel(base: PatternSize, wall: WallBox, percent: num
  *          composition would blow every motif up past life size.
  * A customer's explicit choice (`chosen`) always wins.
  */
-export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null }): WallScaleDecision {
+/** A repeat width the CUSTOMER stated, in inches, or null for "estimate it".
+ *  Bounded to the same range the edge validator accepts, so a typo can never
+ *  reach the generator as a real instruction. */
+export function statedRepeatWidthIn(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n >= 1 && n <= 2400 ? n : null;
+}
+
+export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; wallWidthIn: number; chosen?: WallPlacement | null; stated?: number | null }): WallScaleDecision {
+  // ⚠️ A STATED REPEAT WINS OVER EVERY ESTIMATE (owner, 2026-09-24: "the ai
+  // needs to match my other wall so I just upload it").
+  //
+  // Matching an INSTALLED wall from a photograph is a real and common job, and
+  // the prompt already handles it — it strips the room, the perspective and
+  // the lighting and returns the covering as flat artwork. What a photograph
+  // cannot carry is the REPEAT SIZE: the model can see the pattern and cannot
+  // measure it. `autoMatchRepeatWidthIn` therefore guessed about two repeats
+  // across, which on the owner's 143" wall is 72" — while real wallpaper
+  // repeats every 20 to 30 inches. That is a 2-3x error on the one number the
+  // customer is standing in front of and can read with a tape measure.
+  //
+  // So it is ASKED rather than inferred, and when she answers, nothing
+  // second-guesses her. The estimate stays for everyone who does not.
+  const stated = statedRepeatWidthIn(input.stated);
   // A matched design keeps the reference's own scale, so its repeat is the
   // wallpaper baseline (about two across), not the generic four across.
-  const repeatWidthIn = input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn, input.prompt || '');
+  const repeatWidthIn = stated ?? (input.intent === 'match' ? autoMatchRepeatWidthIn(input.wallWidthIn) : autoRepeatWidthIn(input.wallWidthIn, input.prompt || ''));
   if (input.chosen) return { placement: input.chosen, repeatWidthIn, reason: input.chosen === 'repeat' ? `Repeating pattern, as chosen, at ${repeatWidthIn}″ for a ${input.wallWidthIn}″ wall.` : 'Mural, as chosen: one composition sized to the wall.' };
   const brief = input.prompt || '';
   const saysMural = MURAL_WORDS.test(brief), saysPattern = PATTERN_WORDS.test(brief);
-  const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall so motifs print at real size.` });
+  const source = stated ? 'as you measured it' : 'so motifs print at real size';
+  const repeat = (why: string) => ({ placement: 'repeat' as const, repeatWidthIn, reason: `${why} Repeating at ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall ${source}.` });
   const mural = (why: string) => ({ placement: 'cover' as const, repeatWidthIn, reason: `${why} One composition sized to the ${input.wallWidthIn}″ wall.` });
   // MATCH: the uploaded reference IS the design, so it keeps its own scale.
   // The baseline is MEASURED, not assumed: `autoMatchRepeatWidthIn` above puts
@@ -183,9 +234,17 @@ export function autoWallScale(input: { intent: WallScaleIntent; prompt: string; 
   // made it double. Naming the material ("slatted", "floral", "stone")
   // describes the reference and never re-scales it — only a brief that asks
   // for one scene makes it a mural.
-  if (input.intent === 'match') return saysMural && !REPEAT_REQUEST_WORDS.test(brief)
+  if (input.intent === 'match') return MURAL_SCENE_WORDS.test(brief) && !REPEAT_REQUEST_WORDS.test(brief)
     ? mural('The design you uploaded is one scene.')
-    : { placement: 'repeat', repeatWidthIn, reason: `The design you uploaded sets the scale: it repeats every ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall, about twice, the way wallpaper is hung.` };
+    : {
+      placement: 'repeat',
+      repeatWidthIn,
+      // The sentence has to tell her WHERE the number came from: an estimate
+      // she can override reads very differently from the measurement she gave.
+      reason: stated
+        ? `Repeating every ${repeatWidthIn}″ as you measured it, about ${Math.max(1, Math.round(input.wallWidthIn / repeatWidthIn))} times across a ${input.wallWidthIn}″ wall.`
+        : `The design you uploaded sets the scale: it repeats every ${repeatWidthIn}″ across a ${input.wallWidthIn}″ wall, about twice, the way wallpaper is hung. Measure one repeat on the wall you are matching to set it exactly.`,
+    };
   if (saysPattern && !saysMural) return repeat('The brief describes a pattern.');
   if (saysMural && !saysPattern) return mural('The brief describes a mural.');
   if (input.intent === 'wall') return repeat('Designing for the room.');

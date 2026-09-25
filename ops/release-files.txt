@@ -3,6 +3,10 @@
 runtime/package.json
 runtime/package-lock.json
 runtime/index.js
+runtime/layerize.cjs
+runtime/layerize-vtracer/engine.mjs
+runtime/layerize-vtracer/vtracer.mjs
+runtime/layerize-vtracer/vtracer.wasm.b64
 runtime/designpro-standalone-claimant.cjs
 runtime/panelpro-file-output-contract.cjs
 runtime/panelpro-file-output-plan.cjs

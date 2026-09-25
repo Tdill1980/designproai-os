@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView } from '../wallpro-scale';
+import { autoMatchRepeatWidthIn, autoRepeatWidthIn, autoWallScale, clampPatternScale, maxPrintSafeScale, patternBaseWidthIn, patternDrawnWidthIn, patternPpi, patternScaleLabel, patternScaleWord, patternSizeAtScale, flatPaneView , statedRepeatWidthIn } from '../wallpro-scale';
 
 // A 142 x 96 wall and a square master.
 const wall = { width: 142, height: 96, aspect: 1 };
@@ -138,5 +138,77 @@ describe('the flat pane never shows a bare tile as the design', () => {
 
   it('falls back to the tile only when the wall geometry is unknown', () => {
     expect(flatPaneView({ maskActive: false, settling: false, hasCanvas: false, hasCssTile: false })).toBe('tile');
+  });
+});
+
+describe('a repeat the customer measured beats every estimate', () => {
+  // Owner, 2026-09-24: "the ai needs to match my other wall so I just upload
+  // it." Matching an INSTALLED wall from a photograph already worked — the
+  // prompt strips the room, the perspective and the lighting and returns the
+  // covering as flat artwork. What a photograph cannot carry is the REPEAT
+  // SIZE: the model can see a pattern and cannot measure it. The estimate put
+  // it at about two across — 72" on her 143" wall — against the 20-30" real
+  // wallpaper repeats at. A 2-3x error on the one number she can read with a
+  // tape measure, so it is asked rather than inferred.
+  it('uses the stated width instead of the two-across estimate', () => {
+    const guessed = autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143 });
+    expect(guessed.repeatWidthIn).toBe(72);
+    const measured = autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143, stated: 27 });
+    expect(measured.repeatWidthIn).toBe(27);
+    expect(measured.reason).toMatch(/as you measured it/);
+  });
+
+  it('estimates exactly as before when nothing is stated', () => {
+    for (const stated of [null, undefined]) {
+      expect(autoWallScale({ intent: 'match', prompt: '', wallWidthIn: 143, stated }).repeatWidthIn).toBe(72);
+    }
+  });
+
+  it('refuses a number that is not a usable measurement', () => {
+    // Bounded to the range the edge validator accepts, so a typo can never
+    // reach the generator as a real instruction — it falls back to the
+    // estimate rather than producing a wall of 0-inch tiles.
+    for (const bad of ['', 'abc', 0, -5, 3000, NaN, null]) expect(statedRepeatWidthIn(bad)).toBeNull();
+    for (const good of [1, 27, '27', 30.5, 2400]) expect(statedRepeatWidthIn(good)).toBe(Number(good));
+  });
+
+  it('applies to a stated width on any intent, not just match', () => {
+    // The field is only offered on match today, but the decision function must
+    // not care: a measurement is a measurement.
+    expect(autoWallScale({ intent: 'prompt', prompt: 'botanical', wallWidthIn: 143, stated: 18 }).repeatWidthIn).toBe(18);
+  });
+});
+
+describe('a match names the attachment, not a mural', () => {
+  // Owner, 2026-09-24, on a 143" x 96" wall: "Does the system understand
+  // fucking scale ???" Her brief was "Match attached PHOTO of wall wrap
+  // exact". `photo` is in MURAL_WORDS, so placement came back `cover` and a
+  // tropical WALLPAPER was stretched once across the whole wall -- no repeat
+  // at all. Structural, not bad luck: every natural word for the upload
+  // (photo, artwork, illustration, painting, portrait) is in that list.
+  const wall = { intent: 'match' as const, wallWidthIn: 143 };
+  for (const brief of [
+    'Match attached photo of wall wrap exact',
+    'make exactly like the attached',
+    'match this artwork',
+    'match the attached illustration',
+    'reproduce the painting I uploaded',
+  ]) {
+    it(`repeats rather than stretching: ${JSON.stringify(brief)}`, () => {
+      expect(autoWallScale({ ...wall, prompt: brief }).placement).toBe('repeat');
+    });
+  }
+
+  // A brief that genuinely asks for ONE SCENE still gets one. The narrowing
+  // must not cost the real case.
+  it('still makes a mural when the brief asks for a scene', () => {
+    expect(autoWallScale({ ...wall, prompt: 'match my wall but make it a forest mural' }).placement).toBe('cover');
+    expect(autoWallScale({ ...wall, prompt: 'match the attached, a mountain landscape' }).placement).toBe('cover');
+  });
+
+  // Describe-from-scratch keeps the full vocabulary: there, "a photo of the
+  // coast" IS a request for one photographic mural.
+  it('leaves the describe intent alone', () => {
+    expect(autoWallScale({ intent: 'prompt', prompt: 'a photo of the coast at sunset', wallWidthIn: 143 }).placement).toBe('cover');
   });
 });

@@ -51,11 +51,18 @@
 // legitimate reason to move a risk, and moving it is hers to do.
 //
 // TWO THINGS THAT DID NOT MOVE, AND MUST NOT:
-//   1. `canCommitFromView` is untouched. Approving, ordering and exporting
-//      still refuse the AI view, so every act that spends money or freezes
-//      artwork is still a statement about the print file. That guard was
-//      written for exactly this day — see its own comment, which already said
-//      it "survives even if the view is ever put back in front of customers".
+//   1. Approving, ordering and exporting are still statements about the PRINT
+//      FILE, and the pane shows the print file when one of them is taken.
+//
+//      ⚠️ THIS BULLET USED TO READ "`canCommitFromView` is untouched ... still
+//      REFUSE the AI view", and that was true for about six hours. Refusing
+//      was right while the view was staff-only; on the default view it made
+//      Approve eat the first press and left Buy disabled behind a tooltip that
+//      was not true. Measured the same day on the owner's own account: 19
+//      draft versions, 2 approvals, none in eleven days, and every production
+//      job that ever ran succeeded — the file path was never broken, the
+//      commit was. `viewIsPrintFile` now tells a caller to SHOW the file
+//      rather than to refuse, which keeps the rule and loses the dead button.
 //   2. The composite is demoted, never deleted. It is still one tab away, still
 //      carries PRINT_TRUTH_BADGE, and is still what the design team and the
 //      press read. "Keep it, demoted" is the whole instruction.
@@ -89,14 +96,35 @@ export function resolveWallView(view: WallViewKey, aiAvailable: boolean): WallVi
 }
 
 /**
- * Whether a decision that commits money or artwork may be taken from this view.
+ * Whether the pane currently shows the PRINT FILE itself.
  *
- * Never from the AI view. Approving, ordering or exporting is a statement about
- * the print file, and the AI view is not the print file — it is a painting of
- * one. This is the guard that survives even if the view is ever put back in
- * front of customers.
+ * Approving, ordering or exporting is a statement about the print file, and
+ * the AI view is not the print file — it is a painting of one. Everything else
+ * on this page shows the deterministic composite, which IS the file.
+ *
+ * ⚠️ THIS WAS `canCommitFromView`, AND REFUSING WAS THE RIGHT SHAPE ONLY WHILE
+ * THE AI VIEW WAS STAFF-ONLY (owner, 2026-09-24).
+ *
+ * Under the 09-12 ruling the AI view was off the customer path, so a commit
+ * arriving from it meant something had gone wrong and refusing was correct.
+ * The owner then made that view the DEFAULT for everyone — and refusing turned
+ * into this, measured on her own account: 19 draft versions, 2 approvals, none
+ * since 13 September, and three production jobs that all succeeded. The file
+ * path was never broken. Approve simply ate the first press on the default
+ * view and sent her to another tab to press it again, and Buy sat DISABLED
+ * there behind the tooltip "Generate and save this design first" — which was
+ * not true and could not be acted on.
+ *
+ * The rule the guard exists for is "nobody commits without seeing the real
+ * file". That is preserved by SHOWING them the file as part of committing, not
+ * by throwing the press away. Callers switch the pane to the print geometry
+ * and then proceed, in one press.
+ *
+ * Renamed rather than re-pointed: a function still called `canCommitFromView`
+ * that no longer decides whether you may commit is a lie the next reader has
+ * to discover.
  */
-export function canCommitFromView(view: WallViewKey): boolean {
+export function viewIsPrintFile(view: WallViewKey): boolean {
   return view !== 'ai';
 }
 
@@ -146,3 +174,15 @@ export const AI_VIEW_EXPLAINER =
 export const PRINT_TRUTH_BADGE = 'Exact print geometry';
 export const PRINT_TRUTH_LINE =
   'This is your actual print file on your wall \u2014 not a simulation of it. What you approve is what the press prints.';
+/**
+ * HOW LONG A REPAINT WAITS FOR THE MARKING TO SETTLE.
+ *
+ * Marking a room is a burst: a closet, then a door, then a window. Each
+ * committed polygon changes what the render must protect, and repainting on
+ * every one of them would buy a ~30s image call per polygon. Waiting a beat
+ * turns a burst into one render.
+ *
+ * It applies ONLY to a repaint. The FIRST paint of a design is the one the
+ * customer is sitting there waiting for and is never delayed.
+ */
+export const AI_REPAINT_SETTLE_MS = 2500;

@@ -1,0 +1,89 @@
+name: Deploy Edge Hotfix
+on:
+  workflow_dispatch:
+    inputs:
+      exact_main_sha:
+        description: Exact current main SHA (all 40 characters)
+        required: true
+        type: string
+      function_name:
+        description: One approved Edge function; no deploy-all option
+        required: true
+        type: choice
+        options:
+          - production-panel-proof
+          - render-wall-view
+      confirmation:
+        description: Explicit protected production deployment confirmation
+        required: true
+        type: choice
+        default: DO_NOT_DEPLOY
+        options:
+          - DO_NOT_DEPLOY
+          - DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION
+permissions:
+  contents: read
+# Serialize only production writes with the existing full deploy, not its
+# release/build gate. Do not cancel a deployment halfway through a write.
+concurrency:
+  group: designproai-production-dark-deploy
+  cancel-in-progress: false
+jobs:
+  edge-hotfix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: designproai-production
+    env:
+      EXACT_MAIN_SHA: ${{ inputs.exact_main_sha }}
+      FUNCTION_NAME: ${{ inputs.function_name }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+    steps:
+      - name: Validate dispatch intent before checkout
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$EXACT_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$FUNCTION_NAME" in
+            production-panel-proof|render-wall-view) ;;
+            *) echo "::error::Function is not Fast Edge approved: $FUNCTION_NAME"; exit 1 ;;
+          esac
+          test "$CONFIRMATION" = DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ inputs.exact_main_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Enforce integration scope and deployment policy
+        run: |
+          node scripts/edge-hotfix-policy.mjs candidate "$EXACT_MAIN_SHA" "$FUNCTION_NAME"
+          node --test tests/edge-hotfix-policy.test.mjs
+      - name: Install only pinned Edge build tools
+        run: |
+          npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9 supabase@2.111.0
+          echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
+          echo "SUPABASE_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/supabase" >> "$GITHUB_ENV"
+      - name: Focused selected-function tests (no generation or provider charges)
+        run: |
+          case "$FUNCTION_NAME" in
+            production-panel-proof)
+              node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs
+              ;;
+            render-wall-view)
+              node --test tests/wallpro-render-fast-edge.test.mjs
+              ;;
+          esac
+      - name: Build, deploy only selected function, read back and verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DESIGNPRO_SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/deploy-edge-hotfix.mjs
+      - name: Save source/version verification receipt, not source or secrets
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: edge-hotfix-${{ github.run_id }}
+          path: ${{ runner.temp }}/edge-hotfix-audit/receipt.json
+          if-no-files-found: warn
+          retention-days: 30
