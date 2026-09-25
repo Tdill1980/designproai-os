@@ -356,12 +356,42 @@ export async function readRevisionStudioDesign(
 ): Promise<RevisionStudioDesignRow | null> {
   const id = String(generationId || "").trim();
   if (!id) return null;
-  const job = await dpApi.getStatus(id).catch(() => null);
-  if (!job) return null;
-  const detail = await detailFor(job.generationId, revisionId);
+
+  // The Design Library is the canonical browse index. Opening a card must not
+  // depend on every downstream production-detail route being healthy at the
+  // exact same instant: those routes are progressive and a generation can
+  // legitimately exist before all of them do. Resolve the job when available,
+  // but keep the library row as the authorized fallback for the same
+  // generationId.
+  const [job, library] = await Promise.all([
+    dpApi.getStatus(id).catch(() => null),
+    dpApi.listDesignLibrary().catch(() => [] as DesignLibraryEntry[]),
+  ]);
+  const entry = library.find((item) => item.generationId === id) || null;
+  if (!job && !entry) return null;
+
+  const canonicalId = job?.generationId || entry!.generationId;
+  const detail = await detailFor(canonicalId, revisionId).catch(() => ({
+    views: [] as ApprovedGenerationView[],
+    artifacts: [] as WorkflowArtifact[],
+    revision: null,
+    missingRevision: false,
+  }));
   if (detail.missingRevision) return null;
-  return { ...designRowFromJob(job, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null,
-    ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}) };
+
+  if (job) {
+    return {
+      ...designRowFromJob(job, detail.views, detail.artifacts),
+      atlas_revision_id: detail.revision?.id || null,
+      ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}),
+    };
+  }
+
+  return {
+    ...designRowFromLibraryEntry(entry!, detail.views, detail.artifacts),
+    atlas_revision_id: detail.revision?.id || null,
+    ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}),
+  };
 }
 
 /**
