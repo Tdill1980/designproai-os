@@ -40,12 +40,18 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9
           echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
-      - name: Focused Call-1 contract tests
+      - name: Focused selected-function contract tests
         if: steps.lane.outputs.lane == 'fast-edge'
-        run: node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs
+        run: |
+          fn=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).function_name' "$RUNNER_TEMP/edge-lane.json")
+          case "$fn" in
+            production-panel-proof) node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs ;;
+            render-wall-view) node --test tests/wallpro-render-fast-edge.test.mjs ;;
+          esac
       - name: Build only the approved Edge entrypoint
         if: steps.lane.outputs.lane == 'fast-edge'
         run: |
-          "$ESBUILD_BIN" supabase/functions/production-panel-proof/index.ts --bundle --format=esm --platform=neutral --target=es2022 \
+          fn=$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).function_name' "$RUNNER_TEMP/edge-lane.json")
+          "$ESBUILD_BIN" "supabase/functions/$fn/index.ts" --bundle --format=esm --platform=neutral --target=es2022 \
             '--external:https://*' '--external:http://*' '--external:npm:*' '--external:jsr:*' '--external:node:*' \
-            --outfile="$RUNNER_TEMP/production-panel-proof.mjs"
+            --outfile="$RUNNER_TEMP/$fn.mjs"
