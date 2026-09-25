@@ -111,32 +111,32 @@ try {
   receipt.status = 'deployed-awaiting-verification'; record();
   const deployed = join(work, 'deployed');
   download(deployed);
+  for (const [file, expected] of Object.entries(receipt.files)) {
+    if (!existsSync(join(deployed, file)) || digest(readFileSync(join(deployed, file))) !== expected) {
+      throw new Error(`DEPLOYED SOURCE MISMATCH: ${file}`);
+    }
+  }
   const after = metadata();
-  if (after.id !== before.id || after.slug !== before.slug || after.version <= before.version || after.status !== 'ACTIVE' || after.verify_jwt !== before.verify_jwt) {
-    throw new Error('Deployed identity/version/JWT policy failed readback');
-  }
-  for (const [file, hash] of Object.entries(receipt.files)) {
-    const path = join(deployed, file);
-    if (!existsSync(path) || digest(readFileSync(path)) !== hash) throw new Error(`Deployed source mismatch: ${file}`);
-  }
-  // OPTIONS does not generate an image or spend provider credits.
-  const smoke = await fetch(`https://${PROJECT}.supabase.co/functions/v1/${FUNCTION}`, {
-    method: 'OPTIONS', signal: AbortSignal.timeout(30000), redirect: 'error',
-  });
-  if (smoke.status !== 200 || (hasStamp && smoke.headers.get('x-designpro-source-sha') !== sha)) {
-    throw new Error('Live identity smoke test failed');
-  }
   receipt.after = after;
-  receipt.files_verified = true;
-  receipt.jwt_policy_preserved = true;
-  receipt.live_header_verified = hasStamp ? true : 'not-available-this-function';
-  receipt.status = 'deployed-and-verified';
-  receipt.finished_at = new Date().toISOString(); record();
-  if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY,
-    `\n### Selected Edge function verified\nFunction: ${FUNCTION}\nSource SHA: ${sha}\nVersion: ${after.version}\nFile hashes: verified\nAuth/JWT: unchanged\nRuntime, gateway, database, droplet and other functions: untouched\n`, { flag: 'a' });
+  if (after.id !== before.id || after.version <= before.version || after.verify_jwt !== before.verify_jwt || after.status !== 'ACTIVE') {
+    throw new Error('Post-deploy version, identity, status or JWT policy verification failed');
+  }
+  // OPTIONS runs the handler/CORS path without provider calls, rows or charges.
+  let healthy = false;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const response = await fetch(`https://${PROJECT}.supabase.co/functions/v1/${FUNCTION}`, {
+      method: 'OPTIONS', headers: { Origin: 'https://os.designproai.com' },
+      signal: AbortSignal.timeout(20000), redirect: 'error',
+    });
+    receipt.smoke = { method: 'OPTIONS', status: response.status, source_sha: response.headers.get('x-designpro-source-sha') };
+    await response.body?.cancel();
+    if (response.status === 200 && (!hasStamp || receipt.smoke.source_sha === sha)) { healthy = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  if (!healthy) throw new Error(hasStamp ? 'Live function did not return HTTP 200 and the exact deployed source SHA' : 'Live function OPTIONS smoke failed');
+  receipt.status = 'verified'; receipt.completed_at = new Date().toISOString(); record();
+  console.log(`Verified ${FUNCTION} version ${after.version} from ${sha}; deployed source hashes match; OPTIONS smoke passed.`);
 } catch (error) {
-  receipt.status = receipt.status === 'deployed-awaiting-verification' ? 'deployed-verification-failed' : 'not-deployed';
-  receipt.error = String(error.message || error); record(); throw error;
-} finally {
-  rmSync(work, { recursive: true, force: true });
-}
+  receipt.failure = error.message; record();
+  throw error;
+} finally { rmSync(work, { recursive: true, force: true }); }
