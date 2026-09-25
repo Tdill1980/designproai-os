@@ -795,6 +795,49 @@ async function signedArtifactUrl(fetchImpl, token, cfg, storagePath) {
   return payload.signedURL.startsWith("http") ? payload.signedURL : `${cfg.supabaseUrl}/storage/v1${payload.signedURL.startsWith("/") ? "" : "/"}${payload.signedURL}`;
 }
 
+/**
+ * LIBRARY TILES ARE THUMBNAILS, AND A TILE KEEPS ITS URL (2026-09-25).
+ *
+ * `/api/design-library` published the driver ORIGINAL (5504x3072, 7-9 MB) as
+ * every tile and signed a fresh five-minute URL for it on every read. Live:
+ * one phone pulled 100 originals (~800 MB) in one second, every one a CDN miss
+ * because each read minted new tokens, and ~91 library reads in 20 minutes
+ * made 11,471 sign calls that ended in storage 429/544s -- missing tiles.
+ *
+ * So a tile is a signed TRANSFORM of the same authorized path (640x360 cover,
+ * served by storage's own renderer; nothing is written anywhere), signed for
+ * an hour and reused for the same caller token until it has under ten minutes
+ * left. The response still says `expiresIn: 300` and that stays true: a reused
+ * URL always has more than 300 s to run. The cache is keyed by a hash of the
+ * caller's own token, so a URL signed under one session is never handed to
+ * another. If the transform cannot be signed, the tile falls back to exactly
+ * the previous five-minute original.
+ */
+const LIBRARY_THUMBNAIL_TRANSFORM = Object.freeze({ width: 640, height: 360, resize: "cover", quality: 60 });
+const LIBRARY_THUMBNAIL_TTL_S = 3600;
+const LIBRARY_THUMBNAIL_REUSE_MARGIN_MS = 600_000;
+const LIBRARY_THUMBNAIL_CACHE_MAX = 5000;
+
+async function signedLibraryThumbnailUrl(fetchImpl, token, cfg, storagePath, cache, now = Date.now) {
+  const key = `${createHash("sha256").update(String(token || ""), "utf8").digest("hex")}:${storagePath}`;
+  const hit = cache.get(key);
+  if (hit && hit.expiresAt - now() > LIBRARY_THUMBNAIL_REUSE_MARGIN_MS) return hit.url;
+  if (hit) cache.delete(key);
+  const signedAt = now();
+  const response = await upstream(fetchImpl, `${cfg.supabaseUrl}/storage/v1/object/sign/${BUCKET}/${encodeStoragePath(storagePath)}`,
+    { method: "POST", body: JSON.stringify({ expiresIn: LIBRARY_THUMBNAIL_TTL_S, transform: LIBRARY_THUMBNAIL_TRANSFORM }) }, token, cfg)
+    .catch(() => null);
+  const payload = response ? await response.json().catch(() => ({})) : {};
+  if (!response?.ok || !payload.signedURL) return signedArtifactUrl(fetchImpl, token, cfg, storagePath);
+  const url = payload.signedURL.startsWith("http") ? payload.signedURL : `${cfg.supabaseUrl}/storage/v1${payload.signedURL.startsWith("/") ? "" : "/"}${payload.signedURL}`;
+  if (cache.size >= LIBRARY_THUMBNAIL_CACHE_MAX) {
+    for (const [k, v] of cache) if (v.expiresAt - now() <= LIBRARY_THUMBNAIL_REUSE_MARGIN_MS) cache.delete(k);
+    while (cache.size >= LIBRARY_THUMBNAIL_CACHE_MAX) cache.delete(cache.keys().next().value);
+  }
+  cache.set(key, { url, expiresAt: signedAt + LIBRARY_THUMBNAIL_TTL_S * 1000 });
+  return url;
+}
+
 function authorizedArtifactPath(storagePath, userId, runId) {
   if (!storagePath || storagePath.includes("..") || !/^[A-Za-z0-9._/-]+$/.test(storagePath)) return false;
   const derivedPrefix = `designpro/user_${userId}/${runId}/`;
@@ -2564,8 +2607,9 @@ function validatedGenerationStatus(value) {
   };
 }
 
-export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
+export function createGateway({ env = process.env, fetchImpl = fetch, now = Date.now } = {}) {
   const cfg = config(env);
+  const libraryThumbnailCache = new Map();
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url || "/", "http://gateway");
@@ -3365,7 +3409,7 @@ export function createGateway({ env = process.env, fetchImpl = fetch } = {}) {
           const signable = storagePath
             && authorizedGenerationViewPath(storagePath, ownerId, generationId);
           const thumbnailUrl = signable
-            ? await signedArtifactUrl(fetchImpl, token, cfg, storagePath).catch(() => null)
+            ? await signedLibraryThumbnailUrl(fetchImpl, token, cfg, storagePath, libraryThumbnailCache, now).catch(() => null)
             : null;
           const vehicle = row?.vehicle && typeof row.vehicle === "object" && !Array.isArray(row.vehicle)
             ? {
