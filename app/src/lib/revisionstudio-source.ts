@@ -103,6 +103,15 @@ export type RevisionStudioDesignRow = {
   revision: number;
   state: WorkflowStatus["state"];
   current_stage: string;
+  /**
+   * True for a row projected from the design-library INDEX, whose
+   * `render_urls` carries only the driver thumbnail by construction. It is not
+   * the design's view set, so nothing may count "missing" views from it; the
+   * index's own `viewCount` is carried as `_viewCount`. A row re-read through
+   * `readRevisionStudioDesign` is hydrated and says false.
+   */
+  _librarySummary?: boolean;
+  _viewCount?: number;
 };
 
 /** The tool badge every DesignProAI design card carries. */
@@ -333,6 +342,11 @@ export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignR
     const row = designRowFromLibraryEntry(entry, []);
     row.render_urls = entry.thumbnailUrl
       ? { side: entry.thumbnailUrl, driver: entry.thumbnailUrl } : {};
+    // 2026-09-25 (generation 9999ec65): the studio opened this index row and
+    // counted 6 "missing" views on a design that had all 7. Mark it so the
+    // studio waits for the hydrated job, and keep the real count for cards.
+    row._librarySummary = true;
+    row._viewCount = Number(entry.viewCount) || 0;
     row.generation_status = ["failed", "cancelled"].includes(entry.state)
       ? "failed" : entry.state === "outputs_ready" && entry.viewCount >= 7 ? "completed" : "processing";
     return row;
@@ -360,8 +374,43 @@ export async function readRevisionStudioDesign(
   if (!job) return null;
   const detail = await detailFor(job.generationId, revisionId);
   if (detail.missingRevision) return null;
-  return { ...designRowFromJob(job, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null,
+  return { ...designRowFromJob(job, detail.views, detail.artifacts), _librarySummary: false,
+    atlas_revision_id: detail.revision?.id || null,
     ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}) };
+}
+
+/**
+ * KEEP A VIEW'S URL WHILE IT IS STILL GOOD (2026-09-25).
+ *
+ * The open design is re-read every 15 s and every read re-signs all seven
+ * views, so every poll swapped seven live URLs for new ones and the browser
+ * re-downloaded each multi-megabyte view it was already showing. A new URL for
+ * the SAME object path replaces the old one only when the old signed token has
+ * less than a minute left (or cannot be read). A different path always wins,
+ * so a changed view is never hidden behind a stale one.
+ */
+export function keepLiveSignedUrls(
+  previous: Record<string, string> | null | undefined,
+  next: Record<string, string> | null | undefined,
+  nowMs: number = Date.now(),
+): Record<string, string> {
+  if (!next) return next as unknown as Record<string, string>;
+  if (!previous) return next;
+  const kept: Record<string, string> = { ...next };
+  for (const key of Object.keys(kept)) {
+    const before = previous[key];
+    const after = kept[key];
+    if (typeof before !== "string" || typeof after !== "string" || before === after) continue;
+    if (before.split("?")[0] !== after.split("?")[0]) continue;
+    try {
+      const token = new URL(before).searchParams.get("token") || "";
+      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (Number(payload?.exp) * 1000 > nowMs + 60_000) kept[key] = before;
+    } catch {
+      // Unreadable token: take the fresh URL, which is today's behaviour.
+    }
+  }
+  return kept;
 }
 
 /**

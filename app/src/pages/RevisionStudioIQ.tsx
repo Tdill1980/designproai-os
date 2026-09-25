@@ -10,6 +10,7 @@ import {
   revisionStudioVersionCommits,
   loadLayeredEditSources,
   readRevisionStudioDesign,
+  keepLiveSignedUrls,
   historicalStudioProofs,
 } from "@/lib/revisionstudio-source";
 // WallPro is its own app on DesignProAI, like GraphicsPro: its designs sit in
@@ -783,6 +784,11 @@ function formatDesignName(render: any): string {
  * against the canonical VIEW_ORDER.
  */
 function getMissingViews(render: any): string[] {
+  // A design-library INDEX row carries only the driver thumbnail by
+  // construction, so it cannot say which views are missing. Live 9999ec65
+  // showed "Generate 6 Missing Views" on a design with all 7. Nothing is
+  // missing until the hydrated job (readRevisionStudioDesign) has loaded.
+  if (render?._librarySummary) return [];
   const order = getViewOrderForVehicle(render);
   const urls = render?.render_urls as Record<string, string> | null;
   if (!urls) return [...order];
@@ -1470,7 +1476,11 @@ function VehicleGroupCard({
     views[0]?.url;
   const heroFailed = failedImages.has(render.id);
   const renderMissing = getMissingViews(render);
-  const hasAllViews = renderMissing.length === 0;
+  // An index row reports the server's own view count instead of its one tile.
+  const summaryViewCount = render?._librarySummary
+    ? Math.min(Number(render._viewCount) || 0, VIEW_ORDER.length) : null;
+  const hasAllViews = summaryViewCount === null
+    ? renderMissing.length === 0 : summaryViewCount >= getViewOrderForVehicle(render).length;
   const versionLabel = getVersionLabel(render);
   // WPW order number for this design group: a panelizer job carries it
   // directly, a CV design resolves through the approval map (any version /
@@ -1588,7 +1598,7 @@ function VehicleGroupCard({
         {!hasAllViews && (
           <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-amber-600/90 px-2 py-0.5 rounded text-[10px] font-bold">
             <AlertTriangle className="w-3 h-3" />
-            {views.length}/{VIEW_ORDER.length} views
+            {summaryViewCount ?? views.length}/{VIEW_ORDER.length} views
           </div>
         )}
       </div>
@@ -2849,7 +2859,7 @@ export default function RevisionStudioIQ() {
           const fresh = await readRevisionStudioDesign(String(id), selectedRender.atlas_revision_id);
           if (cancelled || !fresh) return;
           setSelectedRender((previous: any) => previous?.id === id && !previous?._revisionRequest
-            ? { ...previous, ...fresh } : previous);
+            ? { ...previous, ...fresh, render_urls: keepLiveSignedUrls(previous.render_urls, fresh.render_urls) } : previous);
         }
       } catch {
         // A failed read keeps this revision's last verified previews. A retry
@@ -4389,7 +4399,7 @@ export default function RevisionStudioIQ() {
     : selectedRender;
   const productionMissingViews = selectedInspectionRender ? getMissingViews(selectedInspectionRender) : [];
   const productionProofsReady = selectedViews.length > 0 && productionMissingViews.length === 0
-    && !selectedInspectionRender?._revisionRequest;
+    && !selectedInspectionRender?._revisionRequest && !selectedInspectionRender?._librarySummary;
   const immutableHistoryHero = useMemo(() => {
     if (!isViewingImmutableVersion || !selectedVersionPresentation) return null;
     // The seven angle controls inspect the selected saved version, too.
@@ -4780,7 +4790,9 @@ export default function RevisionStudioIQ() {
                 const urls = { ...(render.render_urls || {}), ...Object.fromEntries(historical.map((view) => [view.key, view.url])) } as Record<string, string>;
                 const viewOrder = [...VIEW_ORDER.filter((key) => key !== "close-up" || urls[key] || !historical.length), ...historical.map((view) => view.key)];
                 const viewLabels: Record<string, string> = { side: "Driver", "passenger-side": "Passenger", hood_detail: "Hood", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof", "hero-3d": "Historical 3D proof" };
-                const viewCount = viewOrder.filter((v) => urls[v]).length;
+                const viewCount = render._librarySummary
+                  ? Math.min(Number(render._viewCount) || 0, viewOrder.length)
+                  : viewOrder.filter((v) => urls[v]).length;
 
                 return (
                   <div
