@@ -6,7 +6,6 @@
 // painted through instead, as an installer would after clearing the room.
 // This is a presentation picture, the ChatGPT-style "show me", and never a
 // print file: the flat master stays the production truth. No token is charged.
-import { decodeWallImage, finalWallImage } from '../generate-wall-design/handler.ts';
 
 const BUCKET = 'wallpro-files';
 export const VIEW_MODEL = 'gemini-3-pro-image';
@@ -14,6 +13,37 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 const toBase64 = (bytes: Uint8Array) => { let s = ''; for (let i = 0; i < bytes.length; i += 8192) s += String.fromCharCode(...bytes.subarray(i, i + 8192)); return btoa(s); };
+
+// Response-only codecs stay local to the renderer. Importing the design
+// generator pulled its personas, prompts and credit pipeline into this free
+// preview bundle. Keep the established decoding behavior; parity tests compare
+// these two functions with the generator without creating a runtime dependency.
+export function decodeWallImage(data: unknown): Uint8Array {
+  if (typeof data !== 'string' || !data.length || data.length % 4 !== 0 || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4) throw new Error('The design image exceeded the supported size.');
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  const size = data.length / 4 * 3 - padding;
+  if (size > 20 * 1024 * 1024) throw new Error('The design image exceeded the supported size.');
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (let start = 0; start < data.length; start += 262144) {
+    const binary = atob(data.slice(start, start + 262144));
+    for (let i = 0; i < binary.length; i++) bytes[offset++] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+export function finalWallImage(result: any) {
+  const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+  for (const candidate of candidates) {
+    if (['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'RECITATION', 'BLOCKLIST'].includes(candidate.finishReason)) continue;
+    const parts = Array.isArray(candidate.content?.parts) ? candidate.content.parts : [];
+    const final = parts.filter((p: any) => p.thought !== true && p.inlineData?.data && imageTypes.includes(p.inlineData.mimeType)).at(-1)?.inlineData;
+    if (final) return final;
+  }
+  const reason = String(result?.promptFeedback?.blockReason || candidates[0]?.finishReason || 'NO_IMAGE').replace(/[^A-Z0-9_]/g, '').slice(0, 50);
+  if (['SAFETY', 'IMAGE_SAFETY', 'PROHIBITED_CONTENT', 'RECITATION', 'BLOCKLIST'].includes(reason)) throw new Error(`The image service could not generate this design (${reason}). Revise the description. Your render credit will be returned.`);
+  throw new Error(`The image service returned no finished image (${reason || 'NO_IMAGE'}). Your render credit will be returned. Please try again.`);
+}
 
 /** THE RENDER IS PRESENTATION AUTHORITY, NEVER ARTWORK AUTHORITY (RULE 0.29).
  *
@@ -434,7 +464,6 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
       // so `nearestAspect` is unchanged, and the recomposite resizes the photo
       // to the model's own output size regardless.
       if (source.path === input.wallPath) { wallDims = imageDimensions(source.bytes); wallPhotoBytes = source.bytes; wallPhotoMimeType = source.mimeType; }
-      else if (source.path === input.geometryPath) { wallDims = imageDimensions(source.bytes); }
       parts.push({ text: source.label }, { inlineData: { mimeType: source.mimeType, data: toBase64(source.bytes) } });
     }
     // Both optional masks are best effort: a missing, unreadable or oversized
@@ -442,7 +471,8 @@ export function createViewHandler(deps: { createClient: (...args: any[]) => any;
     // customer already has a correct render without it, from the prose
     // instruction. Image numbers advance dynamically so the wording is right
     // whether one, both, or neither mask is present.
-    let nextImage = 3;
+    // The geometry guide already occupies Image 3 when present.
+    let nextImage = fitted.length + 1;
     function pushMask(bytes: Uint8Array, instruction: string): void {
       parts.push({ text: `Image ${nextImage++} — ${instruction}` }, { inlineData: { mimeType: 'image/png', data: toBase64(bytes) } });
     }
