@@ -361,6 +361,101 @@ test("an advisory semantic finding persists the first proof without an image rer
   assert.equal(persisted.metadata.validation.semanticCode, "atlas_qc_studio_failed");
 });
 
+test("an explicit camera or framing failure blocks publication and buys one proof-only rerender", async () => {
+  const f = await fixture();
+  let reviews = 0;
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        reviews += 1;
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, reviews === 1 ? {
+            cameraContract: "fail",
+            framingContract: "fail",
+            reasons: ["Driver is three-quarter and undersized in frame."],
+          } : {})),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  let imageCalls = 0;
+  let persisted = null;
+  const store = {
+    async findAcceptedSlot() { return null; },
+    async acquireSlotLease() { return { token: "lease" }; },
+    async releaseSlotLease() {},
+    async recordAttemptStarted() {},
+    async recordAttemptFinished() {},
+    async putImmutableBytes() {},
+    async persistAcceptedSlot(row) { persisted = row; return row; },
+    async markSlotFailed() { throw new Error("corrected second camera attempt must publish"); },
+  };
+  const result = await runSlot({
+    requestId: "request",
+    tenantKey: "user_owner",
+    generationId: "generation",
+    sourceViewType: "side",
+    consumerRole: "driver",
+    provider: {
+      async generateImage() {
+        imageCalls += 1;
+        return {
+          bytes: f.proofBytes,
+          contentType: "image/png",
+          model: "gemini-3-pro-image",
+          keyFingerprint: "000000000000",
+        };
+      },
+    },
+    store,
+    promptParts: [],
+    aspectRatio: "16:9",
+    imageSize: "4K",
+    validate,
+    allowOrphanReconciliation: false,
+    maxProviderAttempts: 4,
+    maxRegenerations: 4,
+  });
+
+  assert.equal(result.state, "accepted");
+  assert.equal(imageCalls, 2);
+  assert.equal(reviews, 2);
+  assert.equal(persisted.metadata.validation.semanticDisposition, "pass");
+});
+
+test("camera uncertainty stays advisory and does not spend a rerender", async () => {
+  const f = await fixture();
+  const validate = createAtlasProofValidator({
+    provider: {
+      generateRaw: async ({ body }) => {
+        const identity = responseIdentity(body);
+        return {
+          payload: payload(passingReview(identity, {
+            cameraContract: "uncertain",
+            reasons: ["Perspective is ambiguous at this crop."],
+          })),
+          model: "gemini-2.5-flash",
+        };
+      },
+    },
+    atlas: f.atlas,
+    input: f.input,
+  });
+  const verdict = await validate({
+    bytes: f.proofBytes,
+    contentType: "image/png",
+    sourceViewType: "side",
+  });
+  assert.equal(verdict.accepted, true);
+  assert.equal(verdict.advisory, true);
+  assert.equal(verdict.metadata.semanticDisposition, "review_required");
+  assert.equal(verdict.metadata.semanticCode, "atlas_qc_camera_failed");
+});
+
 // ═══ CONTINUITY IS BLOCKING, AND IT BUYS EXACTLY ONE RE-RENDER.
 //
 // Owner ruling, 2026-09-01: "atlasContinuityContract: fail -> candidate cannot
