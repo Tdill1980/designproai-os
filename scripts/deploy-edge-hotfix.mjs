@@ -6,6 +6,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSy
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { APPROVED, PROJECT, requireSha } from './edge-hotfix-policy.mjs';
+import { collectEdgeSourceFiles } from './edge-source-closure.mjs';
 const root = process.cwd();
 const sha = requireSha(process.env.EXACT_MAIN_SHA);
 const FUNCTION = process.env.FUNCTION_NAME;
@@ -14,7 +15,7 @@ if (!SPEC) throw new Error('Function is not allowlisted');
 const SOURCE = SPEC.sources[0];
 if (process.env.CONFIRMATION !== 'DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION') throw new Error('Production confirmation missing');
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Dispatch must run from main');
-for (const name of ['GH_TOKEN', 'SUPABASE_ACCESS_TOKEN', 'ESBUILD_BIN', 'SUPABASE_BIN', 'GITHUB_REPOSITORY']) {
+for (const name of ['GH_TOKEN', 'SUPABASE_ACCESS_TOKEN', 'ESBUILD_BIN', 'SUPABASE_BIN', 'GITHUB_REPOSITORY', 'EDGE_TYPESCRIPT_PATH']) {
   if (!process.env[name]) throw new Error(`Missing ${name}`);
 }
 const run = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
@@ -52,15 +53,19 @@ try {
   await currentMain();
   const candidate = JSON.parse(run(process.execPath, ['scripts/edge-hotfix-policy.mjs', 'candidate', sha, FUNCTION]));
   receipt.change_sha = candidate.change;
-  if (run('git', ['status', '--porcelain', '--untracked-files=all', '--', 'supabase/functions', 'scripts/edge-hotfix-policy.mjs', 'scripts/deploy-edge-hotfix.mjs']).trim()) {
+  if (run('git', ['status', '--porcelain', '--untracked-files=all', '--', 'supabase/functions', 'scripts/edge-hotfix-policy.mjs', 'scripts/deploy-edge-hotfix.mjs', 'scripts/edge-source-closure.mjs']).trim()) {
     throw new Error('Dirty source checkout; deploy only immutable Git content');
   }
-  // Build only this function and determine its real local import closure.
+  // Keep the isolated build, but do not use optimized inputs as the raw-source
+  // upload manifest: TypeScript import elision can omit syntactic dependencies.
   const metafile = join(work, 'bundle.json');
   run(process.env.ESBUILD_BIN, [SOURCE, '--bundle', '--format=esm', '--platform=neutral', '--target=es2022',
     '--external:https://*', '--external:http://*', '--external:npm:*', '--external:jsr:*', '--external:node:*',
     `--metafile=${metafile}`, `--outfile=${join(work, 'function.mjs')}`]);
-  const files = Object.keys(JSON.parse(readFileSync(metafile, 'utf8')).inputs).sort();
+  const optimizedFiles = Object.keys(JSON.parse(readFileSync(metafile, 'utf8')).inputs);
+  const rawFiles = collectEdgeSourceFiles({ root, entrypoints: SPEC.sources });
+  const files = [...new Set([...rawFiles, ...optimizedFiles])].sort();
+  receipt.source_graph = 'raw-typescript-import-closure-v1';
   for (const source of SPEC.sources) if (!files.includes(source)) throw new Error(`Owned source absent from build graph: ${source}`);
   const stamp = 'supabase/functions/_shared/release-source.ts';
   const hasStamp = files.includes(stamp);
@@ -92,6 +97,9 @@ try {
   if (hasStamp) writeFileSync(join(stage, stamp), `export const RELEASE_SOURCE_SHA = "${sha}";\n`);
   writeFileSync(join(stage, 'supabase/config.toml'),
     `project_id = "designproai-edge-hotfix"\n[functions.${FUNCTION}]\nverify_jwt = ${before.verify_jwt}\nentrypoint = "./functions/${FUNCTION}/index.ts"\n`);
+  // Re-parse the exact files being uploaded; missing imports fail before write.
+  const stagedRawFiles = collectEdgeSourceFiles({ root: stage, entrypoints: SPEC.sources });
+  if (JSON.stringify(stagedRawFiles) !== JSON.stringify(rawFiles)) throw new Error('Staged source graph differs from checkout');
   receipt.files = Object.fromEntries(files.map(file => [file, digest(readFileSync(join(stage, file)))]));
   receipt.auth_policy_preserved = before.verify_jwt;
   await currentMain();
@@ -103,32 +111,32 @@ try {
   receipt.status = 'deployed-awaiting-verification'; record();
   const deployed = join(work, 'deployed');
   download(deployed);
-  for (const [file, expected] of Object.entries(receipt.files)) {
-    if (!existsSync(join(deployed, file)) || digest(readFileSync(join(deployed, file))) !== expected) {
-      throw new Error(`DEPLOYED SOURCE MISMATCH: ${file}`);
-    }
-  }
   const after = metadata();
+  if (after.id !== before.id || after.slug !== before.slug || after.version <= before.version || after.status !== 'ACTIVE' || after.verify_jwt !== before.verify_jwt) {
+    throw new Error('Deployed identity/version/JWT policy failed readback');
+  }
+  for (const [file, hash] of Object.entries(receipt.files)) {
+    const path = join(deployed, file);
+    if (!existsSync(path) || digest(readFileSync(path)) !== hash) throw new Error(`Deployed source mismatch: ${file}`);
+  }
+  // OPTIONS does not generate an image or spend provider credits.
+  const smoke = await fetch(`https://${PROJECT}.supabase.co/functions/v1/${FUNCTION}`, {
+    method: 'OPTIONS', signal: AbortSignal.timeout(30000), redirect: 'error',
+  });
+  if (smoke.status !== 200 || (hasStamp && smoke.headers.get('x-designpro-source-sha') !== sha)) {
+    throw new Error('Live identity smoke test failed');
+  }
   receipt.after = after;
-  if (after.id !== before.id || after.version <= before.version || after.verify_jwt !== before.verify_jwt || after.status !== 'ACTIVE') {
-    throw new Error('Post-deploy version, identity, status or JWT policy verification failed');
-  }
-  // OPTIONS runs the handler/CORS path without provider calls, rows or charges.
-  let healthy = false;
-  for (let attempt = 0; attempt < 6; attempt++) {
-    const response = await fetch(`https://${PROJECT}.supabase.co/functions/v1/${FUNCTION}`, {
-      method: 'OPTIONS', headers: { Origin: 'https://os.designproai.com' },
-      signal: AbortSignal.timeout(20000), redirect: 'error',
-    });
-    receipt.smoke = { method: 'OPTIONS', status: response.status, source_sha: response.headers.get('x-designpro-source-sha') };
-    await response.body?.cancel();
-    if (response.status === 200 && (!hasStamp || receipt.smoke.source_sha === sha)) { healthy = true; break; }
-    await new Promise(resolve => setTimeout(resolve, 3000));
-  }
-  if (!healthy) throw new Error(hasStamp ? 'Live function did not return HTTP 200 and the exact deployed source SHA' : 'Live function OPTIONS smoke failed');
-  receipt.status = 'verified'; receipt.completed_at = new Date().toISOString(); record();
-  console.log(`Verified ${FUNCTION} version ${after.version} from ${sha}; deployed source hashes match; OPTIONS smoke passed.`);
+  receipt.files_verified = true;
+  receipt.jwt_policy_preserved = true;
+  receipt.live_header_verified = hasStamp ? true : 'not-available-this-function';
+  receipt.status = 'deployed-and-verified';
+  receipt.finished_at = new Date().toISOString(); record();
+  if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY,
+    `\n### Selected Edge function verified\nFunction: ${FUNCTION}\nSource SHA: ${sha}\nVersion: ${after.version}\nFile hashes: verified\nAuth/JWT: unchanged\nRuntime, gateway, database, droplet and other functions: untouched\n`, { flag: 'a' });
 } catch (error) {
-  receipt.failure = error.message; record();
-  throw error;
-} finally { rmSync(work, { recursive: true, force: true }); }
+  receipt.status = receipt.status === 'deployed-awaiting-verification' ? 'deployed-verification-failed' : 'not-deployed';
+  receipt.error = String(error.message || error); record(); throw error;
+} finally {
+  rmSync(work, { recursive: true, force: true });
+}
