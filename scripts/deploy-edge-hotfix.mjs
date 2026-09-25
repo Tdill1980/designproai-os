@@ -6,6 +6,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSy
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { APPROVED, PROJECT, requireSha } from './edge-hotfix-policy.mjs';
+import { collectEdgeSourceFiles } from './edge-source-closure.mjs';
 const root = process.cwd();
 const sha = requireSha(process.env.EXACT_MAIN_SHA);
 const FUNCTION = process.env.FUNCTION_NAME;
@@ -14,7 +15,7 @@ if (!SPEC) throw new Error('Function is not allowlisted');
 const SOURCE = SPEC.sources[0];
 if (process.env.CONFIRMATION !== 'DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION') throw new Error('Production confirmation missing');
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Dispatch must run from main');
-for (const name of ['GH_TOKEN', 'SUPABASE_ACCESS_TOKEN', 'ESBUILD_BIN', 'SUPABASE_BIN', 'GITHUB_REPOSITORY']) {
+for (const name of ['GH_TOKEN', 'SUPABASE_ACCESS_TOKEN', 'ESBUILD_BIN', 'SUPABASE_BIN', 'GITHUB_REPOSITORY', 'EDGE_TYPESCRIPT_PATH']) {
   if (!process.env[name]) throw new Error(`Missing ${name}`);
 }
 const run = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
@@ -52,15 +53,19 @@ try {
   await currentMain();
   const candidate = JSON.parse(run(process.execPath, ['scripts/edge-hotfix-policy.mjs', 'candidate', sha, FUNCTION]));
   receipt.change_sha = candidate.change;
-  if (run('git', ['status', '--porcelain', '--untracked-files=all', '--', 'supabase/functions', 'scripts/edge-hotfix-policy.mjs', 'scripts/deploy-edge-hotfix.mjs']).trim()) {
+  if (run('git', ['status', '--porcelain', '--untracked-files=all', '--', 'supabase/functions', 'scripts/edge-hotfix-policy.mjs', 'scripts/deploy-edge-hotfix.mjs', 'scripts/edge-source-closure.mjs']).trim()) {
     throw new Error('Dirty source checkout; deploy only immutable Git content');
   }
-  // Build only this function and determine its real local import closure.
+  // Keep the isolated build, but do not use optimized inputs as the raw-source
+  // upload manifest: TypeScript import elision can omit syntactic dependencies.
   const metafile = join(work, 'bundle.json');
   run(process.env.ESBUILD_BIN, [SOURCE, '--bundle', '--format=esm', '--platform=neutral', '--target=es2022',
     '--external:https://*', '--external:http://*', '--external:npm:*', '--external:jsr:*', '--external:node:*',
     `--metafile=${metafile}`, `--outfile=${join(work, 'function.mjs')}`]);
-  const files = Object.keys(JSON.parse(readFileSync(metafile, 'utf8')).inputs).sort();
+  const optimizedFiles = Object.keys(JSON.parse(readFileSync(metafile, 'utf8')).inputs);
+  const rawFiles = collectEdgeSourceFiles({ root, entrypoints: SPEC.sources });
+  const files = [...new Set([...rawFiles, ...optimizedFiles])].sort();
+  receipt.source_graph = 'raw-typescript-import-closure-v1';
   for (const source of SPEC.sources) if (!files.includes(source)) throw new Error(`Owned source absent from build graph: ${source}`);
   const stamp = 'supabase/functions/_shared/release-source.ts';
   const hasStamp = files.includes(stamp);
@@ -92,6 +97,9 @@ try {
   if (hasStamp) writeFileSync(join(stage, stamp), `export const RELEASE_SOURCE_SHA = "${sha}";\n`);
   writeFileSync(join(stage, 'supabase/config.toml'),
     `project_id = "designproai-edge-hotfix"\n[functions.${FUNCTION}]\nverify_jwt = ${before.verify_jwt}\nentrypoint = "./functions/${FUNCTION}/index.ts"\n`);
+  // Re-parse the exact files being uploaded; missing imports fail before write.
+  const stagedRawFiles = collectEdgeSourceFiles({ root: stage, entrypoints: SPEC.sources });
+  if (JSON.stringify(stagedRawFiles) !== JSON.stringify(rawFiles)) throw new Error('Staged source graph differs from checkout');
   receipt.files = Object.fromEntries(files.map(file => [file, digest(readFileSync(join(stage, file)))]));
   receipt.auth_policy_preserved = before.verify_jwt;
   await currentMain();

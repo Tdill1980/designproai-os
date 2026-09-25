@@ -55,3 +55,26 @@ jobs:
           "$ESBUILD_BIN" "supabase/functions/$fn/index.ts" --bundle --format=esm --platform=neutral --target=es2022 \
             '--external:https://*' '--external:http://*' '--external:npm:*' '--external:jsr:*' '--external:node:*' \
             --outfile="$RUNNER_TEMP/$fn.mjs"
+  source-packaging:
+    # Run on tooling-only PRs too: optimized builds previously hid missing imports.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install pinned source parser and focused compiler only
+        run: |
+          npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9 typescript@5.8.3
+          echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
+          echo "EDGE_TYPESCRIPT_PATH=$RUNNER_TEMP/edge-tools/node_modules/typescript/lib/typescript.js" >> "$GITHUB_ENV"
+      - name: Verify raw import closure and unchanged Call-1 request contracts
+        env:
+          EDGE_CLOSURE_REPO_TEST: '1'
+        run: |
+          node --check scripts/deploy-edge-hotfix.mjs
+          node --test tests/edge-source-closure.test.mjs tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs
