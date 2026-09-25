@@ -695,8 +695,11 @@ function createAtlasProofValidator({
   // re-render is proof-only: the same hash-bound canonical panel, the same
   // camera contract, plus the inspector's findings as a correction.
   const BLOCKING_SEMANTIC_CODE = "atlas_qc_design_drift";
+  const BLOCKING_CAMERA_CODE = "atlas_qc_camera_failed";
   const MAX_CONTINUITY_ATTEMPTS = 2;
+  const MAX_CAMERA_ATTEMPTS = 2;
   let continuityFailures = 0;
+  let cameraFailures = 0;
 
   // Reviewer configuration belongs to the advisory branch. Keeping it as a
   // constructor throw would let a missing Gemini seam, bad model name or bad
@@ -832,6 +835,36 @@ function createAtlasProofValidator({
             semanticReason: rejection.reason,
             semanticReview: review,
             continuityAttempt: continuityFailures,
+            model: result?.model || model,
+            keyFingerprint: result?.keyFingerprint || null,
+            confidence: review.confidence,
+          },
+        };
+      }
+      // A proof that visibly violates the locked camera/framing contract is
+      // not customer-ready. The September 25 Nash canary proved the old
+      // advisory policy could publish a Driver proof that the inspector itself
+      // graded camera=fail and framing=fail. Explicit FAIL gets one proof-only
+      // rerender with the same immutable artwork authority; UNCERTAIN remains
+      // advisory so reviewer hesitation cannot burn the slot.
+      if (rejection?.code === BLOCKING_CAMERA_CODE
+        && (review.cameraContract === "fail" || review.framingContract === "fail")) {
+        cameraFailures += 1;
+        return {
+          accepted: false,
+          code: rejection.code,
+          reason: rejection.reason,
+          correction: rejection.correction,
+          review,
+          terminal: cameraFailures >= MAX_CAMERA_ATTEMPTS,
+          metadata: {
+            ...request.metadata,
+            policyContract: ADVISORY_POLICY_CONTRACT,
+            semanticDisposition: "blocked",
+            semanticCode: rejection.code,
+            semanticReason: rejection.reason,
+            semanticReview: review,
+            cameraAttempt: cameraFailures,
             model: result?.model || model,
             keyFingerprint: result?.keyFingerprint || null,
             confidence: review.confidence,
