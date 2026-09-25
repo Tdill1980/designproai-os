@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { APPROVED, PROJECT, requireSha } from './edge-hotfix-policy.mjs';
 import { collectEdgeSourceFiles } from './edge-source-closure.mjs';
+import { healthyEdgeOptions } from './edge-options-health.mjs';
 const root = process.cwd();
 const sha = requireSha(process.env.EXACT_MAIN_SHA);
 const FUNCTION = process.env.FUNCTION_NAME;
@@ -130,10 +131,10 @@ try {
     });
     receipt.smoke = { method: 'OPTIONS', status: response.status, source_sha: response.headers.get('x-designpro-source-sha') };
     await response.body?.cancel();
-    if (response.status === 200 && (!hasStamp || receipt.smoke.source_sha === sha)) { healthy = true; break; }
+    if (healthyEdgeOptions(FUNCTION, response.status, receipt.smoke.source_sha, sha, hasStamp)) { healthy = true; break; }
     await new Promise(resolve => setTimeout(resolve, 3000));
   }
-  if (!healthy) throw new Error(hasStamp ? 'Live function did not return HTTP 200 and the exact deployed source SHA' : 'Live function OPTIONS smoke failed');
+  if (!healthy) throw new Error('Live function OPTIONS status or required source SHA did not match its contract');
   receipt.status = 'verified'; receipt.completed_at = new Date().toISOString(); record();
   console.log(`Verified ${FUNCTION} version ${after.version} from ${sha}; deployed source hashes match; OPTIONS smoke passed.`);
 } catch (error) {
