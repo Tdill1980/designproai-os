@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - production-panel-proof
+          - render-wall-view
       confirmation:
         description: Explicit protected production deployment confirmation
         required: true
@@ -41,7 +42,10 @@ jobs:
         run: |
           test "$GITHUB_REF" = refs/heads/main
           [[ "$EXACT_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$FUNCTION_NAME" = production-panel-proof
+          case "$FUNCTION_NAME" in
+            production-panel-proof|render-wall-view) ;;
+            *) echo "::error::Function is not Fast Edge approved: $FUNCTION_NAME"; exit 1 ;;
+          esac
           test "$CONFIRMATION" = DEPLOY_EDGE_TO_DESIGNPROAI_PRODUCTION
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -60,8 +64,16 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/edge-tools" --no-audit --no-fund esbuild@0.25.9 supabase@2.111.0
           echo "ESBUILD_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/esbuild" >> "$GITHUB_ENV"
           echo "SUPABASE_BIN=$RUNNER_TEMP/edge-tools/node_modules/.bin/supabase" >> "$GITHUB_ENV"
-      - name: Focused Call-1 tests (no generation or provider charges)
-        run: node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs
+      - name: Focused selected-function tests (no generation or provider charges)
+        run: |
+          case "$FUNCTION_NAME" in
+            production-panel-proof)
+              node --test tests/edge-hotfix-call1.test.mjs tests/production-panel-proof-clean-prompt.test.mjs
+              ;;
+            render-wall-view)
+              node --test tests/wallpro-render-fast-edge.test.mjs
+              ;;
+          esac
       - name: Build, deploy only selected function, read back and verify
         env:
           GH_TOKEN: ${{ github.token }}
