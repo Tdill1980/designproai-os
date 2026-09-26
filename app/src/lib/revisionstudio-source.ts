@@ -103,6 +103,15 @@ export type RevisionStudioDesignRow = {
   revision: number;
   state: WorkflowStatus["state"];
   current_stage: string;
+  /**
+   * True for a row projected from the design-library INDEX, whose
+   * `render_urls` carries only the driver thumbnail by construction. It is not
+   * the design's view set, so nothing may count "missing" views from it; the
+   * index's own `viewCount` is carried as `_viewCount`. A row re-read through
+   * `readRevisionStudioDesign` is hydrated and says false.
+   */
+  _librarySummary?: boolean;
+  _viewCount?: number;
 };
 
 /** The tool badge every DesignProAI design card carries. */
@@ -333,6 +342,11 @@ export async function listRevisionStudioDesigns(): Promise<RevisionStudioDesignR
     const row = designRowFromLibraryEntry(entry, []);
     row.render_urls = entry.thumbnailUrl
       ? { side: entry.thumbnailUrl, driver: entry.thumbnailUrl } : {};
+    // 2026-09-25 (generation 9999ec65): the studio opened this index row and
+    // counted 6 "missing" views on a design that had all 7. Mark it so the
+    // studio waits for the hydrated job, and keep the real count for cards.
+    row._librarySummary = true;
+    row._viewCount = Number(entry.viewCount) || 0;
     row.generation_status = ["failed", "cancelled"].includes(entry.state)
       ? "failed" : entry.state === "outputs_ready" && entry.viewCount >= 7 ? "completed" : "processing";
     return row;
@@ -360,8 +374,43 @@ export async function readRevisionStudioDesign(
   if (!job) return null;
   const detail = await detailFor(job.generationId, revisionId);
   if (detail.missingRevision) return null;
-  return { ...designRowFromJob(job, detail.views, detail.artifacts), atlas_revision_id: detail.revision?.id || null,
+  return { ...designRowFromJob(job, detail.views, detail.artifacts), _librarySummary: false,
+    atlas_revision_id: detail.revision?.id || null,
     ...(detail.revision ? { revision: detail.revision.revisionSequence } : {}) };
+}
+
+/**
+ * KEEP A VIEW'S URL WHILE IT IS STILL GOOD (2026-09-25).
+ *
+ * The open design is re-read every 15 s and every read re-signs all seven
+ * views, so every poll swapped seven live URLs for new ones and the browser
+ * re-downloaded each multi-megabyte view it was already showing. A new URL for
+ * the SAME object path replaces the old one only when the old signed token has
+ * less than a minute left (or cannot be read). A different path always wins,
+ * so a changed view is never hidden behind a stale one.
+ */
+export function keepLiveSignedUrls(
+  previous: Record<string, string> | null | undefined,
+  next: Record<string, string> | null | undefined,
+  nowMs: number = Date.now(),
+): Record<string, string> {
+  if (!next) return next as unknown as Record<string, string>;
+  if (!previous) return next;
+  const kept: Record<string, string> = { ...next };
+  for (const key of Object.keys(kept)) {
+    const before = previous[key];
+    const after = kept[key];
+    if (typeof before !== "string" || typeof after !== "string" || before === after) continue;
+    if (before.split("?")[0] !== after.split("?")[0]) continue;
+    try {
+      const token = new URL(before).searchParams.get("token") || "";
+      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (Number(payload?.exp) * 1000 > nowMs + 60_000) kept[key] = before;
+    } catch {
+      // Unreadable token: take the fresh URL, which is today's behaviour.
+    }
+  }
+  return kept;
 }
 
 /**
@@ -497,4 +546,41 @@ export async function revisionStudioVersionCommits(generationId: string, revisio
       angle_renders_json: views.map((view) => ({ view: view.sourceViewType, url: view.signedUrl })),
     };
   });
+}
+
+/**
+ * A FAILED FULL-JOB READ IS SAID OUT LOUD (owner, 2026-09-25).
+ *
+ * The open design is hydrated by `readRevisionStudioDesign`. That read used to
+ * fail silently, leaving an index row (or stale data) on screen with nothing to
+ * say the studio did not actually know the design's views. The studio now keeps
+ * the failure for the open design, shows it inline with a Retry, and offers no
+ * missing-views banner or Generate action while it stands: missing views
+ * counted from a row the studio could not load are not evidence of anything.
+ */
+export type RevisionStudioJobLoadError = { id: string; message: string };
+
+/** One full-job read's outcome for design `id` -> the error to show, or null. */
+export function jobLoadErrorFor(
+  id: string,
+  outcome: { row: unknown } | { error: unknown },
+): RevisionStudioJobLoadError | null {
+  if ("row" in outcome) {
+    return outcome.row ? null : { id, message: "The design's job could not be found for this account." };
+  }
+  const detail = outcome.error instanceof Error ? outcome.error.message : String(outcome.error ?? "");
+  return { id, message: detail.trim() ? detail.trim().slice(0, 200) : "The design's job could not be loaded." };
+}
+
+/** True when the latest full-job read of the OPEN design failed. */
+export function jobLoadFailedFor(
+  error: RevisionStudioJobLoadError | null | undefined,
+  selectedId: unknown,
+): boolean {
+  return Boolean(error && selectedId != null && error.id === String(selectedId));
+}
+
+/** Missing views may only be offered from a job the studio actually loaded. */
+export function missingViewsUnlessJobLoadFailed(missing: string[], jobLoadFailed: boolean): string[] {
+  return jobLoadFailed ? [] : missing;
 }

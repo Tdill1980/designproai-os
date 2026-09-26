@@ -10,8 +10,14 @@ import {
   revisionStudioVersionCommits,
   loadLayeredEditSources,
   readRevisionStudioDesign,
+  keepLiveSignedUrls,
   historicalStudioProofs,
+  jobLoadErrorFor,
+  jobLoadFailedFor,
+  missingViewsUnlessJobLoadFailed,
+  type RevisionStudioJobLoadError,
 } from "@/lib/revisionstudio-source";
+import { JobLoadErrorNotice } from "@/components/revisionstudio/JobLoadErrorNotice";
 // WallPro is its own app on DesignProAI, like GraphicsPro: its designs sit in
 // this grid beside vehicle designs, keyed by DesignID, with the 150 PPI panels
 // downloadable from the card (owner, 2026-09-11).
@@ -783,6 +789,11 @@ function formatDesignName(render: any): string {
  * against the canonical VIEW_ORDER.
  */
 function getMissingViews(render: any): string[] {
+  // A design-library INDEX row carries only the driver thumbnail by
+  // construction, so it cannot say which views are missing. Live 9999ec65
+  // showed "Generate 6 Missing Views" on a design with all 7. Nothing is
+  // missing until the hydrated job (readRevisionStudioDesign) has loaded.
+  if (render?._librarySummary) return [];
   const order = getViewOrderForVehicle(render);
   const urls = render?.render_urls as Record<string, string> | null;
   if (!urls) return [...order];
@@ -1470,7 +1481,11 @@ function VehicleGroupCard({
     views[0]?.url;
   const heroFailed = failedImages.has(render.id);
   const renderMissing = getMissingViews(render);
-  const hasAllViews = renderMissing.length === 0;
+  // An index row reports the server's own view count instead of its one tile.
+  const summaryViewCount = render?._librarySummary
+    ? Math.min(Number(render._viewCount) || 0, VIEW_ORDER.length) : null;
+  const hasAllViews = summaryViewCount === null
+    ? renderMissing.length === 0 : summaryViewCount >= getViewOrderForVehicle(render).length;
   const versionLabel = getVersionLabel(render);
   // WPW order number for this design group: a panelizer job carries it
   // directly, a CV design resolves through the approval map (any version /
@@ -1588,7 +1603,7 @@ function VehicleGroupCard({
         {!hasAllViews && (
           <div className="absolute bottom-2 left-2 flex items-center gap-1 bg-amber-600/90 px-2 py-0.5 rounded text-[10px] font-bold">
             <AlertTriangle className="w-3 h-3" />
-            {views.length}/{VIEW_ORDER.length} views
+            {summaryViewCount ?? views.length}/{VIEW_ORDER.length} views
           </div>
         )}
       </div>
@@ -1705,6 +1720,11 @@ export default function RevisionStudioIQ() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showTeamRenders, setShowTeamRenders] = useState(false);
   const [selectedRender, setSelectedRender] = useState<any | null>(null);
+  // The latest failed full-job read of the open design (never swallowed), and
+  // a Retry counter that re-runs the hydrate effect immediately.
+  const [jobLoadError, setJobLoadError] = useState<RevisionStudioJobLoadError | null>(null);
+  const [jobLoadAttempt, setJobLoadAttempt] = useState(0);
+  const [jobLoadRetrying, setJobLoadRetrying] = useState(false);
   // A durable commit is a read-only historical snapshot, not another mutable
   // render row. Keep its selection separate so browsing history can never make
   // an edit/delete action target the immutable ledger entry.
@@ -2846,10 +2866,21 @@ export default function RevisionStudioIQ() {
           // Keep signed previews fresh after completion and let the normal
           // production-layers observer display the server's automatic handoff.
         } else {
-          const fresh = await readRevisionStudioDesign(String(id), selectedRender.atlas_revision_id);
-          if (cancelled || !fresh) return;
+          let fresh: Awaited<ReturnType<typeof readRevisionStudioDesign>> = null;
+          try {
+            fresh = await readRevisionStudioDesign(String(id), selectedRender.atlas_revision_id);
+          } catch (error) {
+            // Never swallowed: the studio says the job did not load and offers
+            // Retry instead of counting "missing" views from what it has.
+            if (!cancelled) { setJobLoadError(jobLoadErrorFor(String(id), { error })); setJobLoadRetrying(false); }
+            throw error;
+          }
+          if (cancelled) return;
+          setJobLoadError(jobLoadErrorFor(String(id), { row: fresh }));
+          setJobLoadRetrying(false);
+          if (!fresh) return;
           setSelectedRender((previous: any) => previous?.id === id && !previous?._revisionRequest
-            ? { ...previous, ...fresh } : previous);
+            ? { ...previous, ...fresh, render_urls: keepLiveSignedUrls(previous.render_urls, fresh.render_urls) } : previous);
         }
       } catch {
         // A failed read keeps this revision's last verified previews. A retry
@@ -2859,7 +2890,12 @@ export default function RevisionStudioIQ() {
     };
     void refresh();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedRender?._revisionRequest?.requestId, queryClient]);
+  }, [selectedRender?.id, selectedRender?.atlas_revision_id, selectedRender?._revisionRequest?.requestId, queryClient, jobLoadAttempt]);
+  const jobLoadFailed = jobLoadFailedFor(jobLoadError, selectedRender?.id) && !selectedRender?._revisionRequest;
+  const retryJobLoad = useCallback(() => {
+    setJobLoadRetrying(true);
+    setJobLoadAttempt((n) => n + 1);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // RE-SIGN THE VIEWS BEFORE OPENING A PROOF. (Trish 2026-08-31: "show 3d proof
@@ -3862,6 +3898,11 @@ export default function RevisionStudioIQ() {
   // closed tab, and there is no per-view budget for a browser to spend. All a
   // click here can honestly do is ask the server to pick pending work back up.
   const generateMissingViews = async (render: any) => {
+    if (jobLoadFailedFor(jobLoadError, render?.id)) {
+      // Never generate "missing" views for a design whose job did not load.
+      toast.error("This design's full job did not load. Retry loading it first.");
+      return;
+    }
     const missing = getMissingViews(render);
     if (missing.length === 0) {
       toast.success("All views already exist!");
@@ -3911,7 +3952,7 @@ export default function RevisionStudioIQ() {
   const autoBackfilledIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const r = selectedRender;
-    if (!r?.id || isGeneratingMissing) return;
+    if (!r?.id || isGeneratingMissing || jobLoadFailed) return;
     if (String(r.mode_type || "").toLowerCase() !== "recreatepro") return;
     const urls = (r.render_urls || {}) as Record<string, string>;
     const hasHero = !!(urls.side || urls.hero || urls["driver-side"] || urls["driver_side"] || urls.primary || urls.mockup);
@@ -3924,7 +3965,7 @@ export default function RevisionStudioIQ() {
     // generateMissingViews closes over refs/state; intentionally omitted from deps
     // to avoid re-fire loops — the id Set guards single execution per design.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRender, isGeneratingMissing]);
+  }, [selectedRender, isGeneratingMissing, jobLoadFailed]);
 
   // ---------------------------------------------------------------------------
   // Delete render mutation
@@ -4333,7 +4374,7 @@ export default function RevisionStudioIQ() {
     return [...standard, ...extra, ...historicalStudioProofs(urls)];
   };
 
-  const missingViews = selectedRender ? getMissingViews(selectedRender) : [];
+  const missingViews = selectedRender ? missingViewsUnlessJobLoadFailed(getMissingViews(selectedRender), jobLoadFailed) : [];
 
   // ── Immutable OS version projection ──────────────────────────────────────
   // The design row is the mutable working row. Every immutable ledger
@@ -4387,9 +4428,10 @@ export default function RevisionStudioIQ() {
     ? { ...selectedRender, render_urls: selectedVersionPresentation?.currentUrls || {},
       atlas_revision_id: historyRevisionId, _revisionRequest: undefined }
     : selectedRender;
-  const productionMissingViews = selectedInspectionRender ? getMissingViews(selectedInspectionRender) : [];
+  const productionMissingViews = selectedInspectionRender
+    ? missingViewsUnlessJobLoadFailed(getMissingViews(selectedInspectionRender), jobLoadFailed) : [];
   const productionProofsReady = selectedViews.length > 0 && productionMissingViews.length === 0
-    && !selectedInspectionRender?._revisionRequest;
+    && !selectedInspectionRender?._revisionRequest && !selectedInspectionRender?._librarySummary && !jobLoadFailed;
   const immutableHistoryHero = useMemo(() => {
     if (!isViewingImmutableVersion || !selectedVersionPresentation) return null;
     // The seven angle controls inspect the selected saved version, too.
@@ -4780,7 +4822,9 @@ export default function RevisionStudioIQ() {
                 const urls = { ...(render.render_urls || {}), ...Object.fromEntries(historical.map((view) => [view.key, view.url])) } as Record<string, string>;
                 const viewOrder = [...VIEW_ORDER.filter((key) => key !== "close-up" || urls[key] || !historical.length), ...historical.map((view) => view.key)];
                 const viewLabels: Record<string, string> = { side: "Driver", "passenger-side": "Passenger", hood_detail: "Hood", front: "Front 3/4", rear: "Rear 3/4", "close-up": "Close-Up", roof: "Roof", "hero-3d": "Historical 3D proof" };
-                const viewCount = viewOrder.filter((v) => urls[v]).length;
+                const viewCount = render._librarySummary
+                  ? Math.min(Number(render._viewCount) || 0, viewOrder.length)
+                  : viewOrder.filter((v) => urls[v]).length;
 
                 return (
                   <div
@@ -5030,10 +5074,14 @@ export default function RevisionStudioIQ() {
               </div>
             </div>
 
+            {jobLoadFailed && jobLoadError && (
+              <JobLoadErrorNotice message={jobLoadError.message} retrying={jobLoadRetrying} onRetry={retryJobLoad} />
+            )}
+
             {/* ============================================================ */}
             {/* MISSING RENDERS ALERT                                       */}
             {/* ============================================================ */}
-            {!isReadOnlyProof && missingViews.length > 0 && !isMyVehicleRender(selectedRender) && (
+            {!isReadOnlyProof && !jobLoadFailed && missingViews.length > 0 && !isMyVehicleRender(selectedRender) && (
               <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-950/20 overflow-hidden">
                 <div className="flex items-start gap-4 p-4">
                   <div className="flex-shrink-0 mt-0.5">
