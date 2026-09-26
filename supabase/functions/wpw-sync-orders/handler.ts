@@ -173,7 +173,10 @@ export function createSyncOrdersHandler(deps: SyncDeps) {
         fetched += batch.length;
 
         if (batch.length) {
-          const orderRows = batch.map((o) => (user ? { ...normalizeOrder(o), user_id: user.id } : normalizeOrder(o)));
+          // No user_id column is written: production's wpw_orders has none
+          // (information_schema, 2026-09-25). The customer scope is the Woo
+          // customer id, which is the column wpw-orders-read filters on.
+          const orderRows = batch.map(normalizeOrder);
           const { error: orderError } = await sb.from('wpw_orders').upsert(orderRows, { onConflict: 'id' });
           if (orderError) throw new Error('Orders could not be stored: ' + orderError.message);
           orders += orderRows.length;

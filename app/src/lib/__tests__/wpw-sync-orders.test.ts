@@ -138,7 +138,9 @@ describe('WPW order sync: signed-in customer scope (fixes the browser 401)', () 
     // Woo is asked for that customer, and a stray row for another customer is dropped anyway.
     expect(f.paths[0]).toContain('customer=42');
     expect(f.upserts.wpw_orders.map((r) => r.id)).toEqual([7001]);
-    expect(f.upserts.wpw_orders[0].user_id).toBe('user-1');
+    // production wpw_orders has no user_id column, so none is written.
+    expect(f.upserts.wpw_orders[0]).not.toHaveProperty('user_id');
+    expect(f.upserts.wpw_orders[0].woo_customer_id).toBe(42);
   });
   it('answers linked:false (not an error) when the account has no Woo link', async () => {
     const f = userFixture({ link: null });
