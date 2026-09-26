@@ -1610,6 +1610,7 @@ async function assemblePanelProofMaster({
         surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.rect,
         identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
         widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
+        ...(p.rectGuard ? { rectGuard: p.rectGuard } : {}),
       };
       try {
         const stored = await persist({
@@ -1894,6 +1895,7 @@ async function assemblePanelProofMaster({
           surfaceKey: p.surfaceKey, role: p.role, byteSize: p.byteSize, fit: p.fit, rect: p.displayRect, backgroundRect: p.rect,
           widthIn: p.widthIn ?? null, heightIn: p.heightIn ?? null,
           identity: p.identity, positionalPremiseVerified: p.positionalPremiseVerified,
+          ...(p.rectGuard ? { rectGuard: p.rectGuard } : {}),
         })),
         clean: cleanQuadrant,
         cutGraphics: cutGraphicsQuadrant,
