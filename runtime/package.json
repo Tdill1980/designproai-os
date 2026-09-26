@@ -2,6 +2,7 @@
   "name": "@designproai/server-runtime",
   "version": "1.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Standalone durable DesignProAI production runtime",
   "main": "index.js",
   "type": "commonjs",

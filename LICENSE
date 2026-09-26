@@ -1,0 +1,63 @@
+DesignProAI — Proprietary Software License
+Copyright (c) 2026 DesignProAI. All rights reserved.
+
+1. OWNERSHIP
+
+   This repository and everything in it — source code, configuration,
+   database migrations, prompts, model direction, quality-control
+   thresholds, documentation, and design assets (collectively, the
+   "Software") — is the confidential and proprietary property of
+   DesignProAI. No ownership interest is transferred by access to it.
+
+2. NO LICENSE GRANTED
+
+   No license, express or implied, is granted to any person or entity
+   except by a separate written agreement signed by DesignProAI.
+   Without such an agreement you may not use, copy, modify, merge,
+   publish, distribute, sublicense, sell, host, or create derivative
+   works of the Software, in whole or in part.
+
+   Access to this repository — including access granted for employment,
+   contracting, evaluation, or collaboration — is permission to view and
+   to work on the Software for DesignProAI, and nothing more. It does
+   not grant redistribution rights, and it does not survive the end of
+   that relationship.
+
+3. CONFIDENTIALITY AND TRADE SECRETS
+
+   The Software contains trade secrets, including but not limited to the
+   generation pipeline architecture and its internal codenames, the
+   prompt and persona stacks, the deterministic panel-cutting and
+   quality-control methods, and their thresholds and tuning.
+
+   Anyone with access must keep the Software confidential, must not
+   disclose it or describe its internal mechanisms to third parties, and
+   must not present its internal codenames or methods on any
+   customer-facing or public surface. This obligation continues after
+   access ends.
+
+4. THIRD-PARTY COMPONENTS
+
+   The Software incorporates third-party open-source components that
+   remain governed by their own licenses. Nothing in this LICENSE
+   restricts rights you hold in those components under their respective
+   terms, and nothing here claims ownership of them. This LICENSE
+   governs only the DesignProAI-authored portions of the Software.
+
+5. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+   NONINFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL DESIGNPROAI BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+   OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE
+   OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. CONTACT
+
+   Licensing inquiries: trish@weprintwraps.com

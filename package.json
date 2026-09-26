@@ -2,6 +2,7 @@
   "name": "designproai-os",
   "version": "1.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Standalone server-owned DesignProAI production operating system",
   "type": "module",
   "scripts": {
