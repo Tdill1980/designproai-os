@@ -547,3 +547,40 @@ export async function revisionStudioVersionCommits(generationId: string, revisio
     };
   });
 }
+
+/**
+ * A FAILED FULL-JOB READ IS SAID OUT LOUD (owner, 2026-09-25).
+ *
+ * The open design is hydrated by `readRevisionStudioDesign`. That read used to
+ * fail silently, leaving an index row (or stale data) on screen with nothing to
+ * say the studio did not actually know the design's views. The studio now keeps
+ * the failure for the open design, shows it inline with a Retry, and offers no
+ * missing-views banner or Generate action while it stands: missing views
+ * counted from a row the studio could not load are not evidence of anything.
+ */
+export type RevisionStudioJobLoadError = { id: string; message: string };
+
+/** One full-job read's outcome for design `id` -> the error to show, or null. */
+export function jobLoadErrorFor(
+  id: string,
+  outcome: { row: unknown } | { error: unknown },
+): RevisionStudioJobLoadError | null {
+  if ("row" in outcome) {
+    return outcome.row ? null : { id, message: "The design's job could not be found for this account." };
+  }
+  const detail = outcome.error instanceof Error ? outcome.error.message : String(outcome.error ?? "");
+  return { id, message: detail.trim() ? detail.trim().slice(0, 200) : "The design's job could not be loaded." };
+}
+
+/** True when the latest full-job read of the OPEN design failed. */
+export function jobLoadFailedFor(
+  error: RevisionStudioJobLoadError | null | undefined,
+  selectedId: unknown,
+): boolean {
+  return Boolean(error && selectedId != null && error.id === String(selectedId));
+}
+
+/** Missing views may only be offered from a job the studio actually loaded. */
+export function missingViewsUnlessJobLoadFailed(missing: string[], jobLoadFailed: boolean): string[] {
+  return jobLoadFailed ? [] : missing;
+}
