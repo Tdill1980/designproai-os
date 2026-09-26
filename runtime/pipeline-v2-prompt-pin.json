@@ -1,0 +1,9 @@
+{
+  "contract": "designpro.pipeline-v2.prompt-pin.v1",
+  "promptVersion": "designpro.atlas-panel-production-proof.v1+pin.2026-09-25",
+  "pinnedAt": "2026-09-25",
+  "sources": {
+    "supabase/functions/_shared/atlas-panel-proof-prompt.ts": "f7fd766541d7f4c1d45d339280017fd1bba43aa14816193ce37e6698d43a7930",
+    "supabase/functions/_shared/atlas-proof-container-template.ts": "6591b9e4d85bd8d7f3b28f0a66ee27645c9385ceb49633867a4a7444f5f4a1c9"
+  }
+}
