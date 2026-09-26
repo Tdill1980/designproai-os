@@ -2734,6 +2734,50 @@ export default function RevisionStudioIQ() {
       setOpeningId(null);
     }
   }, [renders]);
+
+  /**
+   * RUN A PAST BRIEF AGAIN, ON TODAY'S CODE (owner, 2026-09-23).
+   *
+   * Measured on production that day: 230 generations in sixty days and **124 of
+   * them failed** — briefs that produced nothing, while Call 1 has since gained
+   * the raw brief, both personas, the design anchor, the die-cut gate, the drawn
+   * trim line and the one-letterform rule.
+   *
+   * IT LIVES HERE, NOT ON THE LIBRARY CARD. Spending a generation makes a
+   * surface a PRODUCER, and the library is a browse grid — RULE 0.18 and RULE
+   * 0.21 both forbid it, and `tests/design-library.test.mjs` convicts the
+   * affordance by name. It caught this exact button on its first draft. The
+   * card hands the id up; the studio, which already produces designs, runs it.
+   *
+   * IT IS A NEW DESIGN. New GenerationID, its own lineage, the original left
+   * exactly as it is — RULE 0.22 forbids silently replacing a version, and for
+   * the failed half that old row is the only evidence of what went wrong.
+   *
+   * IT SPENDS A GENERATION, so it asks first and says what it will do.
+   */
+  const runBriefAgain = useCallback(async (generationId: string) => {
+    const id = String(generationId || "").trim();
+    if (!id) return;
+    const proceed = window.confirm(
+      "Run this design's original brief again on the current code?\n\n"
+      + "This creates a NEW design and costs one generation. "
+      + "The original is left exactly as it is.",
+    );
+    if (!proceed) return;
+    try {
+      const result = await dpApi.regenerateGeneration(id);
+      // An uploaded logo lives under its own generation's input prefix, so the
+      // server copies it across. Say so when it could not be carried: a
+      // commercial wrap without its brand mark is a different design, and
+      // learning that from the finished sheet is learning it too late.
+      toast.success(result.logoCarried === false
+        ? "Running again — the original logo could not be carried, so re-upload it if this design needs it."
+        : "Running this brief again on the current code.");
+      await openDesignById(result.generationId);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "That design could not be run again.");
+    }
+  }, [openDesignById]);
   useEffect(() => {
     const selectionKey = `${deepLinkId || ""}:${deepLinkRevisionId || "current"}`;
     if (!deepLinkId || deepLinkFetchedRef.current === selectionKey || (selectedRender && !deepLinkRevisionId)) return;
@@ -4957,6 +5001,7 @@ export default function RevisionStudioIQ() {
                 is a single field over a single list. */}
             <DesignLibrary
               onOpen={openDesignById}
+              onRunAgain={runBriefAgain}
               query={searchQuery}
               pipeline={pipelineFilter}
               emptySlot={<SproketTipsSlideshow />}

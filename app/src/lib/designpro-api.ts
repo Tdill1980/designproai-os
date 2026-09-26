@@ -1288,9 +1288,44 @@ function parseRefusedViewsHeader(value: string | null): RefusedGenerationView[] 
   }
 }
 
+/**
+ * What running a past brief again answers with. `logoCarried` is stated rather
+ * than assumed: an uploaded logo lives under its OWN generation's input prefix,
+ * so the server copies it to the new one, and a two-month-old object that has
+ * since been tidied away cannot be carried. The caller is told, because a
+ * commercial wrap without its brand mark is a different design.
+ */
+export type RegenerateGenerationResult = {
+  requestId: string;
+  generationId: string;
+  sourceGenerationId: string;
+  state: string;
+  logoCarried: boolean;
+};
+
 export const dpApi = {
   /* Calls 1-7 */
   createGenerationRequest,
+  /**
+   * Re-run a past job's ORIGINAL brief under today's code, as a NEW design.
+   *
+   * The old generation is never touched — RULE 0.22 forbids silently replacing
+   * a version, and half of what this exists to re-run are failed jobs whose
+   * evidence has to survive. The server rebuilds the request under today's
+   * contract and enqueues it through the same validator and intake RPC a design
+   * created from the form uses, so this is a re-submit and not a second
+   * producer.
+   */
+  regenerateGeneration: (sourceGenerationId: string, generationId?: string) =>
+    request<RegenerateGenerationResult>(
+      `/generation/requests/${encodeURIComponent(sourceGenerationId)}/regenerate`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          generationId: (generationId || crypto.randomUUID()).toLowerCase(),
+        }),
+      },
+    ),
   createGenerationRevision: (input: GenerationRevisionInput) =>
     request<GenerationRevisionReceipt>("/generation/requests/revisions", {
       method: "POST",

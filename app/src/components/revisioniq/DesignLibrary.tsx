@@ -202,6 +202,7 @@ export function matchesQuery(entry: DesignLibraryEntry, needle: string): boolean
 
 export function DesignLibrary({
   onOpen,
+  onRunAgain,
   query: externalQuery,
   pipeline: externalPipeline,
   emptySlot,
@@ -209,6 +210,14 @@ export function DesignLibrary({
 }: {
   /** Open this design in the studio, in place. */
   onOpen?: (generationId: string) => void;
+  /**
+   * Hand this design's id UP to the studio, which runs its brief again.
+   *
+   * The card never performs it: spending a generation makes a surface a
+   * PRODUCER, and a browse grid may not be one (RULE 0.18, RULE 0.21). Absent,
+   * the control is not offered at all rather than rendering a dead button.
+   */
+  onRunAgain?: (generationId: string) => void;
   /**
    * The studio's own search box drives this when it is supplied, and the
    * library renders no second one. Two search fields over one list is the
@@ -615,6 +624,26 @@ export function DesignLibrary({
                   >
                     Open design
                   </Button>
+                  {/* ⛔ NAVIGATION ONLY -- THE LIBRARY PRODUCES NOTHING.
+                      "Run this brief again" spends a generation, which makes it
+                      a PRODUCER, and this surface is a browse grid: RULE 0.18
+                      and RULE 0.21 both say neither browse surface may produce,
+                      and `tests/design-library.test.mjs` convicts the affordance
+                      by name. It caught this exact button on its first draft.
+                      So the card hands the id UP to the studio, which already
+                      owns producing designs, and changes nothing itself. */}
+                  {onRunAgain ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-violet-500/40 bg-violet-500/5 text-[11px] font-semibold text-violet-200 hover:bg-violet-500/10"
+                      title="Run this brief again as a new design, on the current code"
+                      onClick={() => onRunAgain(entry.generationId)}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span className="ml-1">Run again</span>
+                    </Button>
+                  ) : null}
                   <Button
                     asChild
                     size="sm"
