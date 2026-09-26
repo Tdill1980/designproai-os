@@ -345,7 +345,7 @@ Canon EOS R5, 35mm f/8, tack-sharp. 16:9 landscape. Razor-sharp details, perfect
       }
     }
 
-    return await processGeminiResponse(geminiData, vehicle, viewType, email, colorData);
+    return await processGeminiResponse(geminiData, vehicle, viewType, email, colorData, vehicleYear, vehicleMake, vehicleModel);
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -394,6 +394,17 @@ async function processGeminiResponse(
   viewType: string,
   email: string,
   colorData: any,
+  // vehicleYear/vehicleMake/vehicleModel: threaded through from the request
+  // body (Deno.serve's own destructure) because the DB insert below reads
+  // them directly. They were referenced here without ever being passed in —
+  // a ReferenceError on every live render, thrown right after the image
+  // upload succeeded, so the customer saw "Edge Function returned a non-2xx
+  // status code" on a render that had already generated correctly. The image
+  // never reached the customer because the response never got returned.
+  // Live-confirmed 2026-09-18.
+  vehicleYear?: string,
+  vehicleMake?: string,
+  vehicleModel?: string,
 ): Promise<Response> {
   const sb = createServiceClient();
 
