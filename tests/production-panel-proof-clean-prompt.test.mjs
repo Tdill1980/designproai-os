@@ -20,6 +20,15 @@ const start = source.indexOf('    const customerAssets =');
 const end = source.indexOf('    const parts: Array<Record<string, unknown>> = [{ text: prompt }];', start);
 assert.ok(start > 0 && end > start, 'execute the real edge request assembly, not a duplicate');
 const section = source.slice(start, end);
+// Unit-test the real exclusion parser: compile it from the edge request
+// section (between its markers) rather than a copy.
+const parserStart = source.indexOf('// BEGIN excludedSurfacesFromBrief');
+const parserEnd = source.indexOf('// END excludedSurfacesFromBrief', parserStart);
+assert.ok(parserStart > start && parserEnd > parserStart && parserEnd < end, 'the parser lives inside the executed request section');
+const excludedSurfacesFromBrief = runInNewContext(execFileSync(resolveEsbuild(), ['--loader=ts', '--format=cjs'], {
+  input: `(() => { "use strict"; ${source.slice(parserStart, parserEnd)}\nreturn excludedSurfacesFromBrief; })()`,
+  encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+}), {}, {timeout: 2000});
 
 function compile(inject = '') {
   const code = section.replace('    const phase1Audit = {', `${inject}\n    const phase1Audit = {`);
@@ -221,4 +230,125 @@ test('RecreatePro still fails the actual audit when its graphic designer role is
     prompt: recreateEdits, customerAssets: [recreateReference], visionboard_intent: 'exact_reference',
     styleDescriptors: 'RecreatePro / exact. Keep the supplied design.' }, compiled, removeRole),
     /panel_proof_phase1_contract_missing:.*graphicDesignerPersonaInjected/);
+});
+
+
+// ---------------------------------------------------------------------------
+// Issue 4 (2026-09-25, job 9999ec65, WPW order #30292): the Phone field was
+// empty and the brief asked for "the business Phone number under the Logo";
+// the sheet came back with 555-0199. The brief said "full wrap except for the
+// hood and roof"; the hood and roof were wrapped. Synthetic brief with the same
+// operative phrases (no customer data in this public repo).
+const order30292Brief = 'Hello, I need a full wrap except for the hood and roof for my 2010 Ram 1500 crew cab. '
+  + 'Black and silver with a bold modern look. Please put the logo big on both doors, '
+  + 'and I would like the business Phone number under the Logo. List our services on the tailgate.';
+const order30292 = { separatedArtwork: undefined, anchorTurns: false, mode: 'commercial',
+  prompt: order30292Brief, customerPrompt: order30292Brief,
+  companyName: 'Mesa Line Hauling', phone: '', website: '', email: '',
+  vehicleYear: '2010', vehicleMake: 'Ram', vehicleModel: '1500', vehicleType: 'truck', panelRows: livePanels };
+const CONTACT_LOCK = /SUPPLIED CONTACT ONLY:/;
+const COVERAGE_LOCK = /WRAP COVERAGE \(the customer's brief\):/;
+
+test('issue 4 parser: exclusion wording names only the excluded surfaces', () => {
+  const cases = [
+    ['full wrap except for the hood and roof', ['hood', 'roof']],
+    ['Full wrap, except the roof.', ['roof']],
+    ['everything but the hood', ['hood']],
+    ['Excluding the hood, roof and tailgate', ['hood', 'roof', 'rear']],
+    ["Please don't wrap the hood", ['hood']],
+    ['do not wrap the roof or the bonnet', ['hood', 'roof']],
+    ['no wrap on the roof', ['roof']],
+    ['The hood stays factory paint.', ['hood']],
+    ['roof will remain unwrapped', ['roof']],
+    ['The roof is not wrapped', ['roof']],
+    ['leave the hood bare', ['hood']],
+    ['Leave the roof alone please', ['roof']],
+    ['full wrap without the roof, please', ['roof']],
+    ['Wrap it all apart from the front bumper', ['front']],
+    ["Don’t wrap the hood", ['hood']],
+  ];
+  for (const [text, expected] of cases) assert.deepEqual([...excludedSurfacesFromBrief(text)], expected, text);
+});
+
+test('issue 4 parser: ordinary mentions of a surface exclude nothing', () => {
+  for (const text of [
+    'Put the logo on the hood', 'Big flames across the hood and roof', 'hood scoop in matte black',
+    'We have a roof rack', 'Leave room on the rear for a QR code', 'No neon colors.',
+    'List our services on the tailgate.', 'Full wrap, all six sides', 'front and center logo',
+    'Driver side is the hero; passenger side mirrors it', 'except make the text bigger',
+    order30292Brief.replace('except for the hood and roof ', ''), '',
+  ]) assert.deepEqual([...excludedSurfacesFromBrief(text)], [], text);
+  assert.deepEqual([...excludedSurfacesFromBrief('except the driver side and the passenger side')], [],
+    'a TriZone design always keeps both flanks');
+});
+
+test('issue 4: order #30292 locks out invented contact and wraps only the included surfaces', async () => {
+  const result = await assemble(order30292);
+  const coverage = result.prompt.split('\n').find(line => COVERAGE_LOCK.test(line));
+  assert.ok(coverage, 'the excluded surfaces reach the provider-bound prompt');
+  assert.match(coverage, /Hood and Roof stay unwrapped, in the vehicle's own factory paint/);
+  assert.match(coverage, /no artwork, pattern, photograph, lettering, logo or contact detail/);
+  assert.match(coverage, /Driver, Passenger, Front, Rear carry the whole design/);
+  const derivation = result.prompt.split('\n').find(line => line.startsWith('SURFACE DERIVATION:'));
+  assert.equal(derivation.includes('Roof, Hood'), false, 'hood and roof are not derived from the master');
+  assert.match(derivation, /Derive Driver, Passenger, Front, Rear from that one master concept; Hood and Roof are unwrapped factory paint/);
+  const contact = result.prompt.split('\n').find(line => CONTACT_LOCK.test(line));
+  assert.ok(contact, 'the missing phone is locked by code');
+  assert.match(contact, /no phone number, no email address, no web address/);
+  assert.match(contact, /even where the brief asks for one/);
+  assert.doesNotMatch(result.prompt, /555/, 'no placeholder number anywhere in the request');
+  // The six production rectangles are unchanged: topology, cut and QC still see six cells.
+  for (const row of livePanels) assert.ok(result.prompt.includes(row), row);
+  for (const [key, value] of Object.entries(result.phase1Audit)) {
+    if (key !== 'contract') assert.equal(value, true, key);
+  }
+  assert.equal(result.phase1Audit.suppliedContactLocked, true);
+  assert.equal(result.phase1Audit.excludedSurfacesLocked, true);
+});
+
+test('issue 4: a supplied phone is never locked out and is carried verbatim', async () => {
+  const result = await assemble({ ...order30292, phone: '(602) 555-0142' });
+  const contact = result.prompt.split('\n').find(line => CONTACT_LOCK.test(line));
+  assert.match(contact, /the customer supplied no email address, no web address\. /);
+  assert.equal(/supplied no phone number/.test(contact), false);
+  assert.ok(result.prompt.includes('(602) 555-0142'));
+});
+
+test('issue 4: a phone, address or domain typed in the brief counts as supplied', async () => {
+  const brief = 'Logo big, then call 480-555-0110, email ops@mesaline.example and visit mesaline.com';
+  const result = await assemble({ ...order30292, prompt: brief, customerPrompt: brief });
+  assert.doesNotMatch(result.prompt, CONTACT_LOCK);
+  assert.doesNotMatch(result.prompt, COVERAGE_LOCK);
+});
+
+test('issue 4: full contact and no exclusion leave the TriZone prompt byte-identical', async () => {
+  const baseline = compile().replace(/\.\.\.\[coverageLock, contactLock\]\.filter\(Boolean\)/, '');
+  const full = { separatedArtwork: undefined, anchorTurns: false, email: 'hello@junipercycle.example', panelRows: livePanels };
+  const withLocks = await assemble(full);
+  assert.doesNotMatch(withLocks.prompt, CONTACT_LOCK);
+  assert.doesNotMatch(withLocks.prompt, COVERAGE_LOCK);
+  assert.match(withLocks.prompt, /SURFACE DERIVATION: Derive Driver, Passenger, Roof, Hood, Front, and Rear/);
+  assert.equal(withLocks.prompt, (await assemble(full, baseline)).prompt);
+});
+
+test('issue 4: separated artwork and RecreatePro are untouched by the locks', async () => {
+  const separated = await assemble({ ...order30292, separatedArtwork: true });
+  assert.doesNotMatch(separated.prompt, CONTACT_LOCK);
+  assert.doesNotMatch(separated.prompt, COVERAGE_LOCK);
+  const recreate = await assemble({ ...order30292, visionboard_intent: 'exact_reference',
+    customerAssets: [recreateReference], styleDescriptors: 'RecreatePro / exact. Keep the supplied design.' });
+  assert.doesNotMatch(recreate.prompt, CONTACT_LOCK);
+  assert.doesNotMatch(recreate.prompt, COVERAGE_LOCK);
+});
+
+test('issue 4: the audit refuses a request whose locks were dropped', async () => {
+  await assert.rejects(assemble(order30292, compile('prompt = prompt.replace(contactLock, "");')),
+    /panel_proof_phase1_contract_missing:.*suppliedContactLocked/);
+  await assert.rejects(assemble(order30292, compile('prompt = prompt.replace(coverageLock, "");')),
+    /panel_proof_phase1_contract_missing:.*excludedSurfacesLocked/);
+});
+
+test('issue 4: the receipt records what code locked, without colliding with brand fields', () => {
+  assert.ok(source.includes('{ contract: INTAKE_CONTRACT, ...intake, briefSource, flashSkipped, contactSupplied, excludedSurfaces }'));
+  assert.ok(source.includes('{ briefSource, flashSkipped: false, contactSupplied, excludedSurfaces }'));
 });

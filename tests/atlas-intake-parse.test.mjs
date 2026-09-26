@@ -166,7 +166,7 @@ test("the edge runs intake as node 0, deterministic-first and failing soft", () 
   assert.match(fn, /responseSchema: INTAKE_SCHEMA/, "it must be schema-bound, not prose");
   assert.match(fn, /intakeRead: `unavailable:/,
     "a reader that is down must not cost a design — it fails soft and says so");
-  assert.match(fn, /intake: intake\n\s*\? \{ contract: INTAKE_CONTRACT, \.\.\.intake, briefSource, flashSkipped \}\n\s*: \{ briefSource, flashSkipped: false \}/,
+  assert.match(fn, /intake: intake\n\s*\? \{ contract: INTAKE_CONTRACT, \.\.\.intake, briefSource, flashSkipped, contactSupplied, excludedSurfaces \}\n\s*: \{ briefSource, flashSkipped: false, contactSupplied, excludedSurfaces \}/,
     "what the raw message became must be on the receipt, with briefSource and flashSkipped; a wrong parse is otherwise invisible");
   // The explicit field wins: intake is a convenience for free text, not an
   // override of a caller that stated a value.

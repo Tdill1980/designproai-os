@@ -606,6 +606,91 @@ serve(async (req) => {
     ].filter(Boolean).join("\n");
     const vehicleType = field("vehicleType") || undefined;
     /**
+     * NOTHING THE CUSTOMER DID NOT SUPPLY, AND NOTHING THEY EXCLUDED. (2026-09-25)
+     *
+     * Owner UI test, job 9999ec65 (WPW order #30292, 2010 Ram 1500): the Phone
+     * field was empty and the brief said "I would like the business Phone
+     * number under the Logo", and the sheet came back reading 555-0199. The
+     * same brief said "a full wrap except for the hood and roof", and the hood
+     * and roof were designed and wrapped. Neither string is in any code; the
+     * model drew a placeholder because the brief asked for a line nobody
+     * supplied, and it wrapped every panel because every panel was named.
+     *
+     * Both locks are decided here by code, from the customer's own fields and
+     * words, and ride on the standard TriZone route only. Separated artwork
+     * already draws no lettering, and RecreatePro reproduces the supplied
+     * artwork, contact line and coverage included.
+     */
+    // BEGIN excludedSurfacesFromBrief
+    /**
+     * WHICH PANELS THE CUSTOMER SAID NOT TO WRAP, read by code from their words.
+     *
+     * Deliberately narrow: a surface counts as excluded only when an exclusion
+     * verb governs it ("except (for) the hood and roof", "excluding the roof",
+     * "don't wrap the hood", "no wrap on the roof", "hood stays unwrapped",
+     * "roof not wrapped", "leave the hood bare/unwrapped/as is"). Driver and
+     * passenger sides are never excluded here -- a TriZone design always has its
+     * two flanks. "Put the logo on the hood", "hood scoop", "roof rack" and
+     * "leave room on the rear" exclude nothing.
+     */
+    function excludedSurfacesFromBrief(text: string): string[] {
+      const words = String(text || "").toLowerCase().replace(/[’']/g, "'");
+      const SURFACES: Array<[string, string]> = [
+        ["hood", "hood|bonnet"],
+        ["roof", "roof"],
+        ["front", "front(?: end| bumper)?"],
+        ["rear", "rear(?: doors?| end)?|back doors?|tailgate"],
+      ];
+      const any = SURFACES.map(([, pattern]) => `(?:${pattern})`).join("|");
+      const list = `(?:the\\s+)?(?:${any})(?:\\s*(?:,|and|or|&|\\+)\\s*(?:the\\s+)?(?:${any}))*`;
+      const unwrapped = "(?:un-?wrapped|not wrapped|bare|uncovered|as is|as-is|alone|stock|factory(?: paint)?|original(?: paint)?|painted)";
+      const phrases = [
+        new RegExp(`\\b(?:except|excluding|exclude|other than|but not|apart from|minus)\\s+(?:for\\s+)?(${list})`, "g"),
+        new RegExp(`\\b(?:everything|all)\\s+but\\s+(${list})`, "g"),
+        new RegExp(`\\b(?:do not|don't|dont|not|never|no need to)\\s+wrap\\s+(${list})`, "g"),
+        new RegExp(`\\bno\\s+(?:wrap|vinyl|graphics?)\\s+on\\s+(${list})`, "g"),
+        new RegExp(`\\bwithout\\s+(${list})\\b(?=\\s*(?:[.,;!)]|$|\\s+(?:wrapped|and|or|i\\b|we\\b|please|since|because)))`, "g"),
+        new RegExp(`\\b(?:leave|leaving|keep|keeping)\\s+(${list})\\s+${unwrapped}`, "g"),
+        new RegExp(`(${list})\\s+(?:is|are|stays?|remains?|will stay|will remain|should stay|should remain|to stay|to remain|left|to be left|should be left|will be left)\\s+${unwrapped}`, "g"),
+        new RegExp(`(${list})\\s+(?:is not|isn't|are not|aren't|will not be|won't be|should not be|shouldn't be|not to be|not)\\s+wrapped`, "g"),
+      ];
+      const excluded = new Set<string>();
+      for (const phrase of phrases) {
+        for (const match of words.matchAll(phrase)) {
+          for (const [key, pattern] of SURFACES) {
+            if (new RegExp(`\\b(?:${pattern})\\b`).test(match[1] || "")) excluded.add(key);
+          }
+        }
+      }
+      return ["hood", "roof", "front", "rear"].filter((key) => excluded.has(key));
+    }
+    // END excludedSurfacesFromBrief
+    const contentLockRoute = body.separatedArtwork !== true && body.visionboard_intent !== "exact_reference";
+    const customerWords = [rawBrief, customerPrompt].filter(Boolean).join("\n");
+    // A number, address or domain the customer TYPED in the brief is supplied
+    // copy, exactly like a form field: the deterministic intake pass reads it.
+    const contactSupplied = {
+      phone: Boolean(field("phone")) || /(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/.test(customerWords),
+      website: Boolean(field("website")) || /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|net|org|co|us|biz|info|io)\b/i.test(customerWords),
+      email: Boolean(field("email")) || /\b[^\s@]+@[^\s@]+\.[a-z]{2,}\b/i.test(customerWords),
+    };
+    const missingContact = [
+      contactSupplied.phone ? "" : "phone number",
+      contactSupplied.email ? "" : "email address",
+      contactSupplied.website ? "" : "web address",
+    ].filter(Boolean);
+    const contactLock = contentLockRoute && missingContact.length
+      ? `SUPPLIED CONTACT ONLY: the customer supplied no ${missingContact.join(", no ")}. The wrap carries none of them on any panel or band — no invented or placeholder contact detail and no digits styled as a phone number — even where the brief asks for one. Where the brief asks for that line, the company name and logo take the space.`
+      : "";
+    const excludedSurfaces = contentLockRoute ? excludedSurfacesFromBrief(customerWords) : [];
+    const surfaceName = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
+    const wrappedSurfaces = ["driver", "passenger", "roof", "hood", "front", "rear"]
+      .filter((key) => !excludedSurfaces.includes(key)).map(surfaceName);
+    const excludedNames = excludedSurfaces.map(surfaceName);
+    const coverageLock = excludedSurfaces.length
+      ? `WRAP COVERAGE (the customer's brief): this is a partial wrap. ${excludedNames.join(" and ")} ${excludedNames.length > 1 ? "stay" : "stays"} unwrapped, in the vehicle's own factory paint. In every band, draw ${excludedNames.length > 1 ? "each of those panels" : "that panel"} as one flat, even, solid paint-colour field with no artwork, pattern, photograph, lettering, logo or contact detail. ${wrappedSurfaces.join(", ")} carry the whole design.`
+      : "";
+    /**
      * BOTH PERSONAS, SELECTED BY THE CUSTOMER'S MODE.
      *
      * Owner, 2026-09-22: "Make sure it also has the persona based design
@@ -671,7 +756,11 @@ serve(async (req) => {
     // Exact-reference/RecreatePro requests retain their reproduction authority.
     const sheetDesignInstructions = body.separatedArtwork !== true
       && body.visionboard_intent !== "exact_reference"
-      ? flatProductionInstructions.slice(0, -1) : [];
+      ? flatProductionInstructions.slice(0, -1).map((instruction) => excludedSurfaces.length
+          && instruction.startsWith("SURFACE DERIVATION:")
+        ? `SURFACE DERIVATION: Derive ${wrappedSurfaces.join(", ")} from that one master concept; ${excludedNames.join(" and ")} ${excludedNames.length > 1 ? "are" : "is"} unwrapped factory paint (see WRAP COVERAGE). Driver and Passenger are corresponding executions of the same campaign, never independent designs.`
+        : instruction)
+      : [];
     const proofCreativeHead = [creativeHead, ...sheetDesignInstructions].join("\n\n");
     // The live caller requests the complete three-zone sheet, not the legacy
     // separated-background canvas. Keep that request paired with the template
@@ -679,6 +768,9 @@ serve(async (req) => {
     const productionProofInstructions = [
       "ZONE 2 UNDERLAY: Show the same continuous background artwork beneath the Zone 1 lettering and logos. Complete the underlying photography, illustration, color and texture through every covered area. Each panel is fully opaque, edge-to-edge artwork, including beneath every removed mark; transparency, checkerboards and logo-shaped blank patches are not background artwork.",
       "PRODUCTION GEOMETRY: Each supplied outer rectangle includes 5-inch bleed on all four edges. Carry the background to every outer edge; keep all complete logos, text and focal subjects inside the trim and safe area.",
+      // Code-owned locks, present only when a contact kind is missing or a
+      // surface is excluded (see `contactLock` / `coverageLock` above).
+      ...[coverageLock, contactLock].filter(Boolean),
     ];
     let prompt = body.separatedArtwork === true
       ? [creativeHead, ...flatProductionInstructions].join("\n\n")
@@ -717,6 +809,9 @@ serve(async (req) => {
         : prompt.includes(SHEET_LAYOUT)
           && productionProofInstructions.every(instruction => prompt.includes(instruction)),
       masterCampaignInjected: sheetDesignInstructions.every(instruction => prompt.includes(instruction)),
+      suppliedContactLocked: !contactLock || prompt.includes(contactLock),
+      excludedSurfacesLocked: !coverageLock || (body.separatedArtwork !== true && prompt.includes(coverageLock)
+        && sheetDesignInstructions.some(instruction => instruction.startsWith("SURFACE DERIVATION:") && excludedNames.every(name => instruction.includes(`${name}`)) && instruction.includes("unwrapped factory paint"))),
     };
     const missingPhase1 = Object.entries(phase1Audit)
       .filter(([key, value]) => key !== "contract" && value !== true)
@@ -1274,9 +1369,11 @@ serve(async (req) => {
       // sheet just quietly carries the wrong company or the wrong truck.
       // `briefSource` is the fact that matters most: "raw" means A.C.E. read
       // the customer's own sentence; "intake" means no raw text existed.
+      // What code locked: the contact kinds actually supplied and the surfaces
+      // the brief excluded. The runtime persists this receipt on the node.
       intake: intake
-        ? { contract: INTAKE_CONTRACT, ...intake, briefSource, flashSkipped }
-        : { briefSource, flashSkipped: false },
+        ? { contract: INTAKE_CONTRACT, ...intake, briefSource, flashSkipped, contactSupplied, excludedSurfaces }
+        : { briefSource, flashSkipped: false, contactSupplied, excludedSurfaces },
       // THE EDIT, BOUND TO ITS PARENT. Sequence, parent revision id, context
       // hash and the parent proof's content hash, so the runtime's receipt can
       // prove V2 was drawn against V1's approved sheet and not from scratch.
