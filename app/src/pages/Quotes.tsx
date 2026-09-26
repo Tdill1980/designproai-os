@@ -30,7 +30,11 @@ const Quotes = () => {
         body: { days_back: 90, per_page: 100 },
       });
       if (error) throw error;
-      const msg = `${data.orders_fetched} orders synced, ${data.quotes_converted} quotes converted`;
+      // The sync reports orders only; quote conversion is not part of it, so
+      // the old "undefined quotes converted" text is gone.
+      const msg = data?.linked === false
+        ? "No WePrintWraps account is linked to this login yet."
+        : `${data?.orders_fetched ?? 0} orders synced`;
       setSyncResult(msg);
       toast({ title: "WPW Orders Synced", description: msg });
       queryClient.invalidateQueries({ queryKey: ["admin-saved-quotes"] });

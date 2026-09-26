@@ -412,6 +412,20 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // MISSING WOO SECRETS ARE A CONFIGURATION STATE, NOT A CRASH (diagnosed
+    // 2026-09-25: all three 500s in function_logs read "WooCommerce API
+    // credentials are not configured"). 503 + a stable code lets Login/Signup
+    // carry on (they already treat a link failure as non-fatal) and lets
+    // monitoring separate "secrets unset" from a real fault. The secrets
+    // themselves (WOOCOMMERCE_CONSUMER_KEY / WOOCOMMERCE_CONSUMER_SECRET) are an
+    // owner configuration step; this code never reads or logs their values.
+    if (/WooCommerce API credentials are not configured/.test(msg)) {
+      console.error("[wpw-oauth-link] woo_not_configured");
+      return new Response(JSON.stringify({ ok: false, code: "woo_not_configured", error: "WePrintWraps account linking is not configured on this project." }), {
+        status: 503,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     console.error("[wpw-oauth-link] error", msg);
     return new Response(JSON.stringify({ ok: false, error: msg }), {
       status: 500,
