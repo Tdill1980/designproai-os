@@ -643,7 +643,8 @@ export default function ShopFlow() {
     try {
       const { data: syncData, error: syncErr } = await supabase.functions.invoke("wpw-sync-orders", { body: { days_back: 90, per_page: 100 } });
       if (syncErr) throw syncErr;
-      toast.success(`Synced ${syncData?.orders_fetched ?? 0} orders`);
+      if (syncData?.linked === false) toast.message("No WePrintWraps account is linked to this login yet.");
+      else toast.success(`Synced ${syncData?.orders_fetched ?? 0} orders`);
       await refetch();
     } catch (e: any) {
       toast.error(e?.message || "Sync failed");

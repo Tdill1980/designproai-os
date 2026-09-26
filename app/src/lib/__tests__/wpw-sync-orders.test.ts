@@ -102,3 +102,72 @@ describe('WPW order sync', () => {
     expect(upserts.wpw_orders).toHaveLength(50);
   });
 });
+
+// ── 2026-09-25: the 401/500 diagnosis ────────────────────────────────────
+// function_edge_logs: every wpw-sync-orders 401 was a BROWSER POST (OPTIONS
+// preflight first) from ShopFlow/Quotes carrying a user JWT and no secret, and
+// every wpw-oauth-link 500 logged "WooCommerce API credentials are not
+// configured". These cases fail against the pre-fix handler.
+import { isWooNotConfigured, windowFromBody } from '../../../../supabase/functions/wpw-sync-orders/handler';
+
+function userFixture({ link = 42 as number | null, pages = [[order(7001), order(7002, { customer_id: 99 })]] as any[][], fetchImpl = null as any } = {}) {
+  const upserts: Record<string, any[]> = { wpw_orders: [], wpw_order_items: [] };
+  const linkQuery: any = { select: () => linkQuery, eq: () => linkQuery, not: () => linkQuery, maybeSingle: async () => ({ data: link ? { woo_customer_id: link } : null, error: null }) };
+  const sb = { from: vi.fn((table: string) => table === 'user_subscriptions' ? linkQuery
+    : ({ upsert: vi.fn(async (rows: any[]) => { upserts[table].push(...rows); return { error: null }; }) })) };
+  let call = 0;
+  const paths: string[] = [];
+  const fetchOrders = vi.fn(fetchImpl || (async (path: string) => { paths.push(path); return pages[call++] ?? []; }));
+  const handler = createSyncOrdersHandler({
+    createClient: () => sb, supabaseUrl: 'u', serviceKey: 'k', syncSecret: () => SECRET, fetchOrders: fetchOrders as any,
+    authenticate: async (req) => (req.headers.get('authorization') === 'Bearer good-user-jwt' ? { id: 'user-1' } : null),
+  });
+  const invoke = (body: any = {}, headers: Record<string, string> = { authorization: 'Bearer good-user-jwt' }) => handler(new Request('https://own/x', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+  }));
+  return { invoke, upserts, fetchOrders, paths };
+}
+
+describe('WPW order sync: signed-in customer scope (fixes the browser 401)', () => {
+  it('syncs ONLY the linked customer for a signed-in browser caller with no secret', async () => {
+    const f = userFixture();
+    const res = await f.invoke({ days_back: 90, per_page: 100 });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ ok: true, scope: 'customer', linked: true, orders_upserted: 1 });
+    // Woo is asked for that customer, and a stray row for another customer is dropped anyway.
+    expect(f.paths[0]).toContain('customer=42');
+    expect(f.upserts.wpw_orders.map((r) => r.id)).toEqual([7001]);
+    // production wpw_orders has no user_id column, so none is written.
+    expect(f.upserts.wpw_orders[0]).not.toHaveProperty('user_id');
+    expect(f.upserts.wpw_orders[0].woo_customer_id).toBe(42);
+  });
+  it('answers linked:false (not an error) when the account has no Woo link', async () => {
+    const f = userFixture({ link: null });
+    const body = await (await f.invoke({ days_back: 90 })).json();
+    expect(body).toMatchObject({ ok: true, linked: false });
+    expect(f.fetchOrders).not.toHaveBeenCalled();
+  });
+  it('still refuses an unauthenticated caller and a wrong secret', async () => {
+    const f = userFixture();
+    expect((await f.invoke({}, {})).status).toBe(401);
+    expect((await f.invoke({}, { authorization: 'Bearer forged' })).status).toBe(401);
+    expect((await f.invoke({}, { authorization: 'Bearer good-user-jwt', 'x-wpw-sync-secret': 'wrong' })).status).toBe(401);
+    expect(f.fetchOrders).not.toHaveBeenCalled();
+  });
+  it('turns days_back into an after window and refuses out-of-range values', () => {
+    const now = Date.parse('2026-09-25T00:00:00Z');
+    expect(windowFromBody({ days_back: 10 }, now).after).toBe('2026-09-15T00:00:00.000Z');
+    expect(windowFromBody({ after: '2026-01-01T00:00:00Z', days_back: 10 }, now).after).toBe('2026-01-01T00:00:00.000Z');
+    expect(() => windowFromBody({ days_back: 0 })).toThrow(/days_back/);
+    expect(() => windowFromBody({ days_back: 9999 })).toThrow(/days_back/);
+  });
+  it('reports missing Woo secrets as 503 woo_not_configured, not a crash', async () => {
+    const f = userFixture({ fetchImpl: async () => { throw new Error('WooCommerce API credentials are not configured'); } });
+    const res = await f.invoke({ days_back: 30 });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('woo_not_configured');
+    expect(isWooNotConfigured(new Error('WooCommerce API credentials are not configured'))).toBe(true);
+    expect(isWooNotConfigured(new Error('deadlock'))).toBe(false);
+  });
+});
