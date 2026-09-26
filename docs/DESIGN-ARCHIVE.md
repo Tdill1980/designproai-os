@@ -17,7 +17,7 @@ prompts through views over the existing tables.
 | `designpro_design_files` (view) | Every file of a design: per-view renders, revision master/projection/manifest/guide, pipeline artifacts (panels, proofs, zips). |
 | `designpro_design_prompts` (view) | Every prompt: original brief, each revision instruction, each per-view regeneration note. |
 | `designpro_design_search(...)` | Library search: free text, order #, make, model, vehicle year, created year, date range, status; keyset pagination. SECURITY INVOKER, so RLS decides what each caller sees. |
-| `designpro_design_history(design_id)` | Versions + prompts + files + orders in order (`designpro.design-history.v1`). Owner or QC staff only (existing `caller_may_read_generation`). This is what Revision Studio and PanelPro read. |
+| `designpro_design_history(design_id)` | Versions + prompts + files + orders in order (`designpro.design-history.v1`). Owner or QC staff only (existing `caller_may_read_generation`). This is what Revision Studio and PanelPro read. Customers get `audience: customer`: their proofs and panels, with no A.T.L.A.S. master/projection/manifest/guide, content hashes or storage paths (the master is never shown to clients). Staff get everything. |
 | `designpro_bind_design_order(gen, order, source, woo_id)` | Customers may record their own `intake` order number; `woocommerce`/`stripe`/`manual` bindings are staff/service facts. |
 | `designpro_archive_backfill(limit, dry_run)` | Service-role only. Indexes existing generations; reports free-text order candidates without binding them. |
 

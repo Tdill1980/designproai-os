@@ -186,9 +186,19 @@ test('the history RPC: versions, every prompt, files and orders, in order; owner
     ['view-regeneration', 'Show the tailgate logo', 'accepted'],
     ['revision-instruction', 'Make the phone number larger', 'failed'],
   ], 'every prompt, including a failed revision, in the order it was entered');
-  assert.deepEqual(h.files.map((f) => [f.source, f.kind, f.surface]), [['revision', 'master', null], ['view', 'view', 'side'], ['artifact', 'panel', 'hood']]);
+  // The customer's own record: proofs and panels, never the A.T.L.A.S. master, its hash or a storage path.
+  assert.equal(h.audience, 'customer');
+  assert.deepEqual(h.files.map((f) => [f.source, f.kind, f.surface]), [['view', 'view', 'side'], ['artifact', 'panel', 'hood']]);
   assert.equal(h.files.find((f) => f.kind === 'panel').widthPx, 1262);
-  assert.ok(await history(STAFF), 'PanelPro QC staff read the same history');
+  assert.ok(h.files.every((f) => f.storagePath === null && f.contentHash === null));
+  assert.equal(h.versions[0].masterContentHash, null);
+  // PanelPro QC staff read the same history, plus the production authority.
+  const s = await history(STAFF);
+  assert.equal(s.audience, 'staff');
+  assert.deepEqual(s.prompts, h.prompts, 'same prompts on both surfaces');
+  assert.deepEqual(s.files.map((f) => [f.source, f.kind, f.surface]), [['revision', 'master', null], ['view', 'view', 'side'], ['artifact', 'panel', 'hood']]);
+  assert.equal(s.versions[0].masterContentHash, 'a'.repeat(64));
+  assert.equal(s.files[0].storagePath, 'm/1.png');
   assert.equal(await history(OWNER_B), null, 'another customer gets nothing');
   assert.ok(req2);
   await pg.close();

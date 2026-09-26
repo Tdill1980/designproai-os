@@ -359,13 +359,19 @@ GRANT EXECUTE ON FUNCTION public.designpro_design_search(text,text,text,text,int
 -- (designpro_private.caller_may_read_generation: owner, QC staff, service).
 CREATE OR REPLACE FUNCTION public.designpro_design_history(p_design_id text)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
-DECLARE d public.designpro_designs%ROWTYPE;
+DECLARE d public.designpro_designs%ROWTYPE; v_staff boolean;
 BEGIN
   SELECT * INTO d FROM public.designpro_designs WHERE design_id = upper(btrim(p_design_id));
   IF NOT FOUND OR (SELECT auth.uid()) IS NULL AND coalesce(auth.jwt()->>'role','') <> 'service_role' THEN RETURN NULL; END IF;
   IF NOT designpro_private.caller_may_read_generation(d.generation_id) THEN RETURN NULL; END IF;
+  -- THE A.T.L.A.S. MASTER IS NEVER SHOWN TO CLIENTS (owner, 2026-08-26;
+  -- app/src/components/revisioniq/DesignVersionRecordCard.tsx). A customer's
+  -- history lists their 3D proofs and panels; the master/projection/manifest/
+  -- guide files, content hashes and storage paths are staff-only.
+  v_staff := coalesce(auth.jwt()->>'role','') = 'service_role' OR designpro_private.caller_is_design_staff();
   RETURN jsonb_build_object(
     'contract', 'designpro.design-history.v1',
+    'audience', CASE WHEN v_staff THEN 'staff' ELSE 'customer' END,
     'designId', d.design_id, 'generationId', d.generation_id, 'designName', d.design_name,
     'companyName', d.company_name, 'status', d.status, 'createdAt', d.created_at,
     'vehicle', jsonb_build_object('year', d.vehicle_year, 'make', d.vehicle_make, 'model', d.vehicle_model, 'type', d.vehicle_type),
@@ -377,18 +383,19 @@ BEGIN
         'requestId', a.request_id, 'parentRevisionId', a.parent_revision_id, 'createdAt', a.created_at,
         'productionEligible', a.production_eligible, 'effectivePpi', a.effective_ppi,
         'widthPx', a.width_px, 'heightPx', a.height_px, 'promptVersion', a.prompt_version,
-        'masterContentHash', a.master_content_hash) ORDER BY a.revision_sequence, a.created_at)
+        'masterContentHash', CASE WHEN v_staff THEN a.master_content_hash END) ORDER BY a.revision_sequence, a.created_at)
       FROM public.designpro_flat_atlas_revisions a WHERE a.generation_id = d.generation_id AND a.owner_id = d.owner_id), '[]'::jsonb),
     'prompts', coalesce((SELECT jsonb_agg(jsonb_build_object('kind', p.prompt_kind, 'version', p.revision_sequence,
         'surface', p.surface, 'prompt', p.prompt, 'state', p.state, 'requestId', p.request_id, 'createdAt', p.created_at)
         ORDER BY p.created_at, p.prompt_kind)
       FROM public.designpro_design_prompts p WHERE p.design_id = d.design_id), '[]'::jsonb),
     'files', coalesce((SELECT jsonb_agg(jsonb_build_object('source', f.source, 'kind', f.kind, 'surface', f.surface,
-        'version', f.revision_sequence, 'storagePath', f.storage_path, 'contentHash', f.content_hash,
+        'version', f.revision_sequence,
+        'storagePath', CASE WHEN v_staff THEN f.storage_path END, 'contentHash', CASE WHEN v_staff THEN f.content_hash END,
         'byteSize', f.byte_size, 'contentType', f.content_type, 'widthPx', f.width_px, 'heightPx', f.height_px,
         'createdAt', f.created_at, 'superseded', f.superseded_at IS NOT NULL)
         ORDER BY f.created_at, f.source, f.kind, f.surface)
-      FROM public.designpro_design_files f WHERE f.design_id = d.design_id), '[]'::jsonb)
+      FROM public.designpro_design_files f WHERE f.design_id = d.design_id AND (v_staff OR f.source <> 'revision')), '[]'::jsonb)
   );
 END
 $fn$;
