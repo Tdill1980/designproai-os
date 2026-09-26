@@ -112,8 +112,15 @@ async function inkFraction(sharp, bytes, rect) {
  *                          as drawn and only reported.
  *
  * Nothing here throws into the cut: a guard failure keeps the original bytes
- * and records the reason. `DESIGNPRO_RECT_GUARD_POLICY=report` measures only;
- * `=off` restores the exact previous behaviour (no measurement at all).
+ * and records the reason.
+ *
+ * POLICY (owner, 2026-09-25: "hood fix in report-only mode"). The default is
+ * REPORT: with `DESIGNPRO_RECT_GUARD_POLICY` unset (or empty, or any value not
+ * listed below) both passes MEASURE and record `rectGuard` on the panel but
+ * never modify a pixel, so production ships measure-only without a server env
+ * change. `=repair` explicitly enables the pixel repairs described above;
+ * `=report` is the default spelled out; `=off` restores the exact previous
+ * behaviour (no measurement at all, no `rectGuard` field).
  */
 const RECT_GUARD_CONTRACT = "designpro.rect-panel-guard.v1";
 const RECT_GUARD = Object.freeze({
@@ -130,9 +137,13 @@ const RECT_GUARD = Object.freeze({
 });
 const RECT_ENFORCED_SURFACES = Object.freeze(["hood"]);
 
+const RECT_GUARD_DEFAULT_POLICY = "report";
+
 function rectGuardPolicy(env = process.env) {
   const value = String(env?.DESIGNPRO_RECT_GUARD_POLICY || "").trim().toLowerCase();
-  return value === "off" || value === "report" ? value : "repair";
+  // Only an explicit, exact opt-in repairs pixels; anything else fails safe to
+  // measure-only. No policy value may throw into the cut.
+  return value === "off" || value === "report" || value === "repair" ? value : RECT_GUARD_DEFAULT_POLICY;
 }
 
 function isPage(data, i, o) {
@@ -384,7 +395,7 @@ async function cutProofPanels({
 
 module.exports = {
   PANELS_CONTRACT, QUADRANTS, cutProofPanels, scaleCell,
-  RECT_GUARD_CONTRACT, RECT_GUARD, RECT_ENFORCED_SURFACES, rectGuardPolicy,
+  RECT_GUARD_CONTRACT, RECT_GUARD, RECT_ENFORCED_SURFACES, RECT_GUARD_DEFAULT_POLICY, rectGuardPolicy,
   measureEdgeStrips, measureSurround, largestInnerRect,
   trimEdgeStrips, enforceRectangularPanel, guardPanelRectangle,
 };

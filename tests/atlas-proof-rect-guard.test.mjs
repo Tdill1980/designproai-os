@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 
 const require_ = createRequire(import.meta.url);
 const {
-  cutProofPanels, guardPanelRectangle, rectGuardPolicy, RECT_GUARD_CONTRACT, RECT_ENFORCED_SURFACES,
+  cutProofPanels, guardPanelRectangle, rectGuardPolicy, RECT_GUARD_CONTRACT, RECT_ENFORCED_SURFACES, RECT_GUARD_DEFAULT_POLICY,
 } = require_("../runtime/atlas-proof-panels.cjs");
 const { parsePanelRows, containerLayout } = require_("../runtime/atlas-proof-container-template.cjs");
 const sharp = require_("../runtime/node_modules/sharp");
@@ -38,12 +38,41 @@ async function whiteColumnShare(bytes, x) {
   return n / info.height;
 }
 
-test("only the hood is squared up by default; the policy defaults to repair and has an off switch", () => {
+test("only the hood is squared up; the policy DEFAULTS TO REPORT, repair is an explicit opt-in, off is a kill switch", () => {
   assert.deepEqual([...RECT_ENFORCED_SURFACES], ["hood"]);
-  assert.equal(rectGuardPolicy({}), "repair");
+  assert.equal(RECT_GUARD_DEFAULT_POLICY, "report");
+  assert.equal(rectGuardPolicy({}), "report", "unset ships measure-only");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "" }), "report");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "   " }), "report");
+  assert.equal(rectGuardPolicy(undefined), rectGuardPolicy(process.env), "defaults to process.env");
   assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "report" }), "report");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "repair" }), "repair");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: " Repair " }), "repair");
   assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "OFF" }), "off");
-  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "refuse" }), "repair", "no policy may throw into the cut");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "refuse" }), "report", "unknown values fail safe to measure-only");
+  assert.equal(rectGuardPolicy({ DESIGNPRO_RECT_GUARD_POLICY: "on" }), "report", "only the exact word repair modifies pixels");
+});
+
+test("DEFAULT (env unset): panel.cut and the guard record rectGuard but never change a pixel", async () => {
+  const saved = process.env.DESIGNPRO_RECT_GUARD_POLICY;
+  delete process.env.DESIGNPRO_RECT_GUARD_POLICY;
+  try {
+    const hood = await png(`${art}<rect width="100%" height="100%" fill="white"/><path d="M 40 10 L 360 10 L 395 270 L 5 270 Z" fill="url(#g)"/>`);
+    const out = await guardPanelRectangle(sharp, hood, { surfaceKey: "hood" });
+    assert.equal(out.bytes, hood, "hood silhouette bytes are untouched by default");
+    assert.equal(out.rectGuard.policy, "report");
+    assert.equal(out.rectGuard.contract, RECT_GUARD_CONTRACT);
+    assert.equal(out.rectGuard.changed, false);
+    assert.equal(out.rectGuard.surround.silhouette, true, "the die-cut is still measured and recorded");
+    assert.equal(out.rectGuard.surround.repaired, undefined);
+    const roof = await png(`${art}<rect width="100%" height="100%" fill="white"/><rect x="3" y="0" width="${W - 3}" height="${H}" fill="url(#g)"/>`);
+    const roofOut = await guardPanelRectangle(sharp, roof, { surfaceKey: "roof" });
+    assert.equal(roofOut.bytes, roof, "roof strip bytes are untouched by default");
+    assert.equal(roofOut.rectGuard.changed, false);
+    assert.equal(roofOut.rectGuard.edgeStrips.left, 3, "the strip is still measured and recorded");
+  } finally {
+    if (saved === undefined) delete process.env.DESIGNPRO_RECT_GUARD_POLICY; else process.env.DESIGNPRO_RECT_GUARD_POLICY = saved;
+  }
 });
 
 test("BUG 1: a hood drawn as a silhouette on white is repaired to a full rectangle at the same size", async () => {
@@ -154,4 +183,33 @@ test("panel.cut: the hood cell drawn as a silhouette comes out rectangular in Zo
   for (const p of out.panels.filter((p) => p.zone === "zone3")) assert.equal(p.rectGuard, undefined);
   const off = await cutProofPanels({ proofBytes, manifest, sharp, rectPolicy: "off" });
   for (const p of off.panels) assert.equal(p.rectGuard, undefined, "off restores the previous panel shape exactly");
+
+  // Env-driven: unset => report (bytes identical to the raw cut, rectGuard recorded);
+  // DESIGNPRO_RECT_GUARD_POLICY=repair => repaired exactly like rectPolicy: "repair".
+  const saved = process.env.DESIGNPRO_RECT_GUARD_POLICY;
+  try {
+    delete process.env.DESIGNPRO_RECT_GUARD_POLICY;
+    const dflt = await cutProofPanels({ proofBytes, manifest, sharp });
+    for (const zone of ["zone1", "zone2"]) {
+      const hood = dflt.panels.find((p) => p.zone === zone && p.surfaceKey === "hood");
+      const raw = off.panels.find((p) => p.zone === zone && p.surfaceKey === "hood");
+      assert.equal(hood.rectGuard.policy, "report", `${zone} hood default policy`);
+      assert.equal(hood.rectGuard.changed, false);
+      assert.equal(hood.rectGuard.surround.silhouette, true, `${zone} hood silhouette recorded`);
+      assert.ok(hood.bytes.equals(raw.bytes), `${zone} hood bytes are the raw cut in report mode`);
+    }
+    for (const p of dflt.panels.filter((p) => p.zone === "zone1" || p.zone === "zone2")) {
+      assert.equal(p.rectGuard.changed, false, `${p.zone} ${p.surfaceKey} unchanged by default`);
+    }
+    process.env.DESIGNPRO_RECT_GUARD_POLICY = "repair";
+    const repaired = await cutProofPanels({ proofBytes, manifest, sharp });
+    for (const zone of ["zone1", "zone2"]) {
+      const hood = repaired.panels.find((p) => p.zone === zone && p.surfaceKey === "hood");
+      assert.equal(hood.rectGuard.policy, "repair");
+      assert.equal(hood.rectGuard.changed, true, `${zone} hood repaired when explicitly enabled`);
+      assert.equal(hood.rectGuard.surround.repaired, true);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.DESIGNPRO_RECT_GUARD_POLICY; else process.env.DESIGNPRO_RECT_GUARD_POLICY = saved;
+  }
 });
