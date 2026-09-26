@@ -2934,11 +2934,11 @@ async function processClaim(db, stage) {
 // 2026-08-12 00:01 UTC), blocking every downstream file stage. Same probe,
 // same contract: verdict cached five minutes, transport errors are not an
 // auth verdict, a repaired environment recovers on its own.
-const AUTH_PROBE_TTL_MS = 5 * 60_000;
-let authProbe = { ok: null, checkedAt: 0 };
+const { authProbeVerdict, authProbeRefusalMessage } = require("./edge-auth-probe.cjs");
+let authProbe = { ok: null, checkedAt: 0, ttlMs: 0 };
 async function runnerCanAuthenticate() {
   const now = Date.now();
-  if (authProbe.ok !== null && now - authProbe.checkedAt < AUTH_PROBE_TTL_MS) {
+  if (authProbe.ok !== null && now - authProbe.checkedAt < authProbe.ttlMs) {
     return authProbe.ok;
   }
   try {
@@ -2957,16 +2957,16 @@ async function runnerCanAuthenticate() {
         body: JSON.stringify({ mode: "designpro_job", action: "auth_probe" }),
       },
     );
-    // ANY non-401/403 response proves the credential was accepted — the probe
-    // action itself is unknown to the function and that is fine.
-    const ok = response.status !== 401 && response.status !== 403;
-    authProbe = { ok, checkedAt: now };
-    if (!ok) {
-      console.error(
-        `[DESIGNPRO-ENTICE] refusing to claim: edge gateway rejected this runner's credentials (HTTP ${response.status}). Set WORKER_SECRET (and a current service key) in this environment, or retire this claimant.`,
-      );
+    // A 2xx or a non-auth 4xx proves the credential was accepted (the probe
+    // action itself is unknown to the function and that is fine). A 404 means
+    // the function is NOT DEPLOYED and every claimed stage would fail on it;
+    // see ./edge-auth-probe.cjs.
+    const verdict = authProbeVerdict(response.status);
+    authProbe = { ok: verdict.ok, checkedAt: now, ttlMs: verdict.ttlMs };
+    if (!verdict.ok) {
+      console.error(authProbeRefusalMessage("DESIGNPRO-ENTICE", verdict, response.status));
     }
-    return ok;
+    return verdict.ok;
   } catch (error) {
     // Transport failure is not an auth verdict: do not block a previously
     // healthy runner on it, and do not cache success from it either.
