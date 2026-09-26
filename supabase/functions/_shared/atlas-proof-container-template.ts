@@ -90,7 +90,6 @@ export interface ContainerOptions {
   mode?: "template" | "chrome" | "artwork";
   companyName?: string;
   vehicle?: string;
-  bleedInches?: number;
   /**
    * Header job block. Absent fields draw a ruled line, as the blank sheet does.
    * `generationId` labels the second row before a purchase exists (the ID
@@ -152,46 +151,10 @@ function zoneBand(x: number, y: number, w: number, colour: string, title: string
  */
 function panelCell(
   x: number, y: number, w: number, h: number,
-  /**
-   * THE TRIM LINE — WHERE THE 5" BLEED STOPS AND THE WRAP BEGINS.
-   *
-   * Owner, 2026-09-23, on a spa design whose model's FACE was cut by the panel
-   * edge: "fix bleed". The bleed was never wrong — `trimOf`/`printOf` compute it
-   * from GENIE and every caption states it ("166.8" W x 59.4" H (TRIM: 156.8" x
-   * 49.4") with 5" bleed"). It was STATED AND NEVER DRAWN. The cell was one
-   * rectangle, the contract says "background to every edge", and so the designer
-   * filled it corner to corner with no idea that the outer 3% all round is
-   * sacrificial. A face on the trim line is a face the installer cuts off.
-   *
-   * The requirement already existed at the WRONG END: PanelPro's human QC asks
-   * the reviewer to confirm "nothing important falling into openings or cut
-   * areas" — inspected after the fact, never asked for up front. This is that
-   * same rule, moved to where the decision is made.
-   *
-   * ⛔ IT IS DRAWN INSIDE THE PAINT AREA, WHICH IS THE ONE PLACE THIS REPO HAS
-   * BEEN BITTEN. `atlasFieldContract` printed six rectangles beside the words
-   * "none of the map is drawn" and four consecutive live runs painted those
-   * digits onto the customer's flanks. So this carries NO text, no ticks and no
-   * crosses -- a single hairline rectangle, and `map_drawn` in
-   * `runtime/atlas-output-class.cjs` already convicts "drawn frames" if the
-   * model copies it. The customer never sees it either way: the returned panel
-   * is composited OVER this cell when the document is assembled, so the guide
-   * exists for the designer and is painted out before anyone reads the proof.
-   */
-  spec: {
-    widthIn?: number | null; heightIn?: number | null; caption: string; detail?: string[];
-    dimension?: boolean; fill?: string; trimInset?: { x: number; y: number } | null;
-  },
+  spec: { widthIn?: number | null; heightIn?: number | null; caption: string; detail?: string[]; dimension?: boolean; fill?: string },
 ): string {
-  const { widthIn, heightIn, caption, detail = [], dimension = true, fill = "#ffffff",
-    trimInset = null } = spec;
+  const { widthIn, heightIn, caption, detail = [], dimension = true, fill = "#ffffff" } = spec;
   const out = [`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}" stroke="${FRAME}" stroke-width="1"/>`];
-  if (trimInset && trimInset.x > 0 && trimInset.y > 0
-    && w - trimInset.x * 2 > 8 && h - trimInset.y * 2 > 8) {
-    out.push(`<rect x="${r1(x + trimInset.x)}" y="${r1(y + trimInset.y)}" `
-      + `width="${r1(w - trimInset.x * 2)}" height="${r1(h - trimInset.y * 2)}" `
-      + `fill="none" stroke="${RULE}" stroke-width="0.6" stroke-dasharray="4 3"/>`);
-  }
   if (dimension && widthIn != null) {
     const dy = y - 12;
     const label = `${r1(widthIn)}"`;
@@ -263,24 +226,16 @@ export function layoutRow(
 function row(
   surfaces: ContainerSurface[],
   opts: {
-    top: number; height: number; fill?: string; bleedInches?: number;
+    top: number; height: number; fill?: string;
     detail?: (cell: ContainerCell) => string[];
   },
 ): string {
-  const { detail, bleedInches = 0 } = opts;
+  const { detail } = opts;
   return layoutRow(surfaces, opts).map((cell) => panelCell(cell.x, cell.y, cell.w, cell.h, {
     widthIn: cell.widthIn, heightIn: cell.heightIn,
     caption: LABEL[cell.surfaceKey] || cell.surfaceKey.toUpperCase(),
     detail: detail ? detail(cell) : [],
     fill: opts.fill,
-    // The cell is drawn at the PRINT rectangle, so the bleed is the same
-    // FRACTION of the cell as it is of the panel -- 5" of 166.8" is 3.0% of the
-    // width and 5" of 59.4" is 8.4% of the height. Per axis, never one inset for
-    // both: a flank's bleed is nearly three times deeper vertically, and a
-    // single average would put the line off the trim on both axes at once.
-    trimInset: bleedInches > 0 && cell.widthIn > 0 && cell.heightIn > 0
-      ? { x: (cell.w * bleedInches) / cell.widthIn, y: (cell.h * bleedInches) / cell.heightIn }
-      : null,
   })).join("");
 }
 
@@ -545,13 +500,13 @@ export function containerSvg(options: ContainerOptions = {}): string {
   m.push(zoneBand(54, 108, 1428, ZONE1,
     "ZONE 1 — FULL DESIGN PANELS (PHOTO + DESIGN + TEXT + LOGO)",
     `${surfaces.length} PANELS — COMPLETE WRAP ARTWORK (RECTANGLE PANELS)`));
-  m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail, fill: ground, bleedInches }));
+  m.push(row(surfaces, { ...BAND.zone1, detail: panelDetail, fill: ground }));
 
   // ── zone 2: the same panels, artwork only ────────────────────────────────
   m.push(zoneBand(54, 372, 1428, ZONE2,
     "ZONE 2 — BACKGROUNDS ONLY (NO TEXT OR LOGO)",
     `${surfaces.length} PANELS — BACKGROUND ARTWORK ONLY (MATCHES ZONE 1 EXACTLY)`));
-  m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground, bleedInches }));
+  m.push(row(surfaces, { ...BAND.zone2, detail: panelDetail, fill: ground }));
 
   // ── zone 3: the elements alone ───────────────────────────────────────────
   m.push(zoneBand(54, 648, 1428, ZONE3,
