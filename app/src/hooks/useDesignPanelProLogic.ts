@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionLimits } from "./useSubscriptionLimits";
+import { DESIGN_ARCHIVE_UI_ENABLED } from "@/lib/design-archive";
 import {
   handoffGeneration,
   listDesignPanelViews,
@@ -703,6 +704,13 @@ export const useDesignPanelProLogic = (
         throw new Error("generation_pipeline_mode_mismatch");
       }
 
+      // THE ARCHIVE LINK. The order number rides beside the generation, never
+      // inside it, and a failed binding never fails the design: it is logged
+      // and the customer can still find the design by name, vehicle or DID.
+      if (DESIGN_ARCHIVE_UI_ENABLED && params.orderNumber?.trim()) {
+        void dpApi.bindDesignOrder(request.generationId, params.orderNumber.trim())
+          .catch((error) => console.warn("[design-archive] order number not bound", error));
+      }
       setStandaloneRequestId(request.requestId);
       // The design's id everywhere downstream: production layers, the pack, the
       // QC certificate and WrapBox all key by this one value.

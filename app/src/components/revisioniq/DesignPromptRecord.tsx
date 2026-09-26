@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { dpApi, type DesignPromptRecord as PromptRecord } from "@/lib/designpro-api";
 import { exactTimestamp } from "@/lib/design-version-history";
+import { DESIGN_ARCHIVE_UI_ENABLED } from "@/lib/design-archive";
+import { DesignFullHistory } from "@/components/revisioniq/DesignFullHistory";
 
 export function DesignPromptRecordView({ record }: { record: PromptRecord }) {
   return (
@@ -37,6 +39,16 @@ export function DesignPromptRecordView({ record }: { record: PromptRecord }) {
 }
 
 export function DesignPromptRecord({ generationId }: { generationId: string | null | undefined }) {
+  // Behind the archive flag, all three surfaces that mount this record show the
+  // FULL history (every version, prompt, file and order) instead, and fall back
+  // to this record when the archive cannot answer.
+  if (DESIGN_ARCHIVE_UI_ENABLED && generationId) {
+    return <DesignFullHistory generationId={generationId} fallback={<LegacyDesignPromptRecord generationId={generationId} />} />;
+  }
+  return <LegacyDesignPromptRecord generationId={generationId} />;
+}
+
+function LegacyDesignPromptRecord({ generationId }: { generationId: string | null | undefined }) {
   const { data, isPending, isError, refetch } = useQuery({
     queryKey: ["design-prompt-record", generationId],
     queryFn: () => dpApi.getDesignPromptRecord(generationId!),

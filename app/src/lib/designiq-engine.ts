@@ -142,6 +142,12 @@ export interface DesignIQParams {
    */
   textLayerPrompt?: string;
   textLayerVisionBoardImages?: VisionBoardImage[];
+  /**
+   * The customer's WPW / shop order number, when they have one. NOT part of the
+   * generation contract (v2/v3 refuse it): it is bound to the design in the
+   * archive after intake, behind VITE_DESIGNPRO_ARCHIVE_V1.
+   */
+  orderNumber?: string;
 }
 
 // ---------------------------------------------------------------------------

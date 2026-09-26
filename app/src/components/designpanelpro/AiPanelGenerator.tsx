@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { DESIGN_ARCHIVE_UI_ENABLED } from "@/lib/design-archive";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -263,6 +264,8 @@ export const AiPanelGenerator = ({
   const [isGroundingFilm, setIsGroundingFilm] = useState(false);
   const filmSwatchRef = useRef<HTMLInputElement>(null);
   const [companyName, setCompanyName] = useState(initialCompanyName || "");
+  // Optional WPW order number, bound to the design in the archive after intake.
+  const [orderNumber, setOrderNumber] = useState("");
   const [phone, setPhone] = useState(initialPhone || "");
   const [mascot, setMascot] = useState("");
   const [industryType, setIndustryType] = useState("");
@@ -428,6 +431,7 @@ export const AiPanelGenerator = ({
       // wrap, and nothing told them. Mode is inferred downstream from exactly
       // these values, so gating them on it was also circular.
       companyName: companyName?.trim() ? companyName : undefined,
+      ...(DESIGN_ARCHIVE_UI_ENABLED && orderNumber.trim() ? { orderNumber: orderNumber.trim() } : {}),
       phone: phone.trim() ? phone.trim() : undefined,
       mascot: mascot?.trim() ? mascot : undefined,
       bulletPoints: (() => {
@@ -685,6 +689,22 @@ export const AiPanelGenerator = ({
                 className="bg-background"
               />
             </div>
+
+            {DESIGN_ARCHIVE_UI_ENABLED && (
+              <div>
+                <Label htmlFor="designpro-order-number" className="text-xs text-muted-foreground mb-1">
+                  Order # <span className="text-muted-foreground/50">(optional — links this design to your order)</span>
+                </Label>
+                <Input
+                  id="designpro-order-number"
+                  placeholder="e.g., 30292"
+                  value={orderNumber}
+                  maxLength={120}
+                  onChange={(e) => setOrderNumber(e.target.value)}
+                  className="bg-background"
+                />
+              </div>
+            )}
 
             <div>
               <Label className="text-xs text-muted-foreground mb-1">

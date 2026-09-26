@@ -54,6 +54,8 @@ import { listRevisionStudioDesigns, type RevisionStudioDesignRow } from "@/lib/r
 import { toolLabel, thumbnailOf, openPathOf, titleOf, toolsPresent, filterDesigns } from "@/lib/my-designs";
 import { listWallDesignsForStudio } from "@/lib/wallpro-api";
 import { wallStudioRow } from "@/lib/wallpro-studio";
+import { DESIGN_ARCHIVE_UI_ENABLED } from "@/lib/design-archive";
+import { DesignArchiveSearch } from "@/components/archive/DesignArchiveSearch";
 
 async function loadMyDesigns(): Promise<RevisionStudioDesignRow[]> {
   const [vehicle, walls] = await Promise.all([
@@ -87,6 +89,10 @@ export default function MyDesigns() {
           Every design on this account, newest first. Open one to revise it or order its print files.
         </p>
       </header>
+
+      {/* Behind VITE_DESIGNPRO_ARCHIVE_V1: search every vehicle design by order #,
+          customer, make/model/year, date, status or year. */}
+      {DESIGN_ARCHIVE_UI_ENABLED && <DesignArchiveSearch />}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Button size="sm" variant={tool === "all" ? "default" : "outline"} onClick={() => setTool("all")}>

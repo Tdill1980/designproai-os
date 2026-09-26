@@ -53,6 +53,7 @@ const VEHICLE_CLASSES = ["car", "truck", "suv", "van", "motorcycle", "boat", "bu
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ORDER_NUMBER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/# -]{0,119}$/;
+const DESIGN_ARCHIVE_STATUSES = ["generating", "ready", "failed", "ordered", "in_production", "delivered", "archived"];
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_REFERENCE_PATTERN = /^[^\u0000-\u001f\u007f]{1,160}$/;
 const VERIFICATION_REFERENCE_PATTERN = /^[^\u0000-\u001f\u007f]{3,256}$/;
@@ -146,7 +147,10 @@ function config(env) {
       throw new Error("gateway_internal_runtime_url_invalid");
     }
   }
-  return { supabaseUrl, publishableKey, appOrigin, allowedOrigins, internalRuntimeUrl, workerSecret, production, stripeSecretKey, stripeWebhookSecret };
+  // THE DESIGN ARCHIVE (search, full history, order binding). Off unless the
+  // operator turns it on, and it needs migration 20260926010000 applied first.
+  const archiveEnabled = ["1", "true", "on", "enabled"].includes(String(env.DESIGNPRO_ARCHIVE_V1 || "").toLowerCase());
+  return { supabaseUrl, publishableKey, appOrigin, allowedOrigins, internalRuntimeUrl, workerSecret, production, stripeSecretKey, stripeWebhookSecret, archiveEnabled };
 }
 
 function encodeStoragePath(path) {
@@ -2792,6 +2796,91 @@ export function createGateway({ env = process.env, fetchImpl = fetch, now = Date
             errorCode: /^[a-z0-9][a-z0-9_:-]{0,119}$/.test(entry.errorCode || "") ? entry.errorCode : null,
           })),
         });
+      }
+
+      // ── THE DESIGN ARCHIVE ────────────────────────────────────────────────
+      // Search, full history and order binding over migration 20260926010000.
+      // Every call carries the customer's own token, so the database's RLS and
+      // the history RPC's owner-or-QC-staff rule decide what comes back; this
+      // process never widens it. The A.T.L.A.S. master is stripped for
+      // customers by the RPC itself (audience: "customer").
+      if (url.pathname.startsWith("/api/designs/")) {
+        if (!cfg.archiveEnabled) return json(res, 404, { error: "design_archive_disabled" });
+        if (req.method === "GET" && url.pathname === "/api/designs/search") {
+          const q = url.searchParams;
+          const text = (name, max) => {
+            const value = String(q.get(name) || "").trim();
+            if (value.length > max) throw Object.assign(new Error("design_search_invalid"), { status: 400 });
+            return value || null;
+          };
+          const int = (name, lo, hi) => {
+            const raw = q.get(name);
+            if (raw === null || raw === "") return null;
+            const value = Number(raw);
+            if (!Number.isInteger(value) || value < lo || value > hi) throw Object.assign(new Error("design_search_invalid"), { status: 400 });
+            return value;
+          };
+          const time = (name) => {
+            const raw = q.get(name);
+            if (!raw) return null;
+            if (Number.isNaN(Date.parse(raw))) throw Object.assign(new Error("design_search_invalid"), { status: 400 });
+            return new Date(raw).toISOString();
+          };
+          const status = text("status", 20);
+          if (status && !DESIGN_ARCHIVE_STATUSES.includes(status)) return json(res, 400, { error: "design_search_invalid" });
+          const cursorId = text("cursorId", 12);
+          if (cursorId && !/^DID-[0-9A-F]{8}$/.test(cursorId)) return json(res, 400, { error: "design_search_invalid" });
+          const rows = await rpc(fetchImpl, token, cfg, "designpro_design_search", {
+            p_query: text("q", 200), p_order_number: text("order", 120),
+            p_vehicle_make: text("make", 80), p_vehicle_model: text("model", 120),
+            p_vehicle_year: int("year", 1900, 2100), p_created_year: int("createdYear", 2000, 2100),
+            p_from: time("from"), p_to: time("to"), p_status: status,
+            p_limit: int("limit", 1, 100) ?? 24,
+            p_cursor_created_at: time("cursorAt"), p_cursor_design_id: cursorId,
+          });
+          if (!Array.isArray(rows)) throw Object.assign(new Error("design_search_response_invalid"), { status: 502 });
+          const designs = rows.map((row) => ({
+            designId: String(row.design_id || ""), generationId: String(row.generation_id || ""),
+            designName: row.design_name ?? null, companyName: row.company_name ?? null,
+            vehicle: { year: row.vehicle_year ?? null, make: row.vehicle_make ?? null, model: row.vehicle_model ?? null, type: row.vehicle_type ?? null },
+            status: String(row.status || ""), createdAt: row.created_at ?? null, createdYear: row.created_year ?? null,
+            orderNumbers: Array.isArray(row.order_numbers) ? row.order_numbers.map(String) : [],
+            currentRevisionSequence: row.current_revision_sequence ?? null,
+          }));
+          if (designs.some((d) => !/^DID-[0-9A-F]{8}$/.test(d.designId) || !UUID_PATTERN.test(d.generationId))) {
+            throw Object.assign(new Error("design_search_response_invalid"), { status: 502 });
+          }
+          const last = designs[designs.length - 1];
+          return json(res, 200, { designs, nextCursor: last && designs.length === (int("limit", 1, 100) ?? 24) ? { cursorAt: last.createdAt, cursorId: last.designId } : null });
+        }
+        const historyMatch = url.pathname.match(/^\/api\/designs\/(DID-[0-9A-F]{8})\/history$/i);
+        if (req.method === "GET" && historyMatch) {
+          const record = await rpc(fetchImpl, token, cfg, "designpro_design_history", { p_design_id: historyMatch[1].toUpperCase() });
+          if (!record) return json(res, 404, { error: "design_not_found" });
+          if (record.contract !== "designpro.design-history.v1" || record.designId !== historyMatch[1].toUpperCase()
+            || !Array.isArray(record.versions) || !Array.isArray(record.prompts) || !Array.isArray(record.files) || !Array.isArray(record.orders)) {
+            return json(res, 502, { error: "design_history_invalid" });
+          }
+          return json(res, 200, record);
+        }
+        const bindMatch = url.pathname.match(/^\/api\/designs\/([0-9a-f-]{36})\/orders$/);
+        if (req.method === "POST" && bindMatch) {
+          const body = await readBody(req);
+          const orderNumber = String(body?.orderNumber || "").trim().replace(/^#+\s*/, "");
+          if (!body || typeof body !== "object" || Array.isArray(body)
+            || JSON.stringify(Object.keys(body)) !== JSON.stringify(["orderNumber"])
+            || !ORDER_NUMBER_PATTERN.test(orderNumber)) return json(res, 400, { error: "design_order_number_invalid" });
+          // A customer may only record an intake reference; Woo/Stripe bindings
+          // are staff/service facts the RPC refuses from this role anyway.
+          const bound = await rpc(fetchImpl, token, cfg, "designpro_bind_design_order", {
+            p_generation_id: bindMatch[1], p_order_number: orderNumber, p_source: "intake", p_woo_order_id: null,
+          }).catch((error) => {
+            if (/design_not_found/.test(String(error?.message || ""))) throw Object.assign(new Error("design_not_found"), { status: 404 });
+            throw error;
+          });
+          return json(res, 200, bound);
+        }
+        return json(res, 404, { error: "not_found" });
       }
 
       const generationProgressMatch=url.pathname.match(/^\/api\/generation\/([0-9a-f-]{36})\/progress$/);

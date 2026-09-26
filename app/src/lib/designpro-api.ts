@@ -83,6 +83,56 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+/* ── The design archive (designpro.design-history.v1) ───────────────── */
+
+export type DesignArchiveStatus = "generating" | "ready" | "failed" | "ordered" | "in_production" | "delivered" | "archived";
+
+export type DesignArchiveSearchFilters = {
+  q?: string; order?: string; make?: string; model?: string;
+  year?: number | string; createdYear?: number | string;
+  from?: string; to?: string; status?: DesignArchiveStatus | "";
+  limit?: number; cursorAt?: string; cursorId?: string;
+};
+
+export type DesignArchiveSummary = {
+  designId: string; generationId: string; designName: string | null; companyName: string | null;
+  vehicle: { year: number | null; make: string | null; model: string | null; type: string | null };
+  status: DesignArchiveStatus; createdAt: string | null; createdYear: number | null;
+  orderNumbers: string[]; currentRevisionSequence: number | null;
+};
+
+export type DesignArchiveSearchPage = {
+  designs: DesignArchiveSummary[];
+  nextCursor: { cursorAt: string; cursorId: string } | null;
+};
+
+export type DesignArchivePromptKind = "original-brief" | "revision-instruction" | "view-regeneration";
+
+export type DesignArchiveHistory = {
+  contract: "designpro.design-history.v1";
+  /** "customer" never carries the A.T.L.A.S. master, hashes or storage paths. */
+  audience: "customer" | "staff";
+  designId: string; generationId: string; designName: string | null; companyName: string | null;
+  status: DesignArchiveStatus; createdAt: string | null;
+  vehicle: { year: number | null; make: string | null; model: string | null; type: string | null };
+  templateRef: Record<string, unknown> | null;
+  orders: Array<{ orderNumber: string; source: string; wooOrderId: number | null; boundAt: string }>;
+  versions: Array<{
+    version: number; revisionId: string; requestId: string | null; parentRevisionId: string | null;
+    createdAt: string | null; productionEligible: boolean | null; effectivePpi: number | null;
+    widthPx: number | null; heightPx: number | null; promptVersion: string | null; masterContentHash: string | null;
+  }>;
+  prompts: Array<{
+    kind: DesignArchivePromptKind; version: number; surface: string | null; prompt: string | null;
+    state: string | null; requestId: string; createdAt: string | null;
+  }>;
+  files: Array<{
+    source: "view" | "revision" | "artifact"; kind: string; surface: string | null; version: number | null;
+    storagePath: string | null; contentHash: string | null; byteSize: number | null; contentType: string | null;
+    widthPx: number | null; heightPx: number | null; createdAt: string | null; superseded: boolean;
+  }>;
+};
+
 /* ── Identity and workflow contracts ─────────────────────────────── */
 
 // The six surfaces and their key type live in `designpro-surfaces.ts`, which
@@ -1408,6 +1458,22 @@ export const dpApi = {
     const query = params.toString();
     return request<DesignLibraryEntry[]>(`/design-library${query ? `?${query}` : ""}`);
   },
+  /* The design archive (migration 20260926010000), behind VITE_DESIGNPRO_ARCHIVE_V1. */
+  searchDesignArchive: (filters: DesignArchiveSearchFilters = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && String(value).trim() !== "") params.set(key, String(value).trim());
+    }
+    const query = params.toString();
+    return request<DesignArchiveSearchPage>(`/designs/search${query ? `?${query}` : ""}`);
+  },
+  getDesignArchiveHistory: (designId: string) =>
+    request<DesignArchiveHistory>(`/designs/${encodeURIComponent(designId)}/history`),
+  bindDesignOrder: (generationId: string, orderNumber: string) =>
+    request<{ designId: string; orderNumber: string; source: string }>(
+      `/designs/${encodeURIComponent(generationId)}/orders`,
+      { method: "POST", body: JSON.stringify({ orderNumber }) },
+    ),
   listApprovedViews: (generationId: string, atlasRevisionId?: string | null) =>
     request<ApprovedGenerationView[]>(`/jobs/${encodeURIComponent(generationId)}/approved-views${atlasRevisionId ? `?atlasRevisionId=${encodeURIComponent(atlasRevisionId)}` : ""}`),
   /**
@@ -1606,3 +1672,4 @@ export const dpApi = {
       body: JSON.stringify({ qc, notes }),
     }),
 };
+
