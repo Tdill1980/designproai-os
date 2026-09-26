@@ -1605,14 +1605,61 @@ function atlasPanelForProofView(atlas, sourceViewType) {
      * GENIE remains the geometry authority and these stay `calls-1-7-layout-only`
      * design-time inches; Call 2 is told the proportion, never asked for it.
      */
-    trimWidthIn: finiteOrNull(panel.trimWidthIn),
-    trimHeightIn: finiteOrNull(panel.trimHeightIn),
-    printWidthIn: finiteOrNull(panel.printWidthIn),
-    printHeightIn: finiteOrNull(panel.printHeightIn),
-    surfaceSqFt: finiteOrNull(panel.surfaceSqFt),
-    bleedInches: finiteOrNull(panel.bleedInches),
+    ...proofPanelDimensions(panel, atlas?.manifest, surfaceKey),
     geometryPurpose: String(panel.geometryPurpose || "calls-1-7-layout-only"),
   });
+}
+
+/**
+ * A MISSING SIZE FALLS BACK TO GENIE, NEVER TO A GUESS (owner, 2026-09-24:
+ * "if it didn't have height on file it should use fallback").
+ *
+ * #674 told Call 2 the panel's printed size so the artwork wraps the whole
+ * surface instead of shrinking into the doors -- but a panel persisted without
+ * its inches silently lost that instruction. The fallback ladder uses only
+ * GENIE-derived numbers, in this order:
+ *
+ *   1. the panel's own print inches (stamped by `cutCallOnePanels`);
+ *   2. the panel's own trim inches plus its OWN stated bleed;
+ *   3. this atlas's GENIE manifest zone for the same surface -- the exact
+ *      source `cutCallOnePanels` copies from, so it cannot disagree with it.
+ *
+ * Nothing else. A pixel rectangle, a generic vehicle size or a default is
+ * refused: a silent pixel fallback is what once told the model the driver
+ * panel was 81 feet tall (see `panelRowsFromManifest`). No source = no numbers,
+ * and the photographer still gets the dimension-free full-surface rule.
+ */
+function proofPanelDimensions(panel, manifest, surfaceKey) {
+  const dimensionsFrom = (source, dimensionSource, bleedFallback) => {
+    const trimWidthIn = finiteOrNull(source?.trimWidthIn);
+    const trimHeightIn = finiteOrNull(source?.trimHeightIn);
+    const bleedInches = finiteOrNull(source?.bleedInches) ?? bleedFallback;
+    let printWidthIn = finiteOrNull(source?.printWidthIn);
+    let printHeightIn = finiteOrNull(source?.printHeightIn);
+    if (!(printWidthIn && printHeightIn) && trimWidthIn && trimHeightIn && bleedInches) {
+      printWidthIn = trimWidthIn + 2 * bleedInches;
+      printHeightIn = trimHeightIn + 2 * bleedInches;
+      dimensionSource += "-trim-plus-bleed";
+    }
+    if (!(printWidthIn && printHeightIn)) return null;
+    return {
+      trimWidthIn, trimHeightIn, printWidthIn, printHeightIn,
+      surfaceSqFt: finiteOrNull(source?.surfaceSqFt),
+      bleedInches,
+      dimensionSource,
+    };
+  };
+  const zone = manifest?.contract === MANIFEST_CONTRACT && Array.isArray(manifest.zones)
+    ? manifest.zones.find((candidate) => candidate?.surfaceKey === surfaceKey)
+    : null;
+  return dimensionsFrom(panel, "call1-panel", null)
+    // A GENIE zone states its bleed per edge; the atlas contract fixes all four
+    // at BLEED_INCHES and refuses any other value when the manifest is built.
+    || dimensionsFrom(zone, "genie-manifest", BLEED_INCHES)
+    || {
+      trimWidthIn: null, trimHeightIn: null, printWidthIn: null, printHeightIn: null,
+      surfaceSqFt: null, bleedInches: finiteOrNull(panel.bleedInches), dimensionSource: null,
+    };
 }
 
 /**

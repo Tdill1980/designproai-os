@@ -47,11 +47,70 @@ test("the Call-1 panel carries its printed size through to the proof view", () =
   assert.equal(panel.geometryPurpose, "calls-1-7-layout-only",
     "GENIE stays the geometry authority; these are design-time inches");
 
-  // `Number(null)` is 0 and a 0" panel reads as fact. Absence stays absent.
-  const bare = atlasPanelForProofView(
-    { callOnePanels: [{ ...DRIVER, printWidthIn: null, surfaceSqFt: undefined }] }, "side");
+  assert.equal(panel.dimensionSource, "call1-panel");
+
+  // `Number(null)` is 0 and a 0" panel reads as fact. With no trim, no bleed
+  // and no GENIE manifest there is no real source, so absence stays absent.
+  const bare = atlasPanelForProofView({ callOnePanels: [{ ...DRIVER, ...NO_SIZE }] }, "side");
   assert.equal(bare.printWidthIn, null);
+  assert.equal(bare.printHeightIn, null);
   assert.equal(bare.surfaceSqFt, null);
+  assert.equal(bare.dimensionSource, null);
+});
+
+const NO_SIZE = { trimWidthIn: null, trimHeightIn: null, printWidthIn: null,
+  printHeightIn: null, surfaceSqFt: undefined };
+// A GENIE manifest zone exactly as `buildAtlasManifest` writes it: inches plus
+// the PIXEL rectangle `trim`, which must never be read as a size.
+const GENIE_ATLAS = {
+  master: { contentHash: "b".repeat(64) },
+  manifest: {
+    contract: "designpro.flat-first-atlas-manifest.v1",
+    zones: [{ surfaceKey: "driver", trim: { x: 40, y: 40, w: 979, h: 2674 },
+      trimWidthIn: 153, trimHeightIn: 56, printWidthIn: 163, printHeightIn: 66,
+      surfaceSqFt: 59.5, bleedIn: { top: 5, right: 5, bottom: 5, left: 5 } }],
+  },
+};
+
+test("a panel with only trim inches derives print from its own stated bleed", () => {
+  const panel = atlasPanelForProofView(
+    { callOnePanels: [{ ...DRIVER, printWidthIn: null, printHeightIn: null }] }, "side");
+  assert.equal(panel.printWidthIn, 171.7);
+  assert.equal(panel.printHeightIn, 55.6);
+  assert.equal(panel.dimensionSource, "call1-panel-trim-plus-bleed");
+});
+
+test("a panel with no size on file falls back to its own GENIE manifest zone", () => {
+  const panel = atlasPanelForProofView(
+    { ...GENIE_ATLAS, callOnePanels: [{ ...DRIVER, ...NO_SIZE, bleedInches: null }] }, "side");
+  assert.equal(panel.printWidthIn, 163);
+  assert.equal(panel.printHeightIn, 66, "GENIE inches, never the 979x2674 pixel trim");
+  assert.equal(panel.trimWidthIn, 153);
+  assert.equal(panel.surfaceSqFt, 59.5);
+  assert.equal(panel.bleedInches, 5);
+  assert.equal(panel.dimensionSource, "genie-manifest");
+
+  // Only print missing on the zone too: GENIE trim + the contract's 5" bleed.
+  const zone = { ...GENIE_ATLAS.manifest.zones[0], printWidthIn: null, printHeightIn: null };
+  const derived = atlasPanelForProofView({ ...GENIE_ATLAS,
+    manifest: { ...GENIE_ATLAS.manifest, zones: [zone] },
+    callOnePanels: [{ ...DRIVER, ...NO_SIZE }] }, "side");
+  assert.equal(derived.printWidthIn, 163);
+  assert.equal(derived.printHeightIn, 66);
+  assert.equal(derived.dimensionSource, "genie-manifest-trim-plus-bleed");
+});
+
+test("the panel's own size wins over the manifest, and a foreign manifest is refused", () => {
+  assert.equal(atlasPanelForProofView({ ...GENIE_ATLAS, callOnePanels: [DRIVER] }, "side").printWidthIn, 165.7);
+  for (const manifest of [
+    { ...GENIE_ATLAS.manifest, contract: "something-else" },
+    { ...GENIE_ATLAS.manifest, zones: [{ ...GENIE_ATLAS.manifest.zones[0], surfaceKey: "hood" }] },
+  ]) {
+    const panel = atlasPanelForProofView(
+      { ...GENIE_ATLAS, manifest, callOnePanels: [{ ...DRIVER, ...NO_SIZE }] }, "side");
+    assert.equal(panel.printWidthIn, null);
+    assert.equal(panel.dimensionSource, null);
+  }
 });
 
 const options = { requestId: "r", generationId: "g", claimToken: "c" };
@@ -76,8 +135,7 @@ test("the three-zone proof request states the panel's printed size to Call 2", (
 });
 
 test("a panel with no stated size sends no dimension at all", () => {
-  const panel = atlasPanelForProofView(
-    { callOnePanels: [{ ...DRIVER, printWidthIn: null, printHeightIn: null }] }, "side");
+  const panel = atlasPanelForProofView({ callOnePanels: [{ ...DRIVER, ...NO_SIZE }] }, "side");
   const body = atlasProofRequestBody({
     options, input, sourceViewType: "side", revisionId: "rev",
     authority: { storagePath: "sheet.png", contentHash: "c".repeat(64), contentType: "image/png",
@@ -87,6 +145,21 @@ test("a panel with no stated size sends no dimension at all", () => {
   for (const key of ["panelPrintWidthIn", "panelPrintHeightIn", "panelSquareFeet", "panelBleedIn"]) {
     assert.equal(key in body, false, `${key} must be absent, never a fabricated 0"`);
   }
+  assert.equal("panelDimensionSource" in body, false);
+});
+
+test("a GENIE fallback size reaches Call 2 and says where it came from", () => {
+  const panel = atlasPanelForProofView(
+    { ...GENIE_ATLAS, callOnePanels: [{ ...DRIVER, ...NO_SIZE }] }, "side");
+  const body = atlasProofRequestBody({
+    options, input, sourceViewType: "side", revisionId: "rev",
+    authority: { storagePath: "panels/driver.png", contentHash: "a".repeat(64), contentType: "image/png",
+      role: "surface-panel", contract: "x", surfaceKey: "driver", surfaceSelection: "fixed-by-surface", panel },
+  });
+  assert.equal(body.panelPrintWidthIn, 163);
+  assert.equal(body.panelPrintHeightIn, 66);
+  assert.equal(body.panelBleedIn, 5);
+  assert.equal(body.panelDimensionSource, "genie-manifest");
 });
 
 test("the photographer states the proportion and never paints the annotation", () => {

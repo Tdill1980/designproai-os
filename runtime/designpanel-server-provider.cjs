@@ -1151,6 +1151,9 @@ function panelDimensionFields(panel) {
     ...(positive(panel?.surfaceSqFt) ? { panelSquareFeet: positive(panel.surfaceSqFt) } : {}),
     ...(positive(panel?.bleedInches) ? { panelBleedIn: positive(panel.bleedInches) } : {}),
     panelGeometryPurpose: String(panel?.geometryPurpose || "calls-1-7-layout-only"),
+    // Which GENIE source the inches came from (`call1-panel`, or a
+    // `genie-manifest` fallback), so a proof can be traced to its size.
+    ...(panel?.dimensionSource ? { panelDimensionSource: String(panel.dimensionSource) } : {}),
   };
 }
 
